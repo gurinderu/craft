@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "craft",
+  "version": "0.1.0",
+  "description": "Personal Claude Code engineering skills and agents.",
+  "owner": {
+    "name": "gurinderu",
+    "email": "gurinderu@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "craft",
+      "source": "./",
+      "description": "Opinionated, self-contained engineering skills and agents for Claude Code — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native), language-agnostic engineering-process skills (specs, debugging, refactoring, verification, review workflow, onboarding), and code-review / security / Miri agents.",
+      "version": "0.1.0",
+      "category": "development",
+      "license": "MIT"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "craft",
+  "version": "0.1.0",
+  "description": "Personal Claude Code collection of opinionated, self-contained engineering skills and agents — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native) plus language-agnostic process skills (specs, debugging, refactoring, verification, review workflow, onboarding) and code-review / architecture / security / Miri agents; multi-language over time.",
+  "author": {
+    "name": "gurinderu",
+    "email": "gurinderu@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "skills",
+    "agents",
+    "rust",
+    "testing",
+    "code-review",
+    "craft"
+  ]
+}

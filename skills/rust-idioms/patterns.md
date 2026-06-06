@@ -1,0 +1,117 @@
+# Idiomatic constructs
+
+The patterns the standard library and ecosystem expect. Using them makes your API feel native
+and composable.
+
+## Conversions: `From` / `Into` / `TryFrom`
+
+Implement `From`; `Into` comes free. Accept `impl Into<T>` to let callers pass either side.
+
+```rust
+struct Celsius(f64);
+struct Fahrenheit(f64);
+
+impl From<Celsius> for Fahrenheit {
+    fn from(c: Celsius) -> Self { Fahrenheit(c.0 * 9.0 / 5.0 + 32.0) }
+}
+
+let f: Fahrenheit = Celsius(100.0).into();   // free via From
+
+// Fallible conversions use TryFrom (and give TryInto free)
+impl TryFrom<i64> for Age {
+    type Error = AgeError;
+    fn try_from(n: i64) -> Result<Self, AgeError> { /* ... */ }
+}
+```
+
+Don't write `to_fahrenheit()` / `from_celsius()` methods where a `From` impl is the idiom — it
+plugs into `?`, generic bounds, and `.into()` everywhere.
+
+## `Default` + struct-update
+
+```rust
+#[derive(Default)]
+struct Config { workers: usize, verbose: bool, name: String }
+
+let cfg = Config { workers: 4, ..Default::default() };   // override some, default the rest
+```
+
+Prefer this to a constructor with many arguments. For staged/validated construction, use a
+builder (→ typestate builder in `rust-traits`).
+
+## Constructors and builders
+
+```rust
+impl Server {
+    pub fn new(addr: SocketAddr) -> Self { /* the obvious constructor */ }
+    pub fn with_tls(mut self, cfg: TlsConfig) -> Self { self.tls = Some(cfg); self } // chainable
+}
+let s = Server::new(addr).with_tls(tls);
+```
+
+## Iterators over loops
+
+Express transformations as iterator chains — clearer, and often faster (→ `rust-performance`).
+
+```rust
+// Idiomatic
+let names: Vec<_> = users.iter().filter(|u| u.active).map(|u| &u.name).collect();
+
+// Fallible iteration: collect into Result to short-circuit on the first Err
+let parsed: Result<Vec<i32>, _> = lines.iter().map(|l| l.parse::<i32>()).collect();
+
+// Sum/find/any/all instead of manual accumulation
+let total: u64 = items.iter().map(|i| i.size).sum();
+```
+
+## Concise control flow
+
+```rust
+if let Some(name) = maybe_name { greet(name); }          // one case
+let Some(cfg) = load() else { return Err(Error::NoConfig); }; // bind-or-bail
+if matches!(status, Status::Active | Status::Trial) { /* ... */ } // shape test, no PartialEq
+```
+
+## `Display` + `Error` for your types
+
+User-facing string is `Display`; debugging is `Debug`. For error types use `thiserror`
+(→ `rust-errors`) rather than hand-writing `Display`/`Error`.
+
+```rust
+impl std::fmt::Display for Money {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "${}.{:02}", self.dollars, self.cents)
+    }
+}
+```
+
+## Derives, in the conventional order
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+struct Point { x: i32, y: i32 }
+```
+
+Derive `Debug` on essentially everything public. Add `Serialize, Deserialize` after the std
+derives. Don't derive `Copy` on types that own heap data (it won't compile) or large types.
+
+## Visibility: expose the minimum
+
+```rust
+mod internal {
+    pub(crate) fn helper() {}   // visible in the crate, not the public API
+}
+pub fn api() {}                 // pub only at the real boundary
+```
+
+A smaller `pub` surface is less to document, test, and keep stable. Prefer `pub(crate)` until
+something genuinely needs to be public.
+
+## Accept borrows, return owned
+
+```rust
+fn greet(name: &str) -> String { format!("hi {name}") }   // flexible in, owned out
+fn longest(items: &[Item]) -> Option<&Item> { /* ... */ } // slice, not &Vec
+```
+
+Details and the `Cow` "borrow-usually-own-sometimes" return → `rust-ownership`.
