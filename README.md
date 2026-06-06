@@ -37,6 +37,7 @@ Every skill is **self-contained** — it does not depend on any other plugin (no
 | agent | `rust-reviewer` | Runs the gate, reviews a diff against the `rust-review` rubric, returns a verdict |
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |
 | agent | `rust-miri` | Runs unsafe code under Miri to detect undefined behavior |
+| workflow | `rust-audit` | Runs `rust-reviewer` + `rust-architecture-reviewer` + `rust-security-scanner` + `rust-miri` (if `unsafe` present) in parallel and synthesizes one severity-ranked report |
 
 ## Layout
 
@@ -49,6 +50,8 @@ craft/
 │   ├── rust-reviewer.md
 │   ├── rust-security-scanner.md
 │   └── rust-miri.md
+├── workflows/             # multi-agent orchestration scripts
+│   └── rust-audit.js
 └── skills/                # (abbreviated)
     ├── rust-review/
     ├── rust-testing/
@@ -61,6 +64,22 @@ craft/
 /plugin marketplace add gurinderu/craft
 /plugin install craft@craft
 ```
+
+## Workflows
+
+`workflows/rust-audit.js` orchestrates the review agents in one pass: a scout step detects
+the diff base and whether the workspace has `unsafe`, then `rust-reviewer`,
+`rust-architecture-reviewer`, `rust-security-scanner`, and (only if `unsafe` is present)
+`rust-miri` run in parallel, and a final step synthesizes one severity-ranked report.
+
+Run it against a path or fixed diff base:
+
+```
+Workflow({ scriptPath: "workflows/rust-audit.js", args: { base: "origin/main" } })
+```
+
+`args.base` is optional — without it the scout falls back to
+`merge-base HEAD origin/main` → `main` → `HEAD~1`.
 
 ## Conventions
 

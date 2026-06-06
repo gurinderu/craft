@@ -62,11 +62,21 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 | Agent | Runs | Rubric skill |
 |---|---|---|
 | `rust-reviewer` | fmt/clippy/test + diff review | `rust-review` |
+| `rust-architecture-reviewer` | whole crate/module dependency graph audit | `rust-architecture-review` |
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |
 
 clippy/test/coverage stay as commands inside `rust-reviewer` / the testing tooling — not separate
 agents (would duplicate).
+
+## Workflows
+
+Multi-agent orchestration scripts under `workflows/` that compose the agents above (referencing
+them by `agentType` — internal to the plugin, no external dependency).
+
+| Workflow | Composes | Output |
+|---|---|---|
+| `rust-audit` | reviewer + architecture + security + miri (parallel) | one synthesized severity-ranked report |
 
 ## Cross-cutting skills (language-agnostic)
 
