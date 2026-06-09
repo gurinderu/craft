@@ -1,9 +1,12 @@
 # craft
 
-Personal Claude Code collection of opinionated, self-contained engineering skills and agents.
+Personal Claude Code collection of opinionated engineering skills and agents.
 
-Every skill is **self-contained** — it does not depend on any other plugin (no
-`rust-skills`/`superpowers` references). The goal is full ownership of the knowledge.
+craft owns its **Rust** knowledge in full and **builds on the `superpowers` plugin** for the
+generic engineering-process discipline (systematic debugging, verification-before-completion,
+requesting/receiving code review). superpowers is declared as a plugin `dependency`, so
+installing craft pulls it in automatically. craft's skills cross-reference each other and point
+at the relevant `superpowers:*` skill for the language-agnostic method.
 
 ## Contents
 
@@ -19,7 +22,7 @@ Every skill is **self-contained** — it does not depend on any other plugin (no
 | skill | `craft:rust-idioms` | Idiomatic Rust — naming conventions, native constructs, clippy/rustfmt, rustdoc conventions, and an anti-pattern catalog (Good/Bad) |
 | skill | `craft:rust-unsafe` | Unsafe done soundly — the five superpowers, `// SAFETY:` discipline, UB, raw pointers, FFI, `#[repr]`, Miri |
 | skill | `craft:rust-ecosystem` | Crates & Cargo — choosing deps, features/workspaces, edition/MSRV, project layout, publishing (semver, docs, interop) |
-| skill | `craft:rust-review` | Code-review rubric — cargo gate, severity checklist, Approve/Warning/Block verdict |
+| skill | `craft:rust-review` | Code-review rubric — cargo gate, severity checklist, Approve/Warning/Block verdict; requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table |
 | skill | `craft:rust-web` | Web services with axum/tokio/tower/sqlx — routing, extractors, state, errors, db pool, middleware, shutdown, auth (JWT/argon2), OpenAPI (utoipa) |
 | skill | `craft:rust-cli` | CLI & TUI — clap (args/subcommands/config), output/exit-code conventions, and full-screen apps with ratatui |
 | skill | `craft:rust-security` | Security review — cargo-audit/deny/geiger + semgrep: vulns, supply chain, unsafe surface, taint/custom rules |
@@ -28,11 +31,8 @@ Every skill is **self-contained** — it does not depend on any other plugin (no
 | skill | `craft:rust-fintech` | Money in Rust — exact decimal, `Money`+currency, rounding/allocation, idempotency, double-entry ledgers |
 | skill | `craft:rust-cloud-native` | Services — gRPC (tonic), tracing/OpenTelemetry, health probes, 12-factor config, graceful shutdown, lean containers |
 | skill | `craft:specs` | Specification by example / BDD / ATDD — requirements → Given/When/Then scenarios, outside-in (language-agnostic) |
-| skill | `craft:debugging` | Systematic debugging — root cause before fix; repro shrinking, bisection, instrumentation, heisenbugs (language-agnostic) |
+| skill | `craft:debugging` | Rust debugging toolbox — repro shrinking, `git bisect`/`cargo bisect-rustc`, `dbg!`/`tracing`/`RUST_BACKTRACE`, Miri/loom heisenbugs, `rust-gdb`/`rr` (method → `superpowers:systematic-debugging`) |
 | skill | `craft:refactoring` | Disciplined refactoring — structure-not-behavior in tiny steps under green tests (language-agnostic) |
-| skill | `craft:verification` | Evidence before claims — run the proving command and read it before saying done (language-agnostic) |
-| skill | `craft:requesting-review` | Request review with a crafted brief, early/often; dispatch the review agents; act on the verdict (language-agnostic) |
-| skill | `craft:receiving-review` | Act on review feedback technically — verify-before-implement, no performative agreement, reasoned pushback (language-agnostic) |
 | skill | `craft:codebase-onboarding` | Understand an unfamiliar codebase first — map, find seams, trace one flow, confirm by building (language-agnostic) |
 | agent | `rust-reviewer` | Runs the gate, reviews a diff against the `rust-review` rubric, returns a verdict |
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |
@@ -85,5 +85,8 @@ Workflow({ scriptPath: "workflows/rust-audit.js", args: { base: "origin/main" } 
 
 - Skills use progressive disclosure: a lean `SKILL.md` entry plus sub-files loaded on demand.
 - Crate versions in examples track the latest stable release; `edition = "2024"`.
-- Skills may reference **each other** (e.g. `rust-review` points at `rust-testing` for how to
-  write missing tests) but never an external plugin.
+- Skills reference **each other** (e.g. `rust-review` points at `rust-testing` for how to write
+  missing tests) and, for the generic engineering-process method, the `superpowers` plugin
+  (`superpowers:systematic-debugging`, `superpowers:verification-before-completion`,
+  `superpowers:requesting-code-review`, `superpowers:receiving-code-review`) — declared as a
+  plugin dependency.

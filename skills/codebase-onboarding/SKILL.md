@@ -74,6 +74,6 @@ how the authors expect the code to be used.
 ## Boundaries
 
 - Once you need to *change* it: structural moves → `rust-architecture`/`refactoring`; a bug to
-  chase → `debugging`; confirming your change → `verification`.
+  chase → `debugging`; confirming your change → `superpowers:verification-before-completion`.
 - For a persistent, queryable knowledge map of a very large codebase, dedicated
   indexing/knowledge-graph tooling goes deeper than this first-hour pass.

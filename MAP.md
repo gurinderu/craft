@@ -1,12 +1,17 @@
 # craft — collection map
 
-The plan for `craft`: a self-contained, opinionated set of engineering skills that can
-eventually replace `rust-skills` entirely (variant **A** — full independence).
+The plan for `craft`: an opinionated set of engineering skills that fully own craft's **Rust**
+knowledge and **build on the `superpowers` plugin** (a declared dependency) for the generic
+engineering-process discipline. It replaces `rust-skills` entirely.
 
 ## Principles
 
-1. **Self-contained.** No skill references an external plugin. Skills may reference *each
-   other* — that internal cross-linking is the collection's cohesion.
+1. **Own the Rust knowledge; delegate generic process to superpowers.** No craft skill
+   duplicates a `superpowers` skill — the language-agnostic method (systematic debugging,
+   verification-before-completion, requesting/receiving code review) lives in `superpowers` and
+   craft skills point at it. `superpowers` is a declared plugin dependency, so installing craft
+   pulls it in. Skills also reference *each other* — that cross-linking is the collection's
+   cohesion.
 2. **Concrete over Socratic.** Good/Bad code and decision tables, not just "ask yourself…".
    (`rust-skills` is reasoning-first; `craft` is action-first.)
 3. **Organized by task, not by error code.** One skill per thing you're *doing*
@@ -28,7 +33,7 @@ Status: ✅ done
 | Skill | Status | Scope | Does NOT cover (owner) |
 |---|---|---|---|
 | `rust-testing` | ✅ | unit/integration/doc, async, rstest, proptest, cargo-fuzz, cargo-mutants, mockall, insta, testcontainers, coverage, runner, CI | benchmarks → `rust-performance` |
-| `rust-review` | ✅ | cargo gate, severity checklist, verdict; agent wrapper | *how* to fix → topic skills; *how* to test → `rust-testing` |
+| `rust-review` | ✅ | cargo gate, severity checklist, verdict; requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table | *how* to fix → topic skills; *how* to test → `rust-testing`; generic review/verify discipline → `superpowers` |
 | `rust-errors` | ✅ | `Result`/`Option`, `?`, domain failures vs defects (ZIO model), thiserror vs anyhow, library-vs-app design, recovery/retry/circuit-breaker | panics as control flow → `rust-idioms` |
 | `rust-ownership` | ✅ | borrowing, lifetimes, `Cow`, smart pointers (`Box`/`Rc`/`Arc`), interior mutability (`Cell`/`RefCell`); fixes for E0382/E0597/E0499/E0502 | cross-thread sharing/`Send`+`Sync` → `rust-concurrency` |
 | `rust-concurrency` | ✅ | threads vs async, `Send`/`Sync`, `Arc<Mutex>`, channels, tokio, deadlocks, lock-across-await | single-thread `Rc`/`RefCell` → `rust-ownership` |
@@ -83,15 +88,16 @@ them by `agentType` — internal to the plugin, no external dependency).
 | Skill | Status | Scope | Does NOT cover (owner) |
 |---|---|---|---|
 | `specs` | ✅ | specification by example / BDD / ATDD: requirements → Given/When/Then scenarios, choosing examples, outside-in | *running* scenarios / frameworks → per-language testing skill (`rust-testing` → cucumber) |
-| `debugging` | ✅ | root-cause-first method + techniques (minimal repro, bisection, instrumentation, differential, heisenbugs) | confirming the fix → `verification`; Rust specifics → `rust-errors`/`rust-concurrency`/`rust-unsafe` |
+| `debugging` | ✅ | **Rust** debugging toolbox: minimal repro, `git bisect`/`cargo bisect-rustc`, `dbg!`/`tracing`/`RUST_BACKTRACE`, Miri/loom heisenbugs, `rust-gdb`/`rr` | the method (root cause before fix) → `superpowers:systematic-debugging`; confirming the fix → `superpowers:verification-before-completion`; Rust specifics → `rust-errors`/`rust-concurrency`/`rust-unsafe` |
 | `refactoring` | ✅ | structure-not-behavior in tiny steps under green tests; characterization tests; named transformations | safety net → `rust-testing`/`specs`; smell catalog → `rust-idioms` |
-| `verification` | ✅ | evidence-before-claims gate: identify→run→read→judge before any "done/passes/fixed" | proving commands → `rust-testing`/`rust-security` |
-| `requesting-review` | ✅ | dispatch a reviewer with a crafted brief (diff range + spec), early/often; act on the verdict | the agents → `rust-reviewer`/`rust-security-scanner`; rubric → `rust-review` |
-| `receiving-review` | ✅ | act on feedback technically: verify-before-implement, no performative agreement, reasoned pushback, one fix at a time | confirming fixes → `verification`; bugs → `debugging` |
 | `codebase-onboarding` | ✅ | understand an unfamiliar repo first: map structure, find entry points/seams, trace one flow, confirm by building | changing it → `refactoring`/`rust-architecture`; bugs → `debugging` |
 
-> Mined and improved from superpowers (systematic-debugging, verification-before-completion) and
-> ECC — tightened, made concrete, and cross-linked into craft's Rust skills (variant A: own copies).
+> **Delegated to `superpowers`** (a declared plugin dependency): the generic engineering-process
+> method — `systematic-debugging`, `verification-before-completion`, `requesting-code-review`,
+> `receiving-code-review`. craft formerly carried its own copies (`debugging`, `verification`,
+> `requesting-review`, `receiving-review`); the duplicate method was removed and only the
+> Rust-specific surface kept — `debugging`'s `techniques.md` toolbox, plus the cargo "what proves
+> what" table and craft-agent dispatch folded into `rust-review`.
 
 ## Build order
 

@@ -11,10 +11,13 @@
     {
       "name": "craft",
       "source": "./",
-      "description": "Opinionated, self-contained engineering skills and agents for Claude Code — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native), language-agnostic engineering-process skills (specs, debugging, refactoring, verification, review workflow, onboarding), and code-review / security / Miri agents.",
+      "description": "Opinionated engineering skills and agents for Claude Code — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native), language-agnostic engineering-process skills (specs, debugging, refactoring, onboarding), and code-review / security / Miri agents. Builds on the superpowers plugin.",
       "version": "0.1.0",
       "category": "development",
-      "license": "MIT"
+      "license": "MIT",
+      "dependencies": [
+        "superpowers"
+      ]
     }
   ]
 }

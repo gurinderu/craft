@@ -1,6 +1,6 @@
 ---
 name: rust-review
-description: Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), and the Approve/Warning/Block verdict. Use when reviewing Rust code or a diff, deciding whether changes are mergeable, or before committing. Triggers: review this Rust, code review, rust review, is this mergeable, cargo clippy review, check this PR, unsafe review.
+description: Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), the Approve/Warning/Block verdict, how to request a craft review (dispatch the rust-reviewer/rust-security-scanner/rust-miri agents with a crafted brief), and the Rust "what proves what" table for verifying a claim. Use when reviewing Rust code or a diff, requesting a review, deciding whether changes are mergeable, before committing or merging, or to confirm a claim with the right cargo command. Triggers: review this Rust, code review, rust review, request review, ready for review, before merge, dispatch reviewer, is this mergeable, cargo clippy review, check this PR, unsafe review, prove it passes, what proves done, verify with cargo.
 ---
 
 # Rust Review
@@ -98,7 +98,53 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 
 Report findings as `severity · file:line · what · why · fix`. Be specific and cite the line; a finding without a location isn't actionable.
 
+## Requesting a review & acting on the verdict
+
+Review early and often — small reviews catch issues while they're cheap; one giant review at the end catches them after they've compounded. Request after a feature or meaningful unit of work, before merging, when stuck, or after a complex bug fix. The generic *discipline* (request early/often) lives in `superpowers:requesting-code-review`; this section is craft's Rust-agent wiring.
+
+Hand the reviewer a **crafted brief**, not your chat history:
+
+- the **diff range** — `BASE..HEAD` (`git merge-base main HEAD` and `HEAD`); the agent derives the exact range itself via `git diff --merge-base main`, so the SHAs are just for your reference;
+- **what it should do** — the requirement/spec it's meant to satisfy (→ `specs`);
+- **what you built** — a one-paragraph summary.
+
+In craft, dispatch the agents with that brief:
+
+- **`rust-reviewer`** — runs the cargo gate + this rubric → Approve/Warning/Block.
+- **`rust-security-scanner`** — security-sensitive changes (deps, `unsafe`, input handling) → `rust-security` verdict.
+- **`rust-miri`** — when the change touches `unsafe` (→ `rust-unsafe`).
+
+Act on the verdict:
+
+- **Block** → fix before doing anything else.
+- **Warning** → judge; fix or consciously accept with a reason.
+- **Approve** → proceed — but still confirm green yourself (→ "Proving a claim" below).
+- **Wrong finding** → push back with reasoning; don't implement a wrong suggestion just because it was raised.
+
+Order multi-item feedback blocking → simple → complex, and test each. *How* to act on the comments without performing (verify-before-implement, no performative agreement, reasoned pushback) → `superpowers:receiving-code-review`.
+
+## Proving a claim — what proves what
+
+The *discipline* — evidence before any "done / passes / fixed / works", no claim without a fresh run you read this session — lives in `superpowers:verification-before-completion`. The Rust commands that actually prove each claim:
+
+| Claim | Proof (run it) | Not proof |
+|---|---|---|
+| tests pass | `cargo test` / `cargo nextest run` → 0 failed | "should pass", an earlier run |
+| doctests pass | `cargo test --doc` | unit tests passing |
+| lint clean | `cargo clippy --all-targets -- -D warnings` → exit 0 | `cargo check` passing |
+| formatted | `cargo fmt --check` | "I ran fmt earlier" |
+| it builds | `cargo build --release` → exit 0 | clippy passing |
+| bug fixed | re-run the case that reproduced it → passes | code changed, "looks right" |
+| regression test works | saw it RED before the fix, GREEN after | it's green now |
+| no vulns | `cargo audit` / `cargo deny check` clean | "deps look fine" |
+| coverage target met | `cargo llvm-cov --fail-under-lines N` | tests pass |
+| an agent finished | read the actual diff / its output | the agent said "success" |
+| requirements met | check each one against the spec | tests pass |
+
+State the claim **with** the evidence, or state the real status with the evidence. An earlier run, a "should pass", or a subagent's self-report is not evidence.
+
 ## Boundaries
 
 - *How* to write the missing tests → `rust-testing` skill (this rubric only flags that they're missing).
 - This skill judges; it does not rewrite. Propose the fix, let the author apply it.
+- The generic review/verify *discipline* → `superpowers:requesting-code-review`, `superpowers:receiving-code-review`, `superpowers:verification-before-completion`.

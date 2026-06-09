@@ -1,7 +1,8 @@
 # craft
 
-Personal collection of self-contained Rust engineering skills, review agents, and the
-`rust-audit` workflow. See `README.md` / `MAP.md` for the full contents.
+Personal collection of opinionated Rust engineering skills, review agents, and the
+`rust-audit` workflow; builds on the `superpowers` plugin (a declared dependency) for the
+generic engineering-process discipline. See `README.md` / `MAP.md` for the full contents.
 
 ## Review requests run as a background subagent
 
@@ -21,8 +22,9 @@ Pick the agent by scope:
 | Full audit — all of the above in parallel, one synthesized report | `rust-audit` workflow |
 
 Give the agent a self-contained brief: the diff range (e.g. `git diff main...HEAD`) or target
-paths, and what the change is supposed to do. See the `craft:requesting-review` skill for how
-to craft the brief and act on the verdict.
+paths, and what the change is supposed to do. The `craft:rust-review` skill covers how to craft
+the brief and act on the verdict; the generic review discipline lives in the superpowers plugin
+(`superpowers:requesting-code-review`, `superpowers:receiving-code-review`).
 
 **Always a fresh agent.** Every review request spawns a **new** agent via the Agent tool — it
 starts with a clean context and never inherits this conversation. Never continue or reuse a

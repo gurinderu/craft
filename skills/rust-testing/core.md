@@ -158,7 +158,7 @@ async fn repo_persists_author() {
 Use a real container over a mock when the thing under test *is* the integration (queries,
 migrations, transactions). Keep these tests separate from fast unit tests (a `--ignored` flag or
 a separate target) so the suite stays quick when Docker isn't around — and note when they're
-skipped (don't let "no Docker" silently pass as "covered", → `verification`).
+skipped (don't let "no Docker" silently pass as "covered", → `superpowers:verification-before-completion`).
 
 ## Doc tests
 

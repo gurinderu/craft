@@ -116,5 +116,5 @@ This skill covers writing and running Rust tests. Adjacent concerns belong elsew
 - Benchmarking and profiling (`criterion`, `cargo bench`, flamegraphs) → `rust-performance`.
 - Fake-port unit tests and hexagonal adapter layering (what to fake vs. integrate) → `rust-architecture`.
 - Deriving BDD scenarios from requirements → `specs`.
-- Reporting and owning skipped-test status (don't let "no Docker" pass as "covered") → `verification`.
+- Reporting and owning skipped-test status (don't let "no Docker" pass as "covered") → `superpowers:verification-before-completion`.
 - Flagging weak or missing tests in a diff → `rust-review`.
