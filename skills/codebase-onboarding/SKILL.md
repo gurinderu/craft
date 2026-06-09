@@ -37,7 +37,8 @@ you need to change.
   table is the index of features.
 - **Activity & hotspots**: `git log --oneline -20` (what's changing now), `git log --format= --name-only | sort | uniq -c | sort -rn | head` (the files that change most — usually the core).
 - **Navigation**: rust-analyzer / your LSP — go-to-definition and find-references to follow a
-  symbol instead of grepping blindly. `cargo doc --open` renders the public API as a browsable map.
+  symbol instead of grepping blindly (the operations and the no-LSP fallbacks → `rust-navigation`).
+  `cargo doc --open` renders the public API as a browsable map.
 - **Find a flow**: grep an endpoint string / CLI subcommand / log message, then follow the calls.
 
 ## Trace one real flow
