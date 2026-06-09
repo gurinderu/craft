@@ -1,6 +1,6 @@
 ---
 name: rust-web
-description: Building web services in Rust with axum, tokio, tower, and sqlx — routing, extractors, shared state, error responses, database access, middleware, and graceful shutdown. Use when building an HTTP API/server in Rust, wiring axum handlers, sharing state, returning typed errors as responses, or connecting a database. Triggers: axum, web server, HTTP API, REST, handler, router, extractor, State, IntoResponse, tower, tower-http, middleware, sqlx, connection pool, axum router, graceful shutdown, CORS, web service.
+description: Building web services in Rust with axum, tokio, tower, and sqlx — routing, extractors, shared state, error responses, database access, middleware, and graceful shutdown. Use when building an HTTP API/server in Rust, wiring axum handlers, sharing state, returning typed errors as responses, or connecting a database. Triggers: axum, extractor, State, IntoResponse, tower, tower-http, sqlx, connection pool, CORS.
 ---
 
 # Rust Web (axum)

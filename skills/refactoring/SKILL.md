@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: Disciplined refactoring — change structure without changing behavior, in tiny reversible steps under green tests. Use when restructuring code, paying down a smell, or preparing messy code for a change. Language-agnostic, with Rust hooks. Triggers: refactor, restructure, clean up, code smell, technical debt, extract function, rename, simplify, decouple, make this testable, tidy.
+description: Disciplined refactoring — change structure without changing behavior, in tiny reversible steps under green tests. Use when restructuring code, paying down a smell, or preparing messy code for a change. Language-agnostic, with Rust hooks. Triggers: refactor, code smell, technical debt, extract function, decouple, make this testable.
 ---
 
 # Refactoring

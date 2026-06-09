@@ -1,6 +1,6 @@
 ---
 name: rust-ecosystem
-description: Rust ecosystem and project setup — choosing crates, Cargo.toml and dependencies, features, workspaces, editions/MSRV, project/module layout, and publishing libraries (semver, docs, interop). Use when adding a dependency, structuring a project or workspace, configuring Cargo, setting edition/MSRV, or preparing a crate to publish. Triggers: crate, dependency, Cargo.toml, cargo add, feature flag, features, workspace, edition, MSRV, rust-version, semver, publish, crates.io, project structure, module layout, which crate.
+description: Rust ecosystem and project setup — choosing crates, Cargo.toml and dependencies, features, workspaces, editions/MSRV, project/module layout, and publishing libraries (semver, docs, interop). Use when adding a dependency, structuring a project or workspace, configuring Cargo, setting edition/MSRV, or preparing a crate to publish. Triggers: Cargo.toml, cargo add, feature flag, workspace, edition, MSRV, semver, crates.io, which crate.
 ---
 
 # Rust Ecosystem & Project Setup

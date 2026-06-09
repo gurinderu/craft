@@ -1,6 +1,6 @@
 ---
 name: rust-plugins
-description: Plugin and extensibility systems in Rust — choosing between compile-time trait objects, embedded scripting, out-of-process RPC, WebAssembly, and dynamic C-ABI libraries, driven first by the trust boundary. Use when designing extensibility, loading user/third-party code at runtime, supporting user-defined functions, or picking a plugin mechanism. Triggers: plugin, plugin system, extensibility, dynamic loading, cdylib, dlopen, FFI plugin, abi_stable, stabby, wasm plugin, wasmtime, extism, scripting, rhai, user-defined function, UDF, hot reload.
+description: Plugin and extensibility systems in Rust — choosing between compile-time trait objects, embedded scripting, out-of-process RPC, WebAssembly, and dynamic C-ABI libraries, driven first by the trust boundary. Use when designing extensibility, loading user/third-party code at runtime, supporting user-defined functions, or picking a plugin mechanism. Triggers: cdylib, dlopen, abi_stable, stabby, wasm plugin, wasmtime, extism, rhai, UDF, hot reload.
 ---
 
 # Rust Plugin Systems
