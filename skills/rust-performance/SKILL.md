@@ -1,6 +1,6 @@
 ---
 name: rust-performance
-description: Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings. Triggers: performance, optimization, slow, faster, benchmark, criterion, divan, profiling, flamegraph, perf, allocation, hashing, FxHashMap, LTO, codegen-units, target-cpu, SIMD, cache, hot path, make it faster.
+description: Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings. Triggers: performance, optimization, slow, faster, benchmark, criterion, divan, profiling, flamegraph, perf, allocation, arena, bumpalo, compact string, hashing, FxHashMap, LTO, codegen-units, target-cpu, PGO, SIMD, autovectorize, inline, cold path, cache, hot path, make it faster.
 ---
 
 # Rust Performance
@@ -59,14 +59,16 @@ When the profiler points at code, the usual culprits — each with concrete fixe
 
 | Symptom | Look at |
 |---|---|
-| lots of `malloc`/`free`, `Vec` growth | heap allocations — `with_capacity`, reuse, `smallvec`, `Box<[T]>` |
+| lots of `malloc`/`free`, `Vec` growth | heap allocations — `with_capacity`, reuse, `smallvec`, `Box<[T]>`, arenas (`bumpalo`), compact strings |
 | hashing hot, many `HashMap` lookups | swap SipHash for `FxHashMap`/`ahash` |
 | big `memcpy`, large stack frames | type sizes — box large enum variants, smaller ints |
-| tight loops with indexing | iterators (often elide bounds checks); avoid redundant work |
+| tight loops with indexing | iterators (often elide bounds checks); autovectorize the hot loop; avoid redundant work |
+| release binary already LTO'd, still need more | profile-guided optimization (PGO); `#[cold]` on slow paths |
 
 ## Boundaries
 
 - *Correctness* tests for the code you're optimizing → `rust-testing`. Performance changes are
   exactly when a regression test pays off.
-- `get_unchecked` / SIMD intrinsics and other `unsafe` speedups → `rust-unsafe`; reach
-  for them only after safe options and with a benchmark proving the win.
+- Safe SIMD (autovectorization, `std::simd`, `wide`/`pulp`) is covered here. `get_unchecked`,
+  architecture-specific intrinsics (`std::arch`, `target_feature`) and other `unsafe` speedups →
+  `rust-unsafe`; reach for them only after the safe options and with a benchmark proving the win.
