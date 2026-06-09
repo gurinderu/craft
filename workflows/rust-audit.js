@@ -99,14 +99,23 @@ if (hasUnsafe) {
 
 const results = (await parallel(tasks)).filter(Boolean)
 
+// Dimensions we dispatched but got no result for (agent skipped or died). Miri is excluded when
+// there's no unsafe code — that's an intentional skip, not a failure, so it never lands here.
+const expectedDimensions = ['review', 'architecture', 'security', ...(hasUnsafe ? ['miri'] : [])]
+const ran = new Set(results.map(r => r.dimension))
+const notRun = expectedDimensions.filter(d => !ran.has(d))
+if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
+
 phase('Synthesize')
 const report = await agent(
   `You are consolidating a Rust audit. Below are JSON results from independent review agents. Produce ONE markdown report — do not invent findings, only merge what is given:
 
-1. An **overall verdict** line — the worst case across all dimensions.
-2. A **dimension → verdict** table.
+1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, mark the audit INCOMPLETE.
+2. A **dimension → verdict** table. Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed or was skipped, so do not treat its absence as a pass.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location, plus a one-line fix direction.
 4. A short **"Fix first"** list — the few highest-leverage items.
+
+NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
 
 RESULTS:
 ${JSON.stringify(results, null, 2)}`,
