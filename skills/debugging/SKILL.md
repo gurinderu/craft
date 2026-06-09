@@ -19,6 +19,27 @@ The single highest-yield habit: read the whole error message and stack trace bef
 anything. Rust's errors (and `RUST_BACKTRACE=1` / `=full`) are unusually precise — they usually
 name the file, line, and often the cause. Don't pattern-match the first word and jump.
 
+## The 3-strike rule: stop fixing, question the design
+
+If the same error survives three honest attempts, the bug is one level up from where you're
+patching. Count the strikes — it's what stops you thrashing at attempt seven.
+
+| Strike | What it suggests | Move |
+|---|---|---|
+| 1 | maybe a slip | apply the obvious local fix |
+| 2 | maybe the wrong method | try a different approach, same layer |
+| 3 | the approach itself is wrong | escalate — question the design, not the line |
+
+Escalating means handing the problem to the skill that owns that design decision:
+
+- `E0382`/`E0597` still failing after clone/borrow churn → the ownership *model* is wrong → `rust-ownership`
+- a `Result`/`unwrap` you keep re-shaping → the error *strategy* is wrong → `rust-errors`
+- "cannot be sent between threads" you keep bound-chasing → the concurrency *design* → `rust-concurrency`
+- a panic that should have been unreachable → the *type* should forbid the state → `rust-traits`
+
+This is the concrete trigger for `superpowers:systematic-debugging`'s iron law (*no fix without a
+root cause you can explain*) and the cure for fix-and-pray / shotgun debugging.
+
 ## Rust toolbox (→ techniques.md)
 
 - **Shrink the repro** — delta-debug the input; a failing `proptest`/`quickcheck` hands you a

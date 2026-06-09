@@ -46,6 +46,7 @@ Status: ✅ done
 | `rust-security` | ✅ | dependency vulns (cargo-audit/RUSTSEC), supply chain & licenses (cargo-deny), unsafe surface (cargo-geiger), code patterns/taint/custom rules (semgrep) | code-smell review → `rust-review`; unsafe soundness → `rust-unsafe` |
 | `rust-plugins` | ✅ | extensibility: trait-objects vs scripting vs RPC vs WASM vs cdylib, chosen by trust boundary; FFI/abi_stable + wasmtime/extism | FFI mechanics → `rust-unsafe`; dynamic ports ≈ `rust-architecture` |
 | `rust-macros` | ✅ | metaprogramming: macro_rules! and procedural macros (derive/attribute/function-like) with syn/quote, cargo-expand, trybuild | "same logic over types" → `rust-traits` first |
+| `rust-navigation` | ✅ | LSP navigation via rust-analyzer: go-to-definition, find-references (impact before rename), hover, document/workspace symbols, trait implementors, call hierarchy; text-tool fallbacks when no LSP | onboarding *method* → `codebase-onboarding`; acting on references → `refactoring`; dispatch choice → `rust-traits` |
 
 ## Domain skills
 
@@ -139,8 +140,10 @@ Plus `rust-architecture` (hexagonal) and the cross-cutting `specs`. Beyond the c
 ## Migration vs rust-skills
 
 `craft` now covers the `rust-skills` surface (core set complete); `rust-skills` can be
-uninstalled. Remaining gaps: m12/m14, `domain-*` beyond web/cli/fintech/cloud-native, and the
-live-data/LSP/news tooling. Rough mapping:
+uninstalled. Remaining gaps: m14 (a deliberate skip — pedagogical/Socratic, against craft's
+action-first stance), `domain-*` beyond web/cli/fintech/cloud-native (ML, embedded, IoT), and the
+live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now covered by
+`rust-navigation`. Rough mapping:
 
 | rust-skills | craft |
 |---|---|
@@ -154,4 +157,6 @@ live-data/LSP/news tooling. Rough mapping:
 | unsafe-checker | `rust-unsafe` |
 | (no equivalent) | `rust-testing`, `rust-review` |
 | m09 (domain modeling) | `rust-architecture` |
-| m12 / m14, domain-*, LSP/news agents | deferred |
+| m12 (lifecycle: RAII/guards/lazy-init) | `rust-ownership` ([lifecycle.md](skills/rust-ownership/lifecycle.md)); pools → `rust-web` |
+| LSP navigation skills (code-navigator/call-graph/symbol/trait-explorer) | `rust-navigation` |
+| m14, domain-* (ML/embedded/IoT), live-data/news agents | deferred |

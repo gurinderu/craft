@@ -119,6 +119,10 @@ Two rules the API guidelines call out:
 
 To release early, call the free function `drop(value)` — you can't call `.drop()` directly.
 
+The patterns built on `Drop` — RAII *guards* (cleanup that survives early return and panic),
+scope guards with transaction-rollback "defuse", and lazy initialization (`OnceLock`/`LazyLock`)
+— are in [lifecycle.md](lifecycle.md).
+
 ## Which one?
 
 | Owners | Mutable? | Threads | Use |
