@@ -1,6 +1,6 @@
 ---
 name: rust-idioms
-description: Idiomatic Rust — naming conventions, the constructs that read as native Rust, clippy/rustfmt as enforcers, and a catalog of common anti-patterns to avoid. Use when writing or polishing Rust to be idiomatic, naming things, deciding "is this the Rust way?", or reviewing for code smells. Triggers: idiomatic, idiom, naming convention, code style, clippy, rustfmt, anti-pattern, code smell, best practice, is this idiomatic, the Rust way, stringly typed, bool parameter, builder, From Into, derive order, doc comment, rustdoc, documentation, /// comment, intra-doc link, missing_docs.
+description: Idiomatic Rust — naming conventions, the constructs that read as native Rust, clippy/rustfmt as enforcers, and a catalog of common anti-patterns to avoid. Use when writing or polishing Rust to be idiomatic, naming things, deciding "is this the Rust way?", or reviewing for code smells. Triggers: clippy, rustfmt, is this idiomatic, the Rust way, stringly typed, bool parameter, rustdoc, intra-doc link, missing_docs.
 ---
 
 # Rust Idioms

@@ -1,6 +1,6 @@
 ---
 name: rust-traits
-description: Rust traits, generics, and dispatch — trait bounds, impl Trait, static vs dynamic vs enum dispatch, object safety, and type-driven design (newtype, typestate, PhantomData, sealed traits). Use when designing an abstraction, choosing generics vs dyn vs enum, fixing trait-bound errors, or encoding invariants in the type system. Triggers: trait, generic, impl Trait, dyn, trait object, monomorphization, static dispatch, dynamic dispatch, enum dispatch, where clause, trait bound, associated type, object safety, newtype, typestate, PhantomData, sealed trait, E0277, E0308, E0599, E0038, E0119.
+description: Rust traits, generics, and dispatch — trait bounds, impl Trait, static vs dynamic vs enum dispatch, object safety, and type-driven design (newtype, typestate, PhantomData, sealed traits). Use when designing an abstraction, choosing generics vs dyn vs enum, fixing trait-bound errors, or encoding invariants in the type system. Triggers: impl Trait, dyn, trait object, monomorphization, enum dispatch, associated type, object safety, newtype, typestate, PhantomData, sealed trait, E0277, E0308, E0599, E0038, E0119.
 ---
 
 # Rust Traits & Generics

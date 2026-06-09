@@ -1,6 +1,6 @@
 ---
 name: rust-architecture
-description: Hexagonal architecture (ports and adapters) in Rust — a domain core that depends on nothing, ports as traits, adapters at the edges, and one-way dependency flow toward the domain. Use when structuring an application/service, isolating business logic from frameworks (axum/sqlx), deciding module layout, or making code testable without infrastructure. Triggers: hexagonal architecture, ports and adapters, clean architecture, domain layer, dependency inversion, repository pattern, service layer, decouple framework, application structure, where does this code go, project layout.
+description: Hexagonal architecture (ports and adapters) in Rust — a domain core that depends on nothing, ports as traits, adapters at the edges, and one-way dependency flow toward the domain. Use when structuring an application/service, isolating business logic from frameworks (axum/sqlx), deciding module layout, or making code testable without infrastructure. Triggers: ports and adapters, clean architecture, dependency inversion, repository pattern, decouple framework, where does this code go.
 ---
 
 # Rust Architecture — Hexagonal (Ports & Adapters)

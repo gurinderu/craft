@@ -1,6 +1,6 @@
 ---
 name: rust-security
-description: Rust security review — auditing dependencies for known vulnerabilities (cargo-audit/RUSTSEC), licenses and supply chain (cargo-deny), unsafe surface (cargo-geiger), and code-level patterns/taint/custom rules (semgrep). Use when security-reviewing a Rust project, vetting dependencies, checking for vulnerable crates or license issues, or setting up a security gate. Triggers: security, vulnerability, CVE, RUSTSEC, cargo audit, cargo deny, license, supply chain, semgrep, SAST, cargo geiger, unsafe audit, secrets, dependency audit, taint.
+description: Rust security review — auditing dependencies for known vulnerabilities (cargo-audit/RUSTSEC), licenses and supply chain (cargo-deny), unsafe surface (cargo-geiger), and code-level patterns/taint/custom rules (semgrep). Use when security-reviewing a Rust project, vetting dependencies, checking for vulnerable crates or license issues, or setting up a security gate. Triggers: CVE, RUSTSEC, cargo-audit, cargo-deny, cargo-geiger, semgrep, SAST, supply chain, taint.
 ---
 
 # Rust Security

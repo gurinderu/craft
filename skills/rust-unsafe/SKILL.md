@@ -1,6 +1,6 @@
 ---
 name: rust-unsafe
-description: Unsafe Rust done soundly — what unsafe does and doesn't unlock, the SAFETY-comment discipline, undefined behavior to avoid, raw pointers, FFI, #[repr], and verifying with Miri. Use when writing or reviewing unsafe code, doing FFI, building a data structure the borrow checker can't express, or chasing UB. Triggers: unsafe, raw pointer, *const, *mut, FFI, extern "C", #[repr(C)], SAFETY, undefined behavior, UB, transmute, MaybeUninit, miri, get_unchecked, bindgen, union, no_mangle.
+description: Unsafe Rust done soundly — what unsafe does and doesn't unlock, the SAFETY-comment discipline, undefined behavior to avoid, raw pointers, FFI, #[repr], and verifying with Miri. Use when writing or reviewing unsafe code, doing FFI, building a data structure the borrow checker can't express, or chasing UB. Triggers: *mut, extern "C", #[repr(C)], SAFETY, UB, transmute, MaybeUninit, miri, get_unchecked, bindgen, no_mangle.
 ---
 
 # Unsafe Rust

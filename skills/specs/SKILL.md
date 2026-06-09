@@ -1,6 +1,6 @@
 ---
 name: specs
-description: Specification by example / BDD / ATDD — turning requirements into concrete Given/When/Then scenarios that double as acceptance tests, driven outside-in. Language-agnostic process skill. Use when turning a feature, user story, or vague requirement into testable behavior before coding, clarifying acceptance criteria, or setting up living documentation. Triggers: spec, specification by example, acceptance criteria, acceptance test, ATDD, BDD, behavior-driven, given when then, gherkin, scenario, user story, requirements to tests, outside-in, living documentation.
+description: Specification by example / BDD / ATDD — turning requirements into concrete Given/When/Then scenarios that double as acceptance tests, driven outside-in. Language-agnostic process skill. Use when turning a feature, user story, or vague requirement into testable behavior before coding, clarifying acceptance criteria, or setting up living documentation. Triggers: specification by example, acceptance criteria, ATDD, BDD, given when then, gherkin, user story, outside-in, living documentation.
 ---
 
 # Specs — specification by example
