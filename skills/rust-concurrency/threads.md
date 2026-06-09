@@ -78,6 +78,21 @@ If a thread panics while holding the lock, the `Mutex` is *poisoned* and later `
 return `Err(PoisonError)`. That's a **defect** (a holder already crashed), not a domain case —
 `unwrap()` it or propagate opaquely (see `rust-errors`). `.lock().unwrap()` is the norm.
 
+### `parking_lot` — faster, non-poisoning alternative
+
+`parking_lot::Mutex` / `RwLock` are smaller and faster under low contention, and **don't poison** —
+`lock()` returns the guard directly, no `unwrap()`:
+
+```rust
+// parking_lot = "0.12"
+let counter = Arc::new(parking_lot::Mutex::new(0));
+*counter.lock() += 1;          // no unwrap, no PoisonError
+```
+
+The trade-offs: a third-party dep, and you lose poisoning as a "holder crashed" signal. `std`'s
+locks have closed much of the historical gap — swap only if a profiler shows lock overhead (or the
+no-poison ergonomics are worth it to you), and benchmark it (→ `rust-performance`).
+
 ## Atomics — lock-free for simple values
 
 For a counter or flag, skip the mutex:
