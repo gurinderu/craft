@@ -67,8 +67,9 @@ std = []            # gate std-only APIs behind this
 #![cfg_attr(not(feature = "std"), no_std)]
 ```
 
-This is the foundation for embedded/bare-metal work (a domain beyond this plugin's current
-scope); the ownership rules are unchanged (→ `rust-ownership`).
+This is the foundation for embedded/bare-metal work — the domain patterns (hardware-ownership
+singletons, ISR-safe sharing, `heapless`, RTIC/Embassy) are `rust-embedded`; the ownership rules
+are unchanged (→ `rust-ownership`).
 
 ## Cross-compilation
 
