@@ -117,6 +117,31 @@ token.cancel();                  // tell everyone to stop
 tracker.wait().await;            // wait for in-flight work to finish, then exit
 ```
 
+## Async cleanup needs an explicit `shutdown().await` — `Drop` can't await
+
+`Drop` is synchronous: it can't `.await`, and blocking inside it (`block_on`, sync I/O) stalls the
+runtime. So a type holding an async resource — a connection that must send a close frame, a writer
+that must flush over the network — can't clean itself up in `Drop` the way a `File` can. Give it an
+explicit async teardown and call it before the value drops:
+
+```rust
+impl Connection {
+    pub async fn shutdown(mut self) -> Result<(), Error> {
+        self.flush().await?;            // the work Drop cannot do
+        self.send_close_frame().await?;
+        Ok(())
+    }
+}
+
+let conn = Connection::connect(addr).await?;
+// ... use conn ...
+conn.shutdown().await?;                 // explicit — don't rely on Drop
+```
+
+Keep a best-effort `Drop` as a backstop (abort/log if `shutdown` wasn't called), but the correct
+path is the explicit `await`. This is the async face of the destructor rules in `rust-ownership`
+(Drop); `AsyncWriteExt::shutdown` and `Sink::close` follow the same shape.
+
 ## Choosing a shared-state primitive
 
 When sharing *is* the right model, pick by access pattern:

@@ -93,7 +93,9 @@ struct Point { x: i32, y: i32 }
 ```
 
 Derive `Debug` on essentially everything public. Add `Serialize, Deserialize` after the std
-derives. Don't derive `Copy` on types that own heap data (it won't compile) or large types.
+derives. Don't derive `Copy` on types that own heap data (it won't compile) or large types. A
+`Debug` impl should never be empty — `{:?}` must print something useful (the derive guarantees
+this; don't hand-write a no-op).
 
 ## Visibility: expose the minimum
 
@@ -115,3 +117,30 @@ fn longest(items: &[Item]) -> Option<&Item> { /* ... */ } // slice, not &Vec
 ```
 
 Details and the `Cow` "borrow-usually-own-sometimes" return → `rust-ownership`.
+
+## Plug into std: implement the traits callers expect
+
+These impls let your types compose with `for`, `.collect()`, and generic std functions — being a
+good ecosystem citizen costs a few lines and saves every caller a workaround.
+
+```rust
+// A collection you own: FromIterator enables .collect(), Extend enables .extend().
+impl FromIterator<Item> for Bag { /* ... */ }
+impl Extend<Item> for Bag {
+    fn extend<I: IntoIterator<Item = Item>>(&mut self, it: I) { /* ... */ }
+}
+let bag: Bag = items.into_iter().collect();
+
+// Take readers/writers generically, by value — works with File, TcpStream, Vec<u8>, Cursor, ...
+fn write_report<W: Write>(mut w: W, r: &Report) -> io::Result<()> { writeln!(w, "{r}") }
+fn parse_stream<R: Read>(mut r: R) -> io::Result<Data> { /* ... */ }
+
+// Integer-/flag-like types: offer the alternative bases callers reach for with {:x}/{:o}/{:b}.
+impl fmt::LowerHex for Mask { /* ... */ }   // plus UpperHex / Octal / Binary as relevant
+```
+
+- **`FromIterator` + `Extend`** on a collection you define (C-COLLECT) — `.collect()` / `.extend()`
+  then work without callers writing a loop.
+- **`R: Read` / `W: Write` by value** (C-RW-VALUE), not `&mut File` — the caller picks the
+  source/sink, and `&mut R` itself impls the trait, so passing a borrow still works.
+- **`Hex`/`Octal`/`Binary`** for numeric and bitflag types (C-NUM-FMT) so `{:x}`/`{:b}` format them.

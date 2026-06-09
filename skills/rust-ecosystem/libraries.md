@@ -24,6 +24,10 @@ Two tools that protect you:
   major bump (consumers must use a wildcard arm / `..`).
 - `cargo semver-checks` detects accidental breaking changes against the published version in CI.
 
+Keep a `CHANGELOG.md` (the [Keep a Changelog](https://keepachangelog.com) format) recording every
+user-visible change per release — Added / Changed / Deprecated / Removed / Fixed. It's how
+consumers decide whether (and how) to upgrade; the git log is not a substitute (C-RELNOTES).
+
 ## Public API hygiene
 
 - Expose the **minimum** — `pub(crate)` everything that isn't part of the contract; a smaller
@@ -34,6 +38,12 @@ Two tools that protect you:
 - Typed errors with `thiserror`, not `anyhow`, in a library (→ `rust-errors`).
 - Don't leak your dependencies' types in your public API unless you mean to commit to their
   semver too (re-export deliberately).
+- **Keep unstable deps out of your stable surface** (C-STABLE): a `1.0` crate that exposes a
+  pre-`1.0` dependency's types in its public API inherits that dep's churn — each `0.x` bump can
+  force a major bump on you. Either don't surface them, or depend publicly only on deps that are
+  themselves `1.0`+.
+- **`#[doc(hidden)]`** the items that must be `pub` for macros or internal wiring but aren't part
+  of the contract — it keeps them out of the rendered docs and signals "not API" (C-HIDDEN).
 - Gate optional integrations behind additive features (→ [cargo.md](cargo.md)).
 
 ## Documentation conventions
