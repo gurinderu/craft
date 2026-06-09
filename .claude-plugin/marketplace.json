@@ -16,7 +16,7 @@
       "category": "development",
       "license": "MIT",
       "dependencies": [
-        "superpowers"
+        "superpowers@claude-plugins-official"
       ]
     }
   ]
