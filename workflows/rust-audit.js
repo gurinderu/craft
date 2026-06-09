@@ -61,34 +61,37 @@ const scout = await agent(
 4. baseRef = the ref you actually used (empty string if none resolved).`,
   { label: 'scout', schema: SCOUT_SCHEMA },
 )
-log(scout.notes)
+// scout is null if the agent was skipped or died — fall back to safe defaults rather than crash.
+const baseRef = scout?.baseRef ?? ''
+const hasUnsafe = scout?.hasUnsafe ?? true // fail-safe: run Miri when detection didn't resolve
+log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no base ref')
 
 phase('Audit')
 const tasks = [
   () => agent(
-    `Review the Rust diff for mergeability using the rust-review rubric (load the rust-review skill). ${scout.baseRef
-      ? `Diff base: \`${scout.baseRef}\`.`
+    `Review the Rust diff for mergeability using the rust-review rubric (load the rust-review skill). ${baseRef
+      ? `Diff base: \`${baseRef}\`.`
       : 'There is no clean base ref — review uncommitted changes, or the most recent commit if the tree is clean.'} Return your verdict and findings.`,
     { label: 'review:diff', agentType: 'rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
-  ).then(r => ({ ...r, dimension: 'review' })),
+  ).then(r => (r ? { ...r, dimension: 'review' } : null)),
 
   () => agent(
     `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
     { label: 'architecture', agentType: 'rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
-  ).then(r => ({ ...r, dimension: 'architecture' })),
+  ).then(r => (r ? { ...r, dimension: 'architecture' } : null)),
 
   () => agent(
     `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.`,
     { label: 'security', agentType: 'rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA },
-  ).then(r => ({ ...r, dimension: 'security' })),
+  ).then(r => (r ? { ...r, dimension: 'security' } : null)),
 ]
 
-if (scout.hasUnsafe) {
+if (hasUnsafe) {
   tasks.push(
     () => agent(
       `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.`,
       { label: 'miri', agentType: 'rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA },
-    ).then(r => ({ ...r, dimension: 'miri' })),
+    ).then(r => (r ? { ...r, dimension: 'miri' } : null)),
   )
 } else {
   log('No unsafe code detected — skipping Miri.')
