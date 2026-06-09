@@ -1,6 +1,6 @@
 ---
 name: rust-performance
-description: Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings. Triggers: performance, optimization, slow, faster, benchmark, criterion, divan, profiling, flamegraph, perf, allocation, arena, bumpalo, compact string, hashing, FxHashMap, LTO, codegen-units, target-cpu, PGO, SIMD, autovectorize, inline, cold path, cache, hot path, make it faster.
+description: Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings. Triggers: performance, optimization, slow, faster, benchmark, criterion, divan, profiling, flamegraph, perf, allocation, arena, bumpalo, compact string, hashing, FxHashMap, LTO, codegen-units, target-cpu, PGO, SIMD, autovectorize, inline, cold path, cache, hot path, jemalloc, mimalloc, global allocator, dhat, heap profiling, buffered I/O, BufWriter, BufReader, lock stdout, swap_remove, make it faster.
 ---
 
 # Rust Performance
@@ -27,7 +27,8 @@ and allocation patterns dominate in non-obvious ways. The rule:
 2. **Establish a baseline.** Benchmark the current code so you can prove a change helped
    ([benchmarking.md](benchmarking.md)).
 3. **Profile to find the hot spot.** Don't optimize where you *think* time goes — measure it
-   (`cargo flamegraph`, `samply`, `perf`). Optimize the top of the profile, nothing else.
+   (`cargo flamegraph`, `samply`, `perf`; allocation volume won't show in a CPU profile — use a
+   heap profiler, `dhat`). Optimize the top of the profile, nothing else.
 4. **Apply a targeted fix** ([optimizing.md](optimizing.md)) — one change at a time.
 5. **Re-measure.** Keep the change only if the benchmark moved; revert if not. "Tiny changes in
    memory layout can cause significant but ephemeral fluctuations" — confirm, don't assume.
@@ -59,11 +60,12 @@ When the profiler points at code, the usual culprits — each with concrete fixe
 
 | Symptom | Look at |
 |---|---|
-| lots of `malloc`/`free`, `Vec` growth | heap allocations — `with_capacity`, reuse, `smallvec`, `Box<[T]>`, arenas (`bumpalo`), compact strings |
+| lots of `malloc`/`free`, `Vec` growth | heap allocations — `with_capacity`, reuse, `smallvec`, `Box<[T]>`, arenas (`bumpalo`), compact strings; swap the global allocator (jemalloc/mimalloc); find them with `dhat` |
 | hashing hot, many `HashMap` lookups | swap SipHash for `FxHashMap`/`ahash` |
 | big `memcpy`, large stack frames | type sizes — box large enum variants, smaller ints |
 | tight loops with indexing | iterators (often elide bounds checks); autovectorize the hot loop; avoid redundant work |
 | release binary already LTO'd, still need more | profile-guided optimization (PGO); `#[cold]` on slow paths |
+| slow stdout / many small reads or writes | I/O — buffer (`BufReader`/`BufWriter`), lock stdout once, `read_until` |
 
 ## Boundaries
 

@@ -70,6 +70,24 @@ Allocation is often the hidden cost. Reduce the count:
 - **Files**: `BufRead::read_line` into a reused `String` rather than `.lines()` (which allocates
   a `String` per line).
 
+**Swap the global allocator.** When allocation is unavoidably hot — especially multithreaded — the
+system allocator can be the bottleneck, and replacing it needs no call-site changes:
+
+```rust
+// tikv-jemallocator = "0.6"   (or  mimalloc = "0.1")
+#[cfg(not(target_env = "msvc"))]   // jemalloc doesn't build on MSVC; mimalloc does
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+```
+
+`jemalloc`/`mimalloc` often beat the system allocator on allocation-heavy, multithreaded code — but
+not always; benchmark, it can be neutral or worse.
+
+To **find** the allocations a CPU profiler is blind to — use a heap profiler (`dhat`,
+[benchmarking.md](benchmarking.md)). Its testing mode (`dhat::Profiler::builder().testing()`) also
+lets a test **assert** an allocation count, so a fix can't silently regress (the heap analogue of a
+benchmark regression test).
+
 ## Hashing
 
 The default `HashMap` uses SipHash 1-3 — collision-resistant but slow, especially for small
@@ -115,6 +133,29 @@ and they let the compiler **elide bounds checks** that indexing can't always pro
 When a profiler proves a bounds check dominates a hot loop and you can't restructure to remove
 it, `slice::get_unchecked` exists — but it's `unsafe` and a last resort (→ `rust-unsafe`); a
 correct iterator almost always wins without it.
+
+A few more iterator/collection wins the optimizer can't make for you:
+
+- **Don't `collect` just to iterate again** — return `impl Iterator<Item = T>` and let the caller
+  drive it, skipping an intermediate `Vec`. When you must `collect`, an accurate
+  `Iterator::size_hint` lets it pre-size in one allocation.
+- **`filter_map`** in one pass beats `filter().map()`; **`.copied()`** on small `Copy` items often
+  codegens better than yielding `&T`.
+- **`Vec::swap_remove`** is O(1) vs `remove`'s O(n) when order doesn't matter; **`retain`** drops
+  many elements in a single pass instead of repeated `remove`.
+
+## I/O: lock and buffer
+
+I/O cost is usually syscall count, not CPU.
+
+- **Buffer**: wrap files/sockets in `BufReader`/`BufWriter` so many small reads/writes collapse
+  into few syscalls. `BufWriter` flushes on drop but *swallows the error* then — call `.flush()?`
+  explicitly when it matters.
+- **Lock once**: `println!` re-locks stdout on every call. In a hot output loop take the lock once
+  — `let mut out = io::stdout().lock();` then `writeln!(out, …)` — and wrap it in a `BufWriter` for
+  bulk output (CLI output conventions → `rust-cli`).
+- **Skip UTF-8 validation** when you don't need it: `BufRead::read_until(b'\n', &mut buf)` reads raw
+  bytes and avoids the `str` checks that `lines()`/`read_line` pay.
 
 ## Vectorization (SIMD)
 
@@ -162,6 +203,14 @@ fn empty_err() -> Result<Data, Error> { Err(Error::Empty) }
 `#[cold]` is stable; explicit `likely`/`unlikely` branch hints are still unstable intrinsics, so
 the `#[cold]`-function idiom is how you express the same intent today. Like everything here:
 measure — layout wins are real but small, and easy to talk yourself into without proof.
+
+## Free in release: `debug_assert!`
+
+For invariant checks on a hot path that aren't load-bearing for *safety*, use `debug_assert!` /
+`debug_assert_eq!` instead of `assert!`: they run in debug and test builds but compile to nothing
+in `--release`, so they cost zero in the shipped binary. (A check that upholds an `unsafe`
+precondition must stay a real `assert!` → `rust-unsafe`.) Likewise, gate expensive logging or
+debug-only computation behind the flag that enables it, so a disabled log does no work.
 
 ---
 
