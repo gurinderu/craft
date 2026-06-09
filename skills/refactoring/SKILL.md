@@ -32,7 +32,7 @@ the commits.
 ## The loop
 
 ```
-1. GREEN    — confirm the tests pass now (→ `verification`). No tests? Write characterization
+1. GREEN    — confirm the tests pass now (→ `superpowers:verification-before-completion`). No tests? Write characterization
               tests first that pin current behavior.
 2. ONE STEP — apply a single, named transformation (below).
 3. GREEN    — run the tests again immediately. Still green → keep; red → revert this step.
@@ -78,5 +78,5 @@ Refactor by recognizable moves, not freehand edits:
 - The test safety net (characterization, snapshot, property) → `rust-testing`; specs as the
   behavior contract → `specs`.
 - Which smells to target / the Good→Bad catalog → `rust-idioms` (anti-patterns).
-- Confirming each step preserved behavior → `verification`.
+- Confirming each step preserved behavior → `superpowers:verification-before-completion`.
 - Extracting seams/ports as a larger structural move → `rust-architecture`.

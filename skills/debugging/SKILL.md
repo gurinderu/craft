@@ -1,78 +1,47 @@
 ---
 name: debugging
-description: Systematic debugging — find the root cause before changing anything, with concrete techniques (minimal repro, bisection, instrumentation, differential analysis). Use for any bug, test failure, crash, or unexpected behavior, before proposing a fix. Language-agnostic, with Rust hooks. Triggers: bug, debug, test failure, crash, panic, regression, unexpected behavior, root cause, repro, reproduce, bisect, heisenbug, why is this failing, it works sometimes.
+description: Rust debugging toolbox — the concrete techniques for reproducing, localizing, and explaining a Rust bug (minimal repro, git bisect / cargo bisect-rustc, dbg!/tracing/RUST_BACKTRACE instrumentation, Miri/loom for heisenbugs, rust-gdb/rr). The general method (root cause before fix) lives in superpowers:systematic-debugging. Use for any Rust bug, panic, test failure, crash, or flaky/intermittent behavior. Triggers: bug, debug, test failure, crash, panic, regression, unexpected behavior, root cause, repro, reproduce, bisect, heisenbug, RUST_BACKTRACE, cargo bisect, why is this failing, it works sometimes.
 ---
 
-# Debugging
+# Debugging (Rust)
 
-Guessing wastes time and breeds new bugs. The discipline: **understand the cause before you
-touch the code.** A fix you can't explain isn't a fix — it's a coincidence. Concrete techniques
-are in [techniques.md](techniques.md).
+The **method** is general and lives in `superpowers:systematic-debugging` — follow it: find the
+root cause before you touch the code (the iron law: *no fix without a root cause you can
+explain*), work the OBSERVE → REPRODUCE → LOCALIZE → EXPLAIN → FIX → VERIFY loop, and avoid the
+anti-patterns (shotgun debugging, fix-and-pray, ignoring the trace, no regression test).
 
-## The iron law
-
-```
-NO FIX WITHOUT A ROOT CAUSE YOU CAN EXPLAIN
-```
-
-If you can't say *why* the bug happens and *why* your change fixes it, you haven't debugged —
-you've gambled. This holds hardest exactly when it's tempting to skip: under time pressure, on
-"obviously trivial" bugs, after several failed attempts.
-
-## When to Use
-
-Any technical surprise: test failure, panic/crash, wrong output, perf cliff, build error,
-flaky/intermittent behavior. Especially when a previous fix didn't hold, or you don't fully
-understand the issue.
-
-## The loop
-
-```
-1. OBSERVE   — read the actual error/stack trace, fully. Note exact message, file:line, codes.
-2. REPRODUCE — trigger it reliably and as small as possible. No repro → gather data, don't guess.
-3. LOCALIZE  — narrow WHERE it happens: bisect (code/history/input), differential, instrument.
-4. EXPLAIN   — form a hypothesis that accounts for ALL the evidence; test the hypothesis directly.
-5. FIX       — make the smallest change the explanation demands; add a regression test that was RED.
-6. VERIFY    — re-run the failing case AND the suite; confirm with evidence (→ verification).
-```
-
-Each step gates the next. You don't fix at step 5 until the explanation at step 4 predicts the
-behavior you've seen. Techniques for steps 2–4 → [techniques.md](techniques.md).
+This skill adds the **Rust-specific toolbox** for the middle of that loop. Full detail in
+[techniques.md](techniques.md).
 
 ## Read the error first
 
-The single highest-yield habit: **read the whole error message and stack trace before doing
-anything.** It usually names the file, line, and often the cause. Don't pattern-match the first
-word and jump — Rust's errors (and `RUST_BACKTRACE=1`) are unusually precise; use them.
+The single highest-yield habit: read the whole error message and stack trace before doing
+anything. Rust's errors (and `RUST_BACKTRACE=1` / `=full`) are unusually precise — they usually
+name the file, line, and often the cause. Don't pattern-match the first word and jump.
 
-## Reproduce before you reason
+## Rust toolbox (→ techniques.md)
 
-A bug you can't reproduce, you can't fix — you can only hope. Get a **reliable, minimal** repro:
-fixed inputs, one failing test, deterministic. Shrinking the repro often reveals the cause by
-itself. If it's intermittent, that's data (a race, ordering, or external state — see
-techniques.md and `rust-concurrency`).
-
-## Don't confuse symptom with cause
-
-A `None` unwrap panics at line 50, but the bug is that line 30 produced `None`. Fix the cause,
-not the crash site. Adding `unwrap_or_default()` at line 50 hides a real bug — that's a symptom
-patch, and it's a finding in `rust-review`.
-
-## Anti-patterns
-
-- **Shotgun debugging** — changing several things at once. Change one variable at a time or you
-  learn nothing from the result.
-- **Fix-and-pray** — editing until the symptom disappears without an explanation. The bug isn't
-  gone, it's hidden; it returns as a worse one.
-- **Ignoring the trace** — skimming past the error to your assumption.
-- **No regression test** — fixing without a test that reproduced the bug means it can silently
-  come back (→ `rust-testing`).
+- **Shrink the repro** — delta-debug the input; a failing `proptest`/`quickcheck` hands you a
+  minimal counterexample (→ `rust-testing`).
+- **Bisect** — `git bisect run <cmd>` for the offending commit; `cargo bisect-rustc` for a
+  toolchain regression.
+- **Instrument** — escalate `dbg!` → `eprintln!` → `tracing::debug!(?x)` → `assert!`;
+  `RUST_BACKTRACE=1` for the panic path. Remove `dbg!`/`eprintln!` before committing; keep
+  `tracing` (→ `rust-cloud-native`).
+- **Heisenbugs** — non-determinism is shared state / ordering / timing: run under **Miri** (data
+  races — the `rust-miri` agent) or `loom`; `cargo nextest`'s process isolation surfaces
+  test-order leaks; inject the clock with `tokio::time::pause` (→ `rust-concurrency`).
+- **Heavy tools** — `rust-gdb`/`rust-lldb`, and `rr` for deterministic record/replay of rare
+  failures.
 
 ## Boundaries
 
-- Concrete techniques (repro shrinking, bisection, instrumentation, differential, races) →
-  [techniques.md](techniques.md).
-- Confirming the fix with evidence → `verification`.
-- The bug is a panic-where-a-Result-belonged / error-design issue → `rust-errors`.
-- Intermittent/ordering/data-race bugs → `rust-concurrency` (and Miri via the `rust-miri` agent).
-- "Slow", not "wrong" → `rust-performance` (profile, don't guess — same spirit).
+- Full technique detail → [techniques.md](techniques.md).
+- The general method, iron law, the loop, and anti-patterns → `superpowers:systematic-debugging`.
+- Confirming the fix with evidence → `superpowers:verification-before-completion` (the Rust
+  "what proves what" commands → `rust-review`).
+- A panic-where-a-`Result`-belonged / error-design issue → `rust-errors`.
+- Intermittent / ordering / data-race bugs → `rust-concurrency` (and Miri via the `rust-miri`
+  agent).
+- "Slow", not "wrong" → `rust-performance` (profile, don't guess).
+- Symptom-patching (e.g. `unwrap_or_default()` to hide a `None`) is a finding in → `rust-review`.
