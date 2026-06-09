@@ -63,8 +63,16 @@ microbenchmark harness — less ceremony than criterion when you don't need its 
   your hot spots. Needs debug symbols even in release: `[profile.release] debug = true`.
 - **`samply`** — cross-platform sampling profiler with a web UI; a good `perf` alternative on
   macOS/Windows.
+- **`dhat`** — heap profiler (the `dhat-rs` crate, cross-platform, no Valgrind): shows *where*
+  allocations come from and how many — which a CPU sampler can't. Set `dhat::Alloc` as the
+  `#[global_allocator]` **and** create a profiler at the top of `main`
+  (`let _p = dhat::Profiler::new_heap();`) — on exit it writes `dhat-heap.json` for the DHAT viewer.
+  Reach for it when allocation is the suspected cost (→ heap allocations in
+  [optimizing.md](optimizing.md)).
 
-Profile to decide *what* to optimize; benchmark to prove the optimization *worked*.
+Profile to decide *what* to optimize; benchmark to prove the optimization *worked*. A CPU profiler
+(flamegraph/samply/perf) finds *time*; a heap profiler (`dhat`) finds *allocations* — use the one
+that matches the symptom.
 
 ## Pitfalls
 
