@@ -72,17 +72,17 @@ const tasks = [
     `Review the Rust diff for mergeability using the rust-review rubric (load the rust-review skill). ${baseRef
       ? `Diff base: \`${baseRef}\`.`
       : 'There is no clean base ref — review uncommitted changes, or the most recent commit if the tree is clean.'} Return your verdict and findings.`,
-    { label: 'review:diff', agentType: 'rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
+    { label: 'review:diff', agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
   ).then(r => (r ? { ...r, dimension: 'review' } : null)),
 
   () => agent(
     `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
-    { label: 'architecture', agentType: 'rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
+    { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
   ).then(r => (r ? { ...r, dimension: 'architecture' } : null)),
 
   () => agent(
     `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.`,
-    { label: 'security', agentType: 'rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA },
+    { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA },
   ).then(r => (r ? { ...r, dimension: 'security' } : null)),
 ]
 
@@ -90,7 +90,7 @@ if (hasUnsafe) {
   tasks.push(
     () => agent(
       `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.`,
-      { label: 'miri', agentType: 'rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA },
+      { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA },
     ).then(r => (r ? { ...r, dimension: 'miri' } : null)),
   )
 } else {
