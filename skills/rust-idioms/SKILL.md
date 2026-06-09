@@ -31,11 +31,14 @@ clippy and other Rustaceans expect:
 
 - **Getters have no `get_` prefix** — `name()`, not `get_name()` (`get`/`get_mut` are for
   indexing-style access like `slice.get(i)`).
-- **Iterators**: `iter` (`&T`), `iter_mut` (`&mut T`), `into_iter` (`T`).
+- **Iterators**: `iter` (`&T`), `iter_mut` (`&mut T`), `into_iter` (`T`); the iterator *types* they
+  return mirror the method names — `Iter`, `IterMut`, `IntoIter`.
 - **Constructors**: `new` for the obvious one; `with_capacity`/`from_*` for variants.
 - **Don't stutter**: `author::Author`, not `author::AuthorStruct`; a method on `Error` isn't
   `error_kind()`, it's `kind()`.
 - **Booleans** read as predicates: `is_empty`, `has_root`, `should_retry`.
+- **Consistent word order**: pick one order for a family of names and keep it — siblings of
+  `RecvError` are `SendError`, not `ErrorOnSend`. Don't mix verb-noun and noun-verb in one crate.
 
 ## Idiomatic constructs (the short list)
 

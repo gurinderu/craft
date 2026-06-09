@@ -92,6 +92,33 @@ shared mutation across threads you pair it with `Mutex`/`RwLock`, not `RefCell`.
 plus `Send`/`Sync`, poisoning, and deadlocks — is `rust-concurrency`. Single thread: stay with
 `Rc`/`RefCell` (cheaper, no atomics).
 
+## `Drop` — RAII cleanup, and its two rules
+
+A type with a `Drop` impl runs cleanup when its owner leaves scope (fields drop in declaration
+order, locals in reverse). This is RAII: tie a resource to a value and release it automatically.
+
+```rust
+struct TempFile { path: PathBuf }
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);   // best-effort; ignore the error
+    }
+}
+```
+
+Two rules the API guidelines call out:
+
+- **A destructor must never panic** (C-DTOR-FAIL). If `drop` panics *while another panic is
+  unwinding*, the process aborts. Keep cleanup infallible — ignore/log errors (`let _ = …`), don't
+  `unwrap`. If teardown can genuinely fail and the caller should handle it, give them an explicit
+  `fn close(self) -> Result<…>` and leave `Drop` as the best-effort fallback.
+- **`Drop` can't run async or block usefully** (C-DTOR-BLOCK). `drop` is sync and can't `.await`;
+  blocking inside it (sync I/O, `block_on`) stalls the executor thread. For cleanup that must flush
+  or close over the network, expose an explicit `async fn shutdown(self)` / `close().await` →
+  `rust-concurrency` (async cleanup).
+
+To release early, call the free function `drop(value)` — you can't call `.drop()` directly.
+
 ## Which one?
 
 | Owners | Mutable? | Threads | Use |

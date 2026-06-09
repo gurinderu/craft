@@ -33,7 +33,7 @@ Status: ✅ done
 | Skill | Status | Scope | Does NOT cover (owner) |
 |---|---|---|---|
 | `rust-testing` | ✅ | unit/integration/doc, async, rstest, proptest, cargo-fuzz, cargo-mutants, mockall, insta, testcontainers, coverage, runner, CI | benchmarks → `rust-performance` |
-| `rust-review` | ✅ | cargo gate, severity checklist, verdict; requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table | *how* to fix → topic skills; *how* to test → `rust-testing`; generic review/verify discipline → `superpowers` |
+| `rust-review` | ✅ | cargo gate, severity checklist, verdict; **public-API design pass** (Rust API Guidelines checklist → `api-design.md`); requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table | *how* to fix → topic skills; *how* to test → `rust-testing`; generic review/verify discipline → `superpowers` |
 | `rust-errors` | ✅ | `Result`/`Option`, `?`, domain failures vs defects (ZIO model), thiserror vs anyhow, library-vs-app design, recovery/retry/circuit-breaker | panics as control flow → `rust-idioms` |
 | `rust-ownership` | ✅ | borrowing, lifetimes, `Cow`, smart pointers (`Box`/`Rc`/`Arc`), interior mutability (`Cell`/`RefCell`); fixes for E0382/E0597/E0499/E0502 | cross-thread sharing/`Send`+`Sync` → `rust-concurrency` |
 | `rust-concurrency` | ✅ | threads vs async, `Send`/`Sync`, `Arc<Mutex>`, channels, tokio, deadlocks, lock-across-await | single-thread `Rc`/`RefCell` → `rust-ownership` |
@@ -119,6 +119,15 @@ Plus `rust-architecture` (hexagonal) and the cross-cutting `specs`. Beyond the c
 
 - ✅ `rust-review/examples.md` removed; the Good/Bad catalog now lives in `rust-idioms`
   (anti-patterns). `rust-review` keeps the rubric and cites `rust-idioms` for the fix.
+- ✅ Rust API Guidelines gap-fill. Audited the collection against
+  [api-guidelines](https://rust-lang.github.io/api-guidelines/) and added the missing items to
+  their owning skills: `rust-idioms` (Deref-as-inheritance, out-params, surprising operator
+  overloads, `FromIterator`/`Extend`, generic `Read`/`Write` by value, `Hex`/`Octal`/`Binary`,
+  Debug-never-empty, iterator-type names, word order), `rust-traits` (`bitflags`,
+  no-bounds-on-type-defs, private fields), `rust-ownership` (`Drop` rules: never-panic,
+  no-async-in-drop), `rust-concurrency` (explicit `shutdown().await`), `rust-ecosystem` (stable
+  public deps, `CHANGELOG`, `#[doc(hidden)]`, feature naming). New `rust-review/api-design.md` is a
+  condensed C-guideline checklist that points to each owner — run on public-API diffs.
 
 ## Planned cross-links (ideas)
 

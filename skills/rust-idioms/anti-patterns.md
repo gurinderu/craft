@@ -121,3 +121,51 @@ match status {
 ```
 
 Use `_` only for genuinely open sets; on your own domain enums, stay exhaustive.
+
+## `Deref` to fake inheritance
+
+```rust
+struct Stack { items: Vec<i32>, name: String }
+impl std::ops::Deref for Stack {                    // ✗ "Stack is-a Vec" — every Vec method leaks onto Stack
+    type Target = Vec<i32>;
+    fn deref(&self) -> &Vec<i32> { &self.items }
+}
+
+impl Stack {                                        // ✓ expose what you mean, explicitly
+    fn items(&self) -> &[i32] { &self.items }
+    fn push(&mut self, x: i32) { self.items.push(x); }
+}
+```
+
+`Deref`/`DerefMut` are for **smart pointers** — types that *are* a pointer to their `Target`
+(`Box`, `Rc`, `Arc`). Using them for field access or inheritance makes every `Target` method
+silently appear on your type, breaks when you later add an inherent method of the same name, and
+confuses readers about what your type *is*. Smart pointers also shouldn't add inherent methods
+(call them via the `Target`). → API guideline C-DEREF / C-SMART-PTR; smart-pointer mechanics →
+`rust-ownership`.
+
+## Out-parameters instead of return values
+
+```rust
+fn parse(input: &str, out: &mut Vec<Token>) -> bool { }        // ✗ &mut out-param + bool status
+fn parse(input: &str) -> Result<Vec<Token>, ParseError> { }    // ✓ return the value
+fn min_max(xs: &[i32]) -> (i32, i32) { }                        // ✓ multiple results → tuple/struct
+```
+
+Rust returns values cheaply (moves, no hidden copy). Reserve `&mut` parameters for genuine
+in-place mutation of something the caller already owns — not for handing results back. → C-NO-OUT.
+
+## Surprising operator overloads
+
+```rust
+impl std::ops::Add for Matrix {                     // ✗ `+` that actually multiplies
+    type Output = Matrix;
+    fn add(self, rhs: Matrix) -> Matrix { self.multiply(rhs) }
+}
+let total = a + b;                                  // reader expects addition, gets a product
+```
+
+Overload an operator only when the result is what the symbol means (`+` adds, `*` scales). If the
+operation isn't obviously the operator's meaning, give it a named method. For domain types where a
+bare `+` could silently lose precision or mix currencies, prefer explicit checked methods (→
+`rust-fintech`). → C-OVERLOAD.

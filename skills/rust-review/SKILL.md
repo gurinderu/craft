@@ -1,6 +1,6 @@
 ---
 name: rust-review
-description: Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), the Approve/Warning/Block verdict, how to request a craft review (dispatch the rust-reviewer/rust-security-scanner/rust-miri agents with a crafted brief), and the Rust "what proves what" table for verifying a claim. Use when reviewing Rust code or a diff, requesting a review, deciding whether changes are mergeable, before committing or merging, or to confirm a claim with the right cargo command. Triggers: review this Rust, code review, rust review, request review, ready for review, before merge, dispatch reviewer, is this mergeable, cargo clippy review, check this PR, unsafe review, prove it passes, what proves done, verify with cargo.
+description: Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API design pass against the Rust API Guidelines, the Approve/Warning/Block verdict, how to request a craft review (dispatch the rust-reviewer/rust-security-scanner/rust-miri agents with a crafted brief), and the Rust "what proves what" table for verifying a claim. Use when reviewing Rust code or a diff, requesting a review, deciding whether changes are mergeable, before committing or merging, reviewing a library's public API, or to confirm a claim with the right cargo command. Triggers: review this Rust, code review, rust review, request review, ready for review, before merge, dispatch reviewer, is this mergeable, cargo clippy review, check this PR, unsafe review, API design review, public API, API guidelines, prove it passes, what proves done, verify with cargo.
 ---
 
 # Rust Review
@@ -87,6 +87,15 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - Wildcard `_ =>` on a business enum (hides new variants — prefer exhaustive)
 - `pub` item without a `///` doc
 - `#[allow(...)]` suppressing a lint without a justifying comment
+
+### Public-API diffs — the API-design pass
+
+When the diff changes a **public API** (a library crate, a published `pub` surface), also run the
+condensed Rust API Guidelines checklist → [api-design.md](api-design.md). It catches the
+library-author concerns the general checklist above doesn't — missing common-trait impls,
+`Deref`-as-inheritance, out-parameters, unsealed extensible traits, leaking unstable deps, absent
+`CHANGELOG`/metadata. Each item points at the craft skill that owns the fix. Skip it for
+application-internal code.
 
 ## Step 3 — Verdict
 

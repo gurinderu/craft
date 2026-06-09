@@ -36,6 +36,8 @@ Consequences of unification you must design around:
   crate gets both. Don't make features that contradict each other.
 - **Keep `default` minimal.** Consumers do `default-features = false` to slim builds; don't bury
   must-haves only in non-default features.
+- **Name features for what they enable**, not with placeholder words: `serde`, `tls`, `async` —
+  not `use-serde`, `with-tls`. The `use-`/`with-` prefixes are noise (C-FEATURE).
 - Test the matrix with `cargo hack --feature-powerset check` so a feature combo doesn't fail to
   compile.
 

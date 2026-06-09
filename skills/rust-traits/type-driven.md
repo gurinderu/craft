@@ -107,3 +107,48 @@ enum Task {
 Reach for `enum` over flag combinations, `NonZeroU32`/`NonZero` over "0 means none", and a
 newtype over "a `String` that's been validated somewhere". The compiler then rejects the states
 you'd otherwise have to test for.
+
+## Flag sets: `bitflags`, not enums or bare integers
+
+For a *set* of independent on/off flags, an `enum` can't represent combinations and a bare `u32`
+carries no meaning. Use the `bitflags` crate (`bitflags = "2"`) — a typed set with `|`/`&`,
+`contains`, and derived `Debug`:
+
+```rust
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Permissions: u32 {
+        const READ  = 0b001;
+        const WRITE = 0b010;
+        const EXEC  = 0b100;
+    }
+}
+
+let p = Permissions::READ | Permissions::WRITE;
+if p.contains(Permissions::WRITE) { /* ... */ }
+```
+
+Use an `enum` only when the cases are mutually exclusive (exactly one at a time). → C-BITFLAG.
+
+## Don't bound the type definition — bound the impl
+
+```rust
+struct Cache<T: Hash + Eq> { map: HashMap<T, u32> }   // ✗ bound leaks into every mention of Cache<T>
+struct Cache<T> { map: HashMap<T, u32> }              // ✓ bare data definition
+impl<T: Hash + Eq> Cache<T> { /* require the bound only where you use it */ }
+```
+
+A bound on a struct/enum *definition* buys nothing — you still repeat it on every `impl` — but it
+*does* force the bound onto every signature that names the type, and loosening it later is a
+breaking change. Keep the data definition bare; put bounds on the `impl`s and `where` clauses.
+(Exception: a bound the layout genuinely needs, e.g. `T: ?Sized`.) → C-STRUCT-BOUNDS.
+
+## Keep fields private; expose via methods
+
+A `pub` field is a permanent commitment: you can't add an invariant, change the representation, or
+`#[non_exhaustive]` it later without a breaking change. Default struct fields to private and expose
+constructors/accessors; a newtype's inner field is private precisely so its invariant holds
+(→ Newtype above). The semver mechanics → `rust-ecosystem` (libraries). → C-STRUCT-PRIVATE /
+C-NEWTYPE-HIDE.
