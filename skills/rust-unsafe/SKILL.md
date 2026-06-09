@@ -88,6 +88,7 @@ adversarial inputs are checked for undefined behavior (`cargo-fuzz` + `arbitrary
 
 - The *safe* ownership model (when you **don't** need unsafe) → `rust-ownership`. Most "the
   borrow checker won't let me" cases have a safe answer there first.
-- *Whether* a perf optimization justifies unsafe (`get_unchecked`, SIMD) → `rust-performance`;
-  *how* to write it soundly → here ([raw-and-invariants.md](raw-and-invariants.md)).
+- *Whether* a perf optimization justifies unsafe (`get_unchecked`, arch-specific SIMD intrinsics)
+  → `rust-performance` (which prefers safe autovectorization / portable SIMD first); *how* to
+  write the unsafe version soundly → here ([raw-and-invariants.md](raw-and-invariants.md)).
 - Reviewing unsafe in a diff (require `// SAFETY:`) → `rust-review`.
