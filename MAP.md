@@ -84,6 +84,7 @@ them by `agentType` — internal to the plugin, no external dependency).
 | Workflow | Composes | Output |
 |---|---|---|
 | `rust-audit` | reviewer + architecture + security + miri (parallel) | one synthesized severity-ranked report |
+| `triage-findings` | gather → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
 
 ## Cross-cutting skills (language-agnostic)
 
@@ -93,6 +94,7 @@ them by `agentType` — internal to the plugin, no external dependency).
 | `debugging` | ✅ | **Rust** debugging toolbox: minimal repro, `git bisect`/`cargo bisect-rustc`, `dbg!`/`tracing`/`RUST_BACKTRACE`, Miri/loom heisenbugs, `rust-gdb`/`rr` | the method (root cause before fix) → `superpowers:systematic-debugging`; confirming the fix → `superpowers:verification-before-completion`; Rust specifics → `rust-errors`/`rust-concurrency`/`rust-unsafe` |
 | `refactoring` | ✅ | structure-not-behavior in tiny steps under green tests; characterization tests; named transformations | safety net → `rust-testing`/`specs`; smell catalog → `rust-idioms` |
 | `codebase-onboarding` | ✅ | understand an unfamiliar repo first: map structure, find entry points/seams, trace one flow, confirm by building | changing it → `refactoring`/`rust-architecture`; bugs → `debugging` |
+| `addressing-findings` | ✅ | the fix loop for review findings: gather (craft agents + GitHub PR comments) → normalize → triage (accept/reject/defer/needs-decision/conflict) → order → fix → verify → re-review → close the GitHub loop; scales to the `triage-findings` workflow | the review *rubric* → `rust-review`; *running* the agents → `rust-audit`; generic feedback method → `superpowers:receiving-code-review`; *how* to fix → topic skills |
 
 > **Delegated to `superpowers`** (a declared plugin dependency): the generic engineering-process
 > method — `systematic-debugging`, `verification-before-completion`, `requesting-code-review`,
