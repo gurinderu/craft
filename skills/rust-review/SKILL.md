@@ -123,14 +123,7 @@ In craft, dispatch the agents with that brief:
 - **`rust-security-scanner`** — security-sensitive changes (deps, `unsafe`, input handling) → `rust-security` verdict.
 - **`rust-miri`** — when the change touches `unsafe` (→ `rust-unsafe`).
 
-Act on the verdict:
-
-- **Block** → fix before doing anything else.
-- **Warning** → judge; fix or consciously accept with a reason.
-- **Approve** → proceed — but still confirm green yourself (→ "Proving a claim" below).
-- **Wrong finding** → push back with reasoning; don't implement a wrong suggestion just because it was raised.
-
-Order multi-item feedback blocking → simple → complex, and test each. *How* to act on the comments without performing (verify-before-implement, no performative agreement, reasoned pushback) → `superpowers:receiving-code-review`.
+**Acting on the verdict** — working a set of findings to green (triage accept/reject/defer/needs-decision, order blocking → simple → complex, fix, verify, re-review, close the loop on GitHub) is its own discipline → `addressing-findings`; for a large batch it dispatches the `triage-findings` workflow. The generic "act without performing" method (verify-before-implement, no performative agreement, reasoned pushback) → `superpowers:receiving-code-review`.
 
 ## Proving a claim — what proves what
 
