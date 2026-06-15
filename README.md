@@ -36,10 +36,12 @@ at the relevant `superpowers:*` skill for the language-agnostic method.
 | skill | `craft:debugging` | Rust debugging toolbox — repro shrinking, `git bisect`/`cargo bisect-rustc`, `dbg!`/`tracing`/`RUST_BACKTRACE`, Miri/loom heisenbugs, `rust-gdb`/`rr` (method → `superpowers:systematic-debugging`) |
 | skill | `craft:refactoring` | Disciplined refactoring — structure-not-behavior in tiny steps under green tests (language-agnostic) |
 | skill | `craft:codebase-onboarding` | Understand an unfamiliar codebase first — map, find seams, trace one flow, confirm by building (language-agnostic) |
+| skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; scales to the `triage-findings` workflow |
 | agent | `rust-reviewer` | Runs the gate, reviews a diff against the `rust-review` rubric, returns a verdict |
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |
 | agent | `rust-miri` | Runs unsafe code under Miri to detect undefined behavior |
 | workflow | `rust-audit` | Runs `rust-reviewer` + `rust-architecture-reviewer` + `rust-security-scanner` + `rust-miri` (if `unsafe` present) in parallel and synthesizes one severity-ranked report |
+| workflow | `triage-findings` | Validates review findings (craft agents + GitHub PR comments) in parallel, dedups/conflict-checks, and renders one ordered fix plan (writing-plans format) + a triage ledger — no edits |
 
 ## Layout
 
