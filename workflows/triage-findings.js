@@ -115,8 +115,10 @@ const pin = base
 const validations = (await parallel(raw.map(f => () => {
   const id = idOf(f)
   const prior = priorById.get(id)
-  // Idempotent re-run: keep a prior non-accept verdict rather than re-litigating it.
-  if (prior && prior.verdict !== 'accept') {
+  // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
+  // re-validated (the code may have changed since); `conflict` is a cross-finding judgement, so it
+  // is re-derived fresh in the Plan phase rather than carried as a stale solo verdict.
+  if (prior && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '' })
   }
   return agent(
@@ -151,7 +153,7 @@ const rawById = new Map(raw.map(f => [idOf(f), f]))
 const acceptedEnriched = accepted.map(v => ({ ...v, finding: rawById.get(v.stable_id) || null }))
 
 const plan = await agent(
-  `Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given.
+  `Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose \`finding\` is null (a data glitch) — leave it out of the plan and note it in the summary.
 
 1. Dedup by stable_id (merge findings at the same location with the same fix).
 2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict "conflict" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.

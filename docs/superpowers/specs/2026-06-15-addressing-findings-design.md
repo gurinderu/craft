@@ -195,10 +195,11 @@ Self-contained (variant B), symmetric to `rust-audit`: it scouts/gathers its own
     is *not* a trigger to run the heavy review agents — that is `rust-audit`'s job. To feed
     craft-agent findings, run `rust-audit` (or a reviewer) first and pass its `report`. This
     keeps the two workflows composable without nesting and avoids duplicating `rust-audit`.
-- **Phases:**
+- **Phases** (three harness `phase()` calls; normalization is folded into Gather
+  post-processing rather than its own phase):
   - `Gather` — **`parallel()` over sources** (one agent per requested source: `pr`,
-    `report`), schema-enforced.
-  - `Normalize` — map to the unified schema; tag `source`; compute `stable_id`.
+    `report`), schema-enforced; then normalize in-script — tag `source` and compute
+    `stable_id`.
   - `Validate` — **parallel per-finding agent** (the core fan-out), **pinned to the ref**,
     emitting the *compact* triage result `{ stable_id, verdict, reason, fix_pointer }`
     (M1: keep small).
