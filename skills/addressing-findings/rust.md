@@ -28,8 +28,8 @@ don't restate.)
 ## Verify (step 6)
 
 Prove each fix with the matching command from the `rust-review` "Proving a claim — what proves
-what" table — do not re-derive it here, cite it: `rust-review` SKILL.md, the "Proving a claim"
-section. The discipline (no "done" without a fresh run you read this session) →
+what" table — do not re-derive it here, cite it (`rust-review` SKILL.md, the "Proving a claim —
+what proves what" section). The discipline (no "done" without a fresh run you read this session) →
 `superpowers:verification-before-completion`.
 
 ## Re-review (step 7)
