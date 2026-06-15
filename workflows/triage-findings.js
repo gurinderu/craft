@@ -12,10 +12,15 @@ export const meta = {
 // Locator args (not payload): pr (GitHub PR number), report (path to a rust-audit report or saved
 // verdict), base (ref to pin validation against), priorLedger (array of prior {stable_id, verdict,
 // reason} for idempotent re-runs). At least one of pr/report must be given.
-const pr = (args && args.pr) ? String(args.pr) : ''
-const report = (args && args.report) ? String(args.report) : ''
-const base = (args && args.base) ? String(args.base) : ''
-const priorLedger = (args && Array.isArray(args.priorLedger)) ? args.priorLedger : []
+// `args` may arrive as a parsed object or as a JSON string depending on the harness — normalize.
+let argv = {}
+if (args && typeof args === 'object') argv = args
+else if (typeof args === 'string' && args.trim()) { try { argv = JSON.parse(args) } catch { argv = {} } }
+
+const pr = argv.pr ? String(argv.pr) : ''
+const report = argv.report ? String(argv.report) : ''
+const base = argv.base ? String(argv.base) : ''
+const priorLedger = Array.isArray(argv.priorLedger) ? argv.priorLedger : []
 
 const RAW_SCHEMA = {
   type: 'object',
