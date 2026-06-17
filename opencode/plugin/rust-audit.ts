@@ -23,8 +23,13 @@ async function scout(ctx: PluginCtx, base?: string): Promise<{ baseRef: string; 
       if (baseRef) break
     }
   }
-  const unsafeHits = await sh(ctx, `grep -rnE "\\bunsafe\\b" --include=*.rs . | head -n1`)
-  return { baseRef, hasUnsafe: unsafeHits.length > 0 }
+  // sh() returns "" on both "no matches" and "shell/command failed". Append a marker that only
+  // prints if the shell actually ran, so we can mirror workflows/rust-audit.js's `?? true`
+  // fail-safe: when unsafe-detection does not resolve, run Miri anyway.
+  const probe = await sh(ctx, `grep -rlE "\\bunsafe\\b" --include='*.rs' . 2>/dev/null | head -n1; echo "__scout_ok__"`)
+  const ranOk = probe.includes("__scout_ok__")
+  const hasMatch = probe.replace("__scout_ok__", "").trim().length > 0
+  return { baseRef, hasUnsafe: hasMatch || !ranOk }
 }
 
 export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Promise<string> {
