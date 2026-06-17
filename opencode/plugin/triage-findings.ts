@@ -3,20 +3,16 @@
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAgent, type Job } from "./orchestrator.ts"
+import { existsSync, readFileSync } from "node:fs"
 
-async function sh(ctx: PluginCtx, cmd: string): Promise<string> {
+// Read the locator as a file when it points at one; otherwise treat it as literal findings text.
+// Use FS APIs (not a shell) so the locator can never be interpreted as a command — no injection.
+function gather(locator: string): string {
   try {
-    const r = await ctx.$`bash -lc ${cmd}`.quiet()
-    return (r.stdout?.toString?.() ?? String(r.stdout ?? "")).trim()
+    return existsSync(locator) ? readFileSync(locator, "utf8") : locator
   } catch {
-    return ""
+    return locator
   }
-}
-
-// Resolve the locator into raw findings text: a readable file path, else the literal string.
-async function gather(ctx: PluginCtx, locator: string): Promise<string> {
-  const asFile = await sh(ctx, `test -f ${JSON.stringify(locator)} && cat ${JSON.stringify(locator)} || true`)
-  return asFile || locator
 }
 
 // Split a findings blob into individual items (one per non-empty line that looks like a finding).
@@ -29,7 +25,7 @@ function splitFindings(blob: string): string[] {
 }
 
 export async function runTriageFindings(ctx: PluginCtx, args: { locator: string }): Promise<string> {
-  const blob = await gather(ctx, args.locator)
+  const blob = gather(args.locator)
   const findings = splitFindings(blob)
   if (findings.length === 0) return "No findings parsed from the locator."
 
