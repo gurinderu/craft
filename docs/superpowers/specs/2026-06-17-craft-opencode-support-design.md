@@ -50,6 +50,7 @@ on the Claude Code side.
 | 3 | **Workflows = TS/Bun plugin** (deterministic, child-session orchestration) — not the prompt-driven `task`-tool command. Determinism chosen over simplicity. |
 | 4 | **superpowers = documented co-requisite + graceful degradation.** README tells the user to symlink superpowers' skills too (same Anthropic spec); if absent, only generic-process deferrals go inert — the Rust knowledge is self-contained. |
 | 5 | **Containment ("не торчит наружу")** is a first-class principle — see below. |
+| 6 | **Model strategy applied to both hosts** — see § Model strategy. opencode agents **inherit** the session model (provider-agnostic); Claude Code agents **differentiate** (`rust-architecture-reviewer` → `opus`, others → `sonnet`); the `rust-audit` workflow runs the scout cheap (Haiku / low effort) and synthesis at medium effort. |
 
 ## Containment principle
 
@@ -111,7 +112,7 @@ Four hand-written opencode agent files mirroring `agents/*.md`. Translation rule
 | Claude Code | opencode |
 |---|---|
 | `tools: ["Read","Grep","Glob","Bash"]` | `tools: { write: false, edit: false }` (read/grep/glob/bash allowed by default; mutation denied) |
-| `model: sonnet` | `model: anthropic/claude-sonnet-4-5` (or omit to inherit the session model) |
+| `model: sonnet` | **omit `model`** → inherits the opencode session model (provider-agnostic; no Anthropic ID hardcoded). Per-task tier guidance lives in the README — see § Model strategy. |
 | — | `mode: subagent` |
 | — | `hidden: true` |
 
@@ -163,6 +164,46 @@ Idempotent shell installer:
   `opencode.json` `"plugin"` array route is left for a future published release.
 - Re-runnable: existing correct symlinks are left alone; stale ones repointed.
 - Prints a post-install note: how to also symlink superpowers skills, and how to invoke.
+
+## Model strategy
+
+Match the model tier to the **cognitive demand of the stage**, and use the reasoning `effort`
+knob (low → xhigh → max) as the fine control — often cheaper than jumping a tier. Tiers and
+pricing (input/output per 1M tok): **Fable 5** $10/$50 · **Opus 4.8** $5/$25 · **Sonnet 4.6**
+$3/$15 · **Haiku 4.5** $1/$5. Fable 5 is overkill for craft's rubric-driven tasks.
+
+| Component | Demand | Target | Effort |
+|---|---|---|---|
+| `rust-architecture-reviewer` | Heaviest — whole dependency graph, layering/over-engineering judgement | **top tier** (Opus 4.8) | high/xhigh |
+| `rust-reviewer` | Rubric + subtle-bug hunting on a diff | Sonnet 4.6 default; Opus when bug-finding is critical | high |
+| `rust-security-scanner` | Run tools + consolidate | Sonnet 4.6 | medium |
+| `rust-miri` | Interpret bounded UB output | Sonnet 4.6 (Opus on gnarly UB) | medium |
+| workflow **scout** (diff base, grep unsafe) | Pure mechanics | **Haiku 4.5** | low |
+| workflow **synthesis** (merge/dedup/rank verdicts) | Moderate | Sonnet 4.6 | medium |
+| skills | — | inherit the active session model | — |
+
+Two craft-specific notes baked into this strategy:
+
+1. **Over-report, filter downstream.** Opus 4.8/4.7 follow "report only high-severity"
+   *literally*, which depresses measured recall. craft's find-broad → triage architecture already
+   fits: `rust-reviewer` reports everything with severity + confidence, and
+   `triage-findings` / `addressing-findings` do the filtering. Reviewer briefs should say
+   "coverage, not filtering" — especially on Opus.
+2. **`effort` is orthogonal to tier** — raising effort on the same model is often the better
+   lever than swapping tiers.
+
+**Applied to both hosts:**
+
+- **opencode** — the 4 agent adapters **omit `model`** and inherit the user's configured session
+  model (provider-agnostic; respects containment — we don't impose Anthropic). The per-task tier
+  table above ships in the README as guidance ("run the architecture audit on your strongest
+  model / high effort"). The plugin does **not** override the model when prompting child sessions —
+  each child uses its agent's own config.
+- **Claude Code** (existing artifacts, applied in this change) — Anthropic is fixed here, so
+  differentiate: `agents/rust-architecture-reviewer.md` pinned to `model: opus` (others stay
+  `sonnet`); `workflows/rust-audit.js` runs the scout `agent()` on `model: 'haiku', effort: 'low'`
+  and the synthesis `agent()` on `effort: 'medium'`. Agents dispatched by `agentType` inherit their
+  own file's `model`, so no per-call model override is needed for the reviewers.
 
 ## Data flow
 
