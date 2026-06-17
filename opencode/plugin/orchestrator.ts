@@ -26,13 +26,16 @@ export async function runAgent(ctx: PluginCtx, agentName: string, prompt: string
 }
 
 function extractText(res: any): string {
-  const parts = res?.parts ?? res?.data?.parts ?? res?.message?.parts ?? []
+  // Normalize a streaming/array response to its last message before reading parts, so an array
+  // shape isn't mistaken for "no output" (which would mis-mark a successful job NOT RUN).
+  const root = Array.isArray(res) ? res[res.length - 1] : res
+  const parts = root?.parts ?? root?.data?.parts ?? root?.message?.parts ?? []
   const text = parts
     .filter((p: any) => p?.type === "text" && typeof p.text === "string")
     .map((p: any) => p.text)
     .join("\n")
     .trim()
-  return text || (typeof res?.text === "string" ? res.text.trim() : "")
+  return text || (typeof root?.text === "string" ? root.text.trim() : "")
 }
 
 export interface Job { label: string; agent: string; prompt: string }

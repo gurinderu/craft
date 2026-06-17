@@ -31,7 +31,7 @@ dependencies on startup. If your opencode version doesn't auto-install them, add
 
 ## Use
 
-- **Skills** — auto-discovered; opencode's `skill` tool lists all 24 and routes by description.
+- **Skills** — auto-discovered; opencode's `skill` tool lists all of craft's skills and routes by description.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`
   are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
 - **Workflows** — `/rust-audit [base-ref]` and `/triage-findings <locator>`.

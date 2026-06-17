@@ -72,7 +72,7 @@ craft/
 ## opencode
 
 craft also runs in [opencode](https://opencode.ai) via a contained adapter layer under
-`opencode/`: the 24 skills are shared verbatim (opencode reads the Anthropic skill spec), the 4
+`opencode/`: the skills are shared verbatim (opencode reads the Anthropic skill spec), the 4
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
 workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`). Install with
 `opencode/install.sh` (project-scoped by default). See `opencode/README.md` for details, the model
