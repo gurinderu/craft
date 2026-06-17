@@ -1,0 +1,15 @@
+{
+  "name": "craft-rust-opencode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "craft's Rust audit/triage workflows as a contained opencode plugin.",
+  "dependencies": {
+    "@opencode-ai/plugin": "*",
+    "@opencode-ai/sdk": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^5"
+  }
+}
