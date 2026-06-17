@@ -3,7 +3,7 @@ export const meta = {
   description: 'Full Rust crate audit — review, architecture, security, and Miri in parallel, synthesized into one report',
   whenToUse: 'Before a release or a big merge, when you want every craft review agent run at once and consolidated into a single verdict.',
   phases: [
-    { title: 'Scout', detail: 'detect the diff base and whether the workspace has unsafe code' },
+    { title: 'Scout', detail: 'detect the diff base and whether the workspace has unsafe code', model: 'haiku' },
     { title: 'Audit', detail: 'parallel rust-reviewer / rust-architecture-reviewer / rust-security-scanner / rust-miri' },
     { title: 'Synthesize', detail: 'merge the verdicts into one severity-ranked report' },
   ],
@@ -59,7 +59,8 @@ const scout = await agent(
 2. hasDiff = true if \`git diff --name-only <base>...HEAD\` lists any \`.rs\` file, OR \`git status --porcelain\` shows uncommitted \`.rs\` changes.
 3. hasUnsafe = true if \`grep -rnE "\\bunsafe\\b" --include=*.rs .\` finds any match (a rough check is fine; ignore obvious comment-only hits if cheap to do).
 4. baseRef = the ref you actually used (empty string if none resolved).`,
-  { label: 'scout', schema: SCOUT_SCHEMA },
+  // Scout is pure mechanics (git refs + grep) — run it cheap: Haiku at low effort.
+  { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
 )
 // scout is null if the agent was skipped or died — fall back to safe defaults rather than crash.
 const baseRef = scout?.baseRef ?? ''
@@ -119,7 +120,8 @@ NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.jo
 
 RESULTS:
 ${JSON.stringify(results, null, 2)}`,
-  { label: 'synthesis' },
+  // Synthesis is merge/dedup/rank of given verdicts — moderate reasoning, not a deep judgement call.
+  { label: 'synthesis', effort: 'medium' },
 )
 
 return report
