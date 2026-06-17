@@ -164,3 +164,11 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 | LSP navigation skills (code-navigator/call-graph/symbol/trait-explorer) | `rust-navigation` |
 | domain-embedded | `rust-embedded` |
 | m14, domain-* (ML/IoT), live-data/news agents | deferred |
+
+## opencode adapter
+
+`opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
+(skills shared verbatim by symlink; 4 translated agent files; a TS/Bun plugin hosting the
+`rust-audit` and `triage-findings` workflows; a symlink `install.sh`). Single source of truth: the
+skills are not duplicated. See the design spec
+`docs/superpowers/specs/2026-06-17-craft-opencode-support-design.md`.
