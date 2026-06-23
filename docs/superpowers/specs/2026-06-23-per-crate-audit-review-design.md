@@ -22,7 +22,9 @@ and how to extract code into its own crate, or merge an over-split one).
   The dimensions compose into the comprehensive picture: **architecture** sees the whole dependency
   graph's shape, **per-crate review** sees inside each crate, **contracts** see the edges between
   crates, **crate-decomposition** judges whether the crate boundaries themselves are right,
-  **security**/**Miri** cover deps and unsafe. Together they are the full review.
+  **security**/**Miri** cover vulns and unsafe, and the tool dimensions cover **semver**
+  compatibility, the **build matrix** + MSRV, **dependency** hygiene, and **test/doc** health.
+  Together they are the full review.
 
 ## Problem
 
@@ -161,6 +163,36 @@ and the workspace dependency graph, and returns recommendations — each as a fi
 It runs even on a single-crate project (the god-crate split question still applies). It joins the
 same `parallel(tasks)` call as the other dimensions; dimension label `crate-decomposition`.
 
+## Additional whole-project tool dimensions (D–G)
+
+Four more parallel dimensions, each a generic `agent()` that runs the relevant tools, loads the
+owning craft rubric (no new rubric skill needed), and returns a `FINDINGS_SCHEMA` result. Each
+**degrades gracefully**: a missing tool/toolchain is reported as an intentional skip (`log()` +
+a note in the result), never a failure and never counted NOT RUN.
+
+- **`semver` (D):** `cargo semver-checks check-release` across the published workspace crates →
+  breaking-change findings vs the published baseline. Rubric: `rust-ecosystem` (semver/publishing)
+  + `rust-review` api-design. Skipped if no published library crate or the tool is absent. This is
+  the consolidated *release gate*; it complements (does not replace) the per-crate `rust-review`
+  semver-checks seed.
+- **`build-matrix` (E):** `cargo hack check --feature-powerset --no-dev-deps`, plus
+  `--no-default-features` and `--all-features`, and an **MSRV** check — read `rust-version` from
+  `Cargo.toml` and run `cargo hack --rust-version check` (or `cargo +<msrv> check`). Findings:
+  feature combinations or the MSRV that fail to build. Rubric: `rust-ecosystem`
+  (features/MSRV/edition). Degrade if `cargo-hack` or the MSRV toolchain is absent.
+- **`deps` (F):** dependency hygiene, distinct from `security` (vulns/licenses) — `cargo tree -d`
+  (duplicate versions bloating build/binary), `cargo machete` (unused deps; `cargo-udeps` on
+  nightly as the alternative), `cargo outdated` (out-of-date deps). Rubric: `rust-ecosystem`
+  (deps/weight). Degrade per tool.
+- **`tests-cov` (G):** test effectiveness + docs — `cargo llvm-cov --summary-only` (coverage number
+  + worst-covered files), `cargo mutants` (mutation weak-spots — **heavy: gated to an opt-in / large
+  audit, time-boxed**), and `cargo doc --no-deps` + doctests for a clean doc build (broken
+  intra-doc links, failing doctests). Rubric: `rust-testing` (coverage/mutation/doctests) +
+  `rust-idioms` (rustdoc). Degrade per tool.
+
+All four join the same `parallel(tasks)` call and the `expectedDimensions`/synthesis bookkeeping
+with labels `semver` / `build-matrix` / `deps` / `tests-cov`.
+
 ## Files to change
 
 - `workflows/rust-review.js` — Scout honours optional `args.path` (scope the diff; name the crate).
@@ -172,9 +204,12 @@ same `parallel(tasks)` call as the other dimensions; dimension label `crate-deco
   per touched edge (feature B) via direct `craft:rust-reviewer` agents; **crate-decomposition**
   dimension (feature C) is one whole-project generic agent loading the crate-extraction rubric;
   `expectedDimensions`/`notRun` built from the dispatched `review:<crate>` + `contract:<from>→<to>`
-  + `crate-decomposition` + architecture/security/[miri] labels (intentional skips — contracts with
-  no edges, Miri with no unsafe — are not counted as NOT RUN); synthesis prompt notes the per-crate
-  review rows, the per-edge contract rows, and the crate-decomposition recommendations.
+  + `crate-decomposition` + `semver`/`build-matrix`/`deps`/`tests-cov` + architecture/security/[miri]
+  labels (intentional skips — contracts with no edges, Miri with no unsafe, a tool-dimension whose
+  tool is absent — are not counted as NOT RUN); the four tool dimensions (D–G) are generic `agent()`
+  thunks added to the same `parallel(tasks)` call; `meta.description`/`phases` updated to reflect
+  the comprehensive dimension set; synthesis prompt notes the per-crate review rows, the per-edge
+  contract rows, the crate-decomposition recommendations, and the tool-dimension results.
 
 ## Non-goals
 
@@ -190,6 +225,13 @@ same `parallel(tasks)` call as the other dimensions; dimension label `crate-deco
   crate-decomposition is the focused *when/how to change the crate boundaries* decision, with all
   drivers (reuse, compile, dependency inversion, trust boundary, release cadence, test isolation,
   god-crate). It **recommends**, it does not move code — no auto-refactoring.
+- The four tool dimensions (D–G) load **existing** rubrics (`rust-ecosystem`, `rust-testing`,
+  `rust-idioms`) — no new rubric skill. They are tool-driven (run a tool, interpret, report); a
+  missing tool is an intentional skip, never a failure.
+- `cargo mutants` (in `tests-cov`) is **gated** to an opt-in / large audit and time-boxed — it is
+  too slow to run unconditionally.
+- The `semver` dimension is the consolidated release gate; it complements, and does not remove, the
+  per-crate `rust-review` semver-checks seed.
 - Cost: per-crate review is N × the deep engine for N changed crates; contracts is one focused
   agent per touched edge. This is the full audit (release/big-merge), and the harness concurrency
   cap bounds simultaneity across the whole fan-out. Accepted by design.
