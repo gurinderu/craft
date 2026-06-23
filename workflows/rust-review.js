@@ -128,5 +128,42 @@ const plan = {
 }
 log(scout?.notes ?? 'scout produced no result — assuming medium bucket, all lenses')
 
-// Temporary terminal return for this task — replaced in Task 2.
-return JSON.stringify(plan, null, 2)
+// ================= Gate + tool grounding =================
+phase('Gate')
+const gate = await agent(
+  `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${plan.baseRef ? `\`${plan.baseRef}\`` : 'uncommitted changes / most recent commit'}.
+
+GATE (CI-aware, per the rust-review skill — load it):
+1. Detect a PR + CI: \`gh pr checks --json name,state,bucket,link\` for the current branch. If gh is missing/unauthenticated/offline or no PR is found, fall through to the local gate.
+2. For build/test/clippy/fmt: if a conclusive green required CI check covers it, treat it as PASSED and record provenance "via CI #<n>"; if any such check FAILED, set status=fail and list it in failedChecks. If pending/absent, run it locally (\`cargo fmt --check\`, \`cargo clippy --all-targets -- -D warnings\`, \`cargo test\`).
+3. Security tools (\`cargo audit\`, \`cargo deny check\`) always run locally if installed (cheap, usually absent from CI). A vulnerability with a fix is a fail.
+4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
+
+SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
+5. \`cargo clippy --all-targets -- -W clippy::pedantic -W clippy::nursery\` — turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these.
+${plan.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
+
+Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings are clippy-pedantic / semver only.`,
+  { label: 'gate', schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' },
+)
+
+const gateStatus = gate?.status ?? 'unknown'
+const gateProvenance = gate?.provenance ?? 'gate not established'
+const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
+log(`Gate: ${gateStatus} — ${gateProvenance}${gate?.failedChecks?.length ? ` · failed: ${gate.failedChecks.join(', ')}` : ''}`)
+
+if (gateStatus === 'fail') {
+  return [
+    `## Verdict`,
+    `⛔ Block — mechanical gate is red.`,
+    ``,
+    `## Gate`,
+    gateProvenance,
+    gate.failedChecks?.length ? `\nFailed checks:\n${gate.failedChecks.map(c => `- ${c}`).join('\n')}` : '',
+    ``,
+    `Fix the gate before a semantic review is worthwhile.`,
+  ].join('\n')
+}
+
+// Temporary terminal return — replaced in Task 3.
+return JSON.stringify({ plan, gateProvenance, seedFindings }, null, 2)
