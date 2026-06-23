@@ -15,6 +15,7 @@ export const meta = {
 const baseArg = (args && typeof args === 'object' && args.base) ? String(args.base) : ''
 const intentArg = (args && typeof args === 'object' && args.intent) ? String(args.intent) : ''
 const postComments = !!(args && typeof args === 'object' && args.comment)
+const pathArg = (args && typeof args === 'object' && args.path) ? String(args.path) : ''   // optional crate-scope (audit per-crate fan-out)
 
 // ---- catalog ----
 const ALL_LENSES = ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'tests', 'intent']
@@ -93,7 +94,7 @@ const VERDICT_SCHEMA = {
 // ================= Scout =================
 phase('Scout')
 const scout = await agent(
-  `You are scouting a Rust diff to plan an elastic review. Use shell + read only — do NOT review yet.
+  `You are scouting a Rust diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate at \`${pathArg}\`. Pass \`-- ${pathArg}\` to every \`git diff\` command below, consider only files under that path, and name the crate in your notes.` : ''}
 
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
