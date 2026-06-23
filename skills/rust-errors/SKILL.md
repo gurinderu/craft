@@ -90,6 +90,20 @@ fn read_count(path: &str) -> Result<usize, MyError> {
 The conversion is what makes `?` ergonomic — `thiserror`'s `#[from]` generates those `From`
 impls for you (see [design.md](design.md)). `?` also works in functions returning `Option`.
 
+## Return the consumed value on failure
+
+When a fallible method takes an owned value *by value* (often `self`) and can fail, hand the value
+back inside the `Err` so the caller can retry or recover without re-acquiring it:
+
+```rust
+fn connect(self) -> Result<Live, ConnectError>;          // ✗ on failure the caller has lost `self`
+fn connect(self) -> Result<Live, (Self, ConnectError)>;  // ✓ failure returns the value to retry with
+```
+
+The same shape works for any owned input (a `Vec`, a buffer, a builder). Reserve it for values that
+are expensive or impossible to reconstruct — for cheap `Copy`/clonable inputs it is just noise.
+→ Rust Design Patterns (idiom: "Return consumed arg on error").
+
 ## Decision: which error crate?
 
 This is the single most important error choice in Rust:
