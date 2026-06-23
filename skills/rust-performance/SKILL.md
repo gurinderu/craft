@@ -1,6 +1,6 @@
 ---
 name: rust-performance
-description: Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings. Triggers: criterion, divan, flamegraph, bumpalo, FxHashMap, LTO, codegen-units, target-cpu, PGO, SIMD, jemalloc, mimalloc, dhat, BufWriter, swap_remove.
+description: Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings, or when builds are slow and you want to cut compile times / speed up the edit-compile-run loop. Triggers: criterion, divan, flamegraph, bumpalo, FxHashMap, LTO, codegen-units, target-cpu, PGO, SIMD, jemalloc, mimalloc, dhat, BufWriter, swap_remove, compile times, slow build, mold, lld, sccache, cargo --timings, cargo llvm-lines, incremental.
 ---
 
 # Rust Performance
@@ -16,6 +16,7 @@ are in the sub-files.
 - Optimizing a known hot path
 - Choosing a benchmarking tool or profiler
 - Tuning build/compile settings for speed or size
+- The edit→compile→run loop is too slow — cutting compile times ([compile-times.md](compile-times.md))
 
 ## The discipline: measure, don't guess
 
@@ -52,6 +53,14 @@ panic = "abort"        # smaller/faster, no unwinding
 [build]
 rustflags = ["-C", "target-cpu=native"]
 ```
+
+## The other axis — faster builds, not faster binaries
+
+Everything above tunes the build for a **faster runtime binary**, at the cost of compile time
+(`lto`, `codegen-units = 1`). The opposite goal — a **faster edit→compile→run loop** — is its own
+toolkit: switch to a fast linker (`mold`/`lld`), tune the dev profile, split a monolith crate so
+`rustc` parallelizes and rebuilds incrementally, and cut monomorphization bloat. Several knobs flip
+between the two axes, so keep them straight → [compile-times.md](compile-times.md).
 
 ## Where time and memory usually go
 
