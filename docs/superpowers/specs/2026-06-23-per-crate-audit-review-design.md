@@ -11,9 +11,16 @@ features: (A) per-crate parallel review (inside each crate), and (B) inter-crate
 - **`rust-review` workflow** — reviews *a change* (diff-scoped, elastic deep engine). The single
   review path. It does **not** change behaviour here; it only gains one optional, backward-
   compatible argument.
-- **`rust-audit`** — the *full audit* of the project (review + architecture + security + miri).
-  Per-crate parallelism is a property of **the audit**, not of the review workflow: the audit
-  orchestrates N review runs (one per crate) instead of one run over the whole workspace.
+- **`rust-audit`** — the *full audit* of the project, and what "a full review" means here: it
+  already runs the **architecture**, **security**, and **Miri** dimensions alongside review, and
+  features A + B below complete it (per-crate review + inter-crate contracts). There is no separate
+  "full review" concept — running the audit *is* the full review. Per-crate parallelism is a
+  property of **the audit**, not of the review workflow: the audit orchestrates N review runs (one
+  per crate) instead of one run over the whole workspace.
+
+  The dimensions compose into the comprehensive picture: **architecture** sees the whole dependency
+  graph's shape, **per-crate review** sees inside each crate, **contracts** see the edges between
+  crates, **security**/**Miri** cover deps and unsafe. Together they are the full review.
 
 ## Problem
 
