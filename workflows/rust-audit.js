@@ -130,6 +130,22 @@ if (reviewCrates.length > 1) {
   dispatched.push('review')
 }
 
+// Contracts dimension (feature B) — one focused review per TOUCHED intra-workspace edge. An edge
+// is touched when its caller or callee is a changed crate; with no base, every edge is touched.
+const changedNames = new Set(changedCrates.map(c => c.name))
+const touchedEdges = edges.filter(e => !baseRef || changedNames.has(e.from) || changedNames.has(e.to))
+if (touchedEdges.length) {
+  for (const e of touchedEdges) {
+    tasks.push(() => agent(
+      `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.`,
+      { label: `contract:${e.from}->${e.to}`, agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
+    ).then(r => (r ? { ...r, dimension: `contract:${e.from}→${e.to}` } : null)))
+    dispatched.push(`contract:${e.from}→${e.to}`)
+  }
+} else {
+  log('No intra-workspace dependency edges to review — skipping the contracts dimension.')
+}
+
 tasks.push(() => agent(
   `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
   { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
