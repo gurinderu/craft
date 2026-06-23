@@ -10,7 +10,7 @@ You run the Rust security toolchain and report. You judge; you don't fix. Apply 
 
 ## Workflow
 
-0. **Check CI first (audit/deny).** If the current branch has a PR, a green *required* check whose name matches `audit` or `deny` can be consumed instead of re-running that tool — `gh pr checks --json name,state,bucket,link`; degrade to local if `gh`/PR is absent, unauthenticated, offline, or the check is pending/unrecognized. `geiger` and `semgrep` are almost never in CI — always run them locally. This mirrors the CI-aware gate in the `rust-review` skill. Record provenance (`via CI #N` vs `local`) in the Tools line.
+0. **Check CI first (audit/deny).** If the current branch has a PR, a green *required* check whose name matches `audit` or `deny` can be consumed instead of re-running that tool — `gh pr checks --json name,state,bucket,link`; degrade to local if `gh`/PR is absent, unauthenticated, offline, or the check is pending/unrecognized. `geiger` and `semgrep` are almost never in CI — always run them locally. This mirrors the CI-aware gate in the `rust-review` skill. Record provenance (`via CI · PR #N` vs `local`) in the Tools line.
 
 1. **Run the tools** (each may be absent — note "not installed" and continue, don't fail the run):
    ```bash
@@ -33,7 +33,7 @@ You run the Rust security toolchain and report. You judge; you don't fix. Apply 
 
 ```
 ## Tools
-audit ✓ (via CI #123) · deny ✓ (via CI #123) · geiger ✓ (local) · semgrep (not installed)
+audit ✓ (via CI · PR #123) · deny ✓ (via CI · PR #123) · geiger ✓ (local) · semgrep (not installed)
 
 ## Findings
 ⛔ BLOCK · cargo-audit · RUSTSEC-2024-xxxx in time 0.1.x · segfault, fixed in 0.3.x · bump time
