@@ -446,7 +446,7 @@ git commit -m "feat(rust-review): loop-until-dry rounds with cross-round dedup"
 
 **Interfaces:**
 - Consumes: `pool[]`, `plan.verifyVotes`, `plan.lensModel`, `VERDICT_SCHEMA`.
-- Produces: `confirmed[]`, `suspected[]` arrays (each item is a `FINDING_ITEM` plus `{tier}`).
+- Produces: reusable `async verifyPool(items) → {confirmed, suspected, dropped}`; `let confirmed[]` / `let suspected[]` (each item a `FINDING_ITEM` plus `{tier}`, extended by the Task 6 critic follow-up).
 
 - [ ] **Step 1: Replace the Task-4 temporary return with the Verify phase**
 
@@ -469,31 +469,39 @@ Open the cited file and check:
 Return {refuted, citedLineMatches, reachable, reason}.`
 }
 
-const judged = await parallel(pool.map(f => () => {
-  const isHigh = f.severity === 'Critical' || f.severity === 'High'
-  const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
-  return parallel(Array.from({ length: votes }, (_unused, i) => () =>
-    agent(verifyPrompt(f, i), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
-  )).then(vs => {
-    const v = vs.filter(Boolean)
-    if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
-    const half = v.length / 2
-    const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
-    const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
-    const refutes = v.filter(x => x.refuted).length
-    let tier
-    if (!lineOk) tier = 'refuted'            // hallucinated citation
-    else if (refutes > half) tier = 'refuted'
-    else if (reach && refutes === 0) tier = 'confirmed'
-    else tier = 'suspected'
-    return { ...f, tier }
-  })
-}))
+// Reusable: verify a pool of findings → {confirmed, suspected, dropped}.
+// Called here for the lens pool, and again in Task 6 for the critic's follow-up findings.
+async function verifyPool(items) {
+  const judged = await parallel(items.map(f => () => {
+    const isHigh = f.severity === 'Critical' || f.severity === 'High'
+    const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
+    return parallel(Array.from({ length: votes }, (_unused, i) => () =>
+      agent(verifyPrompt(f, i), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
+    )).then(vs => {
+      const v = vs.filter(Boolean)
+      if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
+      const half = v.length / 2
+      const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
+      const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
+      const refutes = v.filter(x => x.refuted).length
+      let tier
+      if (!lineOk) tier = 'refuted'            // hallucinated citation
+      else if (refutes > half) tier = 'refuted'
+      else if (reach && refutes === 0) tier = 'confirmed'
+      else tier = 'suspected'
+      return { ...f, tier }
+    })
+  }))
+  const vp = judged.filter(Boolean)
+  return {
+    confirmed: vp.filter(f => f.tier === 'confirmed'),
+    suspected: vp.filter(f => f.tier === 'suspected'),
+    dropped: vp.filter(f => f.tier === 'refuted').length,
+  }
+}
 
-const verdictPool = judged.filter(Boolean)
-const confirmed = verdictPool.filter(f => f.tier === 'confirmed')
-const suspected = verdictPool.filter(f => f.tier === 'suspected')
-const dropped = verdictPool.filter(f => f.tier === 'refuted').length
+// `let` so the Task 6 completeness critic can extend these with follow-up findings.
+let { confirmed, suspected, dropped } = await verifyPool(pool)
 log(`Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
 
 // Temporary terminal return — replaced in Task 6.
@@ -525,7 +533,7 @@ git commit -m "feat(rust-review): adversarial + self-verification with Confirmed
 - Modify: `workflows/rust-review.js`
 
 **Interfaces:**
-- Consumes: `confirmed[]`, `suspected[]`, `gateProvenance`, `plan`, `postComments`.
+- Consumes: `confirmed[]`, `suspected[]` (mutable `let` from Task 5), `gateProvenance`, `plan`, `postComments`; and for the critic follow-up: `ALL_LENSES`, `lensPrompt`, `pool`, `seen`, `key`, `verifyPool`, `budget`.
 - Produces: the workflow's final return value — one markdown report string.
 
 - [ ] **Step 1: Replace the Task-5 temporary return with the Synthesize phase**
@@ -534,15 +542,47 @@ git commit -m "feat(rust-review): adversarial + self-verification with Confirmed
 // ================= Synthesize =================
 phase('Synthesize')
 
-// Completeness critic (bounded): large bucket only, and only if budget allows.
-let critic = ''
-if (plan.sizeBucket === 'large' && (!budget.total || budget.remaining() > 60000)) {
-  const ran = plan.lenses.join(', ')
-  critic = await agent(
-    `You are a completeness critic for a Rust review. The review ran these lenses: ${ran}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
-Given the diff (base ${plan.baseRef || 'HEAD'}), name in 1-3 bullets anything likely MISSED: a category not run, a changed file no finding touched, or a claim left unverified. If coverage looks complete, reply exactly "coverage complete". Be terse.`,
-    { label: 'critic', phase: 'Synthesize', effort: 'low' },
-  ) || ''
+// Completeness critic WITH bounded follow-up (large bucket, budget-gated).
+// The critic names lenses that should have run but didn't; we re-run those once,
+// dedup against everything already seen, verify them through verifyPool, and merge
+// the survivors into confirmed/suspected. Bounded: one extra round, only lenses from
+// the catalog not yet run, and only while the budget allows.
+const CRITIC_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['missingLenses', 'notes'],
+  properties: {
+    missingLenses: { type: 'array', items: { type: 'string' }, description: 'lenses from the candidate list that should also run; empty if coverage is complete' },
+    notes: { type: 'string', description: 'one line on anything else likely missed, or "coverage complete"' },
+  },
+}
+
+let criticNotes = ''
+if (plan.sizeBucket === 'large' && (!budget.total || budget.remaining() > 90000)) {
+  const candidates = ALL_LENSES.filter(l => !plan.lenses.includes(l))
+  const critic = await agent(
+    `You are a completeness critic for a Rust review of the diff (base ${plan.baseRef || 'HEAD'}).
+Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
+Name any review lens that was NOT run but SHOULD be, given what the diff touches — choose ONLY from: ${JSON.stringify(candidates)}.
+Also note in one line anything else likely missed (a changed file no finding touched, a claim left unverified). If coverage is complete, return missingLenses: [] and notes: "coverage complete".`,
+    { label: 'critic', phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
+  )
+  criticNotes = critic?.notes ?? ''
+  const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+  if (followups.length && (!budget.total || budget.remaining() > 60000)) {
+    log(`Completeness critic → follow-up lenses: ${followups.join(', ')}`)
+    const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
+    const extra = (await parallel(followups.map(lens => () =>
+      agent(lensPrompt(lens, priorSummary), { label: `lens:${lens} (critic)`, agentType: 'craft:rust-reviewer', phase: 'Synthesize', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+    ))).filter(Boolean).flatMap(r => r.findings || [])
+    const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
+    if (fresh.length) {
+      const v = await verifyPool(fresh)
+      confirmed = confirmed.concat(v.confirmed)
+      suspected = suspected.concat(v.suspected)
+      log(`Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
+    }
+  }
 }
 
 const report = await agent(
@@ -562,7 +602,7 @@ Produce, in order:
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · what · why · fix\` and a blast-radius note when present.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
-${critic && critic.trim() && critic.trim() !== 'coverage complete' ? `6. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(critic)}` : ''}
+${criticNotes && criticNotes.trim() && criticNotes.trim() !== 'coverage complete' ? `6. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 
 CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
 
@@ -593,9 +633,9 @@ Expected: `SYNTAX OK`
 Run:
 ```bash
 rg -n "phase\('(Scout|Gate|Lenses|Verify|Synthesize)'\)" workflows/rust-review.js | wc -l
-rg -n "driven ONLY by Confirmed|Completeness critic|postComments && confirmed.length" workflows/rust-review.js
+rg -n "driven ONLY by Confirmed|Completeness critic WITH bounded follow-up|follow-up lenses|confirmed = confirmed.concat|postComments && confirmed.length" workflows/rust-review.js
 ```
-Expected: the count is `5`; all three string matches present.
+Expected: the count is `5`; all matches present (including the critic follow-up that re-runs missing lenses and merges them via `verifyPool`).
 
 - [ ] **Step 4: Verify no forbidden API and no nested workflow()**
 
