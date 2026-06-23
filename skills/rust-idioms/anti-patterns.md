@@ -169,3 +169,19 @@ Overload an operator only when the result is what the symbol means (`+` adds, `*
 operation isn't obviously the operator's meaning, give it a named method. For domain types where a
 bare `+` could silently lose precision or mix currencies, prefer explicit checked methods (→
 `rust-fintech`). → C-OVERLOAD.
+
+## Crate-level `#![deny(warnings)]`
+
+```rust
+#![deny(warnings)]   // ✗ in lib.rs/main.rs — a future rustc/clippy lint turns into a hard build break
+```
+```bash
+# ✓ deny warnings where the toolchain is fixed — in CI, not baked into the source
+RUSTFLAGS="-D warnings" cargo build
+cargo clippy --all-targets -- -D warnings
+```
+
+Baking `#![deny(warnings)]` into a crate pins it to a toolchain: the next compiler or clippy
+release can add a lint that becomes a hard error for you *and* everyone downstream, with no code
+change on their part. Keep the crate lenient and enforce `-D warnings` in CI, where the toolchain
+is pinned. → Rust Design Patterns (anti-pattern: `#[deny(warnings)]`).
