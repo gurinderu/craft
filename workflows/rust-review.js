@@ -288,5 +288,85 @@ async function verifyPool(items) {
 let { confirmed, suspected, dropped } = await verifyPool(pool)
 log(`Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
 
-// Temporary terminal return — replaced in Task 6.
-return JSON.stringify({ gateProvenance, confirmed: confirmed.length, suspected: suspected.length }, null, 2)
+// ================= Synthesize =================
+phase('Synthesize')
+
+// Completeness critic WITH bounded follow-up (large bucket, budget-gated).
+// The critic names lenses that should have run but didn't; we re-run those once,
+// dedup against everything already seen, verify them through verifyPool, and merge
+// the survivors into confirmed/suspected. Bounded: one extra round, only lenses from
+// the catalog not yet run, and only while the budget allows.
+const CRITIC_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['missingLenses', 'notes'],
+  properties: {
+    missingLenses: { type: 'array', items: { type: 'string' }, description: 'lenses from the candidate list that should also run; empty if coverage is complete' },
+    notes: { type: 'string', description: 'one line on anything else likely missed, or "coverage complete"' },
+  },
+}
+
+let criticNotes = ''
+if (plan.sizeBucket === 'large' && (!budget.total || budget.remaining() > 90000)) {
+  const candidates = ALL_LENSES.filter(l => !plan.lenses.includes(l))
+  const critic = await agent(
+    `You are a completeness critic for a Rust review of the diff (base ${plan.baseRef || 'HEAD'}).
+Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
+Name any review lens that was NOT run but SHOULD be, given what the diff touches — choose ONLY from: ${JSON.stringify(candidates)}.
+Also note in one line anything else likely missed (a changed file no finding touched, a claim left unverified). If coverage is complete, return missingLenses: [] and notes: "coverage complete".`,
+    { label: 'critic', phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
+  )
+  criticNotes = critic?.notes ?? ''
+  const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+  if (followups.length && (!budget.total || budget.remaining() > 60000)) {
+    log(`Completeness critic → follow-up lenses: ${followups.join(', ')}`)
+    const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
+    const extra = (await parallel(followups.map(lens => () =>
+      agent(lensPrompt(lens, priorSummary), { label: `lens:${lens} (critic)`, agentType: 'craft:rust-reviewer', phase: 'Synthesize', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+    ))).filter(Boolean).flatMap(r => r.findings || [])
+    const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
+    if (fresh.length) {
+      const v = await verifyPool(fresh)
+      confirmed = confirmed.concat(v.confirmed)
+      suspected = suspected.concat(v.suspected)
+      log(`Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
+    }
+  }
+}
+
+const report = await agent(
+  `You are consolidating a Rust review into ONE markdown report. Do NOT invent findings — only use what is given.
+
+VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
+- ⛔ Block if any Confirmed Critical or High.
+- ⚠️ Warning if Confirmed Medium only.
+- ✅ Approve if no Confirmed Critical/High/Medium.
+Suspected findings NEVER change the verdict — they are surfaced for the author.
+
+CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do.
+
+Produce, in order:
+1. \`## Verdict\` — one line (emoji + reason).
+2. \`## Gate\` — ${JSON.stringify(gateProvenance)}.
+3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · what · why · fix\` and a blast-radius note when present.
+4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
+5. \`## Fix first\` — the few highest-leverage Confirmed items.
+${criticNotes && criticNotes.trim() && criticNotes.trim() !== 'coverage complete' ? `6. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
+
+CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
+
+SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
+  { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
+)
+
+// Optional: post Confirmed findings as inline PR comments (lever D, best-effort).
+if (postComments && confirmed.length) {
+  await agent(
+    `Post these Confirmed Rust-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, do nothing and report that — never fail.
+For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
+${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}`,
+    { label: 'pr-comments', phase: 'Synthesize', effort: 'low' },
+  )
+}
+
+return report
