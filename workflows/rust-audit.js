@@ -1,10 +1,11 @@
 export const meta = {
   name: 'rust-audit',
-  description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, and test/doc health in parallel, synthesized into one report',
+  description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
   whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {mutants:true} to include the slow mutation pass.',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
-    { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/tests-cov' },
+    { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
+    { title: 'Verify', detail: 'adversarially verify unused-crate candidates before reporting' },
     { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report' },
   ],
 }
@@ -54,7 +55,7 @@ const FINDINGS_SCHEMA = {
   additionalProperties: false,
   required: ['dimension', 'verdict', 'summary', 'findings'],
   properties: {
-    dimension: { type: 'string', description: 'dimension label, e.g. review:<crate> | contract:<from>→<to> | architecture | security | miri | crate-decomposition | semver | build-matrix | deps | tests-cov' },
+    dimension: { type: 'string', description: 'dimension label, e.g. review:<crate> | contract:<from>→<to> | architecture | security | miri | crate-decomposition | semver | build-matrix | deps | unused-crates | tests-cov' },
     verdict: { type: 'string', description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found' },
     summary: { type: 'string', description: 'one-paragraph bottom line' },
     findings: {
@@ -71,6 +72,19 @@ const FINDINGS_SCHEMA = {
         },
       },
     },
+  },
+}
+
+// Verdict for one unused-crate candidate. The verifier's job is to REFUTE (prove the crate IS
+// used); confirmedUnused=true means it survived that and is safe to remove.
+const UNUSED_VERDICT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['confirmedUnused', 'evidence', 'removal'],
+  properties: {
+    confirmedUnused: { type: 'boolean', description: 'true ONLY if genuinely unused after trying to refute; default false when uncertain' },
+    evidence: { type: 'string', description: 'what was checked — use sites, cfg/feature gates, macros, re-exports, build.rs, dev/bench/example usage, bin/published status' },
+    removal: { type: 'string', description: 'concrete removal direction if confirmed unused; empty otherwise' },
   },
 }
 
@@ -197,10 +211,57 @@ tasks.push(() => agent(
 dispatched.push('build-matrix')
 
 tasks.push(() => agent(
-  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary), \`cargo machete\` (unused dependencies; or \`cargo +nightly udeps\` if machete is absent), and \`cargo outdated\` (out-of-date deps). Skip any tool that is not installed with a note — do NOT fail. Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates, unused deps, and notably out-of-date deps as findings.`,
+  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail. Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings.`,
   { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ).then(r => (r ? { ...r, dimension: 'deps' } : null)))
 dispatched.push('deps')
+
+// Unused-crates dimension — detect, then ADVERSARIALLY VERIFY, two classes of dead weight:
+//   (a) orphan workspace members — a workspace crate no other member depends on, that is not a
+//       binary and not a published library;
+//   (b) unused dependencies — deps declared in a Cargo.toml but never used (cargo machete/udeps).
+// Both detectors are false-positive-prone (cfg/feature-gated, macro-only, re-exported, build.rs,
+// dev/bench/example-only usage), so every candidate is verified before it reaches the report: a
+// verifier tries HARD to prove the crate IS used and only the survivors are kept. Self-contained
+// find→verify pipeline inside one thunk so it composes with the flat `parallel(tasks)` fan-out.
+tasks.push(async () => {
+  const found = await agent(
+    `Find UNUSED crates in this Rust workspace, in two classes:
+(a) ORPHAN workspace members — from \`cargo metadata --format-version 1\`, workspace members that NO other workspace member depends on (any dependency kind), EXCLUDING binaries (a [[bin]] target or src/main.rs) and published libraries (Cargo.toml \`publish\` is not false / it is meant for crates.io).
+(b) UNUSED dependencies — run \`cargo machete\` (or \`cargo +nightly udeps\` if machete is absent) to list dependencies declared in a Cargo.toml but not used.
+Skip a tool that is not installed with a note — do NOT fail; if nothing runs and the graph is empty, return verdict "Approve" with an empty findings list.
+Load the rust-ecosystem skill (dependency / crate hygiene).
+These are CANDIDATES, not confirmed — they will be verified downstream. Return one finding per candidate: title = "orphan-member: <crate>" or "unused-dep: <dep> in <crate>", location = the owning manifest path, detail = why the graph/tool thinks it is unused. Use severity Info (verification sets the real severity).`,
+    { label: 'unused-crates:find', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+  )
+  if (!found) return null
+  const candidates = (Array.isArray(found.findings) ? found.findings : [])
+    .filter(f => /^(orphan-member|unused-dep):/.test(f.title || ''))
+  if (!candidates.length) return { ...found, dimension: 'unused-crates' }
+  // Verify each candidate: prove it is USED. Default to "used" (drop it) when uncertain —
+  // recommending deletion of live code is the costly error here.
+  const verdicts = await parallel(candidates.map((c, i) => () =>
+    agent(
+      `A detector flagged a crate/dependency as UNUSED. Try HARD to REFUTE that — prove it IS used — before accepting it. Candidate: ${JSON.stringify(c)}.
+Check the usages machete/udeps and the dependency graph miss: \`use\`/path references; cfg-gated and feature-gated usage; macro-only and re-exported (\`pub use\`) usage; build.rs / [build-dependencies]; [dev-dependencies] exercised only in tests, benches, or examples; and for an orphan member whether it is actually a bin, an example/bench/xtask, or consumed/published outside this workspace. Grep the source to confirm.
+Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; default to false when uncertain.`,
+      { label: `unused-crates:verify#${i + 1}`, phase: 'Verify', schema: UNUSED_VERDICT_SCHEMA, model: 'opus' },
+    ).then(v => ({ c, v })),
+  ))
+  const confirmed = verdicts.filter(Boolean).filter(x => x.v?.confirmedUnused).map(x => ({
+    severity: 'Medium',
+    title: x.c.title,
+    location: x.c.location || '',
+    detail: `${x.v.evidence || ''}${x.v.removal ? `\nRemove: ${x.v.removal}` : ''}`.trim() || (x.c.detail || ''),
+  }))
+  return {
+    dimension: 'unused-crates',
+    verdict: confirmed.length ? 'Warning' : 'Approve',
+    summary: `${candidates.length} candidate(s) flagged; ${confirmed.length} verified unused after trying to refute each (unverified dropped as likely false positives).`,
+    findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${candidates.length} candidate(s) flagged, none survived verification.` }],
+  }
+})
+dispatched.push('unused-crates')
 
 tasks.push(() => agent(
   `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings.`,
@@ -221,7 +282,7 @@ if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN
 
 phase('Synthesize')
 const report = await agent(
-  `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
+  `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, mark the audit INCOMPLETE.
 2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass.
