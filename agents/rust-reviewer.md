@@ -1,6 +1,6 @@
 ---
 name: rust-reviewer
-description: Expert Rust code reviewer. Runs the cargo quality gate, reviews the diff (changed .rs files) against the rust-review severity rubric, and returns an Approve/Warning/Block verdict. Use to review a Rust change before commit or merge. For whole-project structural audits (not a diff), use rust-architecture-reviewer instead.
+description: Expert Rust code reviewer and the per-lens worker for the rust-review workflow — reviews a lens-scoped diff against the rust-review severity rubric with context expansion and blast-radius, surfacing located findings for downstream verification. Run it directly only for an ad-hoc whole-diff review (it then establishes the CI-aware gate and returns an Approve/Warning/Block verdict itself); the default review path is the rust-review workflow. For whole-project structural audits (not a diff), use rust-architecture-reviewer instead.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: sonnet
 ---

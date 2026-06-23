@@ -15,7 +15,7 @@ Pick the agent by scope:
 
 | Ask | Agent |
 |---|---|
-| Review a diff / change before commit or merge (default) | `rust-reviewer` |
+| Review a diff / change before commit or merge (default) | `rust-review` workflow (background) |
 | Whole-project structural / architecture audit (not a diff) | `rust-architecture-reviewer` |
 | Security / dependency / unsafe-surface scan | `rust-security-scanner` |
 | `unsafe` code under Miri (UB check) | `rust-miri` |
@@ -31,5 +31,9 @@ starts with a clean context and never inherits this conversation. Never continue
 prior review agent (no `SendMessage`); spawn a fresh one each time, including re-reviews after
 fixes. Because the agent sees only the brief, restate the diff range / paths and intent on
 every dispatch — don't assume it remembers a previous round.
+
+The default review now runs the `rust-review` **workflow** (multi-agent, launched in the
+background, verdict reported on completion) — it scales depth to the diff. The single-pass
+`rust-reviewer` agent remains for an ad-hoc, non-workflow review when you explicitly want one.
 
 If the user explicitly asks for a synchronous/inline review, honor that instead.
