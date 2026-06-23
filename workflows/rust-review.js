@@ -106,7 +106,7 @@ const scout = await agent(
    - medium: the categories plausibly in play.
    - large: all of them.
    Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; always consider 'intent'.
-4. maxRounds: small=1, medium=2, large=3. verifyVotes: small/medium=1, large=3. lensModel: small=sonnet, medium=sonnet, large=opus.
+4. maxRounds: small=1, medium=2, large=3. verifyVotes: small/medium=1, large=3. lensModel: opus for all sizes (review reasoning runs on Opus; depth still scales via maxRounds/verifyVotes/lens count).
 5. isLibrary: true if this crate is a published library (has \`[lib]\`/is named in a workspace as a lib and looks publishable) — best effort.
 6. securitySensitive: true if the diff touches auth, crypto, input parsing, unsafe, FFI, or dependencies.
 7. intent: ${intentArg ? `the caller provided: "${intentArg}". Refine it from the diff if needed.` : 'infer the change\'s purpose from the diff and any PR/commit messages; empty string if unclear.'}
@@ -121,7 +121,7 @@ const plan = {
   lenses: (scout?.lenses?.length ? scout.lenses : ALL_LENSES),
   maxRounds: scout?.maxRounds ?? 2,
   verifyVotes: scout?.verifyVotes ?? 1,
-  lensModel: scout?.lensModel ?? 'sonnet',
+  lensModel: scout?.lensModel ?? 'opus',
   isLibrary: scout?.isLibrary ?? false,
   securitySensitive: scout?.securitySensitive ?? true,
   intent: scout?.intent ?? intentArg,
