@@ -13,21 +13,34 @@ The rubric for reviewing Rust changes: run the mechanical gate first, then read 
 - Deciding whether changes are safe to commit or merge
 - A self-check before opening a PR
 
-## Step 1 — Mechanical gate
+## Step 1 — Establish the gate (CI-aware)
 
-These are non-negotiable and must pass before human-style review is worth doing. If any fails, stop and report — don't review further.
+The mechanical gate is non-negotiable: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and (if installed) `cargo audit` / `cargo deny check` must be green before human-style review is worth doing. But **before running a check locally, ask whether CI already computed it on this PR; if a conclusive required check covers it and is green, consume that result instead of recomputing.** Re-running a cold build the PR already ran in CI is slow, sometimes impossible (no toolchain/network), and redundant.
 
-```bash
-cargo fmt --check                  # formatting
-cargo clippy --all-targets -- -D warnings   # lints as errors
-cargo test                         # behavior (or: cargo nextest run + cargo test --doc)
-cargo audit                        # known-vuln advisories   (if cargo-audit present)
-cargo deny check                   # licenses + bans + advisories (if cargo-deny present)
-```
+Establish each signal:
 
-Setting up / interpreting `cargo audit` + `cargo deny` → `rust-security`.
+1. **Detect the PR's CI** for the current branch:
+   ```bash
+   gh pr checks --json name,state,bucket,link
+   ```
+   If `gh` is missing, unauthenticated, offline, or finds no PR → fall straight through to the local gate (never fail on detection).
+2. **`fmt` / `clippy` / `test` / `build`** — if a required check whose name matches the command (substring: `fmt`, `clippy`, `test`, `build`/`check`) is conclusive:
+   - green → treat that command as **PASSED**; record provenance `via CI · PR #N`;
+   - failed → the gate is red: verdict **Block**, cite the failed check name + link, stop;
+   - pending / absent / name unrecognized → run that command locally (the safe default is an extra run, never a skipped check):
+     ```bash
+     cargo fmt --check
+     cargo clippy --all-targets -- -D warnings
+     cargo test                         # or: cargo nextest run + cargo test --doc
+     ```
+3. **`audit` / `deny`** — always run locally if installed, regardless of CI (cheap, usually absent from CI):
+   ```bash
+   cargo audit                        # if cargo-audit present
+   cargo deny check                   # if cargo-deny present
+   ```
+   Setting up / interpreting `cargo audit` + `cargo deny` → `rust-security`.
 
-A green gate is the floor, not the ceiling — it does not mean the code is good, only that it's reviewable.
+If any `fmt`/`clippy`/`test`/`build` signal is red (CI or local), stop and report — don't review further. A green gate is the floor, not the ceiling — whatever its provenance, it means the change is *reviewable*, not that it's good.
 
 ## Step 2 — Severity checklist
 
@@ -101,11 +114,13 @@ application-internal code.
 
 | Verdict | When |
 |---|---|
-| **Approve** ✅ | gate green, no CRITICAL or HIGH |
-| **Warning** ⚠️ | gate green, MEDIUM only — list them, leave merge to author |
-| **Block** ⛔ | gate red, or any CRITICAL/HIGH — list each with file:line and the fix |
+| **Approve** ✅ | gate green (CI or local), no CRITICAL or HIGH |
+| **Warning** ⚠️ | gate green (CI or local), MEDIUM only — list them, leave merge to author |
+| **Block** ⛔ | gate red (CI or local), or any CRITICAL/HIGH — list each with file:line and the fix |
 
 Report findings as `severity · file:line · what · why · fix`. Be specific and cite the line; a finding without a location isn't actionable.
+
+"Gate green / red" is read from Step 1 — the signal may come from a green required CI check or a local run. Cite which in the `## Gate` line of the output.
 
 ## Requesting a review & acting on the verdict
 
@@ -142,6 +157,8 @@ The *discipline* — evidence before any "done / passes / fixed / works", no cla
 | coverage target met | `cargo llvm-cov --fail-under-lines N` | tests pass |
 | an agent finished | read the actual diff / its output | the agent said "success" |
 | requirements met | check each one against the spec | tests pass |
+
+A green **required CI check** for the same command is also valid proof of that command (see Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal exists — CI or local — not that you must re-run it yourself.
 
 State the claim **with** the evidence, or state the real status with the evidence. An earlier run, a "should pass", or a subagent's self-report is not evidence.
 
