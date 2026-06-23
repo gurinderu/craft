@@ -72,7 +72,7 @@ const tasks = [
   () => agent(
     `Review the Rust diff for mergeability using the rust-review rubric (load the rust-review skill). ${baseRef
       ? `Diff base: \`${baseRef}\`.`
-      : 'There is no clean base ref — review uncommitted changes, or the most recent commit if the tree is clean.'} Return your verdict and findings.`,
+      : 'There is no clean base ref — review uncommitted changes, or the most recent commit if the tree is clean.'} Establish the gate CI-aware (consume green required CI checks; never silently skip a check) and state its provenance (CI vs local) in your summary. Return your verdict and findings.`,
     { label: 'review:diff', agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
   ).then(r => (r ? { ...r, dimension: 'review' } : null)),
 
@@ -115,6 +115,7 @@ const report = await agent(
 2. A **dimension → verdict** table. Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed or was skipped, so do not treat its absence as a pass.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location, plus a one-line fix direction.
 4. A short **"Fix first"** list — the few highest-leverage items.
+5. If the review dimension's summary names a **gate provenance** (CI vs local), surface it in one line under the verdict so a reader knows whether the mechanical gate was consumed from CI or run locally.
 
 NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
 
