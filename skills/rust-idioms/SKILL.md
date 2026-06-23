@@ -123,3 +123,11 @@ Conventions:
 - Topic mechanics live in their skills: ownership fixes → `rust-ownership`, error design →
   `rust-errors`, dispatch → `rust-traits`, sharing → `rust-concurrency`. This skill links to
   them rather than re-explaining.
+
+## Further reading
+
+- [Rust Design Patterns](https://rust-unofficial.github.io/patterns/) (rust-unofficial) — the
+  broader community catalog of idioms, design patterns, and anti-patterns. craft owns the
+  action-first, review-relevant subset; the book covers the rest, including the GoF patterns craft
+  deliberately doesn't duplicate (mapped by mechanism in the GoF/SOLID Rosetta in
+  [patterns.md](patterns.md)).
