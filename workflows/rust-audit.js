@@ -54,7 +54,7 @@ const FINDINGS_SCHEMA = {
   additionalProperties: false,
   required: ['dimension', 'verdict', 'summary', 'findings'],
   properties: {
-    dimension: { type: 'string', description: 'review | architecture | security | miri' },
+    dimension: { type: 'string', description: 'dimension label, e.g. review:<crate> | contract:<from>→<to> | architecture | security | miri | crate-decomposition | semver | build-matrix | deps | tests-cov' },
     verdict: { type: 'string', description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found' },
     summary: { type: 'string', description: 'one-paragraph bottom line' },
     findings: {
@@ -137,6 +137,9 @@ if (reviewCrates.length > 1) {
 const changedNames = new Set(changedCrates.map(c => c.name))
 const touchedEdges = edges.filter(e => !baseRef || changedNames.has(e.from) || changedNames.has(e.to))
 if (touchedEdges.length) {
+  // The agent `label` uses an ASCII `->` (display-safe); the `dimension` and the matching
+  // `dispatched` entry use the Unicode `→` (U+2192). Keep those two in sync — the NOT-RUN
+  // bookkeeping compares `dispatched` against `dimension`; do NOT "unify" them to the label's `->`.
   for (const e of touchedEdges) {
     tasks.push(() => agent(
       `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.`,
