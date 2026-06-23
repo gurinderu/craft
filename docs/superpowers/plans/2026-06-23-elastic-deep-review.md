@@ -23,7 +23,7 @@
 `node --check` parses `.js` as CommonJS and chokes on `export`/top-level `await`. Verify ES-module syntax by checking a `.mjs` copy:
 
 ```bash
-cp workflows/rust-review.js /tmp/rr-check.mjs && node --check /tmp/rr-check.mjs && echo "SYNTAX OK" && rm /tmp/rr-check.mjs
+node --check workflows/rust-review.js && echo "SYNTAX OK"   # check the .js IN PLACE — workflow scripts use top-level `return` + `export`, so a `.mjs`/`.cjs` copy falsely fails
 ```
 
 ---
@@ -188,7 +188,7 @@ return JSON.stringify(plan, null, 2)
 
 Run:
 ```bash
-cp workflows/rust-review.js /tmp/rr-check.mjs && node --check /tmp/rr-check.mjs && echo "SYNTAX OK" && rm /tmp/rr-check.mjs
+node --check workflows/rust-review.js && echo "SYNTAX OK"   # check the .js IN PLACE — workflow scripts use top-level `return` + `export`, so a `.mjs`/`.cjs` copy falsely fails
 ```
 Expected: `SYNTAX OK`
 
@@ -267,7 +267,7 @@ return JSON.stringify({ plan, gateProvenance, seedFindings }, null, 2)
 
 - [ ] **Step 2: Verify ES-module syntax**
 
-Run: `cp workflows/rust-review.js /tmp/rr-check.mjs && node --check /tmp/rr-check.mjs && echo "SYNTAX OK" && rm /tmp/rr-check.mjs`
+Run: `node --check workflows/rust-review.js && echo "SYNTAX OK"   # check the .js IN PLACE — workflow scripts use top-level `return` + `export`, so a `.mjs`/`.cjs` copy falsely fails`
 Expected: `SYNTAX OK`
 
 - [ ] **Step 3: Verify the early Block path and grounding are present**
@@ -347,7 +347,7 @@ return JSON.stringify({ gateProvenance, seed: seedFindings.length, lensFindings:
 
 - [ ] **Step 2: Verify ES-module syntax**
 
-Run: `cp workflows/rust-review.js /tmp/rr-check.mjs && node --check /tmp/rr-check.mjs && echo "SYNTAX OK" && rm /tmp/rr-check.mjs`
+Run: `node --check workflows/rust-review.js && echo "SYNTAX OK"   # check the .js IN PLACE — workflow scripts use top-level `return` + `export`, so a `.mjs`/`.cjs` copy falsely fails`
 Expected: `SYNTAX OK`
 
 - [ ] **Step 3: Verify the lens fan-out uses the per-lens agent**
@@ -422,7 +422,7 @@ return JSON.stringify({ gateProvenance, pool: pool.length }, null, 2)
 
 - [ ] **Step 2: Verify ES-module syntax**
 
-Run: `cp workflows/rust-review.js /tmp/rr-check.mjs && node --check /tmp/rr-check.mjs && echo "SYNTAX OK" && rm /tmp/rr-check.mjs`
+Run: `node --check workflows/rust-review.js && echo "SYNTAX OK"   # check the .js IN PLACE — workflow scripts use top-level `return` + `export`, so a `.mjs`/`.cjs` copy falsely fails`
 Expected: `SYNTAX OK`
 
 - [ ] **Step 3: Verify loop + dedup present**
@@ -510,7 +510,7 @@ return JSON.stringify({ gateProvenance, confirmed: confirmed.length, suspected: 
 
 - [ ] **Step 2: Verify ES-module syntax**
 
-Run: `cp workflows/rust-review.js /tmp/rr-check.mjs && node --check /tmp/rr-check.mjs && echo "SYNTAX OK" && rm /tmp/rr-check.mjs`
+Run: `node --check workflows/rust-review.js && echo "SYNTAX OK"   # check the .js IN PLACE — workflow scripts use top-level `return` + `export`, so a `.mjs`/`.cjs` copy falsely fails`
 Expected: `SYNTAX OK`
 
 - [ ] **Step 3: Verify the refute/self-verify logic**
@@ -625,7 +625,7 @@ return report
 
 - [ ] **Step 2: Verify ES-module syntax**
 
-Run: `cp workflows/rust-review.js /tmp/rr-check.mjs && node --check /tmp/rr-check.mjs && echo "SYNTAX OK" && rm /tmp/rr-check.mjs`
+Run: `node --check workflows/rust-review.js && echo "SYNTAX OK"   # check the .js IN PLACE — workflow scripts use top-level `return` + `export`, so a `.mjs`/`.cjs` copy falsely fails`
 Expected: `SYNTAX OK`
 
 - [ ] **Step 3: Verify the full phase set and verdict rule**
@@ -868,7 +868,7 @@ Replace with:
 Run:
 ```bash
 rg -n "workflow\('rust-review'" workflows/rust-audit.js
-cp workflows/rust-audit.js /tmp/ra-check.mjs && node --check /tmp/ra-check.mjs && echo "SYNTAX OK" && rm /tmp/ra-check.mjs
+node --check workflows/rust-audit.js && echo "SYNTAX OK"   # in place — see note on .js vs .mjs above
 ```
 Expected: the nested call present; `SYNTAX OK`.
 
