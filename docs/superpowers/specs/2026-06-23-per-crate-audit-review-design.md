@@ -1,10 +1,11 @@
-# Audit review enhancements: per-crate review + inter-crate contracts — design
+# Audit review enhancements: per-crate review + inter-crate contracts + crate decomposition — design
 
 **Date:** 2026-06-23
 **Status:** Approved (verbally), ready for implementation plan
-**Scope:** two workflow edits. Builds on the elastic-deep-review engine. Two complementary audit
-features: (A) per-crate parallel review (inside each crate), and (B) inter-crate contract review
-(the seams *between* crates that per-crate review is blind to).
+**Scope:** two workflow edits plus one new skill sub-file. Builds on the elastic-deep-review engine.
+Three complementary audit features: (A) per-crate parallel review (inside each crate), (B)
+inter-crate contract review (the seams *between* crates), and (C) crate-decomposition advice (when
+and how to extract code into its own crate, or merge an over-split one).
 
 ## Conceptual model (keep these distinct)
 
@@ -20,7 +21,8 @@ features: (A) per-crate parallel review (inside each crate), and (B) inter-crate
 
   The dimensions compose into the comprehensive picture: **architecture** sees the whole dependency
   graph's shape, **per-crate review** sees inside each crate, **contracts** see the edges between
-  crates, **security**/**Miri** cover deps and unsafe. Together they are the full review.
+  crates, **crate-decomposition** judges whether the crate boundaries themselves are right,
+  **security**/**Miri** cover deps and unsafe. Together they are the full review.
 
 ## Problem
 
@@ -124,16 +126,55 @@ edges (single crate or independent crates) → skip the contracts dimension with
 NOT-RUN — it is an intentional skip, like Miri without unsafe); `cargo metadata` failure → skip
 edges, log it. Never fail the audit on detection.
 
+## Crate-decomposition advice (feature C)
+
+Per-crate review and contracts take the crate boundaries as given. Feature C questions the
+boundaries themselves: **when is code better pulled out into its own crate, and how** (and the
+reverse — when an over-split crate should be merged back).
+
+### 7. Knowledge — `skills/rust-ecosystem/crate-extraction.md` (new sub-file)
+
+`rust-ecosystem` owns workspaces and crate granularity, so the decision framework lives there:
+
+- **When (drivers — each a signal to extract):** the code is consumed by more than one
+  crate/binary (**reuse**); it is a compile hotspot or serializes the build (**compile
+  parallelism** → `rust-performance` [compile-times.md](../rust-performance/compile-times.md)); a
+  port/trait + adapters belong behind a boundary so the core doesn't depend on the framework
+  (**dependency inversion** → `rust-architecture` ports); a swappable/sandboxed plugin or FFI
+  surface (**trust boundary** → `rust-plugins`); code that must **version/publish independently**;
+  heavy integration-test dependencies that shouldn't leak into the main build (**test isolation**);
+  a **god-crate** with internally separable concerns.
+- **How (mechanics):** add a `[workspace] members` entry, move the module, expose a minimal `pub`
+  API (visibility → `rust-idioms`), re-export from the original crate for compatibility if needed,
+  set version/edition, and manage the semver of the new public surface.
+- **When NOT to (anti-driver):** every crate boundary costs linking + boilerplate + coordination;
+  don't extract a single-consumer module with no reuse/compile/boundary driver, and don't extract
+  prematurely — it ossifies an API you're still moving. The reverse signal: a crate with one
+  consumer and no boundary reason should be **merged back**.
+
+### 8. `rust-audit` crate-decomposition dimension
+
+A new **whole-project** dimension (not diff-scoped — boundaries are a property of the project, not
+a diff). A generic `agent()` (no new agent type) loads the `rust-ecosystem` crate-extraction rubric
+and the workspace dependency graph, and returns recommendations — each as a finding naming the
+**driver** (why), the **boundary** (what code), and the **how** — for both extractions and merges.
+It runs even on a single-crate project (the god-crate split question still applies). It joins the
+same `parallel(tasks)` call as the other dimensions; dimension label `crate-decomposition`.
+
 ## Files to change
 
 - `workflows/rust-review.js` — Scout honours optional `args.path` (scope the diff; name the crate).
-  (Used by feature A only; the contracts dimension does not touch `rust-review`.)
+  (Used by feature A only; the contracts and decomposition dimensions do not touch `rust-review`.)
+- `skills/rust-ecosystem/crate-extraction.md` — **NEW** (feature C knowledge); linked from
+  `skills/rust-ecosystem/SKILL.md`.
 - `workflows/rust-audit.js` — Scout returns `crates`/`changedCrates`/`edges`; **review** dimension
   fans out per crate (feature A) with the single-review fallback; **contracts** dimension fans out
-  per touched edge (feature B) via direct `craft:rust-reviewer` agents; `expectedDimensions`/`notRun`
-  built from the dispatched `review:<crate>` + `contract:<from>→<to>` + architecture/security/[miri]
-  labels (the skipped contracts case is not counted as NOT RUN); synthesis prompt notes the
-  per-crate review rows and the per-edge contract rows.
+  per touched edge (feature B) via direct `craft:rust-reviewer` agents; **crate-decomposition**
+  dimension (feature C) is one whole-project generic agent loading the crate-extraction rubric;
+  `expectedDimensions`/`notRun` built from the dispatched `review:<crate>` + `contract:<from>→<to>`
+  + `crate-decomposition` + architecture/security/[miri] labels (intentional skips — contracts with
+  no edges, Miri with no unsafe — are not counted as NOT RUN); synthesis prompt notes the per-crate
+  review rows, the per-edge contract rows, and the crate-decomposition recommendations.
 
 ## Non-goals
 
@@ -144,6 +185,11 @@ edges, log it. Never fail the audit on detection.
 - The contracts dimension does **not** duplicate `rust-architecture-reviewer`: architecture judges
   the *shape* of the dependency graph (cycles, layering, god modules); contracts judge whether a
   caller *honours the callee's contract* across an edge. Different question, different rubric.
+- Crate-decomposition is **distinct from architecture and from compile-times**: architecture judges
+  the existing graph's shape; compile-times treats crate-splitting as one parallelism lever;
+  crate-decomposition is the focused *when/how to change the crate boundaries* decision, with all
+  drivers (reuse, compile, dependency inversion, trust boundary, release cadence, test isolation,
+  god-crate). It **recommends**, it does not move code — no auto-refactoring.
 - Cost: per-crate review is N × the deep engine for N changed crates; contracts is one focused
   agent per touched edge. This is the full audit (release/big-merge), and the harness concurrency
   cap bounds simultaneity across the whole fan-out. Accepted by design.
