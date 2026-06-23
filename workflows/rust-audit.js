@@ -113,12 +113,22 @@ function reviewResult(dimension, report) {
 const tasks = []
 const dispatched = []
 
-// Review dimension — a single whole-workspace review for now; Task 4 replaces this with a
-// per-crate fan-out.
-tasks.push(() => workflow('rust-review', baseRef ? { base: baseRef } : {})
-  .then(report => reviewResult('review', report))
-  .catch(() => null))
-dispatched.push('review')
+// Review dimension — per-crate fan-out (feature A). changedCrates → diff-scoped; no base → all
+// crates; 0 or 1 crate → today's single whole-workspace review.
+const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
+if (reviewCrates.length > 1) {
+  for (const c of reviewCrates) {
+    tasks.push(() => workflow('rust-review', { base: baseRef, path: c.path })
+      .then(report => reviewResult(`review:${c.name}`, report))
+      .catch(() => null))
+    dispatched.push(`review:${c.name}`)
+  }
+} else {
+  tasks.push(() => workflow('rust-review', baseRef ? { base: baseRef } : {})
+    .then(report => reviewResult('review', report))
+    .catch(() => null))
+  dispatched.push('review')
+}
 
 tasks.push(() => agent(
   `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
