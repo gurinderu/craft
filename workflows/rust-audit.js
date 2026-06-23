@@ -1,11 +1,11 @@
 export const meta = {
   name: 'rust-audit',
-  description: 'Full Rust crate audit — review, architecture, security, and Miri in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want every craft review agent run at once and consolidated into a single verdict.',
+  description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, and test/doc health in parallel, synthesized into one report',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {mutants:true} to include the slow mutation pass.',
   phases: [
-    { title: 'Scout', detail: 'detect the diff base and whether the workspace has unsafe code', model: 'haiku' },
-    { title: 'Audit', detail: 'parallel rust-reviewer / rust-architecture-reviewer / rust-security-scanner / rust-miri' },
-    { title: 'Synthesize', detail: 'merge the verdicts into one severity-ranked report' },
+    { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
+    { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/tests-cov' },
+    { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report' },
   ],
 }
 
@@ -207,22 +207,25 @@ dispatched.push('tests-cov')
 
 const results = (await parallel(tasks)).filter(Boolean)
 
-// NOT RUN = a dispatched dimension that produced no result (its agent failed). Intentional skips
-// (Miri without unsafe, contracts without edges, a tool dimension whose tool is absent) are never
-// pushed to `dispatched` as failures, so they don't land here.
+// NOT RUN = a dispatched dimension that produced no result (its agent failed). Two intentional
+// skips avoid NOT-RUN by never being pushed to `dispatched`: contracts (no touched edges) and
+// Miri (no unsafe). The four tool dimensions (semver/build-matrix/deps/tests-cov) ARE pushed
+// unconditionally but avoid NOT-RUN differently — their agent always returns a result (verdict
+// Approve + a skip note) when the required tool is absent.
 const ran = new Set(results.map(r => r.dimension))
 const notRun = dispatched.filter(d => !ran.has(d))
 if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
 
 phase('Synthesize')
 const report = await agent(
-  `You are consolidating a Rust audit. Below are JSON results from independent review agents. Produce ONE markdown report — do not invent findings, only merge what is given:
+  `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, mark the audit INCOMPLETE.
-2. A **dimension → verdict** table. Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed or was skipped, so do not treat its absence as a pass.
+2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location, plus a one-line fix direction.
-4. A short **"Fix first"** list — the few highest-leverage items.
-5. If the review dimension's summary names a **gate provenance** (CI vs local), surface it in one line under the verdict so a reader knows whether the mechanical gate was consumed from CI or run locally.
+4. A short **"Fix first"** list — the few highest-leverage items across all dimensions.
+5. A **"Crate boundaries"** note: summarise the \`crate-decomposition\` extract/merge recommendations (driver + boundary), if any.
+6. If a \`review:*\` dimension's summary names a **gate provenance** (CI vs local), surface it in one line under the verdict.
 
 NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
 
