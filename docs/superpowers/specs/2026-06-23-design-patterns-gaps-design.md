@@ -2,8 +2,8 @@
 
 **Date:** 2026-06-23
 **Status:** Approved, ready for implementation plan
-**Scope:** small — two skill additions plus one reference link. Orthogonal to the CI-aware gate
-and elastic review specs; do not fold into them.
+**Scope:** small — three skill additions, one reference link, and a GoF→Rust mapping table.
+Orthogonal to the CI-aware gate and elastic review specs; do not fold into them.
 
 ## Context
 
@@ -11,10 +11,16 @@ A pass over the [Rust Design Patterns book](https://rust-unofficial.github.io/pa
 (rust-unofficial) cross-referenced its full table of contents against craft's skills. The verdict:
 craft already covers the review-relevant subset, and its anti-pattern catalog (14 entries in
 `rust-idioms/anti-patterns.md`) is richer than the book's (3). The book's GoF pattern catalog
-(Command / Interpreter / Strategy / Visitor / Fold / Functional Optics) is deliberately **not**
-imported — it is not review-relevant and would violate craft's action-first principle.
+(Command / Interpreter / Strategy / Visitor / Fold / Functional Optics) is **not** imported
+wholesale — craft organizes by *mechanism*, not by GoF taxonomy, and most of these patterns are
+already present under their Rust mechanism (Strategy → dispatch choice, Builder/Newtype/RAII →
+their own skills). A full GoF catalog would create a second organizing axis that cross-cuts and
+duplicates. Importing it into the review rubric is also rejected: GoF patterns are
+solution-structure guidance, not diff-level defects.
 
-Only two genuine gaps surfaced, both small, plus a courtesy reference link.
+Two genuine content gaps surfaced (both small) plus a courtesy reference link, and — to bridge for
+readers who think in GoF terms — a GoF→Rust mapping table plus the one real *mechanism* gap
+(Visitor).
 
 ## Already covered (no change)
 
@@ -65,15 +71,40 @@ review-relevant subset. A "Further reading" pointer makes that relationship expl
   the book is the broader catalog (including the GoF patterns craft intentionally does not
   duplicate).
 
+### 4. GoF patterns — Rosetta table + the Visitor gap
+
+craft is organized by mechanism, so most GoF patterns already live in it under their Rust form.
+For readers who think in GoF terms (most engineers from OOP), add an opinionated bridge — and fill
+the one mechanism actually missing.
+
+**4a. Rosetta table.** A "GoF patterns in Rust" table in `skills/rust-idioms/patterns.md`, columns
+`GoF pattern · Rust mechanism · owning craft skill · what to avoid`. It is a discoverability
+bridge, not new content — each row points at the skill that owns the mechanism, and states craft's
+opinion (e.g. *Strategy → just choose a dispatch mechanism; do not build an interface hierarchy →
+`rust-traits`*). Cover at least: Strategy, State, Command, Observer, Visitor, Builder, Newtype,
+RAII guard, Fold, Generics-as-Type-Classes, plus the FFI Object-Based-API / Wrapper pair. Mark the
+niche ones craft intentionally omits (Interpreter, Functional Optics) as "out of scope — see the
+book."
+
+**4b. Visitor — the real mechanism gap.** Operations over a set of variants. The Rust answer:
+`match` on the enum for a **closed** set (add an operation freely; adding a variant is a breaking
+change you *want* the compiler to flag); a **visitor trait** (double dispatch) for an **open /
+extensible** set. A short section in `skills/rust-traits/dispatch.md` (it already owns the
+static/dynamic/enum dispatch decision), cross-linked to `rust-macros` for the AST-traversal case.
+The Rosetta table's Visitor row points here.
+
 ## Non-goals
 
-- Do not import the GoF design-pattern catalog (Command, Interpreter, Strategy, Visitor, Fold,
-  Functional Optics) — not review-relevant.
-- Do not duplicate idioms already covered; only add the two missing items and the link.
+- Do not import the full GoF catalog as standalone pattern entries (Command, Interpreter, Strategy,
+  Fold, Functional Optics) — the Rosetta table bridges them by mechanism instead.
+- GoF stays out of the review rubric — solution-structure guidance, not diff-level defects.
+- Do not duplicate idioms already covered; only add the two content gaps, the Visitor mechanism,
+  the Rosetta table, and the link.
 - No change to the review *engine* or the gate — this is skill-content only.
 
 ## Risk
 
-Negligible. Three additive edits to skill docs; no behavior change to agents or workflows. Effect
-on review recall is near-zero (these cases are already largely caught) — this is catalog
-completeness, not a recall fix.
+Negligible. All additive edits to skill docs (`rust-idioms`, `rust-review`, `rust-errors`,
+`rust-traits`); no behavior change to agents or workflows. Effect on review recall is near-zero
+(these cases are already largely caught) — this is catalog completeness and discoverability, not a
+recall fix.
