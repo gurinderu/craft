@@ -235,5 +235,58 @@ if (!pool.length) {
   return [`## Verdict`, `✅ Approve — gate ${gateStatus}; no findings across ${plan.lenses.length} lenses.`, ``, `## Gate`, gateProvenance].join('\n')
 }
 
-// Temporary terminal return — replaced in Task 5.
-return JSON.stringify({ gateProvenance, pool: pool.length }, null, 2)
+// ================= Verify =================
+phase('Verify')
+function verifyPrompt(f, idx) {
+  return `You are skeptic #${idx + 1} trying to REFUTE a Rust review finding. Default to refuted=true when uncertain — only let real findings through.
+
+FINDING: [${f.severity}] ${f.title}
+  at ${f.file || '?'}:${f.line || 0}
+  why: ${f.why}
+  source: ${f.source}
+
+Open the cited file and check:
+1. citedLineMatches: does ${f.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
+2. reachable: is this code reachable in production, or is it test/example/dead code? (Test-only → reachable=false.)
+3. refuted: taking 1 and 2 together plus your judgement, does the finding NOT hold up?
+
+Return {refuted, citedLineMatches, reachable, reason}.`
+}
+
+// Reusable: verify a pool of findings → {confirmed, suspected, dropped}.
+// Called here for the lens pool, and again in Task 6 for the critic's follow-up findings.
+async function verifyPool(items) {
+  const judged = await parallel(items.map(f => () => {
+    const isHigh = f.severity === 'Critical' || f.severity === 'High'
+    const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
+    return parallel(Array.from({ length: votes }, (_unused, i) => () =>
+      agent(verifyPrompt(f, i), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
+    )).then(vs => {
+      const v = vs.filter(Boolean)
+      if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
+      const half = v.length / 2
+      const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
+      const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
+      const refutes = v.filter(x => x.refuted).length
+      let tier
+      if (!lineOk) tier = 'refuted'            // hallucinated citation
+      else if (refutes > half) tier = 'refuted'
+      else if (reach && refutes === 0) tier = 'confirmed'
+      else tier = 'suspected'
+      return { ...f, tier }
+    })
+  }))
+  const vp = judged.filter(Boolean)
+  return {
+    confirmed: vp.filter(f => f.tier === 'confirmed'),
+    suspected: vp.filter(f => f.tier === 'suspected'),
+    dropped: vp.filter(f => f.tier === 'refuted').length,
+  }
+}
+
+// `let` so the Task 6 completeness critic can extend these with follow-up findings.
+let { confirmed, suspected, dropped } = await verifyPool(pool)
+log(`Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
+
+// Temporary terminal return — replaced in Task 6.
+return JSON.stringify({ gateProvenance, confirmed: confirmed.length, suspected: suspected.length }, null, 2)
