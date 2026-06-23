@@ -9,8 +9,10 @@ export const meta = {
   ],
 }
 
-// Optional: pass {base: "origin/main"} as args to fix the diff base for the reviewer.
+// Optional args: {base: "origin/main"} fixes the diff base; {mutants: true} opts into the slow
+// mutation-testing pass in the tests-cov dimension.
 const baseArg = (args && typeof args === 'object' && args.base) ? String(args.base) : ''
+const runMutants = !!(args && typeof args === 'object' && args.mutants)
 
 const CRATE_ITEM = {
   type: 'object',
@@ -174,6 +176,34 @@ if (hasUnsafe) {
 } else {
   log('No unsafe code detected — skipping Miri.')
 }
+
+// ---- Whole-project tool dimensions (D–G). Each runs its tools, interprets, and degrades
+// gracefully: a missing tool/toolchain is an intentional skip (verdict Approve + a note), never a
+// failure. ----
+
+tasks.push(() => agent(
+  `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, or there is no published library crate, say so and return verdict "Approve" with a one-line note that it was skipped — do NOT fail. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings.`,
+  { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+).then(r => (r ? { ...r, dimension: 'semver' } : null)))
+dispatched.push('semver')
+
+tasks.push(() => agent(
+  `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note, and return "Approve" if nothing could run — do NOT fail. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings.`,
+  { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+).then(r => (r ? { ...r, dimension: 'build-matrix' } : null)))
+dispatched.push('build-matrix')
+
+tasks.push(() => agent(
+  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary), \`cargo machete\` (unused dependencies; or \`cargo +nightly udeps\` if machete is absent), and \`cargo outdated\` (out-of-date deps). Skip any tool that is not installed with a note — do NOT fail. Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates, unused deps, and notably out-of-date deps as findings.`,
+  { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+).then(r => (r ? { ...r, dimension: 'deps' } : null)))
+dispatched.push('deps')
+
+tasks.push(() => agent(
+  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings.`,
+  { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+).then(r => (r ? { ...r, dimension: 'tests-cov' } : null)))
+dispatched.push('tests-cov')
 
 const results = (await parallel(tasks)).filter(Boolean)
 
