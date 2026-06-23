@@ -120,3 +120,37 @@ Is the set of types open (others add their own)?
 Rules of thumb: **generics** by default; **enum dispatch** when you need a mixed collection of a
 known set and care about speed/allocation; **`dyn`** when the set must stay open or object
 safety/compile-time/binary-size pushes you there.
+
+## Operations over a variant set — the Visitor question
+
+When you have a set of variants and want to run operations over them, the dispatch choice above
+decides how — this is the classic Visitor pattern, and Rust answers it by whether the set is
+**closed** or **open**:
+
+- **Closed set → `match` on an enum.** Add a new operation freely (just write another function that
+  matches). Adding a variant is a compile error at every `match` — a breaking change you *want* the
+  compiler to surface. This is enum dispatch (above); no visitor trait needed.
+
+```rust
+enum Expr { Lit(i64), Add(Box<Expr>, Box<Expr>) }
+
+fn eval(e: &Expr) -> i64 {                  // a new operation is just a new fn — no trait, no double dispatch
+    match e {
+        Expr::Lit(n) => *n,
+        Expr::Add(a, b) => eval(a) + eval(b),
+    }
+}
+```
+
+- **Open set → a visitor trait (double dispatch).** When external code must add new node types
+  without touching yours, expose a `Visitor` trait and have each node call back into it: new node
+  types implement `accept`, new operations are new `Visitor` impls.
+
+```rust
+trait Visitor { fn visit_lit(&mut self, n: i64); fn visit_add(&mut self, a: &dyn Node, b: &dyn Node); }
+trait Node    { fn accept(&self, v: &mut dyn Visitor); }
+```
+
+Reach for the trait only when the set is genuinely open — for your own closed AST a plain `match`
+is simpler and exhaustiveness-checked. For walking large or generated ASTs, a derive macro can
+generate the `accept`/visit plumbing → `rust-macros`.
