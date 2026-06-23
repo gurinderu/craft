@@ -7,6 +7,10 @@ description: Rust code-review rubric — the cargo quality gate, a severity-tier
 
 The rubric for reviewing Rust changes: run the mechanical gate first, then read the diff against the severity checklist, then issue a verdict. This is the knowledge; the `rust-reviewer` agent applies it to an actual diff and reports back.
 
+**The review entry point is the `rust-review` workflow** (`workflows/rust-review.js`): it scout-scales
+depth to the diff, fans out the lenses below, grounds findings in tool output, and adversarially
+verifies each one. This skill is the rubric the workflow and the `rust-reviewer` lens worker apply.
+
 ## When to Use
 
 - Reviewing a diff / PR of Rust code
@@ -110,13 +114,56 @@ library-author concerns the general checklist above doesn't — missing common-t
 `CHANGELOG`/metadata. Each item points at the craft skill that owns the fix. Skip it for
 application-internal code.
 
+## Review lenses
+
+The workflow fans the rubric out into independent lenses, each reviewing ONE slice blind to the
+others (higher recall than one broad pass):
+
+| Lens | Slice | Owning skill for the fix |
+|---|---|---|
+| safety | injection / secrets / unsafe / untrusted-input limits | `rust-security`, `rust-unsafe` |
+| errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
+| ownership | needless clone, `&str`/`&[T]`, lifetimes | `rust-ownership` |
+| concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
+| performance | hot-loop allocation, N+1, needless owning | `rust-performance` |
+| api-idioms | typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` | `rust-idioms` |
+| tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
+| intent | does the change do what the brief/spec says? | `specs` |
+
+Each lens expands context (callers/impls/error paths via `rust-navigation`) and emits blast-radius
+for changed public symbols.
+
+## Confidence tiers — surface, don't censor
+
+- **Confirmed** — located and survived verification; drives the verdict.
+- **Suspected** — borderline or unverified; surfaced for the author, **never** changes the verdict.
+
+Report everything you suspect. Borderline findings go to Suspected, not the bin.
+
+## Tool grounding (seed findings)
+
+Beyond the gate, the workflow runs real tools scoped to the diff and feeds their output in as seed
+findings (each still verified): `cargo clippy -W clippy::pedantic -W clippy::nursery`, and for
+published libraries `cargo semver-checks check-release`. Optional tools degrade gracefully when
+absent.
+
+## Verification protocol
+
+Every finding (lens or seed) is checked before it can be Confirmed:
+
+- **Adversarial:** skeptics try to REFUTE it (default to refuted when uncertain). One skeptic by
+  default; three-vote consensus for Critical/High.
+- **Self-verification (anti-hallucination):** re-read the cited `file:line` — does the code
+  actually say what the finding claims, and is the path reachable in production (not test/example)?
+  A wrong citation or unreachable path drops or demotes the finding.
+
 ## Step 3 — Verdict
 
 | Verdict | When |
 |---|---|
-| **Approve** ✅ | gate green (CI or local), no CRITICAL or HIGH |
-| **Warning** ⚠️ | gate green (CI or local), MEDIUM only — list them, leave merge to author |
-| **Block** ⛔ | gate red (CI or local), or any CRITICAL/HIGH — list each with file:line and the fix |
+| **Approve** ✅ | gate green (CI or local), no **Confirmed** CRITICAL/HIGH/MEDIUM |
+| **Warning** ⚠️ | gate green (CI or local), **Confirmed** MEDIUM only — Suspected items listed but don't block |
+| **Block** ⛔ | gate red (CI or local), or any **Confirmed** CRITICAL/HIGH |
 
 Report findings as `severity · file:line · what · why · fix`. Be specific and cite the line; a finding without a location isn't actionable.
 
