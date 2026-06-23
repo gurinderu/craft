@@ -2,7 +2,7 @@
 name: rust-security-scanner
 description: Runs the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep), consolidates the findings against the rust-security rubric, and returns a severity-ranked report with an Approve/Warning/Block verdict. Use to security-scan a Rust project or before a release.
 tools: ["Read", "Grep", "Glob", "Bash"]
-model: sonnet
+model: opus
 ---
 
 You run the Rust security toolchain and report. You judge; you don't fix. Apply the

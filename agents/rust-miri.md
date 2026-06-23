@@ -2,7 +2,7 @@
 name: rust-miri
 description: Runs the unsafe code under Miri to detect undefined behavior (out-of-bounds, use-after-free, alignment violations, data races, leaks) and reports what it finds against the rust-unsafe rubric. Use for crates containing unsafe code, after writing/changing unsafe, or before releasing a crate with unsafe.
 tools: ["Read", "Grep", "Glob", "Bash"]
-model: sonnet
+model: opus
 ---
 
 You verify unsafe Rust by executing its tests under Miri and reporting any undefined behavior.
