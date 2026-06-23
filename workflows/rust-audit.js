@@ -88,6 +88,60 @@ const UNUSED_VERDICT_SCHEMA = {
   },
 }
 
+// ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
+const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
+function countBySeverity(findings) {
+  const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
+  for (const f of (Array.isArray(findings) ? findings : [])) {
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+  }
+  return by
+}
+function summarizeFindings(findings) {
+  const bySeverity = countBySeverity(findings)
+  return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
+}
+function worstVerdict(verdicts) {
+  if (verdicts.some(v => /Block|At-risk|UB-found/i.test(v || ''))) return 'Block'
+  if (verdicts.some(v => /Warning|Concerns/i.test(v || ''))) return 'Warning'
+  return 'Approve'
+}
+function indexProjection(r) {
+  return {
+    schemaVersion: r.schemaVersion, ts: r.ts, kind: r.kind, name: r.name,
+    project: r.project, commit: r.commit, dirty: r.dirty,
+    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
+    nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
+  }
+}
+// Drop internal (`_`-prefixed) keys so they never leak into the synthesis prompt.
+function stripInternal(obj) {
+  const out = {}
+  for (const k of Object.keys(obj)) if (!k.startsWith('_')) out[k] = obj[k]
+  return out
+}
+// Persist a run record to ~/.craft/runs via a cheap logger agent (the script has no FS/clock).
+async function logRun(record) {
+  const index = indexProjection(record)
+  await agent(
+    `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
+Steps:
+1. \`mkdir -p ~/.craft/runs\`.
+2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\` prints anything, else false.
+3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
+4. Take INDEX below, add the same four fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
+5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
+Best-effort: if anything fails, report it but do NOT error the run.
+
+RECORD:
+${JSON.stringify(record, null, 2)}
+
+INDEX:
+${JSON.stringify(index)}`,
+    { label: 'log-run', phase: 'Synthesize', model: 'haiku', effort: 'low' },
+  )
+}
+
 phase('Scout')
 const scout = await agent(
   `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
@@ -134,13 +188,14 @@ const dispatched = []
 const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
 if (reviewCrates.length > 1) {
   for (const c of reviewCrates) {
-    tasks.push(() => workflow('rust-review', { base: baseRef, path: c.path })
+    tasks.push(() => workflow('rust-review', { base: baseRef, path: c.path, _via: 'rust-audit' })
       .then(report => reviewResult(`review:${c.name}`, report))
       .catch(() => null))
     dispatched.push(`review:${c.name}`)
   }
 } else {
-  tasks.push(() => workflow('rust-review', baseRef ? { base: baseRef } : {})
+  tasks.push(() => workflow('rust-review', baseRef ? { base: baseRef, _via: 'rust-audit' }
+                                                   : { _via: 'rust-audit' })
     .then(report => reviewResult('review', report))
     .catch(() => null))
   dispatched.push('review')
@@ -156,7 +211,7 @@ if (touchedEdges.length) {
   // bookkeeping compares `dispatched` against `dimension`; do NOT "unify" them to the label's `->`.
   for (const e of touchedEdges) {
     tasks.push(() => agent(
-      `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.`,
+      `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
       { label: `contract:${e.from}->${e.to}`, agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
     ).then(r => (r ? { ...r, dimension: `contract:${e.from}→${e.to}` } : null)))
     dispatched.push(`contract:${e.from}→${e.to}`)
@@ -173,20 +228,20 @@ tasks.push(() => agent(
 dispatched.push('crate-decomposition')
 
 tasks.push(() => agent(
-  `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
+  `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
 ).then(r => (r ? { ...r, dimension: 'architecture' } : null)))
 dispatched.push('architecture')
 
 tasks.push(() => agent(
-  `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.`,
+  `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
 ).then(r => (r ? { ...r, dimension: 'security' } : null)))
 dispatched.push('security')
 
 if (hasUnsafe) {
   tasks.push(() => agent(
-    `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.`,
+    `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
     { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
   ).then(r => (r ? { ...r, dimension: 'miri' } : null)))
   dispatched.push('miri')
@@ -237,7 +292,7 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
   if (!found) return null
   const candidates = (Array.isArray(found.findings) ? found.findings : [])
     .filter(f => /^(orphan-member|unused-dep):/.test(f.title || ''))
-  if (!candidates.length) return { ...found, dimension: 'unused-crates' }
+  if (!candidates.length) return { ...found, dimension: 'unused-crates', _verification: { candidates: 0, confirmed: 0 } }
   // Verify each candidate: prove it is USED. Default to "used" (drop it) when uncertain —
   // recommending deletion of live code is the costly error here.
   const verdicts = await parallel(candidates.map((c, i) => () =>
@@ -259,6 +314,7 @@ Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; defa
     verdict: confirmed.length ? 'Warning' : 'Approve',
     summary: `${candidates.length} candidate(s) flagged; ${confirmed.length} verified unused after trying to refute each (unverified dropped as likely false positives).`,
     findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${candidates.length} candidate(s) flagged, none survived verification.` }],
+    _verification: { candidates: candidates.length, confirmed: confirmed.length },
   }
 })
 dispatched.push('unused-crates')
@@ -294,9 +350,37 @@ const report = await agent(
 NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
 
 RESULTS:
-${JSON.stringify(results, null, 2)}`,
+${JSON.stringify(results.map(stripInternal), null, 2)}`,
   // Synthesis is merge/dedup/rank of given verdicts — moderate reasoning, not a deep judgement call.
   { label: 'synthesis', effort: 'medium' },
 )
+
+const uc = results.find(r => r.dimension === 'unused-crates')
+const auditRecord = {
+  schemaVersion: 1,
+  kind: 'workflow',
+  name: 'rust-audit',
+  verdict: worstVerdict(results.map(r => r.verdict)) + (notRun.length ? ' (INCOMPLETE)' : ''),
+  findings: summarizeFindings(results.flatMap(r => (Array.isArray(r.findings) ? r.findings : []))),
+  nested: false,
+  via: null,
+  scout: { baseRef, crateCount: crates.length, changedCrateCount: changedCrates.length, edgeCount: edges.length, hasUnsafe },
+  dimensions: results.map(stripInternal).map(r => {
+    const s = summarizeFindings(r.findings)
+    return { dimension: r.dimension, verdict: r.verdict, findingCount: s.total, bySeverity: s.bySeverity }
+  }),
+  verification: uc && uc._verification
+    ? {
+      candidates: uc._verification.candidates,
+      confirmed: uc._verification.confirmed,
+      refuteRate: uc._verification.candidates
+        ? Math.round(((uc._verification.candidates - uc._verification.confirmed) / uc._verification.candidates) * 100) / 100
+        : 0,
+    }
+    : null,
+  notRun,
+  outputTokens: budget.spent(),
+}
+await logRun(auditRecord)
 
 return report
