@@ -197,13 +197,43 @@ ${priorSummary}
 Return {lens, findings[]}.`
 }
 
+function key(f) {
+  return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
+}
+
 phase('Lenses')
-const round1 = (await parallel(plan.lenses.map(lens => () =>
-  agent(lensPrompt(lens, 'none yet'), { label: `lens:${lens}`, agentType: 'craft:rust-reviewer', phase: 'Lenses', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
-))).filter(Boolean)
+const seen = new Set()
+const pool = []
+// Seed findings (from the gate) enter the pool first and seed the dedup set.
+for (const f of seedFindings) {
+  const k = key(f)
+  if (!seen.has(k)) { seen.add(k); pool.push(f) }
+}
 
-const allFindings = round1.flatMap(r => (r.findings || []).map(f => ({ ...f, source: f.source || r.lens })))
-log(`Lenses round 1: ${allFindings.length} raw findings from ${round1.length} lenses`)
+let dry = false
+for (let round = 1; round <= plan.maxRounds && !dry; round++) {
+  const priorSummary = pool.length
+    ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n')
+    : 'none yet'
+  const results = (await parallel(plan.lenses.map(lens => () =>
+    agent(lensPrompt(lens, priorSummary), { label: `lens:${lens} r${round}`, agentType: 'craft:rust-reviewer', phase: 'Lenses', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+  ))).filter(Boolean)
+  const fresh = []
+  for (const r of results) {
+    for (const f0 of (r.findings || [])) {
+      const f = { ...f0, source: f0.source || r.lens }
+      const k = key(f)
+      if (!seen.has(k)) { seen.add(k); fresh.push(f) }
+    }
+  }
+  pool.push(...fresh)
+  log(`Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
+  if (!fresh.length) dry = true
+}
 
-// Temporary terminal return — replaced in Task 4.
-return JSON.stringify({ gateProvenance, seed: seedFindings.length, lensFindings: allFindings.length }, null, 2)
+if (!pool.length) {
+  return [`## Verdict`, `✅ Approve — gate ${gateStatus}; no findings across ${plan.lenses.length} lenses.`, ``, `## Gate`, gateProvenance].join('\n')
+}
+
+// Temporary terminal return — replaced in Task 5.
+return JSON.stringify({ gateProvenance, pool: pool.length }, null, 2)
