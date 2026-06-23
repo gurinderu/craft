@@ -12,14 +12,37 @@ export const meta = {
 // Optional: pass {base: "origin/main"} as args to fix the diff base for the reviewer.
 const baseArg = (args && typeof args === 'object' && args.base) ? String(args.base) : ''
 
+const CRATE_ITEM = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'path'],
+  properties: {
+    name: { type: 'string', description: 'crate (package) name' },
+    path: { type: 'string', description: "crate directory (its manifest dir), relative to the repo root" },
+  },
+}
+
+const EDGE_ITEM = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['from', 'to'],
+  properties: {
+    from: { type: 'string', description: 'caller crate name (depends on `to`)' },
+    to: { type: 'string', description: 'callee crate name' },
+  },
+}
+
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['hasDiff', 'hasUnsafe', 'baseRef', 'notes'],
+  required: ['hasDiff', 'hasUnsafe', 'baseRef', 'crates', 'changedCrates', 'edges', 'notes'],
   properties: {
     hasDiff: { type: 'boolean', description: 'true if any .rs files differ vs the base ref (committed or uncommitted)' },
     hasUnsafe: { type: 'boolean', description: 'true if the workspace contains any `unsafe` block or impl' },
     baseRef: { type: 'string', description: 'the git ref the diff was computed against, or empty if none resolved' },
+    crates: { type: 'array', items: CRATE_ITEM, description: 'workspace members; empty if cargo metadata is unavailable' },
+    changedCrates: { type: 'array', items: CRATE_ITEM, description: 'subset of crates with a changed .rs file vs the base; empty if no base / no changes' },
+    edges: { type: 'array', items: EDGE_ITEM, description: 'intra-workspace dependency edges; empty if cargo metadata is unavailable' },
     notes: { type: 'string', description: 'one line on what was detected' },
   },
 }
@@ -58,56 +81,74 @@ const scout = await agent(
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`.'}
 2. hasDiff = true if \`git diff --name-only <base>...HEAD\` lists any \`.rs\` file, OR \`git status --porcelain\` shows uncommitted \`.rs\` changes.
 3. hasUnsafe = true if \`grep -rnE "\\bunsafe\\b" --include=*.rs .\` finds any match (a rough check is fine; ignore obvious comment-only hits if cheap to do).
-4. baseRef = the ref you actually used (empty string if none resolved).`,
+4. baseRef = the ref you actually used (empty string if none resolved).
+5. crates = workspace members from \`cargo metadata --no-deps --format-version 1\` — each as {name, path} where path is the crate's manifest directory relative to the repo root. Empty array if \`cargo metadata\` is unavailable.
+6. changedCrates = the subset of \`crates\` whose directory contains a \`.rs\` file listed by \`git diff --name-only <base>...HEAD\` (or \`git status --porcelain\` for uncommitted work). Empty if no base or no changed \`.rs\`.
+7. edges = intra-workspace dependency edges from \`cargo metadata --format-version 1\`: {from, to} where BOTH \`from\` and \`to\` are workspace members and \`from\` depends on \`to\`. Empty array if \`cargo metadata\` is unavailable.`,
   // Scout is pure mechanics (git refs + grep) — run it cheap: Haiku at low effort.
   { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
 )
 // scout is null if the agent was skipped or died — fall back to safe defaults rather than crash.
 const baseRef = scout?.baseRef ?? ''
 const hasUnsafe = scout?.hasUnsafe ?? true // fail-safe: run Miri when detection didn't resolve
+const crates = Array.isArray(scout?.crates) ? scout.crates : []
+const changedCrates = Array.isArray(scout?.changedCrates) ? scout.changedCrates : []
+const edges = Array.isArray(scout?.edges) ? scout.edges : []
 log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no base ref')
 
 phase('Audit')
-const tasks = [
-  // Review dimension delegates to the elastic deep-review workflow (nested, one level).
-  () => workflow('rust-review', baseRef ? { base: baseRef } : {})
-    .then(report => ({
-      dimension: 'review',
-      verdict: /⛔|Block/.test(report || '') ? 'Block' : /⚠️|Warning/.test(report || '') ? 'Warning' : 'Approve',
-      summary: 'Elastic deep review — see findings below.',
-      findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
-    }))
-    .catch(() => null),
 
-  () => agent(
-    `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
-    { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
-  ).then(r => (r ? { ...r, dimension: 'architecture' } : null)),
+// Map a rust-review workflow report string into a FINDINGS_SCHEMA-shaped dimension result.
+function reviewResult(dimension, report) {
+  return {
+    dimension,
+    verdict: /⛔|Block/.test(report || '') ? 'Block' : /⚠️|Warning/.test(report || '') ? 'Warning' : 'Approve',
+    summary: 'Elastic deep review — see findings below.',
+    findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
+  }
+}
 
-  () => agent(
-    `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.`,
-    { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA },
-  ).then(r => (r ? { ...r, dimension: 'security' } : null)),
-]
+// Dimensions are assembled dynamically; `dispatched` records one label per thunk and drives the
+// NOT-RUN bookkeeping (a thunk that returns null is flagged NOT RUN).
+const tasks = []
+const dispatched = []
+
+// Review dimension — a single whole-workspace review for now; Task 4 replaces this with a
+// per-crate fan-out.
+tasks.push(() => workflow('rust-review', baseRef ? { base: baseRef } : {})
+  .then(report => reviewResult('review', report))
+  .catch(() => null))
+dispatched.push('review')
+
+tasks.push(() => agent(
+  `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
+  { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
+).then(r => (r ? { ...r, dimension: 'architecture' } : null)))
+dispatched.push('architecture')
+
+tasks.push(() => agent(
+  `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.`,
+  { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA },
+).then(r => (r ? { ...r, dimension: 'security' } : null)))
+dispatched.push('security')
 
 if (hasUnsafe) {
-  tasks.push(
-    () => agent(
-      `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.`,
-      { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA },
-    ).then(r => (r ? { ...r, dimension: 'miri' } : null)),
-  )
+  tasks.push(() => agent(
+    `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.`,
+    { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA },
+  ).then(r => (r ? { ...r, dimension: 'miri' } : null)))
+  dispatched.push('miri')
 } else {
   log('No unsafe code detected — skipping Miri.')
 }
 
 const results = (await parallel(tasks)).filter(Boolean)
 
-// Dimensions we dispatched but got no result for (agent skipped or died). Miri is excluded when
-// there's no unsafe code — that's an intentional skip, not a failure, so it never lands here.
-const expectedDimensions = ['review', 'architecture', 'security', ...(hasUnsafe ? ['miri'] : [])]
+// NOT RUN = a dispatched dimension that produced no result (its agent failed). Intentional skips
+// (Miri without unsafe, contracts without edges, a tool dimension whose tool is absent) are never
+// pushed to `dispatched` as failures, so they don't land here.
 const ran = new Set(results.map(r => r.dimension))
-const notRun = expectedDimensions.filter(d => !ran.has(d))
+const notRun = dispatched.filter(d => !ran.has(d))
 if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
 
 phase('Synthesize')
