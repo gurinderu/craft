@@ -68,7 +68,7 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 
 | Agent | Runs | Rubric skill |
 |---|---|---|
-| `rust-reviewer` | fmt/clippy/test + diff review | `rust-review` |
+| `rust-reviewer` | fmt/clippy/test + diff review (per-lens worker for the `rust-review` workflow) | `rust-review` |
 | `rust-architecture-reviewer` | whole crate/module dependency graph audit | `rust-architecture-review` |
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |
@@ -83,6 +83,7 @@ them by `agentType` — internal to the plugin, no external dependency).
 
 | Workflow | Composes | Output |
 |---|---|---|
+| `rust-review` | scout-scaled lens fan-out → `rust-reviewer` (per lens) → loop-until-dry → adversarial + self-verification | Confirmed/Suspected finding report (elastic deep review engine; `rust-reviewer` is its per-lens worker) |
 | `rust-audit` | reviewer + architecture + security + miri (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
 
