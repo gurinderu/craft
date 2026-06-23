@@ -2,8 +2,8 @@
 
 **Date:** 2026-06-23
 **Status:** Approved, ready for implementation plan
-**Scope:** small — three skill additions, one reference link, and a GoF→Rust mapping table.
-Orthogonal to the CI-aware gate and elastic review specs; do not fold into them.
+**Scope:** small — three skill additions, one reference link, and an OOP→Rust Rosetta bridge
+(GoF + SOLID). Orthogonal to the CI-aware gate and elastic review specs; do not fold into them.
 
 ## Context
 
@@ -19,8 +19,10 @@ duplicates. Importing it into the review rubric is also rejected: GoF patterns a
 solution-structure guidance, not diff-level defects.
 
 Two genuine content gaps surfaced (both small) plus a courtesy reference link, and — to bridge for
-readers who think in GoF terms — a GoF→Rust mapping table plus the one real *mechanism* gap
-(Visitor).
+readers who think in OOP terms — one Rosetta section mapping both GoF patterns and SOLID principles
+to their Rust form, plus the one real *mechanism* gap (Visitor). SOLID gets the same treatment as
+GoF: not a dedicated skill (it cross-cuts craft's mechanism organization), but a mapping bridge;
+its DIP principle is already named explicitly in `rust-architecture`.
 
 ## Already covered (no change)
 
@@ -71,20 +73,35 @@ review-relevant subset. A "Further reading" pointer makes that relationship expl
   the book is the broader catalog (including the GoF patterns craft intentionally does not
   duplicate).
 
-### 4. GoF patterns — Rosetta table + the Visitor gap
+### 4. OOP design vocabulary → Rust — one Rosetta bridge (GoF + SOLID) + the Visitor gap
 
-craft is organized by mechanism, so most GoF patterns already live in it under their Rust form.
-For readers who think in GoF terms (most engineers from OOP), add an opinionated bridge — and fill
-the one mechanism actually missing.
+craft is organized by mechanism, so most GoF patterns and SOLID principles already live in it under
+their Rust form. For readers who think in OOP terms (most engineers), add one opinionated bridge
+section — and fill the one mechanism actually missing.
 
-**4a. Rosetta table.** A "GoF patterns in Rust" table in `skills/rust-idioms/patterns.md`, columns
-`GoF pattern · Rust mechanism · owning craft skill · what to avoid`. It is a discoverability
-bridge, not new content — each row points at the skill that owns the mechanism, and states craft's
-opinion (e.g. *Strategy → just choose a dispatch mechanism; do not build an interface hierarchy →
-`rust-traits`*). Cover at least: Strategy, State, Command, Observer, Visitor, Builder, Newtype,
-RAII guard, Fold, Generics-as-Type-Classes, plus the FFI Object-Based-API / Wrapper pair. Mark the
-niche ones craft intentionally omits (Interpreter, Functional Optics) as "out of scope — see the
-book."
+**4a. Rosetta bridge.** One section in `skills/rust-idioms/patterns.md`, "OOP design vocabulary in
+Rust", holding two small tables with columns `name · Rust form · owning craft skill · what to
+avoid`. It is a discoverability bridge, not new content — each row points at the skill that owns
+the mechanism and states craft's opinion.
+
+- **GoF table.** Cover at least: Strategy, State, Command, Observer, Visitor, Builder, Newtype,
+  RAII guard, Fold, Generics-as-Type-Classes, plus the FFI Object-Based-API / Wrapper pair. Example
+  row: *Strategy → just choose a dispatch mechanism; do not build an interface hierarchy →
+  `rust-traits`*. Mark the niche ones craft intentionally omits (Interpreter, Functional Optics) as
+  "out of scope — see the book."
+- **SOLID table.** Five rows:
+  - **S** (Single Responsibility) → cohesion; the god-module / giant-function checks already in
+    `rust-architecture-review` and `rust-review`.
+  - **O** (Open/Closed) → the **expression problem**: enum (closed to types, open to operations)
+    vs trait (open to types, closed to operations); choose by the axis you expect to extend →
+    `rust-traits` (ties to the Visitor gap in 4b).
+  - **L** (Liskov) → **largely dissolves** without implementation inheritance; becomes "honor the
+    trait's documented contract / laws" (total `Ord`, consistent `Hash`/`Eq`) → `rust-traits` /
+    `rust-idioms`.
+  - **I** (Interface Segregation) → many small focused traits (std splits `Read`/`Write`/`Seek`);
+    object-safety pushes the same way → `rust-traits`.
+  - **D** (Dependency Inversion) → ports as traits, dependency flow toward the domain → already
+    named in `rust-architecture` (point at it, do not restate).
 
 **4b. Visitor — the real mechanism gap.** Operations over a set of variants. The Rust answer:
 `match` on the enum for a **closed** set (add an operation freely; adding a variant is a breaking
@@ -96,8 +113,11 @@ The Rosetta table's Visitor row points here.
 ## Non-goals
 
 - Do not import the full GoF catalog as standalone pattern entries (Command, Interpreter, Strategy,
-  Fold, Functional Optics) — the Rosetta table bridges them by mechanism instead.
-- GoF stays out of the review rubric — solution-structure guidance, not diff-level defects.
+  Fold, Functional Optics) — the Rosetta bridge maps them by mechanism instead.
+- No dedicated SOLID skill/subfile — SOLID is an OOP framing by acronym; the Rosetta bridge maps it
+  to the mechanisms craft already owns (DIP points at `rust-architecture`, not restated).
+- GoF and SOLID stay out of the review rubric — solution-structure guidance, not diff-level
+  defects.
 - Do not duplicate idioms already covered; only add the two content gaps, the Visitor mechanism,
   the Rosetta table, and the link.
 - No change to the review *engine* or the gate — this is skill-content only.
