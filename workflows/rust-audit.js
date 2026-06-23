@@ -69,12 +69,15 @@ log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no ba
 
 phase('Audit')
 const tasks = [
-  () => agent(
-    `Review the Rust diff for mergeability using the rust-review rubric (load the rust-review skill). ${baseRef
-      ? `Diff base: \`${baseRef}\`.`
-      : 'There is no clean base ref — review uncommitted changes, or the most recent commit if the tree is clean.'} Establish the gate CI-aware (consume green required CI checks; never silently skip a check) and state its provenance (CI vs local) in your summary. Return your verdict and findings.`,
-    { label: 'review:diff', agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
-  ).then(r => (r ? { ...r, dimension: 'review' } : null)),
+  // Review dimension delegates to the elastic deep-review workflow (nested, one level).
+  () => workflow('rust-review', baseRef ? { base: baseRef } : {})
+    .then(report => ({
+      dimension: 'review',
+      verdict: /⛔|Block/.test(report || '') ? 'Block' : /⚠️|Warning/.test(report || '') ? 'Warning' : 'Approve',
+      summary: 'Elastic deep review — see findings below.',
+      findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
+    }))
+    .catch(() => null),
 
   () => agent(
     `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.`,
