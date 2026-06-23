@@ -104,6 +104,7 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - Wildcard `_ =>` on a business enum (hides new variants — prefer exhaustive)
 - `pub` item without a `///` doc
 - `#[allow(...)]` suppressing a lint without a justifying comment
+- Crate-root `#![deny(warnings)]` (or other blanket lint-level attributes) — brittle: a new compiler/clippy lint becomes a hard build break for the crate and its dependents → move the denial to CI (`rust-idioms` anti-patterns)
 
 ### Public-API diffs — the API-design pass
 
