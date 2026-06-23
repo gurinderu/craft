@@ -70,7 +70,8 @@ rust-version = "1.85"   # declare your MSRV so Cargo can enforce it
 
 Put real logic in a library crate and keep `main.rs` a thin shell — it makes the code testable
 and reusable (this is also the spirit of `rust-architecture`). Module tree and `mod`/visibility
-mechanics → `rust-idioms` (visibility) and `cargo.md` (workspaces).
+mechanics → `rust-idioms` (visibility) and `cargo.md` (workspaces). When and how to pull a module
+out into its own crate (or merge an over-split one) → [crate-extraction.md](crate-extraction.md).
 
 ## Supply-chain hygiene
 
@@ -93,3 +94,5 @@ Vulnerability/advisory scanning and license/supply-chain policy (`cargo-audit`/`
 - *Build* profiles for speed/size (LTO, codegen-units) → `rust-performance`.
 - Build scripts (`build.rs`), `no_std`, and cross-compilation → [build-and-targets.md](build-and-targets.md).
 - Naming and visibility idioms → `rust-idioms`.
+- When/how to extract code into its own crate, or merge an over-split one →
+  [crate-extraction.md](crate-extraction.md).
