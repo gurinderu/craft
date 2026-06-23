@@ -165,5 +165,45 @@ if (gateStatus === 'fail') {
   ].join('\n')
 }
 
-// Temporary terminal return — replaced in Task 3.
-return JSON.stringify({ plan, gateProvenance, seedFindings }, null, 2)
+// ================= Lenses =================
+const LENS_BRIEF = {
+  safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization.',
+  errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
+  ownership: 'ownership & lifetimes: needless clone to satisfy the borrow checker, String where &str/impl AsRef suffices, Vec<T> where &[T] works, explicit lifetimes where elision applies.',
+  concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
+  performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
+  'api-idioms': 'API & idioms & docs: library returning Box<dyn Error>/anyhow, giant functions / deep nesting, wildcard match on a business enum, pub item without ///, #[allow] without justification, #![deny(warnings)] in source.',
+  tests: 'tests & coverage QUALITY (not just presence): do new tests assert real behavior and error paths, or are they vacuous (assert!(true), no assertions)? New error path/branch with no test; bug fix with no regression test.',
+  intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Compare the diff against the stated intent; flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
+}
+
+function lensPrompt(lens, priorSummary) {
+  return `You are the **${lens}** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.
+
+SLICE: ${LENS_BRIEF[lens] || lens}
+
+Diff base: ${plan.baseRef ? `\`${plan.baseRef}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'} -- '*.rs'\`.
+${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
+${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}
+
+CONTEXT EXPANSION (required): for each finding, trace callers / impls / error paths of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
+BLAST-RADIUS (required): for each changed PUBLIC symbol you touch, note how many callers are affected and set a breaking-change flag in \`blastRadius\`.
+CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
+${plan.tests === undefined ? '' : ''}${lens === 'tests' && plan.sizeBucket === 'large' ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to find weak tests; skip silently if absent.' : ''}
+
+ALREADY-FOUND (do not repeat; look for what these MISSED):
+${priorSummary}
+
+Return {lens, findings[]}.`
+}
+
+phase('Lenses')
+const round1 = (await parallel(plan.lenses.map(lens => () =>
+  agent(lensPrompt(lens, 'none yet'), { label: `lens:${lens}`, agentType: 'craft:rust-reviewer', phase: 'Lenses', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+))).filter(Boolean)
+
+const allFindings = round1.flatMap(r => (r.findings || []).map(f => ({ ...f, source: f.source || r.lens })))
+log(`Lenses round 1: ${allFindings.length} raw findings from ${round1.length} lenses`)
+
+// Temporary terminal return — replaced in Task 4.
+return JSON.stringify({ gateProvenance, seed: seedFindings.length, lensFindings: allFindings.length }, null, 2)
