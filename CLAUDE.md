@@ -7,13 +7,14 @@ generic engineering-process discipline. See `README.md` / `MAP.md` for the full 
 ## Review requests run as a background subagent
 
 When the user asks for a review ("сделай ревью", "review this", "проверь изменения", etc.),
-do **not** review inline in the main conversation. Dispatch a review **agent** with the Agent
-tool using `run_in_background: true`, then continue working; report the verdict when the agent
-notifies completion.
+do **not** review inline in the main conversation. Dispatch the matching review **handler** in the
+background — a workflow (the default review and the full audit) via the Workflow tool, or an agent
+via the Agent tool with `run_in_background: true` — then continue working; report the verdict when
+it notifies completion.
 
-Pick the agent by scope:
+Pick the handler by scope:
 
-| Ask | Agent |
+| Ask | Handler |
 |---|---|
 | Review a diff / change before commit or merge (default) | `rust-review` workflow (background) |
 | Whole-project structural / architecture audit (not a diff) | `rust-architecture-reviewer` |
