@@ -9,8 +9,10 @@ import { join } from 'node:path'
 // Worst-signal-wins, mirroring the Claude Code workflows' verdict precedence.
 export function parseVerdict(text) {
   const t = String(text || '')
-  if (/⛔|Block|At-risk|UB-found/i.test(t)) return 'Block'
-  if (/⚠️|Warning|Concerns/i.test(t)) return 'Warning'
+  // Word boundaries (and the verdict emoji) so prose like "no blocking issues" / "unblocked"
+  // doesn't collide with the Block keyword. Worst signal still wins (Block before Warning).
+  if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(t)) return 'Block'
+  if (/⚠️|\b(?:Warning|Concerns)\b/i.test(t)) return 'Warning'
   return 'Approve'
 }
 
