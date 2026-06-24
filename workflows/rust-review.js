@@ -16,6 +16,7 @@ const baseArg = (args && typeof args === 'object' && args.base) ? String(args.ba
 const intentArg = (args && typeof args === 'object' && args.intent) ? String(args.intent) : ''
 const postComments = !!(args && typeof args === 'object' && args.comment)
 const pathArg = (args && typeof args === 'object' && args.path) ? String(args.path) : ''   // optional crate-scope (audit per-crate fan-out)
+const viaArg = (args && typeof args === 'object' && args._via) ? String(args._via) : ''   // set by a parent workflow (e.g. rust-audit)
 
 // ---- catalog ----
 const ALL_LENSES = ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'tests', 'intent']
@@ -91,6 +92,54 @@ const VERDICT_SCHEMA = {
   },
 }
 
+// ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
+const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
+function countBySeverity(findings) {
+  const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
+  for (const f of (Array.isArray(findings) ? findings : [])) {
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+  }
+  return by
+}
+function summarizeFindings(findings) {
+  const bySeverity = countBySeverity(findings)
+  return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
+}
+function reviewVerdict(confirmed) {
+  const by = countBySeverity(confirmed)
+  if (by.Critical || by.High) return 'Block'
+  if (by.Medium) return 'Warning'
+  return 'Approve'
+}
+function indexProjection(r) {
+  return {
+    schemaVersion: r.schemaVersion, ts: r.ts, kind: r.kind, name: r.name,
+    project: r.project, commit: r.commit, dirty: r.dirty,
+    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
+    nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
+  }
+}
+async function logRun(record) {
+  const index = indexProjection(record)
+  await agent(
+    `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
+Steps:
+1. \`mkdir -p ~/.craft/runs\`.
+2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\` prints anything, else false.
+3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
+4. Take INDEX below, add the same four fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
+5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
+Best-effort: if anything fails, report it but do NOT error the run.
+
+RECORD:
+${JSON.stringify(record, null, 2)}
+
+INDEX:
+${JSON.stringify(index)}`,
+    { label: 'log-run', phase: 'Synthesize', model: 'haiku', effort: 'low' },
+  )
+}
+
 // ================= Scout =================
 phase('Scout')
 const scout = await agent(
@@ -153,7 +202,23 @@ const gateProvenance = gate?.provenance ?? 'gate not established'
 const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
 log(`Gate: ${gateStatus} — ${gateProvenance}${gate?.failedChecks?.length ? ` · failed: ${gate.failedChecks.join(', ')}` : ''}`)
 
+// Common fields for every rust-review record; callers pass the path-specific extras.
+function reviewRecord(extra) {
+  return {
+    schemaVersion: 1,
+    kind: 'workflow',
+    name: 'rust-review',
+    nested: !!viaArg,
+    via: viaArg || null,
+    scout: { size: plan.sizeBucket, lenses: plan.lenses, model: plan.lensModel, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes },
+    gate: { status: gateStatus, provenance: gateProvenance },
+    outputTokens: budget.spent(),
+    ...extra,
+  }
+}
+
 if (gateStatus === 'fail') {
+  await logRun(reviewRecord({ verdict: 'Block', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gate.failedChecks || [] }))
   return [
     `## Verdict`,
     `⛔ Block — mechanical gate is red.`,
@@ -195,7 +260,9 @@ ${lens === 'tests' && plan.sizeBucket === 'large' ? 'If `cargo mutants` is insta
 ALREADY-FOUND (do not repeat; look for what these MISSED):
 ${priorSummary}
 
-Return {lens, findings[]}.`
+Return {lens, findings[]}.
+
+Observability: the rust-review workflow records this run — do NOT write your own record.`
 }
 
 function key(f) {
@@ -233,6 +300,7 @@ for (let round = 1; round <= plan.maxRounds && !dry; round++) {
 }
 
 if (!pool.length) {
+  await logRun(reviewRecord({ verdict: 'Approve', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [] }))
   return [`## Verdict`, `✅ Approve — gate ${gateStatus}; no findings across ${plan.lenses.length} lenses.`, ``, `## Gate`, gateProvenance].join('\n')
 }
 
@@ -369,5 +437,18 @@ ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.s
     { label: 'pr-comments', phase: 'Synthesize', effort: 'low' },
   )
 }
+
+const allReviewFindings = confirmed.concat(suspected)
+const totalVerified = confirmed.length + suspected.length + dropped
+await logRun(reviewRecord({
+  verdict: reviewVerdict(confirmed),
+  findings: summarizeFindings(allReviewFindings),
+  dimensions: plan.lenses.map(l => {
+    const s = summarizeFindings(confirmed.filter(f => (f.source || '') === l))
+    return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
+  }),
+  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
+  notRun: [],
+}))
 
 return report
