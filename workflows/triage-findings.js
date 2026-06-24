@@ -104,7 +104,7 @@ if (pr) {
 }
 
 const gathered = (await parallel(gatherTasks)).filter(Boolean)
-const raw = gathered.flatMap(g => g.findings.map(f => ({ ...f, source: g.source })))
+const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 
 // stable composite id; reused for dedup, ledger, and idempotent re-runs
@@ -174,4 +174,5 @@ ${JSON.stringify(validations, null, 2)}`,
   { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA },
 )
 
+if (!plan) return 'Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.'
 return plan
