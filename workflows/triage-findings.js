@@ -83,6 +83,56 @@ const PLAN_SCHEMA = {
   },
 }
 
+// ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
+const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
+function countBySeverity(findings) {
+  const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
+  for (const f of (Array.isArray(findings) ? findings : [])) {
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+  }
+  return by
+}
+function summarizeFindings(findings) {
+  const bySeverity = countBySeverity(findings)
+  return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
+}
+function tallyVerdicts(entries) {
+  const t = { accept: 0, reject: 0, defer: 0, 'needs-decision': 0, conflict: 0 }
+  for (const e of (Array.isArray(entries) ? entries : [])) {
+    if (e && Object.prototype.hasOwnProperty.call(t, e.verdict)) t[e.verdict] += 1
+  }
+  return t
+}
+function indexProjection(r) {
+  return {
+    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
+    project: r.project, commit: r.commit, dirty: r.dirty,
+    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
+    nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
+  }
+}
+// Persist a run record to ~/.craft/runs via a cheap logger agent (the script has no FS/clock).
+async function logRun(record) {
+  const index = indexProjection(record)
+  await agent(
+    `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
+Steps:
+1. \`mkdir -p ~/.craft/runs\`.
+2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\` prints anything, else false.
+3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
+4. Take INDEX below, add the same four fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
+5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; triage-findings adds sources/triage; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
+Best-effort: if anything fails, report it but do NOT error the run.
+
+RECORD:
+${JSON.stringify(record, null, 2)}
+
+INDEX:
+${JSON.stringify(index)}`,
+    { label: 'log-run', phase: 'Plan', model: 'haiku', effort: 'low' },
+  )
+}
+
 // ---- Gather --------------------------------------------------------------
 phase('Gather')
 if (!pr && !report) {
@@ -90,20 +140,25 @@ if (!pr && !report) {
 }
 
 const gatherTasks = []
+const requestedLocators = []   // parallel to gatherTasks; drives NOT-RUN bookkeeping for the run record
 if (report) {
+  requestedLocators.push('report')
   gatherTasks.push(() => agent(
     `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
     { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
   ))
 }
 if (pr) {
+  requestedLocators.push('pr')
   gatherTasks.push(() => agent(
     `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
     { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
   ))
 }
 
-const gathered = (await parallel(gatherTasks)).filter(Boolean)
+const gatherResults = await parallel(gatherTasks)   // order preserved → align with requestedLocators
+const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
+const gathered = gatherResults.filter(Boolean)
 const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 
@@ -173,6 +228,24 @@ ALL VERDICTS (include reject/defer/needs-decision in the ledger):
 ${JSON.stringify(validations, null, 2)}`,
   { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA },
 )
+
+// ---- Observability: persist a run record (best-effort) -------------------
+// Prefer the plan's ledger (it carries the cross-finding `conflict` disposition); fall back to the
+// solo validations when the Plan phase produced nothing.
+const ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
+await logRun({
+  schemaVersion: 1,
+  runtime: 'claude-code',
+  kind: 'workflow',
+  name: 'triage-findings',
+  verdict: '',                         // triage yields per-finding dispositions, not an Approve/Block verdict
+  findings: summarizeFindings(raw),    // total findings triaged + severity mix
+  nested: false,
+  via: null,
+  sources: gathered.map(g => ({ source: g.source, count: Array.isArray(g.findings) ? g.findings.length : 0 })),
+  triage: { gathered: raw.length, validated: validations.length, ...tallyVerdicts(ledger) },
+  notRun: notRunSources,
+})
 
 if (!plan) return 'Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.'
 return plan

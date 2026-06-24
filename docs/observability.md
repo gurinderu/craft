@@ -1,7 +1,7 @@
 # Observability — craft run records
 
-Every `rust-audit` / `rust-review` run, and every directly-dispatched review agent, writes a
-structured record to a global per-user store so runs can be studied later.
+Every `rust-audit` / `rust-review` / `triage-findings` run, and every directly-dispatched review
+agent, writes a structured record to a global per-user store so runs can be studied later.
 
 ## Store
 
@@ -22,6 +22,12 @@ Workflows add: `scout`, `dimensions[]`, `verification {candidates, confirmed, re
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
 rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`; see each
 workflow's `logRun`/record assembly for the exact fields.
+`triage-findings` is not a review: it carries `verdict: ""` and `findings` summarizing the findings
+it *triaged* (total + severity mix of the gathered raw findings, not findings it produced). It adds
+`sources[]` (`{source, count}` per gathered source) and `triage {gathered, validated, accept,
+reject, defer, needs-decision, conflict}` (disposition tally from the plan ledger, or the solo
+validations when the plan phase produced nothing); `notRun[]` lists requested sources that failed to
+gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
 The `rust-security-scanner` agent additionally records `toolsRun[]` (which cargo tools actually ran).
 rust-review records also carry `gate {status, provenance}` (always) and `failedChecks[]`
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
