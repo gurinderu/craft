@@ -398,6 +398,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
       const v = await verifyPool(fresh)
       confirmed = confirmed.concat(v.confirmed)
       suspected = suspected.concat(v.suspected)
+      dropped += v.dropped   // keep the refuted tally complete so totalVerified/refuteRate stay accurate
       log(`Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
     }
   }
