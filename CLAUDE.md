@@ -16,11 +16,12 @@ Pick the handler by scope:
 
 | Ask | Handler |
 |---|---|
-| Review a diff / change before commit or merge (default) | `rust-review` workflow (background) |
-| Whole-project structural / architecture audit (not a diff) | `rust-architecture-reviewer` |
-| Security / dependency / unsafe-surface scan | `rust-security-scanner` |
-| `unsafe` code under Miri (UB check) | `rust-miri` |
-| Full audit — all of the above in parallel, one synthesized report | `rust-audit` workflow |
+| Review a diff / change before commit or merge (default) | `rust-review` **workflow** (background) |
+| Ad-hoc single-pass diff review (when you explicitly don't want the workflow) | `rust-reviewer` **agent** (background) |
+| Whole-project structural / architecture audit (not a diff) | `rust-architecture-reviewer` **agent** |
+| Security / dependency / unsafe-surface scan | `rust-security-scanner` **agent** |
+| `unsafe` code under Miri (UB check) | `rust-miri` **agent** |
+| Full audit — all of the above in parallel, one synthesized report | `rust-audit` **workflow** |
 
 Give the agent a self-contained brief: the diff range (e.g. `git diff main...HEAD`) or target
 paths, and what the change is supposed to do. The `craft:rust-review` skill covers how to craft
