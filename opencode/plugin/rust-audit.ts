@@ -5,6 +5,7 @@
 // rust-reviewer (no per-crate / inter-crate-contract fan-out); see opencode/README.md parity caveats.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAgent, type Job } from "./orchestrator.ts"
+import { buildAuditRecord, writeRecord } from "./run-record.mjs"
 
 async function sh(ctx: PluginCtx, cmd: string): Promise<string> {
   try {
@@ -117,5 +118,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
 RESULTS:
 ${blob}`
 
-  return await runAgent(ctx, "", synthPrompt).catch(() => blob) || blob
+  const report = (await runAgent(ctx, "", synthPrompt).catch(() => blob)) || blob
+  await writeRecord(ctx, buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText: report }))
+  return report
 }
