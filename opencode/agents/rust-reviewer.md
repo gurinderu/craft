@@ -13,7 +13,11 @@ full severity checklist and verdict criteria.
 
 ## Workflow
 
-1. **Mechanical gate.** Run, in order, and stop at the first failure:
+1. **Mechanical gate (CI-aware).** First try `gh pr checks --json name,state,bucket,link` for the
+   current branch — if a conclusive green required check already covers fmt/clippy/test, treat it
+   as passed (record provenance "via CI #<n>") instead of re-running it. If `gh` is
+   unavailable/unauthenticated or a check is pending/absent, run it locally, in order, stopping at
+   the first failure:
    ```bash
    cargo fmt --check
    cargo clippy --all-targets -- -D warnings
