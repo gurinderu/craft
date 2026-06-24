@@ -20,6 +20,12 @@ Common: `ts`, `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`,
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, confirmed, refuteRate}`,
 `notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool).
 Agents add: `toolsRun[]`.
+rust-review records also carry `gate {status, provenance}` (always) and `failedChecks[]`
+(gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
+
+For rust-review, `dimensions[]` accounts for per-lens findings only — seed/gate findings
+(e.g. clippy-pedantic, semver-checks) are included in `findings.total` but are not attributed
+to a lens row, so the per-dimension counts may sum to less than `findings.total`.
 
 `index.jsonl` carries the summary projection (drops `dimensions`/`scout`/`verification` detail,
 adds `findingsTotal`).

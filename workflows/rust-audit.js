@@ -336,6 +336,8 @@ const ran = new Set(results.map(r => r.dimension))
 const notRun = dispatched.filter(d => !ran.has(d))
 if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
 
+const stripped = results.map(stripInternal)
+
 phase('Synthesize')
 const report = await agent(
   `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
@@ -350,7 +352,7 @@ const report = await agent(
 NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
 
 RESULTS:
-${JSON.stringify(results.map(stripInternal), null, 2)}`,
+${JSON.stringify(stripped, null, 2)}`,
   // Synthesis is merge/dedup/rank of given verdicts — moderate reasoning, not a deep judgement call.
   { label: 'synthesis', effort: 'medium' },
 )
@@ -365,7 +367,7 @@ const auditRecord = {
   nested: false,
   via: null,
   scout: { baseRef, crateCount: crates.length, changedCrateCount: changedCrates.length, edgeCount: edges.length, hasUnsafe },
-  dimensions: results.map(stripInternal).map(r => {
+  dimensions: stripped.map(r => {
     const s = summarizeFindings(r.findings)
     return { dimension: r.dimension, verdict: r.verdict, findingCount: s.total, bySeverity: s.bySeverity }
   }),
