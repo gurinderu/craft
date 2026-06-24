@@ -89,7 +89,7 @@ them by `agentType` — internal to the plugin, no external dependency).
 
 ## Documentation
 
-- `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the review workflows and agents.
+- `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the `rust-review` / `rust-audit` / `triage-findings` workflows and the review agents.
 
 ## Cross-cutting skills (language-agnostic)
 
