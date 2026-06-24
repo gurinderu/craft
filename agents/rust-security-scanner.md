@@ -47,3 +47,16 @@ Block — 1 vulnerable dependency with a fix available.
 Each finding: `severity · tool · what · why it matters · fix/mitigation`. Cite the advisory id /
 crate / file:line. Be precise; prefer a few real findings over a wall of noise. If a tool isn't
 installed, say so — don't imply that area was cleared.
+
+## Observability
+
+After you have issued your verdict, record this run — UNLESS your dispatch prompt says the workflow
+records this run (then skip; the workflow owns it). This is best-effort: never fail your scan
+because logging failed.
+
+Append ONE compact JSON line to `~/.craft/runs/index.jsonl` (run `mkdir -p ~/.craft/runs` first),
+using a single atomic append (`printf '%s\n' "$LINE" >> ~/.craft/runs/index.jsonl`):
+
+`{"schemaVersion":1,"ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-security-scanner","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Approve|Warning|Block>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null,"toolsRun":["cargo-audit","cargo-deny"]}`
+
+Set `toolsRun` to the tools that actually ran (omit ones that were absent).

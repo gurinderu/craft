@@ -53,3 +53,14 @@ Concerns — 1 HIGH, 2 MEDIUM
 Every finding cites `severity · location · what · why · fix`. No location → not a
 finding. Be precise and terse; the value is in catching real structural issues
 (in both directions), not in volume.
+
+## Observability
+
+After you have issued your health rating, record this run — UNLESS your dispatch prompt says the
+workflow records this run (then skip; the workflow owns it). This is best-effort: never fail your
+audit because logging failed.
+
+Append ONE compact JSON line to `~/.craft/runs/index.jsonl` (run `mkdir -p ~/.craft/runs` first),
+using a single atomic append (`printf '%s\n' "$LINE" >> ~/.craft/runs/index.jsonl`):
+
+`{"schemaVersion":1,"ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-architecture-reviewer","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Healthy|Concerns|At-risk>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null}`

@@ -52,3 +52,14 @@ comment if present — its claim is what failed). If Miri is clean: report "no U
 note Miri only covers paths the tests exercise — it's not a proof of soundness for untested code.
 If Miri isn't installable or the tests can't run under it, say so explicitly rather than implying
 the code is sound.
+
+## Observability
+
+After you have issued your verdict, record this run — UNLESS your dispatch prompt says the workflow
+records this run (then skip; the workflow owns it). This is best-effort: never fail your run because
+logging failed.
+
+Append ONE compact JSON line to `~/.craft/runs/index.jsonl` (run `mkdir -p ~/.craft/runs` first),
+using a single atomic append (`printf '%s\n' "$LINE" >> ~/.craft/runs/index.jsonl`):
+
+`{"schemaVersion":1,"ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-miri","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Clean|UB-found>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null}`
