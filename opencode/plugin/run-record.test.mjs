@@ -15,6 +15,9 @@ test('parseVerdict picks the worst signal in the text', () => {
   assert.equal(parseVerdict('At-risk structure'), 'Block')
   assert.equal(parseVerdict('Miri: UB-found'), 'Block')
   assert.equal(parseVerdict(''), 'Approve')
+  // Word boundaries: prose containing "block" must NOT register as Block.
+  assert.equal(parseVerdict('no blocking issues found'), 'Approve')
+  assert.equal(parseVerdict('unblocked the pipeline'), 'Approve')
 })
 
 test('buildAuditRecord assembles dimensions, notRun, and a null findings field', () => {
@@ -79,6 +82,8 @@ test('writeRecord writes a detail file and appends one index line', async () => 
   const ctx = {
     worktree: '/proj',
     directory: '/proj',
+    // Mirrors sh()'s `$\`bash -lc ${cmd}\`` shape: the command is the sole interpolated value,
+    // so reading vals (ignoring the static `bash -lc ` prefix) reconstructs it.
     $: (_strings, ...vals) => ({
       quiet: async () => {
         const cmd = vals.join('')
