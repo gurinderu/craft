@@ -87,6 +87,10 @@ them by `agentType` — internal to the plugin, no external dependency).
 | `rust-audit` | reviewer + architecture + security + miri (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
 
+## Documentation
+
+- `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the review workflows and agents.
+
 ## Cross-cutting skills (language-agnostic)
 
 | Skill | Status | Scope | Does NOT cover (owner) |
