@@ -144,9 +144,12 @@ Report everything you suspect. Borderline findings go to Suspected, not the bin.
 ## Tool grounding (seed findings)
 
 Beyond the gate, the workflow runs real tools scoped to the diff and feeds their output in as seed
-findings (each still verified): `cargo clippy -W clippy::pedantic -W clippy::nursery`, and for
-published libraries `cargo semver-checks check-release`. Optional tools degrade gracefully when
-absent.
+findings (each still verified): `cargo clippy -W clippy::pedantic -W clippy::nursery`; for
+published libraries `cargo semver-checks check-release`; and `semgrep` as a SAST seed — in-repo
+`./semgrep/` custom rules always when present, plus `p/rust`/`p/secrets` when the diff is
+security-sensitive (auth, crypto, input parsing, unsafe, FFI, deps). semgrep results are seeds, never
+gate failures: taint/secrets over-report, so the downstream verification refutes the false positives
+(see `rust-security`). Optional tools degrade gracefully when absent.
 
 ## Verification protocol
 
