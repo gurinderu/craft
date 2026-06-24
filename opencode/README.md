@@ -68,8 +68,12 @@ by default.
   the **review** dimension is a single-pass `rust-reviewer` agent — there is no per-crate review
   fan-out and no inter-crate-contract dimension. The other audit dimensions (architecture,
   security, miri, crate-decomposition, semver, build-matrix, deps, unused-crates, tests-cov) do run.
-- **No observability run-records.** The Claude Code workflows/agents emit a structured run record
-  to `~/.craft/runs/` (see `docs/observability.md`); the opencode adapters do not.
+- **Observability is a deterministic subset.** `/rust-audit` and `/triage-findings` write a run
+  record to the shared `~/.craft/runs/` store (`runtime: "opencode"`), straight from the plugin —
+  no logger agent. Because opencode agents return free text (not schema-validated JSON), the record
+  captures `ts`/`project`/`commit`/`dirty`, which dimensions ran vs `notRun`, and a `verdict` parsed
+  from the synthesis text — but NOT `findings.bySeverity` or `outputTokens` (`findings` is `null`).
+  The hidden review agents do not self-log, so a standalone hidden-agent invocation is not recorded.
 - **triage `conflict` semantics differ.** In `opencode/plugin/triage-findings.ts` the per-finding
   validation may itself return a `conflict` verdict (validate and plan logic are merged into one
   call); the Claude Code `triage-findings.js` reserves `conflict` for the separate Plan phase.

@@ -3,6 +3,7 @@
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAgent, type Job } from "./orchestrator.ts"
+import { buildTriageRecord, writeRecord } from "./run-record.mjs"
 import { existsSync, readFileSync } from "node:fs"
 
 // Read the locator as a file when it points at one; otherwise treat it as literal findings text.
@@ -56,5 +57,7 @@ Below is each finding with its validation outcome. Build:
 VALIDATED FINDINGS:
 ${ledger}`
 
-  return (await runAgent(ctx, "", planPrompt).catch(() => ledger)) || ledger
+  const plan = (await runAgent(ctx, "", planPrompt).catch(() => ledger)) || ledger
+  await writeRecord(ctx, buildTriageRecord({ results: validated }))
+  return plan
 }
