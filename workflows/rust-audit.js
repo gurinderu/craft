@@ -108,7 +108,7 @@ function worstVerdict(verdicts) {
 }
 function indexProjection(r) {
   return {
-    schemaVersion: r.schemaVersion, ts: r.ts, kind: r.kind, name: r.name,
+    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
     project: r.project, commit: r.commit, dirty: r.dirty,
     verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
     nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
@@ -360,6 +360,7 @@ ${JSON.stringify(stripped, null, 2)}`,
 const uc = results.find(r => r.dimension === 'unused-crates')
 const auditRecord = {
   schemaVersion: 1,
+  runtime: 'claude-code',
   kind: 'workflow',
   name: 'rust-audit',
   verdict: worstVerdict(results.map(r => r.verdict)) + (notRun.length ? ' (INCOMPLETE)' : ''),

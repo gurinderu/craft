@@ -113,7 +113,7 @@ function reviewVerdict(confirmed) {
 }
 function indexProjection(r) {
   return {
-    schemaVersion: r.schemaVersion, ts: r.ts, kind: r.kind, name: r.name,
+    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
     project: r.project, commit: r.commit, dirty: r.dirty,
     verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
     nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
@@ -206,6 +206,7 @@ log(`Gate: ${gateStatus} â€” ${gateProvenance}${gate?.failedChecks?.length ? ` Â
 function reviewRecord(extra) {
   return {
     schemaVersion: 1,
+    runtime: 'claude-code',
     kind: 'workflow',
     name: 'rust-review',
     nested: !!viaArg,

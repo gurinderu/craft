@@ -59,4 +59,4 @@ because logging failed.
 Append ONE compact JSON line to `~/.craft/runs/index.jsonl` (run `mkdir -p ~/.craft/runs` first),
 using a single atomic append (`printf '%s\n' "$LINE" >> ~/.craft/runs/index.jsonl`):
 
-`{"schemaVersion":1,"ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-reviewer","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Approve|Warning|Block>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null}`
+`{"schemaVersion":1,"runtime":"claude-code","ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-reviewer","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Approve|Warning|Block>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null}`

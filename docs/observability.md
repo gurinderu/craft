@@ -14,7 +14,7 @@ structured record to a global per-user store so runs can be studied later.
 
 ## Record schema (`schemaVersion: 1`)
 
-Common: `ts`, `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
+Common: `ts`, `runtime` (`"claude-code"` | `"opencode"`), `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
 `findings: {total, bySeverity:{Critical,High,Medium,Low,Info}}`, `nested`, `via`.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, confirmed, refuteRate}`,
@@ -25,6 +25,11 @@ workflow's `logRun`/record assembly for the exact fields.
 The `rust-security-scanner` agent additionally records `toolsRun[]` (which cargo tools actually ran).
 rust-review records also carry `gate {status, provenance}` (always) and `failedChecks[]`
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
+
+Records carry a `runtime` field — `"claude-code"` for the Claude Code workflows/agents,
+`"opencode"` for the opencode adapter. opencode records are a deterministic subset: `findings`
+is `null` (no structured findings), and there is no `outputTokens` (no token meter) — so
+`findingsTotal` is `null` in their index projection.
 
 For rust-review, `dimensions[]` accounts for per-lens findings only — seed/gate findings
 (e.g. clippy-pedantic, semver-checks) are included in `findings.total` but are not attributed
