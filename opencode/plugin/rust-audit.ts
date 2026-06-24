@@ -1,4 +1,8 @@
-// Mirrors workflows/rust-audit.js: scout → fan out reviewers (Miri only if unsafe) → synthesize.
+// Mirrors workflows/rust-audit.js (slim port): scout → fan out the agent dimensions (Miri only if
+// unsafe) plus the whole-project tool dimensions (crate-decomposition, semver, build-matrix, deps,
+// unused-crates, tests-cov, on the default session model) → synthesize. The Claude-Code-only
+// elastic rust-review engine has no opencode equivalent, so the "review" dimension is a single-pass
+// rust-reviewer (no per-crate / inter-crate-contract fan-out); see opencode/README.md parity caveats.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAgent, type Job } from "./orchestrator.ts"
 
@@ -62,6 +66,42 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
       prompt: `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric. Return a Clean / UB-found verdict and findings.`,
     })
   }
+
+  // Whole-project tool dimensions — no dedicated agent (run on the default session model). Each runs
+  // its tools, interprets, and degrades gracefully: a missing tool is an intentional skip (verdict
+  // Approve + a note), never a failure.
+  jobs.push(
+    {
+      label: "crate-decomposition",
+      agent: "",
+      prompt: `Judge this Rust workspace's crate boundaries: recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back (build on \`cargo metadata\`). For each recommendation give the DRIVER, the BOUNDARY, and the HOW. Recommend only — do not move code. Load the rust-ecosystem skill (crate-extraction). Return a Healthy/Concerns/At-risk verdict and findings.`,
+    },
+    {
+      label: "semver",
+      agent: "",
+      prompt: `Check public-API semver compatibility across PUBLISHED crates: run \`cargo semver-checks check-release\` if installed. If cargo-semver-checks is absent or there is no published library crate, say so and return verdict "Approve" with a one-line skip note — do NOT fail. Load the rust-ecosystem skill. Report breaking changes vs the published baseline as findings.`,
+    },
+    {
+      label: "build-matrix",
+      agent: "",
+      prompt: `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\`. Skip any absent tool/toolchain with a note and return "Approve" if nothing ran — do NOT fail. Report failing feature combinations or MSRV breakage as findings.`,
+    },
+    {
+      label: "deps",
+      agent: "",
+      prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail. Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.`,
+    },
+    {
+      label: "unused-crates",
+      agent: "",
+      prompt: `Find UNUSED crates in two classes, then VERIFY each before reporting: (a) ORPHAN workspace members — members that NO other workspace member depends on, excluding binaries and published libraries (from \`cargo metadata\`); (b) UNUSED dependencies — \`cargo machete\` (or \`cargo +nightly udeps\` if absent). For EACH candidate, try HARD to prove it IS used (cfg/feature-gated, macro-only, re-exported, build.rs, dev/bench/example usage, bin/published status) before accepting it; default to "used" when uncertain (recommending deletion of live code is the costly error). Skip any absent tool with a note — do NOT fail. Report ONLY verified-unused crates/deps as findings (severity Medium).`,
+    },
+    {
+      label: "tests-cov",
+      agent: "",
+      prompt: `Assess test effectiveness and docs: \`cargo llvm-cov --summary-only\` if cargo-llvm-cov is installed; build docs cleanly (\`cargo doc --no-deps\`, flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any absent tool with a note — do NOT fail. Load the rust-testing skill. Report low-coverage hotspots, broken doc links, and failing doctests as findings.`,
+    },
+  )
 
   const results = await fanOut(ctx, jobs)
 
