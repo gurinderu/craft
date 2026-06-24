@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'The single review path for any Rust diff/PR before commit or merge. Scales depth to the diff automatically — small diffs run cheap, large diffs run the full fan-out.',
   phases: [
     { title: 'Scout', detail: 'resolve the diff base, classify size/categories, pick lenses + rigor', model: 'haiku' },
-    { title: 'Gate', detail: 'CI-aware mechanical gate + tool-grounded seed findings' },
+    { title: 'Gate', detail: 'CI-aware mechanical gate + tool-grounded seed findings (clippy-pedantic / semver / semgrep)' },
     { title: 'Lenses', detail: 'parallel per-lens review with context expansion; loop-until-dry' },
     { title: 'Verify', detail: 'adversarial refutation + self-verification of each finding' },
     { title: 'Synthesize', detail: 'calibrate severities, completeness critic, one report' },
@@ -193,7 +193,14 @@ SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates)
 5. \`cargo clippy --all-targets -- -W clippy::pedantic -W clippy::nursery\` — turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these.
 ${plan.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
 
-Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings are clippy-pedantic / semver only.`,
+7. SAST seed (semgrep) — decide what configs apply, then run only if any do:
+   - If a \`./semgrep/\` rules dir exists in the repo, ALWAYS include \`--config=./semgrep/\` (repo-specific banned-API/taint rules — the whole point of keeping them in-repo).
+${plan.securitySensitive
+    ? '   - This diff IS security-sensitive: also include `--config=p/rust --config=p/secrets`.'
+    : '   - This diff is NOT security-sensitive: do not pull the generic rulesets; rely on `./semgrep/` only (skip step 7 entirely if that dir is absent).'}
+   If at least one config applies and \`semgrep\` is installed, scope it to the changed Rust files (\`git diff --name-only ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'} -- '*.rs'\`) and run \`semgrep --error <configs> <files>\`. Turn each result into a seed finding (source "semgrep"; map semgrep ERROR→High, WARNING→Medium, INFO→Low). These are SEEDS, never gate failures — semgrep taint/secrets over-reports, and downstream verification refutes the false positives. If semgrep is absent or no config applies, log and skip.
+
+Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings are clippy-pedantic / semver / semgrep only.`,
   { label: 'gate', schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' },
 )
 
