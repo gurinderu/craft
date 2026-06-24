@@ -18,8 +18,11 @@ Common: `ts`, `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`,
 `findings: {total, bySeverity:{Critical,High,Medium,Low,Info}}`, `nested`, `via`.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, confirmed, refuteRate}`,
-`notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool).
-Agents add: `toolsRun[]`.
+`notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool). The `scout`
+shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
+rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`; see each
+workflow's `logRun`/record assembly for the exact fields.
+The `rust-security-scanner` agent additionally records `toolsRun[]` (which cargo tools actually ran).
 rust-review records also carry `gate {status, provenance}` (always) and `failedChecks[]`
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
 

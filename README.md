@@ -19,6 +19,7 @@ at the relevant `superpowers:*` skill for the language-agnostic method.
 | skill | `craft:rust-traits` | Traits, generics, dispatch (static / `dyn` / enum), object safety, type-driven design (newtype, typestate, `PhantomData`, sealed) |
 | skill | `craft:rust-performance` | Measure-first perf — criterion/divan, profiling, build config, PGO, heap allocations (incl. arenas, compact strings), hashing, type sizes, iterators, SIMD/autovectorization, code layout |
 | skill | `craft:rust-architecture` | Hexagonal (ports & adapters) — domain core, ports as traits, adapters, dependency inversion, domain modeling, module layout |
+| skill | `craft:rust-architecture-review` | Architecture-audit rubric — whole-project dependency graph, severity-tiered checklist (cycles, layer leaks, god modules) AND over-engineering, Healthy/Concerns/At-risk rating |
 | skill | `craft:rust-idioms` | Idiomatic Rust — naming conventions, native constructs, clippy/rustfmt, rustdoc conventions, and an anti-pattern catalog (Good/Bad) |
 | skill | `craft:rust-unsafe` | Unsafe done soundly — the five superpowers, `// SAFETY:` discipline, UB, raw pointers, FFI, `#[repr]`, Miri |
 | skill | `craft:rust-ecosystem` | Crates & Cargo — choosing deps, features/workspaces, edition/MSRV, project layout, publishing (semver, docs, interop) |
@@ -37,10 +38,12 @@ at the relevant `superpowers:*` skill for the language-agnostic method.
 | skill | `craft:refactoring` | Disciplined refactoring — structure-not-behavior in tiny steps under green tests (language-agnostic) |
 | skill | `craft:codebase-onboarding` | Understand an unfamiliar codebase first — map, find seams, trace one flow, confirm by building (language-agnostic) |
 | skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; scales to the `triage-findings` workflow |
-| agent | `rust-reviewer` | Runs the gate, reviews a diff against the `rust-review` rubric, returns a verdict |
+| agent | `rust-reviewer` | Per-lens worker for the `rust-review` workflow; run directly for an ad-hoc whole-diff review (establishes the CI-aware gate and returns a verdict) |
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |
 | agent | `rust-miri` | Runs unsafe code under Miri to detect undefined behavior |
-| workflow | `rust-audit` | Runs `rust-reviewer` + `rust-architecture-reviewer` + `rust-security-scanner` + `rust-miri` (if `unsafe` present) in parallel and synthesizes one severity-ranked report |
+| agent | `rust-architecture-reviewer` | Audits the whole-project structure against the `rust-architecture-review` rubric, returns a Healthy/Concerns/At-risk rating |
+| workflow | `rust-review` | Elastic deep review of a Rust diff — scout-scaled lens fan-out, loop-until-dry, adversarial + self-verification, one Confirmed/Suspected report with a verdict (the default diff-review path) |
+| workflow | `rust-audit` | Full crate audit — per-crate review, inter-crate contracts, architecture, crate-decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health, run in parallel and synthesized into one report |
 | workflow | `triage-findings` | Validates review findings (craft agents + GitHub PR comments) in parallel, dedups/conflict-checks, and renders one ordered fix plan (writing-plans format) + a triage ledger — no edits |
 
 ## Layout
@@ -50,12 +53,17 @@ craft/
 ├── .claude-plugin/
 │   ├── plugin.json        # plugin metadata
 │   └── marketplace.json   # single-plugin marketplace (source: ./)
-├── agents/                # (abbreviated)
+├── agents/                # diff/structure review agents
 │   ├── rust-reviewer.md
 │   ├── rust-security-scanner.md
-│   └── rust-miri.md
+│   ├── rust-miri.md
+│   └── rust-architecture-reviewer.md
 ├── workflows/             # multi-agent orchestration scripts
-│   └── rust-audit.js
+│   ├── rust-review.js
+│   ├── rust-audit.js
+│   └── triage-findings.js
+├── lib/                   # tested helpers shared (inlined) by the workflows
+│   └── run-record.mjs
 └── skills/                # (abbreviated)
     ├── rust-review/
     ├── rust-testing/
@@ -80,12 +88,24 @@ strategy, and parity caveats.
 
 ## Workflows
 
-`workflows/rust-audit.js` orchestrates the review agents in one pass: a scout step detects
-the diff base and whether the workspace has `unsafe`, then `rust-reviewer`,
-`rust-architecture-reviewer`, `rust-security-scanner`, and (only if `unsafe` is present)
-`rust-miri` run in parallel, and a final step synthesizes one severity-ranked report.
+`workflows/rust-review.js` is the default diff-review path: a scout sizes the diff and picks
+lenses + rigor, lenses fan out in parallel and loop until dry, every finding is adversarially
+and self-verified, and a synthesis step emits one Confirmed/Suspected report with a verdict —
+depth scales to the diff automatically.
 
-Run it against a path or fixed diff base:
+`workflows/rust-audit.js` is the full pre-release audit: a scout detects the diff base, `unsafe`,
+the workspace crates and their dependency edges, then many dimensions run in parallel — per-crate
+review, inter-crate contracts, architecture, crate-decomposition, security, Miri (if `unsafe`),
+semver, build-matrix, deps, unused-crate detection (with verification), and test/doc health — and
+a final step synthesizes one severity-ranked report.
+
+`workflows/triage-findings.js` validates findings (craft agents + GitHub PR comments), dedups and
+conflict-checks them, and renders one ordered fix plan + a triage ledger — no edits.
+
+Both review workflows and the standalone agents emit a structured run record after each run; see
+`docs/observability.md`.
+
+Run a workflow against a path or fixed diff base:
 
 ```
 Workflow({ scriptPath: "workflows/rust-audit.js", args: { base: "origin/main" } })
