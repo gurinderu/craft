@@ -1,6 +1,6 @@
 {
   "name": "craft",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Personal Claude Code collection of opinionated engineering skills and agents — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native) plus language-agnostic process skills (specs, debugging, refactoring, onboarding) and code-review / architecture / security / Miri agents; builds on the superpowers plugin for generic process discipline (systematic-debugging, verification, code-review). Multi-language over time.",
   "dependencies": [
     "superpowers@claude-plugins-official"
