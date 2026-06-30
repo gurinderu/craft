@@ -17,9 +17,10 @@ const intentArg = (args && typeof args === 'object' && args.intent) ? String(arg
 const postComments = !!(args && typeof args === 'object' && args.comment)
 const pathArg = (args && typeof args === 'object' && args.path) ? String(args.path) : ''   // optional crate-scope (audit per-crate fan-out)
 const viaArg = (args && typeof args === 'object' && args._via) ? String(args._via) : ''   // set by a parent workflow (e.g. rust-audit)
+const strict = !!(args && typeof args === 'object' && args.strict)   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
 
 // ---- catalog ----
-const ALL_LENSES = ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'tests', 'intent']
+const ALL_LENSES = ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'maintainability', 'tests', 'intent']
 
 // ---- shared schemas ----
 const FINDING_ITEM = {
@@ -111,6 +112,15 @@ function reviewVerdict(confirmed) {
   if (by.Medium) return 'Warning'
   return 'Approve'
 }
+// finalVerdict is workflow-local — NOT part of the lib/run-record.mjs mirror above.
+// In strict mode the maintainability bar is a presumption of block: any Confirmed
+// maintainability finding at Medium or above escalates the verdict to Block. Outside strict mode
+// the base verdict stands (maintainability findings are at most a Warning).
+function finalVerdict(confirmed) {
+  if (strict && confirmed.some(f => (f.source || '') === 'maintainability'
+    && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) return 'Block'
+  return reviewVerdict(confirmed)
+}
 function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
@@ -154,7 +164,7 @@ const scout = await agent(
    - small: only the touched categories (minimum 2; always include 'safety' and the dominant category).
    - medium: the categories plausibly in play.
    - large: all of them.
-   Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; always consider 'intent'.
+   Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; new branching / growing files / large refactor → maintainability; always consider 'intent'.${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
 4. maxRounds: small=1, medium=2, large=3. verifyVotes: small/medium=1, large=3. lensModel: opus for all sizes (review reasoning runs on Opus; depth still scales via maxRounds/verifyVotes/lens count).
 5. isLibrary: true if this crate is a published library (has \`[lib]\`/is named in a workspace as a lib and looks publishable) — best effort.
 6. securitySensitive: true if the diff touches auth, crypto, input parsing, unsafe, FFI, or dependencies.
@@ -176,7 +186,9 @@ const plan = {
   intent: scout?.intent ?? intentArg,
   churn: scout?.churn ?? [],
 }
-log(scout?.notes ?? 'scout produced no result — assuming medium bucket, all lenses')
+// Strict mode always runs the maintainability lens, whatever the scout picked.
+if (strict && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
+log(`${scout?.notes ?? 'scout produced no result — assuming medium bucket, all lenses'}${strict ? ' · STRICT maintainability mode' : ''}`)
 
 // ================= Gate + tool grounding =================
 phase('Gate')
@@ -247,6 +259,7 @@ const LENS_BRIEF = {
   concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
   performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
   'api-idioms': 'API & idioms & docs: library returning Box<dyn Error>/anyhow, giant functions / deep nesting, wildcard match on a business enum, pub item without ///, #[allow] without justification, #![deny(warnings)] in source.',
+  maintainability: 'maintainability & structural simplification (load the refactoring skill): missed code judo — a behavior-preserving reframing using the existing architecture that would make this change dramatically simpler or delete a whole category of complexity; file pushed across ~700 lines (decomposition smell); ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow instead of a dedicated abstraction; needless optionality (Option that always holds), as-casts where From/TryFrom belongs, Box<dyn Any>/downcasting where a typed model fits. Flag only concrete, behavior-preserving restructurings the author could have taken — not hypothetical rewrites.',
   tests: 'tests & coverage QUALITY (not just presence): do new tests assert real behavior and error paths, or are they vacuous (assert!(true), no assertions)? New error path/branch with no test; bug fix with no regression test.',
   intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Compare the diff against the stated intent; flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
 }
@@ -255,7 +268,7 @@ function lensPrompt(lens, priorSummary) {
   return `You are the **${lens}** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.
 
 SLICE: ${LENS_BRIEF[lens] || lens}
-
+${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Hold the change to: no structural regression, no obvious simplification missed, no unjustified file-size explosion, no spaghetti-growth, no hacky/magical abstraction. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
 Diff base: ${plan.baseRef ? `\`${plan.baseRef}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'} -- '*.rs'\`.
 ${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
 ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}
@@ -297,7 +310,9 @@ for (let round = 1; round <= plan.maxRounds && !dry; round++) {
   const fresh = []
   for (const r of results) {
     for (const f0 of (r.findings || [])) {
-      const f = { ...f0, source: f0.source || r.lens }
+      // Force source to the lens name: the per-dimension tally and the strict-mode
+      // maintainability escalation key off source, and a worker may mislabel it (e.g. "refactoring").
+      const f = { ...f0, source: r.lens }
       const k = key(f)
       if (!seen.has(k)) { seen.add(k); fresh.push(f) }
     }
@@ -419,7 +434,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
 - ⚠️ Warning if Confirmed Medium only.
 - ✅ Approve if no Confirmed Critical/High/Medium.
-Suspected findings NEVER change the verdict — they are surfaced for the author.
+Suspected findings NEVER change the verdict — they are surfaced for the author.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do.
 
@@ -450,7 +465,7 @@ ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.s
 const allReviewFindings = confirmed.concat(suspected)
 const totalVerified = confirmed.length + suspected.length + dropped
 await logRun(reviewRecord({
-  verdict: reviewVerdict(confirmed),
+  verdict: finalVerdict(confirmed),
   findings: summarizeFindings(allReviewFindings),
   dimensions: plan.lenses.map(l => {
     const s = summarizeFindings(confirmed.filter(f => (f.source || '') === l))
