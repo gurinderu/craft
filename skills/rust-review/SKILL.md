@@ -57,6 +57,7 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - Blocking-in-async / lock-across-`.await` / deadlock / `Send`+`Sync` → `rust-concurrency`
 - Allocation / hot-path / N+1 → `rust-performance`
 - Generic code smells / naming / wildcard-match / missing-`///` → `rust-idioms`
+- Structural simplification / file decomposition / spaghetti branching → `refactoring`
 - Missing tests → `rust-testing`
 
 ### CRITICAL — block on sight
@@ -106,6 +107,24 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - `#[allow(...)]` suppressing a lint without a justifying comment
 - Crate-root `#![deny(warnings)]` (or other blanket lint-level attributes) — brittle: a new compiler/clippy lint becomes a hard build break for the crate and its dependents → move the denial to CI (`rust-idioms` anti-patterns)
 
+**Maintainability & structural simplification** (fix → `refactoring`, `rust-idioms`)
+- **Missed code judo** — a reframing that uses the existing architecture more effectively would make this change *dramatically* simpler or delete a whole category of complexity (a layer, a branch family). Don't flag hypothetical rewrites; flag a concrete, behavior-preserving restructuring the author could have taken.
+- **File-size growth** — the diff pushes a file across ~700 lines (Rust files are dense; this is the decomposition smell, the per-function ~50-line rule above is separate) → split by responsibility.
+- **Spaghetti branching** — a new ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow, instead of behind a dedicated abstraction (→ `refactoring` "replace conditional with dispatch").
+- **Needless optionality / casts** — superfluous `Option` wrapping where the value always exists, `as`-casts where `From`/`TryFrom` belongs, `Box<dyn Any>` / downcasting where a typed model fits.
+
+### Maintainability bar — presumption of block (strict mode)
+
+By default the maintainability items above are **MEDIUM** (warn, may merge). When the review is dispatched in **strict mode** (the `rust-review` workflow's `strict` flag, or an explicit "harsh maintainability review" request), they invert to a **presumption of block**: each is treated as a blocker *unless the author has clearly justified it in the diff or brief*. In strict mode, Approve additionally requires:
+
+- no structural regression (a previously cohesive module didn't become more coupled or harder to scan);
+- no obvious simplification missed (the code-judo check above came up empty);
+- no unjustified file-size explosion;
+- no spaghetti-growth from special-case branching;
+- no hacky or magical abstraction obscuring the design.
+
+Strict mode raises the bar; it does not invent findings — every item still goes through the verification protocol and a refuted item is dropped.
+
 ### Public-API diffs — the API-design pass
 
 When the diff changes a **public API** (a library crate, a published `pub` surface), also run the
@@ -128,6 +147,7 @@ others (higher recall than one broad pass):
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
 | performance | hot-loop allocation, N+1, needless owning | `rust-performance` |
 | api-idioms | typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` | `rust-idioms` |
+| maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
 | intent | does the change do what the brief/spec says? | `specs` |
 
@@ -168,6 +188,8 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 | **Approve** ✅ | gate green (CI or local), no **Confirmed** CRITICAL/HIGH/MEDIUM |
 | **Warning** ⚠️ | gate green (CI or local), **Confirmed** MEDIUM only — Suspected items listed but don't block |
 | **Block** ⛔ | gate red (CI or local), or any **Confirmed** CRITICAL/HIGH |
+
+In **strict mode**, the maintainability bar applies: a Confirmed maintainability finding (code judo missed, file-size explosion, spaghetti branching, hacky abstraction) is a **presumptive Block** unless the author justified it — escalated from its default MEDIUM. Outside strict mode those findings stay MEDIUM (Warning at most).
 
 Report findings as `severity · file:line · what · why · fix`. Be specific and cite the line; a finding without a location isn't actionable.
 
