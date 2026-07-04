@@ -1,6 +1,7 @@
 ---
 name: debugging
-description: Rust debugging toolbox — the concrete techniques for reproducing, localizing, and explaining a Rust bug (minimal repro, git bisect / cargo bisect-rustc, dbg!/tracing/RUST_BACKTRACE instrumentation, Miri/loom for heisenbugs, rust-gdb/rr). The general method (root cause before fix) lives in superpowers:systematic-debugging. Use for any Rust bug, panic, test failure, crash, or flaky/intermittent behavior. Triggers: bisect, cargo bisect-rustc, heisenbug, RUST_BACKTRACE, loom, rr, why is this failing, it works sometimes.
+description: >-
+  Rust debugging toolbox — the concrete techniques for reproducing, localizing, and explaining a Rust bug (minimal repro, git bisect / cargo bisect-rustc, dbg!/tracing/RUST_BACKTRACE instrumentation, Miri/loom for heisenbugs, rust-gdb/rr). The general method (root cause before fix) lives in superpowers:systematic-debugging. Use for any Rust bug, panic, test failure, crash, or flaky/intermittent behavior. Triggers: bisect, cargo bisect-rustc, heisenbug, RUST_BACKTRACE, loom, rr, why is this failing, it works sometimes.
 ---
 
 # Debugging (Rust)

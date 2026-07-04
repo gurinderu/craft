@@ -1,6 +1,7 @@
 ---
 name: rust-cloud-native
-description: Cloud-native Rust services — gRPC with tonic, observability (tracing + OpenTelemetry), health/readiness probes, 12-factor config, graceful shutdown, and lean containers. Use when building microservices, gRPC APIs, or services to run in Docker/Kubernetes, or adding tracing/metrics/health checks. Triggers: gRPC, tonic, opentelemetry, OTLP, readiness, liveness, 12-factor, distroless.
+description: >-
+  Cloud-native Rust services — gRPC with tonic, observability (tracing + OpenTelemetry), health/readiness probes, 12-factor config, graceful shutdown, and lean containers. Use when building microservices, gRPC APIs, or services to run in Docker/Kubernetes, or adding tracing/metrics/health checks. Triggers: gRPC, tonic, opentelemetry, OTLP, readiness, liveness, 12-factor, distroless.
 ---
 
 # Rust Cloud-Native
