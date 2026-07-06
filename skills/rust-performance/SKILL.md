@@ -1,6 +1,7 @@
 ---
 name: rust-performance
-description: Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings, or when builds are slow and you want to cut compile times / speed up the edit-compile-run loop. Triggers: criterion, divan, flamegraph, bumpalo, FxHashMap, LTO, codegen-units, target-cpu, PGO, SIMD, jemalloc, mimalloc, dhat, BufWriter, swap_remove, compile times, slow build, mold, lld, sccache, cargo --timings, cargo llvm-lines, incremental.
+description: >-
+  Rust performance — measure-first methodology, benchmarking (criterion/divan), profiling, and concrete optimizations (build config, heap allocations, hashing, type sizes, iterators). Use when code is slow, when optimizing a hot path, choosing a benchmark/profiler, or tuning build settings, or when builds are slow and you want to cut compile times / speed up the edit-compile-run loop. Triggers: criterion, divan, flamegraph, bumpalo, FxHashMap, LTO, codegen-units, target-cpu, PGO, SIMD, jemalloc, mimalloc, dhat, BufWriter, swap_remove, compile times, slow build, mold, lld, sccache, cargo --timings, cargo llvm-lines, incremental.
 ---
 
 # Rust Performance

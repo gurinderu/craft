@@ -1,6 +1,7 @@
 ---
 name: rust-testing
-description: Rust testing — unit, integration, async, table-driven (rstest), property-based (proptest), fuzzing (cargo-fuzz), mutation testing (cargo-mutants), mocking (mockall), snapshot (insta), doc tests, coverage, and the test runner. Use when writing or reviewing Rust tests, adding coverage, choosing a testing crate, or setting up CI for a Rust project. Triggers: #[tokio::test], rstest, proptest, cargo-fuzz, arbitrary, cargo-mutants, mockall, insta, nextest, llvm-cov, cucumber, gherkin.
+description: >-
+  Rust testing — unit, integration, async, table-driven (rstest), property-based (proptest), fuzzing (cargo-fuzz), mutation testing (cargo-mutants), mocking (mockall), snapshot (insta), doc tests, coverage, and the test runner. Use when writing or reviewing Rust tests, adding coverage, choosing a testing crate, or setting up CI for a Rust project. Triggers: #[tokio::test], rstest, proptest, cargo-fuzz, arbitrary, cargo-mutants, mockall, insta, nextest, llvm-cov, cucumber, gherkin.
 ---
 
 # Rust Testing

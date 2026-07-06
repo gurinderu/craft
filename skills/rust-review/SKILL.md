@@ -1,6 +1,7 @@
 ---
 name: rust-review
-description: Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API design pass against the Rust API Guidelines, the Approve/Warning/Block verdict, how to request a craft review (dispatch the rust-reviewer/rust-security-scanner/rust-miri agents with a crafted brief), and the Rust "what proves what" table for verifying a claim. Use when reviewing Rust code or a diff, requesting a review, deciding whether changes are mergeable, before committing or merging, reviewing a library's public API, or to confirm a claim with the right cargo command. Triggers: code review, ready for review, is this mergeable, dispatch reviewer, check this PR, public API, API guidelines, what proves done.
+description: >-
+  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API design pass against the Rust API Guidelines, the Approve/Warning/Block verdict, how to request a craft review (dispatch the rust-reviewer/rust-security-scanner/rust-miri agents with a crafted brief), and the Rust "what proves what" table for verifying a claim. Use when reviewing Rust code or a diff, requesting a review, deciding whether changes are mergeable, before committing or merging, reviewing a library's public API, or to confirm a claim with the right cargo command. Triggers: code review, ready for review, is this mergeable, dispatch reviewer, check this PR, public API, API guidelines, what proves done.
 ---
 
 # Rust Review

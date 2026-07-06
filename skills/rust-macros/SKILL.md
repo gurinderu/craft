@@ -1,6 +1,7 @@
 ---
 name: rust-macros
-description: Rust metaprogramming — declarative macros (macro_rules!) and procedural macros (derive, attribute, function-like) with syn/quote, plus when a macro is the wrong tool. Use when writing or debugging a macro, generating boilerplate, building a derive, or deciding macro vs generics. Triggers: macro_rules!, proc macro, derive macro, syn, quote, cargo expand, ToTokens, DSL.
+description: >-
+  Rust metaprogramming — declarative macros (macro_rules!) and procedural macros (derive, attribute, function-like) with syn/quote, plus when a macro is the wrong tool. Use when writing or debugging a macro, generating boilerplate, building a derive, or deciding macro vs generics. Triggers: macro_rules!, proc macro, derive macro, syn, quote, cargo expand, ToTokens, DSL.
 ---
 
 # Rust Macros
