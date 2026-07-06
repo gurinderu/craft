@@ -1,6 +1,7 @@
 ---
 name: rust-embedded
-description: Bare-metal / microcontroller Rust (no_std firmware) — the domain constraints (no heap, interrupts preempt anything, real-time deadlines, peripherals are single physical resources) and the Rust patterns that satisfy them: heapless collections, peripheral-ownership singletons, embedded-hal drivers, ISR-safe sharing via critical sections, and the RTIC-vs-Embassy choice. Use when writing firmware for Cortex-M / RISC-V / ESP, driving GPIO/SPI/I2C/UART/DMA, or picking an MCU concurrency model. Triggers: no_std, cortex-m, RISC-V, esp32, stm32, nrf, rp2040, embedded-hal, PAC, RTIC, embassy, ISR, critical section, GPIO, SPI, I2C, DMA, heapless, defmt, probe-rs.
+description: >-
+  Bare-metal / microcontroller Rust (no_std firmware) — the domain constraints (no heap, interrupts preempt anything, real-time deadlines, peripherals are single physical resources) and the Rust patterns that satisfy them: heapless collections, peripheral-ownership singletons, embedded-hal drivers, ISR-safe sharing via critical sections, and the RTIC-vs-Embassy choice. Use when writing firmware for Cortex-M / RISC-V / ESP, driving GPIO/SPI/I2C/UART/DMA, or picking an MCU concurrency model. Triggers: no_std, cortex-m, RISC-V, esp32, stm32, nrf, rp2040, embedded-hal, PAC, RTIC, embassy, ISR, critical section, GPIO, SPI, I2C, DMA, heapless, defmt, probe-rs.
 ---
 
 # Rust Embedded

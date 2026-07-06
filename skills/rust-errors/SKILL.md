@@ -1,6 +1,7 @@
 ---
 name: rust-errors
-description: Rust error handling — choosing Result vs Option vs panic, the ? operator, thiserror for libraries vs anyhow for applications, error design, context, and recovery (retry, fallback, circuit breaker). Use when designing or fixing error handling, choosing an error type/crate, propagating or contextualizing errors, or making code resilient. Triggers: ?, thiserror, anyhow, error propagation, retry, backoff, circuit breaker, From impl, E0277.
+description: >-
+  Rust error handling — choosing Result vs Option vs panic, the ? operator, thiserror for libraries vs anyhow for applications, error design, context, and recovery (retry, fallback, circuit breaker). Use when designing or fixing error handling, choosing an error type/crate, propagating or contextualizing errors, or making code resilient. Triggers: ?, thiserror, anyhow, error propagation, retry, backoff, circuit breaker, From impl, E0277.
 ---
 
 # Rust Error Handling

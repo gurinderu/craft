@@ -1,6 +1,7 @@
 ---
 name: rust-fintech
-description: Financial/money code in Rust — exact decimal arithmetic (never floats), a Money type with currency, rounding modes, allocation/splitting without losing cents, idempotency, and double-entry ledgers. Use when handling money, prices, currencies, payments, accounting, or any value where rounding and exactness are correctness-critical. Triggers: decimal, rust_decimal, banker's rounding, idempotency, ledger, double-entry.
+description: >-
+  Financial/money code in Rust — exact decimal arithmetic (never floats), a Money type with currency, rounding modes, allocation/splitting without losing cents, idempotency, and double-entry ledgers. Use when handling money, prices, currencies, payments, accounting, or any value where rounding and exactness are correctness-critical. Triggers: decimal, rust_decimal, banker's rounding, idempotency, ledger, double-entry.
 ---
 
 # Rust Fintech

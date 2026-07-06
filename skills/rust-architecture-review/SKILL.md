@@ -1,6 +1,7 @@
 ---
 name: rust-architecture-review
-description: Rust architecture-audit rubric — builds a whole-project dependency graph (crates and modules), then judges structure against a severity-tiered checklist (dependency cycles, inverted dependencies, layer leaks, god modules, anemic domain) AND over-engineering (ghost abstractions, over-layering, generic soup), and issues a Healthy/Concerns/At-risk health rating. Bidirectional — flags both too little and too much structure. Use when auditing the architecture of a Rust project or workspace, checking layering, or assessing structural debt. Triggers: structural debt, dependency cycle, layer leak, god module, is this over-engineered, hexagonal audit.
+description: >-
+  Rust architecture-audit rubric — builds a whole-project dependency graph (crates and modules), then judges structure against a severity-tiered checklist (dependency cycles, inverted dependencies, layer leaks, god modules, anemic domain) AND over-engineering (ghost abstractions, over-layering, generic soup), and issues a Healthy/Concerns/At-risk health rating. Bidirectional — flags both too little and too much structure. Use when auditing the architecture of a Rust project or workspace, checking layering, or assessing structural debt. Triggers: structural debt, dependency cycle, layer leak, god module, is this over-engineered, hexagonal audit.
 ---
 
 # Rust Architecture Review
