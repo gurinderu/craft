@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/gurinderu/craft/compare/v0.2.0...v0.3.0) (2026-07-07)
+
+
+### Features
+
+* **strict-review:** add subscription-friendly adversarial diff review workflow ([4da7101](https://github.com/gurinderu/craft/commit/4da710188f21557d9f9264fc5d0766d10a634c4d))
+
+
+### Bug Fixes
+
+* **opencode:** make skill descriptions valid YAML ([eff3cd9](https://github.com/gurinderu/craft/commit/eff3cd95709b1be9ba05090a950138173e659d70))
+* **opencode:** make skill descriptions valid YAML ([9969e57](https://github.com/gurinderu/craft/commit/9969e5731b5679c2f3eacaf9c9bd82f0901f571a))
+
 ## [0.2.0](https://github.com/gurinderu/craft/compare/v0.1.0...v0.2.0) (2026-06-30)
 
 
