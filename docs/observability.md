@@ -1,7 +1,8 @@
 # Observability — craft run records
 
-Every `rust-audit` / `rust-review` / `triage-findings` run, and every directly-dispatched review
-agent, writes a structured record to a global per-user store so runs can be studied later.
+Every `rust-audit` / `rust-review` / `strict-review` / `triage-findings` run, and every
+directly-dispatched review agent, writes a structured record to a global per-user store so runs
+can be studied later.
 
 ## Store
 
@@ -20,7 +21,8 @@ Common: `ts`, `runtime` (`"claude-code"` | `"opencode"`), `kind` (`workflow`|`ag
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, confirmed, refuteRate}`,
 `notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool). The `scout`
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
-rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`; see each
+rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
+strict-review records `{size, lenses, indexed, batch}`; see each
 workflow's `logRun`/record assembly for the exact fields.
 `triage-findings` is not a review: it carries `verdict: ""` and `findings` summarizing the findings
 it *triaged* (total + severity mix of the gathered raw findings, not findings it produced). It adds
@@ -40,6 +42,9 @@ is `null` (no structured findings), and there is no `outputTokens` (no token met
 For rust-review, `dimensions[]` accounts for per-lens findings only — seed/gate findings
 (e.g. clippy-pedantic, semver-checks) are included in `findings.total` but are not attributed
 to a lens row, so the per-dimension counts may sum to less than `findings.total`.
+For strict-review the opposite skew applies: a deduped finding corroborated by several lenses
+counts in each corroborating lens's row, so per-dimension counts may sum to more than
+`findings.total`.
 
 `index.jsonl` carries the summary projection (drops `dimensions`/`scout`/`verification` detail,
 adds `findingsTotal`).
