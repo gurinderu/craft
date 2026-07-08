@@ -40,20 +40,21 @@ and a `packages.default`, plus the full `nix flake` command surface.
       perSystem = { pkgs, system, config, ... }:
         let
           # Import nixpkgs with the rust overlay applied.
-          pkgs = import nixpkgs {
+          # Use a distinct name (pkgs') to avoid shadowing the perSystem argument.
+          pkgs' = import nixpkgs {
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
             config.allowUnfree = false;  # flip to true + --impure for unfree pkgs
           };
 
           # Pin a specific Rust toolchain from the overlay.
-          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          rustToolchain = pkgs'.rust-bin.stable.latest.default.override {
             extensions = [ "rust-src" "clippy" "rustfmt" ];
           };
         in
         {
           # ── packages ──────────────────────────────────────────────────────
-          packages.default = pkgs.rustPlatform.buildRustPackage {
+          packages.default = pkgs'.rustPlatform.buildRustPackage {
             pname = "my-project";
             version = "0.1.0";
             src = self;                      # the flake root is the source
@@ -61,14 +62,14 @@ and a `packages.default`, plus the full `nix flake` command surface.
           };
 
           # ── dev shells ────────────────────────────────────────────────────
-          devShells.default = pkgs.mkShell {
+          devShells.default = pkgs'.mkShell {
             name = "my-project-dev";
             packages = [
               rustToolchain
-              pkgs.cargo-watch
-              pkgs.cargo-nextest
-              pkgs.nixd          # Nix language server
-              pkgs.nil           # alternative Nix LS
+              pkgs'.cargo-watch
+              pkgs'.cargo-nextest
+              pkgs'.nixd          # Nix language server
+              pkgs'.nil           # alternative Nix LS
             ];
             # Shell hook runs on `nix develop` entry.
             shellHook = ''
@@ -78,12 +79,13 @@ and a `packages.default`, plus the full `nix flake` command surface.
           };
 
           # ── checks (run by `nix flake check`) ────────────────────────────
-          checks.clippy = pkgs.runCommand "clippy" {
-            buildInputs = [ rustToolchain ];
-            src = self;
+          # Note: Rust build/clippy checks need vendored deps (e.g. crane/vendorCargoDeps)
+          # and cannot run in a bare runCommand (no network in the Nix sandbox).
+          checks.fmt = pkgs.runCommandNoCC "nixpkgs-fmt-check" {
+            buildInputs = [ pkgs.nixpkgs-fmt ];
+            src = ./.;
           } ''
-            cd $src
-            cargo clippy --all-targets --all-features -- -D warnings
+            nixpkgs-fmt --check $src
             touch $out
           '';
         };
@@ -128,12 +130,14 @@ The `@` pattern binds the whole attrset to `inputs` while still destructuring th
 fields you name. This lets you forward `inputs` to `flake-parts.lib.mkFlake` (which
 needs all inputs) without listing every one explicitly.
 
-### Why shadow `pkgs` inside `perSystem`?
+### Why use a distinct name for the imported `pkgs` in `perSystem`?
 
 `perSystem` receives a `pkgs` argument from `flake-parts` (built from
 `nixpkgs.legacyPackages.${system}`), but when you need overlays or `config`, you must
-import nixpkgs yourself and reassign `pkgs`. The shadowing is intentional; the
-`flake-parts`-provided `pkgs` is discarded.
+import nixpkgs yourself. Use a distinct name (`pkgs'` or `nixpkgsFor`) instead of
+rebinding `pkgs` — this avoids shadowing the argument and keeps the two sets of packages
+clearly distinguishable. The `flake-parts`-provided `pkgs` remains available for tools
+(like formatters) that don't need the overlay.
 
 ## `nix flake` command surface
 
