@@ -323,11 +323,12 @@ Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent com
 7. churn: list up to 5 files in the diff that git shows as frequently changed (\`git log --oneline -n 50 -- <file> | wc -l\` is a rough proxy). May be empty.`
 }
 
-function negativeSpacePrompt(priorSummary, profile) {
+function negativeSpacePrompt(priorSummary, profile, plan) {
+  const intent = plan?.intent ?? intentArg
   return `You are the **negative-space** review lens for a ${profile.lang} change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. ${profile.navSkill ? `Load the ${profile.navSkill} skill for whole-repo search; use` : 'Use'} Grep/Glob across the ENTIRE tree, not just the diff.
 
 Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}.
-${intentArg ? `INTENT (what the change should do): ${intentArg}` : ''}
+${intent ? `INTENT (what the change should do): ${intent}` : ''}
 
 METHOD — follow in order:
 1. Inventory the NEW surface the diff introduces. Read the FULL diff: \`git diff ${baseRef ? `--merge-base ${baseRef}` : 'HEAD'}\`. List every new: ${profile.lang === 'Nix' ? 'flake output / module option / package attr / overlay / renamed binding' : 'enum variant / status value / DB column / table / migration / public fn / route / struct field'}. ALSO list any UNCHANGED definition the diff now references or relies on for the first time.
@@ -343,7 +344,7 @@ Return {lens: "negative-space", findings: [...]} using the shared finding schema
 }
 
 function lensPrompt(lens, priorSummary, profile, plan) {
-  if (lens === 'negative-space') return negativeSpacePrompt(priorSummary, profile)
+  if (lens === 'negative-space') return negativeSpacePrompt(priorSummary, profile, plan)
   return `You are the **${lens}** review lens for a ${profile.lang} diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the ${profile.rubricSkill} skill for the rubric${profile.navSkill ? ` and the ${profile.navSkill} skill for context expansion` : ''}.
 
 SLICE: ${profile.lensBrief[lens] || lens}
@@ -356,7 +357,7 @@ CONTEXT EXPANSION (required): for each finding, trace definitions / uses / consu
 BLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in \`blastRadius\`.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
 RULE ID (required field): set \`ruleId\` to the matching catalog ID from the ${profile.rubricSkill} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
-
+${profile.id === 'rust' && lens === 'tests' && plan.sizeBucket === 'large' ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to find weak tests; skip silently if absent.' : ''}
 ALREADY-FOUND (do not repeat; look for what these MISSED):
 ${priorSummary}
 
