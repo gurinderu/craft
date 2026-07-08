@@ -188,14 +188,14 @@ const dispatched = []
 const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
 if (reviewCrates.length > 1) {
   for (const c of reviewCrates) {
-    tasks.push(() => workflow('rust-review', { base: baseRef, path: c.path, _via: 'rust-audit' })
+    tasks.push(() => workflow('review', { base: baseRef, path: c.path, languages: ['rust'], _via: 'rust-audit' })
       .then(report => reviewResult(`review:${c.name}`, report))
       .catch(() => null))
     dispatched.push(`review:${c.name}`)
   }
 } else {
-  tasks.push(() => workflow('rust-review', baseRef ? { base: baseRef, _via: 'rust-audit' }
-                                                   : { _via: 'rust-audit' })
+  tasks.push(() => workflow('review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit' }
+                                              : { languages: ['rust'], _via: 'rust-audit' })
     .then(report => reviewResult('review', report))
     .catch(() => null))
   dispatched.push('review')
