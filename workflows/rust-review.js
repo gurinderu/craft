@@ -188,7 +188,28 @@ const plan = {
 }
 // Strict mode always runs the maintainability lens, whatever the scout picked.
 if (strict && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
-log(`${scout?.notes ?? 'scout produced no result — assuming medium bucket, all lenses'}${strict ? ' · STRICT maintainability mode' : ''}`)
+
+// Security-sensitive rigor floor. The most consequential failure mode is the Scout (haiku, on
+// `git diff --stat`) under-bucketing a security-touching change: a thin lens set with
+// verifyVotes=1 means a real High has to survive a single skeptic that defaults to "refuted".
+// When the change touches auth/crypto/input-parsing/unsafe/FFI/deps we do NOT let the size
+// heuristic gate rigor — run every lens, require a 3-skeptic majority for High/Critical, and
+// give loop-until-dry at least two rounds. (The completeness critic is also forced below.)
+if (plan.securitySensitive) {
+  for (const l of ALL_LENSES) if (!plan.lenses.includes(l)) plan.lenses.push(l)
+  plan.verifyVotes = Math.max(plan.verifyVotes, 3)
+  plan.maxRounds = Math.max(plan.maxRounds, 2)
+}
+
+// Negative-space lens: the bug the diff ENABLES in code it did NOT touch (a new status/type
+// pre-existing endpoints mutate blindly; a latent bug the diff makes reachable). Diff-anchored
+// lenses structurally cannot see these. Run it where new reachable surface tends to appear —
+// security-sensitive or large changes.
+if ((plan.securitySensitive || plan.sizeBucket === 'large') && !plan.lenses.includes('negative-space')) {
+  plan.lenses.push('negative-space')
+}
+
+log(`${scout?.notes ?? 'scout produced no result — assuming medium bucket, all lenses'}${strict ? ' · STRICT maintainability mode' : ''}${plan.securitySensitive ? ' · SECURITY rigor floor (all lenses, 3-vote verify)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
 // ================= Gate + tool grounding =================
 phase('Gate')
@@ -262,9 +283,37 @@ const LENS_BRIEF = {
   maintainability: 'maintainability & structural simplification (load the refactoring skill): missed code judo — a behavior-preserving reframing using the existing architecture that would make this change dramatically simpler or delete a whole category of complexity; file pushed across ~700 lines (decomposition smell); ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow instead of a dedicated abstraction; needless optionality (Option that always holds), as-casts where From/TryFrom belongs, Box<dyn Any>/downcasting where a typed model fits. Flag only concrete, behavior-preserving restructurings the author could have taken — not hypothetical rewrites.',
   tests: 'tests & coverage QUALITY (not just presence): do new tests assert real behavior and error paths, or are they vacuous (assert!(true), no assertions)? New error path/branch with no test; bug fix with no regression test.',
   intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Compare the diff against the stated intent; flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
+  'negative-space': 'negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum-variant/column that pre-existing endpoints mutate blindly; a latent bug in an unchanged helper the diff makes reachable for the first time. Diff-anchored lenses cannot see these — this lens works outward from the new surface into the untouched tree.',
+}
+
+// The negative-space lens does the OPPOSITE of every other lens: it does not review the changed
+// lines, it works outward from the new surface into the UNCHANGED tree. Its findings anchor to the
+// offending pre-existing file:line (real and verifiable), not to a diff line.
+function negativeSpacePrompt(priorSummary) {
+  return `You are the **negative-space** review lens for a Rust change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. Load the rust-navigation skill for whole-repo search; use Grep/Glob across the ENTIRE tree, not just the diff.
+
+Diff base: ${plan.baseRef ? `\`${plan.baseRef}\`` : 'uncommitted changes / most recent commit'}.
+${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
+
+METHOD — follow in order:
+1. Inventory the NEW surface the diff introduces. Read the FULL diff including non-Rust files: \`git diff ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'}\`. List every new: enum variant / status value / DB column / table / migration / public fn / route / struct field. ALSO list any UNCHANGED function the diff now calls for the first time (a newly-reachable helper).
+2. For EACH item, Grep the UNCHANGED tree for existing code that reads, lists, updates, deletes, cascades, serializes, orders, or authorizes that shape. Ask: does this pre-existing path violate an invariant the new feature assumes?
+   - A new "Draft"/"Pending"/"Reserved" status: do pre-existing list / update / delete / cascade paths exclude or guard it, or mutate it blindly and wedge the new flow?
+   - A newly-reachable helper: is there a latent bug (SQL correlated-subquery column scoping / a missing owner or tenant filter / ignored rows_affected) that was dormant only because nothing called it?
+   - A new column / migration: do existing \`SELECT *\` / \`ORDER BY\` / index / backfill paths interact badly, or assume data the old code could have violated?
+   - New serde/utoipa surface: does an UNCHANGED shared DTO serialize the same field with different casing, freezing an asymmetric wire contract?
+3. Report each concrete violation ANCHORED TO THE UNCHANGED file:line that is actually wrong (the offending old handler / query / cascade / DTO), not the diff line. That anchor is real — cite it precisely so it can be verified.
+
+Only report a violation you can name a concrete reachable path for. Put the triggering surface in \`blastRadius\`; in \`why\`, state the invariant and the exact old path that breaks it. Do NOT restate findings already in the ALREADY-FOUND set below — look for what they MISSED.
+
+ALREADY-FOUND (from other lenses / earlier rounds — do not repeat):
+${priorSummary}
+
+Return {lens: "negative-space", findings: [...]} using the shared finding schema (file/line/severity/title/why/blastRadius/confidence). Observability: the workflow records this run — do NOT write your own record.`
 }
 
 function lensPrompt(lens, priorSummary) {
+  if (lens === 'negative-space') return negativeSpacePrompt(priorSummary)
   return `You are the **${lens}** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.
 
 SLICE: ${LENS_BRIEF[lens] || lens}
@@ -299,6 +348,8 @@ for (const f of seedFindings) {
   if (!seen.has(k)) { seen.add(k); pool.push(f) }
 }
 
+const notRun = []   // stages/lenses that were IN SCOPE but did not complete (budget or terminal error) → verdict marked INCOMPLETE
+const ranAtLeastOnce = new Set()   // lenses that returned a result in some round; the rest silently dropped
 let dry = false
 for (let round = 1; round <= plan.maxRounds && !dry; round++) {
   const priorSummary = pool.length
@@ -307,6 +358,7 @@ for (let round = 1; round <= plan.maxRounds && !dry; round++) {
   const results = (await parallel(plan.lenses.map(lens => () =>
     agent(lensPrompt(lens, priorSummary), { label: `lens:${lens} r${round}`, agentType: 'craft:rust-reviewer', phase: 'Lenses', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
   ))).filter(Boolean)
+  for (const r of results) ranAtLeastOnce.add(r.lens)
   const fresh = []
   for (const r of results) {
     for (const f0 of (r.findings || [])) {
@@ -322,9 +374,22 @@ for (let round = 1; round <= plan.maxRounds && !dry; round++) {
   if (!fresh.length) dry = true
 }
 
+// Lenses that never returned a result in any round were silently dropped — a null from parallel()
+// means the agent died (budget hard-ceiling after retries, or a terminal API error), NOT a clean
+// pass (a clean pass returns {lens, findings: []}). Flag them so a budget-nuked run cannot read as
+// complete — most dangerously as a false "Approve — no findings" below.
+const droppedLenses = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
+if (droppedLenses.length) {
+  notRun.push(`lenses that never returned (${droppedLenses.join('/')})`)
+  log(`⚠️ ${droppedLenses.length} lens(es) never returned — likely budget or terminal error: ${droppedLenses.join(', ')}. Review marked INCOMPLETE.`)
+}
+
 if (!pool.length) {
-  await logRun(reviewRecord({ verdict: 'Approve', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [] }))
-  return [`## Verdict`, `✅ Approve — gate ${gateStatus}; no findings across ${plan.lenses.length} lenses.`, ``, `## Gate`, gateProvenance].join('\n')
+  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, findings: summarizeFindings([]), dimensions: [], verification: null, notRun }))
+  const verdictLine = notRun.length
+    ? `⚠️ Approve (INCOMPLETE) — gate ${gateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy, re-run with more budget.`
+    : `✅ Approve — gate ${gateStatus}; no findings across ${plan.lenses.length} lenses.`
+  return [`## Verdict`, verdictLine, ``, `## Gate`, gateProvenance].join('\n')
 }
 
 // ================= Verify =================
@@ -399,7 +464,8 @@ const CRITIC_SCHEMA = {
 }
 
 let criticNotes = ''
-if (plan.sizeBucket === 'large' && (!budget.total || budget.remaining() > 90000)) {
+const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
+if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
   const candidates = ALL_LENSES.filter(l => !plan.lenses.includes(l))
   const critic = await agent(
     `You are a completeness critic for a Rust review of the diff (base ${plan.baseRef || 'HEAD'}).
@@ -424,7 +490,13 @@ Also note in one line anything else likely missed (a changed file no finding tou
       dropped += v.dropped   // keep the refuted tally complete so totalVerified/refuteRate stay accurate
       log(`Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
     }
+  } else if (followups.length) {
+    notRun.push(`critic follow-up lenses (${followups.join('/')})`)
+    log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED critic follow-up lenses: ${followups.join(', ')}. Review marked INCOMPLETE.`)
   }
+} else if (criticInScope) {
+  notRun.push('completeness-critic')
+  log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED completeness critic (in scope: ${plan.securitySensitive ? 'security-sensitive' : 'large'}). Review marked INCOMPLETE.`)
 }
 
 const report = await agent(
@@ -439,7 +511,7 @@ Suspected findings NEVER change the verdict — they are surfaced for the author
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do.
 
 Produce, in order:
-1. \`## Verdict\` — one line (emoji + reason).
+1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — the token budget cut the review short before these ran: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(gateProvenance)}.
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · what · why · fix\` and a blast-radius note when present.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
@@ -465,14 +537,14 @@ ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.s
 const allReviewFindings = confirmed.concat(suspected)
 const totalVerified = confirmed.length + suspected.length + dropped
 await logRun(reviewRecord({
-  verdict: finalVerdict(confirmed),
+  verdict: finalVerdict(confirmed) + (notRun.length ? ' (INCOMPLETE)' : ''),
   findings: summarizeFindings(allReviewFindings),
   dimensions: plan.lenses.map(l => {
     const s = summarizeFindings(confirmed.filter(f => (f.source || '') === l))
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
   }),
   verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
-  notRun: [],
+  notRun,
 }))
 
 return report
