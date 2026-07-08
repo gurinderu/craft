@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0](https://github.com/gurinderu/craft/compare/v0.3.0...v0.4.0) (2026-07-08)
+
+
+### Features
+
+* **nix-flakes:** add nix-flakes domain skill ([dbb6a01](https://github.com/gurinderu/craft/commit/dbb6a014c7191c17011c2ca9e67af8c113c619b4))
+* **nix:** add nix-dev-env skill (devShells, direnv, linters) ([d807816](https://github.com/gurinderu/craft/commit/d8078163238c48678c2845059dfe9aa5ec4bd654))
+* **nix:** add nix-packaging skill (derivations, builders) ([45e7cc4](https://github.com/gurinderu/craft/commit/45e7cc4bb4ed6722494a2962d331861713c59717))
+* **nix:** add nix-review rubric skill rule catalog ([034585b](https://github.com/gurinderu/craft/commit/034585b6b5a19bb1cbaa5a12b15f64ec708373ed))
+* **nix:** add nix-review workflow pin ([7c267b8](https://github.com/gurinderu/craft/commit/7c267b895cd422f80792e8e7e81f549ec322bd3f))
+* **nix:** add nix-reviewer agent ([7e551d0](https://github.com/gurinderu/craft/commit/7e551d05eb54668a85eb1006697e1e6a26d82949))
+* **nix:** add nixos skill (modules, home-manager, secrets) ([be27173](https://github.com/gurinderu/craft/commit/be271738fe34481eac05fde708f3a710f8116ecb))
+* **review:** PROFILES.nix + auto-detect + multi-language merge ([1acda93](https://github.com/gurinderu/craft/commit/1acda932da8b03b991c9f9de574cbc1ef1eb3ff0))
+* **rust-review:** security rigor floor, negative-space lens, INCOMPLETE tracking ([d0f9667](https://github.com/gurinderu/craft/commit/d0f96677ad45b3cf517b87076d55406d5773d229))
+* **rust:** add rust-ml skill, ID-tagged review rule catalog, dependency-aware review ([6358b35](https://github.com/gurinderu/craft/commit/6358b350c1daeb15d2372ce5a8f7341be098aecb))
+
+
+### Bug Fixes
+
+* **nix-flakes:** drop arg shadow in example, offline checks.fmt, verbatim description ([372e7d0](https://github.com/gurinderu/craft/commit/372e7d06bd648950106aad37d610bb34e10fd8ad))
+* **review:** restore negative-space plan.intent and rust cargo-mutants tests hint ([d88fae0](https://github.com/gurinderu/craft/commit/d88fae092b26f6b8cbc42b3def9c8e4ed96e43b7))
+
 ## [0.3.0](https://github.com/gurinderu/craft/compare/v0.2.0...v0.3.0) (2026-07-07)
 
 
