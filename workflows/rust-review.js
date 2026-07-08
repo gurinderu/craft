@@ -26,7 +26,7 @@ const ALL_LENSES = ['safety', 'errors', 'ownership', 'concurrency', 'performance
 const FINDING_ITEM = {
   type: 'object',
   additionalProperties: false,
-  required: ['severity', 'title', 'file', 'line', 'why', 'fix', 'blastRadius', 'source'],
+  required: ['severity', 'title', 'file', 'line', 'why', 'fix', 'blastRadius', 'source', 'ruleId'],
   properties: {
     severity: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low', 'Info'] },
     title: { type: 'string', description: 'one-line what is wrong' },
@@ -36,6 +36,7 @@ const FINDING_ITEM = {
     fix: { type: 'string', description: 'direction of the fix' },
     blastRadius: { type: 'string', description: 'callers affected / breaking-change note; empty if n/a' },
     source: { type: 'string', description: 'lens name or tool name that produced this' },
+    ruleId: { type: 'string', description: 'catalog rule ID from the rust-review skill rules.md (e.g. "CON-003") if the finding maps to one; empty string otherwise' },
   },
 }
 
@@ -233,7 +234,9 @@ ${plan.securitySensitive
     : '   - This diff is NOT security-sensitive: do not pull the generic rulesets; rely on `./semgrep/` only (skip step 7 entirely if that dir is absent).'}
    If at least one config applies and \`semgrep\` is installed, scope it to the changed Rust files (\`git diff --name-only ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'} -- '*.rs'\`) and run \`semgrep --error <configs> <files>\`. Turn each result into a seed finding (source "semgrep"; map semgrep ERROR→High, WARNING→Medium, INFO→Low). These are SEEDS, never gate failures — semgrep taint/secrets over-reports, and downstream verification refutes the false positives. If semgrep is absent or no config applies, log and skip.
 
-Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings are clippy-pedantic / semver / semgrep only.`,
+8. **Dependency context** — review against the crate versions the project ACTUALLY pins, not against crates-in-the-abstract. Resolve them: \`cargo metadata --format-version 1\` (or read \`Cargo.lock\`) and match the external crates the changed files \`use\` to their locked versions. For any nontrivial dependency the diff touches, check whether the usage is correct *for that pinned version* — a since-deprecated/removed/renamed API, a changed default, a known footgun of that exact version. Consult context7 for the crate's version-specific docs instead of trusting memory. Turn a genuine version-specific misuse into a seed finding (source "dep-context", severity Medium, ruleId "DEP-001"). Known-vulnerable versions are already covered by \`cargo audit\` (ruleId "DEP-002") — do not duplicate. Best-effort: skip silently if \`cargo metadata\` fails or the diff touches no external crate.
+
+Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`,
   { label: 'gate', schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' },
 )
 
@@ -309,7 +312,7 @@ Only report a violation you can name a concrete reachable path for. Put the trig
 ALREADY-FOUND (from other lenses / earlier rounds — do not repeat):
 ${priorSummary}
 
-Return {lens: "negative-space", findings: [...]} using the shared finding schema (file/line/severity/title/why/blastRadius/confidence). Observability: the workflow records this run — do NOT write your own record.`
+Return {lens: "negative-space", findings: [...]} using the shared finding schema (file/line/severity/title/why/blastRadius/ruleId). Set \`ruleId\` to the matching rules.md catalog ID (often SAF-*/CON-*/ERR-* for cross-surface bugs) or "" if none fits. Observability: the workflow records this run — do NOT write your own record.`
 }
 
 function lensPrompt(lens, priorSummary) {
@@ -325,6 +328,7 @@ ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}`
 CONTEXT EXPANSION (required): for each finding, trace callers / impls / error paths of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
 BLAST-RADIUS (required): for each changed PUBLIC symbol you touch, note how many callers are affected and set a breaking-change flag in \`blastRadius\`.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
+RULE ID (required field): set \`ruleId\` to the matching catalog ID from the rust-review skill's rules.md (e.g. "CON-003", "SAF-001") when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
 ${lens === 'tests' && plan.sizeBucket === 'large' ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to find weak tests; skip silently if absent.' : ''}
 
 ALREADY-FOUND (do not repeat; look for what these MISSED):
@@ -513,7 +517,7 @@ CALIBRATE severities across the Confirmed set so the same kind of issue is not C
 Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — the token budget cut the review short before these ran: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(gateProvenance)}.
-3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · what · why · fix\` and a blast-radius note when present.
+3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
 ${criticNotes && criticNotes.trim() && criticNotes.trim() !== 'coverage complete' ? `6. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}

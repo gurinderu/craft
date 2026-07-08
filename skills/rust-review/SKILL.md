@@ -47,9 +47,27 @@ Establish each signal:
 
 If any `fmt`/`clippy`/`test`/`build` signal is red (CI or local), stop and report — don't review further. A green gate is the floor, not the ceiling — whatever its provenance, it means the change is *reviewable*, not that it's good.
 
+## Step 1.5 — Resolve dependency context
+
+Review against the crate versions the project **actually pins**, not against crates-in-the-abstract.
+A call that is idiomatic on `tokio 1.40` may be deprecated on the `1.20` this repo locks; a default
+may have flipped between minor versions. Before judging dependency usage:
+
+- Resolve the real versions — `cargo metadata --format-version 1` (or read `Cargo.lock`) — and match
+  the external crates the changed files `use` to their **locked** versions.
+- For any nontrivial dependency the diff touches, check the usage against **that** version's API:
+  a since-deprecated/removed/renamed item, a changed default, a known footgun of that exact version.
+  Consult live docs (context7, docs.rs for the pinned version) rather than memory — this ecosystem
+  moves fast. Version-specific misuse is `DEP-001` (Medium).
+- Known-*vulnerable* versions are a separate axis, caught by `cargo audit` / RUSTSEC (`DEP-002`,
+  High) in Step 1 — don't duplicate them here.
+
+Best-effort: skip if there are no external-crate changes. Choosing/pinning versions and MSRV is the
+`rust-ecosystem` skill's domain; this step only *uses* the pinned set to ground the review.
+
 ## Step 2 — Severity checklist
 
-Review the diff against these tiers. This skill owns only the review *process*; cite the owning skill for each fix:
+Review the diff against these tiers. This skill owns only the review *process*; cite the owning skill for each fix. Each item has a stable ID in the [rules.md](rules.md) catalog — cite it in a finding (e.g. `CON-003`) so the finding is addressable and dedup-able; novel issues without a catalog ID are still welcome.
 
 - Safety / injection / secrets / untrusted-input limits → `rust-security`
 - `unsafe` / missing `// SAFETY:` → `rust-unsafe`
@@ -192,7 +210,7 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 
 In **strict mode**, the maintainability bar applies: a Confirmed maintainability finding (code judo missed, file-size explosion, spaghetti branching, hacky abstraction) is a **presumptive Block** unless the author justified it — escalated from its default MEDIUM. Outside strict mode those findings stay MEDIUM (Warning at most).
 
-Report findings as `severity · file:line · what · why · fix`. Be specific and cite the line; a finding without a location isn't actionable.
+Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md) catalog ID when the finding maps to one (e.g. `CON-003`); novel findings need no ID. Be specific and cite the line; a finding without a location isn't actionable.
 
 "Gate green / red" is read from Step 1 — the signal may come from a green required CI check or a local run. Cite which in the `## Gate` line of the output.
 
