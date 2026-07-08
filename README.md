@@ -38,11 +38,13 @@ at the relevant `superpowers:*` skill for the language-agnostic method.
 | skill | `craft:refactoring` | Disciplined refactoring — structure-not-behavior in tiny steps under green tests (language-agnostic) |
 | skill | `craft:codebase-onboarding` | Understand an unfamiliar codebase first — map, find seams, trace one flow, confirm by building (language-agnostic) |
 | skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; scales to the `triage-findings` workflow |
-| agent | `rust-reviewer` | Per-lens worker for the `rust-review` workflow; run directly for an ad-hoc whole-diff review (establishes the CI-aware gate and returns a verdict) |
+| agent | `rust-reviewer` | Per-lens worker for the `review` workflow's rust profile; run directly for an ad-hoc whole-diff Rust review (establishes the CI-aware gate and returns a verdict) |
+| agent | `nix-reviewer` | Per-lens worker for the `review` workflow's nix profile; run directly for an ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) |
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |
 | agent | `rust-miri` | Runs unsafe code under Miri to detect undefined behavior |
 | agent | `rust-architecture-reviewer` | Audits the whole-project structure against the `rust-architecture-review` rubric, returns a Healthy/Concerns/At-risk rating |
-| workflow | `rust-review` | Elastic deep review of a Rust diff — scout-scaled lens fan-out, loop-until-dry, adversarial + self-verification, one Confirmed/Suspected report with a verdict (the default diff-review path) |
+| workflow | `review` | **Default diff-review path.** Auto-detects the language(s) in the diff (Rust/Nix), runs each language's gate + scout-scaled lens fan-out (loop-until-dry, adversarial + self-verification), and merges into one Confirmed/Suspected report + verdict |
+| workflow | `rust-review` / `nix-review` | Thin pins over `review` that force a single language (`workflow('review', {languages:['rust'\|'nix']})`) |
 | workflow | `rust-audit` | Full crate audit — per-crate review, inter-crate contracts, architecture, crate-decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health, run in parallel and synthesized into one report |
 | workflow | `triage-findings` | Validates review findings (craft agents + GitHub PR comments) in parallel, dedups/conflict-checks, and renders one ordered fix plan (writing-plans format) + a triage ledger — no edits |
 
@@ -88,10 +90,12 @@ strategy, and parity caveats.
 
 ## Workflows
 
-`workflows/rust-review.js` is the default diff-review path: a scout sizes the diff and picks
-lenses + rigor, lenses fan out in parallel and loop until dry, every finding is adversarially
-and self-verified, and a synthesis step emits one Confirmed/Suspected report with a verdict —
-depth scales to the diff automatically.
+`workflows/review.js` is the default diff-review path and the generic engine: it **auto-detects the
+language(s)** in the diff via an inline `PROFILES` registry (Rust and Nix built in), and for each
+active language a scout sizes the diff and picks lenses + rigor, lenses fan out in parallel and loop
+until dry, every finding is adversarially and self-verified, and a synthesis step merges everything
+into one Confirmed/Suspected report with a verdict — depth scales to the diff automatically.
+`workflows/rust-review.js` and `workflows/nix-review.js` are thin pins that force a single language.
 
 `workflows/rust-audit.js` is the full pre-release audit: a scout detects the diff base, `unsafe`,
 the workspace crates and their dependency edges, then many dimensions run in parallel — per-crate
