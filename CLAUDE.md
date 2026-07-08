@@ -1,6 +1,7 @@
 # craft
 
-Personal collection of opinionated Rust engineering skills, review agents, and the
+Personal collection of opinionated engineering skills, review agents, and workflows —
+a broad **Rust** skill set and a **Nix** skill set — plus the generic `review` engine and the
 `rust-audit` workflow; builds on the `superpowers` plugin (a declared dependency) for the
 generic engineering-process discipline. See `README.md` / `MAP.md` for the full contents.
 
@@ -16,8 +17,9 @@ Pick the handler by scope:
 
 | Ask | Handler |
 |---|---|
-| Review a diff / change before commit or merge (default) | `rust-review` **workflow** (background) |
-| Ad-hoc single-pass diff review (when you explicitly don't want the workflow) | `rust-reviewer` **agent** (background) |
+| Review a diff / change before commit or merge (default) | `review` **workflow** (background) — auto-detects language (Rust/Nix) |
+| Force a Rust-only / Nix-only diff review | `rust-review` / `nix-review` **workflow** pin (background) |
+| Ad-hoc single-pass diff review (when you explicitly don't want the workflow) | `rust-reviewer` / `nix-reviewer` **agent** (background) |
 | Whole-project structural / architecture audit (not a diff) | `rust-architecture-reviewer` **agent** |
 | Security / dependency / unsafe-surface scan | `rust-security-scanner` **agent** |
 | `unsafe` code under Miri (UB check) | `rust-miri` **agent** |
@@ -34,8 +36,11 @@ prior review agent (no `SendMessage`); spawn a fresh one each time, including re
 fixes. Because the agent sees only the brief, restate the diff range / paths and intent on
 every dispatch — don't assume it remembers a previous round.
 
-The default review now runs the `rust-review` **workflow** (multi-agent, launched in the
-background, verdict reported on completion) — it scales depth to the diff. The single-pass
-`rust-reviewer` agent remains for an ad-hoc, non-workflow review when you explicitly want one.
+The default review runs the `review` **workflow** (multi-agent, launched in the background, verdict
+reported on completion) — it **auto-detects the language(s)** in the diff (Rust and/or Nix), runs each
+language's gate + lens set, and merges into one report; it scales depth to the diff. `rust-review` /
+`nix-review` are thin pins over the same engine that force a single language (`workflow('review',
+{languages:['rust'|'nix']})`). The single-pass `rust-reviewer` / `nix-reviewer` agents remain for an
+ad-hoc, non-workflow review when you explicitly want one.
 
 If the user explicitly asks for a synchronous/inline review, honor that instead.

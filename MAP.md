@@ -81,7 +81,8 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 
 | Agent | Runs | Rubric skill |
 |---|---|---|
-| `rust-reviewer` | per-lens diff review for the `rust-review` workflow; run directly = ad-hoc whole-diff review that establishes the CI-aware gate and returns a verdict | `rust-review` |
+| `rust-reviewer` | per-lens diff review for the `review` workflow's rust profile; run directly = ad-hoc whole-diff review that establishes the CI-aware gate and returns a verdict | `rust-review` |
+| `nix-reviewer` | per-lens diff review for the `review` workflow's nix profile; run directly = ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) | `nix-review` |
 | `rust-architecture-reviewer` | whole crate/module dependency graph audit | `rust-architecture-review` |
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |
@@ -96,7 +97,8 @@ them by `agentType` — internal to the plugin, no external dependency).
 
 | Workflow | Composes | Output |
 |---|---|---|
-| `rust-review` | scout-scaled lens fan-out → `rust-reviewer` (per lens) → loop-until-dry → adversarial + self-verification | Confirmed/Suspected finding report (elastic deep review engine; `rust-reviewer` is its per-lens worker) |
+| `review` | **auto-detects language(s)** → per-profile (rust/nix) scout + gate + scout-scaled lens fan-out → loop-until-dry → adversarial + self-verification → merge | one Confirmed/Suspected report + verdict across all detected languages (the generic engine; `PROFILES.{rust,nix}` inline) |
+| `rust-review` / `nix-review` | thin pins → `workflow('review', {languages:['rust'\|'nix']})` | single-language review via the engine above |
 | `rust-audit` | per-crate review + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
 | `strict-review` | scout + codebase-memory warm-up → throttled finder lenses → 1 combined verifier per finding (3-lens panel for critical/high) → completeness critic with verified gaps | language-agnostic adversarial diff review with bounded fan-out and steady request rate (subscription-friendly); Confirmed/Suspected report + Block/Warning/Approve verdict |
