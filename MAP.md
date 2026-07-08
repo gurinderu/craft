@@ -33,7 +33,7 @@ Status: ✅ done
 | Skill | Status | Scope | Does NOT cover (owner) |
 |---|---|---|---|
 | `rust-testing` | ✅ | unit/integration/doc, async, rstest, proptest, cargo-fuzz, cargo-mutants, mockall, insta, testcontainers, coverage, runner, CI | benchmarks → `rust-performance` |
-| `rust-review` | ✅ | cargo gate, severity checklist, verdict; **public-API design pass** (Rust API Guidelines checklist → `api-design.md`); requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table | *how* to fix → topic skills; *how* to test → `rust-testing`; generic review/verify discipline → `superpowers` |
+| `rust-review` | ✅ | cargo gate, dependency-context step (review against pinned versions), severity checklist + **ID-tagged rule catalog** (`rules.md`), verdict; **public-API design pass** (Rust API Guidelines checklist → `api-design.md`); requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table | *how* to fix → topic skills; *how* to test → `rust-testing`; generic review/verify discipline → `superpowers` |
 | `rust-errors` | ✅ | `Result`/`Option`, `?`, domain failures vs defects (ZIO model), thiserror vs anyhow, library-vs-app design, recovery/retry/circuit-breaker | panics as control flow → `rust-idioms` |
 | `rust-ownership` | ✅ | borrowing, lifetimes, `Cow`, smart pointers (`Box`/`Rc`/`Arc`), interior mutability (`Cell`/`RefCell`); fixes for E0382/E0597/E0499/E0502 | cross-thread sharing/`Send`+`Sync` → `rust-concurrency` |
 | `rust-concurrency` | ✅ | threads vs async, `Send`/`Sync`, `Arc<Mutex>`, channels, tokio, deadlocks, lock-across-await | single-thread `Rc`/`RefCell` → `rust-ownership` |
@@ -57,8 +57,9 @@ Status: ✅ done
 | `rust-fintech` | ✅ | exact decimal (rust_decimal), `Money` type + currency, rounding/allocation, idempotency, double-entry ledgers | `rust-traits` (newtype), `rust-errors`, `rust-testing` (invariants) |
 | `rust-cloud-native` | ✅ | gRPC (tonic), observability (tracing + OpenTelemetry), health/readiness, 12-factor config, graceful shutdown, lean containers | `rust-web`, `rust-concurrency`, `rust-errors`, `rust-security` |
 | `rust-embedded` | ✅ | bare-metal/MCU no_std: heapless, peripheral-ownership singletons, embedded-hal drivers, ISR-safe sharing (critical-section Mutex), RTIC vs Embassy (`concurrency.md`), defmt/probe-rs | `rust-ecosystem` (no_std/targets), `rust-ownership` (interior mutability), `rust-concurrency` (async model), `rust-errors` |
+| `rust-ml` | ✅ | ML/numerics: framework matrix (candle/burn/tch/ort/dfdx/linfa) (`frameworks.md`), tensors & dtypes (f32/f16/bf16), determinism, zero-copy weights (safetensors), model serving (load-once `Arc`, `spawn_blocking`, batching, GPU) (`serving.md`) | `rust-ownership` (tensor copies), `rust-concurrency` (rayon/spawn_blocking), `rust-web` + `rust-cloud-native` (serving), `rust-performance`, `rust-security` (pickle RCE) |
 
-Other domains (ML, IoT, gamedev, …) and live-data tooling (docs lookup, crate research) remain
+Other domains (IoT, gamedev, …) and live-data tooling (docs lookup, crate research) remain
 open backlog.
 
 ## Agents
