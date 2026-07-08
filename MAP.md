@@ -62,6 +62,18 @@ Status: ✅ done
 Other domains (IoT, gamedev, …) and live-data tooling (docs lookup, crate research) remain
 open backlog.
 
+## Nix skill set
+
+Status: ✅ done
+
+| Skill | Status | Scope | Does NOT cover (owner) |
+|---|---|---|---|
+| `nix-flakes` | ✅ | flake.nix inputs/outputs schema, pinning with flake.lock, standard outputs (devShells, packages, nixosConfigurations, homeConfigurations), flake-parts / flake-utils structuring | derivation details → `nix-packaging`; dev shell contents → `nix-dev-env`; system configs → `nixos` |
+| `nix-packaging` | ✅ | stdenv.mkDerivation + phase model, fixed-output hashes for src fetchers, language-builder hashes (cargoHash, vendorHash, npmDepsHash), lib.fakeHash → real-hash workflow, meta attributes | flake wiring → `nix-flakes`; dev shells → `nix-dev-env` |
+| `nix-dev-env` | ✅ | pkgs.mkShell, devShells.default, direnv + use flake, writeShellApplication for lint-checked scripts, Nix formatters (alejandra, nixpkgs-fmt), linters (statix, deadnix), pre-commit-hooks.nix wiring | flake plumbing → `nix-flakes`; packaging derivations → `nix-packaging` |
+| `nixos` | ✅ | NixOS/nix-darwin module shape, typed options (lib.mkOption), composing modules, nixosConfigurations, secrets (agenix/sops-nix), cross-platform (nix-darwin + Home Manager), systemd units | flake output wiring → `nix-flakes`; dev environments → `nix-dev-env` |
+| `nix-review` | ✅ | Nix code-review rubric: flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules, maintainability, deps), Approve/Warning/Block verdict, "what proves what" table | *how* to fix → topic skills (`nix-flakes`, `nix-packaging`, `nixos`); running the review agent → `nix-review` workflow |
+
 ## Agents
 
 Tool-runner agents (run tools → interpret → report a verdict, in their own context). Each pairs
