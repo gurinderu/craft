@@ -3,11 +3,11 @@ export const meta = {
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected report with a verdict. Rust and Nix profiles built in.',
   whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically.',
   phases: [
-    { title: 'Scout', detail: 'resolve the diff base, classify size/categories, pick lenses + rigor', model: 'haiku' },
-    { title: 'Gate', detail: 'CI-aware mechanical gate + tool-grounded seed findings (clippy-pedantic / semver / semgrep)' },
+    { title: 'Scout', detail: 'resolve the diff base, detect language(s), classify size/categories, pick lenses + rigor', model: 'haiku' },
+    { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
     { title: 'Lenses', detail: 'parallel per-lens review with context expansion; loop-until-dry' },
     { title: 'Verify', detail: 'adversarial refutation + self-verification of each finding' },
-    { title: 'Synthesize', detail: 'calibrate severities, completeness critic, one report' },
+    { title: 'Synthesize', detail: 'calibrate severities, completeness critic, one merged report' },
   ],
 }
 
@@ -18,23 +18,111 @@ const postComments = !!(args && typeof args === 'object' && args.comment)
 const pathArg = (args && typeof args === 'object' && args.path) ? String(args.path) : ''   // optional crate-scope (audit per-crate fan-out)
 const viaArg = (args && typeof args === 'object' && args._via) ? String(args._via) : ''   // set by a parent workflow (e.g. rust-audit)
 const strict = !!(args && typeof args === 'object' && args.strict)   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
+const requestedLangs = (args && typeof args === 'object' && Array.isArray(args.languages) && args.languages.length)
+  ? args.languages.map(String) : null   // pin: restrict active profiles to these ids
 
-// ---- language profiles (inline registry — the sandbox can't import, so profiles live in this file) ----
+// ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
+function rustDepContext(ctx) {
+  return `8. **Dependency context** — review against the crate versions the project ACTUALLY pins, not against crates-in-the-abstract. Resolve them: \`cargo metadata --format-version 1\` (or read \`Cargo.lock\`) and match the external crates the changed files \`use\` to their locked versions. For any nontrivial dependency the diff touches, check whether the usage is correct *for that pinned version* — a since-deprecated/removed/renamed API, a changed default, a known footgun of that exact version. Consult context7 for the crate's version-specific docs instead of trusting memory. Turn a genuine version-specific misuse into a seed finding (source "dep-context", severity Medium, ruleId "DEP-001"). Known-vulnerable versions are already covered by \`cargo audit\` (ruleId "DEP-002") — do not duplicate. Best-effort: skip silently if \`cargo metadata\` fails or the diff touches no external crate.`
+}
+function rustGate(ctx) {
+  return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${ctx.baseRef}\`` : 'uncommitted changes / most recent commit'}.
+
+GATE (CI-aware, per the rust-review skill — load it):
+1. Detect a PR + CI: \`gh pr checks --json name,state,bucket,link\` for the current branch. If gh is missing/unauthenticated/offline or no PR is found, fall through to the local gate.
+2. For build/test/clippy/fmt: if a conclusive green required CI check covers it, treat it as PASSED and record provenance "via CI #<n>"; if any such check FAILED, set status=fail and list it in failedChecks. If pending/absent, run it locally (\`cargo fmt --check\`, \`cargo clippy --all-targets -- -D warnings\`, \`cargo test\`).
+3. Security tools (\`cargo audit\`, \`cargo deny check\`) always run locally if installed (cheap, usually absent from CI). A vulnerability with a fix is a fail.
+4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
+
+SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
+5. \`cargo clippy --all-targets -- -W clippy::pedantic -W clippy::nursery\` — turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these.
+${ctx.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
+
+7. SAST seed (semgrep) — decide what configs apply, then run only if any do:
+   - If a \`./semgrep/\` rules dir exists in the repo, ALWAYS include \`--config=./semgrep/\` (repo-specific banned-API/taint rules — the whole point of keeping them in-repo).
+${ctx.securitySensitive
+    ? '   - This diff IS security-sensitive: also include `--config=p/rust --config=p/secrets`.'
+    : '   - This diff is NOT security-sensitive: do not pull the generic rulesets; rely on `./semgrep/` only (skip step 7 entirely if that dir is absent).'}
+   If at least one config applies and \`semgrep\` is installed, scope it to the changed Rust files (\`git diff --name-only ${ctx.baseRef ? `--merge-base ${ctx.baseRef}` : 'HEAD'} -- '*.rs'\`) and run \`semgrep --error <configs> <files>\`. Turn each result into a seed finding (source "semgrep"; map semgrep ERROR→High, WARNING→Medium, INFO→Low). These are SEEDS, never gate failures — semgrep taint/secrets over-reports, and downstream verification refutes the false positives. If semgrep is absent or no config applies, log and skip.
+
+${rustDepContext(ctx)}
+
+Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`
+}
+function nixDepContext(ctx) {
+  return `6. **Dependency context** — review against the flake inputs the project ACTUALLY pins. Resolve them from \`flake.lock\` (the locked \`rev\`/\`narHash\` per input). Flag inputs that are unpinned, channel-based (\`<nixpkgs>\`), or floating where they should be locked, and \`inputs.*.follows\` that should dedupe nixpkgs but don't (source "dep-context", severity Medium, ruleId "DEP-001"). Best-effort: skip silently if there is no flake.`
+}
+function nixGate(ctx) {
+  return `You are establishing the mechanical gate for a Nix review and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${ctx.baseRef}\`` : 'uncommitted changes / most recent commit'}.
+
+GATE (per the nix-review skill — load it):
+1. If a \`flake.nix\` exists: \`nix flake check\` — a failure is a gate failure (list it in failedChecks), not a seed.
+2. Formatter: run \`alejandra --check .\` or \`nixpkgs-fmt --check\` (whichever the repo uses — check for a formatter in the flake / a treefmt config). Mismatches are seeds (source "fmt", Low), never a gate failure unless CI enforces fmt.
+3. \`nix eval\`/\`nix build\` the attrs the diff touches — an eval or build error on changed code is a gate failure.
+4. status = fail if \`nix flake check\` or an eval/build of touched attrs is red; pass if green; unknown if you could not establish it (e.g. nix not installed).
+
+SEED FINDINGS (tool grounding — scoped to the changed files):
+5. Linters — \`statix check\` (anti-idioms) and \`deadnix\` (dead bindings) on the changed \`.nix\` files. Turn each diagnostic on changed lines into a seed finding (source "statix"/"deadnix", severity Low/Medium, ruleId "MNT-001"). Do not fail the gate on these. If a linter is absent, log and skip.
+
+${nixDepContext(ctx)}
+
+Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits.`
+}
+
 const PROFILES = {}
 PROFILES.rust = {
   id: 'rust',
+  lang: 'Rust',
   detect: (files) => files.some(f => /\.rs$/.test(f) || /(^|\/)Cargo\.toml$/.test(f)),
   diffGlobs: ["'*.rs'"],
   rubricSkill: 'rust-review',
-  ruleCatalog: 'skills/rust-review/rules.md',
+  navSkill: 'rust-navigation',
   reviewerAgent: 'craft:rust-reviewer',
   securityHints: 'auth, crypto, input parsing, unsafe, FFI, or dependencies',
+  usesLibrary: true,
+  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; new branching / growing files / large refactor → maintainability; always consider 'intent'.`,
+  gate: rustGate,
+  depContext: rustDepContext,
   lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'maintainability', 'tests', 'intent'],
+  lensBrief: {
+    safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization.',
+    errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
+    ownership: 'ownership & lifetimes: needless clone to satisfy the borrow checker, String where &str/impl AsRef suffices, Vec<T> where &[T] works, explicit lifetimes where elision applies.',
+    concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
+    performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
+    'api-idioms': 'API & idioms & docs: library returning Box<dyn Error>/anyhow, giant functions / deep nesting, wildcard match on a business enum, pub item without ///, #[allow] without justification, #![deny(warnings)] in source.',
+    maintainability: 'maintainability & structural simplification (load the refactoring skill): missed code judo — a behavior-preserving reframing using the existing architecture that would make this change dramatically simpler or delete a whole category of complexity; file pushed across ~700 lines (decomposition smell); ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow instead of a dedicated abstraction; needless optionality (Option that always holds), as-casts where From/TryFrom belongs, Box<dyn Any>/downcasting where a typed model fits. Flag only concrete, behavior-preserving restructurings the author could have taken — not hypothetical rewrites.',
+    tests: 'tests & coverage QUALITY (not just presence): do new tests assert real behavior and error paths, or are they vacuous (assert!(true), no assertions)? New error path/branch with no test; bug fix with no regression test.',
+    intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Compare the diff against the stated intent; flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
+    'negative-space': 'negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum-variant/column that pre-existing endpoints mutate blindly; a latent bug in an unchanged helper the diff makes reachable for the first time.',
+  },
 }
-
-// Task 7 runs a single active profile (Rust-identical); auto-detect + multi-profile merge come next.
-const profile = PROFILES.rust
-const ALL_LENSES = profile.lenses
+PROFILES.nix = {
+  id: 'nix',
+  lang: 'Nix',
+  detect: (files) => files.some(f => /\.nix$/.test(f) || /(^|\/)flake\.lock$/.test(f)),
+  diffGlobs: ["'*.nix'", "'flake.lock'"],
+  rubricSkill: 'nix-review',
+  navSkill: '',
+  reviewerAgent: 'craft:nix-reviewer',
+  securityHints: 'secrets handling (agenix/sops-nix), fetchers/hashes, module security options, or build-script interpolation',
+  usesLibrary: false,
+  scoutRules: `Decide what is "in play" from the diff: derivations / fetchers / hashes → packaging+purity; flake inputs / flake.lock / IFD → reproducibility; string interpolation into build or shell scripts → injection; devShell / direnv / formatters → dev-env; NixOS or home-manager modules / options / secrets → modules; dead or anti-idiomatic Nix → maintainability; always consider 'intent'.`,
+  gate: nixGate,
+  depContext: nixDepContext,
+  lenses: ['purity', 'reproducibility', 'injection', 'packaging', 'dev-env', 'modules', 'maintainability', 'intent'],
+  lensBrief: {
+    purity: 'purity: impure builtins (currentTime/getEnv/<nixpkgs>), fetchers without a fixed hash — anything that makes a build non-reproducible (PUR-*).',
+    reproducibility: 'reproducibility: unpinned/channel inputs, missing flake.lock entries, import-from-derivation (IFD), --impure reliance (REP-*).',
+    injection: 'injection: untrusted values interpolated into build or shell scripts; builtins.exec (INJ-*).',
+    packaging: 'packaging: mkDerivation correctness — dep hashes (cargoHash/vendorHash/npmDepsHash), builder choice, phases, meta/license (PKG-*).',
+    'dev-env': 'dev-env: devShell/direnv correctness, writeShellApplication, the allowUnfree-not-propagated-to-nix-develop gotcha (DEV-*).',
+    modules: 'modules: NixOS/home-manager option typing and defaults, cross-platform (Linux+Darwin), secrets kept out of the world-readable store — agenix/sops-nix (MOD-*).',
+    maintainability: 'maintainability: dead code (deadnix), anti-idioms (statix), needless rec/with, over-abstraction (MNT-*).',
+    intent: 'intent / spec conformance: does the change do what it should? Compare the diff against the stated intent; flag correct-looking code with wrong behavior.',
+    'negative-space': 'negative space / cross-surface interaction: the breakage the diff ENABLES in UNCHANGED Nix — a renamed option or output that existing modules/consumers still reference; a changed default that unchanged config relies on.',
+  },
+}
 
 // ---- shared schemas ----
 const FINDING_ITEM = {
@@ -50,22 +138,32 @@ const FINDING_ITEM = {
     fix: { type: 'string', description: 'direction of the fix' },
     blastRadius: { type: 'string', description: 'callers affected / breaking-change note; empty if n/a' },
     source: { type: 'string', description: 'lens name or tool name that produced this' },
-    ruleId: { type: 'string', description: 'catalog rule ID from the rust-review skill rules.md (e.g. "CON-003") if the finding maps to one; empty string otherwise' },
+    ruleId: { type: 'string', description: 'catalog rule ID from the active profile\'s rules.md (e.g. "CON-003" for rust, "PUR-001" for nix) if the finding maps to one; empty string otherwise' },
+  },
+}
+
+const DETECT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['baseRef', 'files', 'notes'],
+  properties: {
+    baseRef: { type: 'string', description: 'git ref the diff was computed against; empty if none resolved' },
+    files: { type: 'array', items: { type: 'string' }, description: 'changed file paths in the diff' },
+    notes: { type: 'string', description: 'one line on what was detected' },
   },
 }
 
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['baseRef', 'sizeBucket', 'lenses', 'maxRounds', 'verifyVotes', 'lensModel', 'isLibrary', 'securitySensitive', 'intent', 'churn', 'notes'],
+  required: ['sizeBucket', 'lenses', 'maxRounds', 'verifyVotes', 'lensModel', 'isLibrary', 'securitySensitive', 'intent', 'churn', 'notes'],
   properties: {
-    baseRef: { type: 'string', description: 'git ref the diff was computed against; empty if none resolved' },
     sizeBucket: { type: 'string', enum: ['small', 'medium', 'large'] },
-    lenses: { type: 'array', items: { type: 'string' }, description: 'subset of the lens catalog to run' },
+    lenses: { type: 'array', items: { type: 'string' }, description: 'subset of the profile lens catalog to run' },
     maxRounds: { type: 'integer', description: 'loop-until-dry cap: 1 for small, 2 for medium, 3 for large' },
     verifyVotes: { type: 'integer', description: 'skeptic votes for CRITICAL/HIGH findings (1 or 3); default-tier findings always get 1' },
     lensModel: { type: 'string', enum: ['sonnet', 'opus'], description: 'model for lens + verify agents' },
-    isLibrary: { type: 'boolean', description: 'true if a published library crate (→ semver-checks)' },
+    isLibrary: { type: 'boolean', description: 'true if a published library (→ semver-checks); always false where not applicable' },
     securitySensitive: { type: 'boolean' },
     intent: { type: 'string', description: 'what the change should do, from the brief/args; empty if unknown' },
     churn: { type: 'array', items: { type: 'string' }, description: 'hot/often-changed files to scrutinize; may be empty' },
@@ -105,6 +203,16 @@ const VERDICT_SCHEMA = {
     citedLineMatches: { type: 'boolean', description: 'true if the cited file:line actually contains what the finding claims' },
     reachable: { type: 'boolean', description: 'true if the path is reachable in production (not test/example-only)' },
     reason: { type: 'string' },
+  },
+}
+
+const CRITIC_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['missingLenses', 'notes'],
+  properties: {
+    missingLenses: { type: 'array', items: { type: 'string' }, description: 'lenses from the candidate list that should also run; empty if coverage is complete' },
+    notes: { type: 'string', description: 'one line on anything else likely missed, or "coverage complete"' },
   },
 }
 
@@ -165,255 +273,100 @@ ${JSON.stringify(index)}`,
   )
 }
 
-// ================= Scout =================
-phase('Scout')
-const scout = await agent(
-  `You are scouting a Rust diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate at \`${pathArg}\`. Pass \`-- ${pathArg}\` to every \`git diff\` command below, consider only files under that path, and name the crate in your notes.` : ''}
+function key(f) {
+  return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
+}
 
+// ================= Detect base + languages =================
+phase('Scout')
+const detected = await agent(
+  `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under \`${pathArg}\`; pass \`-- ${pathArg}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
-2. Inspect \`git diff --stat <base>...HEAD\` (and \`git status --porcelain\`). Set sizeBucket:
-   small = a few files / < ~80 changed lines; large = many files / > ~400 lines or a public-API or unsafe-heavy change; medium otherwise.
-3. lenses: choose from ${JSON.stringify(ALL_LENSES)}.
-   - small: only the touched categories (minimum 2; always include 'safety' and the dominant category).
+2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${pathArg}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
+Return baseRef (the ref you resolved, empty string if none) and files (the changed paths).`,
+  { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
+)
+const baseRef = detected?.baseRef ?? baseArg
+const changedFiles = Array.isArray(detected?.files) ? detected.files : []
+
+// Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
+// the detector missed (best-effort detection), honor the pin. If nothing matches, report and stop.
+let active = Object.values(PROFILES).filter(p => (!requestedLangs || requestedLangs.includes(p.id)) && p.detect(changedFiles))
+if (!active.length && requestedLangs) active = requestedLangs.map(id => PROFILES[id]).filter(Boolean)
+if (!active.length) {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'Approve (NO LANGUAGE)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], outputTokens: budget.spent(),
+  })
+  return [`## Verdict`, `✅ Approve — no supported language (Rust/Nix) found in this diff; nothing to review.`, ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`].join('\n')
+}
+log(`Active profiles: ${active.map(p => p.id).join(', ')}${requestedLangs ? ` (pinned: ${requestedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
+
+// ================= Prompt builders (profile-parameterized) =================
+function scoutPrompt(profile) {
+  return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${pathArg}\`. Pass \`-- ${pathArg}\` to every \`git diff\` command below.` : ''}
+
+Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}. Consider only this profile's files (${profile.diffGlobs.join(' ')}).
+1. Inspect \`git diff --stat ${baseRef ? `${baseRef}...HEAD` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`. Set sizeBucket:
+   small = a few files / < ~80 changed lines; large = many files / > ~400 lines or a public-API-heavy change; medium otherwise.
+2. lenses: choose from ${JSON.stringify(profile.lenses)}.
+   - small: only the touched categories (minimum 2; always include the safety-critical lens and the dominant category).
    - medium: the categories plausibly in play.
    - large: all of them.
-   Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; new branching / growing files / large refactor → maintainability; always consider 'intent'.${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
-4. maxRounds: small=1, medium=2, large=3. verifyVotes: small/medium=1, large=3. lensModel: opus for all sizes (review reasoning runs on Opus; depth still scales via maxRounds/verifyVotes/lens count).
-5. isLibrary: true if this crate is a published library (has \`[lib]\`/is named in a workspace as a lib and looks publishable) — best effort.
-6. securitySensitive: true if the diff touches auth, crypto, input parsing, unsafe, FFI, or dependencies.
-7. intent: ${intentArg ? `the caller provided: "${intentArg}". Refine it from the diff if needed.` : 'infer the change\'s purpose from the diff and any PR/commit messages; empty string if unclear.'}
-8. churn: list up to 5 files in the diff that git shows as frequently changed (\`git log --oneline -n 50 -- <file> | wc -l\` is a rough proxy) — these get extra scrutiny. May be empty.`,
-  { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
-)
-
-// Fail-safe defaults if scout was skipped or died.
-const plan = {
-  baseRef: scout?.baseRef ?? '',
-  sizeBucket: scout?.sizeBucket ?? 'medium',
-  lenses: (scout?.lenses?.length ? scout.lenses : ALL_LENSES),
-  maxRounds: scout?.maxRounds ?? 2,
-  verifyVotes: scout?.verifyVotes ?? 1,
-  lensModel: scout?.lensModel ?? 'opus',
-  isLibrary: scout?.isLibrary ?? false,
-  securitySensitive: scout?.securitySensitive ?? true,
-  intent: scout?.intent ?? intentArg,
-  churn: scout?.churn ?? [],
-}
-// Strict mode always runs the maintainability lens, whatever the scout picked.
-if (strict && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
-
-// Security-sensitive rigor floor. The most consequential failure mode is the Scout (haiku, on
-// `git diff --stat`) under-bucketing a security-touching change: a thin lens set with
-// verifyVotes=1 means a real High has to survive a single skeptic that defaults to "refuted".
-// When the change touches auth/crypto/input-parsing/unsafe/FFI/deps we do NOT let the size
-// heuristic gate rigor — run every lens, require a 3-skeptic majority for High/Critical, and
-// give loop-until-dry at least two rounds. (The completeness critic is also forced below.)
-if (plan.securitySensitive) {
-  for (const l of ALL_LENSES) if (!plan.lenses.includes(l)) plan.lenses.push(l)
-  plan.verifyVotes = Math.max(plan.verifyVotes, 3)
-  plan.maxRounds = Math.max(plan.maxRounds, 2)
+   ${profile.scoutRules}${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
+3. maxRounds: small=1, medium=2, large=3. verifyVotes: small/medium=1, large=3. lensModel: opus for all sizes (review reasoning runs on Opus; depth scales via maxRounds/verifyVotes/lens count).
+4. isLibrary: ${profile.usesLibrary ? 'true if this is a published library (has `[lib]`/looks publishable) — best effort.' : 'always false (not applicable to this language).'}
+5. securitySensitive: true if the diff touches ${profile.securityHints}.
+6. intent: ${intentArg ? `the caller provided: "${intentArg}". Refine it from the diff if needed.` : 'infer the change\'s purpose from the diff and any PR/commit messages; empty string if unclear.'}
+7. churn: list up to 5 files in the diff that git shows as frequently changed (\`git log --oneline -n 50 -- <file> | wc -l\` is a rough proxy). May be empty.`
 }
 
-// Negative-space lens: the bug the diff ENABLES in code it did NOT touch (a new status/type
-// pre-existing endpoints mutate blindly; a latent bug the diff makes reachable). Diff-anchored
-// lenses structurally cannot see these. Run it where new reachable surface tends to appear —
-// security-sensitive or large changes.
-if ((plan.securitySensitive || plan.sizeBucket === 'large') && !plan.lenses.includes('negative-space')) {
-  plan.lenses.push('negative-space')
-}
+function negativeSpacePrompt(priorSummary, profile) {
+  return `You are the **negative-space** review lens for a ${profile.lang} change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. ${profile.navSkill ? `Load the ${profile.navSkill} skill for whole-repo search; use` : 'Use'} Grep/Glob across the ENTIRE tree, not just the diff.
 
-log(`${scout?.notes ?? 'scout produced no result — assuming medium bucket, all lenses'}${strict ? ' · STRICT maintainability mode' : ''}${plan.securitySensitive ? ' · SECURITY rigor floor (all lenses, 3-vote verify)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
-
-// ================= Gate + tool grounding =================
-phase('Gate')
-const gate = await agent(
-  `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${plan.baseRef ? `\`${plan.baseRef}\`` : 'uncommitted changes / most recent commit'}.
-
-GATE (CI-aware, per the rust-review skill — load it):
-1. Detect a PR + CI: \`gh pr checks --json name,state,bucket,link\` for the current branch. If gh is missing/unauthenticated/offline or no PR is found, fall through to the local gate.
-2. For build/test/clippy/fmt: if a conclusive green required CI check covers it, treat it as PASSED and record provenance "via CI #<n>"; if any such check FAILED, set status=fail and list it in failedChecks. If pending/absent, run it locally (\`cargo fmt --check\`, \`cargo clippy --all-targets -- -D warnings\`, \`cargo test\`).
-3. Security tools (\`cargo audit\`, \`cargo deny check\`) always run locally if installed (cheap, usually absent from CI). A vulnerability with a fix is a fail.
-4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
-
-SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
-5. \`cargo clippy --all-targets -- -W clippy::pedantic -W clippy::nursery\` — turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these.
-${plan.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
-
-7. SAST seed (semgrep) — decide what configs apply, then run only if any do:
-   - If a \`./semgrep/\` rules dir exists in the repo, ALWAYS include \`--config=./semgrep/\` (repo-specific banned-API/taint rules — the whole point of keeping them in-repo).
-${plan.securitySensitive
-    ? '   - This diff IS security-sensitive: also include `--config=p/rust --config=p/secrets`.'
-    : '   - This diff is NOT security-sensitive: do not pull the generic rulesets; rely on `./semgrep/` only (skip step 7 entirely if that dir is absent).'}
-   If at least one config applies and \`semgrep\` is installed, scope it to the changed Rust files (\`git diff --name-only ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'} -- '*.rs'\`) and run \`semgrep --error <configs> <files>\`. Turn each result into a seed finding (source "semgrep"; map semgrep ERROR→High, WARNING→Medium, INFO→Low). These are SEEDS, never gate failures — semgrep taint/secrets over-reports, and downstream verification refutes the false positives. If semgrep is absent or no config applies, log and skip.
-
-8. **Dependency context** — review against the crate versions the project ACTUALLY pins, not against crates-in-the-abstract. Resolve them: \`cargo metadata --format-version 1\` (or read \`Cargo.lock\`) and match the external crates the changed files \`use\` to their locked versions. For any nontrivial dependency the diff touches, check whether the usage is correct *for that pinned version* — a since-deprecated/removed/renamed API, a changed default, a known footgun of that exact version. Consult context7 for the crate's version-specific docs instead of trusting memory. Turn a genuine version-specific misuse into a seed finding (source "dep-context", severity Medium, ruleId "DEP-001"). Known-vulnerable versions are already covered by \`cargo audit\` (ruleId "DEP-002") — do not duplicate. Best-effort: skip silently if \`cargo metadata\` fails or the diff touches no external crate.
-
-Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`,
-  { label: 'gate', schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' },
-)
-
-const gateStatus = gate?.status ?? 'unknown'
-const gateProvenance = gate?.provenance ?? 'gate not established'
-const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
-log(`Gate: ${gateStatus} — ${gateProvenance}${gate?.failedChecks?.length ? ` · failed: ${gate.failedChecks.join(', ')}` : ''}`)
-
-// Common fields for every rust-review record; callers pass the path-specific extras.
-function reviewRecord(extra) {
-  return {
-    schemaVersion: 1,
-    runtime: 'claude-code',
-    kind: 'workflow',
-    name: 'review',
-    nested: !!viaArg,
-    via: viaArg || null,
-    scout: { size: plan.sizeBucket, lenses: plan.lenses, model: plan.lensModel, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes },
-    gate: { status: gateStatus, provenance: gateProvenance },
-    outputTokens: budget.spent(),
-    ...extra,
-  }
-}
-
-if (gateStatus === 'fail') {
-  await logRun(reviewRecord({ verdict: 'Block', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gate.failedChecks || [] }))
-  return [
-    `## Verdict`,
-    `⛔ Block — mechanical gate is red.`,
-    ``,
-    `## Gate`,
-    gateProvenance,
-    gate.failedChecks?.length ? `\nFailed checks:\n${gate.failedChecks.map(c => `- ${c}`).join('\n')}` : '',
-    ``,
-    `Fix the gate before a semantic review is worthwhile.`,
-  ].join('\n')
-}
-
-// ================= Lenses =================
-const LENS_BRIEF = PROFILES.rust.lensBrief = {
-  safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization.',
-  errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
-  ownership: 'ownership & lifetimes: needless clone to satisfy the borrow checker, String where &str/impl AsRef suffices, Vec<T> where &[T] works, explicit lifetimes where elision applies.',
-  concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
-  performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
-  'api-idioms': 'API & idioms & docs: library returning Box<dyn Error>/anyhow, giant functions / deep nesting, wildcard match on a business enum, pub item without ///, #[allow] without justification, #![deny(warnings)] in source.',
-  maintainability: 'maintainability & structural simplification (load the refactoring skill): missed code judo — a behavior-preserving reframing using the existing architecture that would make this change dramatically simpler or delete a whole category of complexity; file pushed across ~700 lines (decomposition smell); ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow instead of a dedicated abstraction; needless optionality (Option that always holds), as-casts where From/TryFrom belongs, Box<dyn Any>/downcasting where a typed model fits. Flag only concrete, behavior-preserving restructurings the author could have taken — not hypothetical rewrites.',
-  tests: 'tests & coverage QUALITY (not just presence): do new tests assert real behavior and error paths, or are they vacuous (assert!(true), no assertions)? New error path/branch with no test; bug fix with no regression test.',
-  intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Compare the diff against the stated intent; flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
-  'negative-space': 'negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum-variant/column that pre-existing endpoints mutate blindly; a latent bug in an unchanged helper the diff makes reachable for the first time. Diff-anchored lenses cannot see these — this lens works outward from the new surface into the untouched tree.',
-}
-
-// The negative-space lens does the OPPOSITE of every other lens: it does not review the changed
-// lines, it works outward from the new surface into the UNCHANGED tree. Its findings anchor to the
-// offending pre-existing file:line (real and verifiable), not to a diff line.
-function negativeSpacePrompt(priorSummary) {
-  return `You are the **negative-space** review lens for a Rust change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. Load the rust-navigation skill for whole-repo search; use Grep/Glob across the ENTIRE tree, not just the diff.
-
-Diff base: ${plan.baseRef ? `\`${plan.baseRef}\`` : 'uncommitted changes / most recent commit'}.
-${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
+Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}.
+${intentArg ? `INTENT (what the change should do): ${intentArg}` : ''}
 
 METHOD — follow in order:
-1. Inventory the NEW surface the diff introduces. Read the FULL diff including non-Rust files: \`git diff ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'}\`. List every new: enum variant / status value / DB column / table / migration / public fn / route / struct field. ALSO list any UNCHANGED function the diff now calls for the first time (a newly-reachable helper).
-2. For EACH item, Grep the UNCHANGED tree for existing code that reads, lists, updates, deletes, cascades, serializes, orders, or authorizes that shape. Ask: does this pre-existing path violate an invariant the new feature assumes?
-   - A new "Draft"/"Pending"/"Reserved" status: do pre-existing list / update / delete / cascade paths exclude or guard it, or mutate it blindly and wedge the new flow?
-   - A newly-reachable helper: is there a latent bug (SQL correlated-subquery column scoping / a missing owner or tenant filter / ignored rows_affected) that was dormant only because nothing called it?
-   - A new column / migration: do existing \`SELECT *\` / \`ORDER BY\` / index / backfill paths interact badly, or assume data the old code could have violated?
-   - New serde/utoipa surface: does an UNCHANGED shared DTO serialize the same field with different casing, freezing an asymmetric wire contract?
-3. Report each concrete violation ANCHORED TO THE UNCHANGED file:line that is actually wrong (the offending old handler / query / cascade / DTO), not the diff line. That anchor is real — cite it precisely so it can be verified.
+1. Inventory the NEW surface the diff introduces. Read the FULL diff: \`git diff ${baseRef ? `--merge-base ${baseRef}` : 'HEAD'}\`. List every new: ${profile.lang === 'Nix' ? 'flake output / module option / package attr / overlay / renamed binding' : 'enum variant / status value / DB column / table / migration / public fn / route / struct field'}. ALSO list any UNCHANGED definition the diff now references or relies on for the first time.
+2. For EACH item, Grep the UNCHANGED tree for existing code that reads, references, ${profile.lang === 'Nix' ? 'imports, or overrides' : 'lists, updates, deletes, cascades, serializes, orders, or authorizes'} that shape. Ask: does this pre-existing path violate an invariant the change assumes?
+3. Report each concrete violation ANCHORED TO THE UNCHANGED file:line that is actually wrong, not the diff line. That anchor is real — cite it precisely so it can be verified.
 
 Only report a violation you can name a concrete reachable path for. Put the triggering surface in \`blastRadius\`; in \`why\`, state the invariant and the exact old path that breaks it. Do NOT restate findings already in the ALREADY-FOUND set below — look for what they MISSED.
 
 ALREADY-FOUND (from other lenses / earlier rounds — do not repeat):
 ${priorSummary}
 
-Return {lens: "negative-space", findings: [...]} using the shared finding schema (file/line/severity/title/why/blastRadius/ruleId). Set \`ruleId\` to the matching rules.md catalog ID (often SAF-*/CON-*/ERR-* for cross-surface bugs) or "" if none fits. Observability: the workflow records this run — do NOT write your own record.`
+Return {lens: "negative-space", findings: [...]} using the shared finding schema. Set \`ruleId\` to the matching ${profile.rubricSkill} rules.md ID or "" if none fits. Observability: the workflow records this run — do NOT write your own record.`
 }
 
-function lensPrompt(lens, priorSummary) {
-  if (lens === 'negative-space') return negativeSpacePrompt(priorSummary)
-  return `You are the **${lens}** review lens for a Rust diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the rust-review skill for the rubric and the rust-navigation skill for context expansion.
+function lensPrompt(lens, priorSummary, profile, plan) {
+  if (lens === 'negative-space') return negativeSpacePrompt(priorSummary, profile)
+  return `You are the **${lens}** review lens for a ${profile.lang} diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the ${profile.rubricSkill} skill for the rubric${profile.navSkill ? ` and the ${profile.navSkill} skill for context expansion` : ''}.
 
-SLICE: ${LENS_BRIEF[lens] || lens}
-${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Hold the change to: no structural regression, no obvious simplification missed, no unjustified file-size explosion, no spaghetti-growth, no hacky/magical abstraction. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
-Diff base: ${plan.baseRef ? `\`${plan.baseRef}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${plan.baseRef ? `--merge-base ${plan.baseRef}` : 'HEAD'} -- '*.rs'\`.
+SLICE: ${profile.lensBrief[lens] || lens}
+${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
+Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${baseRef ? `--merge-base ${baseRef}` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`.
 ${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
 ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}
 
-CONTEXT EXPANSION (required): for each finding, trace callers / impls / error paths of the changed symbols (Grep/Glob + LSP) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
-BLAST-RADIUS (required): for each changed PUBLIC symbol you touch, note how many callers are affected and set a breaking-change flag in \`blastRadius\`.
+CONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob${profile.navSkill ? ' + LSP' : ''}) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
+BLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in \`blastRadius\`.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
-RULE ID (required field): set \`ruleId\` to the matching catalog ID from the rust-review skill's rules.md (e.g. "CON-003", "SAF-001") when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
-${lens === 'tests' && plan.sizeBucket === 'large' ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to find weak tests; skip silently if absent.' : ''}
+RULE ID (required field): set \`ruleId\` to the matching catalog ID from the ${profile.rubricSkill} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
 
 ALREADY-FOUND (do not repeat; look for what these MISSED):
 ${priorSummary}
 
 Return {lens, findings[]}.
 
-Observability: the rust-review workflow records this run — do NOT write your own record.`
+Observability: the review workflow records this run — do NOT write your own record.`
 }
 
-function key(f) {
-  return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
-}
-
-phase('Lenses')
-const seen = new Set()
-const pool = []
-// Seed findings (from the gate) enter the pool first and seed the dedup set.
-for (const f of seedFindings) {
-  const k = key(f)
-  if (!seen.has(k)) { seen.add(k); pool.push(f) }
-}
-
-const notRun = []   // stages/lenses that were IN SCOPE but did not complete (budget or terminal error) → verdict marked INCOMPLETE
-const ranAtLeastOnce = new Set()   // lenses that returned a result in some round; the rest silently dropped
-let dry = false
-for (let round = 1; round <= plan.maxRounds && !dry; round++) {
-  const priorSummary = pool.length
-    ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n')
-    : 'none yet'
-  const results = (await parallel(plan.lenses.map(lens => () =>
-    agent(lensPrompt(lens, priorSummary), { label: `lens:${lens} r${round}`, agentType: profile.reviewerAgent, phase: 'Lenses', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
-  ))).filter(Boolean)
-  for (const r of results) ranAtLeastOnce.add(r.lens)
-  const fresh = []
-  for (const r of results) {
-    for (const f0 of (r.findings || [])) {
-      // Force source to the lens name: the per-dimension tally and the strict-mode
-      // maintainability escalation key off source, and a worker may mislabel it (e.g. "refactoring").
-      const f = { ...f0, source: r.lens }
-      const k = key(f)
-      if (!seen.has(k)) { seen.add(k); fresh.push(f) }
-    }
-  }
-  pool.push(...fresh)
-  log(`Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
-  if (!fresh.length) dry = true
-}
-
-// Lenses that never returned a result in any round were silently dropped — a null from parallel()
-// means the agent died (budget hard-ceiling after retries, or a terminal API error), NOT a clean
-// pass (a clean pass returns {lens, findings: []}). Flag them so a budget-nuked run cannot read as
-// complete — most dangerously as a false "Approve — no findings" below.
-const droppedLenses = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
-if (droppedLenses.length) {
-  notRun.push(`lenses that never returned (${droppedLenses.join('/')})`)
-  log(`⚠️ ${droppedLenses.length} lens(es) never returned — likely budget or terminal error: ${droppedLenses.join(', ')}. Review marked INCOMPLETE.`)
-}
-
-if (!pool.length) {
-  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, findings: summarizeFindings([]), dimensions: [], verification: null, notRun }))
-  const verdictLine = notRun.length
-    ? `⚠️ Approve (INCOMPLETE) — gate ${gateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy, re-run with more budget.`
-    : `✅ Approve — gate ${gateStatus}; no findings across ${plan.lenses.length} lenses.`
-  return [`## Verdict`, verdictLine, ``, `## Gate`, gateProvenance].join('\n')
-}
-
-// ================= Verify =================
-phase('Verify')
 function verifyPrompt(f, idx) {
-  return `You are skeptic #${idx + 1} trying to REFUTE a Rust review finding. Default to refuted=true when uncertain — only let real findings through.
+  return `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain — only let real findings through.
 
 FINDING: [${f.severity}] ${f.title}
   at ${f.file || '?'}:${f.line || 0}
@@ -428,9 +381,8 @@ Open the cited file and check:
 Return {refuted, citedLineMatches, reachable, reason}.`
 }
 
-// Reusable: verify a pool of findings → {confirmed, suspected, dropped}.
-// Called here for the lens pool, and again in Task 6 for the critic's follow-up findings.
-async function verifyPool(items) {
+// Verify a pool of findings → {confirmed, suspected, dropped}. Rigor scales with the profile's plan.
+async function verifyPool(items, plan) {
   const judged = await parallel(items.map(f => () => {
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
     const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
@@ -459,66 +411,183 @@ async function verifyPool(items) {
   }
 }
 
-// `let` so the Task 6 completeness critic can extend these with follow-up findings.
-let { confirmed, suspected, dropped } = await verifyPool(pool)
-log(`Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
+// ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
+async function reviewProfile(profile) {
+  // ---- Scout ----
+  const scout = await agent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
+  const plan = {
+    sizeBucket: scout?.sizeBucket ?? 'medium',
+    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : profile.lenses.slice()),
+    maxRounds: scout?.maxRounds ?? 2,
+    verifyVotes: scout?.verifyVotes ?? 1,
+    lensModel: scout?.lensModel ?? 'opus',
+    isLibrary: profile.usesLibrary ? (scout?.isLibrary ?? false) : false,
+    securitySensitive: scout?.securitySensitive ?? true,
+    intent: scout?.intent ?? intentArg,
+    churn: scout?.churn ?? [],
+  }
+  if (!plan.lenses.length) plan.lenses = profile.lenses.slice()
+  if (strict && profile.lenses.includes('maintainability') && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
+  // Security-sensitive rigor floor: don't let the size heuristic gate rigor on a security-touching change.
+  if (plan.securitySensitive) {
+    for (const l of profile.lenses) if (!plan.lenses.includes(l)) plan.lenses.push(l)
+    plan.verifyVotes = Math.max(plan.verifyVotes, 3)
+    plan.maxRounds = Math.max(plan.maxRounds, 2)
+  }
+  // Negative-space lens where new reachable surface tends to appear.
+  if ((plan.securitySensitive || plan.sizeBucket === 'large') && !plan.lenses.includes('negative-space')) plan.lenses.push('negative-space')
+  log(`[${profile.id}] ${scout?.notes ?? 'scout: medium/all lenses'} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
-// ================= Synthesize =================
-phase('Synthesize')
+  // ---- Gate ----
+  const gate = await agent(profile.gate({ baseRef, isLibrary: plan.isLibrary, securitySensitive: plan.securitySensitive }),
+    { label: `gate:${profile.id}`, schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' })
+  const gateStatus = gate?.status ?? 'unknown'
+  const gateProvenance = gate?.provenance ?? 'gate not established'
+  const failedChecks = gate?.failedChecks ?? []
+  const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
+  log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
+  if (gateStatus === 'fail') {
+    return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
+  }
 
-// Completeness critic WITH bounded follow-up (large bucket, budget-gated).
-// The critic names lenses that should have run but didn't; we re-run those once,
-// dedup against everything already seen, verify them through verifyPool, and merge
-// the survivors into confirmed/suspected. Bounded: one extra round, only lenses from
-// the catalog not yet run, and only while the budget allows.
-const CRITIC_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['missingLenses', 'notes'],
-  properties: {
-    missingLenses: { type: 'array', items: { type: 'string' }, description: 'lenses from the candidate list that should also run; empty if coverage is complete' },
-    notes: { type: 'string', description: 'one line on anything else likely missed, or "coverage complete"' },
-  },
-}
+  // ---- Lenses (loop-until-dry) ----
+  phase('Lenses')
+  const seen = new Set()
+  const pool = []
+  for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
+  const notRun = []
+  const ranAtLeastOnce = new Set()
+  let dry = false
+  for (let round = 1; round <= plan.maxRounds && !dry; round++) {
+    const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
+    const results = (await parallel(plan.lenses.map(lens => () =>
+      agent(lensPrompt(lens, priorSummary, profile, plan), { label: `lens:${profile.id}:${lens} r${round}`, agentType: profile.reviewerAgent, phase: 'Lenses', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+    ))).filter(Boolean)
+    for (const r of results) ranAtLeastOnce.add(r.lens)
+    const fresh = []
+    for (const r of results) {
+      for (const f0 of (r.findings || [])) {
+        const f = { ...f0, source: r.lens }
+        const k = key(f)
+        if (!seen.has(k)) { seen.add(k); fresh.push(f) }
+      }
+    }
+    pool.push(...fresh)
+    log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
+    if (!fresh.length) dry = true
+  }
+  const droppedLenses = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
+  if (droppedLenses.length) {
+    notRun.push(`${profile.id} lenses that never returned (${droppedLenses.join('/')})`)
+    log(`⚠️ [${profile.id}] ${droppedLenses.length} lens(es) never returned — likely budget or terminal error: ${droppedLenses.join(', ')}. Review marked INCOMPLETE.`)
+  }
+  if (!pool.length) {
+    return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
+  }
 
-let criticNotes = ''
-const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
-if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
-  const candidates = ALL_LENSES.filter(l => !plan.lenses.includes(l))
-  const critic = await agent(
-    `You are a completeness critic for a Rust review of the diff (base ${plan.baseRef || 'HEAD'}).
+  // ---- Verify ----
+  phase('Verify')
+  let { confirmed, suspected, dropped } = await verifyPool(pool, plan)
+  log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
+
+  // ---- Completeness critic (large or security-sensitive; budget-gated) ----
+  phase('Synthesize')
+  let criticNotes = ''
+  const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
+  if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
+    const candidates = profile.lenses.filter(l => !plan.lenses.includes(l))
+    const critic = await agent(
+      `You are a completeness critic for a ${profile.lang} review of the diff (base ${baseRef || 'HEAD'}).
 Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
 Name any review lens that was NOT run but SHOULD be, given what the diff touches — choose ONLY from: ${JSON.stringify(candidates)}.
 Also note in one line anything else likely missed (a changed file no finding touched, a claim left unverified). If coverage is complete, return missingLenses: [] and notes: "coverage complete".`,
-    { label: 'critic', phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
-  )
-  criticNotes = critic?.notes ?? ''
-  const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
-  if (followups.length && (!budget.total || budget.remaining() > 60000)) {
-    log(`Completeness critic → follow-up lenses: ${followups.join(', ')}`)
-    const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
-    const extra = (await parallel(followups.map(lens => () =>
-      agent(lensPrompt(lens, priorSummary), { label: `lens:${lens} (critic)`, agentType: profile.reviewerAgent, phase: 'Synthesize', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
-    ))).filter(Boolean).flatMap(r => r.findings || [])
-    const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
-    if (fresh.length) {
-      const v = await verifyPool(fresh)
-      confirmed = confirmed.concat(v.confirmed)
-      suspected = suspected.concat(v.suspected)
-      dropped += v.dropped   // keep the refuted tally complete so totalVerified/refuteRate stay accurate
-      log(`Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
+      { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
+    )
+    criticNotes = critic?.notes ?? ''
+    const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    if (followups.length && (!budget.total || budget.remaining() > 60000)) {
+      log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
+      const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
+      const extra = (await parallel(followups.map(lens => () =>
+        agent(lensPrompt(lens, priorSummary, profile, plan), { label: `lens:${profile.id}:${lens} (critic)`, agentType: profile.reviewerAgent, phase: 'Synthesize', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+      ))).filter(Boolean).flatMap(r => r.findings || [])
+      const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
+      if (fresh.length) {
+        const v = await verifyPool(fresh, plan)
+        confirmed = confirmed.concat(v.confirmed)
+        suspected = suspected.concat(v.suspected)
+        dropped += v.dropped
+        log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
+      }
+    } else if (followups.length) {
+      notRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
+      log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] critic follow-up lenses. Review marked INCOMPLETE.`)
     }
-  } else if (followups.length) {
-    notRun.push(`critic follow-up lenses (${followups.join('/')})`)
-    log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED critic follow-up lenses: ${followups.join(', ')}. Review marked INCOMPLETE.`)
+  } else if (criticInScope) {
+    notRun.push(`${profile.id} completeness-critic`)
+    log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
-} else if (criticInScope) {
-  notRun.push('completeness-critic')
-  log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED completeness critic (in scope: ${plan.securitySensitive ? 'security-sensitive' : 'large'}). Review marked INCOMPLETE.`)
+
+  return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, notRun, criticNotes }
 }
 
+// ================= Run each active profile, then merge =================
+const results = []
+for (const p of active) results.push(await reviewProfile(p))
+
+// A red gate on any active language blocks the whole review (findings can't be trusted on a broken tree).
+const gateFailed = results.filter(r => r.gateStatus === 'fail')
+const mergedProvenance = results.map(r => `[${r.profile.id}] ${r.gateProvenance}`).join(' · ')
+const mergedGateStatus = gateFailed.length ? 'fail' : (results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown')
+
+function reviewRecord(extra) {
+  return {
+    schemaVersion: 1,
+    runtime: 'claude-code',
+    kind: 'workflow',
+    name: 'review',
+    nested: !!viaArg,
+    via: viaArg || null,
+    languages: active.map(p => p.id),
+    scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
+    gate: { status: mergedGateStatus, provenance: mergedProvenance },
+    outputTokens: budget.spent(),
+    ...extra,
+  }
+}
+
+if (gateFailed.length) {
+  await logRun(reviewRecord({ verdict: 'Block', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
+  return [
+    `## Verdict`,
+    `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
+    ``,
+    `## Gate`,
+    mergedProvenance,
+    `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map(c => `- [${r.profile.id}] ${c}`)).join('\n')}`,
+    ``,
+    `Fix the gate before a semantic review is worthwhile.`,
+  ].join('\n')
+}
+
+let confirmed = results.flatMap(r => r.confirmed)
+let suspected = results.flatMap(r => r.suspected)
+const dropped = results.reduce((n, r) => n + r.dropped, 0)
+const notRun = results.flatMap(r => r.notRun)
+const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
+
+if (!confirmed.length && !suspected.length) {
+  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
+  const verdictLine = notRun.length
+    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy, re-run with more budget.`
+    : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
+  return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance].join('\n')
+}
+
+// ================= Synthesize one merged report =================
+phase('Synthesize')
 const report = await agent(
-  `You are consolidating a Rust review into ONE markdown report. Do NOT invent findings — only use what is given.
+  `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
 
 VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
@@ -530,11 +599,11 @@ CALIBRATE severities across the Confirmed set so the same kind of issue is not C
 
 Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — the token budget cut the review short before these ran: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
-2. \`## Gate\` — ${JSON.stringify(gateProvenance)}.
+2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
-${criticNotes && criticNotes.trim() && criticNotes.trim() !== 'coverage complete' ? `6. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
+${criticNotes ? `6. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 
 CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
 
@@ -542,10 +611,10 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
   { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
 )
 
-// Optional: post Confirmed findings as inline PR comments (lever D, best-effort).
+// Optional: post Confirmed findings as inline PR comments (best-effort).
 if (postComments && confirmed.length) {
   await agent(
-    `Post these Confirmed Rust-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, do nothing and report that — never fail.
+    `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, do nothing and report that — never fail.
 For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
 ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}`,
     { label: 'pr-comments', phase: 'Synthesize', effort: 'low' },
@@ -557,10 +626,10 @@ const totalVerified = confirmed.length + suspected.length + dropped
 await logRun(reviewRecord({
   verdict: finalVerdict(confirmed) + (notRun.length ? ' (INCOMPLETE)' : ''),
   findings: summarizeFindings(allReviewFindings),
-  dimensions: plan.lenses.map(l => {
-    const s = summarizeFindings(confirmed.filter(f => (f.source || '') === l))
-    return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
-  }),
+  dimensions: results.flatMap(r => r.plan.lenses.map(l => {
+    const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
+    return { dimension: `${r.profile.id}:${l}`, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
+  })),
   verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
   notRun,
 }))
