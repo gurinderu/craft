@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/gurinderu/craft/compare/v0.4.1...v0.5.0) (2026-07-09)
+
+
+### Features
+
+* **review:** harden the engine against API deaths and close smoke-run gaps ([4d993bd](https://github.com/gurinderu/craft/commit/4d993bd70086082f7b6cc9174eebbd2b87734dc0))
+
 ## [0.4.1](https://github.com/gurinderu/craft/compare/v0.4.0...v0.4.1) (2026-07-09)
 
 
