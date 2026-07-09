@@ -194,11 +194,16 @@ gate failures: taint/secrets over-report, so the downstream verification refutes
 
 Every finding (lens or seed) is checked before it can be Confirmed:
 
-- **Adversarial:** skeptics try to REFUTE it (default to refuted when uncertain). One skeptic by
-  default; three-vote consensus for Critical/High.
+- **Mechanical first:** if a tool can decide the finding (a clippy lint, semgrep rule,
+  cargo-audit advisory), the verifier re-runs it scoped to the cited file and the tool's output
+  overrides judgement in both directions. Tool-reported seeds can never be refuted on reasoning
+  alone — only by the tool demonstrably no longer reporting them.
+- **Adversarial:** skeptics try to REFUTE it (default to refuted when uncertain — except
+  tool-reported seeds, per above). One skeptic by default; three-vote consensus for Critical/High.
 - **Self-verification (anti-hallucination):** re-read the cited `file:line` — does the code
-  actually say what the finding claims, and is the path reachable in production (not test/example)?
-  A wrong citation or unreachable path drops or demotes the finding.
+  actually say what the finding claims? A wrong citation drops the finding. A path that is
+  test/example-only (not production-reachable) does NOT drop it — it demotes the confirmed
+  severity one notch.
 
 ## Step 3 — Verdict
 
