@@ -299,6 +299,16 @@ function key(f) {
   return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
+// A finding is "tool-sourced" — deterministic and re-runnable, so a verifier may refute it ONLY by
+// re-running the tool — when it came from neither a review lens nor the negative-space lens nor
+// dep-context. dep-context is a *reasoning* seed from the gate (version-specific API misuse) with no
+// re-runnable tool behind it, so it must be verifiable by argument like a lens finding; classifying
+// it as a tool would make it effectively unfalsifiable ("keep an unverifiable tool finding alive")
+// and inflate the verdict with false Warnings.
+function isToolSource(profile, source) {
+  return !(profile.lenses.includes(source) || source === 'negative-space' || source === 'dep-context')
+}
+
 // ================= Detect base + languages =================
 phase('Scout')
 const detected = await ragent(
@@ -443,7 +453,7 @@ const DEDUP_SCHEMA = {
 }
 async function dedupPool(pool, profile) {
   if (pool.length < 2) return pool
-  const isToolSrc = f => !(profile.lenses.includes(f.source) || f.source === 'negative-space')
+  const isToolSrc = f => isToolSource(profile, f.source)
   const listing = pool.map((f, i) => `${i}. ${f.file || '?'}:${f.line || 0} [${f.severity}] (${f.source}) ${f.title} — ${String(f.why || '').slice(0, 160)}`).join('\n')
   let res = null
   try {
@@ -482,8 +492,8 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
 async function verifyPool(items, plan, profile, gateProvenance) {
   const judged = await parallel(items.map(f => () => {
-    // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …).
-    const isTool = !(profile.lenses.includes(f.source) || f.source === 'negative-space')
+    // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
+    const isTool = isToolSource(profile, f.source)
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
     const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
     return parallel(Array.from({ length: votes }, (_unused, i) => () =>
@@ -549,23 +559,38 @@ async function reviewProfile(profile) {
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
   // registered in this session (stale plugin registry), fall back to the generic workflow
-  // subagent — lens prompts are self-contained. Record the real failure reason so
-  // INCOMPLETE reporting doesn't have to guess (budget vs registry vs death).
+  // subagent — lens prompts are self-contained. The miss is LEARNED once (reviewerAgentMissing):
+  // without it the absent agent type is re-attempted on every lens × round, which floods the run
+  // with "agent type '<x>' not found". Both failure shapes are handled — a thrown /not found/ and
+  // a null return (some runtimes signal an unknown agent type that way). Record the real failure
+  // reason so INCOMPLETE reporting doesn't have to guess (budget vs registry vs death).
   const lensFailures = new Map()
+  let reviewerAgentMissing = false
   async function runLens(lens, prompt, phaseName, labelSuffix) {
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
+    const runGeneric = async () => {
+      try {
+        return await ragent(prompt, opts)
+      } catch (e) {
+        lensFailures.set(lens, String((e && e.message) || e).slice(0, 160))
+        return null
+      }
+    }
+    if (reviewerAgentMissing) return runGeneric()
     try {
-      return await ragent(prompt, { ...opts, agentType: profile.reviewerAgent })
+      const res = await ragent(prompt, { ...opts, agentType: profile.reviewerAgent })
+      if (res != null) return res
+      // Null (not a throw) from the reviewer path: on some runtimes an unknown agent type returns
+      // null rather than throwing. ragent already retried; try the generic subagent once. Do NOT
+      // set reviewerAgentMissing — a null can be a transient API death, so later lenses still get
+      // a shot at the real reviewer agent.
+      return await runGeneric()
     } catch (e) {
       const msg = String((e && e.message) || e)
       if (!/not found/i.test(msg)) { lensFailures.set(lens, msg.slice(0, 160)); return null }
-      log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — lens '${lens}' falling back to the generic subagent`)
-      try {
-        return await ragent(prompt, opts)
-      } catch (e2) {
-        lensFailures.set(lens, String((e2 && e2.message) || e2).slice(0, 160))
-        return null
-      }
+      reviewerAgentMissing = true
+      log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
+      return await runGeneric()
     }
   }
 
