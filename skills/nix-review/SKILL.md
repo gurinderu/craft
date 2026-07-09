@@ -171,12 +171,16 @@ findings (each still verified): `statix check` (anti-idioms), `deadnix --fail` (
 
 Every finding (lens or seed) is checked before it can be Confirmed:
 
-- **Adversarial:** skeptics try to REFUTE it (default to refuted when uncertain). One skeptic by
-  default; three-vote consensus for Critical/High.
+- **Mechanical first:** if a tool can decide the finding (a statix/deadnix rule, a failing
+  `nix eval`), the verifier re-runs it scoped to the cited file and the tool's output overrides
+  judgement in both directions. Tool-reported seeds can never be refuted on reasoning alone —
+  only by the tool demonstrably no longer reporting them.
+- **Adversarial:** skeptics try to REFUTE it (default to refuted when uncertain — except
+  tool-reported seeds, per above). One skeptic by default; three-vote consensus for Critical/High.
 - **Self-verification (anti-hallucination):** re-read the cited `file:line` — does the code
-  actually say what the finding claims, and is the path reachable in a real build (not an
-  example overlay or test derivation)? A wrong citation or unreachable path drops or demotes
-  the finding.
+  actually say what the finding claims? A wrong citation drops the finding. A path only reachable
+  from an example overlay or test derivation (not a real build) does NOT drop it — it demotes the
+  confirmed severity one notch.
 
 ## Step 3 — Verdict
 

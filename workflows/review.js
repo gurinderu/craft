@@ -47,6 +47,8 @@ ${ctx.securitySensitive
 
 ${rustDepContext(ctx)}
 
+EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI (cite the check name). Never infer a pass. If the changed files are not part of a cargo project, do NOT fabricate a temporary crate/harness around them to lint or build — record build/clippy/test as not establishable (status=unknown) and say why in notes.
+
 Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`
 }
 function nixDepContext(ctx) {
@@ -65,6 +67,8 @@ SEED FINDINGS (tool grounding — scoped to the changed files):
 5. Linters — \`statix check\` (anti-idioms) and \`deadnix\` (dead bindings) on the changed \`.nix\` files. Turn each diagnostic on changed lines into a seed finding (source "statix"/"deadnix", severity Low/Medium, ruleId "MNT-001"). Do not fail the gate on these. If a linter is absent, log and skip.
 
 ${nixDepContext(ctx)}
+
+EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
 Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits.`
 }
@@ -366,29 +370,37 @@ Return {lens, findings[]}.
 Observability: the review workflow records this run — do NOT write your own record.`
 }
 
-function verifyPrompt(f, idx) {
-  return `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain — only let real findings through.
+function verifyPrompt(f, idx, isTool) {
+  const head = isTool
+    ? `You are verifier #${idx + 1} for a TOOL-REPORTED code review finding (source: ${f.source}). Deterministic tool output outranks your judgement — you may refute it ONLY by re-running the tool, never on reasoning alone.`
+    : `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain — only let real findings through.`
+  return `${head}
 
 FINDING: [${f.severity}] ${f.title}
   at ${f.file || '?'}:${f.line || 0}
   why: ${f.why}
-  source: ${f.source}
+  source: ${f.source}${f.ruleId ? ` · rule ${f.ruleId}` : ''}
+
+MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${isTool ? ' If you cannot run the tool here, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
 
 Open the cited file and check:
 1. citedLineMatches: does ${f.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
-2. reachable: is this code reachable in production, or is it test/example/dead code? (Test-only → reachable=false.)
-3. refuted: taking 1 and 2 together plus your judgement, does the finding NOT hold up?
+2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.)
+3. refuted: does the finding NOT hold up? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain, refuted=true.'})
 
 Return {refuted, citedLineMatches, reachable, reason}.`
 }
 
 // Verify a pool of findings → {confirmed, suspected, dropped}. Rigor scales with the profile's plan.
-async function verifyPool(items, plan) {
+const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
+async function verifyPool(items, plan, profile) {
   const judged = await parallel(items.map(f => () => {
+    // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …).
+    const isTool = !(profile.lenses.includes(f.source) || f.source === 'negative-space')
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
     const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
     return parallel(Array.from({ length: votes }, (_unused, i) => () =>
-      agent(verifyPrompt(f, i), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
+      agent(verifyPrompt(f, i, isTool), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
     )).then(vs => {
       const v = vs.filter(Boolean)
       if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
@@ -399,8 +411,13 @@ async function verifyPool(items, plan) {
       let tier
       if (!lineOk) tier = 'refuted'            // hallucinated citation
       else if (refutes > half) tier = 'refuted'
-      else if (reach && refutes === 0) tier = 'confirmed'
+      else if (refutes === 0) tier = 'confirmed'
       else tier = 'suspected'
+      // Test/example-only code doesn't kill a finding — it lowers the stakes: confirm, but one severity notch down.
+      if (tier === 'confirmed' && !reach) {
+        const demoted = DEMOTE[f.severity] || f.severity
+        return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
+      }
       return { ...f, tier }
     })
   }))
@@ -439,6 +456,28 @@ async function reviewProfile(profile) {
   if ((plan.securitySensitive || plan.sizeBucket === 'large') && !plan.lenses.includes('negative-space')) plan.lenses.push('negative-space')
   log(`[${profile.id}] ${scout?.notes ?? 'scout: medium/all lenses'} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
+  // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
+  // registered in this session (stale plugin registry), fall back to the generic workflow
+  // subagent — lens prompts are self-contained. Record the real failure reason so
+  // INCOMPLETE reporting doesn't have to guess (budget vs registry vs death).
+  const lensFailures = new Map()
+  async function runLens(lens, prompt, phaseName, labelSuffix) {
+    const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
+    try {
+      return await agent(prompt, { ...opts, agentType: profile.reviewerAgent })
+    } catch (e) {
+      const msg = String((e && e.message) || e)
+      if (!/not found/i.test(msg)) { lensFailures.set(lens, msg.slice(0, 160)); return null }
+      log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — lens '${lens}' falling back to the generic subagent`)
+      try {
+        return await agent(prompt, opts)
+      } catch (e2) {
+        lensFailures.set(lens, String((e2 && e2.message) || e2).slice(0, 160))
+        return null
+      }
+    }
+  }
+
   // ---- Gate ----
   const gate = await agent(profile.gate({ baseRef, isLibrary: plan.isLibrary, securitySensitive: plan.securitySensitive }),
     { label: `gate:${profile.id}`, schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' })
@@ -462,7 +501,7 @@ async function reviewProfile(profile) {
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
     const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
     const results = (await parallel(plan.lenses.map(lens => () =>
-      agent(lensPrompt(lens, priorSummary, profile, plan), { label: `lens:${profile.id}:${lens} r${round}`, agentType: profile.reviewerAgent, phase: 'Lenses', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+      runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` r${round}`),
     ))).filter(Boolean)
     for (const r of results) ranAtLeastOnce.add(r.lens)
     const fresh = []
@@ -479,8 +518,9 @@ async function reviewProfile(profile) {
   }
   const droppedLenses = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
   if (droppedLenses.length) {
-    notRun.push(`${profile.id} lenses that never returned (${droppedLenses.join('/')})`)
-    log(`⚠️ [${profile.id}] ${droppedLenses.length} lens(es) never returned — likely budget or terminal error: ${droppedLenses.join(', ')}. Review marked INCOMPLETE.`)
+    const reasons = droppedLenses.map(l => `${l}: ${lensFailures.get(l) || 'returned no result (skipped or died without an error)'}`).join(' · ')
+    notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
+    log(`⚠️ [${profile.id}] ${droppedLenses.length} lens(es) never returned (${reasons}). Review marked INCOMPLETE.`)
   }
   if (!pool.length) {
     return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
@@ -488,7 +528,7 @@ async function reviewProfile(profile) {
 
   // ---- Verify ----
   phase('Verify')
-  let { confirmed, suspected, dropped } = await verifyPool(pool, plan)
+  let { confirmed, suspected, dropped } = await verifyPool(pool, plan, profile)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
@@ -510,11 +550,11 @@ Also note in one line anything else likely missed (a changed file no finding tou
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
       const extra = (await parallel(followups.map(lens => () =>
-        agent(lensPrompt(lens, priorSummary, profile, plan), { label: `lens:${profile.id}:${lens} (critic)`, agentType: profile.reviewerAgent, phase: 'Synthesize', schema: FINDINGS_SCHEMA, model: plan.lensModel }),
+        runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Synthesize', ' (critic)'),
       ))).filter(Boolean).flatMap(r => r.findings || [])
       const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
       if (fresh.length) {
-        const v = await verifyPool(fresh, plan)
+        const v = await verifyPool(fresh, plan, profile)
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
         dropped += v.dropped
@@ -580,7 +620,7 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 if (!confirmed.length && !suspected.length) {
   await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = notRun.length
-    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy, re-run with more budget.`
+    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy; fix the cause and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
   return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance].join('\n')
 }
@@ -598,8 +638,10 @@ Suspected findings NEVER change the verdict — they are surfaced for the author
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do.
 
+DEDUPLICATE across lenses: findings that describe the same underlying defect (same file, same/overlapping lines, fixes that collapse into one edit) MUST be merged into ONE entry — keep the highest severity and the clearest why, credit the other lens in one clause. Never list per-lens duplicates as separate findings.
+
 Produce, in order:
-1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — the token budget cut the review short before these ran: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
+1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
