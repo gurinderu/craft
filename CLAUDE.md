@@ -19,6 +19,7 @@ Pick the handler by scope:
 |---|---|
 | Review a diff / change before commit or merge (default) | `review` **workflow** (background) — auto-detects language (Rust/Nix) |
 | Force a Rust-only / Nix-only diff review | `rust-review` / `nix-review` **workflow** pin (background) |
+| Deep adversarial review of a mixed / non-Rust-Nix diff, or when money-path (payments/ledger) invariants matter | `adversarial-review` **workflow** (background) — language-agnostic, subscription-friendly rate. Not to be confused with `review --strict` (harsh maintainability-block mode of the default engine) |
 | Ad-hoc single-pass diff review (when you explicitly don't want the workflow) | `rust-reviewer` / `nix-reviewer` **agent** (background) |
 | Whole-project structural / architecture audit (not a diff) | `rust-architecture-reviewer` **agent** |
 | Security / dependency / unsafe-surface scan | `rust-security-scanner` **agent** |
