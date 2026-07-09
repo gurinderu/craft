@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/gurinderu/craft/compare/v0.4.0...v0.4.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **review:** close verification blind spots found by the smoke run ([77834ae](https://github.com/gurinderu/craft/commit/77834aef0f4a2ae21c404f50e4883106c23a505c))
+
 ## [0.4.0](https://github.com/gurinderu/craft/compare/v0.3.0...v0.4.0) (2026-07-08)
 
 
