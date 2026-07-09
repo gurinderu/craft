@@ -261,8 +261,15 @@ function reviewVerdict(confirmed) {
 // In strict mode the maintainability bar is a presumption of block: any Confirmed
 // maintainability finding at Medium or above escalates the verdict to Block. Outside strict mode
 // the base verdict stands (maintainability findings are at most a Warning).
+// A finding counts as maintainability for the strict escalation if its own source is maintainability
+// OR a maintainability finding was merged into it during cross-lens dedup (dedupPool carries every
+// contributing source in `sources`). Without the second clause a maintainability finding absorbed
+// under a same-severity non-maintainability base would silently escape the strict Block.
+function isMaintainability(f) {
+  return (f.source || '') === 'maintainability' || (Array.isArray(f.sources) && f.sources.includes('maintainability'))
+}
 function finalVerdict(confirmed) {
-  if (strict && confirmed.some(f => (f.source || '') === 'maintainability'
+  if (strict && confirmed.some(f => isMaintainability(f)
     && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) return 'Block'
   return reviewVerdict(confirmed)
 }
@@ -480,7 +487,10 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
     // re-running the tool), then highest severity.
     const base = members.slice().sort((a, b) => (isToolSrc(b) - isToolSrc(a)) || ((SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9)))[0]
     const others = members.filter(m => m !== base)
-    merged.push({ ...base, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
+    // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
+    // escalation) still fires when its trigger lens was merged into a different-source base.
+    const sources = [...new Set(members.map(m => m.source).filter(Boolean))]
+    merged.push({ ...base, sources, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
   }
   if (!merged.length) return pool
   const out = pool.filter((_f, i) => !inGroup.has(i)).concat(merged)
@@ -604,6 +614,23 @@ async function reviewProfile(profile) {
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
   if (gateStatus === 'fail') {
     return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
+  }
+
+  // ---- Probe reviewer-agent availability ONCE up front ----
+  // The per-lens fallback (runLens) already recovers, but it learns the miss only after the FIRST
+  // attempt — and the round-1 lenses fan out in parallel, so without this every lens in round 1
+  // would fail with "agent type '<x>' not found" before the memo is set. One cheap probe collapses
+  // that opening wave to a single attempt. Best-effort: only a thrown /not found/ marks it missing;
+  // a result, a null, or an unrelated error leaves the per-lens fallback to decide.
+  if (profile.reviewerAgent && !reviewerAgentMissing) {
+    try {
+      await agent('Reply with the single word: OK.', { label: `probe:${profile.id}`, phase: 'Gate', model: 'haiku', effort: 'low', agentType: profile.reviewerAgent })
+    } catch (e) {
+      if (/not found/i.test(String((e && e.message) || e))) {
+        reviewerAgentMissing = true
+        log(`[${profile.id}] reviewer agent '${profile.reviewerAgent}' not registered — all lenses will use the generic subagent`)
+      }
+    }
   }
 
   // ---- Lenses (loop-until-dry) ----
@@ -754,7 +781,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
 - ⚠️ Warning if Confirmed Medium only.
 - ✅ Approve if no Confirmed Critical/High/Medium.
-Suspected findings NEVER change the verdict — they are surfaced for the author.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
+Suspected findings NEVER change the verdict — they are surfaced for the author.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do.
 
