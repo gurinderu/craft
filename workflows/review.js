@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Scout', detail: 'resolve the diff base, detect language(s), classify size/categories, pick lenses + rigor', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
     { title: 'Lenses', detail: 'parallel per-lens review with context expansion; loop-until-dry' },
-    { title: 'Verify', detail: 'adversarial refutation + self-verification of each finding' },
+    { title: 'Verify', detail: 'cross-lens dedup, then adversarial refutation + self-verification of each finding' },
     { title: 'Synthesize', detail: 'calibrate severities, completeness critic, one merged report' },
   ],
 }
@@ -84,7 +84,9 @@ PROFILES.rust = {
   reviewerAgent: 'craft:rust-reviewer',
   securityHints: 'auth, crypto, input parsing, unsafe, FFI, or dependencies',
   usesLibrary: true,
-  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; new branching / growing files / large refactor → maintainability; always consider 'intent'.`,
+  alwaysLenses: ['intent'],
+  safetyLens: 'safety',
+  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; new branching / growing files / large refactor → maintainability. ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
   gate: rustGate,
   depContext: rustDepContext,
   lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'maintainability', 'tests', 'intent'],
@@ -111,7 +113,9 @@ PROFILES.nix = {
   reviewerAgent: 'craft:nix-reviewer',
   securityHints: 'secrets handling (agenix/sops-nix), fetchers/hashes, module security options, or build-script interpolation',
   usesLibrary: false,
-  scoutRules: `Decide what is "in play" from the diff: derivations / fetchers / hashes → packaging+purity; flake inputs / flake.lock / IFD → reproducibility; string interpolation into build or shell scripts → injection; devShell / direnv / formatters → dev-env; NixOS or home-manager modules / options / secrets → modules; dead or anti-idiomatic Nix → maintainability; always consider 'intent'.`,
+  alwaysLenses: ['intent'],
+  safetyLens: 'injection',
+  scoutRules: `Decide what is "in play" from the diff: derivations / fetchers / hashes → packaging+purity; flake inputs / flake.lock / IFD → reproducibility; string interpolation into build or shell scripts → injection; devShell / direnv / formatters → dev-env; NixOS or home-manager modules / options / secrets → modules; dead or anti-idiomatic Nix → maintainability. ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
   gate: nixGate,
   depContext: nixDepContext,
   lenses: ['purity', 'reproducibility', 'injection', 'packaging', 'dev-env', 'modules', 'maintainability', 'intent'],
@@ -220,6 +224,20 @@ const CRITIC_SCHEMA = {
   },
 }
 
+// ---- resilient agent call ----
+// agent() returns null when the subagent dies on a terminal API error (after the harness's own
+// retries) or is skipped. A single quiet re-dispatch recovers most API deaths. Budget-exceeded
+// THROWS and is deliberately not caught — retrying it would just throw again.
+const AGENT_TRIES = 2
+async function ragent(prompt, opts = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const res = await agent(prompt, attempt === 1 ? opts : { ...opts, label: `retry:${opts.label || 'agent'}` })
+    if (res !== null && res !== undefined) return res
+    if (attempt >= AGENT_TRIES) return null
+    log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
+  }
+}
+
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 function countBySeverity(findings) {
@@ -258,7 +276,7 @@ function indexProjection(r) {
 }
 async function logRun(record) {
   const index = indexProjection(record)
-  await agent(
+  await ragent(
     `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
 Steps:
 1. \`mkdir -p ~/.craft/runs\`.
@@ -283,7 +301,7 @@ function key(f) {
 
 // ================= Detect base + languages =================
 phase('Scout')
-const detected = await agent(
+const detected = await ragent(
   `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under \`${pathArg}\`; pass \`-- ${pathArg}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
@@ -292,6 +310,15 @@ const detected = await agent(
 Return baseRef (the ref you resolved, empty string if none) and files (the changed paths).`,
   { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
 )
+// If base resolution died even after the retry, say so loudly — falling through would
+// produce a misleading "Approve — no supported language" on an empty file list.
+if (!detected) {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection'], outputTokens: budget.spent(),
+  })
+  return [`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n')
+}
 const baseRef = detected?.baseRef ?? baseArg
 const changedFiles = Array.isArray(detected?.files) ? detected.files : []
 
@@ -308,6 +335,10 @@ if (!active.length) {
 }
 log(`Active profiles: ${active.map(p => p.id).join(', ')}${requestedLangs ? ` (pinned: ${requestedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 
+// Changed files no active profile covers are NOT reviewed — say so instead of silently shrinking scope.
+const uncoveredFiles = changedFiles.filter(f => !active.some(p => p.detect([f])))
+if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}`)
+
 // ================= Prompt builders (profile-parameterized) =================
 function scoutPrompt(profile) {
   return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${pathArg}\`. Pass \`-- ${pathArg}\` to every \`git diff\` command below.` : ''}
@@ -316,7 +347,7 @@ Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent com
 1. Inspect \`git diff --stat ${baseRef ? `${baseRef}...HEAD` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`. Set sizeBucket:
    small = a few files / < ~80 changed lines; large = many files / > ~400 lines or a public-API-heavy change; medium otherwise.
 2. lenses: choose from ${JSON.stringify(profile.lenses)}.
-   - small: only the touched categories (minimum 2; always include the safety-critical lens and the dominant category).
+   - small: only the touched categories (minimum 2; always include the dominant category, and include '${profile.safetyLens}' unless the diff clearly touches nothing related to ${profile.securityHints}).
    - medium: the categories plausibly in play.
    - large: all of them.
    ${profile.scoutRules}${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
@@ -370,10 +401,10 @@ Return {lens, findings[]}.
 Observability: the review workflow records this run — do NOT write your own record.`
 }
 
-function verifyPrompt(f, idx, isTool) {
+function verifyPrompt(f, idx, isTool, gateProvenance) {
   const head = isTool
     ? `You are verifier #${idx + 1} for a TOOL-REPORTED code review finding (source: ${f.source}). Deterministic tool output outranks your judgement — you may refute it ONLY by re-running the tool, never on reasoning alone.`
-    : `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain — only let real findings through.`
+    : `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain whether the technical claim holds — only let real findings through.`
   return `${head}
 
 FINDING: [${f.severity}] ${f.title}
@@ -381,26 +412,82 @@ FINDING: [${f.severity}] ${f.title}
   why: ${f.why}
   source: ${f.source}${f.ruleId ? ` · rule ${f.ruleId}` : ''}
 
-MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${isTool ? ' If you cannot run the tool here, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
+MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${gateProvenance ? ` The gate invoked the tools as: "${gateProvenance}" — if a tool is not on PATH, reproduce the gate's invocation (e.g. \`nix run nixpkgs#<tool> --\`) before declaring it unrunnable.` : ''}${isTool ? ' If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
+
+REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream.
 
 Open the cited file and check:
 1. citedLineMatches: does ${f.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
 2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.)
-3. refuted: does the finding NOT hold up? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain, refuted=true.'})
+3. refuted: is the technical claim itself false? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.'})
 
 Return {refuted, citedLineMatches, reachable, reason}.`
 }
 
+// Cross-lens dedup BEFORE verification. key() above is exact (file:line:title), so two lenses
+// wording the same defect differently both enter the pool — and each duplicate would buy its own
+// verifier fan-out. A cheap grouping pass merges same-defect findings first; synthesis keeps its
+// own dedup instruction as a safety net.
+const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
+const DEDUP_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['groups'],
+  properties: {
+    groups: {
+      type: 'array',
+      items: { type: 'array', items: { type: 'integer' } },
+      description: 'each inner array = indices of findings that describe the SAME underlying defect; singletons omitted; empty if all distinct',
+    },
+  },
+}
+async function dedupPool(pool, profile) {
+  if (pool.length < 2) return pool
+  const isToolSrc = f => !(profile.lenses.includes(f.source) || f.source === 'negative-space')
+  const listing = pool.map((f, i) => `${i}. ${f.file || '?'}:${f.line || 0} [${f.severity}] (${f.source}) ${f.title} — ${String(f.why || '').slice(0, 160)}`).join('\n')
+  let res = null
+  try {
+    res = await ragent(
+      `You are deduplicating code-review findings BEFORE verification. Different lenses word the same defect differently. Group ONLY findings that describe the SAME underlying defect — same root cause, where one edit fixes all of them (e.g. one redundant loop reported by both a performance and an idioms lens). Same file+line alone is NOT enough: two distinct defects can share a line. When in doubt, do NOT group.
+
+FINDINGS:
+${listing}
+
+Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; omit singletons; {groups: []} if all are distinct.`,
+      { label: `dedup:${profile.id}`, phase: 'Verify', schema: DEDUP_SCHEMA, model: 'haiku', effort: 'low' },
+    )
+  } catch (e) {
+    log(`[${profile.id}] dedup pass failed (${String((e && e.message) || e).slice(0, 80)}) — verifying the raw pool`)
+  }
+  const groups = (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length))
+  const merged = []
+  const inGroup = new Set()
+  for (const g of groups) {
+    if (g.some(i => inGroup.has(i))) continue // overlapping groups: first wins
+    for (const i of g) inGroup.add(i)
+    const members = g.map(i => pool[i])
+    // Base = the strictest member: tool-sourced first (a tool finding can only be refuted by
+    // re-running the tool), then highest severity.
+    const base = members.slice().sort((a, b) => (isToolSrc(b) - isToolSrc(a)) || ((SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9)))[0]
+    const others = members.filter(m => m !== base)
+    merged.push({ ...base, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
+  }
+  if (!merged.length) return pool
+  const out = pool.filter((_f, i) => !inGroup.has(i)).concat(merged)
+  log(`[${profile.id}] Dedup before verify: ${pool.length} → ${out.length} (${pool.length - out.length} cross-lens duplicate(s) merged)`)
+  return out
+}
+
 // Verify a pool of findings → {confirmed, suspected, dropped}. Rigor scales with the profile's plan.
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
-async function verifyPool(items, plan, profile) {
+async function verifyPool(items, plan, profile, gateProvenance) {
   const judged = await parallel(items.map(f => () => {
     // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …).
     const isTool = !(profile.lenses.includes(f.source) || f.source === 'negative-space')
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
     const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
     return parallel(Array.from({ length: votes }, (_unused, i) => () =>
-      agent(verifyPrompt(f, i, isTool), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
+      ragent(verifyPrompt(f, i, isTool, gateProvenance), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
     )).then(vs => {
       const v = vs.filter(Boolean)
       if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
@@ -432,7 +519,7 @@ async function verifyPool(items, plan, profile) {
 // ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
 async function reviewProfile(profile) {
   // ---- Scout ----
-  const scout = await agent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
+  const scout = await ragent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
   const plan = {
     sizeBucket: scout?.sizeBucket ?? 'medium',
     lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : profile.lenses.slice()),
@@ -445,6 +532,10 @@ async function reviewProfile(profile) {
     churn: scout?.churn ?? [],
   }
   if (!plan.lenses.length) plan.lenses = profile.lenses.slice()
+  // "Always" lenses are enforced HERE, not left to the scout: smoke runs showed prompt-side
+  // "always include X" gets dropped. 'intent' is the lens that catches correct-looking code
+  // with wrong behavior — it runs at every size.
+  for (const l of (profile.alwaysLenses || [])) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
   if (strict && profile.lenses.includes('maintainability') && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
   // Security-sensitive rigor floor: don't let the size heuristic gate rigor on a security-touching change.
   if (plan.securitySensitive) {
@@ -464,13 +555,13 @@ async function reviewProfile(profile) {
   async function runLens(lens, prompt, phaseName, labelSuffix) {
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
     try {
-      return await agent(prompt, { ...opts, agentType: profile.reviewerAgent })
+      return await ragent(prompt, { ...opts, agentType: profile.reviewerAgent })
     } catch (e) {
       const msg = String((e && e.message) || e)
       if (!/not found/i.test(msg)) { lensFailures.set(lens, msg.slice(0, 160)); return null }
       log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — lens '${lens}' falling back to the generic subagent`)
       try {
-        return await agent(prompt, opts)
+        return await ragent(prompt, opts)
       } catch (e2) {
         lensFailures.set(lens, String((e2 && e2.message) || e2).slice(0, 160))
         return null
@@ -479,7 +570,7 @@ async function reviewProfile(profile) {
   }
 
   // ---- Gate ----
-  const gate = await agent(profile.gate({ baseRef, isLibrary: plan.isLibrary, securitySensitive: plan.securitySensitive }),
+  const gate = await ragent(profile.gate({ baseRef, isLibrary: plan.isLibrary, securitySensitive: plan.securitySensitive }),
     { label: `gate:${profile.id}`, schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' })
   const gateStatus = gate?.status ?? 'unknown'
   const gateProvenance = gate?.provenance ?? 'gate not established'
@@ -528,7 +619,8 @@ async function reviewProfile(profile) {
 
   // ---- Verify ----
   phase('Verify')
-  let { confirmed, suspected, dropped } = await verifyPool(pool, plan, profile)
+  const deduped = await dedupPool(pool, profile)
+  let { confirmed, suspected, dropped } = await verifyPool(deduped, plan, profile, gateProvenance)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
@@ -537,7 +629,7 @@ async function reviewProfile(profile) {
   const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
   if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
     const candidates = profile.lenses.filter(l => !plan.lenses.includes(l))
-    const critic = await agent(
+    const critic = await ragent(
       `You are a completeness critic for a ${profile.lang} review of the diff (base ${baseRef || 'HEAD'}).
 Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
 Name any review lens that was NOT run but SHOULD be, given what the diff touches — choose ONLY from: ${JSON.stringify(candidates)}.
@@ -554,7 +646,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
       ))).filter(Boolean).flatMap(r => r.findings || [])
       const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
       if (fresh.length) {
-        const v = await verifyPool(fresh, plan, profile)
+        const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, gateProvenance)
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
         dropped += v.dropped
@@ -590,6 +682,7 @@ function reviewRecord(extra) {
     nested: !!viaArg,
     via: viaArg || null,
     languages: active.map(p => p.id),
+    uncoveredFiles,
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
     gate: { status: mergedGateStatus, provenance: mergedProvenance },
     outputTokens: budget.spent(),
@@ -622,12 +715,14 @@ if (!confirmed.length && !suspected.length) {
   const verdictLine = notRun.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy; fix the cause and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
-  return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance].join('\n')
+  return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance,
+    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
+  ].join('\n')
 }
 
 // ================= Synthesize one merged report =================
 phase('Synthesize')
-const report = await agent(
+const report = await ragent(
   `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
 
 VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
@@ -646,7 +741,8 @@ Produce, in order:
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
-${criticNotes ? `6. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
+${uncoveredFiles.length ? `6. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
+${criticNotes ? `7. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 
 CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
 
@@ -656,7 +752,7 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
 
 // Optional: post Confirmed findings as inline PR comments (best-effort).
 if (postComments && confirmed.length) {
-  await agent(
+  await ragent(
     `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, do nothing and report that — never fail.
 For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
 ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}`,
@@ -677,4 +773,20 @@ await logRun(reviewRecord({
   notRun,
 }))
 
-return report
+// If the synthesis agent died even after the retry, don't lose the whole run — assemble a
+// mechanical report from the verified findings (unmerged, but complete).
+function fallbackReport() {
+  const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[finalVerdict(confirmed)]
+  const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}`
+  const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
+  return [
+    `## Verdict`,
+    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${notRun.length ? ` · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}.` : ''}`,
+    ``, `## Gate`, mergedProvenance,
+    ``, `## Confirmed`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
+    ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
+    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
+  ].join('\n')
+}
+
+return report || fallbackReport()
