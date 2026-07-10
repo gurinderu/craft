@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
+      - name: Unit tests
+        run: node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'
+      # Workflow scripts can't be `node --check`'d directly (top-level export+await+return); this
+      # reproduces the sandbox wrapper and compile-checks each one.
+      - name: Syntax-check workflow scripts
+        run: node lib/check-workflows.mjs

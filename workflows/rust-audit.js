@@ -142,6 +142,30 @@ ${JSON.stringify(index)}`,
   )
 }
 
+// Plugin agent types (craft:*) are frequently absent from the workflow sandbox's registry. Dispatch
+// to the requested agentType, but on an "agent type '<x>' not found" throw — or a null on runtimes
+// that signal a missing type that way — fall back to the generic subagent (the briefs are
+// self-contained) and REMEMBER the miss so later dimensions skip straight to generic instead of
+// re-failing. Without this, the contract/architecture/security/miri dimensions silently become
+// NOT RUN whenever the craft agents aren't registered.
+const agentTypeMissing = new Set()
+async function safeAgent(prompt, opts = {}) {
+  const at = opts.agentType
+  const generic = { ...opts }
+  delete generic.agentType
+  if (!at || agentTypeMissing.has(at)) return agent(prompt, generic)
+  try {
+    const res = await agent(prompt, opts)
+    if (res != null) return res
+    return await agent(prompt, generic)   // null: try generic once; don't memoize (may be transient)
+  } catch (e) {
+    if (!/not found/i.test(String((e && e.message) || e))) throw e
+    agentTypeMissing.add(at)
+    log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
+    return agent(prompt, generic)
+  }
+}
+
 phase('Scout')
 const scout = await agent(
   `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
@@ -210,7 +234,7 @@ if (touchedEdges.length) {
   // `dispatched` entry use the Unicode `→` (U+2192). Keep those two in sync — the NOT-RUN
   // bookkeeping compares `dispatched` against `dimension`; do NOT "unify" them to the label's `->`.
   for (const e of touchedEdges) {
-    tasks.push(() => agent(
+    tasks.push(() => safeAgent(
       `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
       { label: `contract:${e.from}->${e.to}`, agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
     ).then(r => (r ? { ...r, dimension: `contract:${e.from}→${e.to}` } : null)))
@@ -227,20 +251,20 @@ tasks.push(() => agent(
 ).then(r => (r ? { ...r, dimension: 'crate-decomposition' } : null)))
 dispatched.push('crate-decomposition')
 
-tasks.push(() => agent(
+tasks.push(() => safeAgent(
   `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
 ).then(r => (r ? { ...r, dimension: 'architecture' } : null)))
 dispatched.push('architecture')
 
-tasks.push(() => agent(
+tasks.push(() => safeAgent(
   `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
 ).then(r => (r ? { ...r, dimension: 'security' } : null)))
 dispatched.push('security')
 
 if (hasUnsafe) {
-  tasks.push(() => agent(
+  tasks.push(() => safeAgent(
     `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
     { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
   ).then(r => (r ? { ...r, dimension: 'miri' } : null)))
