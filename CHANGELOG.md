@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/gurinderu/craft/compare/v0.5.0...v0.6.0) (2026-07-10)
+
+
+### Features
+
+* **observability:** add run-record analyzer for the self-improvement loop ([d9cc4d3](https://github.com/gurinderu/craft/commit/d9cc4d3ffa79f74d4db85e624a7a53ab23c5e3ba))
+
+
+### Bug Fixes
+
+* **review:** harden against missing plugin agent types; verify dep-context by reasoning ([2ca957e](https://github.com/gurinderu/craft/commit/2ca957e6cec9dc0d8056541b6b1855384786bb59))
+* **review:** probe reviewer-agent up front; keep maintainability source through dedup ([9eb1fb2](https://github.com/gurinderu/craft/commit/9eb1fb2ecaa532e33d7ed09770ca700333214d39))
+
 ## [0.5.0](https://github.com/gurinderu/craft/compare/v0.4.1...v0.5.0) (2026-07-09)
 
 
