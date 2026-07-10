@@ -1,7 +1,7 @@
 export const meta = {
-  name: 'strict-review',
+  name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial review of any diff (language-agnostic) when running on a rate-limited subscription. For Rust diffs prefer the rust-review workflow; use this for mixed/other codebases or when the money-path lenses matter.',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine.',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -118,7 +118,7 @@ ${JSON.stringify(index)}`,
     { label: 'log-run', phase: 'Coverage', model: 'haiku', effort: 'low' },
   )
 }
-// strict-review uses lowercase severities internally; the store schema is capitalized.
+// adversarial-review uses lowercase severities internally; the store schema is capitalized.
 const capSeverity = f => ({ ...f, severity: f.severity ? f.severity[0].toUpperCase() + f.severity.slice(1) : f.severity })
 
 // ---- lens catalog ----
@@ -450,7 +450,7 @@ await logRun({
   schemaVersion: 1,
   runtime: 'claude-code',
   kind: 'workflow',
-  name: 'strict-review',
+  name: 'adversarial-review',
   nested: !!viaArg,
   via: viaArg || null,
   verdict,
