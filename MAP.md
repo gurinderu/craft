@@ -101,7 +101,7 @@ them by `agentType` — internal to the plugin, no external dependency).
 | `rust-review` / `nix-review` | thin pins → `workflow('review', {languages:['rust'\|'nix']})` | single-language review via the engine above |
 | `rust-audit` | per-crate review + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
-| `strict-review` | scout + codebase-memory warm-up → throttled finder lenses → 1 combined verifier per finding (3-lens panel for critical/high) → completeness critic with verified gaps | language-agnostic adversarial diff review with bounded fan-out and steady request rate (subscription-friendly); Confirmed/Suspected report + Block/Warning/Approve verdict |
+| `adversarial-review` | scout + codebase-memory warm-up → throttled finder lenses → 1 combined verifier per finding (3-lens panel for critical/high) → completeness critic with verified gaps | language-agnostic adversarial diff review with bounded fan-out and steady request rate (subscription-friendly); Confirmed/Suspected report + Block/Warning/Approve verdict. Distinct from `review --strict` (maintainability-block mode of the generic engine) |
 
 ## Documentation
 
