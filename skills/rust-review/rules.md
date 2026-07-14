@@ -40,6 +40,10 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **MNT-002** | MEDIUM¹ | File-size growth past ~700 lines — decomposition smell; split by responsibility | `refactoring` |
 | **MNT-003** | MEDIUM¹ | Spaghetti branching — ad-hoc conditional spliced into a shared flow instead of behind a dedicated abstraction | `refactoring` |
 | **MNT-004** | MEDIUM¹ | Needless optionality / casts — superfluous `Option`, `as`-casts where `From`/`TryFrom` belongs, `Box<dyn Any>` downcasting | `rust-idioms` |
+| **INV-001** | HIGH | Operation accepts an entity in a transient/invalid lifecycle state (soft-delete / in-progress-mutation window) that the type's documented invariant forbids | `rust-architecture` |
+| **INV-002** | HIGH | Scope-boundary crossing (tenant/project/network/address-range) leaves a scoped reference dangling — carried over without re-validating or re-deriving it against the new scope | `rust-architecture` |
+| **INV-003** | MEDIUM | Raw value used where a documented derived/`effective_*` quantity is required | `rust-architecture` |
+| **INV-004** | HIGH | One field mutated/scrubbed but a sibling field the same invariant governs left stale/inconsistent | `rust-architecture` |
 | **TST-001** | HIGH | New error path or branch with no test | `rust-testing` |
 | **TST-002** | HIGH | Bug fix landed without a regression test reproducing it | `rust-testing` |
 | **TST-003** | MEDIUM | Weak assertion — test passes whether or not the behavior holds (no `.never()`, asserts nothing meaningful) | `rust-testing` |
@@ -54,4 +58,4 @@ author justified the change in the diff or brief (see `SKILL.md` → Maintainabi
 Append a new ID under the right prefix (next free number); never renumber existing rows. Keep the
 row in sync with the `SKILL.md` checklist prose. Prefixes: `SAF` safety · `ERR` error handling ·
 `OWN` ownership · `CON` concurrency · `PER` performance · `API` api/quality · `MNT` maintainability ·
-`TST` tests · `DEP` dependencies.
+`INV` domain invariants & lifecycle · `TST` tests · `DEP` dependencies.

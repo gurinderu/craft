@@ -45,3 +45,19 @@ language's gate + lens set, and merges into one report; it scales depth to the d
 ad-hoc, non-workflow review when you explicitly want one.
 
 If the user explicitly asks for a synchronous/inline review, honor that instead.
+
+## Self-review before opening a PR
+
+Self-review is a **gate in the authoring loop**, not a one-shot report you file and forget. Before
+running `gh pr create` on a Rust/Nix change, close the loop first:
+
+1. Run the `review` workflow on the branch diff (`git diff main...HEAD`).
+2. Feed every finding through the `craft:triage-findings` skill (validate against the code, dedupe,
+   order).
+3. Work them to green with the `craft:addressing-findings` fix loop.
+4. Re-review (a **fresh** agent — see above) and repeat until the verdict is **Approve** (or
+   **Warning** with each remaining item explicitly justified in the PR body).
+
+Only then open the PR. A PR should never go up with open blocking findings the self-review already
+surfaced. The generic feedback discipline lives in `superpowers:receiving-code-review`; the
+craft-flavoured fix loop is `craft:addressing-findings`.
