@@ -33,10 +33,11 @@ doesn't blow up on a large PR):
 `severity · title · location · detail`; copy them verbatim. `source` = `rust-audit` (or the
 specific agent, e.g. `rust-reviewer`). `proposed_fix` / `thread_id` empty.
 
-**GitHub PR inline comment** — from `gh api .../pulls/<pr>/comments`:
-`title` = a short summary of the comment, `location` = `<path>:<line>` (`path` + `line`/
-`original_line` from the comment), `detail` = the comment body, `thread_id` = the comment/thread
-id, `severity` = best estimate, `source` = `github-pr`. Skip outdated/resolved threads.
+**GitHub PR review thread** — from the GraphQL `reviewThreads` gather (→ [github.md](github.md),
+"Gather PR comments"): `title` = a short summary of the thread's first comment, `location` =
+`<path>:<line>`, `detail` = the first comment's `body`, `thread_id` = the thread node `id` (used to
+resolve the thread in step 8; reply uses `comments[0].databaseId`), `severity` = best estimate,
+`source` = `github-pr`. Skip threads where `isResolved` or `isOutdated` is true.
 
 ## Triage ledger
 
