@@ -44,6 +44,12 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **INV-002** | HIGH | Scope-boundary crossing (tenant/project/network/address-range) leaves a scoped reference dangling — carried over without re-validating or re-deriving it against the new scope | `rust-architecture` |
 | **INV-003** | MEDIUM | Raw value used where a documented derived/`effective_*` quantity is required | `rust-architecture` |
 | **INV-004** | HIGH | One field mutated/scrubbed but a sibling field the same invariant governs left stale/inconsistent | `rust-architecture` |
+| **REC-001** | HIGH | create and update/apply paths diverge on desired state (fields/metadata dropped on one arm) | `rust-cloud-native` |
+| **REC-002** | HIGH | progress / observed-generation / Ready recorded despite a secondary step that can fail — partial failure strands state | `rust-cloud-native` |
+| **REC-003** | HIGH | child/external resource created with no cleanup on delete/disable (missing owner-reference or finalizer) | `rust-cloud-native` |
+| **REC-004** | MEDIUM | status/condition never cleared when its subject is gone, or written unconditionally (no `desired != current` guard) | `rust-cloud-native` |
+| **REC-005** | MEDIUM | disabled feature still issues API calls, or its error aborts the primary reconcile | `rust-cloud-native` |
+| **REC-006** | MEDIUM | non-idempotent apply — create/patch off a stale read, no 404/409 race tolerance | `rust-cloud-native` |
 | **TST-001** | HIGH | New error path or branch with no test | `rust-testing` |
 | **TST-002** | HIGH | Bug fix landed without a regression test reproducing it | `rust-testing` |
 | **TST-003** | MEDIUM | Weak assertion — test passes whether or not the behavior holds (no `.never()`, asserts nothing meaningful) | `rust-testing` |
@@ -58,4 +64,4 @@ author justified the change in the diff or brief (see `SKILL.md` → Maintainabi
 Append a new ID under the right prefix (next free number); never renumber existing rows. Keep the
 row in sync with the `SKILL.md` checklist prose. Prefixes: `SAF` safety · `ERR` error handling ·
 `OWN` ownership · `CON` concurrency · `PER` performance · `API` api/quality · `MNT` maintainability ·
-`INV` domain invariants & lifecycle · `TST` tests · `DEP` dependencies.
+`INV` domain invariants & lifecycle · `REC` reconciler / eventual-consistency · `TST` tests · `DEP` dependencies.
