@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/gurinderu/craft/compare/v0.8.0...v0.9.0) (2026-07-14)
+
+
+### Features
+
+* **review:** tighten api-idioms lens — high-value breaks over completeness nits ([ca8f28d](https://github.com/gurinderu/craft/commit/ca8f28d37cf94feb291dfcc6b0deb6d5535142f8))
+
 ## [0.8.0](https://github.com/gurinderu/craft/compare/v0.7.0...v0.8.0) (2026-07-14)
 
 
