@@ -509,17 +509,26 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   return out
 }
 
-// Verify a pool of findings → {confirmed, suspected, dropped}. Rigor scales with the profile's plan.
+// Verify a pool of findings → {confirmed, suspected, dropped, refuted}. Rigor scales with the profile's plan.
+// Staged verification: cull votes run on a cheap model (sonnet); a High/Critical additionally gets exactly
+// ONE authoritative opus vote, so the cheap model can neither confirm nor drop a high-stakes finding alone.
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
+const CULL_MODEL = 'sonnet'
 async function verifyPool(items, plan, profile, gateProvenance) {
   const judged = await parallel(items.map(f => () => {
     // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
     const isTool = isToolSource(profile, f.source)
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
-    const votes = isHigh ? Math.max(1, plan.verifyVotes) : 1
-    return parallel(Array.from({ length: votes }, (_unused, i) => () =>
-      ragent(verifyPrompt(f, i, isTool, gateProvenance), { label: `verify:${f.file || '?'}:${f.line || 0}#${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel }),
-    )).then(vs => {
+    const n1 = isHigh ? Math.max(1, plan.verifyVotes) : 1
+    // Cull votes on the cheap model.
+    const cullVotes = Array.from({ length: n1 }, (_unused, i) => () =>
+      ragent(verifyPrompt(f, i, isTool, gateProvenance), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: CULL_MODEL }),
+    )
+    // A High/Critical always gets exactly one authoritative opus vote combined with the cull votes.
+    const authVotes = isHigh
+      ? [() => ragent(verifyPrompt(f, n1, isTool, gateProvenance), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel })]
+      : []
+    return parallel([...cullVotes, ...authVotes]).then(vs => {
       const v = vs.filter(Boolean)
       if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
       const half = v.length / 2
@@ -540,10 +549,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     })
   }))
   const vp = judged.filter(Boolean)
+  const refuted = vp.filter(f => f.tier === 'refuted')
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
     suspected: vp.filter(f => f.tier === 'suspected'),
-    dropped: vp.filter(f => f.tier === 'refuted').length,
+    dropped: refuted.length,
+    refuted,
   }
 }
 
@@ -708,7 +719,7 @@ async function reviewProfile(profile) {
   // ---- Verify ----
   phase('Verify')
   const deduped = await dedupPool(pool, profile)
-  let { confirmed, suspected, dropped } = await verifyPool(deduped, plan, profile, gateProvenance)
+  let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, gateProvenance)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
@@ -738,6 +749,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
         dropped += v.dropped
+        refuted = refuted.concat(v.refuted)
         log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
       }
     } else if (followups.length) {
@@ -749,7 +761,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, notRun, criticNotes }
+  return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
 }
 
 // ================= Run each active profile, then merge =================
@@ -855,7 +867,10 @@ await logRun(reviewRecord({
   findings: summarizeFindings(allReviewFindings),
   dimensions: results.flatMap(r => r.plan.lenses.map(l => {
     const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
-    return { dimension: `${r.profile.id}:${l}`, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
+    const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
+    const suspectedCount = r.suspected.filter(f => (f.source || '') === l).length
+    const refutedCount = (r.refuted || []).filter(f => (f.source || '') === l).length
+    return { dimension: `${r.profile.id}:${l}`, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount }
   })),
   verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
   notRun,
