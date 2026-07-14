@@ -86,10 +86,10 @@ PROFILES.rust = {
   usesLibrary: true,
   alwaysLenses: ['intent'],
   safetyLens: 'safety',
-  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; new/changed tests → tests; new branching / growing files / large refactor → maintainability. ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
+  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
   gate: rustGate,
   depContext: rustDepContext,
-  lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'maintainability', 'tests', 'intent'],
+  lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'maintainability', 'tests', 'intent', 'invariants'],
   lensBrief: {
     safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization.',
     errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
@@ -97,9 +97,11 @@ PROFILES.rust = {
     concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
     performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
     'api-idioms': 'API & idioms & docs: library returning Box<dyn Error>/anyhow, giant functions / deep nesting, wildcard match on a business enum, pub item without ///, #[allow] without justification, #![deny(warnings)] in source.',
+    'api-boundary': 'API boundary correctness for web services: trace every error the changed service/repository can produce to the HTTP status the handler actually returns. A domain Conflict / AlreadyExists / unique-violation / not-found (an empty fetch_one / zero-row / RowNotFound) that collapses into a generic 500 — because a broad `#[from]` on the error enum folds it into a catch-all variant, or a blanket DbError→500 in IntoResponse swallows it — instead of surfacing 409/400/404 is a finding. Method: walk the error enum `#[from]`/`From` chains and the IntoResponse/handler match arms; where the service intends a distinct typed status (a Conflict variant meaning 409, a validation error meaning 400, a not-found meaning 404) confirm a matching arm actually maps it, and flag any typed 4xx that has no variant to land in or that a `#[from]` merges into a generic error before the boundary sees it. Also OpenAPI/utoipa completeness: does the handler annotation (e.g. #[utoipa::path] responses(...)) list EVERY status the handler can actually return — cross-check the statuses the code produces (especially 404/409/400) against the documented response set, and flag any the code returns but the responses(...) omits.',
     maintainability: 'maintainability & structural simplification (load the refactoring skill): missed code judo — a behavior-preserving reframing using the existing architecture that would make this change dramatically simpler or delete a whole category of complexity; file pushed across ~700 lines (decomposition smell); ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow instead of a dedicated abstraction; needless optionality (Option that always holds), as-casts where From/TryFrom belongs, Box<dyn Any>/downcasting where a typed model fits. Flag only concrete, behavior-preserving restructurings the author could have taken — not hypothetical rewrites.',
-    tests: 'tests & coverage QUALITY (not just presence): do new tests assert real behavior and error paths, or are they vacuous (assert!(true), no assertions)? New error path/branch with no test; bug fix with no regression test.',
-    intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Compare the diff against the stated intent; flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
+    tests: 'tests as a COVERAGE ADVERSARY (not a presence check): enumerate what a regression could SILENTLY break, then check each has a test that would FAIL on that regression. The litmus test: if you deleted the production line/branch that carries a contract, would the suite still pass green? If yes, that contract is UNTESTED → finding (cite the missing test). Cover, at minimum: (a) every NEW branch and every distinct ERROR CONTRACT the code / handler / OpenAPI (or other documented interface) promises — not-found→404, forbidden / wrong-owner, bad-request→400, conflict→409, a typed 4xx that must not collapse into a 500 — each needs a test asserting THAT status/error, not just the happy path; (b) every SECURITY / AUTHORIZATION boundary — tenant or owner isolation: is there a test exercising a DIFFERENT user/tenant/scope and ASSERTING denial? A single-user happy path does NOT prove isolation; on a NEW authz-guarded endpoint a missing cross-tenant/cross-owner denial test is a HIGH-severity gap; (c) every behavioral CLAIM in the stated spec — identity preserved / "in place", a state that must stay put or transition exactly once, a field that must be scrubbed, an idempotent no-op — each needs a test that pins it and would fail if the claim were violated; (d) self-exclusion / dedup / unlink / bookkeeping guards — a uniqueness check that must exclude the row itself, a back-reference that must be cleared. Vacuous tests (assert!(true), no assertions) count as absent coverage.',
+    intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Work from the STATED SPEC / AUTHOR CLAIMS block (the verbatim PR/commit description), not just the one-line inferred intent. ENUMERATE every explicit claim or invariant the author wrote — patterns like "never fails on X", "the only way to Y", "idempotent" / "no-op", "in place" / "preserves Z", "always" / "never", and any documented trade-off — and for EACH claim trace the concrete code path that would carry it out. A claim the code contradicts is a finding (cite the exact file:line that violates it): e.g. an "idempotent no-op" that actually wipes a field, "the only way to change X" that silently no-ops for some inputs, "never fails on X" that returns Err on a transient/non-NotFound error. Also flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
+    invariants: 'domain invariants & lifecycle: before judging a changed operation, read the invariants documented or enforced on the TYPES it manipulates (grep the domain/entity/service modules for doc-comment invariants, status/state enums, `effective_*` / derived getters, `*_scoped` reference ids, validation fns, and transient two-phase lifecycle states — a pending-delete/soft-delete window or an in-progress-mutation state). Flag where the change (a) accepts an entity in a transient/invalid lifecycle state, (b) crosses a scope boundary (a tenant/project/network/address-range) without re-validating or re-deriving the scoped references it carries, (c) uses a raw value where a documented derived/effective quantity is required, or (d) mutates/scrubs one field but not a sibling field the same invariant governs.',
     'negative-space': 'negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum-variant/column that pre-existing endpoints mutate blindly; a latent bug in an unchanged helper the diff makes reachable for the first time.',
   },
 }
@@ -127,7 +129,7 @@ PROFILES.nix = {
     'dev-env': 'dev-env: devShell/direnv correctness, writeShellApplication, the allowUnfree-not-propagated-to-nix-develop gotcha (DEV-*).',
     modules: 'modules: NixOS/home-manager option typing and defaults, cross-platform (Linux+Darwin), secrets kept out of the world-readable store — agenix/sops-nix (MOD-*).',
     maintainability: 'maintainability: dead code (deadnix), anti-idioms (statix), needless rec/with, over-abstraction (MNT-*).',
-    intent: 'intent / spec conformance: does the change do what it should? Compare the diff against the stated intent; flag correct-looking code with wrong behavior.',
+    intent: 'intent / spec conformance: does the change do what it should? Work from the STATED SPEC / AUTHOR CLAIMS block (the verbatim PR/commit description), not just the one-line inferred intent. ENUMERATE every explicit claim or invariant the author wrote — patterns like "never fails on X", "the only way to Y", "idempotent" / "no-op", "in place" / "preserves Z", "always" / "never", documented trade-offs — and for EACH claim trace the concrete code path that would carry it out; a claim the code contradicts is a finding (cite the exact file:line). Also flag correct-looking code with wrong behavior.',
     'negative-space': 'negative space / cross-surface interaction: the breakage the diff ENABLES in UNCHANGED Nix — a renamed option or output that existing modules/consumers still reference; a changed default that unchanged config relies on.',
   },
 }
@@ -153,10 +155,11 @@ const FINDING_ITEM = {
 const DETECT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['baseRef', 'files', 'notes'],
+  required: ['baseRef', 'files', 'spec', 'notes'],
   properties: {
     baseRef: { type: 'string', description: 'git ref the diff was computed against; empty if none resolved' },
     files: { type: 'array', items: { type: 'string' }, description: 'changed file paths in the diff' },
+    spec: { type: 'string', description: 'verbatim change description — the open PR title+body, else the commit messages on the diff range; truncated to ~4000 chars; empty string if none' },
     notes: { type: 'string', description: 'one line on what was detected' },
   },
 }
@@ -324,7 +327,8 @@ const detected = await ragent(
     ? `Use \`${baseArg}\`.`
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
 2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${pathArg}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
-Return baseRef (the ref you resolved, empty string if none) and files (the changed paths).`,
+3. Capture the VERBATIM change description as \`spec\` — the authors' own written claims/invariants, checked against code later. If the current branch has an OPEN PR, run \`gh pr view --json body,title\` and use its title + body. Otherwise use the commit messages on the diff range: \`git log <base>..HEAD --format=%B\`. Do not summarize or paraphrase — copy the text as-is. Truncate to ~4000 chars. Empty string if there is no PR and no commit body (e.g. only uncommitted changes). If \`gh\` is missing/unauthenticated, fall through to the commit messages.
+Return baseRef (the ref you resolved, empty string if none), files (the changed paths), and spec (the verbatim description).`,
   { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
 )
 // If base resolution died even after the retry, say so loudly — falling through would
@@ -338,6 +342,10 @@ if (!detected) {
 }
 const baseRef = detected?.baseRef ?? baseArg
 const changedFiles = Array.isArray(detected?.files) ? detected.files : []
+// The authors' OWN written spec (PR body/title or commit messages) — checked claim-by-claim
+// against the code by the intent lens. The one-line inferred `intent` is not enough: precise
+// claims ("never fails on X", "the only way to Y", "idempotent no-op") live in the full body.
+const spec = (typeof detected?.spec === 'string' ? detected.spec : '').slice(0, 4000)
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
 // the detector missed (best-effort detection), honor the pin. If nothing matches, report and stop.
@@ -381,6 +389,7 @@ function negativeSpacePrompt(priorSummary, profile, plan) {
 
 Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}.
 ${intent ? `INTENT (what the change should do): ${intent}` : ''}
+${plan?.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — an invariant the author claims here may be broken by the UNCHANGED code you inventory below):\n"""\n${plan.spec}\n"""` : ''}
 
 METHOD — follow in order:
 1. Inventory the NEW surface the diff introduces. Read the FULL diff: \`git diff ${baseRef ? `--merge-base ${baseRef}` : 'HEAD'}\`. List every new: ${profile.lang === 'Nix' ? 'flake output / module option / package attr / overlay / renamed binding' : 'enum variant / status value / DB column / table / migration / public fn / route / struct field'}. ALSO list any UNCHANGED definition the diff now references or relies on for the first time.
@@ -403,13 +412,14 @@ SLICE: ${profile.lensBrief[lens] || lens}
 ${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
 Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${baseRef ? `--merge-base ${baseRef}` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`.
 ${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
+${plan.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n"""\n${plan.spec}\n"""` : ''}
 ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}
 
 CONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob${profile.navSkill ? ' + LSP' : ''}) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
 BLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in \`blastRadius\`.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
 RULE ID (required field): set \`ruleId\` to the matching catalog ID from the ${profile.rubricSkill} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
-${profile.id === 'rust' && lens === 'tests' && plan.sizeBucket === 'large' ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to find weak tests; skip silently if absent.' : ''}
+${profile.id === 'rust' && lens === 'tests' && (plan.sizeBucket === 'medium' || plan.sizeBucket === 'large') ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to surface contracts no test would catch a regression on; skip silently if absent.' : ''}
 ALREADY-FOUND (do not repeat; look for what these MISSED):
 ${priorSummary}
 
@@ -549,6 +559,7 @@ async function reviewProfile(profile) {
     isLibrary: profile.usesLibrary ? (scout?.isLibrary ?? false) : false,
     securitySensitive: scout?.securitySensitive ?? true,
     intent: scout?.intent ?? intentArg,
+    spec,
     churn: scout?.churn ?? [],
   }
   if (!plan.lenses.length) plan.lenses = profile.lenses.slice()

@@ -18,6 +18,15 @@ verifies each one. This skill is the rubric the workflow and the `rust-reviewer`
 - Deciding whether changes are safe to commit or merge
 - A self-check before opening a PR
 
+### Pre-PR gate
+
+Self-review runs **before** the PR opens, not after. Before `gh pr create` on a Rust change, run
+the `rust-review` (or generic `review`) workflow on the branch diff, then close the loop —
+triage the findings (`triage-findings`), fix them (`addressing-findings`), and re-review until the
+verdict is **Approve** (or **Warning** with each remaining item justified in the PR body). Only
+then open the PR. A one-shot review whose findings never loop back into fixes is not a gate; the
+PR isn't ready until the loop is green.
+
 ## Step 1 — Establish the gate (CI-aware)
 
 The mechanical gate is non-negotiable: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and (if installed) `cargo audit` / `cargo deny check` must be green before human-style review is worth doing. But **before running a check locally, ask whether CI already computed it on this PR; if a conclusive required check covers it and is green, consume that result instead of recomputing.** Re-running a cold build the PR already ran in CI is slow, sometimes impossible (no toolchain/network), and redundant.
