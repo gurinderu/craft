@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/gurinderu/craft/compare/v0.9.0...v0.10.0) (2026-07-14)
+
+
+### Features
+
+* **analyze-runs:** rank lenses by per-lens refute rate ([515a198](https://github.com/gurinderu/craft/commit/515a198ba7e652bde4f8f2ab7c733110c2050ca5))
+
 ## [0.9.0](https://github.com/gurinderu/craft/compare/v0.8.0...v0.9.0) (2026-07-14)
 
 
