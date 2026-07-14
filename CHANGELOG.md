@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/gurinderu/craft/compare/v0.7.0...v0.8.0) (2026-07-14)
+
+
+### Features
+
+* **review:** staged cheap-model verification and per-lens refute telemetry ([9994907](https://github.com/gurinderu/craft/commit/999490749564e4e75175be47f36d7c4ecc970b2b))
+
 ## [0.7.0](https://github.com/gurinderu/craft/compare/v0.6.0...v0.7.0) (2026-07-14)
 
 
