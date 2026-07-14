@@ -175,9 +175,15 @@ others (higher recall than one broad pass):
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
 | performance | hot-loop allocation, N+1, needless owning | `rust-performance` |
 | api-idioms | typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` | `rust-idioms` |
+| invariants | domain lifecycle/scope rules, derived/effective quantities, and eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate that drops a fail-closed dimension the sibling enforces) | `rust-architecture`, `rust-fintech` |
+| compat | serialization / persistence / rolling-deploy compatibility — a changed serde/JSONB/wire representation vs data written by other code versions (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration) | `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
 | intent | does the change do what the brief/spec says? | `specs` |
+
+The workflow runs additional context-dependent lenses the scout selects — `api-boundary` (error→HTTP-status
+mapping, OpenAPI completeness), `reconciler` (controller idempotency), and `negative-space` (breakage the diff
+enables in unchanged code); `workflows/review.js` is the authoritative lens set.
 
 Each lens expands context (callers/impls/error paths via `rust-navigation`) and emits blast-radius
 for changed public symbols.
