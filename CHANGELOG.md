@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/gurinderu/craft/compare/v0.6.0...v0.7.0) (2026-07-14)
+
+
+### Features
+
+* **review:** add reconciler lens and a resurrection sweep for transient lens deaths ([8fb53b3](https://github.com/gurinderu/craft/commit/8fb53b33a216bcaef9c293ed594b608b1c702e95))
+* **review:** harden the engine to catch invariant, coverage, spec & API-boundary defects ([e35d1fc](https://github.com/gurinderu/craft/commit/e35d1fcc1cc413974afad99fa975535d5847865e))
+
 ## [0.6.0](https://github.com/gurinderu/craft/compare/v0.5.0...v0.6.0) (2026-07-10)
 
 
