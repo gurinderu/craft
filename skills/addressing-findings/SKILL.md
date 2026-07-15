@@ -64,6 +64,9 @@ Validate each finding against the code (pinned to the ref it was generated again
 **Locationless findings** (file- or PR-level comments) get an explicit lane: resolve a concrete
 location during triage, else route to `needs-decision` — never drop them silently.
 
+`reject` → `rejected` and `defer` → `deferred` are also written back to the **review ledger** so
+the next re-review carries them forward (→ "Writing dispositions to the review ledger").
+
 ## Stable id & the triage ledger
 
 Every finding gets a **stable id** = `source::location::title` (a composite key — deterministic,
@@ -72,6 +75,32 @@ This one mechanism gives: **idempotent re-runs** (already-`reject`/`defer`/`need
 findings aren't re-litigated), **re-review identity** (tell "same finding" from "new" so "loop
 until green" measures progress, not churn), and **deferred tracking** (deferred findings stay
 visible). Schema details → [schema.md](schema.md).
+
+## Writing dispositions to the review ledger
+
+Distinct from the triage ledger above: the **review ledger** is the `review` workflow's per-run
+record — `~/.craft/runs/<ts>-workflow-review.json`, keyed by `project + branch`, holding a `ledger`
+array keyed by each finding's `fp`. The triage ledger (above) is *your* artifact keyed by
+`stable_id`; the review ledger is the *engine's* artifact keyed by `fp` — do not conflate them.
+The engine writes `disposition: 'open'` for everything it surfaces; the **human-sourced**
+dispositions can only come from this fix loop. Record contract → [schema.md](schema.md).
+
+After **Triage (step 3)** and again after **Verify (step 6)**, write dispositions back:
+
+1. Find the newest `~/.craft/runs/<ts>-workflow-review.json` whose top-level `branch` matches the
+   current branch. If none exists, skip — this is best-effort bookkeeping, never a fix-loop failure.
+2. For each fix-loop finding, set its `disposition` in that record's `ledger` array
+   (vocabulary `open | closed | rejected | justified | deferred`):
+   - triage `reject` → `rejected`
+   - triage `defer` → `deferred`
+   - a fix that landed **and** was verified → `closed`
+   - a finding kept (not fixed) but explicitly justified in the PR body → `justified`
+   - triage `accept` (not yet fixed), `needs-decision`, `conflict` → leave `open`
+3. **Match** a fix-loop finding to a review-ledger entry by `fp` when the finding carries one;
+   otherwise by `file` + `ruleId` + a title match. If no entry matches, skip that finding silently.
+4. **Why:** this is exactly what lets the next round-aware re-review's *adjudicate track* **carry**
+   dismissed (`rejected` / `justified`) findings forward instead of re-raising them, and treat
+   `closed` ones as resolved (→ Re-review, step 7; `rust-review`).
 
 ## Parallelism via subagents
 

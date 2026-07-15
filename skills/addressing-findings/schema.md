@@ -45,3 +45,32 @@ A persisted artifact (e.g. `triage-ledger.json` next to the plan) — one entry 
 by `stable_id` with its final verdict + one-line reason. Read it at the start of a re-run so
 already-`reject`/`defer`/`needs-decision` findings are carried, not re-litigated, and so the
 re-review loop can tell a recurring finding from a new one.
+
+## Review-ledger record
+
+A **different** artifact from the triage ledger above — the shared contract between the `review`
+workflow and this fix loop. The triage ledger is this skill's, keyed by `stable_id`; the
+review-ledger record is the engine's per-run JSON, keyed by `fp`. Don't conflate them.
+
+Path/shape: `~/.craft/runs/<ts>-workflow-review.json`, keyed by `project + branch`, with top-level
+`branch` / `head` / `round` plus a `ledger` array of:
+
+```
+{
+  fp,           // engine fingerprint — the join key this fix loop matches on
+  file, line, symbol,
+  severity, tier,
+  disposition,  // open | closed | rejected | justified | deferred
+  source, ruleId, title, why,
+}
+```
+
+**Two writer roles.** The `review` engine writes the findings + `tier` (and may auto-set `closed`
+when it later confirms a fix); this fix-loop skill writes the human-sourced dispositions
+`rejected` / `justified` / `deferred` / `closed` (→ SKILL.md, "Writing dispositions to the review
+ledger"). Match a fix-loop finding to a ledger entry by `fp` when present, else by
+`file` + `ruleId` + a title match.
+
+`justified` has no triage-verdict source — unlike `rejected` (← `reject`) and `deferred`
+(← `defer`), it is set **only here**, when a finding is kept-with-justification in the PR body
+rather than fixed.
