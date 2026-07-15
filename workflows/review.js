@@ -474,6 +474,10 @@ Best-effort: any error → {found:false}.`,
 if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${priorRound.head} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
 else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 
+// On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
+// regressions the fixes introduced. `fresh` (priorRound=null) keeps the full base...HEAD scan.
+const lensBase = priorRound ? priorRound.head : baseRef
+
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
 // the detector missed (best-effort detection), honor the pin. If nothing matches, report and stop.
 let active = Object.values(PROFILES).filter(p => (!requestedLangs || requestedLangs.includes(p.id)) && p.detect(changedFiles))
@@ -495,8 +499,8 @@ if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${un
 function scoutPrompt(profile) {
   return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${pathArg}\`. Pass \`-- ${pathArg}\` to every \`git diff\` command below.` : ''}
 
-Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}. Consider only this profile's files (${profile.diffGlobs.join(' ')}).
-1. Inspect \`git diff --stat ${baseRef ? `${baseRef}...HEAD` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`. Set sizeBucket:
+Diff base: ${lensBase ? `\`${lensBase}\`` : 'uncommitted changes / most recent commit'}. Consider only this profile's files (${profile.diffGlobs.join(' ')}).
+1. Inspect \`git diff --stat ${lensBase ? `${lensBase}...HEAD` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`. Set sizeBucket:
    small = a few files / < ~80 changed lines; large = many files / > ~400 lines or a public-API-heavy change; medium otherwise.
 2. lenses: choose from ${JSON.stringify(profile.lenses)}.
    - small: only the touched categories (minimum 2; always include the dominant category, and include '${profile.safetyLens}' unless the diff clearly touches nothing related to ${profile.securityHints}).
@@ -514,12 +518,12 @@ function negativeSpacePrompt(priorSummary, profile, plan) {
   const intent = plan?.intent ?? intentArg
   return `You are the **negative-space** review lens for a ${profile.lang} change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. ${profile.navSkill ? `Load the ${profile.navSkill} skill for whole-repo search; use` : 'Use'} Grep/Glob across the ENTIRE tree, not just the diff.
 
-Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}.
+Diff base: ${lensBase ? `\`${lensBase}\`` : 'uncommitted changes / most recent commit'}.
 ${intent ? `INTENT (what the change should do): ${intent}` : ''}
 ${plan?.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — an invariant the author claims here may be broken by the UNCHANGED code you inventory below):\n"""\n${plan.spec}\n"""` : ''}
 
 METHOD — follow in order:
-1. Inventory the NEW surface the diff introduces. Read the FULL diff: \`git diff ${baseRef ? `--merge-base ${baseRef}` : 'HEAD'}\`. List every new: ${profile.lang === 'Nix' ? 'flake output / module option / package attr / overlay / renamed binding' : 'enum variant / status value / DB column / table / migration / public fn / route / struct field'}. ALSO list any UNCHANGED definition the diff now references or relies on for the first time.
+1. Inventory the NEW surface the diff introduces. Read the FULL diff: \`git diff ${lensBase ? `--merge-base ${lensBase}` : 'HEAD'}\`. List every new: ${profile.lang === 'Nix' ? 'flake output / module option / package attr / overlay / renamed binding' : 'enum variant / status value / DB column / table / migration / public fn / route / struct field'}. ALSO list any UNCHANGED definition the diff now references or relies on for the first time.
 2. For EACH item, Grep the UNCHANGED tree for existing code that reads, references, ${profile.lang === 'Nix' ? 'imports, or overrides' : 'lists, updates, deletes, cascades, serializes, orders, or authorizes'} that shape. Ask: does this pre-existing path violate an invariant the change assumes?
 3. Report each concrete violation ANCHORED TO THE UNCHANGED file:line that is actually wrong, not the diff line. That anchor is real — cite it precisely so it can be verified.
 
@@ -537,7 +541,8 @@ function lensPrompt(lens, priorSummary, profile, plan) {
 
 SLICE: ${profile.lensBrief[lens] || lens}
 ${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
-Diff base: ${baseRef ? `\`${baseRef}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${baseRef ? `--merge-base ${baseRef}` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`.
+Diff base: ${lensBase ? `\`${lensBase}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${lensBase ? `--merge-base ${lensBase}` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`.
+${priorRound ? `RE-REVIEW: you are reviewing ONLY the fix commits since the prior round (base ${lensBase}). Prior findings are adjudicated separately — do not re-report them; surface only NEW defects the fixes introduced.` : ''}
 ${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
 ${plan.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n"""\n${plan.spec}\n"""` : ''}
 ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}
@@ -991,7 +996,11 @@ const dropped = results.reduce((n, r) => n + r.dropped, 0)
 const notRun = results.flatMap(r => r.notRun)
 const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
 
-if (!confirmed.length && !suspected.length) {
+// A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
+// through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
+// here would wrongly erase still-open/regressed priors.
+const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length)
+if (!confirmed.length && !suspected.length && !hasAdjudicated) {
   await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = notRun.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy; fix the cause and re-run.`
@@ -1003,6 +1012,11 @@ if (!confirmed.length && !suspected.length) {
 
 // ================= Synthesize one merged report =================
 phase('Synthesize')
+const isRereview = !!priorRound
+const rereviewData = isRereview ? {
+  resolved: adjudicated.resolved, stillOpen: adjudicated.stillOpen,
+  regressed: adjudicated.regressed, carried: adjudicated.carried, neu: confirmed,
+} : null
 const report = await ragent(
   `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
 
@@ -1016,14 +1030,22 @@ CALIBRATE severities across the Confirmed set so the same kind of issue is not C
 
 DEDUPLICATE across lenses: findings that describe the same underlying defect (same file, same/overlapping lines, fixes that collapse into one edit) MUST be merged into ONE entry — keep the highest severity and the clearest why, credit the other lens in one clause. Never list per-lens duplicates as separate findings.
 
-Produce, in order:
+${isRereview ? `This is a RE-REVIEW (round ${(priorRound.round || 1) + 1}). Produce, in order:
+1. \`## Verdict\` — driven ONLY by Still-open + Regressed + New Confirmed findings (Block on any Critical/High; Warning on Medium; else Approve). Resolved and Carried NEVER change the verdict.${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
+2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
+3. \`## ✅ Resolved\` — prior findings the fixes closed (one line each); omit if empty.
+4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
+5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
+6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
+7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) carried forward unchanged, collapsed to a count + one-line list; omit if empty.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
+RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
 ${uncoveredFiles.length ? `6. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
-${criticNotes ? `7. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
+${criticNotes ? `7. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}`}
 
 CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
 
@@ -1043,8 +1065,11 @@ ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.s
 
 const allReviewFindings = confirmed.concat(suspected)
 const totalVerified = confirmed.length + suspected.length + dropped
+const recordVerdict = isRereview
+  ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
+  : finalVerdict(confirmed)
 await logRun(reviewRecord({
-  verdict: finalVerdict(confirmed) + (notRun.length ? ' (INCOMPLETE)' : ''),
+  verdict: recordVerdict + (notRun.length ? ' (INCOMPLETE)' : ''),
   round: priorRound ? (priorRound.round || 1) + 1 : 1,
   findings: summarizeFindings(allReviewFindings),
   ledger: allReviewFindings.map(f => ({
