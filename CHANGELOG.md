@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.12.0](https://github.com/gurinderu/craft/compare/v0.11.0...v0.12.0) (2026-07-15)
+
+
+### Features
+
+* **review:** adjudicate track for prior-round findings ([f7b50e1](https://github.com/gurinderu/craft/commit/f7b50e1c552d15891827ba02667c5889d26b6d99))
+* **review:** auto-detect re-review round with ancestor guard ([b0b1d9d](https://github.com/gurinderu/craft/commit/b0b1d9db989884e29f12bdf688c312f4a1b3da90))
+* **review:** delta-scoped lenses and re-review report shape ([a558d8f](https://github.com/gurinderu/craft/commit/a558d8f1cfb4cc7a494faba7ba1761f05dc2e33e))
+* **review:** disposition mapping and re-review verdict ([675ae5e](https://github.com/gurinderu/craft/commit/675ae5ef619d9805e95d35cc3b045acd8b9e68c7))
+* **review:** fuzzy cross-round finding matching ([83b8958](https://github.com/gurinderu/craft/commit/83b8958638d0ed472e814ce7100e67f810a698aa))
+* **review:** line-tolerant finding fingerprint helper ([187dff8](https://github.com/gurinderu/craft/commit/187dff874320236f24f2cddb7574ffccc602925e))
+* **review:** persist full finding ledger with branch/head/round ([2a2f5c1](https://github.com/gurinderu/craft/commit/2a2f5c1bed08f1d4da23387d748bfae2681eaf1d))
+* **review:** prior-round selection and index branch/head/round ([7e99f86](https://github.com/gurinderu/craft/commit/7e99f86bd82cfb4d5038c9eca13edde8f5d92b47))
+
+
+### Bug Fixes
+
+* **review:** carry ledger across rounds, decouple ledger schema, re-review-aware fallback + verdict ([5f4f883](https://github.com/gurinderu/craft/commit/5f4f8837ac87f02d8b94cd1f880bbf116768edbc))
+* **review:** escape backticks in rust scoutRules so it evaluates to the intended string ([92ced71](https://github.com/gurinderu/craft/commit/92ced71579cb9e06b4e81aef9ec137e2425437ca))
+* **review:** sync workflow indexProjection with branch/head/round ([fa14895](https://github.com/gurinderu/craft/commit/fa14895de88db0f2bd9cfba6b6f9aff0b75f3ebd))
+
 ## [0.11.0](https://github.com/gurinderu/craft/compare/v0.10.0...v0.11.0) (2026-07-15)
 
 
