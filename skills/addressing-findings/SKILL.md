@@ -100,7 +100,7 @@ After **Triage (step 3)** and again after **Verify (step 6)**, write disposition
    otherwise by `file` + `ruleId` + a title match. If no entry matches, skip that finding silently.
 4. **Why:** this is exactly what lets the next round-aware re-review's *adjudicate track* **carry**
    dismissed (`rejected` / `justified`) findings forward instead of re-raising them, and treat
-   `closed` ones as resolved (→ Re-review, step 7; `rust-review`).
+   `closed` ones as resolved (→ Re-review, step 7; the round-aware `review` workflow).
 
 ## Parallelism via subagents
 

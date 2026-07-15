@@ -111,6 +111,12 @@ fp = hash(file + enclosing_symbol + ruleId + title_shingle)
 Matching "same finding across rounds" is by `fp` with a fuzzy allowance on the title shingle — not by
 exact line. **Decision:** fingerprint at the *symbol* level (accepted default).
 
+**Follow-up (not yet wired):** the lenses do not currently emit an `enclosing_symbol`, so persisted
+ledger findings carry `symbol: ''` and the fingerprint is effectively `file + ruleId + title_shingle`.
+This still delivers the actual goal — **line-tolerance** (no line in the fp) — since matching never
+uses the line. Populating `enclosing_symbol` from the lenses (which only adds same-file
+disambiguation when two findings share file+ruleId+title) is a documented follow-up, not a blocker.
+
 ### 3. Two tracks (the re-review mode)
 
 At scout: if a prior round exists for this branch **and its `head` is an ancestor of the current
