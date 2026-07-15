@@ -25,8 +25,7 @@
 - `lib/run-record.mjs` — **modify.** Add pure ledger helpers: `titleShingle`, `fingerprint`, `shingleOverlap`, `matchesPrior`, `dispositionFromTriage`, `rereviewVerdict`, `selectPriorRound`; extend `indexProjection` with `branch`/`head`/`round`.
 - `lib/run-record.test.mjs` — **modify.** One `test(...)` block per new helper.
 - `workflows/review.js` — **modify.** Inline-mirror the new helpers; load the prior round at scout; ancestor-guard the round decision; add the adjudicate stage; scope delta lenses to `prevHead...HEAD`; merge the two tracks in synthesis; extend `logRun`/`reviewRecord` to persist full findings + `branch`/`head`/`round`.
-- `skills/triage-findings/SKILL.md` (+ `skills/triage-findings/*.md` as needed) — **modify.** Document + instruct the ledger disposition write for `reject`/`defer`.
-- `skills/addressing-findings/SKILL.md` (+ `skills/addressing-findings/schema.md`) — **modify.** Document + instruct the ledger disposition write for `closed`/`justified`/`deferred`.
+- `skills/addressing-findings/SKILL.md` (+ `skills/addressing-findings/schema.md`) — **modify.** Document + instruct the review-ledger disposition write for ALL human-sourced dispositions (`rejected`/`justified`/`deferred`/`closed`). **CORRECTION (impl-time):** `triage-findings` is a *workflow* (`workflows/triage-findings.js`), NOT a skill — there is no `skills/triage-findings/`. Per the user's decision, all disposition writes are consolidated into the `addressing-findings` skill (the documented primary loop `review → triage-findings → addressing-findings → re-review` always runs it). A standalone-`triage-findings`-workflow writeback is a documented follow-up, not built here. Task 10 is therefore folded into Task 11.
 
 ---
 
