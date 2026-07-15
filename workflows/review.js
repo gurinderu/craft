@@ -287,6 +287,7 @@ function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
     project: r.project, commit: r.commit, dirty: r.dirty,
+    branch: r.branch ?? null, head: r.head ?? null, round: r.round ?? 0,
     verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
     nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
   }
