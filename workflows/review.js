@@ -159,6 +159,29 @@ const FINDING_ITEM = {
   },
 }
 
+// The persisted ledger entry has its OWN shape (the 11 fields `toLedgerEntry` writes) — NOT
+// FINDING_ITEM. Reusing FINDING_ITEM here would require `fix`/`blastRadius` (which the ledger omits),
+// so a strict validator could reject the loader's output and null out `priorRound`, silently
+// degrading a re-review to a first pass.
+const LEDGER_ITEM = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['fp', 'file', 'line', 'symbol', 'severity', 'tier', 'disposition', 'source', 'ruleId', 'title', 'why'],
+  properties: {
+    fp: { type: 'string' },
+    file: { type: 'string' },
+    line: { type: 'integer' },
+    symbol: { type: 'string' },
+    severity: { type: 'string' },
+    tier: { type: 'string' },
+    disposition: { type: 'string' },
+    source: { type: 'string' },
+    ruleId: { type: 'string' },
+    title: { type: 'string' },
+    why: { type: 'string' },
+  },
+}
+
 const PRIOR_ROUND_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -167,7 +190,7 @@ const PRIOR_ROUND_SCHEMA = {
     found: { type: 'boolean' },
     round: { type: 'integer', description: 'the prior round number; 0 when found=false' },
     head: { type: 'string', description: 'prior HEAD sha; empty when found=false' },
-    ledger: { type: 'array', items: FINDING_ITEM, description: 'prior findings with fp/symbol/tier/disposition; empty when found=false' },
+    ledger: { type: 'array', items: LEDGER_ITEM, description: 'prior findings with fp/symbol/tier/disposition; empty when found=false' },
   },
 }
 
@@ -393,7 +416,7 @@ function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
 // `open` (still to be adjudicated or fixed); only reject/defer carry a settled disposition.
 const DISPOSITION_FROM_TRIAGE = { reject: 'rejected', defer: 'deferred', accept: 'open', 'needs-decision': 'open', conflict: 'open' }
 function dispositionFromTriage(v) {
-  return DISPOSITION_FROM_TRIAGE[v] || 'open'
+  return Object.prototype.hasOwnProperty.call(DISPOSITION_FROM_TRIAGE, v) ? DISPOSITION_FROM_TRIAGE[v] : 'open'
 }
 
 // Re-review verdict: reviewVerdict over the findings that still matter this round. resolved and
@@ -927,7 +950,7 @@ function reviewRecord(extra) {
 }
 
 if (gateFailed.length) {
-  await logRun(reviewRecord({ verdict: 'Block', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
+  await logRun(reviewRecord({ verdict: 'Block', round: priorRound ? (priorRound.round || 1) + 1 : 1, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
   return [
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
@@ -1001,7 +1024,7 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 // here would wrongly erase still-open/regressed priors.
 const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length)
 if (!confirmed.length && !suspected.length && !hasAdjudicated) {
-  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
+  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, round: priorRound ? (priorRound.round || 1) + 1 : 1, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = notRun.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy; fix the cause and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
@@ -1065,18 +1088,39 @@ ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.s
 
 const allReviewFindings = confirmed.concat(suspected)
 const totalVerified = confirmed.length + suspected.length + dropped
-const recordVerdict = isRereview
+let recordVerdict = isRereview
   ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
   : finalVerdict(confirmed)
+// Strict-mode maintainability escalation applies to a re-review too (finalVerdict already covers the
+// first-pass path): a Confirmed Medium+ maintainability finding among the live re-review set blocks.
+if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed, ...confirmed]
+  .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
+  recordVerdict = 'Block'
+}
+// Persist the ledger so round N+1 can find round N. On a re-review, carry the still-relevant priors
+// forward (still-open/regressed as 'open', dismissed carried with their disposition) UNIONed with the
+// new delta findings; resolved priors are intentionally dropped. Without this the ledger would hold
+// only this round's delta, and a finding open across 3+ rounds — or a dismissed finding — would
+// silently vanish after one hop.
+const toLedgerEntry = (f, disposition, tier) => ({
+  fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
+  severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
+  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: f.why || '',
+})
+const reviewLedger = isRereview
+  ? [
+    ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
+    ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
+    ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
+    ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
+    ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
+  ]
+  : allReviewFindings.map(f => toLedgerEntry(f, 'open', confirmed.includes(f) ? 'confirmed' : 'suspected'))
 await logRun(reviewRecord({
   verdict: recordVerdict + (notRun.length ? ' (INCOMPLETE)' : ''),
   round: priorRound ? (priorRound.round || 1) + 1 : 1,
   findings: summarizeFindings(allReviewFindings),
-  ledger: allReviewFindings.map(f => ({
-    fp: fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
-    severity: f.severity, tier: confirmed.includes(f) ? 'confirmed' : 'suspected',
-    disposition: 'open', source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: f.why || '',
-  })),
+  ledger: reviewLedger,
   dimensions: results.flatMap(r => r.plan.lenses.map(l => {
     const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
     const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
@@ -1091,14 +1135,19 @@ await logRun(reviewRecord({
 // If the synthesis agent died even after the retry, don't lose the whole run — assemble a
 // mechanical report from the verified findings (unmerged, but complete).
 function fallbackReport() {
-  const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[finalVerdict(confirmed)]
+  // On a re-review the verdict must come from recordVerdict (still-open+regressed+new), NOT
+  // finalVerdict(confirmed) — confirmed holds only the delta, so finalVerdict would print a false
+  // Approve and hide live still-open/regressed priors. Render those tracks too.
+  const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[isRereview ? recordVerdict : finalVerdict(confirmed)]
   const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}`
   const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
   return [
     `## Verdict`,
     `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${notRun.length ? ` · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}.` : ''}`,
     ``, `## Gate`, mergedProvenance,
-    ``, `## Confirmed`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
+    ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
+    ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
+    ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
     ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
   ].join('\n')
