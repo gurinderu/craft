@@ -20,6 +20,7 @@ const viaArg = (args && typeof args === 'object' && args._via) ? String(args._vi
 const strict = !!(args && typeof args === 'object' && args.strict)   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
 const requestedLangs = (args && typeof args === 'object' && Array.isArray(args.languages) && args.languages.length)
   ? args.languages.map(String) : null   // pin: restrict active profiles to these ids
+const freshArg = !!(args && typeof args === 'object' && args.fresh)   // force a full first-pass review, ignore any prior round
 
 // ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
 function rustDepContext(ctx) {
@@ -151,6 +152,22 @@ const FINDING_ITEM = {
     blastRadius: { type: 'string', description: 'callers affected / breaking-change note; empty if n/a' },
     source: { type: 'string', description: 'lens name or tool name that produced this' },
     ruleId: { type: 'string', description: 'catalog rule ID from the active profile\'s rules.md (e.g. "CON-003" for rust, "PUR-001" for nix) if the finding maps to one; empty string otherwise' },
+    fp: { type: 'string', description: 'line-tolerant fingerprint; empty if not from a ledger' },
+    symbol: { type: 'string', description: 'enclosing fn/type name; empty if unknown' },
+    tier: { type: 'string', description: 'confirmed|suspected|refuted; empty if n/a' },
+    disposition: { type: 'string', description: 'open|closed|rejected|justified|deferred; empty if n/a' },
+  },
+}
+
+const PRIOR_ROUND_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['found', 'round', 'head', 'ledger'],
+  properties: {
+    found: { type: 'boolean' },
+    round: { type: 'integer', description: 'the prior round number; 0 when found=false' },
+    head: { type: 'string', description: 'prior HEAD sha; empty when found=false' },
+    ledger: { type: 'array', items: FINDING_ITEM, description: 'prior findings with fp/symbol/tier/disposition; empty when found=false' },
   },
 }
 
@@ -424,6 +441,25 @@ const changedFiles = Array.isArray(detected?.files) ? detected.files : []
 const spec = (typeof detected?.spec === 'string' ? detected.spec : '').slice(0, 4000)
 const branch = (typeof detected?.branch === 'string' ? detected.branch : '').trim()
 const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
+
+// Round detection: find the newest prior `review` run for this branch, and accept it as the prior
+// round ONLY if its head is an ANCESTOR of the current HEAD (a rebase/force-push makes a stale run
+// non-ancestor → treat as a fresh first review). `fresh` skips the whole mechanism.
+let priorRound = null
+if (!freshArg && branch && head) {
+  priorRound = await ragent(
+    `You are locating the prior review round for this branch, if any. Shell + read only.
+1. If \`~/.craft/runs/index.jsonl\` does not exist, return {found:false}.
+2. Read it. Select the newest line with kind="workflow", name="review", project=\`pwd\`, branch=${JSON.stringify(branch)} (newest = lexical-max ts). If none, return {found:false}.
+3. That line has a \`head\` field (a prior commit). Check ancestry: \`git merge-base --is-ancestor <priorHead> HEAD\` (exit 0 = ancestor). If NOT an ancestor (rebase/force-push/unrelated), return {found:false}.
+4. Reconstruct the full record path \`~/.craft/runs/<ts>-workflow-review.json\` from that line's ts, read it, and return {found:true, round:<its round>, head:<its head>, ledger:<its ledger array, or [] if absent>}.
+Best-effort: any error → {found:false}.`,
+    { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
+  )
+  if (!priorRound?.found) priorRound = null
+}
+if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${priorRound.head} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
+else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
 // the detector missed (best-effort detection), honor the pin. If nothing matches, report and stop.
@@ -946,8 +982,7 @@ const allReviewFindings = confirmed.concat(suspected)
 const totalVerified = confirmed.length + suspected.length + dropped
 await logRun(reviewRecord({
   verdict: finalVerdict(confirmed) + (notRun.length ? ' (INCOMPLETE)' : ''),
-  // TODO(Task 6): round: priorRound ? (priorRound.round || 1) + 1 : 1
-  round: 1,
+  round: priorRound ? (priorRound.round || 1) + 1 : 1,
   findings: summarizeFindings(allReviewFindings),
   ledger: allReviewFindings.map(f => ({
     fp: fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
