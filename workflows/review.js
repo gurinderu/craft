@@ -248,6 +248,19 @@ const CRITIC_SCHEMA = {
   },
 }
 
+const CHANGED_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['changed', 'reason'],
+  properties: { changed: { type: 'boolean' }, reason: { type: 'string' } },
+}
+const ADJUDICATE_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['status', 'currentLine', 'note'],
+  properties: {
+    status: { type: 'string', enum: ['resolved', 'still-open', 'regressed'] },
+    currentLine: { type: 'integer', description: 're-located 1-based line; 0 if not found' },
+    note: { type: 'string' },
+  },
+}
+
 // ---- resilient agent call ----
 // agent() returns null when the subagent dies on a terminal API error (after the harness's own
 // retries) or is skipped. A single quiet re-dispatch recovers most API deaths. Budget-exceeded
@@ -924,6 +937,56 @@ if (gateFailed.length) {
 
 let confirmed = results.flatMap(r => r.confirmed)
 let suspected = results.flatMap(r => r.suspected)
+
+// ---- Adjudicate track (re-review only) ----
+// For each prior-round finding, decide its fate this round. rejected/justified are carried (not
+// re-raised) unless the code around them changed; open/deferred/confirmed priors get a targeted
+// "is it still here?" check against the current tree.
+const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [] }
+if (priorRound?.ledger?.length) {
+  phase('Adjudicate')
+  const settled = priorRound.ledger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
+  const toCheck = priorRound.ledger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
+
+  // Settled priors: carried unless the code around them changed since the prior round.
+  const carriedResults = (await parallel(settled.map(f => () =>
+    ragent(
+      `A prior review finding was dismissed by the author (disposition: ${f.disposition}). Decide only whether the CODE AROUND IT CHANGED since commit ${priorRound.head}. Shell + read only.
+FINDING: [${f.severity}] ${f.title} — at ${f.file}:${f.line} (symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}.
+Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
+      { label: `carry:${f.file}:${f.line}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
+    ).then(r => ({ f, changed: !!r?.changed })),
+  ))).filter(Boolean)
+  for (const { f, changed } of carriedResults) {
+    if (changed) adjudicated.stillOpen.push({ ...f, why: `${f.why} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
+    else adjudicated.carried.push(f)
+  }
+
+  // Open/deferred/confirmed priors: is the defect still at its (re-located) site?
+  const checkResults = (await parallel(toCheck.map(f => () =>
+    ragent(
+      `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
+FINDING: [${f.severity}] ${f.title}
+  originally at ${f.file}:${f.line} (enclosing symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}
+  why it mattered: ${f.why}
+METHOD: re-locate the symbol (grep it — the line has likely moved), read it, and decide:
+  - "resolved": the defect is gone (the fix addressed it).
+  - "still-open": the defect is still present (cite the current file:line).
+  - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
+Return {status, currentLine, note}.`,
+      { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: results[0]?.plan?.lensModel || 'opus' },
+    ).then(r => ({ f, r })),
+  ))).filter(Boolean)
+  for (const { f, r } of checkResults) {
+    const status = r?.status || 'still-open'   // verification died → assume still-open (safe: keeps it in the verdict)
+    const located = { ...f, line: r?.currentLine || f.line }
+    if (status === 'resolved') adjudicated.resolved.push({ ...located, disposition: 'closed' })
+    else if (status === 'regressed') adjudicated.regressed.push({ ...located, why: `${f.why} — REGRESSED after fix: ${r?.note || ''}` })
+    else adjudicated.stillOpen.push(located)
+  }
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried`)
+}
+
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
 const notRun = results.flatMap(r => r.notRun)
 const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
