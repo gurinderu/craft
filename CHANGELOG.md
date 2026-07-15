@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/gurinderu/craft/compare/v0.10.0...v0.11.0) (2026-07-15)
+
+
+### Features
+
+* **review:** add compat lens and sibling-divergence invariants clause ([2bf9064](https://github.com/gurinderu/craft/commit/2bf90643f60bff0515ee4bda5342b211c3e3e1b5))
+* **review:** harden reconciler lens for requeue-gap and watch-poisoning ([3c5536e](https://github.com/gurinderu/craft/commit/3c5536e1a12b4fcb32f3e0e759e3e5e84c5ba88b))
+
+
+### Bug Fixes
+
+* **addressing-findings:** gather PR comments via GraphQL reviewThreads ([034493a](https://github.com/gurinderu/craft/commit/034493a9d7c9a22ad5705a5fc230db878cbee90e))
+
 ## [0.10.0](https://github.com/gurinderu/craft/compare/v0.9.0...v0.10.0) (2026-07-14)
 
 
