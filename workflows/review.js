@@ -157,11 +157,13 @@ const FINDING_ITEM = {
 const DETECT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['baseRef', 'files', 'spec', 'notes'],
+  required: ['baseRef', 'files', 'spec', 'branch', 'head', 'notes'],
   properties: {
     baseRef: { type: 'string', description: 'git ref the diff was computed against; empty if none resolved' },
     files: { type: 'array', items: { type: 'string' }, description: 'changed file paths in the diff' },
     spec: { type: 'string', description: 'verbatim change description — the open PR title+body, else the commit messages on the diff range; truncated to ~4000 chars; empty string if none' },
+    branch: { type: 'string', description: 'current git branch name; empty string if detached HEAD' },
+    head: { type: 'string', description: 'current HEAD short SHA; empty string if not a git repo' },
     notes: { type: 'string', description: 'one line on what was detected' },
   },
 }
@@ -244,6 +246,9 @@ async function ragent(prompt, opts = {}) {
 }
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
+// Mirrors: countBySeverity, summarizeFindings, reviewVerdict, indexProjection, titleShingle,
+// fingerprint, shingleOverlap, matchesPrior, DISPOSITION_FROM_TRIAGE, dispositionFromTriage,
+// rereviewVerdict, selectPriorRound.
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
@@ -311,6 +316,73 @@ function key(f) {
   return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
+// Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
+// for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
+function titleShingle(title) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(' ')
+}
+
+// Line-tolerant finding identity: hash of file + enclosing symbol + ruleId + title shingle.
+// djb2 (not crypto) — the sandbox has no crypto and bans Math.random, and we only need a stable,
+// collision-resistant-enough key, computed identically in the lib and in the workflow mirror.
+function fingerprint(f) {
+  const basis = [f?.file || '', f?.symbol || '', f?.ruleId || '', titleShingle(f?.title)].join('\0')
+  let h = 5381
+  for (let i = 0; i < basis.length; i++) h = ((h << 5) + h + basis.charCodeAt(i)) >>> 0
+  return h.toString(16).padStart(8, '0')
+}
+
+function shingleOverlap(a, b) {
+  const sa = new Set(titleShingle(a).split(' ').filter(Boolean))
+  const sb = new Set(titleShingle(b).split(' ').filter(Boolean))
+  if (!sa.size || !sb.size) return 0
+  let inter = 0
+  for (const w of sa) if (sb.has(w)) inter++
+  return inter / Math.max(sa.size, sb.size)
+}
+
+// True when `cur` (a freshly located finding) is the same defect as `prior` (from the ledger).
+// file + ruleId must match exactly; a symbol mismatch only disqualifies when BOTH carry one (a
+// finding can move symbols across a fix, so an absent symbol is not a veto); titles must overlap.
+function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
+  if ((cur?.file || '') !== (prior?.file || '')) return false
+  if ((cur?.ruleId || '') !== (prior?.ruleId || '')) return false
+  if ((cur?.symbol || '') && (prior?.symbol || '') && cur.symbol !== prior.symbol) return false
+  return shingleOverlap(cur?.title, prior?.title) >= threshold
+}
+
+// A ledger disposition sourced from a human triage decision. accept/needs-decision/conflict stay
+// `open` (still to be adjudicated or fixed); only reject/defer carry a settled disposition.
+const DISPOSITION_FROM_TRIAGE = { reject: 'rejected', defer: 'deferred', accept: 'open', 'needs-decision': 'open', conflict: 'open' }
+function dispositionFromTriage(v) {
+  return DISPOSITION_FROM_TRIAGE[v] || 'open'
+}
+
+// Re-review verdict: reviewVerdict over the findings that still matter this round. resolved and
+// carried (rejected/justified) findings are excluded by the caller, so they never reach here.
+function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
+  return reviewVerdict([...stillOpen, ...regressed, ...neu])
+}
+
+// Pick the newest prior `review` run for this project+branch from the loaded index.jsonl entries.
+// ts strings are UTC and lexically sortable (YYYY-MM-DDTHH-MM-SSZ), so a string max is chronological.
+function selectPriorRound(indexEntries, { project, branch }) {
+  let best = null
+  for (const e of (Array.isArray(indexEntries) ? indexEntries : [])) {
+    if (!e || e.kind !== 'workflow' || e.name !== 'review') continue
+    if (e.project !== project || e.branch !== branch || !e.branch) continue
+    if (!best || String(e.ts) > String(best.ts)) best = e
+  }
+  return best
+}
+
 // A finding is "tool-sourced" — deterministic and re-runnable, so a verifier may refute it ONLY by
 // re-running the tool — when it came from neither a review lens nor the negative-space lens nor
 // dep-context. dep-context is a *reasoning* seed from the gate (version-specific API misuse) with no
@@ -330,7 +402,8 @@ const detected = await ragent(
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
 2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${pathArg}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
 3. Capture the VERBATIM change description as \`spec\` — the authors' own written claims/invariants, checked against code later. If the current branch has an OPEN PR, run \`gh pr view --json body,title\` and use its title + body. Otherwise use the commit messages on the diff range: \`git log <base>..HEAD --format=%B\`. Do not summarize or paraphrase — copy the text as-is. Truncate to ~4000 chars. Empty string if there is no PR and no commit body (e.g. only uncommitted changes). If \`gh\` is missing/unauthenticated, fall through to the commit messages.
-Return baseRef (the ref you resolved, empty string if none), files (the changed paths), and spec (the verbatim description).`,
+4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo).
+Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, and head.`,
   { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
 )
 // If base resolution died even after the retry, say so loudly — falling through would
@@ -348,6 +421,8 @@ const changedFiles = Array.isArray(detected?.files) ? detected.files : []
 // against the code by the intent lens. The one-line inferred `intent` is not enough: precise
 // claims ("never fails on X", "the only way to Y", "idempotent no-op") live in the full body.
 const spec = (typeof detected?.spec === 'string' ? detected.spec : '').slice(0, 4000)
+const branch = (typeof detected?.branch === 'string' ? detected.branch : '').trim()
+const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
 // the detector missed (best-effort detection), honor the pin. If nothing matches, report and stop.
@@ -786,6 +861,7 @@ function reviewRecord(extra) {
     name: 'review',
     nested: !!viaArg,
     via: viaArg || null,
+    branch, head,
     languages: active.map(p => p.id),
     uncoveredFiles,
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
@@ -869,7 +945,14 @@ const allReviewFindings = confirmed.concat(suspected)
 const totalVerified = confirmed.length + suspected.length + dropped
 await logRun(reviewRecord({
   verdict: finalVerdict(confirmed) + (notRun.length ? ' (INCOMPLETE)' : ''),
+  // TODO(Task 6): round: priorRound ? (priorRound.round || 1) + 1 : 1
+  round: 1,
   findings: summarizeFindings(allReviewFindings),
+  ledger: allReviewFindings.map(f => ({
+    fp: fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
+    severity: f.severity, tier: confirmed.includes(f) ? 'confirmed' : 'suspected',
+    disposition: 'open', source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: f.why || '',
+  })),
   dimensions: results.flatMap(r => r.plan.lenses.map(l => {
     const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
     const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
