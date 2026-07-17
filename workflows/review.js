@@ -276,11 +276,21 @@ const CHANGED_SCHEMA = {
   properties: { changed: { type: 'boolean' }, reason: { type: 'string' } },
 }
 const ADJUDICATE_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['status', 'currentLine', 'note'],
+  type: 'object', additionalProperties: false, required: ['status', 'currentLine', 'note', 'invariant', 'attack'],
   properties: {
     status: { type: 'string', enum: ['resolved', 'still-open', 'regressed'] },
     currentLine: { type: 'integer', description: 're-located 1-based line; 0 if not found' },
     note: { type: 'string' },
+    invariant: { type: 'string', description: 'one-sentence invariant the finding violated' },
+    attack: { type: 'string', description: 'the successful attack on the fix; empty string if every attack failed' },
+  },
+}
+// Red-team verdict on a "resolved" Critical/High prior: an independent attempt to defeat the fix.
+const ATTACK_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['defeated', 'attack'],
+  properties: {
+    defeated: { type: 'boolean', description: 'true only if a concrete input/state defeats the fix' },
+    attack: { type: 'string', description: 'the concrete input/state and why it slips past the fix; empty if none found' },
   },
 }
 
