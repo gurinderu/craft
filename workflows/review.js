@@ -1000,29 +1000,55 @@ Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judg
     else adjudicated.carried.push(f)
   }
 
-  // Open/deferred/confirmed priors: is the defect still at its (re-located) site?
+  // Open/deferred/confirmed priors: is the defect CLASS still present at its (re-located) site?
+  // The adjudicator must state the violated invariant and attack the fix — a fix that closes the
+  // literal repro but not the class must not close. A "resolved" Critical/High is then re-attacked
+  // by an independent red-team agent that never sees the adjudicator's verdict.
+  const adjudModel = results[0]?.plan?.lensModel || 'opus'
+  let overturned = 0
+  const redTeam = async (f, adj) => {
+    if (!(f.severity === 'Critical' || f.severity === 'High')) return adj
+    const rt = await ragent(
+      `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
+FINDING: [${f.severity}] ${f.title}
+  originally at ${f.file}:${f.line} (enclosing symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}
+  why it mattered: ${f.why}
+INVARIANT it violated: ${adj.invariant || f.why}
+METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
+Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
+      { label: `redteam:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
+    )
+    // A dead red-teamer keeps `resolved`: the adjudicator already ran its own attack pass, and a
+    // transient agent death must not spuriously reopen findings.
+    if (rt?.defeated) { overturned++; return { ...adj, status: 'still-open', attack: `(red-team) ${rt.attack}` } }
+    return adj
+  }
   const checkResults = (await parallel(toCheck.map(f => () =>
     ragent(
       `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
 FINDING: [${f.severity}] ${f.title}
   originally at ${f.file}:${f.line} (enclosing symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}
   why it mattered: ${f.why}
-METHOD: re-locate the symbol (grep it — the line has likely moved), read it, and decide:
-  - "resolved": the defect is gone (the fix addressed it).
-  - "still-open": the defect is still present (cite the current file:line).
+METHOD:
+  1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
+  2. Re-locate the symbol (grep it — the line has likely moved) and read the fix.
+  3. Construct AT LEAST TWO concrete attacks: inputs/states that would violate the invariant while the current fix is in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check each against the actual code.
+  4. Decide:
+  - "resolved": every attack fails — the fix closes the CLASS, not just the described instance.
+  - "still-open": the defect is still present OR one of your attacks succeeds (cite the current file:line; put the attack in \`attack\`).
   - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
-Return {status, currentLine, note}.`,
-      { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: results[0]?.plan?.lensModel || 'opus' },
-    ).then(r => ({ f, r })),
+Return {status, currentLine, note, invariant, attack}.`,
+      { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
+    ).then(async r => ({ f, r: r?.status === 'resolved' ? await redTeam(f, r) : r })),
   ))).filter(Boolean)
   for (const { f, r } of checkResults) {
     const status = r?.status || 'still-open'   // verification died → assume still-open (safe: keeps it in the verdict)
     const located = { ...f, line: r?.currentLine || f.line }
     if (status === 'resolved') adjudicated.resolved.push({ ...located, disposition: 'closed' })
     else if (status === 'regressed') adjudicated.regressed.push({ ...located, why: `${f.why} — REGRESSED after fix: ${r?.note || ''}` })
-    else adjudicated.stillOpen.push(located)
+    else adjudicated.stillOpen.push(r?.attack ? { ...located, why: `${f.why} — fix incomplete: ${r.attack}` } : located)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried`)
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team`)
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
