@@ -303,10 +303,25 @@ function sanitizeAttack(text) {
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
+// Model-authored finding fields reach agent PROMPTS as context; flatten them like attack/note so
+// injected newlines/markdown in a lens-derived title/symbol/ruleId cannot hijack a downstream
+// adjudicate/red-team/carry agent. Ledger storage stays raw (matchesPrior fingerprints on the
+// unsanitized ruleId+title) — only the prompt copy is flattened. file/line stay raw (validated path).
+function promptFields(f) {
+  return {
+    title: sanitizeAttack(f.title),
+    symbol: sanitizeAttack(f.symbol) || '?',
+    ruleId: sanitizeAttack(f.ruleId) || '—',
+  }
+}
 // A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
-// Strip any PRIOR suffix first so `why` always carries the original rationale plus at most the
-// LATEST attack — stale attacks must not accrete and bias future adjudications (the adjudicator
-// and red-team derive the invariant from `why`).
+// Strip any PRIOR suffix first so stale attacks do not accrete and bias future adjudications (the
+// adjudicator and red-team derive the invariant from `why`). Honest invariant: `why` carries the
+// original rationale plus at most the LATEST attack — EXCEPT that we strip on the LAST marker only
+// (so a rationale that legitimately quotes a marker phrase is not truncated), which means an attack
+// that itself contains the literal marker substring " — fix incomplete: " can leave ONE bounded
+// (ATTACK_MAX-capped) stale fragment behind. sanitizeAttack flattens structure but does not strip the
+// marker words/em-dash/colon, so this residue is a conscious, size-bounded tradeoff, not unbounded growth.
 function baseWhy(why) {
   const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
   const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix): /g
@@ -1048,14 +1063,15 @@ if (priorRound?.ledger?.length) {
   const toCheck = priorRound.ledger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
 
   // Settled priors: carried unless the code around them changed since the prior round.
-  const carriedResults = (await parallel(settled.map(f => () =>
-    ragent(
+  const carriedResults = (await parallel(settled.map(f => () => {
+    const pf = promptFields(f)
+    return ragent(
       `A prior review finding was dismissed by the author (disposition: ${f.disposition}). Decide only whether the CODE AROUND IT CHANGED since commit ${priorRound.head}. Shell + read only.
-FINDING: [${f.severity}] ${f.title} — at ${f.file}:${f.line} (symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}.
+FINDING: [${f.severity}] ${pf.title} — at ${f.file}:${f.line} (symbol ${pf.symbol}), rule ${pf.ruleId}.
 Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
       { label: `carry:${f.file}:${f.line}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
-    ).then(r => ({ f, changed: !!r?.changed })),
-  ))).filter(Boolean)
+    ).then(r => ({ f, changed: !!r?.changed }))
+  }))).filter(Boolean)
   for (const { f, changed } of carriedResults) {
     if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
     else adjudicated.carried.push(f)
@@ -1072,10 +1088,11 @@ Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judg
   let adjudicatorDied = 0
   const redTeam = async (f, adj) => {
     if (!(f.severity === 'Critical' || f.severity === 'High')) return adj
+    const pf = promptFields(f)
     const rt = await ragent(
       `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
-FINDING: [${f.severity}] ${sanitizeAttack(f.title)}
-  originally at ${f.file}:${f.line} (enclosing symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}
+FINDING: [${f.severity}] ${pf.title}
+  originally at ${f.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(f.why)}
 INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
@@ -1092,11 +1109,12 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
     if (ov) overturned++
     return out
   }
-  const checkResults = (await parallel(toCheck.map(f => () =>
-    ragent(
+  const checkResults = (await parallel(toCheck.map(f => () => {
+    const pf = promptFields(f)
+    return ragent(
       `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
-FINDING: [${f.severity}] ${sanitizeAttack(f.title)}
-  originally at ${f.file}:${f.line} (enclosing symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}
+FINDING: [${f.severity}] ${pf.title}
+  originally at ${f.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(f.why)}
 METHOD:
   1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
@@ -1108,8 +1126,8 @@ METHOD:
   - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
 Return {status, currentLine, note, invariant, attack}.`,
       { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
-    ).then(async r => ({ f, r: shouldRedTeam(r) ? await redTeam(f, r) : r })),
-  ))).filter(Boolean)
+    ).then(async r => ({ f, r: shouldRedTeam(r) ? await redTeam(f, r) : r }))
+  }))).filter(Boolean)
   for (const { f, r } of checkResults) {
     const { track, entry, demoted, adjudicatorDied: adjDied } = adjudicateOne(f, r)
     if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
