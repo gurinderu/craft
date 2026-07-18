@@ -311,6 +311,28 @@ function baseWhy(why) {
   return String(why ?? '').split(/ — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix): /)[0]
 }
 
+// Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
+// adjusted adjudication plus degradation flags; the caller does the logging/counting.
+function classifyRedTeam(f, adj, rt) {
+  if (!(f.severity === 'Critical' || f.severity === 'High')) return { adj, died: false, overturned: false }
+  if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false }
+  if (rt.defeated && !String(rt.attack || '').trim()) return { adj, died: false, overturned: false }
+  if (rt.defeated) return { adj: { ...adj, status: 'still-open', attack: `(red-team) ${rt.attack}` }, died: false, overturned: true }
+  return { adj, died: false, overturned: false }
+}
+
+// Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
+// and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
+function adjudicateOne(f, r) {
+  const status = r?.status || 'still-open'
+  const located = { ...f, line: r?.currentLine || f.line }
+  const attack = sanitizeAttack(r?.attack)
+  if (status === 'resolved' && attack) return { track: 'stillOpen', demoted: true, entry: { ...located, why: `${baseWhy(f.why)} — fix incomplete (adjudicator reported attack despite resolved): ${attack}` } }
+  if (status === 'resolved') return { track: 'resolved', entry: { ...located, disposition: 'closed', ...(r?.note ? { note: r.note } : {}) } }
+  if (status === 'regressed') return { track: 'regressed', entry: { ...located, why: `${baseWhy(f.why)} — REGRESSED after fix: ${sanitizeAttack(r?.note)}` } }
+  return { track: 'stillOpen', entry: attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located }
+}
+
 // ---- resilient agent call ----
 // agent() returns null when the subagent dies on a terminal API error (after the harness's own
 // retries) or is skipped. A single quiet re-dispatch recovers most API deaths. Budget-exceeded
@@ -1040,20 +1062,11 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
     // transient agent death must not spuriously reopen findings. But the degradation must be
     // auditable — count it, log it, and annotate the note so "red-team passed" is distinguishable
     // from "red-team never ran" in the report and the run log.
-    if (rt == null) {
-      redTeamDied++
-      log(`⚠️ red-team for ${f.file}:${f.line} died — "resolved" stands on the adjudicator's own attack pass only`)
-      return { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }
-    }
-    // defeated=true with no concrete attack is an internally invalid verdict (the schema cannot
-    // express the cross-field constraint). Keep `resolved` — same policy as a dead red-teamer —
-    // and log it; reopening on an empty claim would hand the author nothing actionable.
-    if (rt.defeated && !String(rt.attack || '').trim()) {
-      log(`⚠️ red-team for ${f.file}:${f.line} claimed defeat with NO attack — invalid verdict, keeping resolved`)
-      return adj
-    }
-    if (rt.defeated) { overturned++; return { ...adj, status: 'still-open', attack: `(red-team) ${rt.attack}` } }
-    return adj
+    const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
+    if (died) { redTeamDied++; log(`⚠️ red-team for ${f.file}:${f.line} died — "resolved" stands on the adjudicator's own attack pass only`) }
+    if (invalid) log(`⚠️ red-team for ${f.file}:${f.line} claimed defeat with NO attack — invalid verdict, keeping resolved`)
+    if (ov) overturned++
+    return out
   }
   const checkResults = (await parallel(toCheck.map(f => () =>
     ragent(
@@ -1074,19 +1087,9 @@ Return {status, currentLine, note, invariant, attack}.`,
     ).then(async r => ({ f, r: r?.status === 'resolved' ? await redTeam(f, r) : r })),
   ))).filter(Boolean)
   for (const { f, r } of checkResults) {
-    const status = r?.status || 'still-open'   // verification died → assume still-open (safe: keeps it in the verdict)
-    const located = { ...f, line: r?.currentLine || f.line }
-    const attack = sanitizeAttack(r?.attack)
-    if (status === 'resolved' && attack) {
-      // Contradictory adjudication: the model closed the finding while reporting a successful
-      // attack. Trust the concrete attack over the status flag — same safe direction as the
-      // death default above.
-      log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
-      adjudicated.stillOpen.push({ ...located, why: `${baseWhy(f.why)} — fix incomplete (adjudicator reported attack despite resolved): ${attack}` })
-    }
-    else if (status === 'resolved') adjudicated.resolved.push({ ...located, disposition: 'closed', ...(r?.note ? { note: r.note } : {}) })
-    else if (status === 'regressed') adjudicated.regressed.push({ ...located, why: `${baseWhy(f.why)} — REGRESSED after fix: ${sanitizeAttack(r?.note)}` })
-    else adjudicated.stillOpen.push(attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located)
+    const { track, entry, demoted } = adjudicateOne(f, r)
+    if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
+    adjudicated[track].push(entry)
   }
   log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died`)
 }
