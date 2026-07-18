@@ -300,7 +300,7 @@ const ATTACK_SCHEMA = {
 // injected output cannot restyle the report or compound across re-review rounds.
 const ATTACK_MAX = 500
 function sanitizeAttack(text) {
-  const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`]/g, '').trim()
+  const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 // A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
@@ -308,29 +308,51 @@ function sanitizeAttack(text) {
 // LATEST attack — stale attacks must not accrete and bias future adjudications (the adjudicator
 // and red-team derive the invariant from `why`).
 function baseWhy(why) {
-  return String(why ?? '').split(/ — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix): /)[0]
+  const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
+  const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix): /g
+  let last = -1, m
+  while ((m = re.exec(s))) last = m.index
+  return last === -1 ? s : s.slice(0, last)
 }
 
 // Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
 // adjusted adjudication plus degradation flags; the caller does the logging/counting.
 function classifyRedTeam(f, adj, rt) {
-  if (!(f.severity === 'Critical' || f.severity === 'High')) return { adj, died: false, overturned: false }
-  if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false }
-  if (rt.defeated && !String(rt.attack || '').trim()) return { adj, died: false, overturned: false }
-  if (rt.defeated) return { adj: { ...adj, status: 'still-open', attack: `(red-team) ${rt.attack}` }, died: false, overturned: true }
-  return { adj, died: false, overturned: false }
+  if (!(f.severity === 'Critical' || f.severity === 'High')) return { adj, died: false, overturned: false, invalid: false }
+  if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false, invalid: false }
+  const atk = sanitizeAttack(rt.attack)
+  if (rt.defeated && !atk) return { adj: { ...adj, note: `${adj.note || ''} [red-team claimed defeat with no attack — invalid verdict discarded; resolved on the adjudicator's attack pass alone]`.trim() }, died: false, overturned: false, invalid: true }
+  if (rt.defeated) return { adj: { ...adj, status: 'still-open', attack: `(red-team) ${atk}` }, died: false, overturned: true, invalid: false }
+  return { adj, died: false, overturned: false, invalid: false }
 }
 
 // Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
 // and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
 function adjudicateOne(f, r) {
-  const status = r?.status || 'still-open'
   const located = { ...f, line: r?.currentLine || f.line }
   const attack = sanitizeAttack(r?.attack)
+  if (r == null) return { track: 'stillOpen', adjudicatorDied: true, entry: { ...located, why: `${baseWhy(f.why)} — still-open (adjudicator did not run — agent died; kept still-open by default)` } }
+  const status = r.status || 'still-open'
   if (status === 'resolved' && attack) return { track: 'stillOpen', demoted: true, entry: { ...located, why: `${baseWhy(f.why)} — fix incomplete (adjudicator reported attack despite resolved): ${attack}` } }
-  if (status === 'resolved') return { track: 'resolved', entry: { ...located, disposition: 'closed', ...(r?.note ? { note: r.note } : {}) } }
-  if (status === 'regressed') return { track: 'regressed', entry: { ...located, why: `${baseWhy(f.why)} — REGRESSED after fix: ${sanitizeAttack(r?.note)}` } }
+  if (status === 'resolved') return { track: 'resolved', entry: { ...located, disposition: 'closed', ...(r.note ? { note: sanitizeAttack(r.note) } : {}) } }
+  if (status === 'regressed') { const note = sanitizeAttack(r.note); return { track: 'regressed', entry: { ...located, why: note ? `${baseWhy(f.why)} — REGRESSED after fix: ${note}` : `${baseWhy(f.why)} — REGRESSED after fix (no detail returned by adjudicator)` } } }
   return { track: 'stillOpen', entry: attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located }
+}
+
+// The invariant string interpolated into the red-team prompt is model-authored (from the
+// adjudicator's own verdict, falling back to the finding `why`). Route it through sanitizeAttack
+// so runaway/injected structure cannot restyle or hijack the next agent's prompt.
+function redTeamInvariant(adj, f) {
+  return sanitizeAttack(adj.invariant) || sanitizeAttack(f.why)
+}
+
+// Whether a "resolved" verdict is worth an independent red-team pass. A resolved verdict that
+// ALREADY carries an attack is self-contradictory — adjudicateOne demotes it — so red-teaming it
+// wastes an opus call and lets the red-team overwrite the adjudicator's own attack. Only a genuinely
+// clean resolved (no attack) gets red-teamed. Emptiness is judged on the SANITIZED attack so a
+// markdown-only "attack" counts as none.
+function shouldRedTeam(r) {
+  return r?.status === 'resolved' && !sanitizeAttack(r.attack)
 }
 
 // ---- resilient agent call ----
@@ -1035,7 +1057,7 @@ Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judg
     ).then(r => ({ f, changed: !!r?.changed })),
   ))).filter(Boolean)
   for (const { f, changed } of carriedResults) {
-    if (changed) adjudicated.stillOpen.push({ ...f, why: `${f.why} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
+    if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
     else adjudicated.carried.push(f)
   }
 
@@ -1046,14 +1068,16 @@ Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judg
   const adjudModel = results[0]?.plan?.lensModel || 'opus'
   let overturned = 0
   let redTeamDied = 0
+  let invalidRedTeam = 0
+  let adjudicatorDied = 0
   const redTeam = async (f, adj) => {
     if (!(f.severity === 'Critical' || f.severity === 'High')) return adj
     const rt = await ragent(
       `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
-FINDING: [${f.severity}] ${f.title}
+FINDING: [${f.severity}] ${sanitizeAttack(f.title)}
   originally at ${f.file}:${f.line} (enclosing symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}
-  why it mattered: ${f.why}
-INVARIANT it violated: ${adj.invariant || f.why}
+  why it mattered: ${sanitizeAttack(f.why)}
+INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
 Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
       { label: `redteam:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
@@ -1064,16 +1088,16 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
     // from "red-team never ran" in the report and the run log.
     const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
     if (died) { redTeamDied++; log(`⚠️ red-team for ${f.file}:${f.line} died — "resolved" stands on the adjudicator's own attack pass only`) }
-    if (invalid) log(`⚠️ red-team for ${f.file}:${f.line} claimed defeat with NO attack — invalid verdict, keeping resolved`)
+    if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f.file}:${f.line} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
     if (ov) overturned++
     return out
   }
   const checkResults = (await parallel(toCheck.map(f => () =>
     ragent(
       `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
-FINDING: [${f.severity}] ${f.title}
+FINDING: [${f.severity}] ${sanitizeAttack(f.title)}
   originally at ${f.file}:${f.line} (enclosing symbol ${f.symbol || '?'}), rule ${f.ruleId || '—'}
-  why it mattered: ${f.why}
+  why it mattered: ${sanitizeAttack(f.why)}
 METHOD:
   1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
   2. Re-locate the symbol (grep it — the line has likely moved) and read the fix.
@@ -1084,14 +1108,15 @@ METHOD:
   - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
 Return {status, currentLine, note, invariant, attack}.`,
       { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
-    ).then(async r => ({ f, r: r?.status === 'resolved' ? await redTeam(f, r) : r })),
+    ).then(async r => ({ f, r: shouldRedTeam(r) ? await redTeam(f, r) : r })),
   ))).filter(Boolean)
   for (const { f, r } of checkResults) {
-    const { track, entry, demoted } = adjudicateOne(f, r)
+    const { track, entry, demoted, adjudicatorDied: adjDied } = adjudicateOne(f, r)
     if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
+    if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
     adjudicated[track].push(entry)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died`)
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died`)
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
