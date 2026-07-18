@@ -294,6 +294,23 @@ const ATTACK_SCHEMA = {
   },
 }
 
+// ---- adjudicate-track text hygiene (pure helpers; declared in the prefix so tests can eval them) ----
+// Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
+// prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
+// injected output cannot restyle the report or compound across re-review rounds.
+const ATTACK_MAX = 500
+function sanitizeAttack(text) {
+  const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`]/g, '').trim()
+  return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
+}
+// A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
+// Strip any PRIOR suffix first so `why` always carries the original rationale plus at most the
+// LATEST attack — stale attacks must not accrete and bias future adjudications (the adjudicator
+// and red-team derive the invariant from `why`).
+function baseWhy(why) {
+  return String(why ?? '').split(/ — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix): /)[0]
+}
+
 // ---- resilient agent call ----
 // agent() returns null when the subagent dies on a terminal API error (after the harness's own
 // retries) or is skipped. A single quiet re-dispatch recovers most API deaths. Budget-exceeded
@@ -1006,6 +1023,7 @@ Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judg
   // by an independent red-team agent that never sees the adjudicator's verdict.
   const adjudModel = results[0]?.plan?.lensModel || 'opus'
   let overturned = 0
+  let redTeamDied = 0
   const redTeam = async (f, adj) => {
     if (!(f.severity === 'Critical' || f.severity === 'High')) return adj
     const rt = await ragent(
@@ -1019,8 +1037,22 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
       { label: `redteam:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
     )
     // A dead red-teamer keeps `resolved`: the adjudicator already ran its own attack pass, and a
-    // transient agent death must not spuriously reopen findings.
-    if (rt?.defeated) { overturned++; return { ...adj, status: 'still-open', attack: `(red-team) ${rt.attack}` } }
+    // transient agent death must not spuriously reopen findings. But the degradation must be
+    // auditable — count it, log it, and annotate the note so "red-team passed" is distinguishable
+    // from "red-team never ran" in the report and the run log.
+    if (rt == null) {
+      redTeamDied++
+      log(`⚠️ red-team for ${f.file}:${f.line} died — "resolved" stands on the adjudicator's own attack pass only`)
+      return { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }
+    }
+    // defeated=true with no concrete attack is an internally invalid verdict (the schema cannot
+    // express the cross-field constraint). Keep `resolved` — same policy as a dead red-teamer —
+    // and log it; reopening on an empty claim would hand the author nothing actionable.
+    if (rt.defeated && !String(rt.attack || '').trim()) {
+      log(`⚠️ red-team for ${f.file}:${f.line} claimed defeat with NO attack — invalid verdict, keeping resolved`)
+      return adj
+    }
+    if (rt.defeated) { overturned++; return { ...adj, status: 'still-open', attack: `(red-team) ${rt.attack}` } }
     return adj
   }
   const checkResults = (await parallel(toCheck.map(f => () =>
@@ -1044,11 +1076,19 @@ Return {status, currentLine, note, invariant, attack}.`,
   for (const { f, r } of checkResults) {
     const status = r?.status || 'still-open'   // verification died → assume still-open (safe: keeps it in the verdict)
     const located = { ...f, line: r?.currentLine || f.line }
-    if (status === 'resolved') adjudicated.resolved.push({ ...located, disposition: 'closed' })
-    else if (status === 'regressed') adjudicated.regressed.push({ ...located, why: `${f.why} — REGRESSED after fix: ${r?.note || ''}` })
-    else adjudicated.stillOpen.push(r?.attack ? { ...located, why: `${f.why} — fix incomplete: ${r.attack}` } : located)
+    const attack = sanitizeAttack(r?.attack)
+    if (status === 'resolved' && attack) {
+      // Contradictory adjudication: the model closed the finding while reporting a successful
+      // attack. Trust the concrete attack over the status flag — same safe direction as the
+      // death default above.
+      log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
+      adjudicated.stillOpen.push({ ...located, why: `${baseWhy(f.why)} — fix incomplete (adjudicator reported attack despite resolved): ${attack}` })
+    }
+    else if (status === 'resolved') adjudicated.resolved.push({ ...located, disposition: 'closed', ...(r?.note ? { note: r.note } : {}) })
+    else if (status === 'regressed') adjudicated.regressed.push({ ...located, why: `${baseWhy(f.why)} — REGRESSED after fix: ${sanitizeAttack(r?.note)}` })
+    else adjudicated.stillOpen.push(attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team`)
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died`)
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
