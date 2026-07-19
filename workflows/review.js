@@ -304,14 +304,20 @@ function sanitizeAttack(text) {
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 // Model-authored finding fields reach agent PROMPTS as context; flatten them like attack/note so
-// injected newlines/markdown in a lens-derived title/symbol/ruleId cannot hijack a downstream
-// adjudicate/red-team/carry agent. Ledger storage stays raw (matchesPrior fingerprints on the
-// unsanitized ruleId+title) — only the prompt copy is flattened. file/line stay raw (validated path).
+// injected newlines/markdown in a lens-derived title/symbol/ruleId/file/severity cannot hijack a
+// downstream adjudicate/red-team/carry agent. Ledger storage stays raw (matchesPrior fingerprints on
+// the unsanitized ruleId+title) — only the prompt copy is flattened. `file` is model-authored (lens
+// output round-tripped through the ledger, schema-typed only as a string — NOT a validated path) and
+// `severity` has no enum on LEDGER_ITEM, so both are flattened here for prompt safety; a legitimate
+// path/severity has no newlines, so flattening is lossless for real values. The `git diff` shell
+// argument still uses the RAW f.file via JSON.stringify (JSON-escaping already prevents shell breakout).
 function promptFields(f) {
   return {
     title: sanitizeAttack(f.title),
     symbol: sanitizeAttack(f.symbol) || '?',
     ruleId: sanitizeAttack(f.ruleId) || '—',
+    file: sanitizeAttack(f.file),
+    severity: sanitizeAttack(f.severity),
   }
 }
 // A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
@@ -324,16 +330,24 @@ function promptFields(f) {
 // marker words/em-dash/colon, so this residue is a conscious, size-bounded tradeoff, not unbounded growth.
 function baseWhy(why) {
   const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
+    .replace(/ — still-open \(adjudicator did not run[^)]*\)\s*$/, '')
+    .replace(/ — REGRESSED after fix \(no detail[^)]*\)\s*$/, '')
   const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix): /g
   let last = -1, m
   while ((m = re.exec(s))) last = m.index
   return last === -1 ? s : s.slice(0, last)
 }
 
+// Case-insensitive Critical/High gate. LEDGER_ITEM.severity has no enum (deliberately — clamping it
+// would fail the whole prior-round ledger load and silently degrade re-review to a first pass), so a
+// drifted `critical`/`CRITICAL` value must still trip the red-team gate. Exact-match `=== 'Critical'`
+// would silently skip red-team on such a prior.
+function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
+
 // Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
 // adjusted adjudication plus degradation flags; the caller does the logging/counting.
 function classifyRedTeam(f, adj, rt) {
-  if (!(f.severity === 'Critical' || f.severity === 'High')) return { adj, died: false, overturned: false, invalid: false }
+  if (!isHighSeverity(f.severity)) return { adj, died: false, overturned: false, invalid: false }
   if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false, invalid: false }
   const atk = sanitizeAttack(rt.attack)
   if (rt.defeated && !atk) return { adj: { ...adj, note: `${adj.note || ''} [red-team claimed defeat with no attack — invalid verdict discarded; resolved on the adjudicator's attack pass alone]`.trim() }, died: false, overturned: false, invalid: true }
@@ -1067,13 +1081,18 @@ if (priorRound?.ledger?.length) {
     const pf = promptFields(f)
     return ragent(
       `A prior review finding was dismissed by the author (disposition: ${f.disposition}). Decide only whether the CODE AROUND IT CHANGED since commit ${priorRound.head}. Shell + read only.
-FINDING: [${f.severity}] ${pf.title} — at ${f.file}:${f.line} (symbol ${pf.symbol}), rule ${pf.ruleId}.
+FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f.line} (symbol ${pf.symbol}), rule ${pf.ruleId}.
 Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
       { label: `carry:${f.file}:${f.line}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
-    ).then(r => ({ f, changed: !!r?.changed }))
+    ).then(r => ({ f, changed: r == null ? null : !!r.changed }))
   }))).filter(Boolean)
+  // A dead carry agent (changed == null) is indeterminate — keep the dismissed prior as carried (do
+  // NOT reopen on an indeterminate carry), but count + ⚠️-log it like the other death paths so this
+  // is no longer the one unaudited death path.
+  let carryDied = 0
   for (const { f, changed } of carriedResults) {
-    if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
+    if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
+    else if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
     else adjudicated.carried.push(f)
   }
 
@@ -1087,12 +1106,12 @@ Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judg
   let invalidRedTeam = 0
   let adjudicatorDied = 0
   const redTeam = async (f, adj) => {
-    if (!(f.severity === 'Critical' || f.severity === 'High')) return adj
+    if (!isHighSeverity(f.severity)) return adj
     const pf = promptFields(f)
     const rt = await ragent(
       `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
-FINDING: [${f.severity}] ${pf.title}
-  originally at ${f.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
+FINDING: [${pf.severity}] ${pf.title}
+  originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(f.why)}
 INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
@@ -1113,8 +1132,8 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
     const pf = promptFields(f)
     return ragent(
       `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
-FINDING: [${f.severity}] ${pf.title}
-  originally at ${f.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
+FINDING: [${pf.severity}] ${pf.title}
+  originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(f.why)}
 METHOD:
   1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
@@ -1134,7 +1153,7 @@ Return {status, currentLine, note, invariant, attack}.`,
     if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
     adjudicated[track].push(entry)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died`)
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${carryDied} carry died`)
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
