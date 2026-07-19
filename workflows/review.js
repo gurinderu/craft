@@ -304,7 +304,12 @@ const ATTACK_SCHEMA = {
 // injected output cannot restyle the report or compound across re-review rounds.
 const ATTACK_MAX = 500
 function sanitizeAttack(text) {
-  const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '').trim()
+  // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
+  // `REGRESSED after fix` marker word to a plain space. The words survive (no content loss) but the
+  // exact ` — <marker>: ` shape baseWhy parses is gone — so an attack/note that echoes a marker can
+  // no longer re-introduce a parseable marker that would accrete a stale fragment each re-review round.
+  const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '')
+    .replace(/ — (?=fix incomplete|REGRESSED after fix)/gi, ' ').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -352,11 +357,12 @@ function isCommitish(s) {
 // A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
 // Strip any PRIOR suffix first so stale attacks do not accrete and bias future adjudications (the
 // adjudicator and red-team derive the invariant from `why`). Honest invariant: `why` carries the
-// original rationale plus at most the LATEST attack — EXCEPT that we strip on the LAST marker only
-// (so a rationale that legitimately quotes a marker phrase is not truncated), which means an attack
-// that itself contains the literal marker substring " — fix incomplete: " can leave ONE bounded
-// (ATTACK_MAX-capped) stale fragment behind. sanitizeAttack flattens structure but does not strip the
-// marker words/em-dash/colon, so this residue is a conscious, size-bounded tradeoff, not unbounded growth.
+// original rationale plus at most the LATEST attack. We strip on the LAST marker only (so a rationale
+// that legitimately QUOTES a marker phrase is not truncated). Attack/note text cannot re-introduce a
+// parseable marker: sanitizeAttack now breaks the ` — <marker>: ` delimiter (collapses the em-dash),
+// so the ONLY markers in `why` are the real per-round appends plus any in the original (unsanitized)
+// rationale. The LAST-marker split then both PREVENTS accretion (each round strips the prior append
+// before re-appending — `why` is stable round-over-round) AND preserves a rationale that quotes a marker.
 function baseWhy(why) {
   const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
     .replace(/ — still-open \(adjudicator did not run[^)]*\)\s*$/, '')
