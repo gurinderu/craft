@@ -159,10 +159,13 @@ const FINDING_ITEM = {
   },
 }
 
-// The persisted ledger entry has its OWN shape (the 11 fields `toLedgerEntry` writes) — NOT
-// FINDING_ITEM. Reusing FINDING_ITEM here would require `fix`/`blastRadius` (which the ledger omits),
-// so a strict validator could reject the loader's output and null out `priorRound`, silently
-// degrading a re-review to a first pass.
+// The persisted ledger entry has its OWN shape (the 11 required fields `toLedgerEntry` always writes,
+// plus an OPTIONAL `sources` — see below) — NOT FINDING_ITEM. Reusing FINDING_ITEM here would require
+// `fix`/`blastRadius` (which the ledger omits), so a strict validator could reject the loader's output
+// and null out `priorRound`, silently degrading a re-review to a first pass. `sources` is optional (not
+// in `required`) so pre-existing ledgers written without it still validate; it is persisted so the
+// strict-mode maintainability escalation (isMaintainability's merged-`sources` clause) survives a
+// re-review — without it the reconstructed prior has no `sources` and the escalation silently no-ops.
 const LEDGER_ITEM = {
   type: 'object',
   additionalProperties: false,
@@ -176,6 +179,7 @@ const LEDGER_ITEM = {
     tier: { type: 'string' },
     disposition: { type: 'string' },
     source: { type: 'string' },
+    sources: { type: 'array', items: { type: 'string' } },
     ruleId: { type: 'string' },
     title: { type: 'string' },
     why: { type: 'string' },
@@ -303,21 +307,24 @@ function sanitizeAttack(text) {
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
-// Model-authored finding fields reach agent PROMPTS as context; flatten them like attack/note so
-// injected newlines/markdown in a lens-derived title/symbol/ruleId/file/severity cannot hijack a
-// downstream adjudicate/red-team/carry agent. Ledger storage stays raw (matchesPrior fingerprints on
-// the unsanitized ruleId+title) — only the prompt copy is flattened. `file` is model-authored (lens
-// output round-tripped through the ledger, schema-typed only as a string — NOT a validated path) and
-// `severity` has no enum on LEDGER_ITEM, so both are flattened here for prompt safety; a legitimate
-// path/severity has no newlines, so flattening is lossless for real values. The `git diff` shell
-// argument still uses the RAW f.file via JSON.stringify (JSON-escaping already prevents shell breakout).
+// Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
+// single-value prompt field is the NEWLINE (it lets injected text pose as a fresh instruction line);
+// markdown structure chars are inert there. So flatten newlines (the vector) while PRESERVING
+// identifier characters `_ < > [ ]`: symbols (`handle_request`, `Vec<T>`) and paths
+// (`src/review_adjudicate.rs`) carry them and they are LOAD-BEARING — the adjudicate/red-team prompts
+// tell the agent to grep the symbol/file to RELOCATE the finding, so mangling them (as sanitizeAttack's
+// strip set did) breaks the grep. flattenField neutralizes newlines and caps length while leaving those
+// chars intact. Ledger storage stays raw (matchesPrior fingerprints on the unsanitized ruleId+title) —
+// only the prompt copy is flattened. The `git diff` shell argument still uses the RAW f.file via
+// JSON.stringify (JSON-escaping already prevents shell breakout) — do NOT route it through flattenField.
+function flattenField(v) { return String(v ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, ATTACK_MAX) }
 function promptFields(f) {
   return {
-    title: sanitizeAttack(f.title),
-    symbol: sanitizeAttack(f.symbol) || '?',
-    ruleId: sanitizeAttack(f.ruleId) || '—',
-    file: sanitizeAttack(f.file),
-    severity: sanitizeAttack(f.severity),
+    title: flattenField(f.title),
+    symbol: flattenField(f.symbol) || '?',
+    ruleId: flattenField(f.ruleId) || '—',
+    file: flattenField(f.file),
+    severity: flattenField(f.severity),
   }
 }
 // A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
@@ -343,6 +350,16 @@ function baseWhy(why) {
 // drifted `critical`/`CRITICAL` value must still trip the red-team gate. Exact-match `=== 'Critical'`
 // would silently skip red-team on such a prior.
 function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
+
+// Canonicalize a ledger severity ONCE at the prior-round load boundary. LEDGER_ITEM.severity has no
+// enum, so a drifted `critical`/`CRITICAL` reaches the load: the case-insensitive gates (isHighSeverity)
+// still fire on it, but every VERDICT/COUNT function (countBySeverity, reviewVerdict/finalVerdict/
+// rereviewVerdict, and the strict re-review escalation) matches severity by EXACT case and would
+// silently bucket it as 0 Critical/0 High — a fail-open that clears a still-broken Critical fix.
+// Mapping known values to canonical case here (and passing an unknown value through, trimmed — never
+// dropping it) means EVERY downstream comparison sees canonical severity for priors.
+const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
+function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
 
 // Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
 // adjusted adjudication plus degradation flags; the caller does the logging/counting.
@@ -1073,8 +1090,16 @@ let suspected = results.flatMap(r => r.suspected)
 const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [] }
 if (priorRound?.ledger?.length) {
   phase('Adjudicate')
-  const settled = priorRound.ledger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
-  const toCheck = priorRound.ledger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
+  // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
+  // LEDGER_ITEM.severity has no enum, so a drifted `critical`/`CRITICAL` prior would trip the
+  // case-insensitive gates (isHighSeverity in classifyRedTeam / the red-team gate) yet be bucketed as
+  // 0 Critical/0 High by countBySeverity (exact-case) — a fail-open re-review Approve over a
+  // still-broken Critical fix. Mapping through canonicalSeverity here means adjudicateOne's
+  // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
+  // escalation) and the re-persisted ledger all see canonical severity for priors.
+  const priorLedger = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  const settled = priorLedger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
+  const toCheck = priorLedger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
 
   // Settled priors: carried unless the code around them changed since the prior round.
   const carriedResults = (await parallel(settled.map(f => () => {
@@ -1247,6 +1272,7 @@ const toLedgerEntry = (f, disposition, tier) => ({
   fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
   severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
   source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: f.why || '',
+  ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
 })
 const reviewLedger = isRereview
   ? [
