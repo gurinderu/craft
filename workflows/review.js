@@ -738,22 +738,28 @@ Observability: the review workflow records this run — do NOT write your own re
 }
 
 function verifyPrompt(f, idx, isTool, gateProvenance) {
+  // Model-authored fields enter this prompt as context — guard them the same way the adjudicate track
+  // does: flatten identifier/locator fields via promptFields (newline is the single-value injection
+  // vector; identifier chars are load-bearing for the grep) and markdown-strip the prose (why/source).
+  const pf = promptFields(f)
+  const src = sanitizeAttack(f.source)
+  const why = sanitizeAttack(f.why)
   const head = isTool
-    ? `You are verifier #${idx + 1} for a TOOL-REPORTED code review finding (source: ${f.source}). Deterministic tool output outranks your judgement — you may refute it ONLY by re-running the tool, never on reasoning alone.`
+    ? `You are verifier #${idx + 1} for a TOOL-REPORTED code review finding (source: ${src}). Deterministic tool output outranks your judgement — you may refute it ONLY by re-running the tool, never on reasoning alone.`
     : `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain whether the technical claim holds — only let real findings through.`
   return `${head}
 
-FINDING: [${f.severity}] ${f.title}
-  at ${f.file || '?'}:${f.line || 0}
-  why: ${f.why}
-  source: ${f.source}${f.ruleId ? ` · rule ${f.ruleId}` : ''}
+FINDING: [${pf.severity}] ${pf.title}
+  at ${pf.file || '?'}:${f.line || 0}
+  why: ${why}
+  source: ${src}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
 
 MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${gateProvenance ? ` The gate invoked the tools as: "${gateProvenance}" — if a tool is not on PATH, reproduce the gate's invocation (e.g. \`nix run nixpkgs#<tool> --\`) before declaring it unrunnable.` : ''}${isTool ? ' If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
 
 REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream.
 
 Open the cited file and check:
-1. citedLineMatches: does ${f.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
+1. citedLineMatches: does ${pf.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
 2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.)
 3. refuted: is the technical claim itself false? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.'})
 
