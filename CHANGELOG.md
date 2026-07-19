@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.13.0](https://github.com/gurinderu/craft/compare/v0.12.0...v0.13.0) (2026-07-19)
+
+
+### Features
+
+* **review:** adjudicate schema requires invariant+attack; add ATTACK_SCHEMA + lint guard ([cb6a394](https://github.com/gurinderu/craft/commit/cb6a394077a9b6ceec0e86bdb60238da900ae5cb))
+* **review:** fix-completeness adjudication — invariant+attack method, red-team pass for resolved Crit/High priors ([34c5253](https://github.com/gurinderu/craft/commit/34c52536299c4a789fa43bd2b505567d844b46a1))
+
+
+### Bug Fixes
+
+* **review:** canonicalize prior-ledger severity for the verdict path, preserve identifiers in prompt fields, persist sources for strict re-review escalation ([9b14d67](https://github.com/gurinderu/craft/commit/9b14d6770f1a44d9a76c0c2803e7a283eef94bca))
+* **review:** guard model-authored fields in the round-1 verifyPrompt ([873f8dd](https://github.com/gurinderu/craft/commit/873f8dd39cf1343c06f55e7b8e9fef262f608e9d))
+* **review:** harden adjudicate track — demote contradictory resolved+attack, audit red-team death, reject empty-attack defeat, bound attack text ([bc5dd1b](https://github.com/gurinderu/craft/commit/bc5dd1ba4f95999a450389910fac0c6d10a210ee))
+* **review:** sanitize all adjudicate-track text, audit every degraded verdict, harden why bookkeeping ([0733b07](https://github.com/gurinderu/craft/commit/0733b07b49c70fc56b714138e6d3fc06ac2b9b7e))
+* **review:** sanitize model-authored fields at all three adjudicate prompt sites; cover still-open path; reconcile baseWhy comment ([ea44ad7](https://github.com/gurinderu/craft/commit/ea44ad79a1310629bf9c5d3a80281147c7e0f45d))
+* **review:** shq/flatten all model-authored refs into shell + prompts (round 3b) ([af29dc5](https://github.com/gurinderu/craft/commit/af29dc586a2e40b4b50505507be64cf3e815e0a0))
+* **review:** single-quote shell args in the carry-check git diff, validate ledger head ([f207a14](https://github.com/gurinderu/craft/commit/f207a149b14dbdd35c5728791be644cc6b291c00))
+* **review:** stop baseWhy residue accreting when attack text echoes a marker ([6c11987](https://github.com/gurinderu/craft/commit/6c11987db83991c51d4b78d650744d08b5abd009))
+* **review:** strip new why-suffixes in baseWhy, flatten file/severity into prompts, audit carry-death, case-insensitive severity gate ([363e76a](https://github.com/gurinderu/craft/commit/363e76ae93eb0d9ae9576694d422b114ceaa3229))
+
 ## [0.12.0](https://github.com/gurinderu/craft/compare/v0.11.0...v0.12.0) (2026-07-15)
 
 
