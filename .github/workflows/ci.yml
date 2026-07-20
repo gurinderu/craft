@@ -20,3 +20,6 @@ jobs:
       # reproduces the sandbox wrapper and compile-checks each one.
       - name: Syntax-check workflow scripts
         run: node lib/check-workflows.mjs
+      # Validate skill/agent frontmatter and that every internal craft:<slug> reference resolves.
+      - name: Check skills & agents
+        run: node lib/check-skills.mjs
