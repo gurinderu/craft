@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "craft",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "description": "Personal Claude Code collection of opinionated engineering skills and agents — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native, ml) plus language-agnostic engineering skills (specs, debugging, refactoring, onboarding) and code-review / architecture / security / Miri agents; a Nix skill set (flakes, packaging, dev-env, nixos/home-manager, review). Self-contained — owns its domain knowledge and carries no generic engineering-process content. Multi-language over time.",
   "author": {
     "name": "gurinderu",
