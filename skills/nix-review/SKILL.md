@@ -223,5 +223,3 @@ exists — CI or local — not that you must re-run it yourself.
 - *How* to configure a dev shell → `nix-dev-env`.
 - *How* to write NixOS/HM modules or manage secrets → `nixos`.
 - This skill judges; it does not rewrite. Propose the fix, let the author apply it.
-- The generic review/verify *discipline* → `superpowers:requesting-code-review`,
-  `superpowers:receiving-code-review`, `superpowers:verification-before-completion`.

@@ -55,9 +55,6 @@ cat <<EOF
 
 Done.
   • Restart opencode (or reopen the project) so it rescans skills/agents/commands/plugins.
-  • superpowers co-requisite: craft skills reference superpowers:* skills. Install those the same
-    way (symlink their skill dirs into "$TARGET/skills/") for full parity; without them craft still
-    works, only the generic-process deferrals go inert.
   • If opencode does not auto-install the plugin's deps, add @opencode-ai/plugin and
     @opencode-ai/sdk to "$TARGET/package.json" and restart. See opencode/README.md.
 EOF

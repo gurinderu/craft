@@ -19,18 +19,15 @@ mirrors the `rust-review` severity checklist:
 | code smell / naming / wildcard match / missing `///` | `rust-idioms` |
 | missing tests | `rust-testing` |
 
-A **bug fix** starts by finding the root cause before touching code (→
-`superpowers:systematic-debugging`; the Rust toolbox → `debugging`), then a regression test:
-write it, watch it fail (RED), fix, watch it pass (GREEN). The TDD mechanic →
-`superpowers:test-driven-development`; the Rust test tooling → `rust-testing`. (Cite them —
-don't restate.)
+A **bug fix** starts by finding the root cause (the Rust toolbox → `debugging`), then a
+regression test: write it, watch it fail (RED), fix, watch it pass (GREEN). The Rust test
+tooling → `rust-testing`.
 
 ## Verify (step 6)
 
 Prove each fix with the matching command from the `rust-review` "Proving a claim — what proves
 what" table — do not re-derive it here, cite it (`rust-review` SKILL.md, the "Proving a claim —
-what proves what" section). The discipline (no "done" without a fresh run you read this session) →
-`superpowers:verification-before-completion`.
+what proves what" section).
 
 ## Re-review (step 7)
 

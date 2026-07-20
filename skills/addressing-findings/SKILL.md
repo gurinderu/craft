@@ -1,17 +1,14 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather findings from craft review agents / rust-audit reports and GitHub PR comments, normalize to one schema, triage each against the code (accept/reject/defer/needs-decision/conflict), order them, fix (delegating how-to-fix to topic skills), verify each, re-review until green, and close the loop on GitHub. The generic feedback discipline lives in superpowers:receiving-code-review; this owns the craft-flavoured, Rust-aware process. Use after a review or audit produces findings, when working through PR comments, or when deciding what to fix first. Triggers: address review comments, fix the findings, work through the review, triage findings, PR comments, act on the verdict, what to fix first, resolve review threads, rust-audit report.
+  Systematic fix loop for review findings — gather findings from craft review agents / rust-audit reports and GitHub PR comments, normalize to one schema, triage each against the code (accept/reject/defer/needs-decision/conflict), order them, fix (delegating how-to-fix to topic skills), verify each, re-review until green, and close the loop on GitHub. Use after a review or audit produces findings, when working through PR comments, or when deciding what to fix first. Triggers: address review comments, fix the findings, work through the review, triage findings, PR comments, act on the verdict, what to fix first, resolve review threads, rust-audit report.
 ---
 
 # Addressing Findings
 
 The fix counterpart to `rust-review`: take a set of review findings and work them to green —
-gather, normalize, triage, order, fix, verify, re-review, close the loop. The generic feedback
-discipline (don't implement a wrong suggestion, no performative agreement, evidence before
-"done") lives in `superpowers:receiving-code-review` and `superpowers:verification-before-completion`;
-this skill owns the concrete, Rust-aware process and points at the topic skills for *how* to fix
-each thing.
+gather, normalize, triage, order, fix, verify, re-review, close the loop. This skill owns the
+concrete, Rust-aware process and points at the topic skills for *how* to fix each thing.
 
 ## When to use
 
@@ -30,15 +27,13 @@ each thing.
 2. Normalize — to the unified schema; tag source; compute stable_id        (→ schema.md)
 3. Triage  ⫲ — per finding, validated against a pinned ref, one subagent per finding:
                accept / reject / defer / needs-decision / conflict (+ reasoning)
-               (generic feedback discipline → superpowers:receiving-code-review)
 4. Order     — accepted only: blocking → simple → complex; group by file to cut churn
                (the grouping is what makes step 5 parallelisable — independent groups)
 5. Fix     ⫲ — independent file-groups fixed concurrently, one subagent per group
-               (superpowers:subagent-driven-development; worktree isolation when groups
-               could touch shared files). Within a group, serial. "How to fix" → topic
-               skills; a bug → regression test first, RED→GREEN                (→ rust.md)
+               (worktree isolation when groups could touch shared files). Within a
+               group, serial. "How to fix" → topic skills; a bug → regression test
+               first, RED→GREEN                                                (→ rust.md)
 6. Verify    — per fix: the rust-review "what proves what" proof table         (→ rust.md)
-               (+ superpowers:verification-before-completion)
 7. Re-review ⫲ — re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &
@@ -46,8 +41,8 @@ each thing.
 ```
 
 **Scaling:** small batch → steps 2–4 inline. Large batch (a fat `rust-audit` report, a
-many-comment PR) → dispatch the `triage-findings` workflow, apply its plan via
-`superpowers:executing-plans`, then run the re-review loop.
+many-comment PR) → dispatch the `triage-findings` workflow, apply its plan, then run the
+re-review loop.
 
 ## Triage outcomes
 
@@ -56,7 +51,7 @@ Validate each finding against the code (pinned to the ref it was generated again
 | Verdict | Meaning | Where it goes |
 |---|---|---|
 | `accept` | real, in scope | into the plan |
-| `reject` | wrong / not a real problem | ledger + drafted pushback (→ `superpowers:receiving-code-review`) |
+| `reject` | wrong / not a real problem | ledger + drafted pushback |
 | `defer` | valid but out of scope now | ledger (stays deferred across runs) |
 | `needs-decision` | valid but needs a product/spec call, **or** has no resolvable location | → `specs` |
 | `conflict` | contradicts another finding | both surfaced for a human; never silently pick one |
@@ -104,17 +99,15 @@ After **Triage (step 3)** and again after **Verify (step 6)**, write disposition
 
 ## Parallelism via subagents
 
-Fanning out independent work is owned by `superpowers:dispatching-parallel-agents` (ad-hoc
-fan-out) and `superpowers:subagent-driven-development` (independent plan tasks) — cite them, don't
-restate. Where each applies:
+Where craft's fix loop fans out across subagents:
 
 - **Gather (1)** — independent sources → one subagent per source.
 - **Triage (3)** — each finding judged independently → one subagent per finding (the core
   fan-out). The dedup/conflict/order step afterwards needs all results together, so it does
   **not** parallelise.
 - **Fix (5)** — the plan is grouped by file so **independent groups run concurrently**, one
-  subagent per group, via `superpowers:subagent-driven-development`; worktree isolation only when
-  groups could touch shared files. Within a group, serial.
+  subagent per group; worktree isolation only when groups could touch shared files. Within a
+  group, serial.
 - **Re-review (7)** — review agents run in parallel, as `rust-audit` orchestrates them.
 
 ## Rust wiring
@@ -131,12 +124,7 @@ Reading PR threads, and drafting/posting/resolving replies (only after explicit 
 
 - *How* to fix a specific problem → topic skills (`rust-errors`, `rust-ownership`,
   `rust-concurrency`, `rust-security`, …).
-- *How* to write the missing test → `rust-testing`; the RED→GREEN mechanic →
-  `superpowers:test-driven-development` (cite, don't restate).
-- Generic feedback discipline → `superpowers:receiving-code-review`; proof →
-  `superpowers:verification-before-completion`; plan formalization/execution →
-  `superpowers:writing-plans` / `executing-plans`; parallel fan-out →
-  `superpowers:dispatching-parallel-agents` / `subagent-driven-development`.
+- *How* to write the missing test → `rust-testing`.
 - Findings needing product/spec input → `specs`.
 - This skill does **not** rewrite for the reviewer and does **not** duplicate the `rust-review`
   rubric or its proof table — it cites them.

@@ -1,18 +1,13 @@
 ---
 name: debugging
 description: >-
-  Rust debugging toolbox — the concrete techniques for reproducing, localizing, and explaining a Rust bug (minimal repro, git bisect / cargo bisect-rustc, dbg!/tracing/RUST_BACKTRACE instrumentation, Miri/loom for heisenbugs, rust-gdb/rr). The general method (root cause before fix) lives in superpowers:systematic-debugging. Use for any Rust bug, panic, test failure, crash, or flaky/intermittent behavior. Triggers: bisect, cargo bisect-rustc, heisenbug, RUST_BACKTRACE, loom, rr, why is this failing, it works sometimes.
+  Rust debugging toolbox — the concrete techniques for reproducing, localizing, and explaining a Rust bug (minimal repro, git bisect / cargo bisect-rustc, dbg!/tracing/RUST_BACKTRACE instrumentation, Miri/loom for heisenbugs, rust-gdb/rr). Use for any Rust bug, panic, test failure, crash, or flaky/intermittent behavior. Triggers: bisect, cargo bisect-rustc, heisenbug, RUST_BACKTRACE, loom, rr, why is this failing, it works sometimes.
 ---
 
 # Debugging (Rust)
 
-The **method** is general and lives in `superpowers:systematic-debugging` — follow it: find the
-root cause before you touch the code (the iron law: *no fix without a root cause you can
-explain*), work the OBSERVE → REPRODUCE → LOCALIZE → EXPLAIN → FIX → VERIFY loop, and avoid the
-anti-patterns (shotgun debugging, fix-and-pray, ignoring the trace, no regression test).
-
-This skill adds the **Rust-specific toolbox** for the middle of that loop. Full detail in
-[techniques.md](techniques.md).
+The **Rust-specific toolbox** for reproducing, localizing, and explaining a Rust bug. Full detail
+in [techniques.md](techniques.md).
 
 ## Read the error first
 
@@ -38,9 +33,6 @@ Escalating means handing the problem to the skill that owns that design decision
 - "cannot be sent between threads" you keep bound-chasing → the concurrency *design* → `rust-concurrency`
 - a panic that should have been unreachable → the *type* should forbid the state → `rust-traits`
 
-This is the concrete trigger for `superpowers:systematic-debugging`'s iron law (*no fix without a
-root cause you can explain*) and the cure for fix-and-pray / shotgun debugging.
-
 ## Rust toolbox (→ techniques.md)
 
 - **Shrink the repro** — delta-debug the input; a failing `proptest`/`quickcheck` hands you a
@@ -59,9 +51,7 @@ root cause you can explain*) and the cure for fix-and-pray / shotgun debugging.
 ## Boundaries
 
 - Full technique detail → [techniques.md](techniques.md).
-- The general method, iron law, the loop, and anti-patterns → `superpowers:systematic-debugging`.
-- Confirming the fix with evidence → `superpowers:verification-before-completion` (the Rust
-  "what proves what" commands → `rust-review`).
+- Confirming the fix — the Rust "what proves what" commands → `rust-review`.
 - A panic-where-a-`Result`-belonged / error-design issue → `rust-errors`.
 - Intermittent / ordering / data-race bugs → `rust-concurrency` (and Miri via the `rust-miri`
   agent).

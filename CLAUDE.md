@@ -2,8 +2,8 @@
 
 Personal collection of opinionated engineering skills, review agents, and workflows —
 a broad **Rust** skill set and a **Nix** skill set — plus the generic `review` engine and the
-`rust-audit` workflow; builds on the `superpowers` plugin (a declared dependency) for the
-generic engineering-process discipline. See `README.md` / `MAP.md` for the full contents.
+`rust-audit` workflow. Self-contained: owns its domain knowledge, declares no plugin dependencies,
+and carries no generic engineering-process content. See `README.md` / `MAP.md` for the full contents.
 
 ## Review requests run as a background subagent
 
@@ -28,8 +28,7 @@ Pick the handler by scope:
 
 Give the agent a self-contained brief: the diff range (e.g. `git diff main...HEAD`) or target
 paths, and what the change is supposed to do. The `craft:rust-review` skill covers how to craft
-the brief and act on the verdict; the generic review discipline lives in the superpowers plugin
-(`superpowers:requesting-code-review`, `superpowers:receiving-code-review`).
+the brief and act on the verdict.
 
 **Always a fresh agent.** Every review request spawns a **new** agent via the Agent tool — it
 starts with a clean context and never inherits this conversation. Never continue or reuse a
@@ -59,5 +58,4 @@ running `gh pr create` on a Rust/Nix change, close the loop first:
    **Warning** with each remaining item explicitly justified in the PR body).
 
 Only then open the PR. A PR should never go up with open blocking findings the self-review already
-surfaced. The generic feedback discipline lives in `superpowers:receiving-code-review`; the
-craft-flavoured fix loop is `craft:addressing-findings`.
+surfaced. The craft-flavoured fix loop is `craft:addressing-findings`.
