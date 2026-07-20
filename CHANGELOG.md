@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/gurinderu/craft/compare/v0.13.0...v0.13.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* **review:** close re-review coverage holes (full re-scan cadence + ledger-degradation guard) ([ee8cf79](https://github.com/gurinderu/craft/commit/ee8cf798000472fde4dddac6bc6873ac7a5d14e7))
+
 ## [0.13.0](https://github.com/gurinderu/craft/compare/v0.12.0...v0.13.0) (2026-07-19)
 
 
