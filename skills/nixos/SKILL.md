@@ -1,11 +1,7 @@
 ---
 name: nixos
 description: >-
-  NixOS and nix-darwin system configuration — module shape, typed options with lib.mkOption,
-  composing modules, nixosConfigurations, secrets management (agenix/sops-nix, never plaintext
-  in the store), and cross-platform setups via nix-darwin + Home Manager. Home Manager specifics
-  in home-manager.md. Triggers: nixosConfiguration, nixos module, options, config, home-manager,
-  darwin, nix-darwin, agenix, sops-nix, systemd service.
+  NixOS and nix-darwin system configuration — module shape, typed options with lib.mkOption, composing modules, nixosConfigurations, secrets (agenix/sops-nix), and cross-platform via nix-darwin + Home Manager. Use when writing a system module or config. Triggers: nixosConfiguration, nixos module, home-manager, nix-darwin, agenix, sops-nix, systemd service.
 ---
 
 # NixOS Modules

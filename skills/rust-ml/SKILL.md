@@ -1,7 +1,7 @@
 ---
 name: rust-ml
 description: >-
-  Machine learning and numerical computing in Rust — tensors (ndarray/candle), the framework choice (candle vs burn vs tch vs ort vs dfdx vs linfa/smartcore), dtypes (f32/f16/bf16) and determinism, avoiding needless copies of large tensors, GPU device management, and serving a model without blocking the async runtime. Use when doing inference or training in Rust, loading a model (safetensors/ONNX), tokenizing, wiring a data pipeline (polars/arrow), or deploying a model behind an API. Triggers: candle, burn, tch, tch-rs, libtorch, ort, ONNX, onnxruntime, dfdx, linfa, smartcore, ndarray, polars, arrow, safetensors, tokenizers, tensor, inference, embeddings, GPU, CUDA, spawn_blocking model.
+  Machine learning and numerical computing in Rust — tensors, framework choice (candle/burn/tch/ort/linfa), dtypes and determinism, avoiding needless copies of large tensors, GPU management, and serving a model without blocking the async runtime. Use for inference or training, loading a model (safetensors/ONNX), tokenizing, a data pipeline (polars/arrow), or deploying behind an API. Triggers: candle, burn, tch, ort, ONNX, ndarray, polars, safetensors, inference, GPU, spawn_blocking.
 ---
 
 # Rust ML

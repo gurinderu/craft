@@ -1,7 +1,7 @@
 ---
 name: codebase-onboarding
 description: >-
-  Quickly understand an unfamiliar codebase before changing it — map the structure, find the entry points and seams, trace one real flow end to end, and confirm understanding by building/testing. Use when dropped into a new or large repository, or before a change in code you don't know. Language-agnostic, with Rust hooks. Triggers: where do I start, how does this work, trace the flow, get oriented, onboard.
+  Quickly understand an unfamiliar codebase before changing it — map the structure, find entry points and seams, trace one real flow end to end, and confirm by building/testing. Use when dropped into a new or large repo, or before changing code you don't know. Language-agnostic. Triggers: where do I start, how does this work, trace the flow, get oriented, onboard.
 ---
 
 # Codebase Onboarding

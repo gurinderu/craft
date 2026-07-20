@@ -1,7 +1,7 @@
 ---
 name: rust-navigation
 description: >-
-  Navigate a Rust codebase precisely with rust-analyzer over LSP instead of grepping blindly — jump to a definition, find every reference (impact before a rename), read a symbol's type/docs, outline a file, search symbols by name, find a trait's implementors, and trace a call hierarchy (who calls this / what this calls). Use when exploring an unfamiliar crate, locating a symbol, assessing the blast radius of a change, or building a call graph. Triggers: where is X defined, who calls, who uses this, find references, find implementations, who implements, call hierarchy, go to definition, rust-analyzer, LSP.
+  Navigate a Rust codebase with rust-analyzer over LSP instead of grepping blindly — go to definition, find references (impact before a rename), read a symbol's type/docs, find a trait's implementors, and trace a call hierarchy. Use when exploring an unfamiliar crate, locating a symbol, or assessing a change's blast radius. Triggers: where is X defined, who calls, find references, find implementations, call hierarchy, rust-analyzer, LSP.
 ---
 
 # Rust Navigation (LSP)

@@ -1,7 +1,7 @@
 ---
 name: nix-flakes
 description: >-
-  Nix flakes — flake.nix inputs/outputs schema, pinning with flake.lock, the standard outputs (devShells, packages, nixosConfigurations, homeConfigurations), and structuring with flake-parts / flake-utils. Use when writing or debugging a flake, pinning or updating inputs, exposing dev shells or packages, or wiring a system config. Triggers: flake.nix, flake.lock, nix flake, inputs, outputs, devShell, flake-parts, flake-utils, nixpkgs input, follows.
+  Nix flakes — flake.nix inputs/outputs schema, pinning with flake.lock, the standard outputs (devShells, packages, nixosConfigurations, homeConfigurations), and flake-parts / flake-utils. Use when writing or debugging a flake, pinning or updating inputs, or exposing dev shells or packages. Triggers: flake.nix, flake.lock, nix flake, inputs, outputs, flake-parts, follows.
 ---
 
 # Nix Flakes
