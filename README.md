@@ -2,11 +2,11 @@
 
 Personal Claude Code collection of opinionated engineering skills and agents.
 
-craft owns its **Rust** knowledge in full and **builds on the `superpowers` plugin** for the
-generic engineering-process discipline (systematic debugging, verification-before-completion,
-requesting/receiving code review). superpowers is declared as a plugin `dependency`, so
-installing craft pulls it in automatically. craft's skills cross-reference each other and point
-at the relevant `superpowers:*` skill for the language-agnostic method.
+craft owns its **Rust** and **Nix** knowledge in full and is **self-contained** — it declares no
+plugin dependencies and carries no generic engineering-process content. Language-agnostic
+*discipline* (how to run a review, how to verify a claim, the debugging method) is intentionally
+out of scope; bring your own process skills. craft's skills cross-reference **each other** — that
+cross-linking is the collection's cohesion.
 
 ## Contents
 
@@ -34,7 +34,7 @@ at the relevant `superpowers:*` skill for the language-agnostic method.
 | skill | `craft:rust-embedded` | Bare-metal/MCU `no_std` — heapless, peripheral-ownership singletons, embedded-hal drivers, ISR-safe sharing (critical-section), RTIC vs Embassy, defmt/probe-rs |
 | skill | `craft:rust-navigation` | Navigate a crate with rust-analyzer over LSP — go-to-definition, find-references (impact before a rename), hover, file/workspace symbols, trait implementors, call hierarchy; text-tool fallbacks when no LSP |
 | skill | `craft:specs` | Specification by example / BDD / ATDD — requirements → Given/When/Then scenarios, outside-in (language-agnostic) |
-| skill | `craft:debugging` | Rust debugging toolbox — repro shrinking, `git bisect`/`cargo bisect-rustc`, `dbg!`/`tracing`/`RUST_BACKTRACE`, Miri/loom heisenbugs, `rust-gdb`/`rr` (method → `superpowers:systematic-debugging`) |
+| skill | `craft:debugging` | Rust debugging toolbox — repro shrinking, `git bisect`/`cargo bisect-rustc`, `dbg!`/`tracing`/`RUST_BACKTRACE`, Miri/loom heisenbugs, `rust-gdb`/`rr` |
 | skill | `craft:refactoring` | Disciplined refactoring — structure-not-behavior in tiny steps under green tests (language-agnostic) |
 | skill | `craft:codebase-onboarding` | Understand an unfamiliar codebase first — map, find seams, trace one flow, confirm by building (language-agnostic) |
 | skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; scales to the `triage-findings` workflow |
@@ -46,7 +46,7 @@ at the relevant `superpowers:*` skill for the language-agnostic method.
 | workflow | `review` | **Default diff-review path.** Auto-detects the language(s) in the diff (Rust/Nix), runs each language's gate + scout-scaled lens fan-out (loop-until-dry, adversarial + self-verification), and merges into one Confirmed/Suspected report + verdict |
 | workflow | `rust-review` / `nix-review` | Thin pins over `review` that force a single language (`workflow('review', {languages:['rust'\|'nix']})`) |
 | workflow | `rust-audit` | Full crate audit — per-crate review, inter-crate contracts, architecture, crate-decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health, run in parallel and synthesized into one report |
-| workflow | `triage-findings` | Validates review findings (craft agents + GitHub PR comments) in parallel, dedups/conflict-checks, and renders one ordered fix plan (writing-plans format) + a triage ledger — no edits |
+| workflow | `triage-findings` | Validates review findings (craft agents + GitHub PR comments) in parallel, dedups/conflict-checks, and renders one ordered fix plan (checkbox-task format) + a triage ledger — no edits |
 
 ## Layout
 
@@ -123,7 +123,5 @@ Workflow({ scriptPath: "workflows/rust-audit.js", args: { base: "origin/main" } 
 - Skills use progressive disclosure: a lean `SKILL.md` entry plus sub-files loaded on demand.
 - Crate versions in examples track the latest stable release; `edition = "2024"`.
 - Skills reference **each other** (e.g. `rust-review` points at `rust-testing` for how to write
-  missing tests) and, for the generic engineering-process method, the `superpowers` plugin
-  (`superpowers:systematic-debugging`, `superpowers:verification-before-completion`,
-  `superpowers:requesting-code-review`, `superpowers:receiving-code-review`) — declared as a
-  plugin dependency.
+  missing tests). Generic engineering-process discipline is out of scope — craft names no external
+  process skills and declares no plugin dependencies.

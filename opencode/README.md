@@ -16,13 +16,6 @@ opencode/install.sh --global   # ~/.config/opencode
 Then restart opencode (or reopen the project) so it rescans `skills/`, `agents/`, `commands/`,
 and `plugins/`.
 
-### superpowers co-requisite
-
-craft skills defer to `superpowers:*` skills (generic engineering-process discipline). opencode
-reads the same Anthropic skill spec, so install superpowers' skills the same way — symlink their
-skill directories into your opencode `skills/` dir. **Without them craft still works**; only the
-generic-process deferrals go inert (the Rust knowledge is self-contained).
-
 ### Plugin dependencies
 
 opencode auto-loads the plugin from `plugins/craft-rust` and Bun installs its `package.json`
@@ -59,8 +52,8 @@ by default.
 ## Parity caveats
 
 - Skill sub-files aren't first-class bundled in opencode — the agent reads them by path on demand.
-- `craft:` / `superpowers:` namespace prefixes in skill bodies are cosmetic here (skill name = bare
-  dir); the model still resolves them.
+- `craft:` namespace prefixes in skill bodies are cosmetic here (skill name = bare dir); the model
+  still resolves them.
 - Workflow determinism rides on opencode's child-session API; the plugin retries sequentially and
   surfaces a clear error if a child session is stuck (opencode #8528 / #6573).
 - **No elastic `rust-review` engine.** The Claude Code `rust-review` workflow (scout-scaled lens

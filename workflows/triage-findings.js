@@ -64,7 +64,7 @@ const PLAN_SCHEMA = {
   additionalProperties: false,
   required: ['plan_markdown', 'ledger', 'summary'],
   properties: {
-    plan_markdown: { type: 'string', description: 'the fix plan in superpowers:writing-plans format (accepted findings only)' },
+    plan_markdown: { type: 'string', description: 'the fix plan in checkbox-task markdown format (accepted findings only)' },
     ledger: {
       type: 'array',
       description: 'every finding keyed by stable_id with its final verdict',
@@ -218,7 +218,7 @@ const plan = await agent(
 1. Dedup by stable_id (merge findings at the same location with the same fix).
 2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict "conflict" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.
 3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex.
-4. Render plan_markdown in the superpowers:writing-plans format: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).
+4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).
 5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason. summary = human-readable rundown of everything not in the plan.
 
 ACCEPTED (with their findings):

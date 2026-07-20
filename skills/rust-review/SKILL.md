@@ -236,7 +236,7 @@ Report findings as `severity · file:line · [rule-id] · what · why · fix`. C
 
 ## Requesting a review & acting on the verdict
 
-Review early and often — small reviews catch issues while they're cheap; one giant review at the end catches them after they've compounded. Request after a feature or meaningful unit of work, before merging, when stuck, or after a complex bug fix. The generic *discipline* (request early/often) lives in `superpowers:requesting-code-review`; this section is craft's Rust-agent wiring.
+Review early and often — small reviews catch issues while they're cheap; one giant review at the end catches them after they've compounded. Request after a feature or meaningful unit of work, before merging, when stuck, or after a complex bug fix.
 
 Hand the reviewer a **crafted brief**, not your chat history:
 
@@ -250,11 +250,11 @@ In craft, dispatch the agents with that brief:
 - **`rust-security-scanner`** — security-sensitive changes (deps, `unsafe`, input handling) → `rust-security` verdict.
 - **`rust-miri`** — when the change touches `unsafe` (→ `rust-unsafe`).
 
-**Acting on the verdict** — working a set of findings to green (triage accept/reject/defer/needs-decision, order blocking → simple → complex, fix, verify, re-review, close the loop on GitHub) is its own discipline → `addressing-findings`; for a large batch it dispatches the `triage-findings` workflow. The generic "act without performing" method (verify-before-implement, no performative agreement, reasoned pushback) → `superpowers:receiving-code-review`.
+**Acting on the verdict** — working a set of findings to green (triage accept/reject/defer/needs-decision, order blocking → simple → complex, fix, verify, re-review, close the loop on GitHub) is its own discipline → `addressing-findings`; for a large batch it dispatches the `triage-findings` workflow.
 
 ## Proving a claim — what proves what
 
-The *discipline* — evidence before any "done / passes / fixed / works", no claim without a fresh run you read this session — lives in `superpowers:verification-before-completion`. The Rust commands that actually prove each claim:
+The Rust commands that actually prove each claim:
 
 | Claim | Proof (run it) | Not proof |
 |---|---|---|
@@ -278,4 +278,3 @@ State the claim **with** the evidence, or state the real status with the evidenc
 
 - *How* to write the missing tests → `rust-testing` skill (this rubric only flags that they're missing).
 - This skill judges; it does not rewrite. Propose the fix, let the author apply it.
-- The generic review/verify *discipline* → `superpowers:requesting-code-review`, `superpowers:receiving-code-review`, `superpowers:verification-before-completion`.
