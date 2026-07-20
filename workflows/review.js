@@ -21,6 +21,10 @@ const strict = !!(args && typeof args === 'object' && args.strict)   // harsh ma
 const requestedLangs = (args && typeof args === 'object' && Array.isArray(args.languages) && args.languages.length)
   ? args.languages.map(String) : null   // pin: restrict active profiles to these ids
 const freshArg = !!(args && typeof args === 'object' && args.fresh)   // force a full first-pass review, ignore any prior round
+// Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
+// code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
+// re-scan (stateless, like adversarial-review); 0 = never (pure incremental — the pre-guard behavior).
+const fullEvery = (args && typeof args === 'object' && args.fullEvery != null) ? Math.max(0, Number(args.fullEvery)) : 3
 
 // ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
 function rustDepContext(ctx) {
@@ -189,12 +193,13 @@ const LEDGER_ITEM = {
 const PRIOR_ROUND_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['found', 'round', 'head', 'ledger'],
+  required: ['found', 'round', 'head', 'ledger', 'priorFindings'],
   properties: {
     found: { type: 'boolean' },
     round: { type: 'integer', description: 'the prior round number; 0 when found=false' },
     head: { type: 'string', description: 'prior HEAD sha; empty when found=false' },
     ledger: { type: 'array', items: LEDGER_ITEM, description: 'prior findings with fp/symbol/tier/disposition; empty when found=false' },
+    priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
   },
 }
 
@@ -582,6 +587,29 @@ function selectPriorRound(indexEntries, { project, branch }) {
   return best
 }
 
+// A re-review scans lenses only over the fix delta (prevHead...HEAD) by default — cheap, but a defect
+// in code an intermediate round did not touch is never re-scanned; only the carried ledger keeps it
+// alive. Two pure guards close the resulting coverage holes (see the runtime use sites):
+//   ledgerDegraded — the prior round reported findings but persisted NO ledger (an older craft run, or
+//     one that failed to write one). The adjudicate track then has nothing to carry and the re-review
+//     silently degrades to a near-first-pass. Detect it to warn AND force a full re-scan.
+//   shouldFullRescan — every `fullEvery`-th re-review (and always when the ledger is degraded, or on a
+//     first review) re-scans the FULL base...HEAD diff so an earlier miss in untouched code resurfaces.
+//     fullEvery<=0 disables the periodic full scan (pure incremental).
+function ledgerDegraded(priorRound) {
+  if (!priorRound) return false
+  const findings = Number(priorRound.priorFindings || 0)
+  const ledgerLen = Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0
+  return findings > 0 && ledgerLen === 0
+}
+function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded }) {
+  if (!priorRound) return true            // a first review is already a full base...HEAD scan
+  if (degraded) return true               // nothing to carry — a delta-only scan would review almost nothing
+  const n = Number(fullEvery)
+  if (!Number.isFinite(n) || n < 1) return false
+  return Number(thisRound) % n === 0
+}
+
 // A finding is "tool-sourced" — deterministic and re-runnable, so a verifier may refute it ONLY by
 // re-running the tool — when it came from neither a review lens nor the negative-space lens nor
 // dep-context. dep-context is a *reasoning* seed from the gate (version-specific API misuse) with no
@@ -633,8 +661,8 @@ if (!freshArg && branch && head) {
 1. If \`~/.craft/runs/index.jsonl\` does not exist, return {found:false}.
 2. Read it. Select the newest line with kind="workflow", name="review", project=\`pwd\`, branch=${JSON.stringify(branch)} (newest = lexical-max ts). If none, return {found:false}.
 3. That line has a \`head\` field (a prior commit). Check ancestry: \`git merge-base --is-ancestor <priorHead> HEAD\` (exit 0 = ancestor). If NOT an ancestor (rebase/force-push/unrelated), return {found:false}.
-4. Reconstruct the full record path \`~/.craft/runs/<ts>-workflow-review.json\` from that line's ts, read it, and return {found:true, round:<its round>, head:<its head>, ledger:<its ledger array, or [] if absent>}.
-Best-effort: any error → {found:false}.`,
+4. Reconstruct the full record path \`~/.craft/runs/<ts>-workflow-review.json\` from that line's ts, read it, and return {found:true, round:<its round>, head:<its head>, ledger:<its ledger array, or [] if absent>, priorFindings:<its findings.total, or 0 if absent>}.
+Best-effort: any error → {found:false, round:0, head:"", ledger:[], priorFindings:0}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   if (!priorRound?.found) priorRound = null
@@ -651,9 +679,24 @@ Best-effort: any error → {found:false}.`,
 if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${flattenField(priorRound.head)} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
 else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 
+// Re-review coverage guards (see ledgerDegraded / shouldFullRescan). thisRound is the round number we
+// are about to record; reused for the record below.
+const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
+const priorLedgerDegraded = ledgerDegraded(priorRound)
+if (priorLedgerDegraded) {
+  log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
+}
+const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
-// regressions the fixes introduced. `fresh` (priorRound=null) keeps the full base...HEAD scan.
-const lensBase = priorRound ? priorRound.head : baseRef
+// regressions the fixes introduced. But every `fullEvery`-th round (and whenever the prior ledger is
+// degraded) we widen back to the FULL base...HEAD diff so a defect an earlier round missed in code it
+// never touched is re-discovered. `fresh` (priorRound=null) always keeps the full base...HEAD scan.
+const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
+if (priorRound) {
+  log(`Re-review round ${thisRound} lens scope: ${fullRescan
+    ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}) — earlier misses in untouched code are re-checked`
+    : `incremental delta ${flattenField(priorRound.head)}...HEAD (fix commits only)`}`)
+}
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
 // the detector missed (best-effort detection), honor the pin. If nothing matches, report and stop.
@@ -719,7 +762,9 @@ function lensPrompt(lens, priorSummary, profile, plan) {
 SLICE: ${profile.lensBrief[lens] || lens}
 ${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
 Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${lensBase ? `--merge-base ${shq(lensBase)}` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`.
-${priorRound ? `RE-REVIEW: you are reviewing ONLY the fix commits since the prior round (base ${flattenField(lensBase)}). Prior findings are adjudicated separately — do not re-report them; surface only NEW defects the fixes introduced.` : ''}
+${priorRound ? (fullRescan
+  ? `RE-REVIEW (full re-scan): review the WHOLE diff (base ${flattenField(lensBase)}...HEAD), not just the latest fixes — an earlier round may have missed a defect in code it did not touch. Prior findings are adjudicated separately and any you re-surface are de-duplicated downstream, so spend your effort on defects that are NOT already obviously known.`
+  : `RE-REVIEW: you are reviewing ONLY the fix commits since the prior round (base ${flattenField(lensBase)}). Prior findings are adjudicated separately — do not re-report them; surface only NEW defects the fixes introduced.`) : ''}
 ${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
 ${plan.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n"""\n${plan.spec}\n"""` : ''}
 ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}
@@ -1110,7 +1155,7 @@ function reviewRecord(extra) {
 }
 
 if (gateFailed.length) {
-  await logRun(reviewRecord({ verdict: 'Block', round: priorRound ? (priorRound.round || 1) + 1 : 1, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
+  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
   return [
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
@@ -1224,6 +1269,23 @@ Return {status, currentLine, note, invariant, attack}.`,
   log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${carryDied} carry died`)
 }
 
+// On a re-review, lenses can re-surface a finding that is already tracked on the adjudicate track —
+// always on a full re-scan (the lenses saw the whole diff), and even on the delta path when a fix
+// commit touches a still-open site. Drop new findings that match a still-LIVE prior
+// (still-open/regressed/carried) so they are not double-counted in the report or the persisted ledger.
+// Do NOT dedup against RESOLVED priors: a new finding matching a resolved one is a regression signal
+// and must survive.
+if (priorRound) {
+  const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried]
+  if (livePriors.length) {
+    const before = confirmed.length + suspected.length
+    confirmed = confirmed.filter(f => !livePriors.some(p => matchesPrior(f, p)))
+    suspected = suspected.filter(f => !livePriors.some(p => matchesPrior(f, p)))
+    const removed = before - (confirmed.length + suspected.length)
+    if (removed) log(`Re-review: dropped ${removed} new finding(s) already tracked as a still-live prior (kept on the adjudicate track, not double-counted)`)
+  }
+}
+
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
 const notRun = results.flatMap(r => r.notRun)
 const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
@@ -1233,7 +1295,7 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 // here would wrongly erase still-open/regressed priors.
 const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length)
 if (!confirmed.length && !suspected.length && !hasAdjudicated) {
-  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, round: priorRound ? (priorRound.round || 1) + 1 : 1, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
+  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = notRun.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy; fix the cause and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
@@ -1262,7 +1324,7 @@ CALIBRATE severities across the Confirmed set so the same kind of issue is not C
 
 DEDUPLICATE across lenses: findings that describe the same underlying defect (same file, same/overlapping lines, fixes that collapse into one edit) MUST be merged into ONE entry — keep the highest severity and the clearest why, credit the other lens in one clause. Never list per-lens duplicates as separate findings.
 
-${isRereview ? `This is a RE-REVIEW (round ${(priorRound.round || 1) + 1}). Produce, in order:
+${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 1. \`## Verdict\` — driven ONLY by Still-open + Regressed + New Confirmed findings (Block on any Critical/High; Warning on Medium; else Approve). Resolved and Carried NEVER change the verdict.${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
 3. \`## ✅ Resolved\` — prior findings the fixes closed (one line each); omit if empty.
@@ -1328,7 +1390,7 @@ const reviewLedger = isRereview
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', confirmed.includes(f) ? 'confirmed' : 'suspected'))
 await logRun(reviewRecord({
   verdict: recordVerdict + (notRun.length ? ' (INCOMPLETE)' : ''),
-  round: priorRound ? (priorRound.round || 1) + 1 : 1,
+  round: thisRound,
   findings: summarizeFindings(allReviewFindings),
   ledger: reviewLedger,
   dimensions: results.flatMap(r => r.plan.lenses.map(l => {
