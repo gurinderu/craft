@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.14.0](https://github.com/gurinderu/craft/compare/v0.13.1...v0.14.0) (2026-07-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* installing craft no longer pulls in superpowers, and craft skills no longer defer to it. Install your own process-discipline skills if you want that layer.
+
+### Features
+
+* make craft self-contained by dropping the superpowers dependency ([0e94eff](https://github.com/gurinderu/craft/commit/0e94efff116d3afc53960d33288a7f979c3a447e))
+
 ## [0.13.1](https://github.com/gurinderu/craft/compare/v0.13.0...v0.13.1) (2026-07-20)
 
 
