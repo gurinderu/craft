@@ -23,6 +23,11 @@ jobs:
       # Validate skill/agent frontmatter and that every internal craft:<slug> reference resolves.
       - name: Check skills & agents
         run: node lib/check-skills.mjs
+      # Static shape-check of the skill-triggering eval corpus (evals/evals.json): well-formed cases,
+      # every referenced skill exists. The model-based triggering evals themselves are a local
+      # harness (need a live model) — see evals/README.md — and are intentionally NOT run in CI.
+      - name: Check evals corpus
+        run: node lib/check-evals.mjs
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
       # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.
       - name: Validate plugin manifests

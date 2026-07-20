@@ -1,0 +1,252 @@
+[
+  {
+    "skills": ["rust-review"],
+    "query": "I've finished a Rust change on this branch. Do a Rust-only code review of the diff against main — run the cargo gate, apply the severity checklist, and tell me if it's mergeable with an Approve/Warning/Block verdict.",
+    "expected_behavior": [
+      "Selects rust-review (or the review workflow pinned to Rust).",
+      "Establishes the cargo quality gate (fmt/clippy/test) before judging.",
+      "Ends with an explicit Approve/Warning/Block verdict, not just a list of comments."
+    ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Before I publish this crate, review its public API against the Rust API Guidelines — naming, error types, and whether the surface is future-proof.",
+    "expected_behavior": [
+      "Selects rust-review and runs its public-API design pass (api-design.md against the C-guidelines).",
+      "Does not treat this as a generic idioms polish; it is a review-verdict task.",
+      "May cite rust-idioms / rust-ecosystem as owners for specific fixes, but rust-review drives."
+    ]
+  },
+  {
+    "skills": ["nix-review"],
+    "query": "Review my flake.nix and default.nix changes before I merge them.",
+    "expected_behavior": [
+      "Selects nix-review, NOT rust-review — the diff is Nix even though the ask is 'review before merge'.",
+      "Runs the Nix gate (nix flake check, statix, deadnix, formatter --check).",
+      "Keyword overlap on 'review'/'merge' must not pull the Rust reviewer."
+    ]
+  },
+  {
+    "skills": ["debugging"],
+    "query": "My Rust test passes locally but fails intermittently in CI — help me track down this heisenbug.",
+    "expected_behavior": [
+      "Selects debugging for the Rust-specific toolbox (repro shrinking, loom/Miri for heisenbugs, RUST_BACKTRACE).",
+      "Focuses on reproducing and localizing the flake before proposing a fix.",
+      "Does not jump to rust-concurrency internals until a root cause is found (may cite it once localized)."
+    ]
+  },
+  {
+    "skills": ["debugging"],
+    "query": "A regression showed up somewhere in the last 40 commits. I want to bisect to find exactly which commit broke it.",
+    "expected_behavior": [
+      "Selects debugging and reaches for git bisect / cargo bisect-rustc.",
+      "Treats bisection as localization, not a code-review or refactoring task."
+    ]
+  },
+  {
+    "skills": ["rust-ownership"],
+    "query": "I'm getting compile error E0499: cannot borrow `buf` as mutable more than once at a time. How do I restructure this?",
+    "expected_behavior": [
+      "Selects rust-ownership, NOT debugging — a borrow-checker error is an ownership fix, not a runtime bug hunt.",
+      "Explains the borrow conflict and offers a concrete restructuring.",
+      "The words 'error' and 'failing to compile' must not route this to the debugging toolbox."
+    ]
+  },
+  {
+    "skills": ["addressing-findings"],
+    "query": "The rust-audit report came back with about a dozen findings. Help me triage them and work through the fixes one by one.",
+    "expected_behavior": [
+      "Selects addressing-findings (its gather → normalize → triage → fix → verify loop), optionally scaling to triage-findings.",
+      "Delegates the how-to-fix of each finding to the relevant topic skill.",
+      "Does not itself re-run the review rubric; it consumes existing findings."
+    ]
+  },
+  {
+    "skills": ["addressing-findings"],
+    "query": "There are a bunch of unresolved reviewer comments on my PR. Walk me through resolving them and closing the threads on GitHub.",
+    "expected_behavior": [
+      "Selects addressing-findings — the fix loop for review findings and PR comments.",
+      "Normalizes comments to one schema and triages (accept/reject/defer/needs-decision/conflict).",
+      "Closes the GitHub loop at the end."
+    ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Review my diff and tell me what's wrong with it before I commit.",
+    "expected_behavior": [
+      "Selects rust-review (produce findings + verdict), NOT addressing-findings — no findings exist yet to fix.",
+      "addressing-findings is the downstream fix loop; do not invoke it to generate a review."
+    ]
+  },
+  {
+    "skills": ["rust-testing"],
+    "query": "Add property-based tests with proptest for this parser, plus a couple of table-driven rstest cases.",
+    "expected_behavior": [
+      "Selects rust-testing (proptest, rstest, test layout).",
+      "Writes real tests rather than only describing them.",
+      "Does not drift into perf benchmarking."
+    ]
+  },
+  {
+    "skills": ["rust-testing"],
+    "query": "How do I write an async integration test with #[tokio::test] and wire nextest into CI?",
+    "expected_behavior": [
+      "Selects rust-testing (async tests, integration tests, nextest, CI wiring).",
+      "Covers the runner setup, not just a single test body."
+    ]
+  },
+  {
+    "skills": ["rust-performance"],
+    "query": "I need a criterion benchmark to measure how fast this hashing function is.",
+    "expected_behavior": [
+      "Selects rust-performance, NOT rust-testing — benchmarks live in the performance skill.",
+      "Sets up criterion (or divan) with a measure-first framing.",
+      "The word 'measure' must not route this to the testing skill."
+    ]
+  },
+  {
+    "skills": ["rust-errors"],
+    "query": "Should I use thiserror or anyhow for this library's error type, and how should I structure the variants?",
+    "expected_behavior": [
+      "Selects rust-errors (thiserror-vs-anyhow decision, library-vs-app error design).",
+      "Recommends thiserror for a library and explains variant design/opacity."
+    ]
+  },
+  {
+    "skills": ["rust-errors"],
+    "query": "Design a retry-with-backoff and a circuit breaker around this flaky network call so it degrades gracefully.",
+    "expected_behavior": [
+      "Selects rust-errors (recovery: retry, fallback, circuit breaker).",
+      "Frames the failure as a domain failure to recover from, not a defect to panic on."
+    ]
+  },
+  {
+    "skills": ["rust-concurrency"],
+    "query": "A worker thread panicked while holding the Mutex and now every other thread hits a PoisonError. How do I handle the poisoning?",
+    "expected_behavior": [
+      "Selects rust-concurrency, NOT rust-errors — lock poisoning mechanics are owned by the concurrency skill.",
+      "Explains PoisonError recovery / into_inner and that a poisoned lock signals a prior defect.",
+      "The words 'error' and 'handle' must not route this to rust-errors."
+    ]
+  },
+  {
+    "skills": ["rust-ownership"],
+    "query": "The borrow checker rejects this with E0502 (cannot borrow as immutable because it is also borrowed as mutable). Help me restructure it.",
+    "expected_behavior": [
+      "Selects rust-ownership and explains the E0502 conflict.",
+      "Offers a concrete restructuring (split borrows, scope the mutable borrow, etc.)."
+    ]
+  },
+  {
+    "skills": ["rust-ownership"],
+    "query": "In this single-threaded tree, should I reach for Rc<RefCell<T>>, Box<T>, or Cow<'a, str>? I keep guessing.",
+    "expected_behavior": [
+      "Selects rust-ownership (smart pointers, interior mutability, Cow).",
+      "Frames the choice around single-threaded ownership, not cross-thread sharing.",
+      "Does not select rust-concurrency — there is no threading here."
+    ]
+  },
+  {
+    "skills": ["rust-concurrency"],
+    "query": "I want to share a counter across several tokio tasks and mutate it safely. Arc<Mutex>? And I'm getting 'future is not Send'.",
+    "expected_behavior": [
+      "Selects rust-concurrency, NOT rust-ownership — cross-task sharing and Send/Sync are concurrency.",
+      "Explains Arc<Mutex> sharing and diagnoses the 'future is not Send' error (e.g. a non-Send guard held across .await).",
+      "The presence of Arc/Mutex must not misroute this to the single-threaded ownership skill."
+    ]
+  },
+  {
+    "skills": ["rust-concurrency"],
+    "query": "Two of my threads deadlock intermittently. I think I'm holding a lock across an .await point. Help me fix it.",
+    "expected_behavior": [
+      "Selects rust-concurrency (deadlocks, holding a lock across await).",
+      "Explains why holding a std/parking_lot guard across .await deadlocks or breaks Send, and how to scope it."
+    ]
+  },
+  {
+    "skills": ["rust-ownership"],
+    "query": "How do I fix E0382: use of moved value `config`?",
+    "expected_behavior": [
+      "Selects rust-ownership, NOT rust-concurrency — a move error is single-value ownership.",
+      "Explains the move and offers clone/borrow/restructure options."
+    ]
+  },
+  {
+    "skills": ["nix-review"],
+    "query": "Is this Nix change mergeable? Run nix flake check and give me a verdict on the flake.",
+    "expected_behavior": [
+      "Selects nix-review (flake quality gate + verdict).",
+      "Runs nix flake check / formatter --check / statix / deadnix and issues Approve/Warning/Block.",
+      "Checks purity/reproducibility, not just formatting."
+    ]
+  },
+  {
+    "skills": ["nix-review"],
+    "query": "Review this flake for impure derivations and import-from-derivation before I merge it.",
+    "expected_behavior": [
+      "Selects nix-review and specifically checks purity/reproducibility (impure derivations, IFD).",
+      "Applies the Nix severity checklist and returns a verdict."
+    ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "Review my axum handler and sqlx query changes before I merge this PR.",
+    "expected_behavior": [
+      "Selects rust-review, NOT nix-review — axum/sqlx is Rust.",
+      "Runs the Rust cargo gate and severity checklist.",
+      "May cite rust-web for domain specifics, but the review engine is Rust."
+    ]
+  },
+  {
+    "skills": ["rust-performance"],
+    "query": "This hot loop is slow. Profile it, find where the time goes, and cut the heap allocations.",
+    "expected_behavior": [
+      "Selects rust-performance (measure-first, profiling, allocation reduction).",
+      "Insists on measuring/profiling before optimizing.",
+      "Does not treat this as a correctness bug hunt."
+    ]
+  },
+  {
+    "skills": ["rust-performance"],
+    "query": "My Rust build takes four minutes on every edit. How do I cut compile times — mold, sccache, codegen-units, incremental?",
+    "expected_behavior": [
+      "Selects rust-performance (compile-time / edit-compile-run loop tuning: mold/lld, sccache, codegen-units).",
+      "Addresses build speed, distinct from runtime performance."
+    ]
+  },
+  {
+    "skills": ["debugging"],
+    "query": "My program gives the wrong answer only when the input is large. Help me find the bug.",
+    "expected_behavior": [
+      "Selects debugging, NOT rust-performance — 'large input' is about correctness, not speed.",
+      "Reproduces and localizes the wrong-answer bug (shrink the repro) before proposing a fix.",
+      "The words 'large input' / 'only when' must not route this to the performance skill."
+    ]
+  },
+  {
+    "skills": ["specs"],
+    "query": "Turn this vague feature request into concrete Given/When/Then acceptance scenarios before we write any code.",
+    "expected_behavior": [
+      "Selects specs (specification by example, Given/When/Then, outside-in).",
+      "Produces concrete example scenarios that double as acceptance criteria.",
+      "Language-agnostic — does not jump straight to a Rust test framework."
+    ]
+  },
+  {
+    "skills": ["specs"],
+    "query": "Help me clarify the acceptance criteria for the checkout flow using BDD, working outside-in.",
+    "expected_behavior": [
+      "Selects specs (BDD/ATDD acceptance criteria, outside-in).",
+      "Focuses on defining behavior/examples, not on wiring a runner."
+    ]
+  },
+  {
+    "skills": ["rust-testing"],
+    "query": "I already have these Gherkin scenarios written. Set up the cucumber runner so they actually execute in my Rust project.",
+    "expected_behavior": [
+      "Selects rust-testing, NOT specs — running Gherkin scenarios (cucumber) is owned by the testing skill.",
+      "Wires up the cucumber crate and step definitions.",
+      "'Gherkin' must not route this to specs, which only owns writing the scenarios."
+    ]
+  }
+]
