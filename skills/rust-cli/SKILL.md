@@ -1,7 +1,7 @@
 ---
 name: rust-cli
 description: >-
-  Building command-line and terminal apps in Rust — argument parsing with clap, subcommands, config, output/exit-code conventions, and full-screen TUIs with ratatui. Use when building a CLI tool, parsing args/subcommands, designing command output, or writing an interactive terminal UI. Triggers: clap, subcommand, exit code, TUI, ratatui, crossterm, indicatif.
+  Command-line and terminal apps in Rust — argument parsing with clap, subcommands, config, output/exit-code conventions, and full-screen TUIs with ratatui. Use when building a CLI, parsing args/subcommands, designing output, or writing a terminal UI. Triggers: clap, subcommand, exit code, TUI, ratatui, crossterm, indicatif.
 ---
 
 # Rust CLI & TUI

@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather findings from craft review agents / rust-audit reports and GitHub PR comments, normalize to one schema, triage each against the code (accept/reject/defer/needs-decision/conflict), order them, fix (delegating how-to-fix to topic skills), verify each, re-review until green, and close the loop on GitHub. Use after a review or audit produces findings, when working through PR comments, or when deciding what to fix first. Triggers: address review comments, fix the findings, work through the review, triage findings, PR comments, act on the verdict, what to fix first, resolve review threads, rust-audit report.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, triage each against the code, order, fix, verify, and re-review until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings

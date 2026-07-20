@@ -1,7 +1,7 @@
 ---
 name: rust-ownership
 description: >-
-  Rust ownership, borrowing, lifetimes, smart pointers, and resource lifecycle — the mental model plus concrete fixes for borrow-checker errors. Use when fighting the borrow checker, deciding whether to take T / &T / &mut T, choosing Box/Rc/RefCell/Cow, returning references, resolving move/borrow/lifetime errors, writing an RAII/scope guard for cleanup, or lazily initializing a value. Triggers: borrow checker, cannot borrow, does not live long enough, Box, Rc, RefCell, Cow, RAII, scope guard, OnceLock, LazyLock, once_cell, E0382, E0499, E0502, E0505, E0507, E0515, E0597, E0106, E0716.
+  Rust ownership, borrowing, lifetimes, and smart pointers — the mental model plus concrete fixes for borrow-checker errors. Use when fighting the borrow checker, deciding between T / &T / &mut T, choosing Box/Rc/RefCell/Cow, returning references, writing an RAII/scope guard, or lazily initializing a value. Triggers: borrow checker, cannot borrow, does not live long enough, Rc, RefCell, Cow, RAII, OnceLock, E0382, E0499, E0515, E0597, E0716.
 ---
 
 # Rust Ownership

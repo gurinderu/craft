@@ -1,13 +1,7 @@
 ---
 name: nix-packaging
 description: >-
-  Nix derivations — stdenv.mkDerivation and the phase model, fixed-output hashes for src fetchers,
-  language-builder dependency hashes (cargoHash, vendorHash, npmDepsHash), the iterative
-  lib.fakeHash → copy-real-hash workflow, and meta attributes. Use when writing, debugging, or
-  reviewing a derivation, packaging a Rust/Go/Python/Node project for Nix, or dealing with hash
-  mismatches at build time. Triggers: mkDerivation, buildRustPackage, buildGoModule,
-  buildPythonPackage, buildNpmPackage, vendorHash, cargoHash, fetchFromGitHub, meta, nix-build,
-  derivation.
+  Nix derivations — stdenv.mkDerivation and the phase model, fixed-output hashes for src fetchers, language-builder dependency hashes (cargoHash, vendorHash, npmDepsHash), the lib.fakeHash → copy-real-hash workflow, and meta attributes. Use when writing, debugging, or reviewing a derivation, packaging a Rust/Go/Python/Node project, or fixing a hash mismatch. Triggers: mkDerivation, buildRustPackage, buildGoModule, vendorHash, cargoHash, fetchFromGitHub.
 ---
 
 # Nix Packaging

@@ -1,7 +1,7 @@
 ---
 name: nix-dev-env
 description: >-
-  Nix dev shells — pkgs.mkShell, devShells.default, direnv with use flake, writeShellApplication for lint-checked scripts, Nix formatters (alejandra, nixpkgs-fmt), linters (statix, deadnix), and pre-commit-hooks.nix wiring. Use when building or debugging a development environment in a flake, wiring direnv for auto-activation, scripting with writeShellApplication, or setting up Nix code quality gates. Triggers: devShell, mkShell, direnv, .envrc, use flake, writeShellApplication, nixpkgs-fmt, alejandra, statix, deadnix, pre-commit.
+  Nix dev shells — mkShell, devShells.default, direnv with use flake, writeShellApplication for lint-checked scripts, formatters (alejandra, nixpkgs-fmt), linters (statix, deadnix), and pre-commit-hooks.nix. Use when building or debugging a dev environment in a flake, wiring direnv, or setting up Nix quality gates. Triggers: devShell, mkShell, direnv, .envrc, writeShellApplication, alejandra, statix, deadnix, pre-commit.
 ---
 
 # Nix Dev Environments

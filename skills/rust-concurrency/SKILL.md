@@ -1,7 +1,7 @@
 ---
 name: rust-concurrency
 description: >-
-  Rust concurrency and async — threads vs async, Send/Sync, sharing with Arc/Mutex/RwLock, channels, tokio tasks, holding locks across await, and deadlocks. Use when parallelizing work, sharing state across threads, choosing threads vs async, fixing Send/Sync errors, or debugging deadlocks. Triggers: tokio, Send/Sync, mpsc, deadlock, cannot be sent between threads, future is not Send, blocking in async, rayon, parking_lot, poisoning.
+  Rust concurrency and async — threads vs async, Send/Sync, sharing with Arc/Mutex/RwLock, channels, tokio tasks, holding locks across await, and deadlocks. Use when parallelizing work, sharing state across threads, choosing threads vs async, or fixing Send/Sync errors and deadlocks. Triggers: tokio, Send/Sync, mpsc, deadlock, future is not Send, rayon, parking_lot.
 ---
 
 # Rust Concurrency
