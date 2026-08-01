@@ -256,6 +256,26 @@ need a crash, and a fuzzer has no oracle for it.
 Report: the invariant · enforced-at `file:line` · missing-mirror-at `file:line` · which axis · what
 the gap lets through (panic, silent drop, downgrade, accepted-but-should-be-rejected).
 
+### Proving one — the control/attack differential
+
+These findings have no crash to point at: the defect is that a value is *silently discarded* or a
+message that should be rejected is *accepted*. Build the oracle as an A/B where **exactly one
+variable changes**:
+
+- **CONTROL** — the benign arrangement; the value must arrive / the message must be rejected.
+- **ATTACK** — byte-for-byte the same construction with the one variable flipped; the loss or the
+  wrong-accept must appear.
+
+The oracle is the **delta**, not a panic. Assert both halves and exit non-zero unless CONTROL holds
+*and* ATTACK reproduces — then the reproducer doubles as the regression test, and a fix that breaks
+CONTROL cannot pass by making ATTACK stop firing.
+
+Reach the state through the crate's **own test helpers** (its `tests/common`, an internal
+`*-test` crate, a `#[cfg(feature = "test-util")]` surface) rather than hand-rolling the wire format
+or mocking the protocol. A PoC over a mock measures the mock. Then state plainly what the harness
+**demonstrated** versus what is **inferred** — "acceptance demonstrated at the API; on-path
+reachability inferred, not exercised" is an honest and much stronger claim than blurring the two.
+
 ## Premise grounding — cite it or drop the claim
 
 Most findings rest on a premise that is **not visible at the line they cite**: "the dependency
@@ -341,6 +361,8 @@ The Rust commands that actually prove each claim:
 | it builds | `cargo build --release` → exit 0 | clippy passing |
 | bug fixed | re-run the case that reproduced it → passes | code changed, "looks right" |
 | a panic is release-unreachable | re-run the repro under the shipping profile **and** state what release does instead (wrap? truncate? corrupt?) | `overflow-checks` is off in release |
+| a silent-loss / wrong-accept bug is real | a control/attack pair differing in ONE variable: CONTROL correct **and** ATTACK reproducing (above) | no panic, "the code clearly drops it" |
+| a defect is reachable from untrusted input | drive it through the real public entry point on crafted input | reproduced by constructing the state directly (builder/`new`/test fixture) |
 | regression test works | saw it RED before the fix, GREEN after | it's green now |
 | no vulns | `cargo audit` / `cargo deny check` clean | "deps look fine" |
 | coverage target met | `cargo llvm-cov --fail-under-lines N` | tests pass |
