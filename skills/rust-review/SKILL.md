@@ -29,7 +29,9 @@ PR isn't ready until the loop is green.
 
 ## Step 1 — Establish the gate (CI-aware)
 
-The mechanical gate is non-negotiable: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and (if installed) `cargo audit` / `cargo deny check` must be green before human-style review is worth doing. But **before running a check locally, ask whether CI already computed it on this PR; if a conclusive required check covers it and is green, consume that result instead of recomputing.** Re-running a cold build the PR already ran in CI is slow, sometimes impossible (no toolchain/network), and redundant.
+The mechanical gate is non-negotiable: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and (if installed) `cargo audit` / `cargo deny check` must be green before human-style review is worth doing. But **before running a check locally, ask whether CI already computed it on this PR; if a conclusive check covers it and is green, consume that result instead of recomputing.** Re-running a cold build the PR already ran in CI is slow, sometimes impossible (no toolchain/network), and redundant.
+
+**Green does not have to be `required`.** Most repositories have no branch protection — `isRequired` is then null on every check and `gh api …/branches/<b>/protection` returns 404 — so a rule that only consumes *required* checks never fires and always falls through to a local build. Required-ness governs whether a **red** check blocks the merge upstream; it says nothing about whether a **green** one is trustworthy. A passing job ran the project's own command on a clean machine with a warm cache; that is better evidence than anything reproducible locally.
 
 Establish each signal:
 
@@ -38,7 +40,7 @@ Establish each signal:
    gh pr checks --json name,state,bucket,link
    ```
    If `gh` is missing, unauthenticated, offline, or finds no PR → fall straight through to the local gate (never fail on detection).
-2. **`fmt` / `clippy` / `test` / `build`** — if a required check whose name matches the command (substring: `fmt`, `clippy`, `test`, `build`/`check`) is conclusive:
+2. **`fmt` / `clippy` / `test` / `build`** — if a check whose name matches the command (substring: `fmt`, `clippy`, `test`, `build`/`check`; match generously — `cargo nextest`, `just clippy`, `ci / test (stable)` all count) is conclusive — required or not:
    - green → treat that command as **PASSED**; record provenance `via CI · PR #N`;
    - failed → the gate is red: verdict **Block**, cite the failed check name + link, stop;
    - pending / absent / name unrecognized → run that command locally (the safe default is an extra run, never a skipped check):
@@ -328,7 +330,7 @@ In **strict mode**, the maintainability bar applies: a Confirmed maintainability
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md) catalog ID when the finding maps to one (e.g. `CON-003`); novel findings need no ID. Be specific and cite the line; a finding without a location isn't actionable.
 
-"Gate green / red" is read from Step 1 — the signal may come from a green required CI check or a local run. Cite which in the `## Gate` line of the output.
+"Gate green / red" is read from Step 1 — the signal may come from a green CI check or a local run. Cite which in the `## Gate` line of the output.
 
 ## Requesting a review & acting on the verdict
 
@@ -369,7 +371,7 @@ The Rust commands that actually prove each claim:
 | an agent finished | read the actual diff / its output | the agent said "success" |
 | requirements met | check each one against the spec | tests pass |
 
-A green **required CI check** for the same command is also valid proof of that command (see Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal exists — CI or local — not that you must re-run it yourself.
+A green **CI check** (required or not) for the same command is also valid proof of that command (see Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal exists — CI or local — not that you must re-run it yourself.
 
 State the claim **with** the evidence, or state the real status with the evidence. An earlier run, a "should pass", or a subagent's self-report is not evidence.
 
