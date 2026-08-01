@@ -12,19 +12,61 @@ export const meta = {
 }
 
 // ---- args ----
-const baseArg = (args && typeof args === 'object' && args.base) ? String(args.base) : ''
-const intentArg = (args && typeof args === 'object' && args.intent) ? String(args.intent) : ''
-const postComments = !!(args && typeof args === 'object' && args.comment)
-const pathArg = (args && typeof args === 'object' && args.path) ? String(args.path) : ''   // optional crate-scope (audit per-crate fan-out)
-const viaArg = (args && typeof args === 'object' && args._via) ? String(args._via) : ''   // set by a parent workflow (e.g. rust-audit)
-const strict = !!(args && typeof args === 'object' && args.strict)   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
-const requestedLangs = (args && typeof args === 'object' && Array.isArray(args.languages) && args.languages.length)
-  ? args.languages.map(String) : null   // pin: restrict active profiles to these ids
-const freshArg = !!(args && typeof args === 'object' && args.fresh)   // force a full first-pass review, ignore any prior round
+// A caller that passes args as a JSON *string* (easy to do, and what the Workflow tool receives if
+// the value is quoted) used to fail SILENTLY: every `typeof args === 'object'` guard below went
+// false, every option fell back to its default, and the run reviewed whatever repo the session sat
+// in — then reported a confident "Approve". Losing `repo`/`base`/`languages` without a word is the
+// worst possible failure for a review. Normalize the string form, and if it cannot be parsed, say so.
+const A = (() => {
+  if (typeof args === 'string' && args.trim()) {
+    try {
+      const parsed = JSON.parse(args)
+      if (parsed && typeof parsed === 'object') {
+        log('⚠️ args arrived as a JSON string, not an object — parsed it; pass a real object to avoid this')
+        return parsed
+      }
+    } catch (e) {
+      log(`⚠️ args arrived as a string that is not JSON (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      return {}
+    }
+    log('⚠️ args arrived as a non-object JSON scalar — ALL options ignored, running with defaults')
+    return {}
+  }
+  return (args && typeof args === 'object') ? args : {}
+})()
+const baseArg = A.base ? String(A.base) : ''
+const intentArg = A.intent ? String(A.intent) : ''
+const postComments = !!A.comment
+const pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
+// Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
+// it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
+// its own checkout — reviewing a PR in another repo silently reviewed craft instead.
+const repoArg = A.repo ? String(A.repo) : ''
+const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
+const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
+const requestedLangs = (Array.isArray(A.languages) && A.languages.length)
+  ? A.languages.map(String) : null   // pin: restrict active profiles to these ids
+const freshArg = !!A.fresh   // force a full first-pass review, ignore any prior round
 // Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
 // code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
 // re-scan (stateless, like adversarial-review); 0 = never (pure incremental — the pre-guard behavior).
-const fullEvery = (args && typeof args === 'object' && args.fullEvery != null) ? Math.max(0, Number(args.fullEvery)) : 3
+const fullEvery = (A.fullEvery != null) ? Math.max(0, Number(A.fullEvery)) : 3
+
+// A cold full-workspace build is the one step in this workflow that can run for an hour and take the
+// whole review down with it: a gate agent that sits in `cargo clippy` stops emitting, the harness
+// calls it stalled, re-dispatches it, and the replacement starts the same build from scratch. One
+// real run burned 99 minutes across six gate agents that way and returned nothing. craft already
+// treats an ABSENT tool as an intentional skip; a tool that cannot finish in budget is the same
+// thing — an unestablished signal, which is a fine review outcome, unlike a dead run.
+const GATE_TIME_BUDGET = `
+TIME BUDGET (hard): wrap EVERY build/lint/test command in \`timeout\` so the shell kills it instead of
+you waiting — e.g. \`timeout 600 cargo clippy … ; echo "EXIT=\${PIPESTATUS[0]}"\`. Allow roughly 10
+minutes for the primary gate command and 5 for each optional one. A command that hits the timeout is
+NOT a failure and NOT a retry: record that signal as unknown, say in notes which command timed out and
+after how long, and move on to the next one. Never re-run a timed-out build hoping it is faster the
+second time — the cache is no warmer and you will spend the whole review on it. status=fail is
+reserved for a check that actually RAN and came back red. If the primary gate times out, the review
+continues on the remaining signals with status=unknown — an incomplete gate beats a dead run.`
 
 // ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
 function rustDepContext(ctx) {
@@ -34,13 +76,22 @@ function rustGate(ctx) {
   return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
 GATE (CI-aware, per the rust-review skill — load it):
-1. Detect a PR + CI: \`gh pr checks --json name,state,bucket,link\` for the current branch. If gh is missing/unauthenticated/offline or no PR is found, fall through to the local gate.
-2. For build/test/clippy/fmt: if a conclusive green required CI check covers it, treat it as PASSED and record provenance "via CI #<n>"; if any such check FAILED, set status=fail and list it in failedChecks. If pending/absent, run it locally (\`cargo fmt --check\`, \`cargo clippy --all-targets -- -D warnings\`, \`cargo test\`).
+1. Detect a PR + CI: \`gh pr checks --json name,state,bucket,link\` for the current branch. If gh is missing/unauthenticated/offline or no PR is found, fall through to the local gate. Match generously: a check named \`cargo nextest\`, \`unit-tests\`, \`ci / test (stable)\` etc. all cover the TEST signal; \`just clippy\`, \`lint\`, \`clippy (stable)\` cover CLIPPY. A green check is the BEST evidence available — it ran on a clean machine with a warm cache and the project's real configuration. Prefer it over anything you could run here.
+
+1b. NEVER stand up infrastructure to satisfy this gate. If a check needs a database, a container, a broker, a network service or a fixture server, that check is CI's — do not start Postgres, run \`docker\`/\`docker compose\`, apply migrations, or seed anything. Record that signal as unknown with the reason ("integration tests need Postgres; not run locally — CI owns this"). You are establishing whether a DIFF is reviewable, not reproducing the build farm. A review that never starts is worth far less than one with an unestablished test signal.
+2. For build/test/clippy/fmt: if a conclusive GREEN check covers it, treat it as PASSED and record provenance "via CI #<n>". Do NOT require the check to be marked \`required\` — most repos have no branch protection at all (\`isRequired\` is then null for every check, and \`gh api …/branches/<b>/protection\` 404s), so demanding it would make this whole shortcut dead code and send you into a local build you did not need. Required-ness decides whether RED blocks a merge upstream; it says nothing about whether GREEN is trustworthy evidence — a passing job ran the project's real command on a clean machine. If a check covering fmt/clippy/test/build FAILED, set status=fail and list it in failedChecks (note whether it was required). A red check unrelated to those four is worth a line in notes, not a gate failure. Only when the signal is genuinely pending or absent, run it locally under the TIME BUDGET below.
+   TAKE THE PROJECT'S LINT SEMANTICS, USE YOUR OWN SCOPE AND FORMAT. First READ the project's lint recipe — a \`clippy\`/\`lint\` target in \`justfile\`/\`Makefile\`/\`Taskfile\`, an \`[alias]\` in \`.cargo/config.toml\`, or the step its CI workflow runs (\`.github/workflows/*.yml\`) — and lift its SEMANTIC flags: the feature selection (\`--all-features\`, \`--features …\`, \`--no-default-features\`) and every \`-A\`/\`-W\`/\`-D\` lint level it sets. Those decide verdicts: a project that allows \`clippy::too_many_arguments\` will otherwise get gate failures on lints it deliberately permits, and linting the wrong feature set lints code that never ships.
+   Then run it SCOPED and SHORT, which change only how much is built and how it prints, never what a lint says about a given crate:
+   \`cargo clippy -p <each changed package> --all-targets --message-format=short <their feature flags> -- <their -A/-W flags> -D warnings\`
+   Resolve the changed packages from the diff paths via \`cargo metadata --no-deps --format-version 1\`. Fall back to the whole workspace only when the diff genuinely spans it.
+   Note the trade-off in notes: a scoped run cannot see a break this change causes in a DEPENDENT crate elsewhere in the workspace. That is CI's job — and if CI covered clippy you should not be running this at all (step 2 above). When you scope, say so, and name the packages.
+   If the project defines no recipe, use \`cargo fmt --check\` and \`cargo clippy -p <changed> --all-targets --message-format=short -- -D warnings\`.
+   TESTS: run them locally ONLY if CI did not cover them AND they need no infrastructure (per 1b) — and then scoped, \`cargo test -p <changed package>\`, never the whole workspace. If the changed package's tests need a service, or a bare \`cargo test\` starts pulling one up, stop and record the test signal as unknown. Do not chase a green suite; that is not what this gate is for.
 3. Security tools (\`cargo audit\`, \`cargo deny check\`) always run locally if installed (cheap, usually absent from CI). A vulnerability with a fix is a fail.
 4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
 
 SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
-5. \`cargo clippy --all-targets -- -W clippy::pedantic -W clippy::nursery\` — turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these.
+5. Pedantic seeds (a SEPARATE, optional pass — never a substitute for the gate in step 2), on the SAME changed packages and the SAME feature flags you resolved there, so the two passes see the same code: \`cargo clippy -p <pkg> --all-targets --message-format=short <their feature flags> -- -W clippy::pedantic -W clippy::nursery\`. Only fall back to the whole workspace when the diff genuinely spans it. Keep the last ~200 diagnostic lines; if you truncate, SAY how many you dropped in notes — a silent cut reads as "there were only N". Turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these. This step is optional: if it exceeds the budget, skip it and note that the pedantic seeds are absent.
 ${ctx.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
 
 7. SAST seed (semgrep) — decide what configs apply, then run only if any do:
@@ -52,6 +103,7 @@ ${ctx.securitySensitive
 
 ${rustDepContext(ctx)}
 
+${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI (cite the check name). Never infer a pass. If the changed files are not part of a cargo project, do NOT fabricate a temporary crate/harness around them to lint or build — record build/clippy/test as not establishable (status=unknown) and say why in notes.
 
 Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`
@@ -73,6 +125,7 @@ SEED FINDINGS (tool grounding — scoped to the changed files):
 
 ${nixDepContext(ctx)}
 
+${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
 Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits.`
@@ -315,6 +368,13 @@ const ATTACK_SCHEMA = {
 // Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
 // prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
 // injected output cannot restyle the report or compound across re-review rounds.
+// The craft release that produced a run. Recorded on every run record and index line so an
+// aggregate can be filtered to ONE engine version: without it, "did tightening that lens help?"
+// is unanswerable, because the numbers blend runs from every rubric the store has ever seen.
+// MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs` fails the build if it drifts.
+// Pair it with craftCommit (the engine's git HEAD, added by the logger): the version identifies a
+// release, the commit separates two runs of the same release while the rubric is being edited.
+const CRAFT_VERSION = '0.13.1'
 const ATTACK_MAX = 500
 // Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
 // dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
@@ -453,9 +513,15 @@ function shouldRedTeam(r) {
 // retries) or is skipped. A single quiet re-dispatch recovers most API deaths. Budget-exceeded
 // THROWS and is deliberately not caught — retrying it would just throw again.
 const AGENT_TRIES = 2
+// Every prompt in this workflow goes through ragent, so this is the one place that can retarget the
+// whole review at another checkout. Prepended (not appended) because it has to win over the git
+// commands the individual prompts spell out; shq() because the path is an argument to a real `cd`.
+const REPO_DIRECTIVE = repoArg
+  ? `WORKING DIRECTORY: this review targets the repository at ${shq(repoArg)} — NOT the directory you start in. Before ANY git / cargo / nix / file command, \`cd\` there (or pass \`git -C\`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\n`
+  : ''
 async function ragent(prompt, opts = {}) {
   for (let attempt = 1; ; attempt++) {
-    const res = await agent(prompt, attempt === 1 ? opts : { ...opts, label: `retry:${opts.label || 'agent'}` })
+    const res = await agent(`${REPO_DIRECTIVE}${prompt}`, attempt === 1 ? opts : { ...opts, label: `retry:${opts.label || 'agent'}` })
     if (res !== null && res !== undefined) return res
     if (attempt >= AGENT_TRIES) return null
     log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
@@ -503,6 +569,9 @@ function finalVerdict(confirmed) {
 function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
+    // craftVersion/craftCommit must ride in the INDEX, not just the detail file: the whole point is
+    // filtering an aggregate down to one engine version, and that is done by scanning index.jsonl.
+    craftVersion: r.craftVersion ?? null, craftCommit: r.craftCommit ?? null,
     project: r.project, commit: r.commit, dirty: r.dirty,
     branch: r.branch ?? null, head: r.head ?? null, round: r.round ?? 0,
     verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
@@ -515,9 +584,10 @@ async function logRun(record) {
     `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
 Steps:
 1. \`mkdir -p ~/.craft/runs\`.
-2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\` prints anything, else false.
-3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
-4. Take INDEX below, add the same four fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
+2a. CRAFT_COMMIT (best-effort, one line): \`git -C "\${CLAUDE_PLUGIN_ROOT:-.}" rev-parse --short HEAD 2>/dev/null\` — the engine's OWN commit, which is what separates two runs of the same released version while the rubric is being edited. Empty string if it cannot be resolved; never fail over this.
+2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\`prints anything, else false.
+3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY,"craftCommit":CRAFT_COMMIT}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
+4. Take INDEX below, add the same five fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
 5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
 Best-effort: if anything fails, report it but do NOT error the run.
 
@@ -651,7 +721,7 @@ Return baseRef (the ref you resolved, empty string if none), files (the changed 
 // produce a misleading "Approve — no supported language" on an empty file list.
 if (!detected) {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection'], outputTokens: budget.spent(),
   })
   return [`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n')
@@ -718,7 +788,7 @@ let active = Object.values(PROFILES).filter(p => (!requestedLangs || requestedLa
 if (!active.length && requestedLangs) active = requestedLangs.map(id => PROFILES[id]).filter(Boolean)
 if (!active.length) {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'Approve (NO LANGUAGE)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], outputTokens: budget.spent(),
   })
   return [`## Verdict`, `✅ Approve — no supported language (Rust/Nix) found in this diff; nothing to review.`, ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`].join('\n')

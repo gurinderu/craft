@@ -26,7 +26,7 @@ lens worker apply.
 The mechanical gate is non-negotiable: formatter `--check`, `statix check`, `deadnix`,
 `nix flake check`, and `nix build` / `nix eval` must be green before human-style review is worth
 doing. But **before running a check locally, ask whether CI already computed it on this PR; if a
-conclusive required check covers it and is green, consume that result instead of recomputing.**
+conclusive check covers it and is green (required or not — most repos have no branch protection, so demanding `required` would make this shortcut dead code; required-ness governs whether RED blocks a merge, not whether GREEN is trustworthy), consume that result instead of recomputing.**
 
 Establish each signal:
 
@@ -37,7 +37,7 @@ Establish each signal:
    If `gh` is missing, unauthenticated, offline, or finds no PR → fall straight through to the
    local gate (never fail on detection).
 
-2. **Formatter** — if a required check whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`,
+2. **Formatter** — if a conclusive check (required or not) whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`,
    `format`) is conclusive:
    - green → **PASSED** (record provenance `via CI · PR #N`);
    - failed → gate red → **Block**;
@@ -52,7 +52,7 @@ Establish each signal:
    deadnix --fail
    ```
 
-4. **Flake check / build / eval** — if a required check matching `flake-check`, `nix build`, or
+4. **Flake check / build / eval** — if a conclusive check (required or not) matching `flake-check`, `nix build`, or
    `nix eval` is conclusive:
    - green → **PASSED**;
    - failed → gate red → **Block**;
@@ -210,7 +210,7 @@ Report findings as `severity · file:line · [rule-id] · what · why · fix`. C
 catalog ID when the finding maps to one (e.g. `PUR-001`); novel findings need no ID. Be specific
 and cite the line; a finding without a location isn't actionable.
 
-"Gate green / red" is read from Step 1 — the signal may come from a green required CI check or a
+"Gate green / red" is read from Step 1 — the signal may come from a green CI check or a
 local run. Cite which in the `## Gate` line of the output.
 
 ## Proving a claim — what proves what
@@ -228,7 +228,7 @@ local run. Cite which in the `## Gate` line of the output.
 | secret not in store | runtime secret management confirmed (agenix/sops-nix) | "looks encrypted" |
 | bug fixed | re-run the case that reproduced it → passes | code changed |
 
-A green **required CI check** for the same command is also valid proof of that command (see
+A green **CI check** (required or not) for the same command is also valid proof of that command (see
 Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal
 exists — CI or local — not that you must re-run it yourself.
 
