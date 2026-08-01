@@ -50,11 +50,12 @@ const RAW_SCHEMA = {
 const VALIDATION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['stable_id', 'verdict', 'reason', 'fix_pointer'],
+  required: ['stable_id', 'verdict', 'reason', 'fix_pointer', 'premise_checked'],
   properties: {
     stable_id: { type: 'string', description: 'composite identity: source::location::title' },
     verdict: { type: 'string', description: 'accept | reject | defer | needs-decision' },
     reason: { type: 'string', description: 'one line justifying the verdict against the code' },
+    premise_checked: { type: 'string', description: 'the file:line you actually opened to settle the verdict\'s load-bearing premise when it lives outside the cited location — a dependency\'s behaviour, reachability, what a caller or sibling does. Applies to reject exactly as much as to accept. Empty string only when the cited location alone settled it' },
     fix_pointer: { type: 'string', description: 'owning craft skill + one-line fix direction; empty unless accept' },
   },
 }
@@ -179,7 +180,9 @@ const validations = (await parallel(raw.map(f => () => {
   // re-validated (the code may have changed since); `conflict` is a cross-finding judgement, so it
   // is re-derived fresh in the Plan phase rather than carried as a stale solo verdict.
   if (prior && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
-    return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '' })
+    // Carried verdicts skip the agent, so they carry no fresh premise check — say so rather than
+    // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
+    return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
   }
   return agent(
     `Judge ONE review finding against the actual code. ${pin}
@@ -196,6 +199,8 @@ Read the cited code, then decide ONE verdict:
 - reject — not a real problem / wrong; explain why (this becomes reviewer pushback).
 - defer — real but out of scope now; say why.
 - needs-decision — valid but needs a product/spec decision, OR the finding has no resolvable location; say what is needed.
+
+PREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: "a caller must already validate this" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified.
 
 stable_id MUST be exactly: ${id}
 Keep reason to one line. fix_pointer empty unless verdict is accept.`,
