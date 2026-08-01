@@ -104,6 +104,7 @@ them by `agentType` — internal to the plugin, no external dependency).
 
 ## Documentation
 
+- `docs/LESSONS.md` — operational lessons not derivable from the code: stable-numbered evidence entries folded into principles. Add one when something was learned at a cost.
 - `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the `rust-review` / `rust-audit` / `triage-findings` workflows and the review agents.
 
 ## Cross-cutting skills (language-agnostic)
