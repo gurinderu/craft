@@ -86,6 +86,9 @@ PROFILES.rust = {
   diffGlobs: ["'*.rs'"],
   rubricSkill: 'rust-review',
   fpRules: 'fp-rules.md', // exclusion catalog (FP-*/KEEP-*); '' for a profile that ships none
+  // Rules whose per-occurrence reporting buries the review — capped mechanically by rollupPool.
+  // Only completeness nits belong here: never a rule whose individual instances carry distinct risk.
+  rollupRuleIds: ['API-001', 'API-003', 'API-004', 'API-005'],
   navSkill: 'rust-navigation',
   reviewerAgent: 'craft:rust-reviewer',
   securityHints: 'auth, crypto, input parsing, unsafe, FFI, or dependencies',
@@ -120,6 +123,7 @@ PROFILES.nix = {
   diffGlobs: ["'*.nix'", "'flake.lock'"],
   rubricSkill: 'nix-review',
   fpRules: '',
+  rollupRuleIds: [],
   navSkill: '',
   reviewerAgent: 'craft:nix-reviewer',
   securityHints: 'secrets handling (agenix/sops-nix), fetchers/hashes, module security options, or build-script interpolation',
@@ -312,6 +316,9 @@ const ATTACK_SCHEMA = {
 // prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
 // injected output cannot restyle the report or compound across re-review rounds.
 const ATTACK_MAX = 500
+// Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
+// dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
+const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
   // `REGRESSED after fix` marker word to a plain space. The words survive (no content loss) but the
@@ -830,7 +837,6 @@ Return {refuted, citedLineMatches, reachable, premiseSupported, reason}.`
 // wording the same defect differently both enter the pool — and each duplicate would buy its own
 // verifier fan-out. A cheap grouping pass merges same-defect findings first; synthesis keeps its
 // own dedup instruction as a safety net.
-const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 const DEDUP_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -843,6 +849,43 @@ const DEDUP_SCHEMA = {
     },
   },
 }
+// Mechanical roll-up of high-volume, low-value rule IDs. The api-idioms lens brief already ASKS for
+// this ("do NOT file one finding per occurrence — roll repeated instances into ONE finding"), and the
+// run store shows it is not obeyed: one lens produced 126 confirmed findings over 21 runs, 100 of
+// them Low/Info. An instruction the model can quietly skip is not a cap; this is. The excess is
+// folded into the representative finding rather than dropped, and the count is stated in the title
+// and logged — a silent truncation would read as "there were only N", which is worse than the flood.
+const ROLLUP_MAX = 3
+function rollupPool(pool, profile) {
+  const ids = profile.rollupRuleIds || []
+  if (!ids.length) return pool
+  const groups = new Map()
+  const out = []
+  for (const f of pool) {
+    const id = f.ruleId || ''
+    if (!ids.includes(id)) { out.push(f); continue }
+    const k = `${f.source || ''}::${id}`
+    const g = groups.get(k) || (groups.set(k, []), groups.get(k))
+    g.push(f)
+  }
+  for (const [, g] of groups) {
+    // Order by severity so the representative is the worst instance, not an arbitrary one.
+    const sorted = g.slice().sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
+    if (sorted.length <= ROLLUP_MAX) { out.push(...sorted); continue }
+    const keep = sorted.slice(0, ROLLUP_MAX)
+    const folded = sorted.slice(ROLLUP_MAX)
+    const rep = folded[0]
+    const where = folded.slice(0, 6).map(f => `${f.file || '?'}:${f.line || 0}`).join(', ')
+    out.push(...keep, {
+      ...rep,
+      title: `${rep.title} — and ${folded.length - 1} more of the same (${rep.ruleId})`,
+      why: `${rep.why} Repeated ${folded.length} more times across the diff (${where}${folded.length > 6 ? ', …' : ''}); rolled into one finding because per-occurrence reporting of this rule buries the rest of the review. Fix the pattern, not the instance.`,
+    })
+    log(`[${profile.id}] Roll-up: ${g.length}× ${rep.ruleId} from '${rep.source}' → ${keep.length} individual + 1 grouped`)
+  }
+  return out
+}
+
 async function dedupPool(pool, profile) {
   if (pool.length < 2) return pool
   const isToolSrc = f => isToolSource(profile, f.source)
@@ -1025,7 +1068,7 @@ async function reviewProfile(profile) {
   const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
   if (gateStatus === 'fail') {
-    return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
+    return { profile, plan, ranLenses: [], gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -1101,13 +1144,18 @@ async function reviewProfile(profile) {
     notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
     log(`⚠️ [${profile.id}] ${droppedLenses.length} lens(es) never returned (${reasons}). Review marked INCOMPLETE.`)
   }
+  // `ranLenses` rides along to the record: the dimension rows are built from plan.lenses, so a lens
+  // that never returned still gets a row reading 0 findings — indistinguishable from a lens that ran
+  // and found nothing. That is the difference between "redundant, consider dropping it" and "broken,
+  // fix it", and the yield analysis inverts on it.
+  const ranLenses = plan.lenses.filter(l => ranAtLeastOnce.has(l))
   if (!pool.length) {
-    return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
   }
 
   // ---- Verify ----
   phase('Verify')
-  const deduped = await dedupPool(pool, profile)
+  const deduped = await dedupPool(rollupPool(pool, profile), profile)
   let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, gateProvenance)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
 
@@ -1150,7 +1198,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
 }
 
 // ================= Run each active profile, then merge =================
@@ -1424,7 +1472,11 @@ await logRun(reviewRecord({
     const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
     const suspectedCount = r.suspected.filter(f => (f.source || '') === l).length
     const refutedCount = (r.refuted || []).filter(f => (f.source || '') === l).length
-    return { dimension: `${r.profile.id}:${l}`, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount }
+    // `ran` distinguishes "executed and found nothing" from "never returned". Both otherwise render
+    // as a 0-finding row, and the yield analysis would read a broken lens as a redundant one.
+    // Absent `ranLenses` (a record written before this landed) → assume it ran, the old behaviour.
+    const ran = r.ranLenses ? r.ranLenses.includes(l) : true
+    return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount }
   })),
   verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
   notRun,
