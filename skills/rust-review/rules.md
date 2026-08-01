@@ -16,6 +16,8 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **SAF-004** | CRITICAL | User-controlled path used without canonicalize + prefix check (traversal) | `rust-security` |
 | **SAF-005** | CRITICAL | Hardcoded secret / key / token / password in source | `rust-security` |
 | **SAF-006** | CRITICAL | Deserializing untrusted input without size/depth limits | `rust-security` |
+| **SAF-007** | HIGH | Untrusted-input arithmetic whose outcome **diverges between build profiles** — a dev/test `overflow-checks` panic that wraps silently in release. Grade against the shipping profile and report what release does *instead* | `rust-errors`, `rust-security` |
+| **SAF-008** | CRITICAL | `debug_assert!` as the only guard on an `unsafe` precondition or other load-bearing invariant — it compiles out in release, so the shipped binary runs unguarded | `rust-unsafe`, `rust-performance` |
 | **ERR-001** | CRITICAL | Recoverable failure handled with `panic!`/`unwrap` instead of `Result` | `rust-errors` |
 | **ERR-002** | CRITICAL | `let _ = result;` silently dropping a `#[must_use]` / error value | `rust-errors` |
 | **ERR-003** | MEDIUM | Library returns `Box<dyn Error>` / `anyhow::Error` instead of a typed error | `rust-errors` |

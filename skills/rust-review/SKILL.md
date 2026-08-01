@@ -97,12 +97,18 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - User-controlled path used without canonicalize + prefix check (traversal)
 - Hardcoded secret / key / token / password in source
 - Deserializing untrusted input without size/depth limits
+- `debug_assert!` carrying a load-bearing invariant — an `unsafe` precondition, a bounds/length check, a trust-boundary validation. It compiles out in `--release`, so the shipped binary runs unguarded; a safety-critical check must be a real `assert!` (→ `rust-unsafe`; when `debug_assert!` *is* the right call → `rust-performance`)
 
 **Error handling**
 - Recoverable failure handled with `panic!`/`unwrap` instead of `Result`
 - `let _ = result;` silently dropping a `#[must_use]` / error value
 
 ### HIGH — block unless justified
+
+**Safety — build-profile divergence**
+- Arithmetic on an untrusted-input path whose **outcome differs between the dev/test and the shipping profile**. `overflow-checks` is on in `dev`/`test` and off in `release` by default, so the same expression panics under review and wraps silently in production.
+
+  Grade against the profile the project actually ships — read `[profile.release]` in the crate and workspace root before assuming, it may be re-enabled there. The profile-gated panic is the **floor of the impact, not the ceiling**: a panic that vanishes in release is not thereby harmless. Ask what the release build does *instead* — a silent wrap that truncates a length, misresolves an index, or corrupts state is worse than the panic precisely because nothing reports it. "Doesn't reproduce in release, moving on" is the reflex that misses it. Report both facets.
 
 **Ownership & lifetimes**
 - `.clone()` added to silence the borrow checker without understanding why
@@ -169,7 +175,7 @@ others (higher recall than one broad pass):
 
 | Lens | Slice | Owning skill for the fix |
 |---|---|---|
-| safety | injection / secrets / unsafe / untrusted-input limits | `rust-security`, `rust-unsafe` |
+| safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | ownership | needless clone, `&str`/`&[T]`, lifetimes | `rust-ownership` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
@@ -264,6 +270,7 @@ The Rust commands that actually prove each claim:
 | formatted | `cargo fmt --check` | "I ran fmt earlier" |
 | it builds | `cargo build --release` → exit 0 | clippy passing |
 | bug fixed | re-run the case that reproduced it → passes | code changed, "looks right" |
+| a panic is release-unreachable | re-run the repro under the shipping profile **and** state what release does instead (wrap? truncate? corrupt?) | `overflow-checks` is off in release |
 | regression test works | saw it RED before the fix, GREEN after | it's green now |
 | no vulns | `cargo audit` / `cargo deny check` clean | "deps look fine" |
 | coverage target met | `cargo llvm-cov --fail-under-lines N` | tests pass |
