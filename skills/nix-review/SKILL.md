@@ -167,6 +167,22 @@ findings (each still verified): `statix check` (anti-idioms), `deadnix --fail` (
 `nix flake check --all-systems` (eval errors, cycle detection), and `nix build --dry-run`
 (missing dependencies). Optional tools degrade gracefully when absent.
 
+## Premise grounding — cite it or drop the claim
+
+Most findings rest on a premise **not visible at the line they cite**: "that flake input provides
+this", "the module default is X", "no other module sets it", "the fetcher is already pinned
+upstream". Nix makes this especially easy to get wrong — the truth usually lives in a locked input's
+own source or in a module merged from elsewhere, not in the file under review.
+
+Pin every off-site premise to a `file:line` you **actually opened** (the locked input's source
+included — `nix flake metadata` / the store path) and report it in the finding's `whereChecked`. A
+premise you did not open is not admissible: open it, or drop the claim and report only what the
+cited line shows. This binds **rejection** as much as confirmation — dismissing a finding on an
+unopened "the module already sets that" discards a real bug silently.
+
+An unpinnable off-site premise costs a finding its Confirmed tier — it drops to Suspected, never to
+refuted. Unsupported is not disproven.
+
 ## Verification protocol
 
 Every finding (lens or seed) is checked before it can be Confirmed:

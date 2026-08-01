@@ -27,6 +27,13 @@ gives no lens, review the whole diff against the full rubric.
 
 4. **Apply the rubric** for your slice, walking CRITICAL → HIGH → MEDIUM tiers.
 
+   **Ground every off-site premise.** A finding usually rests on a claim that is not visible at the
+   line it cites — "the dependency rejects this", "reachable from untrusted input", "no caller
+   guards it". Open that code (dependency sources included) and report the `file:line` in
+   `whereChecked`; a premise you did not open is not admissible — open it or drop the claim. This
+   binds rejection too: dismissing a finding on an unopened "a caller already validates this"
+   discards a real bug silently. See the rust-review skill → *Premise grounding*.
+
 5. **Report everything you suspect — do not self-censor.** Borderline findings are surfaced, not
    dropped; downstream verification decides Confirmed vs Suspected. Each finding cites
    `severity · file:line · what · why · fix`. Use an empty location only when truly not locatable.

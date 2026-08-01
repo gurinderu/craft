@@ -211,6 +211,26 @@ security-sensitive (auth, crypto, input parsing, unsafe, FFI, deps). semgrep res
 gate failures: taint/secrets over-report, so the downstream verification refutes the false positives
 (see `rust-security`). Optional tools degrade gracefully when absent.
 
+## Premise grounding — cite it or drop the claim
+
+Most findings rest on a premise that is **not visible at the line they cite**: "the dependency
+rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path
+does X". That off-site premise is the claim a review most reliably invents — and a second, smarter
+reading does not catch it, because it reproduces the same assumption. Only opening the code does.
+
+So every off-site premise is pinned to a `file:line` you **actually opened** — dependency sources
+included (`~/.cargo/registry`, the vendored tree) — and reported in the finding's `whereChecked`.
+A premise you did not open is not admissible: open it, or drop the claim and report only what the
+cited line itself shows.
+
+This binds **rejection** exactly as much as confirmation. "A caller already validates this," waved
+through without opening the caller, is the same unfounded claim as the finding it dismisses — and
+it discards a real bug silently. Uncertain and unable to check? That is Suspected, not a rejection.
+
+An off-site premise nobody could pin costs a finding its Confirmed tier — it drops to Suspected,
+never to refuted. Unsupported is not disproven, and burying it as "refuted" would keep a possibly
+real defect out of every later round.
+
 ## Verification protocol
 
 Every finding (lens or seed) is checked before it can be Confirmed:

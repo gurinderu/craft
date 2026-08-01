@@ -145,13 +145,14 @@ PROFILES.nix = {
 const FINDING_ITEM = {
   type: 'object',
   additionalProperties: false,
-  required: ['severity', 'title', 'file', 'line', 'why', 'fix', 'blastRadius', 'source', 'ruleId'],
+  required: ['severity', 'title', 'file', 'line', 'why', 'fix', 'blastRadius', 'source', 'ruleId', 'whereChecked'],
   properties: {
     severity: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low', 'Info'] },
     title: { type: 'string', description: 'one-line what is wrong' },
     file: { type: 'string', description: 'path; empty string if not applicable' },
     line: { type: 'integer', description: '1-based line; 0 if not applicable' },
     why: { type: 'string', description: 'why it matters' },
+    whereChecked: { type: 'string', description: 'OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise that lives OUTSIDE the cited defect site — a dependency\'s behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Several may be comma-separated, each with a few words on what it shows. Empty string ONLY when the finding is fully self-contained at the cited file:line and rests on no off-site claim' },
     fix: { type: 'string', description: 'direction of the fix' },
     blastRadius: { type: 'string', description: 'callers affected / breaking-change note; empty if n/a' },
     source: { type: 'string', description: 'lens name or tool name that produced this' },
@@ -261,11 +262,12 @@ const FINDINGS_SCHEMA = {
 const VERDICT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['refuted', 'citedLineMatches', 'reachable', 'reason'],
+  required: ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported', 'reason'],
   properties: {
     refuted: { type: 'boolean', description: 'true if the finding does not hold up' },
     citedLineMatches: { type: 'boolean', description: 'true if the cited file:line actually contains what the finding claims' },
     reachable: { type: 'boolean', description: 'true if the path is reachable in production (not test/example-only)' },
+    premiseSupported: { type: 'boolean', description: 'true if the load-bearing premise is either self-contained at the cited line or actually shown by the code at whereChecked; false if it is an off-site claim with no evidence that checks out' },
     reason: { type: 'string' },
   },
 }
@@ -338,6 +340,9 @@ function promptFields(f) {
     ruleId: flattenField(f.ruleId) || '—',
     file: flattenField(f.file),
     severity: flattenField(f.severity),
+    // A locator field like file/symbol: paths and identifiers are load-bearing (the verifier is
+    // told to OPEN it), so flatten newlines but keep `_ < > [ ]` intact — see flattenField.
+    whereChecked: flattenField(f.whereChecked),
   }
 }
 // POSIX single-quote shell-escaper for a model-authored value that lands in a shell command a
@@ -772,6 +777,7 @@ ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}`
 CONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob${profile.navSkill ? ' + LSP' : ''}) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
 BLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in \`blastRadius\`.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
+WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Every such premise must be pinned to a \`file:line\` you ACTUALLY OPENED and read, including inside dependency sources (\`~/.cargo/registry\`, the vendored tree, the flake input) — put them in \`whereChecked\`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set \`whereChecked\` to "" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing.
 RULE ID (required field): set \`ruleId\` to the matching catalog ID from the ${profile.rubricSkill} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
 ${profile.id === 'rust' && lens === 'tests' && (plan.sizeBucket === 'medium' || plan.sizeBucket === 'large') ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to surface contracts no test would catch a regression on; skip silently if absent.' : ''}
 ALREADY-FOUND (do not repeat; look for what these MISSED):
@@ -798,6 +804,7 @@ FINDING: [${pf.severity}] ${pf.title}
   at ${pf.file || '?'}:${f.line || 0}
   why: ${why}
   source: ${src}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — the finding claims to be self-contained at the cited line)'}
 
 MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${gateProvenance ? ` The gate invoked the tools as: "${flattenField(gateProvenance)}" — if a tool is not on PATH, reproduce the gate's invocation (e.g. \`nix run nixpkgs#<tool> --\`) before declaring it unrunnable.` : ''}${isTool ? ' If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
 
@@ -807,8 +814,9 @@ Open the cited file and check:
 1. citedLineMatches: does ${pf.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
 2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.)
 3. refuted: is the technical claim itself false? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.'})
+4. premiseSupported: identify the finding's LOAD-BEARING premise — the one claim that, if false, makes the finding evaporate. If it lives outside the cited line (the dependency behaves this way, this is reachable from untrusted input, no caller guards it, the sibling does X), OPEN the \`whereChecked\` location and check it actually shows that. premiseSupported=false when the premise is off-site and \`whereChecked\` is empty, points somewhere that does not show it, or merely restates the cited line. premiseSupported=true when the finding is genuinely self-contained at the cited line, or the off-site evidence checks out. Do NOT set refuted=true just because a premise is uncited — unsupported is not disproven; that is what this field is for, and it demotes the finding downstream instead of killing it.
 
-Return {refuted, citedLineMatches, reachable, reason}.`
+Return {refuted, citedLineMatches, reachable, premiseSupported, reason}.`
 }
 
 // Cross-lens dedup BEFORE verification. key() above is exact (file:line:title), so two lenses
@@ -860,7 +868,10 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
     // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
     // escalation) still fires when its trigger lens was merged into a different-source base.
     const sources = [...new Set(members.map(m => m.source).filter(Boolean))]
-    merged.push({ ...base, sources, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
+    // Union the off-site evidence too: a merged-away member may have pinned the premise the base
+    // only asserted, and dropping it would cost the group its Confirmed tier at verification.
+    const whereChecked = [...new Set(members.map(m => m.whereChecked).filter(Boolean))].join('; ')
+    merged.push({ ...base, sources, whereChecked, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
   }
   if (!merged.length) return pool
   const out = pool.filter((_f, i) => !inGroup.has(i)).concat(merged)
@@ -893,12 +904,20 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       const half = v.length / 2
       const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
       const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
+      // An off-site premise nobody could pin to real code is UNSUPPORTED, not disproven — the
+      // classic over-claim (a dependency's behaviour, reachability) that a "smarter" reviewer
+      // reproduces rather than catches. Structural, not exhortative: it costs the finding its
+      // Confirmed tier and so its power over the verdict, but never deletes it.
+      const premiseOk = v.filter(x => x.premiseSupported).length >= Math.ceil(half)
       const refutes = v.filter(x => x.refuted).length
       let tier
       if (!lineOk) tier = 'refuted'            // hallucinated citation
       else if (refutes > half) tier = 'refuted'
       else if (refutes === 0) tier = 'confirmed'
       else tier = 'suspected'
+      if (tier === 'confirmed' && !premiseOk) {
+        return { ...f, tier: 'suspected', why: `${f.why} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f.whereChecked ? ` — claimed at ${f.whereChecked}` : ', and whereChecked was empty'})` }
+      }
       // Test/example-only code doesn't kill a finding — it lowers the stakes: confirm, but one severity notch down.
       if (tier === 'confirmed' && !reach) {
         const demoted = DEMOTE[f.severity] || f.severity
@@ -1335,7 +1354,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
-3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise.
+3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
 ${uncoveredFiles.length ? `6. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
@@ -1411,7 +1430,7 @@ function fallbackReport() {
   // finalVerdict(confirmed) — confirmed holds only the delta, so finalVerdict would print a false
   // Approve and hide live still-open/regressed priors. Render those tracks too.
   const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[isRereview ? recordVerdict : finalVerdict(confirmed)]
-  const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}`
+  const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}${f.whereChecked ? ` · Premise checked at: ${f.whereChecked}` : ''}`
   const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
   return [
     `## Verdict`,
