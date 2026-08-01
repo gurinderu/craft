@@ -18,6 +18,7 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **SAF-006** | CRITICAL | Deserializing untrusted input without size/depth limits | `rust-security` |
 | **SAF-007** | HIGH | Untrusted-input arithmetic whose outcome **diverges between build profiles** — a dev/test `overflow-checks` panic that wraps silently in release. Grade against the shipping profile and report what release does *instead* | `rust-errors`, `rust-security` |
 | **SAF-008** | CRITICAL | `debug_assert!` as the only guard on an `unsafe` precondition or other load-bearing invariant — it compiles out in release, so the shipped binary runs unguarded | `rust-unsafe`, `rust-performance` |
+| **SAF-009** | HIGH | Algorithmic-complexity blow-up reachable from untrusted input — superlinear work, unbounded recursion, or a rebuild whose cost is decoupled from output size. Severity must be **measured**, not inherited from a similar bug (see `SKILL.md` → Severity magnitude) | `rust-performance`, `rust-security` |
 | **ERR-001** | CRITICAL | Recoverable failure handled with `panic!`/`unwrap` instead of `Result` | `rust-errors` |
 | **ERR-002** | CRITICAL | `let _ = result;` silently dropping a `#[must_use]` / error value | `rust-errors` |
 | **ERR-003** | MEDIUM | Library returns `Box<dyn Error>` / `anyhow::Error` instead of a typed error | `rust-errors` |
@@ -46,6 +47,7 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **INV-002** | HIGH | Scope-boundary crossing (tenant/project/network/address-range) leaves a scoped reference dangling — carried over without re-validating or re-deriving it against the new scope | `rust-architecture` |
 | **INV-003** | MEDIUM | Raw value used where a documented derived/`effective_*` quantity is required | `rust-architecture` |
 | **INV-004** | HIGH | One field mutated/scrubbed but a sibling field the same invariant governs left stale/inconsistent | `rust-architecture` |
+| **INV-005** | HIGH | Enforcement asymmetry — an invariant guarded at one site but not at its mirror (client↔server, send↔receive, offered↔accepted, one-param↔all-params). The asymmetry is the finding; no crash required. A guard present in the last released tag and gone at HEAD is a regression — say so | `rust-architecture`, `rust-web` |
 | **REC-001** | HIGH | create and update/apply paths diverge on desired state (fields/metadata dropped on one arm) | `rust-cloud-native` |
 | **REC-002** | HIGH | progress / observed-generation / Ready recorded despite a secondary step that can fail — partial failure strands state | `rust-cloud-native` |
 | **REC-003** | HIGH | child/external resource created with no cleanup on delete/disable (missing owner-reference or finalizer) | `rust-cloud-native` |

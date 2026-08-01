@@ -181,7 +181,7 @@ others (higher recall than one broad pass):
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
 | performance | hot-loop allocation, N+1, needless owning | `rust-performance` |
 | api-idioms | typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` | `rust-idioms` |
-| invariants | domain lifecycle/scope rules, derived/effective quantities, and eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate that drops a fail-closed dimension the sibling enforces) | `rust-architecture`, `rust-fintech` |
+| invariants | domain lifecycle/scope rules, derived/effective quantities, eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate dropping a fail-closed dimension), and the **mirror walk** on two-sided contracts (below) | `rust-architecture`, `rust-fintech` |
 | compat | serialization / persistence / rolling-deploy compatibility — a changed serde/JSONB/wire representation vs data written by other code versions (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration) | `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
@@ -210,6 +210,51 @@ published libraries `cargo semver-checks check-release`; and `semgrep` as a SAST
 security-sensitive (auth, crypto, input parsing, unsafe, FFI, deps). semgrep results are seeds, never
 gate failures: taint/secrets over-report, so the downstream verification refutes the false positives
 (see `rust-security`). Optional tools degrade gracefully when absent.
+
+## Severity magnitude — measure it, don't inherit it (`SAF-009`)
+
+"Same class as that other finding" is a claim about **mechanism**, not about severity. A shared root
+cause says nothing about shared magnitude, and the gap can be one or two orders of magnitude —
+entirely invisible unless someone does the arithmetic.
+
+For any resource-exhaustion or algorithmic-complexity finding, compute before you label:
+
+- **Attack throughput vs a real-data baseline.** Measure the same code on *representative real
+  input*, not only on the crafted PoC. "8× slower than normal traffic" and "50,000× slower" are
+  different findings; a decoder still running at 10+ MB/s under attack is not a denial of service.
+- **Attacker cost per unit of victim cost** — bytes (or requests) the attacker must send per second
+  of victim CPU. This is the metric that ranks two exhaustion bugs against each other; when citing a
+  prior finding as precedent, compare *this* number against that one's, not the mechanism.
+- **State the units.** A severity backed by a measurement carries its numbers into the report.
+
+Crashes have no throughput curve — a panic either fires or it doesn't. Rate those by convention
+(malformed input causing a panic, no memory corruption, in a parsing library → Medium) and say
+explicitly that it is a judgement call, so the label doesn't acquire false precision.
+
+The check cuts both ways: run honestly, it demotes inflated findings and it *promotes* the ones that
+turn out far worse than their class suggests.
+
+## The mirror walk — enforcement asymmetry (`INV-005`)
+
+For a protocol, state machine, codec, or any two-sided contract, bugs cluster where an invariant is
+enforced in one place and **not at its mirror**. The asymmetry itself is the finding — you do not
+need a crash, and a fuzzer has no oracle for it.
+
+1. **Enumerate the invariants.** The **error enum is the index**: every variant names a rule someone
+   decided to enforce. The spec/RFC and doc comments name the rest.
+2. **Grep every enforcement site** for each invariant — the guard, the version check, the bounds or
+   limit test, the capability predicate.
+3. **Walk the four mirror axes.** For each site, where is the mirror and is it guarded the same?
+   - **client ↔ server** — the server rejects X; does the client?
+   - **send ↔ receive** — the outgoing value is filtered; is the incoming one re-validated?
+   - **offered ↔ accepted** — we constrain what we offer; do we constrain what we accept back?
+   - **one-param ↔ all-params** — one negotiated parameter is validated; are its siblings (version,
+     algorithm, limit, scope)? Missing siblings travel in packs.
+4. **Release-diff each candidate** — `git diff <last-tag> -- <file>`. A guard **present in the
+   release and gone at HEAD** is a regression, not a long-standing gap; that changes its severity.
+
+Report: the invariant · enforced-at `file:line` · missing-mirror-at `file:line` · which axis · what
+the gap lets through (panic, silent drop, downgrade, accepted-but-should-be-rejected).
 
 ## Premise grounding — cite it or drop the claim
 
@@ -245,6 +290,11 @@ Every finding (lens or seed) is checked before it can be Confirmed:
   actually say what the finding claims? A wrong citation drops the finding. A path that is
   test/example-only (not production-reachable) does NOT drop it — it demotes the confirmed
   severity one notch.
+- **Exclusion catalog:** a rejection is a claim and carries the same burden as the finding. When
+  one of the false-positive precedents in [fp-rules.md](fp-rules.md) fires, cite its ID
+  (`refuted per FP-006`) — and run the trace that rule demands, not the shape it matches. That file
+  also lists the `KEEP-*` non-reasons: dismissals that sound decisive and have repeatedly killed
+  real defects.
 
 ## Step 3 — Verdict
 
