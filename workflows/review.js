@@ -76,7 +76,13 @@ function rustGate(ctx) {
   return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
 GATE (CI-aware, per the rust-review skill — load it):
-1. Detect a PR + CI: \`gh pr checks --json name,state,bucket,link\` for the current branch. If gh is missing/unauthenticated/offline or no PR is found, fall through to the local gate. Match generously: a check named \`cargo nextest\`, \`unit-tests\`, \`ci / test (stable)\` etc. all cover the TEST signal; \`just clippy\`, \`lint\`, \`clippy (stable)\` cover CLIPPY. A green check is the BEST evidence available — it ran on a clean machine with a warm cache and the project's real configuration. Prefer it over anything you could run here.
+1. Detect a PR + CI. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
+   \`\`\`
+   SHA=$(git rev-parse HEAD)
+   gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'   # PRs whose head is this commit
+   gh pr checks <number> --json name,state,bucket,link
+   \`\`\`
+   Derive owner/repo from \`git remote get-url origin\`. Also accept a PR found this way when its head SHA equals your HEAD — say so in provenance (\`via CI · PR #N · matched by SHA\`). Only if BOTH the branch and the commit lookup find nothing, or gh is missing/unauthenticated/offline, fall through to the local gate. Match generously: a check named \`cargo nextest\`, \`unit-tests\`, \`ci / test (stable)\` etc. all cover the TEST signal; \`just clippy\`, \`lint\`, \`clippy (stable)\` cover CLIPPY. A green check is the BEST evidence available — it ran on a clean machine with a warm cache and the project's real configuration. Prefer it over anything you could run here.
 
 1b. NEVER stand up infrastructure to satisfy this gate. If a check needs a database, a container, a broker, a network service or a fixture server, that check is CI's — do not start Postgres, run \`docker\`/\`docker compose\`, apply migrations, or seed anything. Record that signal as unknown with the reason ("integration tests need Postgres; not run locally — CI owns this"). You are establishing whether a DIFF is reviewable, not reproducing the build farm. A review that never starts is worth far less than one with an unestablished test signal.
 2. For build/test/clippy/fmt: if a conclusive GREEN check covers it, treat it as PASSED and record provenance "via CI #<n>". Do NOT require the check to be marked \`required\` — most repos have no branch protection at all (\`isRequired\` is then null for every check, and \`gh api …/branches/<b>/protection\` 404s), so demanding it would make this whole shortcut dead code and send you into a local build you did not need. Required-ness decides whether RED blocks a merge upstream; it says nothing about whether GREEN is trustworthy evidence — a passing job ran the project's real command on a clean machine. If a check covering fmt/clippy/test/build FAILED, set status=fail and list it in failedChecks (note whether it was required). A red check unrelated to those four is worth a line in notes, not a gate failure. Only when the signal is genuinely pending or absent, run it locally under the TIME BUDGET below.
@@ -1034,13 +1040,21 @@ const CULL_MODEL = 'sonnet'
 // UNVERIFIED; surfaced for the author, never changes the verdict". Spending an adversarial skeptic to
 // move a finding from Suspected to Suspected buys nothing. The residual risk is a lens UNDER-calling
 // severity, which the blocking-family escape hatch below covers for the families where it would hurt.
-const BLOCKING_RULE_FAMILY = /^(SAF|ERR|CON)-/
+// The escape hatch belongs ONLY on the skipped tier. Batching is still verification — a Medium the
+// lens under-called gets a real adversarial judgement either way — so the only place an under-call
+// goes unexamined is `skip`. A first attempt keyed on the whole SAF/ERR/CON *families* dragged most
+// of a Rust review back into individual treatment (measured: 88 of 137 agents, 49% of transcript
+// volume, wiping out the saving) because those families cover unwrap, dropped errors and every
+// concurrency rule. Key it on the specific CRITICAL-tier rules instead, and only when the lens
+// filed them at Low/Info — that combination *is* the under-call, and it is rare.
+const CRITICAL_TIER_RULES = new Set(['SAF-001', 'SAF-002', 'SAF-003', 'SAF-004', 'SAF-005', 'SAF-006', 'SAF-008', 'ERR-001', 'ERR-002'])
 const BATCH_SIZE = 6
 function verifyTier(f) {
   if (f.severity === 'Critical' || f.severity === 'High') return 'individual'
-  if (BLOCKING_RULE_FAMILY.test(f.ruleId || '')) return 'individual'
   if (f.severity === 'Medium') return 'batch'
-  return 'skip'
+  // Low/Info: skipped, unless the rule it cites is one that blocks on sight — then the severity is
+  // more likely a mislabel than a judgement, and it is worth one verifier to find out.
+  return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
 }
 // Shared vote→tier decision, so the batched path cannot drift from the individual one.
 function tierFromVotes(f, votes) {
@@ -1258,7 +1272,7 @@ async function reviewProfile(profile) {
   const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -1285,6 +1299,7 @@ async function reviewProfile(profile) {
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
   const notRun = []
   const ranAtLeastOnce = new Set()
+  const lensRounds = []
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
     const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
@@ -1301,6 +1316,12 @@ async function reviewProfile(profile) {
       }
     }
     pool.push(...fresh)
+    // Per-round yield, persisted to the run record. Lenses are the other half of a review's cost
+    // (182 min / 31 agents on a measured run) and every round re-runs EVERY lens over the whole
+    // diff, but whether round 2 earns that is unknowable after the fact: the gate's seed findings
+    // make the pool non-empty from round 1, so a transcript cannot be split by round. Record it
+    // rather than guess — a later `maxRounds` cut should be argued from these numbers.
+    lensRounds.push({ round, agents: plan.lenses.length, returned: results.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     if (!fresh.length) dry = true
   }
@@ -1340,7 +1361,7 @@ async function reviewProfile(profile) {
   // fix it", and the yield analysis inverts on it.
   const ranLenses = plan.lenses.filter(l => ranAtLeastOnce.has(l))
   if (!pool.length) {
-    return { profile, plan, ranLenses, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
   }
 
   // ---- Verify ----
@@ -1388,7 +1409,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
 }
 
 // ================= Run each active profile, then merge =================
@@ -1412,6 +1433,7 @@ function reviewRecord(extra) {
     branch, head,
     languages: active.map(p => p.id),
     uncoveredFiles,
+    lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
     gate: { status: mergedGateStatus, provenance: mergedProvenance },
     outputTokens: budget.spent(),
