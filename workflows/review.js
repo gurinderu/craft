@@ -379,6 +379,9 @@ const ATTACK_MAX = 500
 // Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
 // dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
 const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
+// One-notch severity demotion (test-only reachability). In the declarations prefix alongside
+// SEV_RANK so the severity helpers stay unit-testable.
+const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
   // `REGRESSED after fix` marker word to a plain space. The words survive (no content loss) but the
@@ -580,14 +583,28 @@ function indexProjection(r) {
 }
 async function logRun(record) {
   const index = indexProjection(record)
+  // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
+  // but a full review record carries every finding plus the ledger, and the cheap model is where the
+  // silent truncation came from. Size the model to the payload.
+  const payloadKB = JSON.stringify(record).length / 1024
+  const big = payloadKB > 24
   await ragent(
     `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
 Steps:
 1. \`mkdir -p ~/.craft/runs\`.
 2a. CRAFT_COMMIT (best-effort, one line): \`git -C "\${CLAUDE_PLUGIN_ROOT:-.}" rev-parse --short HEAD 2>/dev/null\` — the engine's OWN commit, which is what separates two runs of the same released version while the rubric is being edited. Empty string if it cannot be resolved; never fail over this.
 2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\`prints anything, else false.
-3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY,"craftCommit":CRAFT_COMMIT}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
-4. Take INDEX below, add the same five fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
+3. COPY RECORD VERBATIM — do not retype, reformat, summarise, or "clean up" any part of it. It can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays: that is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for. Write it with a QUOTED heredoc so the shell performs no expansion, then merge the computed fields with a tool, never by hand:
+   \`\`\`
+   cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
+   …RECORD, byte for byte…
+   CRAFT_RECORD_EOF
+   jq --arg ts "$TS" --arg p "$PROJECT" --arg c "$COMMIT" --argjson d "$DIRTY" --arg cc "$CRAFT_COMMIT" \\
+      '. + {ts:$ts, project:$p, commit:$c, dirty:$d, craftCommit:$cc}' /tmp/craft-rec.json > ~/.craft/runs/"$TS-<kind>-<name>.json"
+   \`\`\`
+   (kind and name are fields in RECORD). If \`jq\` is absent use \`python3 -c\` with \`json.load\`/\`json.dump\` — still never by hand.
+3b. VERIFY, and report the result: \`jq -r '[keys[]]|join(",")' \` on both the input and the written file and confirm the key sets are IDENTICAL, plus \`jq '.dimensions|length, (.ledger|length)'\` is non-zero whenever RECORD had them. If any key was lost, say so loudly in your reply — a silently truncated record is worse than no record, because the analyzer cannot tell the difference between "this lens found nothing" and "this field never made it to disk".
+4. Take INDEX below, add the same five fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`. INDEX is small — but copy it verbatim too.
 5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
 Best-effort: if anything fails, report it but do NOT error the run.
 
@@ -596,7 +613,7 @@ ${JSON.stringify(record, null, 2)}
 
 INDEX:
 ${JSON.stringify(index)}`,
-    { label: 'log-run', phase: 'Synthesize', model: 'haiku', effort: 'low' },
+    { label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`, phase: 'Synthesize', model: big ? 'sonnet' : 'haiku', effort: 'low' },
   )
 }
 
@@ -1002,10 +1019,139 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
 // Verify a pool of findings → {confirmed, suspected, dropped, refuted}. Rigor scales with the profile's plan.
 // Staged verification: cull votes run on a cheap model (sonnet); a High/Critical additionally gets exactly
 // ONE authoritative opus vote, so the cheap model can neither confirm nor drop a high-stakes finding alone.
-const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
 const CULL_MODEL = 'sonnet'
+
+// ---- verification budget ----
+// Verification is ~2/3 of a review's entire cost and scales linearly with finding count, uncapped:
+// one measured run spent 154 agents / 21MB of transcript on 111 findings. Route each finding to the
+// cheapest treatment that cannot change its outcome.
+//
+// INDIVIDUAL — Critical/High, plus any severity carrying a rule from a family that blocks on sight.
+// These decide the verdict and get the full adversarial panel, never batched, never skipped.
+// BATCHED — Medium. Can only reach Warning, so one agent judges a group of them instead of one each.
+// SKIPPED — Low/Info. No combination of verdicts on these can move Approve/Warning/Block, and craft
+// already has the right tier for an unjudged finding: Suspected is defined as "borderline or
+// UNVERIFIED; surfaced for the author, never changes the verdict". Spending an adversarial skeptic to
+// move a finding from Suspected to Suspected buys nothing. The residual risk is a lens UNDER-calling
+// severity, which the blocking-family escape hatch below covers for the families where it would hurt.
+const BLOCKING_RULE_FAMILY = /^(SAF|ERR|CON)-/
+const BATCH_SIZE = 6
+function verifyTier(f) {
+  if (f.severity === 'Critical' || f.severity === 'High') return 'individual'
+  if (BLOCKING_RULE_FAMILY.test(f.ruleId || '')) return 'individual'
+  if (f.severity === 'Medium') return 'batch'
+  return 'skip'
+}
+// Shared vote→tier decision, so the batched path cannot drift from the individual one.
+function tierFromVotes(f, votes) {
+  const v = votes.filter(Boolean)
+  if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
+  const half = v.length / 2
+  const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
+  const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
+  const premiseOk = v.filter(x => x.premiseSupported).length >= Math.ceil(half)
+  const refutes = v.filter(x => x.refuted).length
+  let tier
+  if (!lineOk) tier = 'refuted'
+  else if (refutes > half) tier = 'refuted'
+  else if (refutes === 0) tier = 'confirmed'
+  else tier = 'suspected'
+  if (tier === 'confirmed' && !premiseOk) {
+    return { ...f, tier: 'suspected', why: `${f.why} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f.whereChecked ? ` — claimed at ${f.whereChecked}` : ', and whereChecked was empty'})` }
+  }
+  if (tier === 'confirmed' && !reach) {
+    const demoted = DEMOTE[f.severity] || f.severity
+    return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
+  }
+  return { ...f, tier }
+}
+const BATCH_VERDICT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['verdicts'],
+  properties: {
+    verdicts: {
+      type: 'array',
+      description: 'one entry per finding in the batch, keyed by its index — every index must appear',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['index', 'refuted', 'citedLineMatches', 'reachable', 'premiseSupported', 'reason'],
+        properties: {
+          index: { type: 'integer' },
+          refuted: { type: 'boolean' },
+          citedLineMatches: { type: 'boolean' },
+          reachable: { type: 'boolean' },
+          premiseSupported: { type: 'boolean' },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+function batchVerifyPrompt(group, profile) {
+  const pfs = group.map((f, i) => {
+    const pf = promptFields(f)
+    return `--- FINDING ${i} ---
+[${pf.severity}] ${pf.title}
+  at ${pf.file || '?'}:${f.line || 0}
+  why: ${sanitizeAttack(f.why)}
+  source: ${sanitizeAttack(f.source)}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — claims to be self-contained at the cited line)'}`
+  }).join('\n')
+  return `You are a skeptic verifying ${group.length} INDEPENDENT ${profile.lang} review findings in one pass. They are batched only to save cost — judge each ENTIRELY on its own evidence. Never let one finding's verdict influence another's, and never assume a batch "should" contain some proportion of real ones.
+
+Open the cited file for EACH finding and judge it exactly as you would alone. Default to refuted=true when uncertain whether a technical claim holds.
+
+REFUTATION RULE: refuted=true means the TECHNICAL CLAIM is false — the cited code does not contain the claimed defect. Context is NOT refutation: test/fixture-only, looks intentional, low impact — none of those justify refuted=true. Record that in reachable=false and reason.
+
+Per finding, decide:
+- citedLineMatches: does the cited file:line actually contain what the finding claims?
+- reachable: production-reachable, or test/example/fixture-only? Reachability is about the ROUTE — a state reached by CONSTRUCTING the object directly (builder, \`new\`, a fixture) bypasses the validation the question is about and proves nothing about untrusted-input reachability.
+- refuted: is the technical claim itself false?
+- premiseSupported: name the one claim that, if false, makes the finding evaporate. If it lives outside the cited line, OPEN the claimed off-site evidence and check it shows that. false when the premise is off-site and the evidence is empty, wrong, or merely restates the cited line. Unsupported is NOT disproven — do not raise refuted for it.
+
+${pfs}
+
+Return {verdicts: [...]} with ONE entry per finding, each carrying its \`index\` (0..${group.length - 1}). Every index must appear — omitting one silently deletes a finding from the review.`
+}
 async function verifyPool(items, plan, profile, gateProvenance) {
-  const judged = await parallel(items.map(f => () => {
+  const route = { individual: [], batch: [], skip: [] }
+  for (const f of items) route[verifyTier(f)].push(f)
+
+  // Skipped tier: straight to Suspected, and SAY so on the finding — an unverified item that reads
+  // like a verified one is exactly the silent cap this codebase refuses elsewhere.
+  const skipped = route.skip.map(f => ({
+    ...f,
+    tier: 'suspected',
+    why: `${f.why} (not adversarially verified: ${f.severity} cannot change the verdict, so it is surfaced as Suspected rather than spending a verifier on it)`,
+  }))
+
+  // Batched tier: group by file so one agent reads one file's context once.
+  const byFile = new Map()
+  for (const f of route.batch) {
+    const k = f.file || '?'
+    ;(byFile.get(k) || (byFile.set(k, []), byFile.get(k))).push(f)
+  }
+  const groups = []
+  for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
+
+  const batchedNested = await parallel(groups.map(group => () =>
+    ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
+      .then(res => group.map((f, i) => {
+        const v = (res?.verdicts ?? []).find(x => x && x.index === i)
+        // A missing index is a verifier that lost a finding, not a refutation: fall back to Suspected.
+        return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
+      }))
+      .catch(() => group.map(f => ({ ...f, tier: 'suspected' }))),
+  ))
+  const batched = batchedNested.filter(Boolean).flat()
+
+  if (route.skip.length || groups.length) {
+    log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} surfaced unverified (Low/Info cannot move the verdict)`)
+  }
+
+  const judged = await parallel(route.individual.map(f => () => {
     // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
     const isTool = isToolSource(profile, f.source)
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
@@ -1018,35 +1164,9 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     const authVotes = isHigh
       ? [() => ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel })]
       : []
-    return parallel([...cullVotes, ...authVotes]).then(vs => {
-      const v = vs.filter(Boolean)
-      if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
-      const half = v.length / 2
-      const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
-      const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
-      // An off-site premise nobody could pin to real code is UNSUPPORTED, not disproven — the
-      // classic over-claim (a dependency's behaviour, reachability) that a "smarter" reviewer
-      // reproduces rather than catches. Structural, not exhortative: it costs the finding its
-      // Confirmed tier and so its power over the verdict, but never deletes it.
-      const premiseOk = v.filter(x => x.premiseSupported).length >= Math.ceil(half)
-      const refutes = v.filter(x => x.refuted).length
-      let tier
-      if (!lineOk) tier = 'refuted'            // hallucinated citation
-      else if (refutes > half) tier = 'refuted'
-      else if (refutes === 0) tier = 'confirmed'
-      else tier = 'suspected'
-      if (tier === 'confirmed' && !premiseOk) {
-        return { ...f, tier: 'suspected', why: `${f.why} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f.whereChecked ? ` — claimed at ${f.whereChecked}` : ', and whereChecked was empty'})` }
-      }
-      // Test/example-only code doesn't kill a finding — it lowers the stakes: confirm, but one severity notch down.
-      if (tier === 'confirmed' && !reach) {
-        const demoted = DEMOTE[f.severity] || f.severity
-        return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
-      }
-      return { ...f, tier }
-    })
+    return parallel([...cullVotes, ...authVotes]).then(vs => tierFromVotes(f, vs))
   }))
-  const vp = judged.filter(Boolean)
+  const vp = judged.filter(Boolean).concat(batched, skipped)
   const refuted = vp.filter(f => f.tier === 'refuted')
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
@@ -1284,6 +1404,7 @@ function reviewRecord(extra) {
   return {
     schemaVersion: 1,
     runtime: 'claude-code',
+    craftVersion: CRAFT_VERSION,
     kind: 'workflow',
     name: 'review',
     nested: !!viaArg,
