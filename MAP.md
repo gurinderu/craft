@@ -32,7 +32,7 @@ Status: ✅ done
 | Skill | Status | Scope | Does NOT cover (owner) |
 |---|---|---|---|
 | `rust-testing` | ✅ | unit/integration/doc, async, rstest, proptest, cargo-fuzz, cargo-mutants, mockall, insta, testcontainers, coverage, runner, CI | benchmarks → `rust-performance` |
-| `rust-review` | ✅ | cargo gate, dependency-context step (review against pinned versions), severity checklist + **ID-tagged rule catalog** (`rules.md`), verdict; **public-API design pass** (Rust API Guidelines checklist → `api-design.md`); requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table | *how* to fix → topic skills; *how* to test → `rust-testing` |
+| `rust-review` | ✅ | cargo gate, dependency-context step (review against pinned versions), severity checklist + **ID-tagged rule catalog** (`rules.md`), verdict; **exclusion catalog** — false-positive precedents + the `KEEP-*` non-reasons, each demanding a trace (`fp-rules.md`); premise grounding (`whereChecked`); the mirror walk (enforcement asymmetry); measured severity magnitude; **public-API design pass** (Rust API Guidelines checklist → `api-design.md`); requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table | *how* to fix → topic skills; *how* to test → `rust-testing` |
 | `rust-errors` | ✅ | `Result`/`Option`, `?`, domain failures vs defects (ZIO model), thiserror vs anyhow, library-vs-app design, recovery/retry/circuit-breaker | panics as control flow → `rust-idioms` |
 | `rust-ownership` | ✅ | borrowing, lifetimes, `Cow`, smart pointers (`Box`/`Rc`/`Arc`), interior mutability (`Cell`/`RefCell`); fixes for E0382/E0597/E0499/E0502 | cross-thread sharing/`Send`+`Sync` → `rust-concurrency` |
 | `rust-concurrency` | ✅ | threads vs async, `Send`/`Sync`, `Arc<Mutex>`, channels, tokio, deadlocks, lock-across-await | single-thread `Rc`/`RefCell` → `rust-ownership` |
@@ -104,6 +104,7 @@ them by `agentType` — internal to the plugin, no external dependency).
 
 ## Documentation
 
+- `docs/LESSONS.md` — operational lessons not derivable from the code: stable-numbered evidence entries folded into principles. Add one when something was learned at a cost.
 - `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the `rust-review` / `rust-audit` / `triage-findings` workflows and the review agents.
 
 ## Cross-cutting skills (language-agnostic)

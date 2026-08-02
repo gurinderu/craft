@@ -26,7 +26,7 @@ lens worker apply.
 The mechanical gate is non-negotiable: formatter `--check`, `statix check`, `deadnix`,
 `nix flake check`, and `nix build` / `nix eval` must be green before human-style review is worth
 doing. But **before running a check locally, ask whether CI already computed it on this PR; if a
-conclusive required check covers it and is green, consume that result instead of recomputing.**
+conclusive check covers it and is green (required or not — most repos have no branch protection, so demanding `required` would make this shortcut dead code; required-ness governs whether RED blocks a merge, not whether GREEN is trustworthy), consume that result instead of recomputing.**
 
 Establish each signal:
 
@@ -37,7 +37,7 @@ Establish each signal:
    If `gh` is missing, unauthenticated, offline, or finds no PR → fall straight through to the
    local gate (never fail on detection).
 
-2. **Formatter** — if a required check whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`,
+2. **Formatter** — if a conclusive check (required or not) whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`,
    `format`) is conclusive:
    - green → **PASSED** (record provenance `via CI · PR #N`);
    - failed → gate red → **Block**;
@@ -52,7 +52,7 @@ Establish each signal:
    deadnix --fail
    ```
 
-4. **Flake check / build / eval** — if a required check matching `flake-check`, `nix build`, or
+4. **Flake check / build / eval** — if a conclusive check (required or not) matching `flake-check`, `nix build`, or
    `nix eval` is conclusive:
    - green → **PASSED**;
    - failed → gate red → **Block**;
@@ -167,6 +167,22 @@ findings (each still verified): `statix check` (anti-idioms), `deadnix --fail` (
 `nix flake check --all-systems` (eval errors, cycle detection), and `nix build --dry-run`
 (missing dependencies). Optional tools degrade gracefully when absent.
 
+## Premise grounding — cite it or drop the claim
+
+Most findings rest on a premise **not visible at the line they cite**: "that flake input provides
+this", "the module default is X", "no other module sets it", "the fetcher is already pinned
+upstream". Nix makes this especially easy to get wrong — the truth usually lives in a locked input's
+own source or in a module merged from elsewhere, not in the file under review.
+
+Pin every off-site premise to a `file:line` you **actually opened** (the locked input's source
+included — `nix flake metadata` / the store path) and report it in the finding's `whereChecked`. A
+premise you did not open is not admissible: open it, or drop the claim and report only what the
+cited line shows. This binds **rejection** as much as confirmation — dismissing a finding on an
+unopened "the module already sets that" discards a real bug silently.
+
+An unpinnable off-site premise costs a finding its Confirmed tier — it drops to Suspected, never to
+refuted. Unsupported is not disproven.
+
 ## Verification protocol
 
 Every finding (lens or seed) is checked before it can be Confirmed:
@@ -194,7 +210,7 @@ Report findings as `severity · file:line · [rule-id] · what · why · fix`. C
 catalog ID when the finding maps to one (e.g. `PUR-001`); novel findings need no ID. Be specific
 and cite the line; a finding without a location isn't actionable.
 
-"Gate green / red" is read from Step 1 — the signal may come from a green required CI check or a
+"Gate green / red" is read from Step 1 — the signal may come from a green CI check or a
 local run. Cite which in the `## Gate` line of the output.
 
 ## Proving a claim — what proves what
@@ -212,7 +228,7 @@ local run. Cite which in the `## Gate` line of the output.
 | secret not in store | runtime secret management confirmed (agenix/sops-nix) | "looks encrypted" |
 | bug fixed | re-run the case that reproduced it → passes | code changed |
 
-A green **required CI check** for the same command is also valid proof of that command (see
+A green **CI check** (required or not) for the same command is also valid proof of that command (see
 Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal
 exists — CI or local — not that you must re-run it yourself.
 

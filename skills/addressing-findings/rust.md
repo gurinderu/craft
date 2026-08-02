@@ -27,7 +27,18 @@ tooling → `rust-testing`.
 
 Prove each fix with the matching command from the `rust-review` "Proving a claim — what proves
 what" table — do not re-derive it here, cite it (`rust-review` SKILL.md, the "Proving a claim —
-what proves what" section).
+what proves what" section). The three completeness checks are in `SKILL.md` → *When a fix is done*;
+their Rust mechanics:
+
+- **Every facet.** A profile-divergent bug (`SAF-007`) has two: re-run the case under `cargo test`
+  (dev, `overflow-checks` on) **and** under the shipping profile (`cargo test --release`, or a
+  release-profile repro binary). Fixing only the panic leaves the silent-wrap facet alive.
+- **Your own check, not the fixer's.** Point a scratch crate at the fix branch as a path dependency
+  — `[dependencies] thing = { path = "../thing" }` — and drive it through the real public entry
+  point rather than running the fixer's own test module. Then `cargo test` the whole suite yourself.
+- **Sibling sweep.** `rg` the pattern across the crate before closing: the sibling method that pops
+  the same stack, the second call site of the same helper, the `impl` block that repeats the guard.
+  `cargo mutants` scoped to the changed files also surfaces contracts no test would catch.
 
 ## Re-review (step 7)
 

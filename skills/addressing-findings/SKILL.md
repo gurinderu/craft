@@ -33,7 +33,7 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                (worktree isolation when groups could touch shared files). Within a
                group, serial. "How to fix" → topic skills; a bug → regression test
                first, RED→GREEN                                                (→ rust.md)
-6. Verify    — per fix: the rust-review "what proves what" proof table         (→ rust.md)
+6. Verify    — per fix: every facet · your own check · sibling sweep          (→ below, rust.md)
 7. Re-review ⫲ — re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &
@@ -61,6 +61,33 @@ location during triage, else route to `needs-decision` — never drop them silen
 
 `reject` → `rejected` and `defer` → `deferred` are also written back to the **review ledger** so
 the next re-review carries them forward (→ "Writing dispositions to the review ledger").
+
+## When a fix is done (step 6)
+
+The proof table in `rust-review` says how to prove *a* claim. These three checks say when the fix
+itself is finished. Each exists because a fix that passed the obvious check still shipped broken.
+
+**Every facet, not the loudest one.** A bug with more than one observable effect — a panic *and*
+silent corruption, two build profiles, two entry points, two callers — is not fixed until the case
+for **each** is re-run green. A plausible, idiomatic, symmetric one-liner can silence the symptom
+that fired first and leave the other alive: saturating arithmetic removes the panic while every
+saturated value still collapses to the same bucket downstream, so the misresolution it caused
+persists. Enumerate the facets from the finding before you accept the fix, and re-run all of them.
+
+**Your own check, not the fixer's.** When a subagent or another author reports "fixed, tests pass",
+that is a claim, not evidence — its test can construct the broken state differently from the real
+entry point, or assert something subtly weaker than the contract. Verify against the fix as an
+outsider would: exercise it through the real entry point, and re-run the full suite yourself. A
+green suite written by whoever wrote the fix proves the two agree, not that the bug is gone.
+
+**Sibling sweep.** Bugs travel in packs. Before closing, grep for the same pattern elsewhere — the
+adjacent method, the other call site, the mirror path (`rust-review` → *The mirror walk*). A fix
+can close the one reported instance and leave an identical sibling untouched, invisible to the one
+case that was tested. Findings in the same file/pattern group can be swept together in one pass.
+
+Fixed-and-verified findings become `closed` in the review ledger (above); a sibling found during
+the sweep is a **new** finding — give it its own stable id rather than folding it into the one
+being closed, or the ledger will report a defect as resolved while an instance of it still ships.
 
 ## Stable id & the triage ledger
 

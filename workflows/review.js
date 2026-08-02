@@ -12,19 +12,61 @@ export const meta = {
 }
 
 // ---- args ----
-const baseArg = (args && typeof args === 'object' && args.base) ? String(args.base) : ''
-const intentArg = (args && typeof args === 'object' && args.intent) ? String(args.intent) : ''
-const postComments = !!(args && typeof args === 'object' && args.comment)
-const pathArg = (args && typeof args === 'object' && args.path) ? String(args.path) : ''   // optional crate-scope (audit per-crate fan-out)
-const viaArg = (args && typeof args === 'object' && args._via) ? String(args._via) : ''   // set by a parent workflow (e.g. rust-audit)
-const strict = !!(args && typeof args === 'object' && args.strict)   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
-const requestedLangs = (args && typeof args === 'object' && Array.isArray(args.languages) && args.languages.length)
-  ? args.languages.map(String) : null   // pin: restrict active profiles to these ids
-const freshArg = !!(args && typeof args === 'object' && args.fresh)   // force a full first-pass review, ignore any prior round
+// A caller that passes args as a JSON *string* (easy to do, and what the Workflow tool receives if
+// the value is quoted) used to fail SILENTLY: every `typeof args === 'object'` guard below went
+// false, every option fell back to its default, and the run reviewed whatever repo the session sat
+// in — then reported a confident "Approve". Losing `repo`/`base`/`languages` without a word is the
+// worst possible failure for a review. Normalize the string form, and if it cannot be parsed, say so.
+const A = (() => {
+  if (typeof args === 'string' && args.trim()) {
+    try {
+      const parsed = JSON.parse(args)
+      if (parsed && typeof parsed === 'object') {
+        log('⚠️ args arrived as a JSON string, not an object — parsed it; pass a real object to avoid this')
+        return parsed
+      }
+    } catch (e) {
+      log(`⚠️ args arrived as a string that is not JSON (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      return {}
+    }
+    log('⚠️ args arrived as a non-object JSON scalar — ALL options ignored, running with defaults')
+    return {}
+  }
+  return (args && typeof args === 'object') ? args : {}
+})()
+const baseArg = A.base ? String(A.base) : ''
+const intentArg = A.intent ? String(A.intent) : ''
+const postComments = !!A.comment
+const pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
+// Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
+// it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
+// its own checkout — reviewing a PR in another repo silently reviewed craft instead.
+const repoArg = A.repo ? String(A.repo) : ''
+const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
+const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
+const requestedLangs = (Array.isArray(A.languages) && A.languages.length)
+  ? A.languages.map(String) : null   // pin: restrict active profiles to these ids
+const freshArg = !!A.fresh   // force a full first-pass review, ignore any prior round
 // Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
 // code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
 // re-scan (stateless, like adversarial-review); 0 = never (pure incremental — the pre-guard behavior).
-const fullEvery = (args && typeof args === 'object' && args.fullEvery != null) ? Math.max(0, Number(args.fullEvery)) : 3
+const fullEvery = (A.fullEvery != null) ? Math.max(0, Number(A.fullEvery)) : 3
+
+// A cold full-workspace build is the one step in this workflow that can run for an hour and take the
+// whole review down with it: a gate agent that sits in `cargo clippy` stops emitting, the harness
+// calls it stalled, re-dispatches it, and the replacement starts the same build from scratch. One
+// real run burned 99 minutes across six gate agents that way and returned nothing. craft already
+// treats an ABSENT tool as an intentional skip; a tool that cannot finish in budget is the same
+// thing — an unestablished signal, which is a fine review outcome, unlike a dead run.
+const GATE_TIME_BUDGET = `
+TIME BUDGET (hard): wrap EVERY build/lint/test command in \`timeout\` so the shell kills it instead of
+you waiting — e.g. \`timeout 600 cargo clippy … ; echo "EXIT=\${PIPESTATUS[0]}"\`. Allow roughly 10
+minutes for the primary gate command and 5 for each optional one. A command that hits the timeout is
+NOT a failure and NOT a retry: record that signal as unknown, say in notes which command timed out and
+after how long, and move on to the next one. Never re-run a timed-out build hoping it is faster the
+second time — the cache is no warmer and you will spend the whole review on it. status=fail is
+reserved for a check that actually RAN and came back red. If the primary gate times out, the review
+continues on the remaining signals with status=unknown — an incomplete gate beats a dead run.`
 
 // ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
 function rustDepContext(ctx) {
@@ -34,13 +76,28 @@ function rustGate(ctx) {
   return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
 GATE (CI-aware, per the rust-review skill — load it):
-1. Detect a PR + CI: \`gh pr checks --json name,state,bucket,link\` for the current branch. If gh is missing/unauthenticated/offline or no PR is found, fall through to the local gate.
-2. For build/test/clippy/fmt: if a conclusive green required CI check covers it, treat it as PASSED and record provenance "via CI #<n>"; if any such check FAILED, set status=fail and list it in failedChecks. If pending/absent, run it locally (\`cargo fmt --check\`, \`cargo clippy --all-targets -- -D warnings\`, \`cargo test\`).
+1. Detect a PR + CI. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
+   \`\`\`
+   SHA=$(git rev-parse HEAD)
+   gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'   # PRs whose head is this commit
+   gh pr checks <number> --json name,state,bucket,link
+   \`\`\`
+   Derive owner/repo from \`git remote get-url origin\`. Also accept a PR found this way when its head SHA equals your HEAD — say so in provenance (\`via CI · PR #N · matched by SHA\`). Only if BOTH the branch and the commit lookup find nothing, or gh is missing/unauthenticated/offline, fall through to the local gate. Match generously: a check named \`cargo nextest\`, \`unit-tests\`, \`ci / test (stable)\` etc. all cover the TEST signal; \`just clippy\`, \`lint\`, \`clippy (stable)\` cover CLIPPY. A green check is the BEST evidence available — it ran on a clean machine with a warm cache and the project's real configuration. Prefer it over anything you could run here.
+
+1b. NEVER stand up infrastructure to satisfy this gate. If a check needs a database, a container, a broker, a network service or a fixture server, that check is CI's — do not start Postgres, run \`docker\`/\`docker compose\`, apply migrations, or seed anything. Record that signal as unknown with the reason ("integration tests need Postgres; not run locally — CI owns this"). You are establishing whether a DIFF is reviewable, not reproducing the build farm. A review that never starts is worth far less than one with an unestablished test signal.
+2. For build/test/clippy/fmt: if a conclusive GREEN check covers it, treat it as PASSED and record provenance "via CI #<n>". Do NOT require the check to be marked \`required\` — most repos have no branch protection at all (\`isRequired\` is then null for every check, and \`gh api …/branches/<b>/protection\` 404s), so demanding it would make this whole shortcut dead code and send you into a local build you did not need. Required-ness decides whether RED blocks a merge upstream; it says nothing about whether GREEN is trustworthy evidence — a passing job ran the project's real command on a clean machine. If a check covering fmt/clippy/test/build FAILED, set status=fail and list it in failedChecks (note whether it was required). A red check unrelated to those four is worth a line in notes, not a gate failure. Only when the signal is genuinely pending or absent, run it locally under the TIME BUDGET below.
+   TAKE THE PROJECT'S LINT SEMANTICS, USE YOUR OWN SCOPE AND FORMAT. First READ the project's lint recipe — a \`clippy\`/\`lint\` target in \`justfile\`/\`Makefile\`/\`Taskfile\`, an \`[alias]\` in \`.cargo/config.toml\`, or the step its CI workflow runs (\`.github/workflows/*.yml\`) — and lift its SEMANTIC flags: the feature selection (\`--all-features\`, \`--features …\`, \`--no-default-features\`) and every \`-A\`/\`-W\`/\`-D\` lint level it sets. Those decide verdicts: a project that allows \`clippy::too_many_arguments\` will otherwise get gate failures on lints it deliberately permits, and linting the wrong feature set lints code that never ships.
+   Then run it SCOPED and SHORT, which change only how much is built and how it prints, never what a lint says about a given crate:
+   \`cargo clippy -p <each changed package> --all-targets --message-format=short <their feature flags> -- <their -A/-W flags> -D warnings\`
+   Resolve the changed packages from the diff paths via \`cargo metadata --no-deps --format-version 1\`. Fall back to the whole workspace only when the diff genuinely spans it.
+   Note the trade-off in notes: a scoped run cannot see a break this change causes in a DEPENDENT crate elsewhere in the workspace. That is CI's job — and if CI covered clippy you should not be running this at all (step 2 above). When you scope, say so, and name the packages.
+   If the project defines no recipe, use \`cargo fmt --check\` and \`cargo clippy -p <changed> --all-targets --message-format=short -- -D warnings\`.
+   TESTS: run them locally ONLY if CI did not cover them AND they need no infrastructure (per 1b) — and then scoped, \`cargo test -p <changed package>\`, never the whole workspace. If the changed package's tests need a service, or a bare \`cargo test\` starts pulling one up, stop and record the test signal as unknown. Do not chase a green suite; that is not what this gate is for.
 3. Security tools (\`cargo audit\`, \`cargo deny check\`) always run locally if installed (cheap, usually absent from CI). A vulnerability with a fix is a fail.
 4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
 
 SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
-5. \`cargo clippy --all-targets -- -W clippy::pedantic -W clippy::nursery\` — turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these.
+5. Pedantic seeds (a SEPARATE, optional pass — never a substitute for the gate in step 2), on the SAME changed packages and the SAME feature flags you resolved there, so the two passes see the same code: \`cargo clippy -p <pkg> --all-targets --message-format=short <their feature flags> -- -W clippy::pedantic -W clippy::nursery\`. Only fall back to the whole workspace when the diff genuinely spans it. Keep the last ~200 diagnostic lines; if you truncate, SAY how many you dropped in notes — a silent cut reads as "there were only N". Turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these. This step is optional: if it exceeds the budget, skip it and note that the pedantic seeds are absent.
 ${ctx.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
 
 7. SAST seed (semgrep) — decide what configs apply, then run only if any do:
@@ -52,6 +109,7 @@ ${ctx.securitySensitive
 
 ${rustDepContext(ctx)}
 
+${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI (cite the check name). Never infer a pass. If the changed files are not part of a cargo project, do NOT fabricate a temporary crate/harness around them to lint or build — record build/clippy/test as not establishable (status=unknown) and say why in notes.
 
 Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`
@@ -73,6 +131,7 @@ SEED FINDINGS (tool grounding — scoped to the changed files):
 
 ${nixDepContext(ctx)}
 
+${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
 Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits.`
@@ -85,6 +144,10 @@ PROFILES.rust = {
   detect: (files) => files.some(f => /\.rs$/.test(f) || /(^|\/)Cargo\.toml$/.test(f)),
   diffGlobs: ["'*.rs'"],
   rubricSkill: 'rust-review',
+  fpRules: 'fp-rules.md', // exclusion catalog (FP-*/KEEP-*); '' for a profile that ships none
+  // Rules whose per-occurrence reporting buries the review — capped mechanically by rollupPool.
+  // Only completeness nits belong here: never a rule whose individual instances carry distinct risk.
+  rollupRuleIds: ['API-001', 'API-003', 'API-004', 'API-005'],
   navSkill: 'rust-navigation',
   reviewerAgent: 'craft:rust-reviewer',
   securityHints: 'auth, crypto, input parsing, unsafe, FFI, or dependencies',
@@ -96,7 +159,7 @@ PROFILES.rust = {
   depContext: rustDepContext,
   lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
   lensBrief: {
-    safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization.',
+    safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization. Also BUILD-PROFILE DIVERGENCE (SAF-007/SAF-008), where the code you review is not the code that ships: (a) arithmetic on an untrusted-input path whose outcome differs between the dev/test profile (`overflow-checks` ON) and the shipping release profile (OFF by default — read `[profile.release]` in the crate AND workspace root before assuming, it may be re-enabled). The profile-gated panic is the FLOOR of the impact, not the ceiling: do NOT close it as "does not reproduce in release" — say what the release build does INSTEAD (a silent wrap that truncates a length, misresolves an index, or corrupts state is worse than the panic, because nothing reports it), and report both facets. (b) a `debug_assert!` carrying a load-bearing invariant — an unsafe precondition, a bounds/length check, a trust-boundary validation — which compiles out in `--release`, leaving the shipped binary unguarded.',
     errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
     ownership: 'ownership & lifetimes: needless clone to satisfy the borrow checker, String where &str/impl AsRef suffices, Vec<T> where &[T] works, explicit lifetimes where elision applies.',
     concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
@@ -107,7 +170,7 @@ PROFILES.rust = {
     maintainability: 'maintainability & structural simplification (load the refactoring skill): missed code judo — a behavior-preserving reframing using the existing architecture that would make this change dramatically simpler or delete a whole category of complexity; file pushed across ~700 lines (decomposition smell); ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow instead of a dedicated abstraction; needless optionality (Option that always holds), as-casts where From/TryFrom belongs, Box<dyn Any>/downcasting where a typed model fits. Flag only concrete, behavior-preserving restructurings the author could have taken — not hypothetical rewrites.',
     tests: 'tests as a COVERAGE ADVERSARY (not a presence check): enumerate what a regression could SILENTLY break, then check each has a test that would FAIL on that regression. The litmus test: if you deleted the production line/branch that carries a contract, would the suite still pass green? If yes, that contract is UNTESTED → finding (cite the missing test). Cover, at minimum: (a) every NEW branch and every distinct ERROR CONTRACT the code / handler / OpenAPI (or other documented interface) promises — not-found→404, forbidden / wrong-owner, bad-request→400, conflict→409, a typed 4xx that must not collapse into a 500 — each needs a test asserting THAT status/error, not just the happy path; (b) every SECURITY / AUTHORIZATION boundary — tenant or owner isolation: is there a test exercising a DIFFERENT user/tenant/scope and ASSERTING denial? A single-user happy path does NOT prove isolation; on a NEW authz-guarded endpoint a missing cross-tenant/cross-owner denial test is a HIGH-severity gap; (c) every behavioral CLAIM in the stated spec — identity preserved / "in place", a state that must stay put or transition exactly once, a field that must be scrubbed, an idempotent no-op — each needs a test that pins it and would fail if the claim were violated; (d) self-exclusion / dedup / unlink / bookkeeping guards — a uniqueness check that must exclude the row itself, a back-reference that must be cleared. Vacuous tests (assert!(true), no assertions) count as absent coverage.',
     intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Work from the STATED SPEC / AUTHOR CLAIMS block (the verbatim PR/commit description), not just the one-line inferred intent. ENUMERATE every explicit claim or invariant the author wrote — patterns like "never fails on X", "the only way to Y", "idempotent" / "no-op", "in place" / "preserves Z", "always" / "never", and any documented trade-off — and for EACH claim trace the concrete code path that would carry it out. A claim the code contradicts is a finding (cite the exact file:line that violates it): e.g. an "idempotent no-op" that actually wipes a field, "the only way to change X" that silently no-ops for some inputs, "never fails on X" that returns Err on a transient/non-NotFound error. Also flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.',
-    invariants: 'domain invariants & lifecycle: before judging a changed operation, read the invariants documented or enforced on the TYPES it manipulates (grep the domain/entity/service modules for doc-comment invariants, status/state enums, `effective_*` / derived getters, `*_scoped` reference ids, validation fns, and transient two-phase lifecycle states — a pending-delete/soft-delete window or an in-progress-mutation state). Flag where the change (a) accepts an entity in a transient/invalid lifecycle state, (b) crosses a scope boundary (a tenant/project/network/address-range) without re-validating or re-deriving the scoped references it carries, (c) uses a raw value where a documented derived/effective quantity is required, (d) mutates/scrubs one field but not a sibling field the same invariant governs, or (e) REIMPLEMENTS an eligibility / capacity / compatibility / authorization check that an EXISTING sibling function already performs — grep for the function doing the same job (a catalog/availability filter, a permission gate, a `*_available` / `filter_*` / `*_has_room` predicate) and diff the new path against it DIMENSION BY DIMENSION; flag any FAIL-CLOSED dimension the sibling enforces but the new path drops (a hardware/family/version compatibility filter, a missing-data→unavailable rule, an overcommit/effective-quantity conversion), because the two gates disagree the moment one is missing a dimension — that is a present correctness bug, not merely future drift.',
+    invariants: 'domain invariants & lifecycle: before judging a changed operation, read the invariants documented or enforced on the TYPES it manipulates (grep the domain/entity/service modules for doc-comment invariants, status/state enums, `effective_*` / derived getters, `*_scoped` reference ids, validation fns, and transient two-phase lifecycle states — a pending-delete/soft-delete window or an in-progress-mutation state). Flag where the change (a) accepts an entity in a transient/invalid lifecycle state, (b) crosses a scope boundary (a tenant/project/network/address-range) without re-validating or re-deriving the scoped references it carries, (c) uses a raw value where a documented derived/effective quantity is required, (d) mutates/scrubs one field but not a sibling field the same invariant governs, or (e) REIMPLEMENTS an eligibility / capacity / compatibility / authorization check that an EXISTING sibling function already performs — grep for the function doing the same job (a catalog/availability filter, a permission gate, a `*_available` / `filter_*` / `*_has_room` predicate) and diff the new path against it DIMENSION BY DIMENSION; flag any FAIL-CLOSED dimension the sibling enforces but the new path drops (a hardware/family/version compatibility filter, a missing-data→unavailable rule, an overcommit/effective-quantity conversion), because the two gates disagree the moment one is missing a dimension — that is a present correctness bug, not merely future drift. MIRROR WALK (run this when the diff touches a protocol, a state machine, a codec, or any two-sided contract — the finding IS the asymmetry, you do not need a crash to report it): (1) ENUMERATE the invariants the code must uphold — the error enum is the index, each variant names a rule someone decided to enforce, and the spec/RFC and doc comments name the rest; (2) for each invariant GREP EVERY ENFORCEMENT SITE (the guard, the version check, the bounds/limit test, the capability predicate); (3) for each site ask where its MIRROR is and whether it is guarded the same, along four axes — client↔server (the server rejects X, does the client?), send↔receive (the outgoing value is filtered, is the incoming one re-validated?), offered↔accepted (we constrain what we offer, do we constrain what we accept back?), one-param↔all-params (one negotiated parameter is validated, are its siblings — version, algorithm, limit, scope?). Missing siblings travel in packs; (4) DIFF EACH CANDIDATE AGAINST THE LAST RELEASED TAG (`git diff <tag> -- <file>`): a guard PRESENT in the release and GONE at HEAD is a regression, and that raises its severity — say which it is. Report each as: the invariant, enforced-at file:line, missing-mirror-at file:line, which axis, and what the gap lets through downstream (a panic, a silent drop, a downgrade, an accepted-but-should-be-rejected message).',
     compat: 'serialization, persistence & rolling-deploy compatibility: a changed on-the-wire or at-rest representation checked against data written by OTHER versions of the code. Trace every type whose serde/JSON/proto/bincode representation the diff changes — a #[serde(rename)] / field rename / retag / flatten change, a field added without #[serde(default)], a renamed or reordered enum variant, a changed discriminant / repr, a Display/FromStr used as a storage key — AND every place that representation is persisted (JSONB or blob columns, caches, event logs, message-queue payloads, config/state files) or crosses a version boundary. Flag where (a) already-persisted data written under the OLD shape can no longer deserialize under the new shape and no migration backfills it (a rename with no #[serde(alias)], a new required field with no default) — every stored row fails to decode until rewritten; (b) during a ROLLING deploy old and new replicas run CONCURRENTLY, so the representation must be compatible in BOTH directions — new writers must still emit what old readers require (a bare rename breaks old readers: keep the serialized key stable via #[serde(rename = "<old-key>")] on the renamed Rust field, or split the flip across two deploys where all readers understand both keys before any writer flips) AND old writers must emit what new readers accept; (c) a DB migration renames/retypes a column or enum the running code still (de)serializes under the old contract. NOTE: an #[serde(alias = "<old>")] only covers new-code-reads-old-data — it does NOT make old code read new-data during a rollout; call that asymmetry out explicitly.',
     'negative-space': 'negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum-variant/column that pre-existing endpoints mutate blindly; a latent bug in an unchanged helper the diff makes reachable for the first time.',
   },
@@ -118,6 +181,8 @@ PROFILES.nix = {
   detect: (files) => files.some(f => /\.nix$/.test(f) || /(^|\/)flake\.lock$/.test(f)),
   diffGlobs: ["'*.nix'", "'flake.lock'"],
   rubricSkill: 'nix-review',
+  fpRules: '',
+  rollupRuleIds: [],
   navSkill: '',
   reviewerAgent: 'craft:nix-reviewer',
   securityHints: 'secrets handling (agenix/sops-nix), fetchers/hashes, module security options, or build-script interpolation',
@@ -145,13 +210,14 @@ PROFILES.nix = {
 const FINDING_ITEM = {
   type: 'object',
   additionalProperties: false,
-  required: ['severity', 'title', 'file', 'line', 'why', 'fix', 'blastRadius', 'source', 'ruleId'],
+  required: ['severity', 'title', 'file', 'line', 'why', 'fix', 'blastRadius', 'source', 'ruleId', 'whereChecked'],
   properties: {
     severity: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low', 'Info'] },
     title: { type: 'string', description: 'one-line what is wrong' },
     file: { type: 'string', description: 'path; empty string if not applicable' },
     line: { type: 'integer', description: '1-based line; 0 if not applicable' },
     why: { type: 'string', description: 'why it matters' },
+    whereChecked: { type: 'string', description: 'OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise that lives OUTSIDE the cited defect site — a dependency\'s behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Several may be comma-separated, each with a few words on what it shows. Empty string ONLY when the finding is fully self-contained at the cited file:line and rests on no off-site claim' },
     fix: { type: 'string', description: 'direction of the fix' },
     blastRadius: { type: 'string', description: 'callers affected / breaking-change note; empty if n/a' },
     source: { type: 'string', description: 'lens name or tool name that produced this' },
@@ -261,11 +327,12 @@ const FINDINGS_SCHEMA = {
 const VERDICT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['refuted', 'citedLineMatches', 'reachable', 'reason'],
+  required: ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported', 'reason'],
   properties: {
     refuted: { type: 'boolean', description: 'true if the finding does not hold up' },
     citedLineMatches: { type: 'boolean', description: 'true if the cited file:line actually contains what the finding claims' },
     reachable: { type: 'boolean', description: 'true if the path is reachable in production (not test/example-only)' },
+    premiseSupported: { type: 'boolean', description: 'true if the load-bearing premise is either self-contained at the cited line or actually shown by the code at whereChecked; false if it is an off-site claim with no evidence that checks out' },
     reason: { type: 'string' },
   },
 }
@@ -307,7 +374,20 @@ const ATTACK_SCHEMA = {
 // Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
 // prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
 // injected output cannot restyle the report or compound across re-review rounds.
+// The craft release that produced a run. Recorded on every run record and index line so an
+// aggregate can be filtered to ONE engine version: without it, "did tightening that lens help?"
+// is unanswerable, because the numbers blend runs from every rubric the store has ever seen.
+// MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs` fails the build if it drifts.
+// Pair it with craftCommit (the engine's git HEAD, added by the logger): the version identifies a
+// release, the commit separates two runs of the same release while the rubric is being edited.
+const CRAFT_VERSION = '0.13.1'
 const ATTACK_MAX = 500
+// Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
+// dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
+const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
+// One-notch severity demotion (test-only reachability). In the declarations prefix alongside
+// SEV_RANK so the severity helpers stay unit-testable.
+const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
   // `REGRESSED after fix` marker word to a plain space. The words survive (no content loss) but the
@@ -338,6 +418,9 @@ function promptFields(f) {
     ruleId: flattenField(f.ruleId) || '—',
     file: flattenField(f.file),
     severity: flattenField(f.severity),
+    // A locator field like file/symbol: paths and identifiers are load-bearing (the verifier is
+    // told to OPEN it), so flatten newlines but keep `_ < > [ ]` intact — see flattenField.
+    whereChecked: flattenField(f.whereChecked),
   }
 }
 // POSIX single-quote shell-escaper for a model-authored value that lands in a shell command a
@@ -439,9 +522,15 @@ function shouldRedTeam(r) {
 // retries) or is skipped. A single quiet re-dispatch recovers most API deaths. Budget-exceeded
 // THROWS and is deliberately not caught — retrying it would just throw again.
 const AGENT_TRIES = 2
+// Every prompt in this workflow goes through ragent, so this is the one place that can retarget the
+// whole review at another checkout. Prepended (not appended) because it has to win over the git
+// commands the individual prompts spell out; shq() because the path is an argument to a real `cd`.
+const REPO_DIRECTIVE = repoArg
+  ? `WORKING DIRECTORY: this review targets the repository at ${shq(repoArg)} — NOT the directory you start in. Before ANY git / cargo / nix / file command, \`cd\` there (or pass \`git -C\`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\n`
+  : ''
 async function ragent(prompt, opts = {}) {
   for (let attempt = 1; ; attempt++) {
-    const res = await agent(prompt, attempt === 1 ? opts : { ...opts, label: `retry:${opts.label || 'agent'}` })
+    const res = await agent(`${REPO_DIRECTIVE}${prompt}`, attempt === 1 ? opts : { ...opts, label: `retry:${opts.label || 'agent'}` })
     if (res !== null && res !== undefined) return res
     if (attempt >= AGENT_TRIES) return null
     log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
@@ -489,6 +578,9 @@ function finalVerdict(confirmed) {
 function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
+    // craftVersion/craftCommit must ride in the INDEX, not just the detail file: the whole point is
+    // filtering an aggregate down to one engine version, and that is done by scanning index.jsonl.
+    craftVersion: r.craftVersion ?? null, craftCommit: r.craftCommit ?? null,
     project: r.project, commit: r.commit, dirty: r.dirty,
     branch: r.branch ?? null, head: r.head ?? null, round: r.round ?? 0,
     verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
@@ -497,13 +589,28 @@ function indexProjection(r) {
 }
 async function logRun(record) {
   const index = indexProjection(record)
+  // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
+  // but a full review record carries every finding plus the ledger, and the cheap model is where the
+  // silent truncation came from. Size the model to the payload.
+  const payloadKB = JSON.stringify(record).length / 1024
+  const big = payloadKB > 24
   await ragent(
     `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
 Steps:
 1. \`mkdir -p ~/.craft/runs\`.
-2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\` prints anything, else false.
-3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
-4. Take INDEX below, add the same four fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
+2a. CRAFT_COMMIT (best-effort, one line): \`git -C "\${CLAUDE_PLUGIN_ROOT:-.}" rev-parse --short HEAD 2>/dev/null\` — the engine's OWN commit, which is what separates two runs of the same released version while the rubric is being edited. Empty string if it cannot be resolved; never fail over this.
+2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\`prints anything, else false.
+3. COPY RECORD VERBATIM — do not retype, reformat, summarise, or "clean up" any part of it. It can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays: that is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for. Write it with a QUOTED heredoc so the shell performs no expansion, then merge the computed fields with a tool, never by hand:
+   \`\`\`
+   cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
+   …RECORD, byte for byte…
+   CRAFT_RECORD_EOF
+   jq --arg ts "$TS" --arg p "$PROJECT" --arg c "$COMMIT" --argjson d "$DIRTY" --arg cc "$CRAFT_COMMIT" \\
+      '. + {ts:$ts, project:$p, commit:$c, dirty:$d, craftCommit:$cc}' /tmp/craft-rec.json > ~/.craft/runs/"$TS-<kind>-<name>.json"
+   \`\`\`
+   (kind and name are fields in RECORD). If \`jq\` is absent use \`python3 -c\` with \`json.load\`/\`json.dump\` — still never by hand.
+3b. VERIFY, and report the result: \`jq -r '[keys[]]|join(",")' \` on both the input and the written file and confirm the key sets are IDENTICAL, plus \`jq '.dimensions|length, (.ledger|length)'\` is non-zero whenever RECORD had them. If any key was lost, say so loudly in your reply — a silently truncated record is worse than no record, because the analyzer cannot tell the difference between "this lens found nothing" and "this field never made it to disk".
+4. Take INDEX below, add the same five fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`. INDEX is small — but copy it verbatim too.
 5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
 Best-effort: if anything fails, report it but do NOT error the run.
 
@@ -512,7 +619,7 @@ ${JSON.stringify(record, null, 2)}
 
 INDEX:
 ${JSON.stringify(index)}`,
-    { label: 'log-run', phase: 'Synthesize', model: 'haiku', effort: 'low' },
+    { label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`, phase: 'Synthesize', model: big ? 'sonnet' : 'haiku', effort: 'low' },
   )
 }
 
@@ -637,7 +744,7 @@ Return baseRef (the ref you resolved, empty string if none), files (the changed 
 // produce a misleading "Approve — no supported language" on an empty file list.
 if (!detected) {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection'], outputTokens: budget.spent(),
   })
   return [`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n')
@@ -704,7 +811,7 @@ let active = Object.values(PROFILES).filter(p => (!requestedLangs || requestedLa
 if (!active.length && requestedLangs) active = requestedLangs.map(id => PROFILES[id]).filter(Boolean)
 if (!active.length) {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'Approve (NO LANGUAGE)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], outputTokens: budget.spent(),
   })
   return [`## Verdict`, `✅ Approve — no supported language (Rust/Nix) found in this diff; nothing to review.`, ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`].join('\n')
@@ -772,6 +879,7 @@ ${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}`
 CONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob${profile.navSkill ? ' + LSP' : ''}) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
 BLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in \`blastRadius\`.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
+WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Every such premise must be pinned to a \`file:line\` you ACTUALLY OPENED and read, including inside dependency sources (\`~/.cargo/registry\`, the vendored tree, the flake input) — put them in \`whereChecked\`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set \`whereChecked\` to "" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing.
 RULE ID (required field): set \`ruleId\` to the matching catalog ID from the ${profile.rubricSkill} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
 ${profile.id === 'rust' && lens === 'tests' && (plan.sizeBucket === 'medium' || plan.sizeBucket === 'large') ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to surface contracts no test would catch a regression on; skip silently if absent.' : ''}
 ALREADY-FOUND (do not repeat; look for what these MISSED):
@@ -782,13 +890,18 @@ Return {lens, findings[]}.
 Observability: the review workflow records this run — do NOT write your own record.`
 }
 
-function verifyPrompt(f, idx, isTool, gateProvenance) {
+// `profile` is threaded in for the exclusion catalog: it is per-profile (only the rust rubric ships
+// an fp-rules.md today), and naming a file the nix reviewer does not have would send it hunting.
+function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   // Model-authored fields enter this prompt as context — guard them the same way the adjudicate track
   // does: flatten identifier/locator fields via promptFields (newline is the single-value injection
   // vector; identifier chars are load-bearing for the grep) and markdown-strip the prose (why/source).
   const pf = promptFields(f)
   const src = sanitizeAttack(f.source)
   const why = sanitizeAttack(f.why)
+  const exclusionCatalog = profile?.fpRules
+    ? `\nEXCLUSION CATALOG: your rejection is itself a claim and carries the same burden of proof as the finding. Load the ${profile.rubricSkill} skill's ${profile.fpRules} and, when one of its precedents fires, name the ID in \`reason\` (e.g. "refuted per FP-006: proven-Some unwrap"). Run the TRACE each rule demands — "looks guarded" does not fire the invariant-protected rule; following the invariant to its source and showing it dominates the sink on every path does. Two of them (FP-002 operator-controlled input, FP-005 operator-only panic surface) are severity DOWNGRADES, not refutations: the claim still holds, only the attacker's access is missing — say so in \`reason\` and leave refuted=false. The file also lists the KEEP-* non-reasons, dismissals that sound decisive and have repeatedly killed real defects (soundness in a public API no current caller reaches, a logic bug in safe Rust, a panic unwinding through an unsafe region). If nothing in the catalog fits, judge on the merits — never force a bad fit to justify a drop.\n`
+    : ''
   const head = isTool
     ? `You are verifier #${idx + 1} for a TOOL-REPORTED code review finding (source: ${src}). Deterministic tool output outranks your judgement — you may refute it ONLY by re-running the tool, never on reasoning alone.`
     : `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain whether the technical claim holds — only let real findings through.`
@@ -798,24 +911,25 @@ FINDING: [${pf.severity}] ${pf.title}
   at ${pf.file || '?'}:${f.line || 0}
   why: ${why}
   source: ${src}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — the finding claims to be self-contained at the cited line)'}
 
 MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${gateProvenance ? ` The gate invoked the tools as: "${flattenField(gateProvenance)}" — if a tool is not on PATH, reproduce the gate's invocation (e.g. \`nix run nixpkgs#<tool> --\`) before declaring it unrunnable.` : ''}${isTool ? ' If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
 
 REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream.
 
-Open the cited file and check:
+${exclusionCatalog}Open the cited file and check:
 1. citedLineMatches: does ${pf.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
-2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.)
+2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.) REACHABILITY IS ABOUT THE ROUTE, not just the destination: if the claim is "reachable from untrusted input", check that the ROUTE runs from the real entry point — the parser, the handler, the deserializer, the public API — on attacker-supplied data. Reaching the state by CONSTRUCTING the object directly (a builder, \`new\`, a test fixture, an internal constructor) bypasses exactly the validation the question is about, and proves nothing about untrusted-input reachability. That trap catches careful reviewers, so check it explicitly rather than assuming the route was the obvious one.
 3. refuted: is the technical claim itself false? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.'})
+4. premiseSupported: identify the finding's LOAD-BEARING premise — the one claim that, if false, makes the finding evaporate. If it lives outside the cited line (the dependency behaves this way, this is reachable from untrusted input, no caller guards it, the sibling does X), OPEN the \`whereChecked\` location and check it actually shows that. premiseSupported=false when the premise is off-site and \`whereChecked\` is empty, points somewhere that does not show it, or merely restates the cited line. premiseSupported=true when the finding is genuinely self-contained at the cited line, or the off-site evidence checks out. Do NOT set refuted=true just because a premise is uncited — unsupported is not disproven; that is what this field is for, and it demotes the finding downstream instead of killing it.
 
-Return {refuted, citedLineMatches, reachable, reason}.`
+Return {refuted, citedLineMatches, reachable, premiseSupported, reason}.`
 }
 
 // Cross-lens dedup BEFORE verification. key() above is exact (file:line:title), so two lenses
 // wording the same defect differently both enter the pool — and each duplicate would buy its own
 // verifier fan-out. A cheap grouping pass merges same-defect findings first; synthesis keeps its
 // own dedup instruction as a safety net.
-const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 const DEDUP_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -828,6 +942,43 @@ const DEDUP_SCHEMA = {
     },
   },
 }
+// Mechanical roll-up of high-volume, low-value rule IDs. The api-idioms lens brief already ASKS for
+// this ("do NOT file one finding per occurrence — roll repeated instances into ONE finding"), and the
+// run store shows it is not obeyed: one lens produced 126 confirmed findings over 21 runs, 100 of
+// them Low/Info. An instruction the model can quietly skip is not a cap; this is. The excess is
+// folded into the representative finding rather than dropped, and the count is stated in the title
+// and logged — a silent truncation would read as "there were only N", which is worse than the flood.
+const ROLLUP_MAX = 3
+function rollupPool(pool, profile) {
+  const ids = profile.rollupRuleIds || []
+  if (!ids.length) return pool
+  const groups = new Map()
+  const out = []
+  for (const f of pool) {
+    const id = f.ruleId || ''
+    if (!ids.includes(id)) { out.push(f); continue }
+    const k = `${f.source || ''}::${id}`
+    const g = groups.get(k) || (groups.set(k, []), groups.get(k))
+    g.push(f)
+  }
+  for (const [, g] of groups) {
+    // Order by severity so the representative is the worst instance, not an arbitrary one.
+    const sorted = g.slice().sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
+    if (sorted.length <= ROLLUP_MAX) { out.push(...sorted); continue }
+    const keep = sorted.slice(0, ROLLUP_MAX)
+    const folded = sorted.slice(ROLLUP_MAX)
+    const rep = folded[0]
+    const where = folded.slice(0, 6).map(f => `${f.file || '?'}:${f.line || 0}`).join(', ')
+    out.push(...keep, {
+      ...rep,
+      title: `${rep.title} — and ${folded.length - 1} more of the same (${rep.ruleId})`,
+      why: `${rep.why} Repeated ${folded.length} more times across the diff (${where}${folded.length > 6 ? ', …' : ''}); rolled into one finding because per-occurrence reporting of this rule buries the rest of the review. Fix the pattern, not the instance.`,
+    })
+    log(`[${profile.id}] Roll-up: ${g.length}× ${rep.ruleId} from '${rep.source}' → ${keep.length} individual + 1 grouped`)
+  }
+  return out
+}
+
 async function dedupPool(pool, profile) {
   if (pool.length < 2) return pool
   const isToolSrc = f => isToolSource(profile, f.source)
@@ -860,7 +1011,10 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
     // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
     // escalation) still fires when its trigger lens was merged into a different-source base.
     const sources = [...new Set(members.map(m => m.source).filter(Boolean))]
-    merged.push({ ...base, sources, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
+    // Union the off-site evidence too: a merged-away member may have pinned the premise the base
+    // only asserted, and dropping it would cost the group its Confirmed tier at verification.
+    const whereChecked = [...new Set(members.map(m => m.whereChecked).filter(Boolean))].join('; ')
+    merged.push({ ...base, sources, whereChecked, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
   }
   if (!merged.length) return pool
   const out = pool.filter((_f, i) => !inGroup.has(i)).concat(merged)
@@ -871,43 +1025,162 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
 // Verify a pool of findings → {confirmed, suspected, dropped, refuted}. Rigor scales with the profile's plan.
 // Staged verification: cull votes run on a cheap model (sonnet); a High/Critical additionally gets exactly
 // ONE authoritative opus vote, so the cheap model can neither confirm nor drop a high-stakes finding alone.
-const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
 const CULL_MODEL = 'sonnet'
+
+// ---- verification budget ----
+// Verification is ~2/3 of a review's entire cost and scales linearly with finding count, uncapped:
+// one measured run spent 154 agents / 21MB of transcript on 111 findings. Route each finding to the
+// cheapest treatment that cannot change its outcome.
+//
+// INDIVIDUAL — Critical/High, plus any severity carrying a rule from a family that blocks on sight.
+// These decide the verdict and get the full adversarial panel, never batched, never skipped.
+// BATCHED — Medium. Can only reach Warning, so one agent judges a group of them instead of one each.
+// SKIPPED — Low/Info. No combination of verdicts on these can move Approve/Warning/Block, and craft
+// already has the right tier for an unjudged finding: Suspected is defined as "borderline or
+// UNVERIFIED; surfaced for the author, never changes the verdict". Spending an adversarial skeptic to
+// move a finding from Suspected to Suspected buys nothing. The residual risk is a lens UNDER-calling
+// severity, which the blocking-family escape hatch below covers for the families where it would hurt.
+// The escape hatch belongs ONLY on the skipped tier. Batching is still verification — a Medium the
+// lens under-called gets a real adversarial judgement either way — so the only place an under-call
+// goes unexamined is `skip`. A first attempt keyed on the whole SAF/ERR/CON *families* dragged most
+// of a Rust review back into individual treatment (measured: 88 of 137 agents, 49% of transcript
+// volume, wiping out the saving) because those families cover unwrap, dropped errors and every
+// concurrency rule. Key it on the specific CRITICAL-tier rules instead, and only when the lens
+// filed them at Low/Info — that combination *is* the under-call, and it is rare.
+const CRITICAL_TIER_RULES = new Set(['SAF-001', 'SAF-002', 'SAF-003', 'SAF-004', 'SAF-005', 'SAF-006', 'SAF-008', 'ERR-001', 'ERR-002'])
+const BATCH_SIZE = 6
+function verifyTier(f) {
+  if (f.severity === 'Critical' || f.severity === 'High') return 'individual'
+  if (f.severity === 'Medium') return 'batch'
+  // Low/Info: skipped, unless the rule it cites is one that blocks on sight — then the severity is
+  // more likely a mislabel than a judgement, and it is worth one verifier to find out.
+  return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
+}
+// Shared vote→tier decision, so the batched path cannot drift from the individual one.
+function tierFromVotes(f, votes) {
+  const v = votes.filter(Boolean)
+  if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
+  const half = v.length / 2
+  const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
+  const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
+  const premiseOk = v.filter(x => x.premiseSupported).length >= Math.ceil(half)
+  const refutes = v.filter(x => x.refuted).length
+  let tier
+  if (!lineOk) tier = 'refuted'
+  else if (refutes > half) tier = 'refuted'
+  else if (refutes === 0) tier = 'confirmed'
+  else tier = 'suspected'
+  if (tier === 'confirmed' && !premiseOk) {
+    return { ...f, tier: 'suspected', why: `${f.why} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f.whereChecked ? ` — claimed at ${f.whereChecked}` : ', and whereChecked was empty'})` }
+  }
+  if (tier === 'confirmed' && !reach) {
+    const demoted = DEMOTE[f.severity] || f.severity
+    return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
+  }
+  return { ...f, tier }
+}
+const BATCH_VERDICT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['verdicts'],
+  properties: {
+    verdicts: {
+      type: 'array',
+      description: 'one entry per finding in the batch, keyed by its index — every index must appear',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['index', 'refuted', 'citedLineMatches', 'reachable', 'premiseSupported', 'reason'],
+        properties: {
+          index: { type: 'integer' },
+          refuted: { type: 'boolean' },
+          citedLineMatches: { type: 'boolean' },
+          reachable: { type: 'boolean' },
+          premiseSupported: { type: 'boolean' },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+function batchVerifyPrompt(group, profile) {
+  const pfs = group.map((f, i) => {
+    const pf = promptFields(f)
+    return `--- FINDING ${i} ---
+[${pf.severity}] ${pf.title}
+  at ${pf.file || '?'}:${f.line || 0}
+  why: ${sanitizeAttack(f.why)}
+  source: ${sanitizeAttack(f.source)}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — claims to be self-contained at the cited line)'}`
+  }).join('\n')
+  return `You are a skeptic verifying ${group.length} INDEPENDENT ${profile.lang} review findings in one pass. They are batched only to save cost — judge each ENTIRELY on its own evidence. Never let one finding's verdict influence another's, and never assume a batch "should" contain some proportion of real ones.
+
+Open the cited file for EACH finding and judge it exactly as you would alone. Default to refuted=true when uncertain whether a technical claim holds.
+
+REFUTATION RULE: refuted=true means the TECHNICAL CLAIM is false — the cited code does not contain the claimed defect. Context is NOT refutation: test/fixture-only, looks intentional, low impact — none of those justify refuted=true. Record that in reachable=false and reason.
+
+Per finding, decide:
+- citedLineMatches: does the cited file:line actually contain what the finding claims?
+- reachable: production-reachable, or test/example/fixture-only? Reachability is about the ROUTE — a state reached by CONSTRUCTING the object directly (builder, \`new\`, a fixture) bypasses the validation the question is about and proves nothing about untrusted-input reachability.
+- refuted: is the technical claim itself false?
+- premiseSupported: name the one claim that, if false, makes the finding evaporate. If it lives outside the cited line, OPEN the claimed off-site evidence and check it shows that. false when the premise is off-site and the evidence is empty, wrong, or merely restates the cited line. Unsupported is NOT disproven — do not raise refuted for it.
+
+${pfs}
+
+Return {verdicts: [...]} with ONE entry per finding, each carrying its \`index\` (0..${group.length - 1}). Every index must appear — omitting one silently deletes a finding from the review.`
+}
 async function verifyPool(items, plan, profile, gateProvenance) {
-  const judged = await parallel(items.map(f => () => {
+  const route = { individual: [], batch: [], skip: [] }
+  for (const f of items) route[verifyTier(f)].push(f)
+
+  // Skipped tier: straight to Suspected, and SAY so on the finding — an unverified item that reads
+  // like a verified one is exactly the silent cap this codebase refuses elsewhere.
+  const skipped = route.skip.map(f => ({
+    ...f,
+    tier: 'suspected',
+    why: `${f.why} (not adversarially verified: ${f.severity} cannot change the verdict, so it is surfaced as Suspected rather than spending a verifier on it)`,
+  }))
+
+  // Batched tier: group by file so one agent reads one file's context once.
+  const byFile = new Map()
+  for (const f of route.batch) {
+    const k = f.file || '?'
+    ;(byFile.get(k) || (byFile.set(k, []), byFile.get(k))).push(f)
+  }
+  const groups = []
+  for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
+
+  const batchedNested = await parallel(groups.map(group => () =>
+    ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
+      .then(res => group.map((f, i) => {
+        const v = (res?.verdicts ?? []).find(x => x && x.index === i)
+        // A missing index is a verifier that lost a finding, not a refutation: fall back to Suspected.
+        return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
+      }))
+      .catch(() => group.map(f => ({ ...f, tier: 'suspected' }))),
+  ))
+  const batched = batchedNested.filter(Boolean).flat()
+
+  if (route.skip.length || groups.length) {
+    log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} surfaced unverified (Low/Info cannot move the verdict)`)
+  }
+
+  const judged = await parallel(route.individual.map(f => () => {
     // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
     const isTool = isToolSource(profile, f.source)
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
     const n1 = isHigh ? Math.max(1, plan.verifyVotes) : 1
     // Cull votes on the cheap model.
     const cullVotes = Array.from({ length: n1 }, (_unused, i) => () =>
-      ragent(verifyPrompt(f, i, isTool, gateProvenance), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: CULL_MODEL }),
+      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: CULL_MODEL }),
     )
     // A High/Critical always gets exactly one authoritative opus vote combined with the cull votes.
     const authVotes = isHigh
-      ? [() => ragent(verifyPrompt(f, n1, isTool, gateProvenance), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel })]
+      ? [() => ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel })]
       : []
-    return parallel([...cullVotes, ...authVotes]).then(vs => {
-      const v = vs.filter(Boolean)
-      if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
-      const half = v.length / 2
-      const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
-      const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
-      const refutes = v.filter(x => x.refuted).length
-      let tier
-      if (!lineOk) tier = 'refuted'            // hallucinated citation
-      else if (refutes > half) tier = 'refuted'
-      else if (refutes === 0) tier = 'confirmed'
-      else tier = 'suspected'
-      // Test/example-only code doesn't kill a finding — it lowers the stakes: confirm, but one severity notch down.
-      if (tier === 'confirmed' && !reach) {
-        const demoted = DEMOTE[f.severity] || f.severity
-        return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
-      }
-      return { ...f, tier }
-    })
+    return parallel([...cullVotes, ...authVotes]).then(vs => tierFromVotes(f, vs))
   }))
-  const vp = judged.filter(Boolean)
+  const vp = judged.filter(Boolean).concat(batched, skipped)
   const refuted = vp.filter(f => f.tier === 'refuted')
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
@@ -999,7 +1272,7 @@ async function reviewProfile(profile) {
   const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
   if (gateStatus === 'fail') {
-    return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -1026,6 +1299,7 @@ async function reviewProfile(profile) {
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
   const notRun = []
   const ranAtLeastOnce = new Set()
+  const lensRounds = []
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
     const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
@@ -1042,6 +1316,12 @@ async function reviewProfile(profile) {
       }
     }
     pool.push(...fresh)
+    // Per-round yield, persisted to the run record. Lenses are the other half of a review's cost
+    // (182 min / 31 agents on a measured run) and every round re-runs EVERY lens over the whole
+    // diff, but whether round 2 earns that is unknowable after the fact: the gate's seed findings
+    // make the pool non-empty from round 1, so a transcript cannot be split by round. Record it
+    // rather than guess — a later `maxRounds` cut should be argued from these numbers.
+    lensRounds.push({ round, agents: plan.lenses.length, returned: results.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     if (!fresh.length) dry = true
   }
@@ -1075,13 +1355,18 @@ async function reviewProfile(profile) {
     notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
     log(`⚠️ [${profile.id}] ${droppedLenses.length} lens(es) never returned (${reasons}). Review marked INCOMPLETE.`)
   }
+  // `ranLenses` rides along to the record: the dimension rows are built from plan.lenses, so a lens
+  // that never returned still gets a row reading 0 findings — indistinguishable from a lens that ran
+  // and found nothing. That is the difference between "redundant, consider dropping it" and "broken,
+  // fix it", and the yield analysis inverts on it.
+  const ranLenses = plan.lenses.filter(l => ranAtLeastOnce.has(l))
   if (!pool.length) {
-    return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
   }
 
   // ---- Verify ----
   phase('Verify')
-  const deduped = await dedupPool(pool, profile)
+  const deduped = await dedupPool(rollupPool(pool, profile), profile)
   let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, gateProvenance)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
 
@@ -1124,7 +1409,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
 }
 
 // ================= Run each active profile, then merge =================
@@ -1140,6 +1425,7 @@ function reviewRecord(extra) {
   return {
     schemaVersion: 1,
     runtime: 'claude-code',
+    craftVersion: CRAFT_VERSION,
     kind: 'workflow',
     name: 'review',
     nested: !!viaArg,
@@ -1147,6 +1433,7 @@ function reviewRecord(extra) {
     branch, head,
     languages: active.map(p => p.id),
     uncoveredFiles,
+    lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
     gate: { status: mergedGateStatus, provenance: mergedProvenance },
     outputTokens: budget.spent(),
@@ -1320,7 +1607,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ✅ Approve if no Confirmed Critical/High/Medium.
 Suspected findings NEVER change the verdict — they are surfaced for the author.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
-CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do.
+CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
 
 DEDUPLICATE across lenses: findings that describe the same underlying defect (same file, same/overlapping lines, fixes that collapse into one edit) MUST be merged into ONE entry — keep the highest severity and the clearest why, credit the other lens in one clause. Never list per-lens duplicates as separate findings.
 
@@ -1335,7 +1622,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
-3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise.
+3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
 ${uncoveredFiles.length ? `6. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
@@ -1398,7 +1685,11 @@ await logRun(reviewRecord({
     const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
     const suspectedCount = r.suspected.filter(f => (f.source || '') === l).length
     const refutedCount = (r.refuted || []).filter(f => (f.source || '') === l).length
-    return { dimension: `${r.profile.id}:${l}`, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount }
+    // `ran` distinguishes "executed and found nothing" from "never returned". Both otherwise render
+    // as a 0-finding row, and the yield analysis would read a broken lens as a redundant one.
+    // Absent `ranLenses` (a record written before this landed) → assume it ran, the old behaviour.
+    const ran = r.ranLenses ? r.ranLenses.includes(l) : true
+    return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount }
   })),
   verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
   notRun,
@@ -1411,7 +1702,7 @@ function fallbackReport() {
   // finalVerdict(confirmed) — confirmed holds only the delta, so finalVerdict would print a false
   // Approve and hide live still-open/regressed priors. Render those tracks too.
   const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[isRereview ? recordVerdict : finalVerdict(confirmed)]
-  const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}`
+  const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}${f.whereChecked ? ` · Premise checked at: ${f.whereChecked}` : ''}`
   const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
   return [
     `## Verdict`,

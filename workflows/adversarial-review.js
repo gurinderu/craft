@@ -30,7 +30,7 @@ const FINDINGS = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['title', 'file', 'line', 'severity', 'description', 'fix'],
+        required: ['title', 'file', 'line', 'severity', 'description', 'fix', 'whereChecked'],
         properties: {
           title: { type: 'string' },
           file: { type: 'string' },
@@ -38,6 +38,7 @@ const FINDINGS = {
           severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
           description: { type: 'string' },
           fix: { type: 'string' },
+          whereChecked: { type: 'string', description: 'OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise living OUTSIDE the cited line — a dependency\'s behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Comma-separate several. Empty string ONLY when the finding rests on no off-site claim at all' },
         },
       },
     },
@@ -46,9 +47,10 @@ const FINDINGS = {
 const VERDICT = {
   type: 'object',
   additionalProperties: false,
-  required: ['refuted', 'reasoning', 'severity'],
+  required: ['refuted', 'reasoning', 'severity', 'premiseSupported'],
   properties: {
     refuted: { type: 'boolean' },
+    premiseSupported: { type: 'boolean', description: 'true if the load-bearing premise is self-contained at the cited line or actually shown by the code at whereChecked; false if it is an off-site claim with no evidence that checks out. Unsupported is NOT the same as refuted — set refuted on its own merits' },
     reasoning: { type: 'string' },
     severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'not-an-issue'] },
   },
@@ -158,6 +160,7 @@ SLICE: ${LENS_BRIEF[lens]}
 Diff base: ${base}.
 ${intentArg ? `INTENT (what the change should do): ${intentArg}` : ''}
 CONTEXT EXPANSION (required): for each finding, read the surrounding code and trace callers of the changed symbols before judging — do not read the diff in isolation.
+WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Pin every such premise to a \`file:line\` you ACTUALLY OPENED, dependency sources included, and put them in \`whereChecked\`. An off-site premise you did not open is not admissible: open it, or drop the claim and report only what the cited line shows. Use "" only when the finding needs no off-site premise.
 CONFIDENCE: report everything you suspect, located to file:line. Do NOT self-censor borderline findings — adversarial verification happens downstream.
 
 Return {findings: []-shaped JSON}.`
@@ -341,13 +344,15 @@ const COMBINED_INSTR = `You are an adversarial verifier. Try to REFUTE this find
 1. code — is the claim factually true in the code as written? Read the actual code; do not trust the description.
 2. exploit — construct a concrete end-to-end scenario that triggers the issue. If you cannot, that counts against the finding.
 3. severity — calibrate real impact for the multi-tenant money-path, and confirm the issue is in scope for THIS diff.
-Return refuted=true if ANY dimension fails. Default to refuted=true when uncertain. Return the calibrated severity.`
+Return refuted=true if ANY dimension fails. Default to refuted=true when uncertain. Return the calibrated severity.
+Also set premiseSupported: identify the ONE claim that, if false, makes the finding evaporate. If it lives outside the cited line, OPEN the finding's whereChecked location and check it actually shows that; premiseSupported=false when the premise is off-site and whereChecked is empty, points elsewhere, or merely restates the cited line. Unsupported is NOT disproven — do not raise refuted for it; the field demotes the finding on its own.`
 const COMBINED_METRIC_INSTR = `You are an adversarial verifier for a METRIC-BACKED complexity finding.
 Use ToolSearch to load the codebase-memory MCP tools. Check ALL THREE dimensions:
 1. metric — re-read the metric values yourself via query_graph; refute if they don't match the claim or the index is unavailable.
 2. attribution — confirm THIS diff introduced or worsened the metric (compare against detect_changes); pre-existing debt misattributed to the diff -> refute or downgrade.
 3. severity — calibrate real impact: is the function on a hot / caller-reachable path (trace_path), or dead-end cold code?
-Return refuted=true if ANY dimension fails; default to refuted=true when uncertain.`
+Return refuted=true if ANY dimension fails; default to refuted=true when uncertain.
+Also set premiseSupported: true when you re-read the metric values yourself and they back the claim, false when the numbers came only from the finding's own description. Unsupported is NOT disproven — it demotes the finding without marking it refuted.`
 const PANEL_LENSES = [
   ['code', 'Verify ONLY the factual claim against the code as written. Read the code yourself; refute if the description misstates it.'],
   ['exploit', 'Try to construct a concrete end-to-end exploit/trigger scenario. Refute if no realistic path exists.'],
@@ -361,7 +366,8 @@ function buildVerifyJobs(findings, sink) {
   const jobs = []
   findings.forEach((f, idx) => {
     const ctx = `FINDING [${f.severity}] ${f.title} @ ${f.file}:${f.line}\n` +
-      `Independently reported by lenses: ${(f.sources || [f.lens]).join(', ')}\n${f.description}\nProposed fix: ${f.fix}`
+      `Independently reported by lenses: ${(f.sources || [f.lens]).join(', ')}\n${f.description}\nProposed fix: ${f.fix}\n` +
+      `Off-site evidence claimed: ${f.whereChecked || '(none — the finding claims to be self-contained at the cited line)'}`
     const push = (lens, instr, effort, tagged) => jobs.push({
       prompt: `${instr}\n\n${ctx}`,
       label: `verify${tagged ? `[${lens}]` : ''}:${f.file}:${f.line}`,
@@ -388,13 +394,19 @@ function judge(findings, sink) {
   const judged = findings.map((f, idx) => {
     const votes = sink[idx]
     const refutes = votes.filter(v => v.refuted).length
-    const confirmed = votes.length > 0 && refutes * 2 < votes.length
-    return { ...f, confirmed, votes, severity: confirmed ? calibrate(f, votes) : f.severity }
+    const survives = votes.length > 0 && refutes * 2 < votes.length
+    // An off-site premise no verifier could pin to real code is UNSUPPORTED, not disproven. It costs
+    // the finding its Confirmed tier, but it must NOT be filed as refuted: the refuted list is fed
+    // back to the next round as "adversarially disproven — do not re-report", which would bury a
+    // possibly-real finding for the rest of the run over a missing citation.
+    const premiseUnsupported = survives && votes.filter(v => v.premiseSupported).length * 2 <= votes.length
+    const confirmed = survives && !premiseUnsupported
+    return { ...f, confirmed, premiseUnsupported, votes, severity: confirmed ? calibrate(f, votes) : f.severity }
   })
   return {
     confirmed: judged.filter(v => v.confirmed),
-    refuted: judged.filter(v => !v.confirmed && v.votes.length > 0),
-    suspected: judged.filter(v => v.votes.length === 0),
+    refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && v.votes.length > 0),
+    suspected: judged.filter(v => v.votes.length === 0 || v.premiseUnsupported),
   }
 }
 

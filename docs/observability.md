@@ -18,6 +18,18 @@ can be studied later.
 Common: `ts`, `runtime` (`"claude-code"` | `"opencode"`), `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
 `findings: {total, bySeverity:{Critical,High,Medium,Low,Info}}`, `nested`, `via`.
 
+**Engine identity** — `craftVersion` (the plugin release, stamped from a `CRAFT_VERSION` const that
+`lib/check-workflows.mjs` keeps in sync with `.claude-plugin/plugin.json`) and `craftCommit`
+(craft's own git HEAD, best-effort via `$CLAUDE_PLUGIN_ROOT`). Distinct from `commit`, which is the
+**reviewed project's** HEAD, and from `schemaVersion`, which versions this record format.
+
+Both ride in `index.jsonl` as well as the detail file, because filtering an aggregate to one engine
+version is done by scanning the index. Without them, findings-per-run and refute rates average
+across every rubric change the store has ever seen, so "did tightening that lens help?" cannot be
+answered. `node lib/analyze-runs.mjs --version latest` (or `--version 0.13.1`) applies the filter;
+with no flag, a store holding more than one version says so in the report. Records written before
+these fields carry `null` and are simply outside any version filter.
+
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, confirmed, refuteRate}`,
 `notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool). The `scout`
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
