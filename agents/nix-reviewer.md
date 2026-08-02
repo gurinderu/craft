@@ -34,6 +34,13 @@ lens, review the whole Nix diff against the full rubric.
    `allowUnfree`-not-in-`nix develop` gotcha (`DEV`), secrets in the world-readable store (`MOD`),
    and dead/anti-idiomatic code (`MNT`).
 
+   **Ground every off-site premise.** A finding usually rests on a claim not visible at the line it
+   cites — "that flake input provides this", "the module default is X", "no other module sets it".
+   Open that code (the locked input's own source included) and report the `file:line` in
+   `whereChecked`; a premise you did not open is not admissible — open it or drop the claim. This
+   binds rejection too: dismissing a finding on an unopened "the module already sets this" discards
+   a real bug silently.
+
 5. **Report everything you suspect — do not self-censor.** Borderline findings are surfaced, not
    dropped; downstream verification decides Confirmed vs Suspected. Each finding cites
    `severity · file:line · [ruleId] · what · why · fix` (ruleId from `nix-review/rules.md` when it

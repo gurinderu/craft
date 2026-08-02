@@ -29,7 +29,9 @@ PR isn't ready until the loop is green.
 
 ## Step 1 — Establish the gate (CI-aware)
 
-The mechanical gate is non-negotiable: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and (if installed) `cargo audit` / `cargo deny check` must be green before human-style review is worth doing. But **before running a check locally, ask whether CI already computed it on this PR; if a conclusive required check covers it and is green, consume that result instead of recomputing.** Re-running a cold build the PR already ran in CI is slow, sometimes impossible (no toolchain/network), and redundant.
+The mechanical gate is non-negotiable: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and (if installed) `cargo audit` / `cargo deny check` must be green before human-style review is worth doing. But **before running a check locally, ask whether CI already computed it on this PR; if a conclusive check covers it and is green, consume that result instead of recomputing.** Re-running a cold build the PR already ran in CI is slow, sometimes impossible (no toolchain/network), and redundant.
+
+**Green does not have to be `required`.** Most repositories have no branch protection — `isRequired` is then null on every check and `gh api …/branches/<b>/protection` returns 404 — so a rule that only consumes *required* checks never fires and always falls through to a local build. Required-ness governs whether a **red** check blocks the merge upstream; it says nothing about whether a **green** one is trustworthy. A passing job ran the project's own command on a clean machine with a warm cache; that is better evidence than anything reproducible locally.
 
 Establish each signal:
 
@@ -38,7 +40,7 @@ Establish each signal:
    gh pr checks --json name,state,bucket,link
    ```
    If `gh` is missing, unauthenticated, offline, or finds no PR → fall straight through to the local gate (never fail on detection).
-2. **`fmt` / `clippy` / `test` / `build`** — if a required check whose name matches the command (substring: `fmt`, `clippy`, `test`, `build`/`check`) is conclusive:
+2. **`fmt` / `clippy` / `test` / `build`** — if a check whose name matches the command (substring: `fmt`, `clippy`, `test`, `build`/`check`; match generously — `cargo nextest`, `just clippy`, `ci / test (stable)` all count) is conclusive — required or not:
    - green → treat that command as **PASSED**; record provenance `via CI · PR #N`;
    - failed → the gate is red: verdict **Block**, cite the failed check name + link, stop;
    - pending / absent / name unrecognized → run that command locally (the safe default is an extra run, never a skipped check):
@@ -97,12 +99,18 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - User-controlled path used without canonicalize + prefix check (traversal)
 - Hardcoded secret / key / token / password in source
 - Deserializing untrusted input without size/depth limits
+- `debug_assert!` carrying a load-bearing invariant — an `unsafe` precondition, a bounds/length check, a trust-boundary validation. It compiles out in `--release`, so the shipped binary runs unguarded; a safety-critical check must be a real `assert!` (→ `rust-unsafe`; when `debug_assert!` *is* the right call → `rust-performance`)
 
 **Error handling**
 - Recoverable failure handled with `panic!`/`unwrap` instead of `Result`
 - `let _ = result;` silently dropping a `#[must_use]` / error value
 
 ### HIGH — block unless justified
+
+**Safety — build-profile divergence**
+- Arithmetic on an untrusted-input path whose **outcome differs between the dev/test and the shipping profile**. `overflow-checks` is on in `dev`/`test` and off in `release` by default, so the same expression panics under review and wraps silently in production.
+
+  Grade against the profile the project actually ships — read `[profile.release]` in the crate and workspace root before assuming, it may be re-enabled there. The profile-gated panic is the **floor of the impact, not the ceiling**: a panic that vanishes in release is not thereby harmless. Ask what the release build does *instead* — a silent wrap that truncates a length, misresolves an index, or corrupts state is worse than the panic precisely because nothing reports it. "Doesn't reproduce in release, moving on" is the reflex that misses it. Report both facets.
 
 **Ownership & lifetimes**
 - `.clone()` added to silence the borrow checker without understanding why
@@ -169,13 +177,13 @@ others (higher recall than one broad pass):
 
 | Lens | Slice | Owning skill for the fix |
 |---|---|---|
-| safety | injection / secrets / unsafe / untrusted-input limits | `rust-security`, `rust-unsafe` |
+| safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | ownership | needless clone, `&str`/`&[T]`, lifetimes | `rust-ownership` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
 | performance | hot-loop allocation, N+1, needless owning | `rust-performance` |
 | api-idioms | typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` | `rust-idioms` |
-| invariants | domain lifecycle/scope rules, derived/effective quantities, and eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate that drops a fail-closed dimension the sibling enforces) | `rust-architecture`, `rust-fintech` |
+| invariants | domain lifecycle/scope rules, derived/effective quantities, eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate dropping a fail-closed dimension), and the **mirror walk** on two-sided contracts (below) | `rust-architecture`, `rust-fintech` |
 | compat | serialization / persistence / rolling-deploy compatibility — a changed serde/JSONB/wire representation vs data written by other code versions (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration) | `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
@@ -205,6 +213,91 @@ security-sensitive (auth, crypto, input parsing, unsafe, FFI, deps). semgrep res
 gate failures: taint/secrets over-report, so the downstream verification refutes the false positives
 (see `rust-security`). Optional tools degrade gracefully when absent.
 
+## Severity magnitude — measure it, don't inherit it (`SAF-009`)
+
+"Same class as that other finding" is a claim about **mechanism**, not about severity. A shared root
+cause says nothing about shared magnitude, and the gap can be one or two orders of magnitude —
+entirely invisible unless someone does the arithmetic.
+
+For any resource-exhaustion or algorithmic-complexity finding, compute before you label:
+
+- **Attack throughput vs a real-data baseline.** Measure the same code on *representative real
+  input*, not only on the crafted PoC. "8× slower than normal traffic" and "50,000× slower" are
+  different findings; a decoder still running at 10+ MB/s under attack is not a denial of service.
+- **Attacker cost per unit of victim cost** — bytes (or requests) the attacker must send per second
+  of victim CPU. This is the metric that ranks two exhaustion bugs against each other; when citing a
+  prior finding as precedent, compare *this* number against that one's, not the mechanism.
+- **State the units.** A severity backed by a measurement carries its numbers into the report.
+
+Crashes have no throughput curve — a panic either fires or it doesn't. Rate those by convention
+(malformed input causing a panic, no memory corruption, in a parsing library → Medium) and say
+explicitly that it is a judgement call, so the label doesn't acquire false precision.
+
+The check cuts both ways: run honestly, it demotes inflated findings and it *promotes* the ones that
+turn out far worse than their class suggests.
+
+## The mirror walk — enforcement asymmetry (`INV-005`)
+
+For a protocol, state machine, codec, or any two-sided contract, bugs cluster where an invariant is
+enforced in one place and **not at its mirror**. The asymmetry itself is the finding — you do not
+need a crash, and a fuzzer has no oracle for it.
+
+1. **Enumerate the invariants.** The **error enum is the index**: every variant names a rule someone
+   decided to enforce. The spec/RFC and doc comments name the rest.
+2. **Grep every enforcement site** for each invariant — the guard, the version check, the bounds or
+   limit test, the capability predicate.
+3. **Walk the four mirror axes.** For each site, where is the mirror and is it guarded the same?
+   - **client ↔ server** — the server rejects X; does the client?
+   - **send ↔ receive** — the outgoing value is filtered; is the incoming one re-validated?
+   - **offered ↔ accepted** — we constrain what we offer; do we constrain what we accept back?
+   - **one-param ↔ all-params** — one negotiated parameter is validated; are its siblings (version,
+     algorithm, limit, scope)? Missing siblings travel in packs.
+4. **Release-diff each candidate** — `git diff <last-tag> -- <file>`. A guard **present in the
+   release and gone at HEAD** is a regression, not a long-standing gap; that changes its severity.
+
+Report: the invariant · enforced-at `file:line` · missing-mirror-at `file:line` · which axis · what
+the gap lets through (panic, silent drop, downgrade, accepted-but-should-be-rejected).
+
+### Proving one — the control/attack differential
+
+These findings have no crash to point at: the defect is that a value is *silently discarded* or a
+message that should be rejected is *accepted*. Build the oracle as an A/B where **exactly one
+variable changes**:
+
+- **CONTROL** — the benign arrangement; the value must arrive / the message must be rejected.
+- **ATTACK** — byte-for-byte the same construction with the one variable flipped; the loss or the
+  wrong-accept must appear.
+
+The oracle is the **delta**, not a panic. Assert both halves and exit non-zero unless CONTROL holds
+*and* ATTACK reproduces — then the reproducer doubles as the regression test, and a fix that breaks
+CONTROL cannot pass by making ATTACK stop firing.
+
+Reach the state through the crate's **own test helpers** (its `tests/common`, an internal
+`*-test` crate, a `#[cfg(feature = "test-util")]` surface) rather than hand-rolling the wire format
+or mocking the protocol. A PoC over a mock measures the mock. Then state plainly what the harness
+**demonstrated** versus what is **inferred** — "acceptance demonstrated at the API; on-path
+reachability inferred, not exercised" is an honest and much stronger claim than blurring the two.
+
+## Premise grounding — cite it or drop the claim
+
+Most findings rest on a premise that is **not visible at the line they cite**: "the dependency
+rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path
+does X". That off-site premise is the claim a review most reliably invents — and a second, smarter
+reading does not catch it, because it reproduces the same assumption. Only opening the code does.
+
+So every off-site premise is pinned to a `file:line` you **actually opened** — dependency sources
+included (`~/.cargo/registry`, the vendored tree) — and reported in the finding's `whereChecked`.
+A premise you did not open is not admissible: open it, or drop the claim and report only what the
+cited line itself shows.
+
+This binds **rejection** exactly as much as confirmation. "A caller already validates this," waved
+through without opening the caller, is the same unfounded claim as the finding it dismisses — and
+it discards a real bug silently. Uncertain and unable to check? That is Suspected, not a rejection.
+
+An off-site premise nobody could pin costs a finding its Confirmed tier — it drops to Suspected,
+never to refuted. Unsupported is not disproven, and burying it as "refuted" would keep a possibly
+real defect out of every later round.
+
 ## Verification protocol
 
 Every finding (lens or seed) is checked before it can be Confirmed:
@@ -219,6 +312,11 @@ Every finding (lens or seed) is checked before it can be Confirmed:
   actually say what the finding claims? A wrong citation drops the finding. A path that is
   test/example-only (not production-reachable) does NOT drop it — it demotes the confirmed
   severity one notch.
+- **Exclusion catalog:** a rejection is a claim and carries the same burden as the finding. When
+  one of the false-positive precedents in [fp-rules.md](fp-rules.md) fires, cite its ID
+  (`refuted per FP-006`) — and run the trace that rule demands, not the shape it matches. That file
+  also lists the `KEEP-*` non-reasons: dismissals that sound decisive and have repeatedly killed
+  real defects.
 
 ## Step 3 — Verdict
 
@@ -232,7 +330,7 @@ In **strict mode**, the maintainability bar applies: a Confirmed maintainability
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md) catalog ID when the finding maps to one (e.g. `CON-003`); novel findings need no ID. Be specific and cite the line; a finding without a location isn't actionable.
 
-"Gate green / red" is read from Step 1 — the signal may come from a green required CI check or a local run. Cite which in the `## Gate` line of the output.
+"Gate green / red" is read from Step 1 — the signal may come from a green CI check or a local run. Cite which in the `## Gate` line of the output.
 
 ## Requesting a review & acting on the verdict
 
@@ -264,13 +362,16 @@ The Rust commands that actually prove each claim:
 | formatted | `cargo fmt --check` | "I ran fmt earlier" |
 | it builds | `cargo build --release` → exit 0 | clippy passing |
 | bug fixed | re-run the case that reproduced it → passes | code changed, "looks right" |
+| a panic is release-unreachable | re-run the repro under the shipping profile **and** state what release does instead (wrap? truncate? corrupt?) | `overflow-checks` is off in release |
+| a silent-loss / wrong-accept bug is real | a control/attack pair differing in ONE variable: CONTROL correct **and** ATTACK reproducing (above) | no panic, "the code clearly drops it" |
+| a defect is reachable from untrusted input | drive it through the real public entry point on crafted input | reproduced by constructing the state directly (builder/`new`/test fixture) |
 | regression test works | saw it RED before the fix, GREEN after | it's green now |
 | no vulns | `cargo audit` / `cargo deny check` clean | "deps look fine" |
 | coverage target met | `cargo llvm-cov --fail-under-lines N` | tests pass |
 | an agent finished | read the actual diff / its output | the agent said "success" |
 | requirements met | check each one against the spec | tests pass |
 
-A green **required CI check** for the same command is also valid proof of that command (see Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal exists — CI or local — not that you must re-run it yourself.
+A green **CI check** (required or not) for the same command is also valid proof of that command (see Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal exists — CI or local — not that you must re-run it yourself.
 
 State the claim **with** the evidence, or state the real status with the evidence. An earlier run, a "should pass", or a subagent's self-report is not evidence.
 
