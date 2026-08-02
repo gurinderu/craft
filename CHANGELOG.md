@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.15.0](https://github.com/gurinderu/craft/compare/v0.14.0...v0.15.0) (2026-08-02)
+
+
+### Features
+
+* build profile review rules ([95a7ca7](https://github.com/gurinderu/craft/commit/95a7ca7b057289559d4cc4af15426e426d5e3c9d))
+* catch build-profile divergence in the Rust review rubric ([fd16514](https://github.com/gurinderu/craft/commit/fd1651449ee3291866170d8f9d7eb0cfb7159e38))
+* exclusion catalog, mirror walk, and measured severity magnitude ([13f07ed](https://github.com/gurinderu/craft/commit/13f07ed771e7fac98048545db013f7718f57877a))
+* fix-completeness checks, control/attack proof, reachability route ([6294e44](https://github.com/gurinderu/craft/commit/6294e447613c4b6093fa10a1e52d88a820ec3e60))
+* require findings to pin their off-site premise (whereChecked) ([8b3c45c](https://github.com/gurinderu/craft/commit/8b3c45c24fcf7dd041478c4fa6c84f31ed308182))
+* stamp the engine version on run records; bound and CI-defer the gate ([c783149](https://github.com/gurinderu/craft/commit/c78314917ce41e16b5ff4e0601065a9708137d59))
+
+
+### Bug Fixes
+
+* distinguish a dead lens from a quiet one; cap low-value rule floods ([ce8ba77](https://github.com/gurinderu/craft/commit/ce8ba77b51884ce55d0fd9e39e6b58417ec5d230))
+* narrow the under-call hatch, find CI by SHA, record per-round lens yield ([cd68a65](https://github.com/gurinderu/craft/commit/cd68a65be05534932404ebaffad5e83654ef4c85))
+* NOISE section ranked precise lenses as noisy; lost records were silent ([4c76c9d](https://github.com/gurinderu/craft/commit/4c76c9dec5eb5e8509d790c22b912e4e89e25285))
+
+
+### Performance Improvements
+
+* route verification by verdict power; stop the logger retyping records ([a4029ce](https://github.com/gurinderu/craft/commit/a4029ce2e461dc3b674ad6ced57d07c32a430aa0))
+
 ## [0.14.0](https://github.com/gurinderu/craft/compare/v0.13.1...v0.14.0) (2026-07-20)
 
 
