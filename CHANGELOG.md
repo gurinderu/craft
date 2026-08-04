@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.16.0](https://github.com/gurinderu/craft/compare/v0.15.0...v0.16.0) (2026-08-04)
+
+
+### Features
+
+* **review:** write run records with a script, and checkpoint them as the run goes ([9ff972c](https://github.com/gurinderu/craft/commit/9ff972c02824becd0a92a28c3e1a8dcc4316894d))
+
+
+### Bug Fixes
+
+* **review:** a pre-existing advisory reports, it does not block ([8c57e2a](https://github.com/gurinderu/craft/commit/8c57e2a9a16da092ada5b74d393ae27657ba22ee))
+* **review:** let the logger be told where craft lives ([de05551](https://github.com/gurinderu/craft/commit/de0555195eaa26da0a521166547b8124e83f1775))
+* **review:** make preflight probe with commands, and on the real PATH ([95dbcb6](https://github.com/gurinderu/craft/commit/95dbcb64b00ad35665a91305889bbda2e17b8a1d))
+
+
+### Performance Improvements
+
+* decide a High on the pair that can decide it, fold same-spot duplicates ([99d50cd](https://github.com/gurinderu/craft/commit/99d50cdac60b35874bd8df59efcbf0fc674eb103))
+* **review:** deadline every agent, verify in one wave, keep preflight cheap ([0373987](https://github.com/gurinderu/craft/commit/03739873c050c64bacf75cc4806a1dc141c0d9d9))
+* **review:** make the Rust gate probe its environment before it compiles ([ae8a6ec](https://github.com/gurinderu/craft/commit/ae8a6ecb5d1e1b60ab3b7b12de8cb2e2c15af632))
+* **review:** resolve the environment in one preflight step, and honour CI for security tools too ([0e9d9c5](https://github.com/gurinderu/craft/commit/0e9d9c5215700e0e9725570bdf71065c9d5cd792))
+
 ## [0.15.0](https://github.com/gurinderu/craft/compare/v0.14.0...v0.15.0) (2026-08-02)
 
 

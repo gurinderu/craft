@@ -472,7 +472,7 @@ const ATTACK_SCHEMA = {
 // MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs` fails the build if it drifts.
 // Pair it with craftCommit (the engine's git HEAD, added by the logger): the version identifies a
 // release, the commit separates two runs of the same release while the rubric is being edited.
-const CRAFT_VERSION = '0.15.0' // x-release-please-version
+const CRAFT_VERSION = '0.16.0' // x-release-please-version
 const ATTACK_MAX = 500
 // Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
 // dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
