@@ -76,6 +76,67 @@ second time — the cache is no warmer and you will spend the whole review on it
 reserved for a check that actually RAN and came back red. If the primary gate times out, the review
 continues on the remaining signals with status=unknown — an incomplete gate beats a dead run.`
 
+// ---- preflight: resolve the environment ONCE, before anything expensive ----
+// This used to be improvised inside the gate agent, which learned it the expensive way — a measured
+// run spent 50s discovering it was outside the repo's dev shell and 113s discovering the crate cannot
+// compile without a database, and reported neither signal. Worse, every agent that later runs a tool
+// (the gate, a lens re-running clippy, a verifier doing its MECHANICAL CHECK) rediscovered the same
+// facts independently. Resolve them once, cheaply, and hand the answer to everyone downstream.
+const PREFLIGHT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'notes'],
+  properties: {
+    runner: { type: 'string', description: 'prefix every build/lint command needs, e.g. "direnv exec . " or "nix develop -c " — empty string if commands run bare' },
+    blockers: { type: 'array', items: { type: 'string' }, description: 'reasons this tree CANNOT compile here, one per line, e.g. "sqlx query macros need a live Postgres; no offline .sqlx cache and no DATABASE_URL"' },
+    missingTools: { type: 'array', items: { type: 'string' }, description: 'gate tools not on PATH (cargo-audit, cargo-deny, semgrep, …)' },
+    ciCovers: { type: 'array', items: { type: 'string' }, description: 'signals a GREEN CI check already establishes for this exact HEAD, as "<signal> via <check name>" — e.g. "test via cargo nextest", "deny-bans via cargo-deny"' },
+    notes: { type: 'string' },
+  },
+}
+function preflightPrompt(profile, ctx) {
+  return `You are the PREFLIGHT for a ${profile.lang} review: resolve, cheaply and once, what the later steps must not rediscover. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
+
+This is reconnaissance, NOT the gate. Run nothing that compiles, builds, or takes more than a few seconds. Every answer below comes from reading the working tree or asking the API.
+
+1. RUNNER. Does this repo pin its toolchain and system libraries in a dev shell? Look for \`.envrc\`, \`flake.nix\`, \`shell.nix\`, \`.direnv/\`. If so and \`direnv\`/\`nix\` is on PATH, the prefix is \`direnv exec . \` (preferred when \`.envrc\` exists and is allowed) or \`nix develop -c \`. Verify it works with something instant — \`<prefix>rustc --version\` or \`<prefix>true\` — never with a build. Outside such a shell, system libraries (openssl, protobuf, pkg-config) are absent and any build dies in a C dependency unrelated to the diff. Empty string only if the repo genuinely needs no prefix.
+
+2. BLOCKERS — things that make a local build impossible no matter how long it runs, so nobody downstream wastes minutes proving it:
+${profile.id === 'rust'
+    ? `   - compile-time-checked SQL: \`sqlx\` in \`Cargo.lock\` with NO offline cache (no \`.sqlx/\` at the repo root or in the changed package) and no \`DATABASE_URL\` — every query macro tries to reach a live database and the crate fails to compile.
+   - a build script or macro that needs a generated file, a private registry token (\`CARGO_REGISTRIES_*\`), or a service that is not running.
+   - a toolchain the repo pins (\`rust-toolchain.toml\`) that is not installed and cannot be fetched offline.`
+    : `   - an input the flake cannot fetch offline, a private registry/token the evaluation needs, or a builder platform this machine is not (\`system\` mismatch).`}
+   Report each as one plain line naming the tool that cannot run and WHY. Report nothing you have not actually checked.
+
+3. MISSING TOOLS. Which of ${profile.id === 'rust' ? '`cargo-audit`, `cargo-deny`, `cargo-semver-checks`, `semgrep`' : '`statix`, `deadnix`, `nixpkgs-fmt`/`alejandra`, `nix-instantiate`'} are NOT on PATH (check with the runner prefix applied — a tool can exist only inside the dev shell). An absent tool is an intentional skip downstream, not a failure.
+
+4. CI COVERAGE. Which signals does a GREEN check already establish for THIS EXACT commit? \`gh pr checks --json name,state,bucket,link\` resolves by branch name and returns nothing on a review worktree or detached HEAD — that false negative costs the whole CI shortcut, so when it comes up empty look the PR up by commit:
+   \`\`\`
+   SHA=$(git rev-parse HEAD)
+   gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'
+   gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" --jq '.check_runs[] | "\\(.name) \\(.status) \\(.conclusion)"'
+   \`\`\`
+   Owner/repo from \`git remote get-url origin\`. Accept a check ONLY when it ran on your exact HEAD SHA — a PR whose head has moved past your commit proves nothing about your commit. Then READ the workflow file behind each green check (\`.github/workflows/*.yml\`) and record what it actually runs, not what its name suggests: a job called \`cargo-deny\` that runs \`check bans\` covers bans and NOT advisories or licenses. Name the sub-command in the entry when it is narrower than the tool.
+   List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
+
+Keep the whole pass under a couple of minutes. Return runner, blockers, missingTools, ciCovers, notes.`
+}
+// Rendered into every downstream prompt that might run a tool, so the answer travels with the work.
+function preflightBrief(pf) {
+  if (!pf) return ''
+  const runner = pf.runner ? `\`${flattenField(pf.runner)}\`` : '(none needed — commands run bare)'
+  const lines = [`PREFLIGHT (already resolved — do NOT rediscover any of this):`,
+    `- Command prefix for every build/lint/test command: ${runner}. Commands run without it die in missing system libraries, not in your diff.`]
+  if (pf.blockers?.length) lines.push(`- CANNOT BUILD HERE: ${pf.blockers.map(flattenField).join(' · ')}. Any step that needs a compile is UNRUNNABLE — skip it and say so; do NOT run it to watch it fail.`)
+  if (pf.missingTools?.length) lines.push(`- Not installed: ${pf.missingTools.map(flattenField).join(', ')} — an absent tool is an intentional skip, never a failure.`)
+  lines.push(pf.ciCovers?.length
+    ? `- Already GREEN in CI for this exact commit: ${pf.ciCovers.map(flattenField).join(' · ')}. Do NOT re-run these locally — CI ran the project's real command on a clean machine. Cite the check in provenance instead.`
+    : `- CI covers nothing for this commit (or could not be consulted) — every signal must be established locally or reported unknown.`)
+  if (pf.notes) lines.push(`- Preflight notes: ${flattenField(pf.notes)}`)
+  return lines.join('\n') + '\n'
+}
+
 // ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
 function rustDepContext(ctx) {
   return `8. **Dependency context** — review against the crate versions the project ACTUALLY pins, not against crates-in-the-abstract. Resolve them: \`cargo metadata --format-version 1\` (or read \`Cargo.lock\`) and match the external crates the changed files \`use\` to their locked versions. For any nontrivial dependency the diff touches, check whether the usage is correct *for that pinned version* — a since-deprecated/removed/renamed API, a changed default, a known footgun of that exact version. Consult context7 for the crate's version-specific docs instead of trusting memory. Turn a genuine version-specific misuse into a seed finding (source "dep-context", severity Medium, ruleId "DEP-001"). Known-vulnerable versions are already covered by \`cargo audit\` (ruleId "DEP-002") — do not duplicate. Best-effort: skip silently if \`cargo metadata\` fails or the diff touches no external crate.`
@@ -83,12 +144,10 @@ function rustDepContext(ctx) {
 function rustGate(ctx) {
   return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
+${preflightBrief(ctx.preflight)}
 GATE (CI-aware, per the rust-review skill — load it):
-0. PREFLIGHT — two seconds of probing, BEFORE the first command that compiles anything. Skipping this is what makes a gate slow: a measured run spent 50s discovering it was outside the dev shell and another 113s discovering the crate cannot compile at all, then reported neither signal. Both were answerable by \`ls\`.
-   a. RUNNER. If the repo has \`.envrc\`/\`flake.nix\`/\`shell.nix\` and \`direnv\`/\`nix\` is on PATH, every cargo command MUST be prefixed — \`direnv exec . <cmd>\` (or \`nix develop -c <cmd>\`). System libraries (openssl, protobuf, pkg-config) live in that shell and nowhere else, so an unprefixed build dies in a C dependency that has nothing to do with the diff. Resolve the prefix ONCE here and use it for every cargo invocation below. Never learn this from a failure.
-   b. COMPILE BLOCKERS. Some crates cannot be built on this machine at all, and no amount of retrying changes that. Check the cheap ones now: compile-time-checked SQL (\`sqlx\` in \`Cargo.lock\`) with NO offline cache (no \`.sqlx/\` at the repo root or in the changed package) and no \`DATABASE_URL\` — every query macro then tries to reach a live database and the crate fails to compile; likewise a required env var or generated file the build script needs. If a blocker is present, treat EVERY compile-requiring step (the local clippy fallback in 2, tests, and the pedantic seeds in 5) as unrunnable: skip them, and record the reason in provenance ("pedantic seeds unavailable: sqlx macros need Postgres"). Do NOT run the command to see it fail — you already know the answer, and it costs minutes.
-   Say in notes what the preflight resolved: the runner prefix, and each blocker found. If it found none, say that too — "preflight clean" is what makes a later failure worth reading.
-1. Detect a PR + CI. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
+0. USE THE PREFLIGHT ABOVE. Its command prefix goes on every cargo invocation; its blockers make the matching steps unrunnable (skip them and record WHY in provenance — "pedantic seeds unavailable: sqlx macros need Postgres"); its ciCovers list is the set of signals you must NOT re-establish locally. It was resolved by a separate step precisely so this one does not pay to rediscover it. If it is absent or empty, fall back to establishing these yourself — but cheaply, by reading the tree, never by running a build to read its error.
+1. Detect a PR + CI — SKIP THIS ENTIRELY if preflight already returned ciCovers; that list IS the detection, and repeating the gh calls costs ~90s for an answer you were handed. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
    \`\`\`
    SHA=$(git rev-parse HEAD)
    gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'   # PRs whose head is this commit
@@ -105,7 +164,10 @@ GATE (CI-aware, per the rust-review skill — load it):
    Note the trade-off in notes: a scoped run cannot see a break this change causes in a DEPENDENT crate elsewhere in the workspace. That is CI's job — and if CI covered clippy you should not be running this at all (step 2 above). When you scope, say so, and name the packages.
    If the project defines no recipe, use \`cargo fmt --check\` and \`cargo clippy -p <changed> --all-targets --message-format=short -- -D warnings\`.
    TESTS: run them locally ONLY if CI did not cover them AND they need no infrastructure (per 1b) — and then scoped, \`cargo test -p <changed package>\`, never the whole workspace. If the changed package's tests need a service, or a bare \`cargo test\` starts pulling one up, stop and record the test signal as unknown. Do not chase a green suite; that is not what this gate is for.
-3. Security tools (\`cargo audit\`, \`cargo deny check\`) always run locally if installed (cheap, usually absent from CI). A vulnerability with a fix is a fail.
+3. Security tools (\`cargo audit\`, \`cargo deny\`) — usually absent from CI, so usually yours to run, but they get the SAME two rules as everything else:
+   - CI COVERAGE. If preflight lists one as already green for this commit, do not re-run it. Note the sub-command: a CI job running \`cargo deny check bans\` covers bans ONLY — advisories and licenses remain yours.
+   - THE PROJECT'S SCOPE, NOT THE TOOL'S DEFAULTS. Run the sub-checks the project actually configures. \`cargo deny check\` with no arguments runs advisories/bans/licenses/sources, and the unconfigured ones fall back to cargo-deny's defaults — so a \`deny.toml\` containing only \`[bans]\` will "fail" licenses and advisories on a policy the project never wrote. That is a property of the tool, not a defect in the diff. Read \`deny.toml\` (and the CI invocation) and run exactly the configured sub-checks; if a sub-check has no configuration, skip it and say so in notes rather than reporting a default-policy failure.
+   A vulnerability with a published fix is a fail. But say whether it is PRE-EXISTING: if the diff changes no \`Cargo.toml\`/\`Cargo.lock\`, the advisory was there before this change and is not something this review can ask the author to fix — record it in failedChecks with "PRE-EXISTING (diff touches no dependency manifest)" so the verdict line is honest about what the author is actually being blocked on.
 4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
 
 SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
@@ -132,7 +194,9 @@ function nixDepContext(ctx) {
 function nixGate(ctx) {
   return `You are establishing the mechanical gate for a Nix review and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
+${preflightBrief(ctx.preflight)}
 GATE (per the nix-review skill — load it):
+0. USE THE PREFLIGHT ABOVE rather than rediscovering it: its command prefix, its blockers (a step that cannot evaluate here is skipped and reported, never run to watch it fail), its missing tools, and its ciCovers — signals already green in CI for this exact commit are cited, not re-run.
 1. If a \`flake.nix\` exists: \`nix flake check\` — a failure is a gate failure (list it in failedChecks), not a seed.
 2. Formatter: run \`alejandra --check .\` or \`nixpkgs-fmt --check\` (whichever the repo uses — check for a formatter in the flake / a treefmt config). Mismatches are seeds (source "fmt", Low), never a gate failure unless CI enforces fmt.
 3. \`nix eval\`/\`nix build\` the attrs the diff touches — an eval or build error on changed code is a gate failure.
@@ -1360,20 +1424,41 @@ async function reviewProfile(profile) {
     }
   }
 
+  // ---- Preflight ----
+  // Cheap and first: resolve the runner, the compile blockers and what CI already covers, so the gate
+  // spends its time on signals rather than on discovering its own environment. Best-effort by design —
+  // a preflight that dies just leaves the gate to work it out the old way.
+  const preflight = await ragent(preflightPrompt(profile, { baseRef }),
+    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low' })
+  if (preflight) {
+    log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
+      + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
+      + ` · CI covers ${preflight.ciCovers?.length ? preflight.ciCovers.join(', ') : 'nothing'}`
+      + `${preflight.missingTools?.length ? ` · missing: ${preflight.missingTools.join(', ')}` : ''}`)
+  }
+
   // ---- Gate ----
-  const gate = await ragent(profile.gate({ baseRef, isLibrary: plan.isLibrary, securitySensitive: plan.securitySensitive }),
+  const gate = await ragent(profile.gate({ baseRef, isLibrary: plan.isLibrary, securitySensitive: plan.securitySensitive, preflight }),
     { label: `gate:${profile.id}`, schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' })
   const gateStatus = gate?.status ?? 'unknown'
   const gateProvenance = gate?.provenance ?? 'gate not established'
   const failedChecks = gate?.failedChecks ?? []
   const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
+  // What a VERIFIER needs to run a tool, as opposed to what the RECORD needs to explain the gate.
+  // Kept separate so the preflight's runner prefix never leaks into the persisted provenance string.
+  const toolProvenance = [
+    gateProvenance,
+    preflight?.runner ? `run every tool as \`${flattenField(preflight.runner).trim()} <cmd>\` — bare invocations die in missing system libraries` : '',
+    preflight?.blockers?.length ? `CANNOT compile here: ${preflight.blockers.map(flattenField).join('; ')} — a tool needing a build is unrunnable, say so rather than reporting its error as evidence` : '',
+  ].filter(Boolean).join(' · ')
   // First checkpoint: from here on, a run that dies still says what was planned and whether the tree
   // was green. Everything before this point is cheap to redo; everything after it is not.
   await checkpoint(`${profile.id}-plan`, {
     language: profile.id, branch, head: baseRef,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, seeds: seedFindings.length },
+    preflight: preflight ? { runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers } : null,
   }, 'Gate')
   if (gateStatus === 'fail') {
     return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
@@ -1479,7 +1564,7 @@ async function reviewProfile(profile) {
   // ---- Verify ----
   phase('Verify')
   const deduped = await dedupPool(rollupPool(pool, profile), profile)
-  let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, gateProvenance)
+  let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, toolProvenance)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
   await checkpoint(`${profile.id}-verify`, {
     language: profile.id,
@@ -1511,7 +1596,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
       ))).filter(Boolean).flatMap(r => r.findings || [])
       const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
       if (fresh.length) {
-        const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, gateProvenance)
+        const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
         dropped += v.dropped
