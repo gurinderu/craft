@@ -42,6 +42,14 @@ const pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit pe
 // it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
 // its own checkout — reviewing a PR in another repo silently reviewed craft instead.
 const repoArg = A.repo ? String(A.repo) : ''
+// Where craft itself lives, so the logger can find lib/craft-log-run.mjs. As an installed plugin
+// CLAUDE_PLUGIN_ROOT is set for us; when the engine is launched by scriptPath from a checkout it is
+// NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
+// be there and the whole record would be lost to a "Cannot find module". Pass craftRoot then.
+const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
+const LOGGER_PATH = craftRootArg
+  ? `${shq(craftRootArg)}/lib/craft-log-run.mjs`
+  : '"${CLAUDE_PLUGIN_ROOT:-.}/lib/craft-log-run.mjs"'
 const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
 const requestedLangs = (Array.isArray(A.languages) && A.languages.length)
@@ -599,7 +607,7 @@ Run exactly this, then return the runDir the script prints:
 cat > /tmp/craft-ckpt.json <<'CRAFT_CKPT_EOF'
 …PAYLOAD below, byte for byte…
 CRAFT_CKPT_EOF
-node "\${CLAUDE_PLUGIN_ROOT:-.}/lib/craft-log-run.mjs" checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-ckpt.json
+node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-ckpt.json
 \`\`\`
 
 The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
@@ -631,7 +639,7 @@ Run exactly this:
 cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-node "\${CLAUDE_PLUGIN_ROOT:-.}/lib/craft-log-run.mjs" finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-rec.json
+node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-rec.json
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, craftCommit), names the file, appends the index line, folds in this run's phase checkpoints and verifies the readback. You compute NONE of that.
