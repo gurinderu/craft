@@ -84,6 +84,10 @@ function rustGate(ctx) {
   return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
 GATE (CI-aware, per the rust-review skill — load it):
+0. PREFLIGHT — two seconds of probing, BEFORE the first command that compiles anything. Skipping this is what makes a gate slow: a measured run spent 50s discovering it was outside the dev shell and another 113s discovering the crate cannot compile at all, then reported neither signal. Both were answerable by \`ls\`.
+   a. RUNNER. If the repo has \`.envrc\`/\`flake.nix\`/\`shell.nix\` and \`direnv\`/\`nix\` is on PATH, every cargo command MUST be prefixed — \`direnv exec . <cmd>\` (or \`nix develop -c <cmd>\`). System libraries (openssl, protobuf, pkg-config) live in that shell and nowhere else, so an unprefixed build dies in a C dependency that has nothing to do with the diff. Resolve the prefix ONCE here and use it for every cargo invocation below. Never learn this from a failure.
+   b. COMPILE BLOCKERS. Some crates cannot be built on this machine at all, and no amount of retrying changes that. Check the cheap ones now: compile-time-checked SQL (\`sqlx\` in \`Cargo.lock\`) with NO offline cache (no \`.sqlx/\` at the repo root or in the changed package) and no \`DATABASE_URL\` — every query macro then tries to reach a live database and the crate fails to compile; likewise a required env var or generated file the build script needs. If a blocker is present, treat EVERY compile-requiring step (the local clippy fallback in 2, tests, and the pedantic seeds in 5) as unrunnable: skip them, and record the reason in provenance ("pedantic seeds unavailable: sqlx macros need Postgres"). Do NOT run the command to see it fail — you already know the answer, and it costs minutes.
+   Say in notes what the preflight resolved: the runner prefix, and each blocker found. If it found none, say that too — "preflight clean" is what makes a later failure worth reading.
 1. Detect a PR + CI. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
    \`\`\`
    SHA=$(git rev-parse HEAD)
@@ -105,7 +109,7 @@ GATE (CI-aware, per the rust-review skill — load it):
 4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
 
 SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
-5. Pedantic seeds (a SEPARATE, optional pass — never a substitute for the gate in step 2), on the SAME changed packages and the SAME feature flags you resolved there, so the two passes see the same code: \`cargo clippy -p <pkg> --all-targets --message-format=short <their feature flags> -- -W clippy::pedantic -W clippy::nursery\`. Only fall back to the whole workspace when the diff genuinely spans it. Keep the last ~200 diagnostic lines; if you truncate, SAY how many you dropped in notes — a silent cut reads as "there were only N". Turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these. This step is optional: if it exceeds the budget, skip it and note that the pedantic seeds are absent.
+5. Pedantic seeds (a SEPARATE, optional pass — never a substitute for the gate in step 2; SKIP OUTRIGHT if preflight 0b found a compile blocker), on the SAME changed packages and the SAME feature flags you resolved there, so the two passes see the same code: \`cargo clippy -p <pkg> --all-targets --message-format=short <their feature flags> -- -W clippy::pedantic -W clippy::nursery\`. Only fall back to the whole workspace when the diff genuinely spans it. Keep the last ~200 diagnostic lines; if you truncate, SAY how many you dropped in notes — a silent cut reads as "there were only N". Turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these. This step is optional: if it exceeds the budget, skip it and note that the pedantic seeds are absent.
 ${ctx.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
 
 7. SAST seed (semgrep) — decide what configs apply, then run only if any do:
@@ -597,7 +601,12 @@ const CHECKPOINT_SCHEMA = {
   properties: { runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' } },
 }
 let runDir = ''
-async function checkpoint(phase, payload, group) {
+async function checkpoint(phase, payloadIn, group) {
+  // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
+  // that name to rebuild a dead run's identity. A payload without them produced a real
+  // `…Z-unknown-unknown` directory on the first live run — recoverable, but recovered as a run of
+  // nothing. They belong on every slice, not just the final record.
+  const payload = { kind: 'workflow', name: 'review', ...payloadIn }
   const res = await ragent(
     `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
