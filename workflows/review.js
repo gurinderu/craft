@@ -538,7 +538,7 @@ async function ragent(prompt, opts = {}) {
 }
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
-// Mirrors: countBySeverity, summarizeFindings, reviewVerdict, indexProjection, titleShingle,
+// Mirrors: countBySeverity, summarizeFindings, reviewVerdict, titleShingle,
 // fingerprint, shingleOverlap, matchesPrior, DISPOSITION_FROM_TRIAGE, dispositionFromTriage,
 // rereviewVerdict, selectPriorRound.
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
@@ -575,50 +575,73 @@ function finalVerdict(confirmed) {
     && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) return 'Block'
   return reviewVerdict(confirmed)
 }
-function indexProjection(r) {
-  return {
-    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
-    // craftVersion/craftCommit must ride in the INDEX, not just the detail file: the whole point is
-    // filtering an aggregate down to one engine version, and that is done by scanning index.jsonl.
-    craftVersion: r.craftVersion ?? null, craftCommit: r.craftCommit ?? null,
-    project: r.project, commit: r.commit, dirty: r.dirty,
-    branch: r.branch ?? null, head: r.head ?? null, round: r.round ?? 0,
-    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
-    nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
-  }
+// indexProjection is NOT mirrored here any more: lib/craft-log-run.mjs imports the real one and owns
+// the index line. A second copy in the workflow would be a copy nothing calls — free to drift out of
+// sync with the projection that actually gets written, which is the worst kind of dead code.
+// A phase checkpoint. Small by construction — counts, per-lens yields, the gate verdict — because
+// its job is to survive the run, not to duplicate the final record early. `runDir` is threaded back
+// out of the first call so every later checkpoint lands in the same directory without the sandbox
+// needing a clock or a run id (it has neither).
+const CHECKPOINT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['runDir'],
+  properties: { runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' } },
 }
+let runDir = ''
+async function checkpoint(phase, payload, group) {
+  const res = await ragent(
+    `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
+
+Run exactly this, then return the runDir the script prints:
+
+\`\`\`
+cat > /tmp/craft-ckpt.json <<'CRAFT_CKPT_EOF'
+…PAYLOAD below, byte for byte…
+CRAFT_CKPT_EOF
+node "\${CLAUDE_PLUGIN_ROOT:-.}/lib/craft-log-run.mjs" checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-ckpt.json
+\`\`\`
+
+The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
+
+PAYLOAD:
+${JSON.stringify(payload, null, 2)}`,
+    { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
+  )
+  if (res?.runDir) runDir = res.runDir
+}
+
+// Persisting the record is deterministic work, and it is now done by lib/craft-log-run.mjs. The model
+// is left in the loop only because the sandbox cannot reach a filesystem at all — its entire job is a
+// quoted heredoc into the script. It no longer computes ts/project/commit/dirty, chooses the filename,
+// hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
+// review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
 async function logRun(record) {
-  const index = indexProjection(record)
   // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
   // but a full review record carries every finding plus the ledger, and the cheap model is where the
   // silent truncation came from. Size the model to the payload.
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
   await ragent(
-    `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
-Steps:
-1. \`mkdir -p ~/.craft/runs\`.
-2a. CRAFT_COMMIT (best-effort, one line): \`git -C "\${CLAUDE_PLUGIN_ROOT:-.}" rev-parse --short HEAD 2>/dev/null\` — the engine's OWN commit, which is what separates two runs of the same released version while the rubric is being edited. Empty string if it cannot be resolved; never fail over this.
-2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\`prints anything, else false.
-3. COPY RECORD VERBATIM — do not retype, reformat, summarise, or "clean up" any part of it. It can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays: that is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for. Write it with a QUOTED heredoc so the shell performs no expansion, then merge the computed fields with a tool, never by hand:
-   \`\`\`
-   cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
-   …RECORD, byte for byte…
-   CRAFT_RECORD_EOF
-   jq --arg ts "$TS" --arg p "$PROJECT" --arg c "$COMMIT" --argjson d "$DIRTY" --arg cc "$CRAFT_COMMIT" \\
-      '. + {ts:$ts, project:$p, commit:$c, dirty:$d, craftCommit:$cc}' /tmp/craft-rec.json > ~/.craft/runs/"$TS-<kind>-<name>.json"
-   \`\`\`
-   (kind and name are fields in RECORD). If \`jq\` is absent use \`python3 -c\` with \`json.load\`/\`json.dump\` — still never by hand.
-3b. VERIFY, and report the result: \`jq -r '[keys[]]|join(",")' \` on both the input and the written file and confirm the key sets are IDENTICAL, plus \`jq '.dimensions|length, (.ledger|length)'\` is non-zero whenever RECORD had them. If any key was lost, say so loudly in your reply — a silently truncated record is worse than no record, because the analyzer cannot tell the difference between "this lens found nothing" and "this field never made it to disk".
-4. Take INDEX below, add the same five fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`. INDEX is small — but copy it verbatim too.
-5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
-Best-effort: if anything fails, report it but do NOT error the run.
+    `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
+
+Run exactly this:
+
+\`\`\`
+cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
+…RECORD below, byte for byte…
+CRAFT_RECORD_EOF
+node "\${CLAUDE_PLUGIN_ROOT:-.}/lib/craft-log-run.mjs" finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-rec.json
+\`\`\`
+
+The script computes every field (ts, project, commit, dirty, craftCommit), names the file, appends the index line, folds in this run's phase checkpoints and verifies the readback. You compute NONE of that.
+
+COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
+
+If the script prints a line starting \`craft-log-run FAILED\`, report that line verbatim and stop — do NOT fall back to writing the file by hand. Otherwise report its stdout. Best-effort either way: never error the run over this.
 
 RECORD:
-${JSON.stringify(record, null, 2)}
-
-INDEX:
-${JSON.stringify(index)}`,
+${JSON.stringify(record, null, 2)}`,
     { label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`, phase: 'Synthesize', model: big ? 'sonnet' : 'haiku', effort: 'low' },
   )
 }
@@ -1328,6 +1351,13 @@ async function reviewProfile(profile) {
   const failedChecks = gate?.failedChecks ?? []
   const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
+  // First checkpoint: from here on, a run that dies still says what was planned and whether the tree
+  // was green. Everything before this point is cheap to redo; everything after it is not.
+  await checkpoint(`${profile.id}-plan`, {
+    language: profile.id, branch, head: baseRef,
+    scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
+    gate: { status: gateStatus, provenance: gateProvenance, failedChecks, seeds: seedFindings.length },
+  }, 'Gate')
   if (gateStatus === 'fail') {
     return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
   }
@@ -1417,6 +1447,14 @@ async function reviewProfile(profile) {
   // and found nothing. That is the difference between "redundant, consider dropping it" and "broken,
   // fix it", and the yield analysis inverts on it.
   const ranLenses = plan.lenses.filter(l => ranAtLeastOnce.has(l))
+  // The lens phase is the expensive half of a review and the half most often lost: on the run that
+  // prompted this, verification died to a usage limit and took every lens's yield with it.
+  await checkpoint(`${profile.id}-lenses`, {
+    language: profile.id, ranLenses, droppedLenses, lensRounds,
+    candidates: summarizeFindings(pool),
+    candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
+    notRun,
+  }, 'Lenses')
   if (!pool.length) {
     return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
   }
@@ -1426,6 +1464,12 @@ async function reviewProfile(profile) {
   const deduped = await dedupPool(rollupPool(pool, profile), profile)
   let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, gateProvenance)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
+  await checkpoint(`${profile.id}-verify`, {
+    language: profile.id,
+    verdict: finalVerdict(confirmed),
+    findings: summarizeFindings(confirmed),
+    verification: { candidates: deduped.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped },
+  }, 'Verify')
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
   phase('Synthesize')
