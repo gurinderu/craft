@@ -380,7 +380,7 @@ const ATTACK_SCHEMA = {
 // MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs` fails the build if it drifts.
 // Pair it with craftCommit (the engine's git HEAD, added by the logger): the version identifies a
 // release, the commit separates two runs of the same release while the rubric is being edited.
-const CRAFT_VERSION = '0.13.1'
+const CRAFT_VERSION = '0.15.0' // x-release-please-version
 const ATTACK_MAX = 500
 // Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
 // dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
@@ -979,6 +979,38 @@ function rollupPool(pool, profile) {
   return out
 }
 
+// Two findings at the SAME file:line whose titles are near-identical are one defect, and the model
+// dedup pass is measurably bad at saying so: it runs on haiku with a 160-char slice of `why`, and its
+// own "same file+line alone is NOT enough / when in doubt do NOT group" instruction biases it toward
+// keeping both. Measured on a payments-service run: the 'reconciler' and 'errors' lenses filed the same
+// reconcile-alarm defect at one line with titles sharing their first 76 characters, survived dedup as
+// two findings, and each paid a full 4-vote individual verification. Catch that deterministically — the
+// model pass then only has to handle the genuinely reworded cross-file duplicates it is good at.
+const SAME_SPOT_OVERLAP = 0.6
+function sameSpotGroups(pool) {
+  const bySpot = new Map()
+  pool.forEach((f, i) => {
+    if (!f || !f.file) return // no location → nothing to key on; leave it to the model pass
+    const k = `${String(f.file).toLowerCase()}:${f.line || 0}`
+    ;(bySpot.get(k) || (bySpot.set(k, []), bySpot.get(k))).push(i)
+  })
+  const groups = []
+  for (const [, idxs] of bySpot) {
+    if (idxs.length < 2) continue
+    const taken = new Set()
+    for (const i of idxs) {
+      if (taken.has(i)) continue
+      const g = [i]
+      for (const j of idxs) {
+        if (j === i || taken.has(j)) continue
+        if (shingleOverlap(pool[i].title, pool[j].title) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
+      }
+      if (g.length > 1) { taken.add(i); groups.push(g) }
+    }
+  }
+  return groups
+}
+
 async function dedupPool(pool, profile) {
   if (pool.length < 2) return pool
   const isToolSrc = f => isToolSource(profile, f.source)
@@ -997,7 +1029,12 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   } catch (e) {
     log(`[${profile.id}] dedup pass failed (${String((e && e.message) || e).slice(0, 80)}) — verifying the raw pool`)
   }
-  const groups = (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length))
+  // Deterministic same-spot groups go FIRST: the "overlapping groups: first wins" rule below then
+  // makes them authoritative over a model group that would have split the same indices differently.
+  const detGroups = sameSpotGroups(pool)
+  const groups = detGroups.concat(
+    (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length)),
+  )
   const merged = []
   const inGroup = new Set()
   for (const g of groups) {
@@ -1018,7 +1055,8 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   }
   if (!merged.length) return pool
   const out = pool.filter((_f, i) => !inGroup.has(i)).concat(merged)
-  log(`[${profile.id}] Dedup before verify: ${pool.length} → ${out.length} (${pool.length - out.length} cross-lens duplicate(s) merged)`)
+  const detFolded = detGroups.reduce((n, g) => n + g.length - 1, 0)
+  log(`[${profile.id}] Dedup before verify: ${pool.length} → ${out.length} (${pool.length - out.length} cross-lens duplicate(s) merged — ${detFolded} of them same-spot, caught deterministically)`)
   return out
 }
 
@@ -1055,6 +1093,13 @@ function verifyTier(f) {
   // Low/Info: skipped, unless the rule it cites is one that blocks on sight — then the severity is
   // more likely a mislabel than a judgement, and it is worth one verifier to find out.
   return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
+}
+// Do two verdicts say the same thing on every axis tierFromVotes reads? Only then can the opening
+// pair stand in for the full panel — a disagreement on ANY axis (not just `refuted`) can move the
+// tier, because citedLineMatches gates refutation outright and reachable/premiseSupported demote.
+function votesAgree(a, b) {
+  if (!a || !b) return false
+  return ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported'].every(k => Boolean(a[k]) === Boolean(b[k]))
 }
 // Shared vote→tier decision, so the batched path cannot drift from the individual one.
 function tierFromVotes(f, votes) {
@@ -1171,14 +1216,26 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
     const n1 = isHigh ? Math.max(1, plan.verifyVotes) : 1
     // Cull votes on the cheap model.
-    const cullVotes = Array.from({ length: n1 }, (_unused, i) => () =>
-      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: CULL_MODEL }),
-    )
+    const cull = i => () =>
+      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: CULL_MODEL })
+    if (!isHigh) return parallel([cull(0)]).then(vs => tierFromVotes(f, vs))
     // A High/Critical always gets exactly one authoritative opus vote combined with the cull votes.
-    const authVotes = isHigh
-      ? [() => ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel })]
-      : []
-    return parallel([...cullVotes, ...authVotes]).then(vs => tierFromVotes(f, vs))
+    const auth = () =>
+      ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel })
+    // Open with the DECIDING pair — one cheap cull plus the authoritative vote — and buy the remaining
+    // cull votes only when those two disagree. tierFromVotes is a majority rule, so a unanimous pair
+    // lands on exactly the tier a unanimous four would: the extra votes only ever change the outcome
+    // when there is a split to break. Measured justification: on a security-sensitive Rust diff
+    // verifyVotes is forced to 3, so every High cost 4 agents — 72 of one run's 137 — while the whole
+    // verification pass refuted 3% of candidates. Nearly all of those votes were re-confirming an
+    // already-unanimous verdict. When they DO split, the escalation restores the full n1+1 panel, so
+    // no contested finding is decided on thinner evidence than before.
+    return parallel([cull(0), auth]).then(async vs => {
+      const opening = vs.filter(Boolean)
+      if (opening.length === 2 && votesAgree(opening[0], opening[1])) return tierFromVotes(f, opening)
+      const rest = await parallel(Array.from({ length: Math.max(0, n1 - 1) }, (_unused, i) => cull(i + 1)))
+      return tierFromVotes(f, opening.concat(rest.filter(Boolean)))
+    })
   }))
   const vp = judged.filter(Boolean).concat(batched, skipped)
   const refuted = vp.filter(f => f.tier === 'refuted')
