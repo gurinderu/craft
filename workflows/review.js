@@ -126,10 +126,13 @@ ${profile.id === 'rust'
    gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'
    gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" --jq '.check_runs[] | "\\(.name) \\(.status) \\(.conclusion)"'
    \`\`\`
-   Owner/repo from \`git remote get-url origin\`. Accept a check ONLY when it ran on your exact HEAD SHA — a PR whose head has moved past your commit proves nothing about your commit. Then READ the workflow file behind each green check (\`.github/workflows/*.yml\`) and record what it actually runs, not what its name suggests: a job called \`cargo-deny\` that runs \`check bans\` covers bans and NOT advisories or licenses. Name the sub-command in the entry when it is narrower than the tool.
+   Owner/repo from \`git remote get-url origin\`. Accept a check ONLY when it ran on your exact HEAD SHA — a PR whose head has moved past your commit proves nothing about your commit.
+   Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. But read NARROWLY — this is where the pass runs away with the clock: at most the handful of workflow files behind checks that are BOTH green AND map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale, never read a workflow behind a check you are not going to cite, and stop reading once every green check you intend to list is accounted for.
    List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
 
-Keep the whole pass under a couple of minutes. Return runner, blockers, missingTools, ciCovers, notes.`
+BUDGET (hard): this pass is reconnaissance and must stay CHEAP — target ~90 seconds, and treat three minutes as the ceiling. If CI archaeology is still going at that point, STOP and return what you have with the rest listed as unknown in notes: a partial preflight still saves the gate its worst mistakes, while a thorough one that costs more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint to answer anything here.
+
+Return runner, blockers, missingTools, ciCovers, notes.`
 }
 // Rendered into every downstream prompt that might run a tool, so the answer travels with the work.
 function preflightBrief(pf) {
@@ -617,9 +620,46 @@ const AGENT_TRIES = 2
 const REPO_DIRECTIVE = repoArg
   ? `WORKING DIRECTORY: this review targets the repository at ${shq(repoArg)} — NOT the directory you start in. Before ANY git / cargo / nix / file command, \`cd\` there (or pass \`git -C\`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\n`
   : ''
+// ---- per-agent wall-clock deadline ----
+// The retry above only fires when agent() RESOLVES to null. An agent whose request hangs mid-response
+// never resolves and never throws, so nothing above catches it. A measured run lost 64 minutes — a
+// third of its wall clock — to six agents frozen inside one `parallel()` barrier, and then died
+// without writing anything. The fix is to stop WAITING, not to wait more cleverly.
+//
+// Honest limit: the sandbox exposes setTimeout/clearTimeout but no AbortController, so losing the
+// race abandons the wait without cancelling the agent — a hung one keeps its concurrency slot until
+// the harness reaps it. That is still the difference between a phase that proceeds shorthanded and a
+// review that stops dead, which is what actually happened.
+//
+// Deadlines are per phase and sit ABOVE the measured maximum of legitimate work (two runs, 213
+// agents): verify 811s max → 15min, batch 370s → 15min, lens 2791s → 60min, gate 434s → 30min. Set
+// them below real work and this turns into a retry storm that is slower than the stall it replaces.
+const DEADLINE_HIT = { craftDeadline: true }
+const DEFAULT_DEADLINE_MS = 1800000
+const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 3600000, Verify: 900000, Adjudicate: 1800000, Synthesize: 1800000 }
+function deadlineMsFor(opts) {
+  const explicit = Number(opts.deadlineMs)
+  if (Number.isFinite(explicit) && explicit > 0) return explicit
+  return PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS
+}
 async function ragent(prompt, opts = {}) {
+  // deadlineMs is ours, not agent()'s — strip it so it never reaches the harness as an unknown option.
+  const { deadlineMs: _deadlineMs, ...agentOpts } = opts
+  const ms = deadlineMsFor(opts)
   for (let attempt = 1; ; attempt++) {
-    const res = await agent(`${REPO_DIRECTIVE}${prompt}`, attempt === 1 ? opts : { ...opts, label: `retry:${opts.label || 'agent'}` })
+    const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
+    let timer = null
+    const res = await Promise.race([
+      agent(`${REPO_DIRECTIVE}${prompt}`, o),
+      new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), ms) }),
+    ])
+    clearTimeout(timer)
+    if (res === DEADLINE_HIT) {
+      const mins = Math.round(ms / 60000)
+      log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${attempt < AGENT_TRIES ? ' and re-dispatching once' : ' (giving up; treated as a dead agent)'}`)
+      if (attempt >= AGENT_TRIES) return null
+      continue
+    }
     if (res !== null && res !== undefined) return res
     if (attempt >= AGENT_TRIES) return null
     log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
@@ -1312,22 +1352,25 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const groups = []
   for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
 
-  const batchedNested = await parallel(groups.map(group => () =>
+  // Batched and individual verification look at DISJOINT findings — routing put each one in exactly
+  // one bucket — so awaiting the batch wave before starting the individual one bought nothing but
+  // latency. Measured on one run: batches ran +81..89min and individuals +89..102min, strictly
+  // nose-to-tail. They are built as two thunk lists and handed to ONE parallel, so the slowest batch
+  // no longer holds up the first verifier.
+  const batchThunks = groups.map(group => () =>
     ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => group.map((f, i) => {
         const v = (res?.verdicts ?? []).find(x => x && x.index === i)
         // A missing index is a verifier that lost a finding, not a refutation: fall back to Suspected.
         return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
       }))
-      .catch(() => group.map(f => ({ ...f, tier: 'suspected' }))),
-  ))
-  const batched = batchedNested.filter(Boolean).flat()
+      .catch(() => group.map(f => ({ ...f, tier: 'suspected' }))))
 
   if (route.skip.length || groups.length) {
     log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} surfaced unverified (Low/Info cannot move the verdict)`)
   }
 
-  const judged = await parallel(route.individual.map(f => () => {
+  const individualThunks = route.individual.map(f => () => {
     // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
     const isTool = isToolSource(profile, f.source)
     const isHigh = f.severity === 'Critical' || f.severity === 'High'
@@ -1353,7 +1396,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       const rest = await parallel(Array.from({ length: Math.max(0, n1 - 1) }, (_unused, i) => cull(i + 1)))
       return tierFromVotes(f, opening.concat(rest.filter(Boolean)))
     })
-  }))
+  })
+  // One wave. A batch thunk resolves to an ARRAY of judged findings (one per finding in the group),
+  // an individual thunk to a single one — flatten the batch side back out before merging.
+  const settledVerdicts = await parallel(batchThunks.concat(individualThunks))
+  const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
+  const judged = settledVerdicts.slice(batchThunks.length)
   const vp = judged.filter(Boolean).concat(batched, skipped)
   const refuted = vp.filter(f => f.tier === 'refuted')
   return {
@@ -1442,7 +1490,9 @@ async function reviewProfile(profile) {
   // spends its time on signals rather than on discovering its own environment. Best-effort by design —
   // a preflight that dies just leaves the gate to work it out the old way.
   const preflight = await ragent(preflightPrompt(profile, { baseRef }),
-    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low' })
+    // A tight deadline is safe HERE and nowhere else: losing preflight costs a fallback, not the
+    // review — the gate still establishes everything itself, just the slow way.
+    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 420000 })
   if (preflight) {
     log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
       + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
