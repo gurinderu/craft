@@ -107,9 +107,18 @@ ${profile.id === 'rust'
    - a build script or macro that needs a generated file, a private registry token (\`CARGO_REGISTRIES_*\`), or a service that is not running.
    - a toolchain the repo pins (\`rust-toolchain.toml\`) that is not installed and cannot be fetched offline.`
     : `   - an input the flake cannot fetch offline, a private registry/token the evaluation needs, or a builder platform this machine is not (\`system\` mismatch).`}
-   Report each as one plain line naming the tool that cannot run and WHY. Report nothing you have not actually checked.
+   Do this MECHANICALLY, not by judgement — these are \`grep\`/\`test\` questions with yes-or-no answers, and the one time this was left to inference the blocker was missed and the gate paid for a doomed compile anyway:
+${profile.id === 'rust'
+    ? `   \`\`\`
+   grep -q '^name = "sqlx"' Cargo.lock && echo SQLX
+   ls -d .sqlx */.sqlx **/.sqlx 2>/dev/null            # offline cache anywhere in the tree
+   [ -n "$DATABASE_URL" ] && echo HAS_DB_URL
+   \`\`\`
+   SQLX present, no \`.sqlx\` directory found and no \`DATABASE_URL\` ⇒ report the blocker. Run those three commands; do not reason about whether the crate "probably" builds.`
+    : `   Check the concrete inputs: \`nix flake metadata\` resolving offline, and whether the flake's \`system\` matches this machine.`}
+   Report each blocker as one plain line naming what cannot run and WHY. Report nothing you have not actually checked.
 
-3. MISSING TOOLS. Which of ${profile.id === 'rust' ? '`cargo-audit`, `cargo-deny`, `cargo-semver-checks`, `semgrep`' : '`statix`, `deadnix`, `nixpkgs-fmt`/`alejandra`, `nix-instantiate`'} are NOT on PATH (check with the runner prefix applied — a tool can exist only inside the dev shell). An absent tool is an intentional skip downstream, not a failure.
+3. MISSING TOOLS. Which of ${profile.id === 'rust' ? '`cargo-audit`, `cargo-deny`, `cargo-semver-checks`, `semgrep`' : '`statix`, `deadnix`, `nixpkgs-fmt`/`alejandra`, `nix-instantiate`'} are genuinely unavailable? Check BOTH ways — \`command -v <tool>\` bare AND with the runner prefix — and treat the tool as present if EITHER finds it, naming the invocation that works (e.g. "cargo-audit: ~/.cargo/bin/cargo-audit, outside the dev shell"). A dev shell usually has a NARROWER PATH than the login shell, so probing only inside it reports a tool as missing that is installed a directory away — that mistake silently dropped the entire \`cargo audit\` signal from a real run. Also try the well-known locations before concluding absence: \`~/.cargo/bin/<tool>\`. Only a tool that neither probe finds is missing — and that is an intentional skip downstream, never a failure.
 
 4. CI COVERAGE. Which signals does a GREEN check already establish for THIS EXACT commit? \`gh pr checks --json name,state,bucket,link\` resolves by branch name and returns nothing on a review worktree or detached HEAD — that false negative costs the whole CI shortcut, so when it comes up empty look the PR up by commit:
    \`\`\`
@@ -129,7 +138,7 @@ function preflightBrief(pf) {
   const lines = [`PREFLIGHT (already resolved — do NOT rediscover any of this):`,
     `- Command prefix for every build/lint/test command: ${runner}. Commands run without it die in missing system libraries, not in your diff.`]
   if (pf.blockers?.length) lines.push(`- CANNOT BUILD HERE: ${pf.blockers.map(flattenField).join(' · ')}. Any step that needs a compile is UNRUNNABLE — skip it and say so; do NOT run it to watch it fail.`)
-  if (pf.missingTools?.length) lines.push(`- Not installed: ${pf.missingTools.map(flattenField).join(', ')} — an absent tool is an intentional skip, never a failure.`)
+  if (pf.missingTools?.length) lines.push(`- Not installed (probed both bare and inside the dev shell): ${pf.missingTools.map(flattenField).join(', ')} — an absent tool is an intentional skip, never a failure. If you can nonetheless invoke one (a full path, \`nix run nixpkgs#<tool> --\`), do, and say so in provenance.`)
   lines.push(pf.ciCovers?.length
     ? `- Already GREEN in CI for this exact commit: ${pf.ciCovers.map(flattenField).join(' · ')}. Do NOT re-run these locally — CI ran the project's real command on a clean machine. Cite the check in provenance instead.`
     : `- CI covers nothing for this commit (or could not be consulted) — every signal must be established locally or reported unknown.`)
