@@ -167,8 +167,11 @@ GATE (CI-aware, per the rust-review skill — load it):
 3. Security tools (\`cargo audit\`, \`cargo deny\`) — usually absent from CI, so usually yours to run, but they get the SAME two rules as everything else:
    - CI COVERAGE. If preflight lists one as already green for this commit, do not re-run it. Note the sub-command: a CI job running \`cargo deny check bans\` covers bans ONLY — advisories and licenses remain yours.
    - THE PROJECT'S SCOPE, NOT THE TOOL'S DEFAULTS. Run the sub-checks the project actually configures. \`cargo deny check\` with no arguments runs advisories/bans/licenses/sources, and the unconfigured ones fall back to cargo-deny's defaults — so a \`deny.toml\` containing only \`[bans]\` will "fail" licenses and advisories on a policy the project never wrote. That is a property of the tool, not a defect in the diff. Read \`deny.toml\` (and the CI invocation) and run exactly the configured sub-checks; if a sub-check has no configuration, skip it and say so in notes rather than reporting a default-policy failure.
-   A vulnerability with a published fix is a fail. But say whether it is PRE-EXISTING: if the diff changes no \`Cargo.toml\`/\`Cargo.lock\`, the advisory was there before this change and is not something this review can ask the author to fix — record it in failedChecks with "PRE-EXISTING (diff touches no dependency manifest)" so the verdict line is honest about what the author is actually being blocked on.
-4. status = fail if any of fmt/clippy/test/build is red (CI or local); pass if all green; unknown if you could not establish it.
+   - ATTRIBUTION decides which list it lands in, and only failedChecks stops the review. Check \`git diff --name-only\` against the base for \`Cargo.toml\`/\`Cargo.lock\`:
+     · the diff DOES touch a dependency manifest → a vulnerability with a published fix is this change's problem: failedChecks, status=fail.
+     · the diff does NOT touch one → the advisory predates this change and no edit to these files can clear it. Put it in **carriedChecks**, prefixed "PRE-EXISTING: ", and do NOT let it set status=fail. It is still reported in full — carriedChecks is printed on every verdict, not just red ones — but a gate exists to answer "is THIS DIFF reviewable", and blocking every diff in a repository on a dependency backlog it did not create means no review in that repository ever runs.
+   The same attribution applies to a red \`cargo deny\` sub-check: caused by this diff → failedChecks; pre-existing → carriedChecks.
+4. status = fail if any of fmt/clippy/test/build is red (CI or local), or a security check red is attributable to this diff per 3; pass if all green; unknown if you could not establish it. Anything in carriedChecks NEVER moves status — that is the whole distinction.
 
 SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
 5. Pedantic seeds (a SEPARATE, optional pass — never a substitute for the gate in step 2; SKIP OUTRIGHT if preflight 0b found a compile blocker), on the SAME changed packages and the SAME feature flags you resolved there, so the two passes see the same code: \`cargo clippy -p <pkg> --all-targets --message-format=short <their feature flags> -- -W clippy::pedantic -W clippy::nursery\`. Only fall back to the whole workspace when the diff genuinely spans it. Keep the last ~200 diagnostic lines; if you truncate, SAY how many you dropped in notes — a silent cut reads as "there were only N". Turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these. This step is optional: if it exceeds the budget, skip it and note that the pedantic seeds are absent.
@@ -380,11 +383,12 @@ const SCOUT_SCHEMA = {
 const GATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['status', 'provenance', 'failedChecks', 'seedFindings', 'notes'],
+  required: ['status', 'provenance', 'failedChecks', 'carriedChecks', 'seedFindings', 'notes'],
   properties: {
     status: { type: 'string', enum: ['pass', 'fail', 'unknown'] },
     provenance: { type: 'string', description: 'e.g. "build/test/clippy/fmt via CI #123; audit/deny local"' },
     failedChecks: { type: 'array', items: { type: 'string' } },
+    carriedChecks: { type: 'array', items: { type: 'string' }, description: 'red checks that are REAL but not attributable to this diff (pre-existing dependency advisories on a diff that touches no manifest). Reported, never gate-failing.' },
     seedFindings: { type: 'array', items: FINDING_ITEM },
     notes: { type: 'string' },
   },
@@ -1443,8 +1447,11 @@ async function reviewProfile(profile) {
   const gateStatus = gate?.status ?? 'unknown'
   const gateProvenance = gate?.provenance ?? 'gate not established'
   const failedChecks = gate?.failedChecks ?? []
+  // Red, real, and NOT this diff's doing. Kept out of failedChecks so it cannot stop the review, and
+  // out of notes so it cannot be quietly lost: it prints on every verdict, including a green one.
+  const carriedChecks = gate?.carriedChecks ?? []
   const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
-  log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}`)
+  log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}${carriedChecks.length ? ` · ${carriedChecks.length} pre-existing (carried, not blocking)` : ''}`)
   // What a VERIFIER needs to run a tool, as opposed to what the RECORD needs to explain the gate.
   // Kept separate so the preflight's runner prefix never leaks into the persisted provenance string.
   const toolProvenance = [
@@ -1457,11 +1464,11 @@ async function reviewProfile(profile) {
   await checkpoint(`${profile.id}-plan`, {
     language: profile.id, branch, head: baseRef,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
-    gate: { status: gateStatus, provenance: gateProvenance, failedChecks, seeds: seedFindings.length },
+    gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
     preflight: preflight ? { runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers } : null,
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -1558,7 +1565,7 @@ async function reviewProfile(profile) {
     notRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
   }
 
   // ---- Verify ----
@@ -1612,7 +1619,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
 }
 
 // ================= Run each active profile, then merge =================
@@ -1623,6 +1630,24 @@ for (const p of active) results.push(await reviewProfile(p))
 const gateFailed = results.filter(r => r.gateStatus === 'fail')
 const mergedProvenance = results.map(r => `[${r.profile.id}] ${r.gateProvenance}`).join(' · ')
 const mergedGateStatus = gateFailed.length ? 'fail' : (results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown')
+
+// carriedChecks prints on EVERY verdict, red or green. A red-but-not-yours check that only appeared
+// on failure would be invisible exactly when the review passes — which is most of the time, and is
+// precisely when a dependency backlog quietly grows.
+function carriedSection() {
+  const all = results.flatMap(r => (r.carriedChecks || []).map(c => `- [${r.profile.id}] ${c}`))
+  return all.length
+    ? `\n## Pre-existing — reported, not blocking\nThese are real and RED, but this diff did not cause them and no edit to the changed files clears them:\n${all.join('\n')}\n`
+    : ''
+}
+
+// The synthesis agent writes the main report; a section it is not told about simply does not exist.
+const carriedLine = (() => {
+  const all = results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`))
+  return all.length
+    ? ` Then a \`## Pre-existing — reported, not blocking\` section listing these VERBATIM, one per line — they are RED and real but this diff did not cause them, so they must appear in the report while changing NOTHING about the verdict: ${JSON.stringify(all)}.`
+    : ''
+})()
 
 function reviewRecord(extra) {
   return {
@@ -1638,7 +1663,7 @@ function reviewRecord(extra) {
     uncoveredFiles,
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
-    gate: { status: mergedGateStatus, provenance: mergedProvenance },
+    gate: { status: mergedGateStatus, provenance: mergedProvenance, carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)) },
     outputTokens: budget.spent(),
     ...extra,
   }
@@ -1653,6 +1678,7 @@ if (gateFailed.length) {
     `## Gate`,
     mergedProvenance,
     `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map(c => `- [${r.profile.id}] ${c}`)).join('\n')}`,
+    carriedSection(),
     ``,
     `Fix the gate before a semantic review is worthwhile.`,
   ].join('\n')
@@ -1789,7 +1815,7 @@ if (!confirmed.length && !suspected.length && !hasAdjudicated) {
   const verdictLine = notRun.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy; fix the cause and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
-  return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance,
+  return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
   ].join('\n')
 }
@@ -1816,7 +1842,7 @@ DEDUPLICATE across lenses: findings that describe the same underlying defect (sa
 
 ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 1. \`## Verdict\` — driven ONLY by Still-open + Regressed + New Confirmed findings (Block on any Critical/High; Warning on Medium; else Approve). Resolved and Carried NEVER change the verdict.${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
-2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
+2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## ✅ Resolved\` — prior findings the fixes closed (one line each); omit if empty.
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
@@ -1824,7 +1850,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) carried forward unchanged, collapsed to a count + one-line list; omit if empty.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
-2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.
+2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
 5. \`## Fix first\` — the few highest-leverage Confirmed items.
@@ -1910,7 +1936,7 @@ function fallbackReport() {
   return [
     `## Verdict`,
     `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${notRun.length ? ` · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}.` : ''}`,
-    ``, `## Gate`, mergedProvenance,
+    ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
