@@ -101,9 +101,15 @@ function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
+// An UNRECOGNISED verdict must never default to the most permissive outcome: an aggregate that
+// turns `INCOMPLETE (no language profile)` back into `Approve` re-creates, one layer up, exactly the
+// overclaim the leaf verdicts were fixed to avoid. Anything that is not a verdict we can read as
+// green — INCOMPLETE included — aggregates to Warning.
 function worstVerdict(verdicts) {
-  if (verdicts.some(v => /Block|At-risk|UB-found/i.test(v || ''))) return 'Block'
-  if (verdicts.some(v => /Warning|Concerns/i.test(v || ''))) return 'Warning'
+  const vs = (Array.isArray(verdicts) ? verdicts : []).map(v => String(v || ''))
+  if (vs.some(v => /Block|At-risk|UB-found/i.test(v))) return 'Block'
+  if (vs.some(v => /Warning|Concerns/i.test(v))) return 'Warning'
+  if (vs.some(v => /INCOMPLETE/i.test(v) || !/Approve|Healthy|Clean|Pass/i.test(v))) return 'Warning'
   return 'Approve'
 }
 function indexProjection(r) {
@@ -196,8 +202,16 @@ phase('Audit')
 function reviewResult(dimension, report) {
   return {
     dimension,
-    verdict: /⛔|Block/.test(report || '') ? 'Block' : /⚠️|Warning/.test(report || '') ? 'Warning' : 'Approve',
-    summary: 'Elastic deep review — see findings below.',
+    // An INCOMPLETE nested review is a coverage or operator problem (an unknown language pin, a diff
+    // no profile covers) — it is neither a code-quality Block nor an Approve. It reads as Warning,
+    // and so does any report whose verdict line we cannot recognise as green.
+    verdict: /INCOMPLETE/i.test(report || '') ? 'Warning'
+      : /⛔|Block/.test(report || '') ? 'Block'
+        : /⚠️|Warning/.test(report || '') ? 'Warning'
+          : /✅|Approve/.test(report || '') ? 'Approve' : 'Warning',
+    summary: /INCOMPLETE/i.test(report || '')
+      ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
+      : 'Elastic deep review — see findings below.',
     findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
   }
 }
