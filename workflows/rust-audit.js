@@ -107,11 +107,25 @@ function summarizeFindings(findings) {
 // green — INCOMPLETE included — aggregates to Warning.
 function worstVerdict(verdicts) {
   const vs = (Array.isArray(verdicts) ? verdicts : []).map(v => String(v || ''))
+  // ZERO verdicts is not unanimous green — it is the ABSENCE of any evidence: every dimension died,
+  // or nothing ran at all. Returning Approve here renders a total outage as a pass, the same
+  // overclaim in its purest form. An empty set aggregates to INCOMPLETE, which no consumer reads
+  // as green.
+  if (!vs.length) return 'INCOMPLETE (no verdicts)'
   if (vs.some(v => /Block|At-risk|UB-found/i.test(v))) return 'Block'
   if (vs.some(v => /Warning|Concerns/i.test(v))) return 'Warning'
   if (vs.some(v => /INCOMPLETE/i.test(v) || !/Approve|Healthy|Clean|Pass/i.test(v))) return 'Warning'
   return 'Approve'
 }
+// ---- end of the lib/run-record.mjs mirror ----
+
+// The audit verdict carries an (INCOMPLETE) marker when any dimension failed to run — unless the
+// aggregate is already an INCOMPLETE verdict in its own right.
+function auditVerdict(worst, notRun) {
+  if (!notRun.length || /INCOMPLETE/i.test(worst)) return worst
+  return `${worst} (INCOMPLETE)`
+}
+
 function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
@@ -199,17 +213,38 @@ log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no ba
 phase('Audit')
 
 // Map a rust-review workflow report string into a FINDINGS_SCHEMA-shaped dimension result.
+// A review report has a stable shape: a `## Verdict` heading whose first non-empty following line
+// IS the verdict. Classify on that line alone — the body legitimately contains ⚠️ and the word
+// INCOMPLETE (the "Not reviewed" list, "Coverage gaps"), so a substring match over the whole report
+// scored a plain Approve as a Warning and any mention of the word as uncovered. A report with no
+// `## Verdict` heading is one we cannot read, and the non-permissive default applies.
+function verdictLine(report) {
+  const text = String(report || '')
+  const m = /^[ \t]*#{1,6}[ \t]*Verdict\b.*$/im.exec(text)
+  if (!m) return null
+  for (const line of text.slice(m.index + m[0].length).split('\n')) {
+    const t = line.trim()
+    if (t) return t
+  }
+  return null
+}
+
 function reviewResult(dimension, report) {
+  const line = verdictLine(report)
+  // SEVERITY FIRST, then coverage — the same rule lib/analyze-runs.mjs states and implements for the
+  // run store, and the two must not disagree. A `⛔ Block (INCOMPLETE)` is a block: partial coverage
+  // cannot un-find a finding that was already made, so it must not be downgraded to Warning. Only an
+  // otherwise-green verdict is voided by incompleteness, because an Approve is a claim about what was
+  // NOT found and holds only over what was actually looked at. Anything unreadable is Warning.
+  const verdict = line == null ? 'Warning'
+    : /⛔|Block/.test(line) ? 'Block'
+      : /⚠️|Warning/.test(line) ? 'Warning'
+        : /INCOMPLETE/i.test(line) ? 'Warning'
+          : /✅|Approve/.test(line) ? 'Approve' : 'Warning'
   return {
     dimension,
-    // An INCOMPLETE nested review is a coverage or operator problem (an unknown language pin, a diff
-    // no profile covers) — it is neither a code-quality Block nor an Approve. It reads as Warning,
-    // and so does any report whose verdict line we cannot recognise as green.
-    verdict: /INCOMPLETE/i.test(report || '') ? 'Warning'
-      : /⛔|Block/.test(report || '') ? 'Block'
-        : /⚠️|Warning/.test(report || '') ? 'Warning'
-          : /✅|Approve/.test(report || '') ? 'Approve' : 'Warning',
-    summary: /INCOMPLETE/i.test(report || '')
+    verdict,
+    summary: /INCOMPLETE/i.test(line || '')
       ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
       : 'Elastic deep review — see findings below.',
     findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
@@ -401,7 +436,9 @@ const auditRecord = {
   runtime: 'claude-code',
   kind: 'workflow',
   name: 'rust-audit',
-  verdict: worstVerdict(results.map(r => r.verdict)) + (notRun.length ? ' (INCOMPLETE)' : ''),
+  // worstVerdict already returns an INCOMPLETE verdict when there is nothing to aggregate;
+  // don't stack a second marker onto it.
+  verdict: auditVerdict(worstVerdict(results.map(r => r.verdict)), notRun),
   findings: summarizeFindings(results.flatMap(r => (Array.isArray(r.findings) ? r.findings : []))),
   nested: false,
   via: null,
