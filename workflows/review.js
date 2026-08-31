@@ -47,13 +47,23 @@ const repoArg = A.repo ? String(A.repo) : ''
 // NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
 // be there and the whole record would be lost to a "Cannot find module". Pass craftRoot then.
 const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
-const LOGGER_PATH = craftRootArg
+// Every logger command runs as `cd <reviewed repo> && node <logger>`, so the `:-.` fallback would be
+// resolved AFTER the cd — against the reviewed repo, where the script is not. That lost every
+// checkpoint, the finalize record and the prior-round chain to "Cannot find module", silently.
+// Resolve the path to an absolute one FIRST, in a variable, then change directory.
+const LOGGER_PRELUDE = `CRAFT_LOGGER=${craftRootArg
   ? `${shq(craftRootArg)}/lib/craft-log-run.mjs`
-  : '"${CLAUDE_PLUGIN_ROOT:-.}/lib/craft-log-run.mjs"'
+  : '"$(cd "${CLAUDE_PLUGIN_ROOT:-.}" 2>/dev/null && pwd)/lib/craft-log-run.mjs"'}
+`
+const LOGGER_PATH = '"$CRAFT_LOGGER"'
 const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
-const requestedLangs = (Array.isArray(A.languages) && A.languages.length)
-  ? A.languages.map(String) : null   // pin: restrict active profiles to these ids
+// The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
+// hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
+// `null` (pin silently dropped, review auto-detected instead), while a `.map(String)` turned
+// `[null]` into the string `'null'` — an "unknown id" that hard-aborted the run. One normalizer:
+// `resolveProfilePin` is the single place that decides what a pin means.
+const requestedLangs = A.languages
 const freshArg = !!A.fresh   // force a full first-pass review, ignore any prior round
 // Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
 // code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
@@ -335,14 +345,29 @@ function noLanguageMessage(fileCount, materialCount = fileCount) {
   return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel()} only), and ${materialCount} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.`
 }
 
+// A diff that came back with NO files at all. Reachable legitimately — an already-merged branch, a
+// `path` scope matching nothing — and also when detection half-failed, which is why this stays
+// INCOMPLETE rather than green. But it is not a coverage hole: describing it with
+// noLanguageMessage(0, 0) produced "none of the 0 changed file(s) … and 0 of them went unreviewed",
+// a hole of size zero, which is self-contradictory and teaches readers to ignore the marker.
+function noChangedFilesMessage() {
+  return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
+}
+
 // Which unreviewed files actually lower the claim. Derived from the path alone and deliberately
 // conservative: when in doubt a file is MATERIAL. A false "material" costs one honest INCOMPLETE
 // marker; a false "inert" costs a silent overclaim, which is the bug this whole section exists to
 // prevent. Three narrow exemptions only — prose/asset extensions, lockfiles matched by their real
 // names, and artifacts whose path makes it unambiguous that a generator wrote them.
-const INERT_EXT = /\.(md|markdown|txt|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
+const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
 const INERT_NAMES = new Set([
   'license', 'licence', 'notice', 'codeowners', '.gitignore', '.gitattributes',
+  // Inert `.txt` files by NAME, not by extension. A blanket `.txt` rule was the lockfile bug again
+  // in another costume: `CMakeLists.txt`, `requirements.txt`, `conanfile.txt` and `Dependencies.txt`
+  // are build-system and dependency SOURCE, and a diff of nothing but those took the green
+  // "nothing needed reviewing" return. When in doubt, material.
+  'license.txt', 'licence.txt', 'notice.txt', 'copying.txt', 'authors.txt', 'contributors.txt',
+  'changelog.txt', 'changes.txt', 'readme.txt', 'robots.txt', 'humans.txt', 'todo.txt', 'notes.txt',
   // Lockfiles, by the names they actually have. Matching a *shape* like `*lock.*` swallowed source
   // code — `db/lock.sql`, `src/lock.rs`, `internal/spin-lock.go` — and silently exempted it.
   'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock',
@@ -818,7 +843,7 @@ Run exactly this, then return the runDir the script prints:
 cat > /tmp/craft-ckpt.json <<'CRAFT_CKPT_EOF'
 …PAYLOAD below, byte for byte…
 CRAFT_CKPT_EOF
-cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-ckpt.json
+${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-ckpt.json
 \`\`\`
 
 The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
@@ -850,7 +875,7 @@ Run exactly this:
 cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-rec.json
+${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-rec.json
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, craftCommit), names the file, appends the index line, folds in this run's phase checkpoints and verifies the readback. You compute NONE of that.
@@ -1010,7 +1035,7 @@ if (!freshArg && branch && head) {
 Run exactly this:
 
 \`\`\`
-cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
+${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
 \`\`\`
 
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, reason:"loader-did-not-run"}.`,
@@ -1078,8 +1103,20 @@ if (!active.length) {
   // Same notion of "material" as the partial-coverage path below: only files that could have carried
   // a defect lower the claim. A diff of nothing but docs/assets/lockfiles gets an honest green —
   // nothing was reviewed AND nothing needed reviewing. A diff of Python or Go source stays INCOMPLETE.
+  if (!changedFiles.length) {
+    const emptyMsg = noChangedFilesMessage()
+    await logRun({
+      schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+      languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
+      uncoveredFiles: [], notRun: [emptyMsg], outputTokens: budget.spent(),
+    })
+    return [
+      `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
+      ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
+    ].join('\n')
+  }
   const noProfileMaterial = materialUncovered(changedFiles)
-  if (changedFiles.length && !noProfileMaterial.length) {
+  if (!noProfileMaterial.length) {
     const okMsg = nothingToReviewMessage(changedFiles.length)
     await logRun({
       schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
