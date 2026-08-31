@@ -151,12 +151,12 @@ Node.js 22 (CI pins `node-version: '22'`), plain ESM JavaScript. **No runtime de
 | Check skills and agents (frontmatter + `craft:<slug>` references) | `node lib/check-skills.mjs` |
 | Check the evals corpus | `node lib/check-evals.mjs` |
 | Validate plugin manifests | `claude plugin validate . --strict` |
-| Lint | `npm run lint` (`eslint lib opencode/plugin`) |
+| Lint | `npm run lint` (`eslint lib opencode/plugin --max-warnings 0`, identical to CI) |
 | Skill frontmatter (auxiliary) | `python3 opencode/scripts/check-frontmatter.py` |
 
-**Lint covers `lib/` and `opencode/plugin/` only, and that boundary is load-bearing.** `workflows/*.js` are excluded in `eslint.config.mjs` because ESLint cannot parse them — top-level `export` + `await` + `return`, the same reason `node --check` cannot. Their gate is `node lib/check-workflows.mjs`. So the hottest surface in the repo (`review.js`) is outside every linter; do not read a green lint as covering it.
+**Lint reaches only the `.mjs` files under `lib/` and `opencode/plugin/` — 15 files, and that boundary is load-bearing.** (Counted 2026-08-31 with `eslint lib opencode/plugin -f json` — every entry is a `.mjs` path.) Two exclusions do the work. `workflows/*.js` are ignored in `eslint.config.mjs` because ESLint cannot parse them — top-level `export` + `await` + `return`, the same reason `node --check` cannot; their gate is `node lib/check-workflows.mjs`. And ESLint 9 globs only `.js`/`.mjs`/`.cjs` by default, so the four TypeScript files in `opencode/plugin/` are never visited. So the hottest surface in the repo (`review.js`) and the whole OpenCode plugin are outside every linter; do not read a green lint as covering them.
 
-No formatter and no typechecker. `eqeqeq` is configured `{ null: 'ignore' }` on purpose: `x != null` is the deliberate idiom for "neither null nor undefined", and `!==` would narrow it and let `undefined` through.
+No formatter and no typechecker — and with no typechecker, nothing at all checks the TypeScript (see the gotcha below). `eqeqeq` is configured `{ null: 'ignore' }` on purpose: `x != null` is the deliberate idiom for "neither null nor undefined", and `!==` would narrow it and let `undefined` through.
 
 ## Project structure
 - `skills/` — 32 skills (the Rust set, the Nix set, the language-agnostic ones); one directory per skill with a `SKILL.md`.
@@ -176,6 +176,7 @@ No formatter and no typechecker. `eqeqeq` is configured `{ null: 'ignore' }` on 
 - **Testing discipline**: unit tests cover `lib/**` and `opencode/plugin/**` — the only tested code; workflow scripts and skill bodies are covered by static checkers (`check-workflows`, `check-skills`, `check-evals`), not by tests. There is no coverage threshold.
 - **Gotchas**:
   - **`run-record.mjs` exists in three copies.** `lib/run-record.mjs` is the original; `opencode/plugin/run-record.mjs` is a duplicate; the workflow scripts **inline a verbatim copy** of the same helpers. Editing one copy diverges silently from the others: tests run only over `lib/` and `opencode/`, and the workflow inline copy is checked by nothing.
+  - **The TypeScript under `opencode/plugin/` is checked by nothing.** `index.ts`, `orchestrator.ts`, `rust-audit.ts` and `triage-findings.ts` are outside ESLint (it globs `.js`/`.mjs`/`.cjs`, and no TS parser is configured), outside `node --test`, and outside every `lib/check-*.mjs`. Repo CI never compiles them; a syntax error there ships green. Editing them means reading them carefully — a passing gate says nothing about that directory. (Adding a TypeScript toolchain is an open decision, not an oversight to patch in passing.)
   - **Workflow scripts cannot be checked with `node --check`** — they have top-level `export` + `await` + `return`. `lib/check-workflows.mjs` reproduces the sandbox wrapper and compiles each one; when you change the shape of a workflow script, verify the wrapper still accepts it.
   - **Model-based evals do not run in CI.** `lib/check-evals.mjs` checks only the corpus shape (`evals/evals.json`) and that every referenced skill exists. Triggering itself is a local harness that needs a live model (see `evals/README.md`). The claim "the skill triggers" is **not** supported by a green CI.
   - **`claude plugin validate --strict` requires `@anthropic-ai/claude-code` to be installed** — CI installs it globally via npm on every run. Locally the command fails if the CLI is not on PATH.
