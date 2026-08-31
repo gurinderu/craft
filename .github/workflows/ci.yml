@@ -13,6 +13,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install dev tooling
+        run: npm ci
+      # Lint covers lib/ and opencode/ only — workflows/*.js cannot be parsed by ESLint for the
+      # same reason `node --check` cannot read them; the syntax-check job below is their gate.
+      - name: Lint
+        run: npx eslint lib opencode/plugin --max-warnings 0
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
       - name: Unit tests
         run: node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'

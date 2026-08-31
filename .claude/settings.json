@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Orient before acting (craft:AGENTS.md, Session lifecycle). Realm @nick/craft (r209), focus holon #1. Run the entry protocol: iskron_orient(realm=\\\"r209\\\") and read the ACTIVE BIANHUA map, then open the doer agenda iskron_orient(realm=\\\"r209\\\", focus=\\\"#3\\\") — incoming posed_to vimarshas are this session inbox; take each or defer it explicitly. Do not reconstruct state from memory.\"}}'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -q 'git push' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"A git push ran. FIRST ASK WHICH PUSH THIS WAS — a push that merely opened or updated a PR shipped nothing; record the answer where it actually stands and leave node bodies and modes describing what trunk carries. AFTER A MERGE: reconcile with reality from fresh artifact evidence, advance the bianhua map, sweep the shipped holon (switch modes across the WHOLE designed holon, not only touched nodes), work the posed_to inbox, and close along the axis (addressed_by records the answer; visarjana is a separate act). ON A GREEN PUSH: run the self-check over your own diff. ON AN OPEN PR: open a cold review with the reviewer sub-agent — branch diff against trunk + the repository + realm references for the framing; walk the trace from the node you name to the neighbours the change touches before handing off, and fix gaps by weaving rather than briefing around them. ALWAYS: re-read the diff and the nodes for borrowed project-management words (ticket, backlog, sprint, epic, story, done, blocker, committed) — name each to the user and ask what it is called in this project; never substitute on your own. Un-intaken design/spec docs on this branch: intake them now, do not defer.\"}}' || true"
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -q 'git push' && { git fetch -q origin main 2>/dev/null && { git merge-base --is-ancestor origin/main HEAD || echo 'branch is behind origin/main — rebase before pushing'; } || echo 'could not reach origin (fetch failed) — branch freshness is UNKNOWN, not confirmed; check with gh before trusting local state'; } || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // \"\"' | grep -Eq '\\.claude/projects/.*/memory/' && { echo 'BLOCKED: local agent memory is forbidden entirely, not by category (AGENTS.md, Persistence rules). Route the fact instead: repo conventions and code facts -> AGENTS.md; project state, decisions and open questions -> the @nick/craft realm. Routing here is repo-scoped by the owner decision: anything this repo does not own stays session-local and is carried nowhere. This directory stays frozen at its prohibition stub.' >&2; exit 2; } || exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
