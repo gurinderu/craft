@@ -85,7 +85,9 @@ const PLAN_SCHEMA = {
 }
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings tallyVerdicts indexProjection
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
+
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
@@ -93,10 +95,12 @@ function countBySeverity(findings) {
   }
   return by
 }
+
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
+
 function tallyVerdicts(entries) {
   const t = { accept: 0, reject: 0, defer: 0, 'needs-decision': 0, conflict: 0 }
   for (const e of (Array.isArray(entries) ? entries : [])) {
@@ -104,14 +108,20 @@ function tallyVerdicts(entries) {
   }
   return t
 }
+
 function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
+    // craftVersion/craftCommit must ride in the INDEX, not just the detail file: the whole point is
+    // filtering an aggregate down to one engine version, and that is done by scanning index.jsonl.
+    craftVersion: r.craftVersion ?? null, craftCommit: r.craftCommit ?? null,
     project: r.project, commit: r.commit, dirty: r.dirty,
+    branch: r.branch ?? null, head: r.head ?? null, round: r.round ?? 0,
     verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
     nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
   }
 }
+// <<< craft-inline
 // Persist a run record to ~/.craft/runs via a cheap logger agent (the script has no FS/clock).
 async function logRun(record) {
   const index = indexProjection(record)
