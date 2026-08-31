@@ -333,7 +333,12 @@ function resolveProfilePin(requested) {
     .map(id => id.trim().toLowerCase())
     .filter(Boolean)
   if (!list.length) return { pinned: null, unknown: [] }
-  return { pinned: list.filter(id => !!PROFILES[id]), unknown: list.filter(id => !PROFILES[id]) }
+  // DEDUPE. Lowercasing collapses `['rust','Rust']` to the same id twice; the pre-normalisation code
+  // hid that by accident (`PROFILES['Rust']` was undefined and got dropped). A duplicated pin makes
+  // the pin fallback build `active` with the same profile twice, so the whole lens pipeline runs
+  // twice and the report reads "no findings across rust+rust".
+  const uniq = [...new Set(list)]
+  return { pinned: uniq.filter(id => !!PROFILES[id]), unknown: uniq.filter(id => !PROFILES[id]) }
 }
 
 function unknownPinMessage(unknown) {
@@ -387,6 +392,65 @@ function isInertUncovered(f) {
 
 function materialUncovered(files) {
   return files.filter(f => !isInertUncovered(f))
+}
+
+// A THIRD class, between "inert" and "a coverage hole in the reviewed code".
+//
+// The INCOMPLETE marker on an otherwise-green verdict exists to say: reviewable CODE went
+// unreviewed. Once "material" was made to mean "anything that is not docs/assets/lockfiles", the
+// marker started firing on ordinary PRs — `src/lib.rs` plus `.github/workflows/ci.yml` produced
+// `⚠️ Approve (INCOMPLETE)`, and rust-audit downgraded the whole audit to Warning off the leading
+// ⚠️. That is the failure this code's own comments warn about, relocated from docs to config: a
+// marker that fires on nearly every PR stops being read, and then the overclaim it guards against
+// comes back as a habit.
+//
+// So: project CONFIGURATION and BUILD RECIPES that no language lens ever claimed to read — CI
+// workflow files, linter/tool config, container and task-runner recipes, editor/dotfile config —
+// are reported in the "Not reviewed" section (nothing is hidden) but do NOT put the verdict into
+// INCOMPLETE. They are not the reviewed program's source, and the review never claimed them.
+// Everything else stays a real gap: `.py`, `.go`, `.sh`, `.sql`, `.proto`, `.ts` and friends are
+// executable or schema SOURCE that can carry a defect, so they keep firing the marker. The list is
+// a narrow, explicit allowlist by name/extension — an unrecognised path is still a coverage gap,
+// preserving the "when in doubt, material" rule.
+const ANCILLARY_NAMES = new Set([
+  'dockerfile', 'containerfile', 'justfile', 'makefile', 'gnumakefile', 'procfile', 'vagrantfile',
+  'deny.toml', 'rustfmt.toml', 'clippy.toml', 'rust-toolchain.toml', 'rust-toolchain',
+  '.editorconfig', '.dockerignore', '.npmrc', '.nvmrc', '.prettierrc', '.eslintrc',
+  'codecov.yml', 'renovate.json', 'dependabot.yml', '.pre-commit-config.yaml',
+])
+const ANCILLARY_PATH = /(^|\/)(\.github|\.gitlab|\.circleci|\.woodpecker|\.buildkite)\//i
+function isAncillaryConfig(f) {
+  const p = String(f)
+  const base = p.split('/').pop().toLowerCase()
+  return ANCILLARY_NAMES.has(base) || ANCILLARY_PATH.test(p) || /\.dockerfile$/i.test(base)
+}
+
+// The files whose absence from the review actually voids a green verdict: material, and not mere
+// project configuration. This — not `materialUncovered` — drives the INCOMPLETE marker on a run
+// that DID review code.
+function coverageGapFiles(files) {
+  return materialUncovered(files).filter(f => !isAncillaryConfig(f))
+}
+
+// THE coverage decision, taken from the change set alone and BEFORE any language pin can populate
+// `active`. Pure, so it is testable through the pinned path — testing the guards in isolation from
+// the pin is exactly how they stayed dead code for a release while every internal caller pinned.
+//   'empty'             — the diff resolved to no files at all: INCOMPLETE, never a green Approve.
+//   'nothing-to-review' — files, but all inert (docs/assets/lockfiles/generated): honest green.
+//   'no-profile'        — reviewable material, and neither detection nor a pin yields a profile.
+//   'review'            — go ahead, with `active`.
+// A pin only takes effect in the last step: it says WHICH profile reviews the material, never that
+// material exists.
+function resolveCoverage({ changedFiles, detectedActive, pinnedLangs }) {
+  const files = Array.isArray(changedFiles) ? changedFiles : []
+  const detected = Array.isArray(detectedActive) ? detectedActive : []
+  if (!files.length) return { outcome: 'empty', active: [], material: [] }
+  const material = materialUncovered(files)
+  if (!material.length && !detected.length) return { outcome: 'nothing-to-review', active: [], material }
+  let active = detected
+  if (!active.length && Array.isArray(pinnedLangs) && pinnedLangs.length) active = pinnedLangs.map(id => PROFILES[id])
+  if (!active.length) return { outcome: 'no-profile', active: [], material }
+  return { outcome: 'review', active, material }
 }
 
 // The other half of the no-profile case: a diff whose changed files are ALL inert (prose, assets,
@@ -1097,39 +1161,44 @@ if (unknownLangs.length) {
   })
   return [`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n')
 }
-let active = Object.values(PROFILES).filter(p => (!pinnedLangs || pinnedLangs.includes(p.id)) && p.detect(changedFiles))
-if (!active.length && pinnedLangs) active = pinnedLangs.map(id => PROFILES[id])
-if (!active.length) {
-  // Same notion of "material" as the partial-coverage path below: only files that could have carried
-  // a defect lower the claim. A diff of nothing but docs/assets/lockfiles gets an honest green —
-  // nothing was reviewed AND nothing needed reviewing. A diff of Python or Go source stays INCOMPLETE.
-  if (!changedFiles.length) {
-    const emptyMsg = noChangedFilesMessage()
-    await logRun({
-      schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
-      languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
-      uncoveredFiles: [], notRun: [emptyMsg], outputTokens: budget.spent(),
-    })
-    return [
-      `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
-      ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
-    ].join('\n')
-  }
-  const noProfileMaterial = materialUncovered(changedFiles)
-  if (!noProfileMaterial.length) {
-    const okMsg = nothingToReviewMessage(changedFiles.length)
-    await logRun({
-      schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
-      languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
-      uncoveredFiles: changedFiles, notRun: [], outputTokens: budget.spent(),
-    })
-    return [
-      `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
-      ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
-      ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
-    ].join('\n')
-  }
-  const msg = noLanguageMessage(changedFiles.length, noProfileMaterial.length)
+const detectedActive = Object.values(PROFILES).filter(p => (!pinnedLangs || pinnedLangs.includes(p.id)) && p.detect(changedFiles))
+// ORDER IS LOAD-BEARING, and it lives in resolveCoverage: the guards are decided from
+// `changedFiles`, BEFORE the pin fallback may populate `active`. The fallback used to run first,
+// and since every internal caller (rust-review, nix-review, both rust-audit dispatches) pins a
+// language, `active` was never empty and the whole guard block below was dead code on exactly the
+// paths that matter: a rust-audit over a diff that resolved empty ran the full lens pipeline over
+// nothing and returned a bare `✅ Approve — no findings across rust`.
+const coverage = resolveCoverage({ changedFiles, detectedActive, pinnedLangs })
+const active = coverage.active
+if (coverage.outcome === 'empty') {
+  const emptyMsg = noChangedFilesMessage()
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    uncoveredFiles: [], notRun: [emptyMsg], outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
+    ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
+  ].join('\n')
+}
+if (coverage.outcome === 'nothing-to-review') {
+  // Nothing was reviewed AND nothing needed reviewing — an honest green, not a coverage hole. A
+  // marker that fires on every README-only change stops being read.
+  const okMsg = nothingToReviewMessage(changedFiles.length)
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    uncoveredFiles: changedFiles, notRun: [], outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
+    ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
+    ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
+  ].join('\n')
+}
+if (coverage.outcome === 'no-profile') {
+  const msg = noLanguageMessage(changedFiles.length, coverage.material.length)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
@@ -1144,11 +1213,12 @@ if (!active.length) {
 log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 
 // Changed files no active profile covers are NOT reviewed — say so instead of silently shrinking scope.
-// The material ones (anything that is not a doc, an asset or a lockfile) additionally join `notRun`
-// further down, so the verdict itself carries the (INCOMPLETE) marker rather than a bare Approve.
+// The ones that are a real coverage gap (see coverageGapFiles: material AND not project config)
+// additionally reach the verdict further down, so it carries the (INCOMPLETE) marker rather than a
+// bare Approve.
 const uncoveredFiles = changedFiles.filter(f => !active.some(p => p.detect([f])))
-const uncoveredMaterial = materialUncovered(uncoveredFiles)
-if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}${uncoveredMaterial.length ? ` — ${uncoveredMaterial.length} material` : ' (docs/assets/lockfiles only)'}`)
+const uncoveredGap = coverageGapFiles(uncoveredFiles)
+if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}${uncoveredGap.length ? ` — ${uncoveredGap.length} unreviewed source file(s)` : ' (docs/assets/lockfiles/project config only — not a coverage gap)'}`)
 
 // ================= Prompt builders (profile-parameterized) =================
 function scoutPrompt(profile) {
@@ -2034,10 +2104,15 @@ if (priorRound) {
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
 const notRun = results.flatMap(r => r.notRun)
-// Files no profile covered are a coverage hole, not a footnote: fold them into `notRun` so every
-// downstream verdict (report line and persisted record alike) carries the INCOMPLETE marker and
-// cannot read as a bare Approve over a diff that was only partly looked at.
-if (uncoveredMaterial.length) notRun.push(uncoveredNotRunNote(uncoveredMaterial))
+// Files no profile covered are a coverage hole, not a footnote — but they are NOT a `notRun` entry.
+// `notRun` means "this ran badly; re-run it": every other entry is a failure a re-run can fix, and
+// lib/analyze-runs.mjs ranks the list by EXACT STRING to surface repeated fragility. A note
+// embedding a count and file names is unique per run, so it filled that ranking with count-1 rows
+// and sank the genuinely repeated failures — while saying the opposite of what it means, since
+// re-running will never review these files. The record carries them as `uncoveredFiles`; the
+// reporting below draws the INCOMPLETE marker from `coverageNotes`, alongside `notRun`.
+const coverageNotes = uncoveredGap.length ? [uncoveredNotRunNote(uncoveredGap)] : []
+const incompleteNotes = [...notRun, ...coverageNotes]
 const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
 
 // A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
@@ -2045,9 +2120,9 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 // here would wrongly erase still-open/regressed priors.
 const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length)
 if (!confirmed.length && !suspected.length && !hasAdjudicated) {
-  await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
-  const verdictLine = notRun.length
-    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel()}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
+  await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
+  const verdictLine = incompleteNotes.length
+    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel()}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
   return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
@@ -2075,7 +2150,7 @@ CALIBRATE severities across the Confirmed set so the same kind of issue is not C
 DEDUPLICATE across lenses: findings that describe the same underlying defect (same file, same/overlapping lines, fixes that collapse into one edit) MUST be merged into ONE entry — keep the highest severity and the clearest why, credit the other lens in one clause. Never list per-lens duplicates as separate findings.
 
 ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
-1. \`## Verdict\` — driven ONLY by Still-open + Regressed + New Confirmed findings (Block on any Critical/High; Warning on Medium; else Approve). Resolved and Carried NEVER change the verdict.${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
+1. \`## Verdict\` — driven ONLY by Still-open + Regressed + New Confirmed findings (Block on any Critical/High; Warning on Medium; else Approve). Resolved and Carried NEVER change the verdict.${incompleteNotes.length ? ` Append " · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## ✅ Resolved\` — prior findings the fixes closed (one line each); omit if empty.
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
@@ -2083,7 +2158,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
 7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) carried forward unchanged, collapsed to a count + one-line list; omit if empty.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
-1. \`## Verdict\` — one line (emoji + reason).${notRun.length ? ` Append " · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
+1. \`## Verdict\` — one line (emoji + reason).${incompleteNotes.length ? ` Append " · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
 4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
@@ -2139,7 +2214,7 @@ const reviewLedger = isRereview
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', confirmed.includes(f) ? 'confirmed' : 'suspected'))
 await logRun(reviewRecord({
-  verdict: recordVerdict + (notRun.length ? ' (INCOMPLETE)' : ''),
+  verdict: recordVerdict + (incompleteNotes.length ? ' (INCOMPLETE)' : ''),
   round: thisRound,
   findings: summarizeFindings(allReviewFindings),
   ledger: reviewLedger,
@@ -2169,7 +2244,7 @@ function fallbackReport() {
   const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
   return [
     `## Verdict`,
-    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${notRun.length ? ` · ⚠️ INCOMPLETE — parts of the review did not run: ${notRun.join('; ')}.` : ''}`,
+    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${incompleteNotes.length ? ` · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}.` : ''}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
