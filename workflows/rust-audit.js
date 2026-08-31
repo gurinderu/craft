@@ -98,7 +98,9 @@ const UNUSED_VERDICT_SCHEMA = {
 }
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings worstVerdict indexProjection
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
+
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
@@ -106,10 +108,12 @@ function countBySeverity(findings) {
   }
   return by
 }
+
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
+
 // An UNRECOGNISED verdict must never default to the most permissive outcome: an aggregate that
 // turns `INCOMPLETE (no language profile)` back into `Approve` re-creates, one layer up, exactly the
 // overclaim the leaf verdicts were fixed to avoid. Anything that is not a verdict we can read as
@@ -126,7 +130,20 @@ function worstVerdict(verdicts) {
   if (vs.some(v => /INCOMPLETE/i.test(v) || !/Approve|Healthy|Clean|Pass/i.test(v))) return 'Warning'
   return 'Approve'
 }
-// ---- end of the lib/run-record.mjs mirror ----
+
+function indexProjection(r) {
+  return {
+    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
+    // craftVersion/craftCommit must ride in the INDEX, not just the detail file: the whole point is
+    // filtering an aggregate down to one engine version, and that is done by scanning index.jsonl.
+    craftVersion: r.craftVersion ?? null, craftCommit: r.craftCommit ?? null,
+    project: r.project, commit: r.commit, dirty: r.dirty,
+    branch: r.branch ?? null, head: r.head ?? null, round: r.round ?? 0,
+    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
+    nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
+  }
+}
+// <<< craft-inline
 
 // Free text in, vocabulary out. worstVerdict() treats anything it cannot read as green as a Warning
 // — the right default over a CONSTRAINED vocabulary, and a false alarm over free text: "No UB
@@ -156,14 +173,6 @@ function auditVerdict(worst, notRun) {
   return `${worst} (INCOMPLETE)`
 }
 
-function indexProjection(r) {
-  return {
-    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
-    project: r.project, commit: r.commit, dirty: r.dirty,
-    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
-    nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
-  }
-}
 // Drop internal (`_`-prefixed) keys so they never leak into the synthesis prompt.
 function stripInternal(obj) {
   const out = {}
