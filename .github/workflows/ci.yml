@@ -25,7 +25,8 @@ jobs:
       - name: Unit tests
         run: node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'
       # Workflow scripts can't be `node --check`'d directly (top-level export+await+return); this
-      # reproduces the sandbox wrapper and compile-checks each one.
+      # reproduces the sandbox wrapper and compile-checks each one. It also regenerates every fenced
+      # `craft-inline` region from lib/ and fails on any drift in the pasted-in helper copies.
       - name: Syntax-check workflow scripts
         run: node lib/check-workflows.mjs
       # Validate skill/agent frontmatter and that every internal craft:<slug> reference resolves.

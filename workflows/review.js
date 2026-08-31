@@ -844,7 +844,9 @@ async function ragent(prompt, opts = {}) {
 // rereviewVerdict. (selectPriorRound is NOT mirrored: round selection, ancestry and record loading
 // now happen in `craft-log-run.mjs prior-round`, so no mirror is needed — a haiku still runs the
 // command and carries the bytes back, but it decides nothing.)
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings reviewVerdict
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
+
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
@@ -852,16 +854,19 @@ function countBySeverity(findings) {
   }
   return by
 }
+
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
+
 function reviewVerdict(confirmed) {
   const by = countBySeverity(confirmed)
   if (by.Critical || by.High) return 'Block'
   if (by.Medium) return 'Warning'
   return 'Approve'
 }
+// <<< craft-inline
 // finalVerdict is workflow-local — NOT part of the lib/run-record.mjs mirror above.
 // In strict mode the maintainability bar is a presumption of block: any Confirmed
 // maintainability finding at Medium or above escalates the verdict to Block. Outside strict mode
@@ -958,6 +963,7 @@ function key(f) {
   return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
+// >>> craft-inline lib/run-record.mjs titleShingle fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 function titleShingle(title) {
@@ -1003,6 +1009,7 @@ function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
 // A ledger disposition sourced from a human triage decision. accept/needs-decision/conflict stay
 // `open` (still to be adjudicated or fixed); only reject/defer carry a settled disposition.
 const DISPOSITION_FROM_TRIAGE = { reject: 'rejected', defer: 'deferred', accept: 'open', 'needs-decision': 'open', conflict: 'open' }
+
 function dispositionFromTriage(v) {
   return Object.prototype.hasOwnProperty.call(DISPOSITION_FROM_TRIAGE, v) ? DISPOSITION_FROM_TRIAGE[v] : 'open'
 }
@@ -1012,7 +1019,7 @@ function dispositionFromTriage(v) {
 function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
   return reviewVerdict([...stillOpen, ...regressed, ...neu])
 }
-
+// <<< craft-inline
 // A re-review scans lenses only over the fix delta (prevHead...HEAD) by default — cheap, but a defect
 // in code an intermediate round did not touch is never re-scanned; only the carried ledger keeps it
 // alive. Two pure guards close the resulting coverage holes (see the runtime use sites):
