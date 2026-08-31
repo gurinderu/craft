@@ -669,8 +669,9 @@ async function ragent(prompt, opts = {}) {
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // Mirrors: countBySeverity, summarizeFindings, reviewVerdict, titleShingle,
 // fingerprint, shingleOverlap, matchesPrior, DISPOSITION_FROM_TRIAGE, dispositionFromTriage,
-// rereviewVerdict. (selectPriorRound is NOT mirrored: round selection now happens in the script,
-// via `craft-log-run.mjs prior-round`, so no model and no mirror is in that path.)
+// rereviewVerdict. (selectPriorRound is NOT mirrored: round selection, ancestry and record loading
+// now happen in `craft-log-run.mjs prior-round`, so no mirror is needed — a haiku still runs the
+// command and carries the bytes back, but it decides nothing.)
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
@@ -734,7 +735,7 @@ Run exactly this, then return the runDir the script prints:
 cat > /tmp/craft-ckpt.json <<'CRAFT_CKPT_EOF'
 …PAYLOAD below, byte for byte…
 CRAFT_CKPT_EOF
-node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-ckpt.json
+cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-ckpt.json
 \`\`\`
 
 The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
@@ -766,7 +767,7 @@ Run exactly this:
 cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project ${shq(repoArg || '.')} < /tmp/craft-rec.json
+cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-rec.json
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, craftCommit), names the file, appends the index line, folds in this run's phase checkpoints and verifies the readback. You compute NONE of that.
@@ -915,7 +916,7 @@ if (!freshArg && branch && head) {
 Run exactly this:
 
 \`\`\`
-node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project ${shq(repoArg || '.')}
+cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
 \`\`\`
 
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], priorFindings:0}.`,
