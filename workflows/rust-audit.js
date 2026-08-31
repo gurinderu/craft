@@ -56,7 +56,16 @@ const FINDINGS_SCHEMA = {
   required: ['dimension', 'verdict', 'summary', 'findings'],
   properties: {
     dimension: { type: 'string', description: 'dimension label, e.g. review:<crate> | contract:<from>→<to> | architecture | security | miri | crate-decomposition | semver | build-matrix | deps | unused-crates | tests-cov' },
-    verdict: { type: 'string', description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found' },
+    // ENUM, not a description. The aggregate below is deliberately non-permissive — anything it
+    // cannot read as green becomes a Warning — and that rule is only honest where the vocabulary is
+    // actually constrained. With a bare `{type:'string'}` an agent answering "No UB detected" or
+    // "OK" flipped a fully green audit to Warning. Constrain the vocabulary where it is PRODUCED;
+    // normalizeDimensionVerdict() catches whatever still slips through.
+    verdict: {
+      type: 'string',
+      enum: ['Approve', 'Warning', 'Block', 'Healthy', 'Concerns', 'At-risk', 'Clean', 'UB-found'],
+      description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found — use one of these words exactly',
+    },
     summary: { type: 'string', description: 'one-paragraph bottom line' },
     findings: {
       type: 'array',
@@ -101,11 +110,52 @@ function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
+// An UNRECOGNISED verdict must never default to the most permissive outcome: an aggregate that
+// turns `INCOMPLETE (no language profile)` back into `Approve` re-creates, one layer up, exactly the
+// overclaim the leaf verdicts were fixed to avoid. Anything that is not a verdict we can read as
+// green — INCOMPLETE included — aggregates to Warning.
 function worstVerdict(verdicts) {
-  if (verdicts.some(v => /Block|At-risk|UB-found/i.test(v || ''))) return 'Block'
-  if (verdicts.some(v => /Warning|Concerns/i.test(v || ''))) return 'Warning'
+  const vs = (Array.isArray(verdicts) ? verdicts : []).map(v => String(v || ''))
+  // ZERO verdicts is not unanimous green — it is the ABSENCE of any evidence: every dimension died,
+  // or nothing ran at all. Returning Approve here renders a total outage as a pass, the same
+  // overclaim in its purest form. An empty set aggregates to INCOMPLETE, which no consumer reads
+  // as green.
+  if (!vs.length) return 'INCOMPLETE (no verdicts)'
+  if (vs.some(v => /Block|At-risk|UB-found/i.test(v))) return 'Block'
+  if (vs.some(v => /Warning|Concerns/i.test(v))) return 'Warning'
+  if (vs.some(v => /INCOMPLETE/i.test(v) || !/Approve|Healthy|Clean|Pass/i.test(v))) return 'Warning'
   return 'Approve'
 }
+// ---- end of the lib/run-record.mjs mirror ----
+
+// Free text in, vocabulary out. worstVerdict() treats anything it cannot read as green as a Warning
+// — the right default over a CONSTRAINED vocabulary, and a false alarm over free text: "No UB
+// detected", "OK" and "No issues" are green answers to the miri prompt's "Clean / UB-found" and used
+// to flip a whole green audit to Warning. The schema now pins the vocabulary; this maps the answers
+// that still arrive off-vocabulary onto it. Anything genuinely unrecognisable is returned UNCHANGED,
+// so it still lands in the non-permissive branch of worstVerdict — this widens the green vocabulary,
+// it never weakens the default.
+const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|good|green|no ub( (detected|found))?|no (issues|findings|problems|defects)( (detected|found))?|none( found)?|nothing (found|to report)|all (clear|good))[\s.!—–-]*$/i
+function normalizeDimensionVerdict(v) {
+  const t = String(v == null ? '' : v).trim()
+  if (!t) return t
+  if (/INCOMPLETE/i.test(t)) return t
+  // Green FIRST, and only on a WHOLE-string match: "No UB found" is a clean miri answer, while the
+  // red pattern's `ub[- ]found` would otherwise read it as a Block. Requiring the whole string keeps
+  // "OK, but 2 blocking findings" out of the green branch — it falls through to the red test below.
+  if (GREEN_VERDICT.test(t)) return 'Approve'
+  if (/\b(block(ing|ed)?|at[- ]risk|ub[- ]found|found ub|fail(ed|ure|ing)?|critical)\b/i.test(t)) return 'Block'
+  if (/\b(warn(ing)?s?|concerns?|caution)\b/i.test(t)) return 'Warning'
+  return t
+}
+
+// The audit verdict carries an (INCOMPLETE) marker when any dimension failed to run — unless the
+// aggregate is already an INCOMPLETE verdict in its own right.
+function auditVerdict(worst, notRun) {
+  if (!notRun.length || /INCOMPLETE/i.test(worst)) return worst
+  return `${worst} (INCOMPLETE)`
+}
+
 function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
@@ -193,11 +243,56 @@ log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no ba
 phase('Audit')
 
 // Map a rust-review workflow report string into a FINDINGS_SCHEMA-shaped dimension result.
+// A review report has a stable shape: a `## Verdict` heading whose first non-empty following line
+// IS the verdict. Classify on that line alone — the body legitimately contains ⚠️ and the word
+// INCOMPLETE (the "Not reviewed" list, "Coverage gaps"), so a substring match over the whole report
+// scored a plain Approve as a Warning and any mention of the word as uncovered. A report with no
+// `## Verdict` heading is one we cannot read, and the non-permissive default applies.
+function verdictLine(report) {
+  const text = String(report || '')
+  const m = /^[ \t]*#{1,6}[ \t]*Verdict\b(.*)$/im.exec(text)
+  if (!m) return null
+  // The verdict is sometimes written INLINE on the heading (`## Verdict: ⛔ Block — 2 High`). Reading
+  // past the heading line then landed on the NEXT heading, which matches nothing, so a Block was
+  // reported as "verdict could not be read" and downgraded to Warning. When the heading line itself
+  // carries text after `Verdict`, that text IS the verdict; only otherwise look below it.
+  const inline = String(m[1] || '').replace(/^[\s:：—–-]+/, '').trim()
+  if (inline) return inline
+  for (const line of text.slice(m.index + m[0].length).split('\n')) {
+    const t = line.trim()
+    if (t) return t
+  }
+  return null
+}
+
 function reviewResult(dimension, report) {
+  const line = verdictLine(report)
+  // SEVERITY FIRST, then coverage — the same rule lib/analyze-runs.mjs states and implements for the
+  // run store, and the two must not disagree. A `⛔ Block (INCOMPLETE)` is a block: partial coverage
+  // cannot un-find a finding that was already made, so it must not be downgraded to Warning. Only an
+  // otherwise-green verdict is voided by incompleteness, because an Approve is a claim about what was
+  // NOT found and holds only over what was actually looked at. Anything unreadable is Warning.
+  const verdict = line == null ? 'Warning'
+    : /⛔|Block/.test(line) ? 'Block'
+      : /⚠️|Warning/.test(line) ? 'Warning'
+        : /INCOMPLETE/i.test(line) ? 'Warning'
+          : /✅|Approve/.test(line) ? 'Approve' : 'Warning'
+  // The summary must follow the SAME classification as the verdict. A bare INCOMPLETE test here
+  // described a `⛔ Block (INCOMPLETE)` as "uncovered, not clean" — one dimension reported both as a
+  // Block and as a mere absence of coverage. Severity first here too: a Block is a Block, and the
+  // partial coverage is a clause on it, never a replacement for it.
+  const incomplete = /INCOMPLETE/i.test(line || '')
+  const summary = line == null
+    ? 'Deep review verdict could not be read — this dimension is unverified, not clean.'
+    : verdict === 'Block'
+      ? `Deep review returned a BLOCK — blocking findings below${incomplete ? '; coverage was also partial, so there may be more' : ''}.`
+      : incomplete
+        ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
+        : 'Elastic deep review — see findings below.'
   return {
     dimension,
-    verdict: /⛔|Block/.test(report || '') ? 'Block' : /⚠️|Warning/.test(report || '') ? 'Warning' : 'Approve',
-    summary: 'Elastic deep review — see findings below.',
+    verdict,
+    summary,
     findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
   }
 }
@@ -349,7 +444,9 @@ tasks.push(() => agent(
 ).then(r => (r ? { ...r, dimension: 'tests-cov' } : null)))
 dispatched.push('tests-cov')
 
-const results = (await parallel(tasks)).filter(Boolean)
+// Normalise every dimension verdict ONCE, here, so the aggregate, the persisted record and the
+// synthesis prompt all read the same vocabulary (reviewResult already normalised its own).
+const results = (await parallel(tasks)).filter(Boolean).map(r => ({ ...r, verdict: normalizeDimensionVerdict(r.verdict) }))
 
 // NOT RUN = a dispatched dimension that produced no result (its agent failed). Two intentional
 // skips avoid NOT-RUN by never being pushed to `dispatched`: contracts (no touched edges) and
@@ -387,7 +484,9 @@ const auditRecord = {
   runtime: 'claude-code',
   kind: 'workflow',
   name: 'rust-audit',
-  verdict: worstVerdict(results.map(r => r.verdict)) + (notRun.length ? ' (INCOMPLETE)' : ''),
+  // worstVerdict already returns an INCOMPLETE verdict when there is nothing to aggregate;
+  // don't stack a second marker onto it.
+  verdict: auditVerdict(worstVerdict(results.map(r => r.verdict)), notRun),
   findings: summarizeFindings(results.flatMap(r => (Array.isArray(r.findings) ? r.findings : []))),
   nested: false,
   via: null,
