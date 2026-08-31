@@ -669,7 +669,8 @@ async function ragent(prompt, opts = {}) {
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // Mirrors: countBySeverity, summarizeFindings, reviewVerdict, titleShingle,
 // fingerprint, shingleOverlap, matchesPrior, DISPOSITION_FROM_TRIAGE, dispositionFromTriage,
-// rereviewVerdict, selectPriorRound.
+// rereviewVerdict. (selectPriorRound is NOT mirrored: round selection now happens in the script,
+// via `craft-log-run.mjs prior-round`, so no model and no mirror is in that path.)
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
@@ -839,18 +840,6 @@ function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
   return reviewVerdict([...stillOpen, ...regressed, ...neu])
 }
 
-// Pick the newest prior `review` run for this project+branch from the loaded index.jsonl entries.
-// ts strings are UTC and lexically sortable (YYYY-MM-DDTHH-MM-SSZ), so a string max is chronological.
-function selectPriorRound(indexEntries, { project, branch }) {
-  let best = null
-  for (const e of (Array.isArray(indexEntries) ? indexEntries : [])) {
-    if (!e || e.kind !== 'workflow' || e.name !== 'review') continue
-    if (e.project !== project || e.branch !== branch || !e.branch) continue
-    if (!best || String(e.ts) > String(best.ts)) best = e
-  }
-  return best
-}
-
 // A re-review scans lenses only over the fix delta (prevHead...HEAD) by default — cheap, but a defect
 // in code an intermediate round did not touch is never re-scanned; only the carried ledger keeps it
 // alive. Two pure guards close the resulting coverage holes (see the runtime use sites):
@@ -921,12 +910,15 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 let priorRound = null
 if (!freshArg && branch && head) {
   priorRound = await ragent(
-    `You are locating the prior review round for this branch, if any. Shell + read only.
-1. If \`~/.craft/runs/index.jsonl\` does not exist, return {found:false}.
-2. Read it. Select the newest line with kind="workflow", name="review", project=\`pwd\`, branch=${JSON.stringify(branch)} (newest = lexical-max ts). If none, return {found:false}.
-3. That line has a \`head\` field (a prior commit). Check ancestry: \`git merge-base --is-ancestor <priorHead> HEAD\` (exit 0 = ancestor). If NOT an ancestor (rebase/force-push/unrelated), return {found:false}.
-4. Reconstruct the full record path \`~/.craft/runs/<ts>-workflow-review.json\` from that line's ts, read it, and return {found:true, round:<its round>, head:<its head>, ledger:<its ledger array, or [] if absent>, priorFindings:<its findings.total, or 0 if absent>}.
-Best-effort: any error → {found:false, round:0, head:"", ledger:[], priorFindings:0}.`,
+    `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
+
+Run exactly this:
+
+\`\`\`
+node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project ${shq(repoArg || '.')}
+\`\`\`
+
+It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], priorFindings:0}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   if (!priorRound?.found) priorRound = null
