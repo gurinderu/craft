@@ -297,6 +297,49 @@ PROFILES.nix = {
   },
 }
 
+// ================= Coverage honesty =================
+// A verdict must never claim more coverage than the run had. The engine only knows the profiles
+// declared above; everything else in a diff is UNREVIEWED, and saying so is the whole point of the
+// helpers below. They are pure and live in the declarations prefix so they can be unit-tested.
+
+// The human-readable roster of what the engine can review, named in every coverage message so a
+// caller reading "nothing was reviewed" also learns what would have been.
+function supportedLangLabel() {
+  return Object.values(PROFILES).map(p => p.lang).join('/')
+}
+
+// A pin naming an id that does not exist used to be dropped by `filter(Boolean)` — silently — and
+// the run then fell into "no language matched" and returned a green Approve over an unreviewed
+// diff. Split the pin into known/unknown instead and let the caller refuse to proceed.
+function resolveProfilePin(requested) {
+  if (!requested) return { pinned: null, unknown: [] }
+  return { pinned: requested.filter(id => !!PROFILES[id]), unknown: requested.filter(id => !PROFILES[id]) }
+}
+
+function unknownPinMessage(unknown) {
+  const q = xs => xs.map(x => `\`${x}\``).join(', ')
+  return `unknown language pin ${q(unknown)} — available: ${q(Object.keys(PROFILES))}`
+}
+
+function noLanguageMessage(fileCount) {
+  return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel()} only). This is not an approval: no lens ran and no finding could have been produced.`
+}
+
+// Which unreviewed files actually lower the claim. Derived from the path alone and deliberately
+// small: docs, text/image assets and lockfiles carry no behaviour a lens would have judged, so they
+// stay a listed note. Anything else — a SQL migration, a deployment manifest, a script, source in a
+// language this engine has no profile for — is a real hole in the coverage and must be said out loud.
+const INERT_UNCOVERED = /(\.(md|markdown|txt|rst|adoc|csv|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$)|(^|\/)(LICENSE|LICENCE|NOTICE|CODEOWNERS|\.gitignore|\.gitattributes)$|(^|\/)([^/]*[.-])?lock(\.[a-z0-9]+)?$/i
+
+function materialUncovered(files) {
+  return files.filter(f => !INERT_UNCOVERED.test(f))
+}
+
+function uncoveredNotRunNote(material) {
+  const shown = material.slice(0, 5).join(', ')
+  return `${material.length} changed file(s) matched no language profile and were NOT reviewed (${shown}${material.length > 5 ? `, +${material.length - 5} more` : ''})`
+}
+
 // ---- shared schemas ----
 const FINDING_ITEM = {
   type: 'object',
@@ -979,21 +1022,41 @@ if (priorRound) {
 }
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
-// the detector missed (best-effort detection), honor the pin. If nothing matches, report and stop.
-let active = Object.values(PROFILES).filter(p => (!requestedLangs || requestedLangs.includes(p.id)) && p.detect(changedFiles))
-if (!active.length && requestedLangs) active = requestedLangs.map(id => PROFILES[id]).filter(Boolean)
-if (!active.length) {
+// the detector missed (best-effort detection), honor the pin. An unknown pin id is an ERROR (it used
+// to be dropped by `filter(Boolean)`), and a diff no profile covers is INCOMPLETE, never an Approve.
+const { pinned: pinnedLangs, unknown: unknownLangs } = resolveProfilePin(requestedLangs)
+if (unknownLangs.length) {
+  const msg = unknownPinMessage(unknownLangs)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
-    languages: [], verdict: 'Approve (NO LANGUAGE)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], outputTokens: budget.spent(),
+    languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    notRun: [`nothing ran — ${msg}`], outputTokens: budget.spent(),
   })
-  return [`## Verdict`, `✅ Approve — no supported language (Rust/Nix) found in this diff; nothing to review.`, ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`].join('\n')
+  return [`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n')
 }
-log(`Active profiles: ${active.map(p => p.id).join(', ')}${requestedLangs ? ` (pinned: ${requestedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
+let active = Object.values(PROFILES).filter(p => (!pinnedLangs || pinnedLangs.includes(p.id)) && p.detect(changedFiles))
+if (!active.length && pinnedLangs) active = pinnedLangs.map(id => PROFILES[id])
+if (!active.length) {
+  const msg = noLanguageMessage(changedFiles.length)
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    uncoveredFiles: changedFiles, notRun: [msg], outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`, `⚠️ INCOMPLETE — ${msg}`,
+    ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
+    ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map(f => `- ${f}`)] : []),
+  ].join('\n')
+}
+log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 
 // Changed files no active profile covers are NOT reviewed — say so instead of silently shrinking scope.
+// The material ones (anything that is not a doc, an asset or a lockfile) additionally join `notRun`
+// further down, so the verdict itself carries the (INCOMPLETE) marker rather than a bare Approve.
 const uncoveredFiles = changedFiles.filter(f => !active.some(p => p.detect([f])))
-if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}`)
+const uncoveredMaterial = materialUncovered(uncoveredFiles)
+if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}${uncoveredMaterial.length ? ` — ${uncoveredMaterial.length} material` : ' (docs/assets/lockfiles only)'}`)
 
 // ================= Prompt builders (profile-parameterized) =================
 function scoutPrompt(profile) {
@@ -1879,6 +1942,10 @@ if (priorRound) {
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
 const notRun = results.flatMap(r => r.notRun)
+// Files no profile covered are a coverage hole, not a footnote: fold them into `notRun` so every
+// downstream verdict (report line and persisted record alike) carries the INCOMPLETE marker and
+// cannot read as a bare Approve over a diff that was only partly looked at.
+if (uncoveredMaterial.length) notRun.push(uncoveredNotRunNote(uncoveredMaterial))
 const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
 
 // A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
