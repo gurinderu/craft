@@ -56,7 +56,16 @@ const FINDINGS_SCHEMA = {
   required: ['dimension', 'verdict', 'summary', 'findings'],
   properties: {
     dimension: { type: 'string', description: 'dimension label, e.g. review:<crate> | contract:<from>→<to> | architecture | security | miri | crate-decomposition | semver | build-matrix | deps | unused-crates | tests-cov' },
-    verdict: { type: 'string', description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found' },
+    // ENUM, not a description. The aggregate below is deliberately non-permissive — anything it
+    // cannot read as green becomes a Warning — and that rule is only honest where the vocabulary is
+    // actually constrained. With a bare `{type:'string'}` an agent answering "No UB detected" or
+    // "OK" flipped a fully green audit to Warning. Constrain the vocabulary where it is PRODUCED;
+    // normalizeDimensionVerdict() catches whatever still slips through.
+    verdict: {
+      type: 'string',
+      enum: ['Approve', 'Warning', 'Block', 'Healthy', 'Concerns', 'At-risk', 'Clean', 'UB-found'],
+      description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found — use one of these words exactly',
+    },
     summary: { type: 'string', description: 'one-paragraph bottom line' },
     findings: {
       type: 'array',
@@ -135,6 +144,27 @@ function indexProjection(r) {
   }
 }
 // <<< craft-inline
+
+// Free text in, vocabulary out. worstVerdict() treats anything it cannot read as green as a Warning
+// — the right default over a CONSTRAINED vocabulary, and a false alarm over free text: "No UB
+// detected", "OK" and "No issues" are green answers to the miri prompt's "Clean / UB-found" and used
+// to flip a whole green audit to Warning. The schema now pins the vocabulary; this maps the answers
+// that still arrive off-vocabulary onto it. Anything genuinely unrecognisable is returned UNCHANGED,
+// so it still lands in the non-permissive branch of worstVerdict — this widens the green vocabulary,
+// it never weakens the default.
+const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|good|green|no ub( (detected|found))?|no (issues|findings|problems|defects)( (detected|found))?|none( found)?|nothing (found|to report)|all (clear|good))[\s.!—–-]*$/i
+function normalizeDimensionVerdict(v) {
+  const t = String(v == null ? '' : v).trim()
+  if (!t) return t
+  if (/INCOMPLETE/i.test(t)) return t
+  // Green FIRST, and only on a WHOLE-string match: "No UB found" is a clean miri answer, while the
+  // red pattern's `ub[- ]found` would otherwise read it as a Block. Requiring the whole string keeps
+  // "OK, but 2 blocking findings" out of the green branch — it falls through to the red test below.
+  if (GREEN_VERDICT.test(t)) return 'Approve'
+  if (/\b(block(ing|ed)?|at[- ]risk|ub[- ]found|found ub|fail(ed|ure|ing)?|critical)\b/i.test(t)) return 'Block'
+  if (/\b(warn(ing)?s?|concerns?|caution)\b/i.test(t)) return 'Warning'
+  return t
+}
 
 // The audit verdict carries an (INCOMPLETE) marker when any dimension failed to run — unless the
 // aggregate is already an INCOMPLETE verdict in its own right.
@@ -229,8 +259,14 @@ phase('Audit')
 // `## Verdict` heading is one we cannot read, and the non-permissive default applies.
 function verdictLine(report) {
   const text = String(report || '')
-  const m = /^[ \t]*#{1,6}[ \t]*Verdict\b.*$/im.exec(text)
+  const m = /^[ \t]*#{1,6}[ \t]*Verdict\b(.*)$/im.exec(text)
   if (!m) return null
+  // The verdict is sometimes written INLINE on the heading (`## Verdict: ⛔ Block — 2 High`). Reading
+  // past the heading line then landed on the NEXT heading, which matches nothing, so a Block was
+  // reported as "verdict could not be read" and downgraded to Warning. When the heading line itself
+  // carries text after `Verdict`, that text IS the verdict; only otherwise look below it.
+  const inline = String(m[1] || '').replace(/^[\s:：—–-]+/, '').trim()
+  if (inline) return inline
   for (const line of text.slice(m.index + m[0].length).split('\n')) {
     const t = line.trim()
     if (t) return t
@@ -417,7 +453,9 @@ tasks.push(() => agent(
 ).then(r => (r ? { ...r, dimension: 'tests-cov' } : null)))
 dispatched.push('tests-cov')
 
-const results = (await parallel(tasks)).filter(Boolean)
+// Normalise every dimension verdict ONCE, here, so the aggregate, the persisted record and the
+// synthesis prompt all read the same vocabulary (reviewResult already normalised its own).
+const results = (await parallel(tasks)).filter(Boolean).map(r => ({ ...r, verdict: normalizeDimensionVerdict(r.verdict) }))
 
 // NOT RUN = a dispatched dimension that produced no result (its agent failed). Two intentional
 // skips avoid NOT-RUN by never being pushed to `dispatched`: contracts (no touched edges) and
