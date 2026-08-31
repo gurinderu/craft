@@ -5,7 +5,7 @@
   "description": "Dev-only tooling for the craft plugin repo. craft itself ships no runtime dependencies.",
   "scripts": {
     "test": "node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'",
-    "lint": "eslint lib opencode/plugin",
+    "lint": "eslint lib opencode/plugin --max-warnings 0",
     "check:workflows": "node lib/check-workflows.mjs",
     "check:skills": "node lib/check-skills.mjs",
     "check:evals": "node lib/check-evals.mjs"

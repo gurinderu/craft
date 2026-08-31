@@ -15,8 +15,10 @@ jobs:
           node-version: '22'
       - name: Install dev tooling
         run: npm ci
-      # Lint covers lib/ and opencode/ only — workflows/*.js cannot be parsed by ESLint for the
-      # same reason `node --check` cannot read them; the syntax-check job below is their gate.
+      # Lint reaches only the .mjs files under lib/ and opencode/plugin/. workflows/*.js cannot be
+      # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
+      # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs and have
+      # no gate here at all. Keep this command identical to package.json's "lint" script.
       - name: Lint
         run: npx eslint lib opencode/plugin --max-warnings 0
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).

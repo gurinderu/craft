@@ -80,8 +80,9 @@ jq 'select(.verdict | test("Block"))' ~/.craft/runs/index.jsonl
 jq -s '[.[] | select(.name=="rust-audit") | .verification | select(.!=null)]' ~/.craft/runs/*-workflow-rust-audit.json
 ```
 
-Design rationale and accepted limitations: see
-`docs/superpowers/specs/2026-06-24-observability-design.md`.
+Design rationale and accepted limitations were written up in a design spec that has since been
+removed along with the rest of `docs/superpowers/`; recover it from git history if you need it
+(`git log --diff-filter=D -- docs/superpowers/`). What still binds is on this page.
 
 ## Out of scope (v1)
 

@@ -2,7 +2,8 @@
 
 Operational lessons about building and running craft that are **not derivable from the code**: why
 a rule is shaped the way it is, what an adopted practice cost, what a change broke. Not a changelog
-(`CHANGELOG.md`), not a plan (`docs/superpowers/plans/`), not architecture (`MAP.md`).
+(`CHANGELOG.md`), not architecture (`MAP.md`). The plan/spec archive that used to sit
+in `docs/superpowers/` is gone; nothing here should point into it.
 
 **Structure.** The **principles** are the working set — what belongs in your head. Each folds one or
 more numbered entries in the **evidence appendix**, where the L-numbers are **stable**: never
