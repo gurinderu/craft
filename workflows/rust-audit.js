@@ -241,12 +241,22 @@ function reviewResult(dimension, report) {
       : /⚠️|Warning/.test(line) ? 'Warning'
         : /INCOMPLETE/i.test(line) ? 'Warning'
           : /✅|Approve/.test(line) ? 'Approve' : 'Warning'
+  // The summary must follow the SAME classification as the verdict. A bare INCOMPLETE test here
+  // described a `⛔ Block (INCOMPLETE)` as "uncovered, not clean" — one dimension reported both as a
+  // Block and as a mere absence of coverage. Severity first here too: a Block is a Block, and the
+  // partial coverage is a clause on it, never a replacement for it.
+  const incomplete = /INCOMPLETE/i.test(line || '')
+  const summary = line == null
+    ? 'Deep review verdict could not be read — this dimension is unverified, not clean.'
+    : verdict === 'Block'
+      ? `Deep review returned a BLOCK — blocking findings below${incomplete ? '; coverage was also partial, so there may be more' : ''}.`
+      : incomplete
+        ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
+        : 'Elastic deep review — see findings below.'
   return {
     dimension,
     verdict,
-    summary: /INCOMPLETE/i.test(line || '')
-      ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
-      : 'Elastic deep review — see findings below.',
+    summary,
     findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
   }
 }
