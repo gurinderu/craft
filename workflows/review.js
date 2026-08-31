@@ -331,8 +331,8 @@ function unknownPinMessage(unknown) {
   return `unknown language pin ${q(unknown)} — available: ${q(Object.keys(PROFILES))}`
 }
 
-function noLanguageMessage(fileCount) {
-  return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel()} only). This is not an approval: no lens ran and no finding could have been produced.`
+function noLanguageMessage(fileCount, materialCount = fileCount) {
+  return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel()} only), and ${materialCount} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.`
 }
 
 // Which unreviewed files actually lower the claim. Derived from the path alone and deliberately
@@ -362,6 +362,15 @@ function isInertUncovered(f) {
 
 function materialUncovered(files) {
   return files.filter(f => !isInertUncovered(f))
+}
+
+// The other half of the no-profile case: a diff whose changed files are ALL inert (prose, assets,
+// lockfiles, generated output). Nothing was reviewed AND nothing needed reviewing — a different
+// statement from "files went unreviewed", and it must not be dressed up as a coverage hole. A
+// marker that fires on every README-only change stops being read, which destroys the value of the
+// marker on the diffs that do hide unreviewed code.
+function nothingToReviewMessage(fileCount) {
+  return `NOTHING NEEDED REVIEWING — all ${fileCount} changed file(s) are documentation, assets, lockfiles or generated output; none carries reviewable code. No lens ran because none had anything to look at.`
 }
 
 function uncoveredNotRunNote(material) {
@@ -1066,7 +1075,24 @@ if (unknownLangs.length) {
 let active = Object.values(PROFILES).filter(p => (!pinnedLangs || pinnedLangs.includes(p.id)) && p.detect(changedFiles))
 if (!active.length && pinnedLangs) active = pinnedLangs.map(id => PROFILES[id])
 if (!active.length) {
-  const msg = noLanguageMessage(changedFiles.length)
+  // Same notion of "material" as the partial-coverage path below: only files that could have carried
+  // a defect lower the claim. A diff of nothing but docs/assets/lockfiles gets an honest green —
+  // nothing was reviewed AND nothing needed reviewing. A diff of Python or Go source stays INCOMPLETE.
+  const noProfileMaterial = materialUncovered(changedFiles)
+  if (changedFiles.length && !noProfileMaterial.length) {
+    const okMsg = nothingToReviewMessage(changedFiles.length)
+    await logRun({
+      schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+      languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
+      uncoveredFiles: changedFiles, notRun: [], outputTokens: budget.spent(),
+    })
+    return [
+      `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
+      ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
+      ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
+    ].join('\n')
+  }
+  const msg = noLanguageMessage(changedFiles.length, noProfileMaterial.length)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
