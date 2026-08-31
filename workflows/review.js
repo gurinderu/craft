@@ -311,9 +311,19 @@ function supportedLangLabel() {
 // A pin naming an id that does not exist used to be dropped by `filter(Boolean)` — silently — and
 // the run then fell into "no language matched" and returned a green Approve over an unreviewed
 // diff. Split the pin into known/unknown instead and let the caller refuse to proceed.
+// `requested` arrives from workflow args and is NOT trusted to be an array: a scalar `languages:
+// 'rust'` and a JSON-decoded string are both known argument-transport shapes here. Normalise first —
+// the old `includes` form tolerated a string by accident, and calling `.filter` on one threw a
+// TypeError that aborted the whole review. Degrade toward running the review, never toward crashing:
+// an unusable shape (empty list, object, number) is treated as "no pin at all".
 function resolveProfilePin(requested) {
   if (!requested) return { pinned: null, unknown: [] }
-  return { pinned: requested.filter(id => !!PROFILES[id]), unknown: requested.filter(id => !PROFILES[id]) }
+  const list = (Array.isArray(requested) ? requested : [requested])
+    .filter(id => typeof id === 'string')
+    .map(id => id.trim().toLowerCase())
+    .filter(Boolean)
+  if (!list.length) return { pinned: null, unknown: [] }
+  return { pinned: list.filter(id => !!PROFILES[id]), unknown: list.filter(id => !PROFILES[id]) }
 }
 
 function unknownPinMessage(unknown) {
@@ -326,13 +336,32 @@ function noLanguageMessage(fileCount) {
 }
 
 // Which unreviewed files actually lower the claim. Derived from the path alone and deliberately
-// small: docs, text/image assets and lockfiles carry no behaviour a lens would have judged, so they
-// stay a listed note. Anything else — a SQL migration, a deployment manifest, a script, source in a
-// language this engine has no profile for — is a real hole in the coverage and must be said out loud.
-const INERT_UNCOVERED = /(\.(md|markdown|txt|rst|adoc|csv|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$)|(^|\/)(LICENSE|LICENCE|NOTICE|CODEOWNERS|\.gitignore|\.gitattributes)$|(^|\/)([^/]*[.-])?lock(\.[a-z0-9]+)?$/i
+// conservative: when in doubt a file is MATERIAL. A false "material" costs one honest INCOMPLETE
+// marker; a false "inert" costs a silent overclaim, which is the bug this whole section exists to
+// prevent. Three narrow exemptions only — prose/asset extensions, lockfiles matched by their real
+// names, and artifacts whose path makes it unambiguous that a generator wrote them.
+const INERT_EXT = /\.(md|markdown|txt|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
+const INERT_NAMES = new Set([
+  'license', 'licence', 'notice', 'codeowners', '.gitignore', '.gitattributes',
+  // Lockfiles, by the names they actually have. Matching a *shape* like `*lock.*` swallowed source
+  // code — `db/lock.sql`, `src/lock.rs`, `internal/spin-lock.go` — and silently exempted it.
+  'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock',
+  'cargo.lock', 'flake.lock', 'poetry.lock', 'pdm.lock', 'uv.lock', 'pipfile.lock', 'gemfile.lock',
+  'composer.lock', 'go.sum', 'deno.lock', 'mix.lock', 'pubspec.lock', 'podfile.lock', 'packages.lock.json',
+  'gradle.lockfile', 'cabal.project.freeze', 'conan.lock', 'herd.lock',
+])
+// Generated artifacts. Only where the PATH itself is unambiguous — a generator-stamped suffix or a
+// directory whose whole purpose is generated output. A hand-written file never lives here.
+const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
+const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
+
+function isInertUncovered(f) {
+  const base = String(f).split('/').pop().toLowerCase()
+  return INERT_EXT.test(f) || INERT_NAMES.has(base) || GENERATED_PATH.test(f) || GENERATED_FILE.test(f)
+}
 
 function materialUncovered(files) {
-  return files.filter(f => !INERT_UNCOVERED.test(f))
+  return files.filter(f => !isInertUncovered(f))
 }
 
 function uncoveredNotRunNote(material) {
@@ -1955,7 +1984,7 @@ const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.
 if (!confirmed.length && !suspected.length && !hasAdjudicated) {
   await logRun(reviewRecord({ verdict: `Approve${notRun.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = notRun.length
-    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — coverage is NOT trustworthy; fix the cause and re-run.`
+    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${notRun.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel()}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
   return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
