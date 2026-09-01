@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "description": "craft's Rust audit/triage workflows as a contained opencode plugin.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
-    "@opencode-ai/plugin": "*",
-    "@opencode-ai/sdk": "*"
+    "@opencode-ai/plugin": "1.18.25",
+    "@opencode-ai/sdk": "1.18.25"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
