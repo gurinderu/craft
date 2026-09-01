@@ -191,6 +191,11 @@ const pin = base
   ? `Validate against ref \`${base}\` (the ref the findings were generated against), not the live working tree.`
   : 'Validate against the currently checked-out tree.'
 
+// The sentinel that marks a `needs-decision` nothing actually judged. It rides in the ledger entry's
+// `reason` (a carry-forward prefixes that reason, so `includes` is the test, not equality) and it
+// is what keeps such an entry OUT of the carry-forward set on the next run.
+const UNJUDGED_MARKER = 'NOT JUDGED'
+
 const deadValidations = []
 const validations = (await parallel(raw.map(f => () => {
   const id = idOf(f)
@@ -198,7 +203,15 @@ const validations = (await parallel(raw.map(f => () => {
   // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
   // re-validated (the code may have changed since); `conflict` is a cross-finding judgement, so it
   // is re-derived fresh in the Plan phase rather than carried as a stale solo verdict.
-  if (prior && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
+  // ...but a finding whose validator DIED is not settled — nothing judged it. Its stand-in verdict
+  // is `needs-decision` (the vocabulary downstream already understands), so without this it would
+  // be carried forward as settled on the next run: no agent re-opens it, `deadValidations` stays
+  // empty, and run two emits no INCOMPLETE banner and no notRun entry over a finding no agent ever
+  // read. The marker in the reason is what distinguishes it — a fifth verdict would have to be
+  // taught to VALIDATION_SCHEMA, PLAN_SCHEMA, the plan prompt and tallyVerdicts, all of which
+  // enumerate the four, and a ledger entry the tally does not know is silently uncounted.
+  const neverJudged = prior && String(prior.reason || '').includes(UNJUDGED_MARKER)
+  if (prior && !neverJudged && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
     // Carried verdicts skip the agent, so they carry no fresh premise check — say so rather than
     // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
@@ -231,7 +244,7 @@ Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     // at this" — the one downstream vocabulary (carry-forward, prompt, ledger) already understands.
     if (v) return v
     deadValidations.push(id)
-    return { stable_id: id, verdict: 'needs-decision', reason: 'NOT JUDGED — the validator agent died; this finding was never checked against the code', fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
+    return { stable_id: id, verdict: 'needs-decision', reason: `${UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code`, fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
   })
 }))).filter(Boolean)
 
@@ -252,7 +265,7 @@ const plan = await agent(
 2. Detect conflicts — two findings demanding opposite changes. Mark each such finding verdict "conflict" in the ledger, DO NOT put it in the plan, and surface both in the summary for a human to decide.
 3. Group the remaining accepted findings by file; order groups blocking (Critical/High) → simple → complex.
 4. Render plan_markdown as a checkbox-task plan: one task per file-group, bite-sized checkbox steps, each step naming the file and the owning craft skill; a bug fix starts with a RED→GREEN regression test. Mark independent file-groups as parallelisable (one subagent per group).
-5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason. summary = human-readable rundown of everything not in the plan.
+5. ledger = EVERY finding (accept/reject/defer/needs-decision/conflict) keyed by stable_id with verdict + one-line reason. Any reason containing "${UNJUDGED_MARKER}" must be copied VERBATIM, marker included — that string is what tells a later re-run this finding was never actually judged; paraphrasing it makes the finding look settled forever. summary = human-readable rundown of everything not in the plan.
 
 ACCEPTED (with their findings):
 ${JSON.stringify(acceptedEnriched, null, 2)}
