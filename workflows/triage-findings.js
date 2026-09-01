@@ -278,8 +278,12 @@ await logRun({
   via: null,
   sources: gathered.map(g => ({ source: g.source, count: Array.isArray(g.findings) ? g.findings.length : 0 })),
   triage: { gathered: raw.length, validated: validations.length, ...tallyVerdicts(ledger) },
-  notRun: notRunSources.map(src => `gather:${src} died — findings from that source were never collected`)
-    .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged (validator died) — carried as needs-decision`] : []),
+  // Bare, aggregatable labels — NOT the human sentences below. `lib/analyze-runs.mjs` ranks
+  // `notRun` by exact string to surface fragility that REPEATS across runs, and a note embedding a
+  // count ("3 finding(s) were never judged") is unique per run: it fills the ranking with count-1
+  // rows and sinks the real repeats. The sentences belong to the banner, which a person reads once.
+  notRun: notRunSources.map(src => `gather:${src}`)
+    .concat(deadValidations.length ? ['findings-unjudged'] : []),
 })
 
 if (!plan) return 'Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.'
