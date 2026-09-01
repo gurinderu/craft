@@ -15,8 +15,10 @@ export function parseVerdict(text) {
   if (/⚠️|\b(?:Warning|Concerns)\b/i.test(t)) return 'Warning'
   // A dimension whose tooling was absent checked nothing and says so with `INCOMPLETE (not run)`.
   // That must not land in the Approve bucket: an Approve is a claim about what was NOT found, and
-  // it only holds over what was actually looked at.
-  if (/INCOMPLETE/i.test(t)) return 'INCOMPLETE (not run)'
+  // it only holds over what was actually looked at. Anchored to the full verdict phrase, not to the
+  // bare word: this runs over an agent's entire free text, where prose like "coverage of untested
+  // paths is incomplete" is ordinary — and a false INCOMPLETE teaches readers to ignore the marker.
+  if (/INCOMPLETE\s*\(\s*not run\s*\)/i.test(t)) return 'INCOMPLETE (not run)'
   return 'Approve'
 }
 

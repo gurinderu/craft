@@ -28,6 +28,16 @@ test('parseVerdict never turns a dimension that could not run into an Approve', 
   assert.equal(parseVerdict('Warning, plus one INCOMPLETE dimension'), 'Warning')
 })
 
+test('parseVerdict does not read the bare word "incomplete" in prose as a verdict', () => {
+  // This runs over an agent's whole free-text report, where "incomplete" is ordinary English.
+  // A false INCOMPLETE on a run that was fine is what trains readers to ignore the marker.
+  assert.equal(parseVerdict('Approve — coverage of untested paths is incomplete, but nothing found'), 'Approve')
+  assert.equal(parseVerdict('the docs are incomplete'), 'Approve')
+  assert.equal(parseVerdict('INCOMPLETE coverage of the feature powerset'), 'Approve')
+  // The verdict phrase itself still registers, whitespace-tolerantly.
+  assert.equal(parseVerdict('## Verdict\nINCOMPLETE  ( not run ) — nothing was scanned'), 'INCOMPLETE (not run)')
+})
+
 test('buildAuditRecord assembles dimensions, notRun, and a null findings field', () => {
   const rec = buildAuditRecord({
     results: [
