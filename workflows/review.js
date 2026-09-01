@@ -310,12 +310,16 @@ PROFILES.nix = {
 // ================= Coverage honesty =================
 // A verdict must never claim more coverage than the run had. The engine only knows the profiles
 // declared above; everything else in a diff is UNREVIEWED, and saying so is the whole point of the
-// helpers below. They are pure and live in the declarations prefix so they can be unit-tested.
+// helpers below. They are pure, so they live in lib/review-coverage.mjs — a real, importable,
+// linted module with real unit tests — and are pasted back in here by the craft-inline gate. The
+// language roster they need is the mutable PROFILES table above, so it is passed in as an argument
+// rather than read: that argument is exactly what keeps them extractable.
 
+// >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote
 // The human-readable roster of what the engine can review, named in every coverage message so a
 // caller reading "nothing was reviewed" also learns what would have been.
-function supportedLangLabel() {
-  return Object.values(PROFILES).map(p => p.lang).join('/')
+function supportedLangLabel(profiles) {
+  return Object.values(profiles).map(p => p.lang).join('/')
 }
 
 // A pin naming an id that does not exist used to be dropped by `filter(Boolean)` — silently — and
@@ -326,7 +330,7 @@ function supportedLangLabel() {
 // the old `includes` form tolerated a string by accident, and calling `.filter` on one threw a
 // TypeError that aborted the whole review. Degrade toward running the review, never toward crashing:
 // an unusable shape (empty list, object, number) is treated as "no pin at all".
-function resolveProfilePin(requested) {
+function resolveProfilePin(profiles, requested) {
   if (!requested) return { pinned: null, unknown: [] }
   const list = (Array.isArray(requested) ? requested : [requested])
     .filter(id => typeof id === 'string')
@@ -334,20 +338,20 @@ function resolveProfilePin(requested) {
     .filter(Boolean)
   if (!list.length) return { pinned: null, unknown: [] }
   // DEDUPE. Lowercasing collapses `['rust','Rust']` to the same id twice; the pre-normalisation code
-  // hid that by accident (`PROFILES['Rust']` was undefined and got dropped). A duplicated pin makes
+  // hid that by accident (`profiles['Rust']` was undefined and got dropped). A duplicated pin makes
   // the pin fallback build `active` with the same profile twice, so the whole lens pipeline runs
   // twice and the report reads "no findings across rust+rust".
   const uniq = [...new Set(list)]
-  return { pinned: uniq.filter(id => !!PROFILES[id]), unknown: uniq.filter(id => !PROFILES[id]) }
+  return { pinned: uniq.filter(id => !!profiles[id]), unknown: uniq.filter(id => !profiles[id]) }
 }
 
-function unknownPinMessage(unknown) {
+function unknownPinMessage(profiles, unknown) {
   const q = xs => xs.map(x => `\`${x}\``).join(', ')
-  return `unknown language pin ${q(unknown)} — available: ${q(Object.keys(PROFILES))}`
+  return `unknown language pin ${q(unknown)} — available: ${q(Object.keys(profiles))}`
 }
 
-function noLanguageMessage(fileCount, materialCount = fileCount) {
-  return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel()} only), and ${materialCount} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.`
+function noLanguageMessage(profiles, fileCount, materialCount = fileCount) {
+  return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel(profiles)} only), and ${materialCount} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.`
 }
 
 // A diff that came back with NO files at all. Reachable legitimately — an already-merged branch, a
@@ -365,6 +369,7 @@ function noChangedFilesMessage() {
 // prevent. Three narrow exemptions only — prose/asset extensions, lockfiles matched by their real
 // names, and artifacts whose path makes it unambiguous that a generator wrote them.
 const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
+
 const INERT_NAMES = new Set([
   'license', 'licence', 'notice', 'codeowners', '.gitignore', '.gitattributes',
   // Inert `.txt` files by NAME, not by extension. A blanket `.txt` rule was the lockfile bug again
@@ -380,9 +385,11 @@ const INERT_NAMES = new Set([
   'composer.lock', 'go.sum', 'deno.lock', 'mix.lock', 'pubspec.lock', 'podfile.lock', 'packages.lock.json',
   'gradle.lockfile', 'cabal.project.freeze', 'conan.lock', 'herd.lock',
 ])
+
 // Generated artifacts. Only where the PATH itself is unambiguous — a generator-stamped suffix or a
 // directory whose whole purpose is generated output. A hand-written file never lives here.
 const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
+
 const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
 
 function isInertUncovered(f) {
@@ -418,7 +425,9 @@ const ANCILLARY_NAMES = new Set([
   '.editorconfig', '.dockerignore', '.npmrc', '.nvmrc', '.prettierrc', '.eslintrc',
   'codecov.yml', 'renovate.json', 'dependabot.yml', '.pre-commit-config.yaml',
 ])
+
 const ANCILLARY_PATH = /(^|\/)(\.github|\.gitlab|\.circleci|\.woodpecker|\.buildkite)\//i
+
 function isAncillaryConfig(f) {
   const p = String(f)
   const base = p.split('/').pop().toLowerCase()
@@ -441,14 +450,14 @@ function coverageGapFiles(files) {
 //   'review'            — go ahead, with `active`.
 // A pin only takes effect in the last step: it says WHICH profile reviews the material, never that
 // material exists.
-function resolveCoverage({ changedFiles, detectedActive, pinnedLangs }) {
+function resolveCoverage({ profiles, changedFiles, detectedActive, pinnedLangs }) {
   const files = Array.isArray(changedFiles) ? changedFiles : []
   const detected = Array.isArray(detectedActive) ? detectedActive : []
   if (!files.length) return { outcome: 'empty', active: [], material: [] }
   const material = materialUncovered(files)
   if (!material.length && !detected.length) return { outcome: 'nothing-to-review', active: [], material }
   let active = detected
-  if (!active.length && Array.isArray(pinnedLangs) && pinnedLangs.length) active = pinnedLangs.map(id => PROFILES[id])
+  if (!active.length && Array.isArray(pinnedLangs) && pinnedLangs.length) active = pinnedLangs.map(id => profiles[id])
   if (!active.length) return { outcome: 'no-profile', active: [], material }
   return { outcome: 'review', active, material }
 }
@@ -466,6 +475,7 @@ function uncoveredNotRunNote(material) {
   const shown = material.slice(0, 5).join(', ')
   return `${material.length} changed file(s) matched no language profile and were NOT reviewed (${shown}${material.length > 5 ? `, +${material.length - 5} more` : ''})`
 }
+// <<< craft-inline
 
 // ---- shared schemas ----
 const FINDING_ITEM = {
@@ -731,6 +741,7 @@ function baseWhy(why) {
 // would silently skip red-team on such a prior.
 function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
 
+// >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity
 // Canonicalize a ledger severity ONCE at the prior-round load boundary. LEDGER_ITEM.severity has no
 // enum, so a drifted `critical`/`CRITICAL` reaches the load: the case-insensitive gates (isHighSeverity)
 // still fire on it, but every VERDICT/COUNT function (countBySeverity, reviewVerdict/finalVerdict/
@@ -739,7 +750,9 @@ function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?
 // Mapping known values to canonical case here (and passing an unknown value through, trimmed — never
 // dropping it) means EVERY downstream comparison sees canonical severity for priors.
 const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
+
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
+// <<< craft-inline
 
 // Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
 // adjusted adjudication plus degradation flags; the caller does the logging/counting.
@@ -1158,9 +1171,9 @@ if (priorRound) {
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
 // the detector missed (best-effort detection), honor the pin. An unknown pin id is an ERROR (it used
 // to be dropped by `filter(Boolean)`), and a diff no profile covers is INCOMPLETE, never an Approve.
-const { pinned: pinnedLangs, unknown: unknownLangs } = resolveProfilePin(requestedLangs)
+const { pinned: pinnedLangs, unknown: unknownLangs } = resolveProfilePin(PROFILES, requestedLangs)
 if (unknownLangs.length) {
-  const msg = unknownPinMessage(unknownLangs)
+  const msg = unknownPinMessage(PROFILES, unknownLangs)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
@@ -1175,7 +1188,7 @@ const detectedActive = Object.values(PROFILES).filter(p => (!pinnedLangs || pinn
 // language, `active` was never empty and the whole guard block below was dead code on exactly the
 // paths that matter: a rust-audit over a diff that resolved empty ran the full lens pipeline over
 // nothing and returned a bare `✅ Approve — no findings across rust`.
-const coverage = resolveCoverage({ changedFiles, detectedActive, pinnedLangs })
+const coverage = resolveCoverage({ profiles: PROFILES, changedFiles, detectedActive, pinnedLangs })
 const active = coverage.active
 if (coverage.outcome === 'empty') {
   const emptyMsg = noChangedFilesMessage()
@@ -1205,7 +1218,7 @@ if (coverage.outcome === 'nothing-to-review') {
   ].join('\n')
 }
 if (coverage.outcome === 'no-profile') {
-  const msg = noLanguageMessage(changedFiles.length, coverage.material.length)
+  const msg = noLanguageMessage(PROFILES, changedFiles.length, coverage.material.length)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
@@ -2129,7 +2142,7 @@ const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.
 if (!confirmed.length && !suspected.length && !hasAdjudicated) {
   await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = incompleteNotes.length
-    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel()}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
+    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
   return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
