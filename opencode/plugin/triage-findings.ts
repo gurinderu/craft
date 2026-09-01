@@ -44,7 +44,7 @@ REASON: <grounded reasoning>`,
 
   const validated = await fanOut(ctx, jobs)
   const ledger = validated
-    .map((r, i) => `- **${r.label}** (${r.ok ? "validated" : "NOT RUN"}): ${findings[i]}\n  ${r.text.replace(/\n/g, "\n  ")}`)
+    .map((r, i) => `- **${r.label}** (${r.ok ? "validated" : "INCOMPLETE (not run)"}): ${findings[i]}\n  ${r.text.replace(/\n/g, "\n  ")}`)
     .join("\n")
 
   const planPrompt = `You are turning validated review findings into ONE ordered fix plan (writing-plans style) plus a triage ledger. Do not edit code.
