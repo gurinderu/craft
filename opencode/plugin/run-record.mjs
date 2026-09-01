@@ -27,8 +27,14 @@ export function parseVerdict(text) {
   // followed on its own line by the word it qualifies ("INCOMPLETE coverage of the feature
   // powerset"), and is normally lowercase besides ("the docs are incomplete"); a verdict is not —
   // it is shouted and then terminated by punctuation, a table pipe, or the end of the line. So:
-  // uppercase, and NOT followed on the same line by a word.
-  if (/\bINCOMPLETE\b(?![ \t]+[A-Za-z])/.test(t)) return 'INCOMPLETE (not run)'
+  // uppercase, and NOT followed on the same line by a word — WITH one exception. The mandated
+  // wording is `INCOMPLETE (not run)`, and a model that drops the parentheses writes `INCOMPLETE
+  // not run`: space-then-letter, and the shape test alone would send the prescribed vocabulary,
+  // minus its punctuation, straight to Approve. So a small closed set of continuations is admitted
+  // explicitly — the words a REASON opens with (not / no / never / nothing / none, run, and the
+  // "it was absent" family). None of them is a noun an adjective would qualify, so admitting them
+  // does not reopen the prose false positive.
+  if (/\bINCOMPLETE\b(?:[ \t]*\(?[ \t]*(?:[Nn](?:ot|o|one|othing|ever)|[Rr]un|[Dd]ue|[Bb]ecause|[Ss]ince|[Cc]annot|[Uu]n(?:able|available)|[Mm]issing|[Aa]bsent|[Ss]kip(?:ped)?)\b|(?![ \t]+[A-Za-z]))/.test(t)) return 'INCOMPLETE (not run)'
   return 'Approve'
 }
 
