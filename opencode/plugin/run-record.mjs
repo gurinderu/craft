@@ -13,6 +13,10 @@ export function parseVerdict(text) {
   // doesn't collide with the Block keyword. Worst signal still wins (Block before Warning).
   if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(t)) return 'Block'
   if (/⚠️|\b(?:Warning|Concerns)\b/i.test(t)) return 'Warning'
+  // A dimension whose tooling was absent checked nothing and says so with `INCOMPLETE (not run)`.
+  // That must not land in the Approve bucket: an Approve is a claim about what was NOT found, and
+  // it only holds over what was actually looked at.
+  if (/INCOMPLETE/i.test(t)) return 'INCOMPLETE (not run)'
   return 'Approve'
 }
 
