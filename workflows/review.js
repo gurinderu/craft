@@ -1769,7 +1769,8 @@ async function reviewProfile(profile) {
   const scoutNotRun = scoutFailed
     ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote), not a scouted one`]
     : []
-  const size = RIGOR_BY_SIZE[scout?.sizeBucket] ? scout.sizeBucket : 'medium'
+  // hasOwn, not truthiness: a bucket of "constructor" would index Object.prototype and pass.
+  const size = Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout.sizeBucket : 'medium'
   const plan = {
     sizeBucket: size,
     lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : profile.lenses.slice()),
@@ -1800,7 +1801,7 @@ async function reviewProfile(profile) {
   // readers (rolling deploy, already-stored rows) invisibly to the code-intrinsic lenses. Security-sensitive
   // diffs already get it via the all-lenses floor above (compat ∈ profile.lenses).
   if (plan.sizeBucket === 'large' && profile.lenses.includes('compat') && !plan.lenses.includes('compat')) plan.lenses.push('compat')
-  log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : scout.notes} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
+  log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
   // registered in this session (stale plugin registry), fall back to the generic workflow
