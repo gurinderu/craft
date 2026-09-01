@@ -890,12 +890,18 @@ const REPO_DIRECTIVE = repoArg
 // the harness reaps it. That is still the difference between a phase that proceeds shorthanded and a
 // review that stops dead, which is what actually happened.
 //
-// Deadlines are per phase and sit ABOVE the measured maximum of legitimate work (two runs, 213
-// agents): verify 811s max → 15min, batch 370s → 15min, lens 2791s → 60min, gate 434s → 30min. Set
-// them below real work and this turns into a retry storm that is slower than the stall it replaces.
+// The clock starts at DISPATCH, so a deadline covers queue wait PLUS execution — not execution
+// alone. Calibrating against execution time was a real and expensive mistake: Verify sat at 15min
+// against an 811s measured maximum, then a ~130-thunk wave queued agents for a quarter of an hour
+// before they ran, the deadline fired on agents that were merely waiting, and 23 findings cost 172
+// verification agents. Waves are bounded now (VERIFY_WAVE_AGENTS), which caps the queue term — and
+// these numbers are set against the SUM: at most ~24 agents in flight over an execution p90 of
+// ~360s is well under 15min of waiting, so 30min leaves real headroom above both parts. Lenses get
+// 90min for a blunter reason: a single lens legitimately ran 46 minutes, so no threshold there can
+// separate "hung" from "thorough" — it is a backstop against an agent stuck for hours, nothing finer.
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
-const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 3600000, Verify: 900000, Adjudicate: 1800000, Synthesize: 1800000 }
+const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
   if (Number.isFinite(explicit) && explicit > 0) return explicit
@@ -1557,6 +1563,44 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
 // ONE authoritative opus vote, so the cheap model can neither confirm nor drop a high-stakes finding alone.
 const CULL_MODEL = 'sonnet'
 
+// ---- verification wave bounding ----
+// Pure helpers, tested as a real module in lib/review-waves.mjs and pasted back here by the
+// craft-inline gate, because this script cannot be imported (top-level export + await + return).
+// >>> craft-inline lib/review-waves.mjs VERIFY_WAVE_AGENTS verifyWeight weightedWaves
+// How many AGENTS one verification wave may put in flight. Chosen so the queue term of the Verify
+// deadline stays small: ~24 agents over an execution p90 of ~360s is well under 15min of waiting,
+// which is what makes a 30min dispatch-clock deadline mean "stuck" rather than "popular".
+const VERIFY_WAVE_AGENTS = 24
+
+// Worst-case agent count for one verification thunk, so a wave can only ever come in under budget,
+// never over. A batch thunk is one agent; a High/Critical opens with a cull + the authoritative
+// vote and, if they split, buys the remaining n1-1 culls — 1 + max(1, verifyVotes) in total.
+function verifyWeight(f, plan) {
+  const isHigh = f.severity === 'Critical' || f.severity === 'High'
+  return isHigh ? 1 + Math.max(1, Number(plan?.verifyVotes) || 1) : 1
+}
+
+// Split an ordered list of {run, weight} entries into waves whose weights sum to at most
+// `maxWeight`, PRESERVING ORDER. Order is the invariant that matters: the caller concatenates the
+// waves' results and slices them back apart positionally, so any reordering here would hand one
+// finding's verdict to another finding. An entry heavier than the whole budget forms its own wave
+// rather than being dropped.
+function weightedWaves(entries, maxWeight) {
+  const cap = Math.max(1, Number(maxWeight) || 1)
+  const waves = []
+  let cur = []
+  let w = 0
+  for (const e of entries) {
+    const ew = Math.max(1, Number(e.weight) || 1)
+    if (cur.length && w + ew > cap) { waves.push(cur); cur = []; w = 0 }
+    cur.push(e)
+    w += ew
+  }
+  if (cur.length) waves.push(cur)
+  return waves
+}
+// <<< craft-inline
+
 // ---- verification budget ----
 // Verification is ~2/3 of a review's entire cost and scales linearly with finding count, uncapped:
 // one measured run spent 154 agents / 21MB of transcript on 111 findings. Route each finding to the
@@ -1690,8 +1734,10 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // Batched and individual verification look at DISJOINT findings — routing put each one in exactly
   // one bucket — so awaiting the batch wave before starting the individual one bought nothing but
   // latency. Measured on one run: batches ran +81..89min and individuals +89..102min, strictly
-  // nose-to-tail. They are built as two thunk lists and handed to ONE parallel, so the slowest batch
-  // no longer holds up the first verifier.
+  // nose-to-tail. They are built as two thunk lists sharing ONE ordered work list, so the slowest
+  // batch no longer holds up the first verifier — but that list is dispatched in BOUNDED waves
+  // rather than all at once, because the per-agent deadline is measured from DISPATCH and an
+  // unbounded wave makes it fire on queue wait instead of on hanging (see VERIFY_WAVE_AGENTS).
   const batchThunks = groups.map(group => () =>
     ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => group.map((f, i) => {
@@ -1732,9 +1778,18 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       return tierFromVotes(f, opening.concat(rest.filter(Boolean)))
     })
   })
-  // One wave. A batch thunk resolves to an ARRAY of judged findings (one per finding in the group),
-  // an individual thunk to a single one — flatten the batch side back out before merging.
-  const settledVerdicts = await parallel(batchThunks.concat(individualThunks))
+  // A batch thunk resolves to an ARRAY of judged findings (one per finding in the group), an
+  // individual thunk to a single one — flatten the batch side back out before merging. The waves
+  // preserve the order of `entries`, and the results are appended wave by wave, so the positional
+  // split below stays exactly as valid as it was under one parallel().
+  const entries = batchThunks.map(run => ({ run, weight: 1 }))
+    .concat(route.individual.map((f, i) => ({ run: individualThunks[i], weight: verifyWeight(f, plan) })))
+  const waves = weightedWaves(entries, VERIFY_WAVE_AGENTS)
+  if (waves.length > 1) {
+    log(`[${profile.id}] Verify dispatched in ${waves.length} bounded wave(s) of ≤${VERIFY_WAVE_AGENTS} agents — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging`)
+  }
+  const settledVerdicts = []
+  for (const wave of waves) settledVerdicts.push(...await parallel(wave.map(e => e.run)))
   const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
   const judged = settledVerdicts.slice(batchThunks.length)
   const vp = judged.filter(Boolean).concat(batched, skipped)
