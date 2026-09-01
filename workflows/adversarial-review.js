@@ -312,10 +312,16 @@ log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${sc
 // The scout enumerates the diff; three outcomes have to be told apart, and only the third is a
 // review. A dead scout is NOT an empty diff — it is an unknown one, so it opens `notRun` and the
 // review proceeds over all lenses rather than short-circuiting to a verdict about nothing.
+// A scout that came back WITHOUT a `changedFiles` array is the dead-scout case, not the empty-diff
+// one: the list is unknown, not empty. Folding it into `!scout` also keeps the `: null` below from
+// reaching `!changedFiles.length`, which threw a TypeError and aborted the run before any lens ran
+// and before any run record was filed — the most permissive failure there is, an invisible one.
 const notRun = []
 const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(f => typeof f === 'string' && f.trim()) : null
-if (!scout) {
-  notRun.push('scout died — the diff was never enumerated, so what the lenses saw is unverified')
+if (!scout || !changedFiles) {
+  notRun.push(scout
+    ? 'the scout returned no file list — the diff was never enumerated, so what the lenses saw is unverified'
+    : 'scout died — the diff was never enumerated, so what the lenses saw is unverified')
 } else if (!changedFiles.length) {
   const msg = noChangedFilesMessage()
   log(`INCOMPLETE — ${msg}`)
