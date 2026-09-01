@@ -159,10 +159,13 @@ Return runner, blockers, missingTools, ciCovers, partial, notes.`
 // anchored at the start of the note, so one clause of preamble before the marker
 // ("Ran out of time. PARTIAL: ciCovers …") produced status 'ok' over unfinished fields. The note is
 // still consulted, unanchored, as a fallback for a model that writes the prose but omits the flag.
+// The fallback matches only the MARKER the prompt mandates — uppercase `PARTIAL:` — never the bare
+// word: `notes` now also carries CI CHECK NAMES (the past-the-cap list), and a green check called
+// `partial-build` matched `/\bPARTIAL\b/i` and flipped a complete preflight to 'partial'.
 function preflightIsPartial(pf) {
   if (!pf) return false
   if (pf.partial === true) return true
-  return /\bPARTIAL\b/i.test(flattenField(pf.notes || ''))
+  return /\bPARTIAL:/.test(flattenField(pf.notes || ''))
 }
 
 // Rendered into every downstream prompt that might run a tool, so the answer travels with the work.
@@ -193,7 +196,7 @@ function rustGate(ctx) {
 ${preflightBrief(ctx.preflight)}
 GATE (CI-aware, per the rust-review skill — load it):
 0. USE THE PREFLIGHT ABOVE. Its command prefix goes on every cargo invocation; its blockers make the matching steps unrunnable (skip them and record WHY in provenance — "pedantic seeds unavailable: sqlx macros need Postgres"); its ciCovers list is the set of signals you must NOT re-establish locally. It was resolved by a separate step precisely so this one does not pay to rediscover it. If it is absent or empty, fall back to establishing these yourself — but cheaply, by reading the tree, never by running a build to read its error.
-1. Detect a PR + CI — SKIP THIS ENTIRELY if preflight already returned ciCovers; that list IS the detection, and repeating the gh calls costs ~90s for an answer you were handed. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
+1. Detect a PR + CI — if preflight returned a non-empty ciCovers, that list is the VERIFIED SUBSET of the detection, not the whole of it: preflight reads at most two workflow files, so a green check past that cap is named in its \`notes\` BY NAME ONLY and is absent from ciCovers. So: never re-run the gh detection for a signal already in ciCovers (~90s for an answer you were handed), and for a check named in \`notes\` but NOT in ciCovers, either open that one workflow yourself to learn what it actually runs — and only then treat it as coverage — or establish the signal locally. A bare check name is never coverage; \`test-and-lint\` may run neither. If ciCovers is non-empty and \`notes\` names no further green checks, the detection is complete and you skip the gh calls entirely. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
    \`\`\`
    SHA=$(git rev-parse HEAD)
    gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'   # PRs whose head is this commit
@@ -1934,6 +1937,9 @@ async function reviewProfile(profile) {
     // so a miss costs TWO dispatches and, if the second is as slow, still yields nothing. Losing
     // preflight is survivable (the gate re-establishes everything itself, the slow way); losing it
     // twice while paying for both is the performance regression this step exists to prevent.
+    // The cost of the higher bound: preflight is serial before the gate, so a hung pass now burns up
+    // to 10min of wall clock (two dispatches) rather than 7. Bounded, and cheaper than the gate
+    // rediscovering its own environment on every run.
     { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
   if (preflight) {
     log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
