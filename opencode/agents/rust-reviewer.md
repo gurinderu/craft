@@ -65,8 +65,12 @@ fmt ✓ · clippy ✓ · test ✓ · audit ✓
 ## Verdict
 Block — 1 CRITICAL must be fixed before merge.
 
-VERDICT: BLOCK
+VERDICT: X
 ```
+
+(`X` stands in for the real token — here `BLOCK`. The example is written as a placeholder on
+purpose: a literal token on that line is the one thing most likely to be echoed back verbatim as
+your own last line, and then the parsed verdict is this template's, not yours.)
 
 When the gate could not run at all:
 
@@ -77,8 +81,10 @@ NOT ESTABLISHED — no CI checks on this branch; `cargo` not on PATH
 ## Verdict
 INCOMPLETE (not run) — the mechanical gate never ran; this diff is UNVERIFIED, not clean.
 
-VERDICT: INCOMPLETE
+VERDICT: X
 ```
+
+(again a placeholder — the real last line here carries the token `INCOMPLETE`.)
 
 Every finding cites `severity · file:line · what · why · fix`. No location → not a finding.
 Be precise and terse; the value is in catching real issues, not in volume.
