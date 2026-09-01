@@ -703,7 +703,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey alreadyCarried
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX noteAbsorbed absorbInto
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -800,8 +800,8 @@ function carriedKey(f) {
   return file && ruleId ? `${file}\u0000${ruleId}` : ''
 }
 
-// True when `f` (a finding the lenses just discovered) is already being tracked by one of `priors`
-// (the still-live adjudicate track: still-open / regressed / carried).
+// The prior a freshly-discovered finding is ALREADY tracked by, or null. `priors` is the still-live
+// adjudicate track (still-open / regressed / carried / retired).
 //
 // WHY FILE+RULEID AND NOT A TITLE MATCH. On a full re-scan the lenses see the whole diff and
 // re-invent every prior as a fresh finding. The old test — matchesPrior, which requires file and
@@ -811,27 +811,65 @@ function carriedKey(f) {
 // finding costs one adjudicator call next round, so the ledger — and the bill — grew round over
 // round. Dropping the title threshold entirely is what stops the accretion.
 //
-// THE COST, STATED HONESTLY: file+ruleId is coarser than the old test, so two GENUINELY DISTINCT
-// defects that share a file and a rule collapse into one ledger entry — the new one is dropped.
-// That is acceptable for exactly one reason: the prior it collapsed into REMAINS INDEPENDENTLY
-// CARRIED on the adjudicate track and is re-checked, by name, on its own next round. The new
-// finding is not lost information; it is a second report of a site already under scrutiny.
+// THE COST, AND WHERE IT IS PAID. file+ruleId is coarser than the old test, so two GENUINELY
+// DISTINCT defects that share a file and a rule collapse into one ledger entry. That would be a
+// silent loss — a prior does not have to be PRUNED to vanish, it vanishes the round it RESOLVES,
+// and `adjudicated.resolved` is deliberately not written to the next ledger. Within a round the
+// collapse is already safe (the caller never dedups against the resolved track), but a finding
+// absorbed in round N whose host resolves in round N+1 would be unrecorded and untracked — and on
+// an incremental round its site is out of the lens base, so nothing re-discovers it.
 //
-// THE CONDITION UNDER WHICH THIS STOPS BEING SAFE: if anything ever PRUNES the adjudicate track —
-// caps the carried set, expires priors after N rounds, drops the ones an adjudicator could not
-// re-locate, or trims the ledger by size — then the prior this drops into can vanish while the
-// finding it absorbed was never recorded anywhere, and the defect is silently lost. Any such
-// pruning must either keep this match exact or re-admit the absorbed findings first.
+// So absorption is not free and not silent: the absorbed finding LANDS — as a clause on the host's
+// `why` (absorbInto), which is a persisted ledger field. The host therefore cannot leave the ledger
+// without an adjudicator that was told, by file:line and title, that a second defect was reported
+// at this site. The clause is written INTO the base rationale, ahead of the per-round markers, so
+// baseWhy's marker-stripping cannot take it away again.
 //
 // `fallbackMatch` (the workflow passes matchesPrior) is used only when the finding or the prior has
 // no usable file+ruleId key: without a ruleId the coarse key would collapse everything in a file.
-function alreadyCarried(f, priors, fallbackMatch) {
+function findCarrier(f, priors, fallbackMatch) {
   const key = carriedKey(f)
-  return (priors || []).some(p => {
+  return (priors || []).find(p => {
     const pk = carriedKey(p)
     if (key && pk) return key === pk
     return typeof fallbackMatch === 'function' ? !!fallbackMatch(f, p) : false
-  })
+  }) || null
+}
+
+// True when `f` (a finding the lenses just discovered) is already tracked by one of `priors`.
+function alreadyCarried(f, priors, fallbackMatch) {
+  return !!findCarrier(f, priors, fallbackMatch)
+}
+
+// How many absorbed reports are named individually on one host before the rest collapse to a count.
+// Not a prune: past the cap the host still says a further N reports landed here, so "this site holds
+// more than one defect" survives — only the extra file:line/title detail is traded for a bounded
+// `why`, which is re-interpolated into every subsequent prompt and rendered in the report.
+const ABSORBED_MAX = 3
+
+// The absorbed finding's landing place: the host's BASE `why`, extended by one bounded clause.
+// Re-absorbing the identical report is a no-op, so a defect the lenses re-discover every round does
+// not grow the string round over round. The clause shape is deliberately unlike the ` — <marker>: `
+// shape baseWhy parses, so it is never mistaken for a per-round append and stripped.
+function noteAbsorbed(baseText, f) {
+  const base = String(baseText ?? '')
+  const mark = ' — also reported at '
+  const clause = `${mark}${sanitizeAttack(f?.file) || '?'}:${Number(f?.line) || 0}: ${sanitizeAttack(f?.title) || 'untitled'}`
+  if (base.includes(clause)) return base
+  if (base.split(mark).length - 1 < ABSORBED_MAX) return base + clause
+  const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
+  const m = base.match(overflow)
+  return `${m ? base.replace(overflow, '') : base} — (+${m ? Number(m[1]) + 1 : 1} more report(s) at this site)`
+}
+
+// Record `f` on its host's `why`. baseWhy is a PREFIX function (every rule it applies strips a
+// TRAILING marker), so the base can be extended and this round's marker suffix re-attached
+// unchanged — which is what keeps the clause alive across rounds: next round's baseWhy strips the
+// marker and keeps everything the clause sits in.
+function absorbInto(hostWhy, f) {
+  const s = String(hostWhy ?? '')
+  const base = baseWhy(s)
+  return noteAbsorbed(base, f) + s.slice(base.length)
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -2251,7 +2289,11 @@ let suspected = results.flatMap(r => r.suspected)
 // For each prior-round finding, decide its fate this round. rejected/justified are carried (not
 // re-raised) unless the code around them changed; open/deferred/confirmed priors get a targeted
 // "is it still here?" check against the current tree.
-const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [] }
+// `retired` is the carried track's EXIT: a dismissed prior whose carry-check reported the code
+// around it unchanged has had its one confirmation and leaves the ledger. It still lives here for
+// the rest of THIS round — it suppresses a lens re-discovery (below) and renders in the report's
+// carried section — but it is not re-persisted, so it never costs another carry agent.
+const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], retired: [] }
 if (priorRound?.ledger?.length) {
   phase('Adjudicate')
   // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
@@ -2278,11 +2320,21 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
   // A dead carry agent (changed == null) is indeterminate — keep the dismissed prior as carried (do
   // NOT reopen on an indeterminate carry), but count + ⚠️-log it like the other death paths so this
   // is no longer the one unaudited death path.
+  //
+  // THE EXIT, AND WHY IT LOSES NOTHING. A dismissal is the author's decision; the only thing that
+  // can invalidate it is the code around it changing. So one carry-check that says "unchanged" is
+  // the whole answer, and re-asking it every round forever buys nothing — it was the only track
+  // with no exit at all, costing one agent per dismissal per round in perpetuity. A retired prior
+  // is not forgotten into silence: if that code is EVER touched again, the change is in a later
+  // round's delta and the lenses raise the finding fresh, on its merits — which is exactly what the
+  // `changed === true` branch does here, minus the stale `rejected` label. What retiring costs is
+  // therefore one label on a re-raise, not a finding. An INDETERMINATE carry-check (agent died)
+  // retires nothing: it stays carried and is asked again next round.
   let carryDied = 0
   for (const { f, changed } of carriedResults) {
     if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
     else if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
-    else adjudicated.carried.push(f)
+    else adjudicated.retired.push(f)
   }
 
   // Open/deferred/confirmed priors: is the defect CLASS still present at its (re-located) site?
@@ -2345,27 +2397,45 @@ Return {status, currentLine, note, invariant, attack}.`,
     if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
     adjudicated[track].push(entry)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${adjudicated.retired.length} carried→retired (code unchanged; leaves the ledger) · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
 }
 
 // On a re-review, lenses can re-surface a finding that is already tracked on the adjudicate track —
 // always on a full re-scan (the lenses saw the whole diff), and even on the delta path when a fix
-// commit touches a still-open site. Drop new findings that are already carried by a still-LIVE prior
-// (still-open/regressed/carried) so they are not double-counted in the report or appended to the
-// persisted ledger — the append is what made the carried set, and therefore the per-round adjudicator
-// bill, grow every round. The match is file+ruleId (alreadyCarried); the reasoning for that coarseness
-// and the condition under which it stops being safe are in lib/review-adjudicate.mjs. matchesPrior is
+// commit touches a still-open site. A new finding already carried by a still-LIVE prior
+// (still-open/regressed/carried/retired) is ABSORBED into that prior rather than listed separately,
+// so it is not double-counted in the report or appended to the persisted ledger — the append is what
+// made the carried set, and therefore the per-round adjudicator bill, grow every round.
+// ABSORBED IS NOT DISCARDED: the finding is recorded onto its host's `why` (absorbInto), a persisted
+// ledger field, so it outlives the round the host RESOLVES and leaves the ledger — the failure mode
+// the old comment named as future and which was in fact already live. The match is file+ruleId
+// (findCarrier); the reasoning for that coarseness is in lib/review-adjudicate.mjs. matchesPrior is
 // the fallback for a finding with no ruleId to key on.
 // Do NOT dedup against RESOLVED priors: a new finding matching a resolved one is a regression signal
 // and must survive.
 if (priorRound) {
-  const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried]
+  const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried, ...adjudicated.retired]
   if (livePriors.length) {
-    const before = confirmed.length + suspected.length
-    confirmed = confirmed.filter(f => !alreadyCarried(f, livePriors, matchesPrior))
-    suspected = suspected.filter(f => !alreadyCarried(f, livePriors, matchesPrior))
-    const removed = before - (confirmed.length + suspected.length)
-    if (removed) log(`Re-review: dropped ${removed} new finding(s) already tracked as a still-live prior (kept on the adjudicate track, not double-counted)`)
+    // A RETIRED host absorbs silently, and that is the one narrowing this design makes knowingly:
+    // it is not persisted, so a clause written on it would not survive the round. Recording the
+    // absorbed finding elsewhere would mean un-retiring the host — and since the lenses re-invent
+    // every dismissed prior on a full re-scan, that would un-retire it every round and the carried
+    // track would have no exit again. What is dropped is therefore a second report keyed to a
+    // file+rule the author has already ruled on, in code that has not moved since the ruling. If
+    // that code is ever touched, the retired prior is gone from the ledger and the report lands as
+    // a new finding on its merits.
+    const retired = new Set(adjudicated.retired)
+    let absorbed = 0
+    const keep = f => {
+      const host = findCarrier(f, livePriors, matchesPrior)
+      if (!host) return true
+      absorbed++
+      if (!retired.has(host)) host.why = absorbInto(host.why, f)
+      return false
+    }
+    confirmed = confirmed.filter(keep)
+    suspected = suspected.filter(keep)
+    if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why so they outlive it, not listed twice`)
   }
 }
 
@@ -2385,7 +2455,7 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 // A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
 // through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
 // here would wrongly erase still-open/regressed priors.
-const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length)
+const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length || adjudicated.retired.length)
 if (!confirmed.length && !suspected.length && !hasAdjudicated) {
   await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = incompleteNotes.length
@@ -2401,7 +2471,7 @@ phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
   resolved: adjudicated.resolved, stillOpen: adjudicated.stillOpen,
-  regressed: adjudicated.regressed, carried: adjudicated.carried, neu: confirmed,
+  regressed: adjudicated.regressed, carried: [...adjudicated.carried, ...adjudicated.retired], neu: confirmed,
 } : null
 const report = await ragent(
   `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
@@ -2441,9 +2511,9 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
 
 // Optional: post Confirmed findings as inline PR comments (best-effort).
 // Best-effort means it must not FAIL the run; it does not mean it may be INVISIBLE. The caller asked
-// for comments, so whether they landed is part of the answer: the outcome comes back under a schema
-// and is logged, including "the agent died and we do not know". Discarding the return value made the
-// prompt's own "report that" reach nobody — not the caller, not the run log.
+// for comments, so whether they landed is part of the answer: the outcome is returned under a schema
+// and logged, including "the agent died and we do not know". Discarding the return value made the
+// prompt's own "report that" reach nobody.
 if (postComments && confirmed.length) {
   const posted = await ragent(
     `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, post nothing and say so in \`reason\` — never fail.
@@ -2485,6 +2555,8 @@ const reviewLedger = isRereview
     ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
     ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
     ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
+    // `adjudicated.retired` is deliberately absent, like `resolved`: a dismissed prior whose
+    // carry-check confirmed the code around it is unchanged has been answered and leaves the ledger.
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', confirmed.includes(f) ? 'confirmed' : 'suspected'))
