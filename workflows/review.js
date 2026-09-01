@@ -95,12 +95,13 @@ continues on the remaining signals with status=unknown — an incomplete gate be
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'notes'],
+  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'partial', 'notes'],
   properties: {
     runner: { type: 'string', description: 'prefix every build/lint command needs, e.g. "direnv exec . " or "nix develop -c " — empty string if commands run bare' },
     blockers: { type: 'array', items: { type: 'string' }, description: 'reasons this tree CANNOT compile here, one per line, e.g. "sqlx query macros need a live Postgres; no offline .sqlx cache and no DATABASE_URL"' },
     missingTools: { type: 'array', items: { type: 'string' }, description: 'gate tools not on PATH (cargo-audit, cargo-deny, semgrep, …)' },
     ciCovers: { type: 'array', items: { type: 'string' }, description: 'signals a GREEN CI check already establishes for this exact HEAD, as "<signal> via <check name>" — e.g. "test via cargo nextest", "deny-bans via cargo-deny"' },
+    partial: { type: 'boolean', description: 'true if ANY of the four fields was left unfinished (ran out of time, a command failed, gh unavailable) — the matching field is then empty and notes says which and why' },
     notes: { type: 'string' },
   },
 }
@@ -137,22 +138,36 @@ ${profile.id === 'rust'
    \`\`\`
    A dev shell usually has a NARROWER PATH than the login shell, so if the runner prefix from step 1 is non-empty, run the same loop once more under it and treat a tool as PRESENT if EITHER pass found it — that mistake silently dropped the entire \`cargo audit\` signal from a real run. Name the invocation that works (e.g. "cargo-audit: ~/.cargo/bin/cargo-audit, outside the dev shell"). Only a tool MISSING in both passes goes in \`missingTools\` — an absent tool is an intentional skip downstream, never a failure.
 
-4. CI COVERAGE. Which signals does a GREEN check already establish for THIS EXACT commit? ONE call answers it — the SHA-scoped check-runs endpoint. Do NOT also run \`gh pr checks\` or look the PR up by commit: those resolve by branch (empty on a review worktree or detached HEAD) or hand you a PR whose head may have moved past your commit, and both then need the SHA test this call satisfies by construction.
+4. CI COVERAGE. Which signals does a GREEN check already establish for THIS EXACT commit? TWO calls answer it, both SHA-scoped — the check-runs endpoint and the commit-status endpoint. Run those two, once each, and NOTHING else — in particular do NOT run \`gh pr checks\` and do NOT look the PR up by commit: those resolve by branch (empty on a review worktree or detached HEAD) or hand you a PR whose head may have moved past your commit, and both then need the SHA test this call satisfies by construction.
    \`\`\`
    SHA=$(git rev-parse HEAD)
    gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" --jq '.check_runs[] | "\\(.name) \\(.status) \\(.conclusion)"'
    gh api "repos/{owner}/{repo}/commits/$SHA/status" --jq '.statuses[] | "\\(.context) completed \\(.state)"'
    \`\`\`
    Owner/repo from \`git remote get-url origin\`. Both calls, once each: check-runs alone misses CI that reports through the older commit-status API, and that omission looks exactly like "no CI". Keep only \`completed\` rows whose conclusion/state is \`success\`.
-   Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. HARD CAP — this is where the pass runs away with the clock: read AT MOST 2 workflow files, only for green checks that map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale. Past the cap, list the remaining green checks by name only and say in notes which ones you did not open.
+   Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. HARD CAP — this is where the pass runs away with the clock: read AT MOST 2 workflow files, only for green checks that map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale. Past the cap, the remaining green checks go in \`notes\` BY NAME ONLY and NEVER in \`ciCovers\` — \`ciCovers\` means "do not re-run this locally", and a check whose workflow you did not open cannot support that: its name is a guess at what it ran, which is exactly what the \`cargo-deny\`/\`check bans\` example above shows going wrong. Only a signal you read the workflow for goes in \`ciCovers\`.
    List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
 
-BUDGET (hard): reconnaissance, target ~90 seconds, three minutes is the ceiling — the dispatch is cut off shortly after it, so a pass still thinking at the ceiling returns NOTHING and the gate loses even the runner prefix. So at three minutes STOP and RETURN. A thorough preflight costing more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint here.
+BUDGET (hard): reconnaissance, target ~90 seconds, three minutes is the ceiling. Past the dispatch deadline nothing cuts you off — the caller simply STOPS WAITING for you and dispatches a second preflight, so everything you do after that point is discarded and paid for twice, and if the second pass is as slow the gate loses even the runner prefix. So at three minutes STOP and RETURN. A thorough preflight costing more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint here.
 
-PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four you did not finish: return the field EMPTY and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
+PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
 
-Return runner, blockers, missingTools, ciCovers, notes.`
+Return runner, blockers, missingTools, ciCovers, partial, notes.`
 }
+// An unfinished preflight must not be recorded as a clean one. The schema carries an explicit
+// `partial` boolean precisely so this does not hang on the shape of prose: the earlier test was
+// anchored at the start of the note, so one clause of preamble before the marker
+// ("Ran out of time. PARTIAL: ciCovers …") produced status 'ok' over unfinished fields. The note is
+// still consulted, unanchored, as a fallback for a model that writes the prose but omits the flag.
+// The fallback matches only the MARKER the prompt mandates — uppercase `PARTIAL:` — never the bare
+// word: `notes` now also carries CI CHECK NAMES (the past-the-cap list), and a green check called
+// `partial-build` matched `/\bPARTIAL\b/i` and flipped a complete preflight to 'partial'.
+function preflightIsPartial(pf) {
+  if (!pf) return false
+  if (pf.partial === true) return true
+  return /\bPARTIAL:/.test(flattenField(pf.notes || ''))
+}
+
 // Rendered into every downstream prompt that might run a tool, so the answer travels with the work.
 function preflightBrief(pf) {
   // A dead preflight must NOT render as a clean one. Returning '' left the downstream prompt with no
@@ -181,7 +196,7 @@ function rustGate(ctx) {
 ${preflightBrief(ctx.preflight)}
 GATE (CI-aware, per the rust-review skill — load it):
 0. USE THE PREFLIGHT ABOVE. Its command prefix goes on every cargo invocation; its blockers make the matching steps unrunnable (skip them and record WHY in provenance — "pedantic seeds unavailable: sqlx macros need Postgres"); its ciCovers list is the set of signals you must NOT re-establish locally. It was resolved by a separate step precisely so this one does not pay to rediscover it. If it is absent or empty, fall back to establishing these yourself — but cheaply, by reading the tree, never by running a build to read its error.
-1. Detect a PR + CI — SKIP THIS ENTIRELY if preflight already returned ciCovers; that list IS the detection, and repeating the gh calls costs ~90s for an answer you were handed. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
+1. Detect a PR + CI — if preflight returned a non-empty ciCovers, that list is the VERIFIED SUBSET of the detection, not the whole of it: preflight reads at most two workflow files, so a green check past that cap is named in its \`notes\` BY NAME ONLY and is absent from ciCovers. So: never re-run the gh detection for a signal already in ciCovers (~90s for an answer you were handed), and for a check named in \`notes\` but NOT in ciCovers, either open that one workflow yourself to learn what it actually runs — and only then treat it as coverage — or establish the signal locally. A bare check name is never coverage; \`test-and-lint\` may run neither. If ciCovers is non-empty and \`notes\` names no further green checks, the detection is complete and you skip the gh calls entirely. \`gh pr checks --json name,state,bucket,link\` resolves the PR from the CURRENT BRANCH NAME, which fails whenever you are not sitting on the PR's own head branch — a review worktree (\`pr-1203-review\`), a detached HEAD, or a local rename all look like "no PR" even though CI ran and is green. That is a false negative that costs the whole CI shortcut, so when the branch lookup comes up empty, LOOK UP THE PR BY COMMIT before giving up:
    \`\`\`
    SHA=$(git rev-parse HEAD)
    gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'   # PRs whose head is this commit
@@ -1912,22 +1927,37 @@ async function reviewProfile(profile) {
   // spends its time on signals rather than on discovering its own environment. Best-effort by design —
   // a preflight that dies just leaves the gate to work it out the old way.
   const preflight = await ragent(preflightPrompt(profile, { baseRef }),
-    // A tight deadline is safe HERE and nowhere else: losing preflight costs a fallback, not the
-    // review — the gate still establishes everything itself, just the slow way. 3.5min, not the
-    // phase default: the prompt declares three minutes as its ceiling, and a deadline at twice the
-    // declared ceiling makes the budget advisory — nothing then stops a pass that ignores it. The
-    // half-minute over is for the return trip, not for more work. (ragent re-dispatches once, so the
-    // worst case is 7min, which is what the single 7min allowance used to buy on the FIRST try.)
-    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 210000 })
+    // 5min, not the phase default. Three numbers set it, and the deadline must clear ALL of them:
+    //  · the prompt declares a 3min ceiling, and a deadline at twice that makes the budget advisory —
+    //    nothing then stops a pass that ignores the ceiling. 5min stays under 2x and keeps it real.
+    //  · the measured cost of an earlier version of this pass was 207s, ALREADY past three minutes.
+    //  · the clock starts at DISPATCH, not at execution, so it covers queue wait PLUS the run.
+    // A deadline between those last two (210000 did exactly this) times out work that would have
+    // landed — and `ragent` does not cancel on a deadline: it abandons the wait and re-dispatches,
+    // so a miss costs TWO dispatches and, if the second is as slow, still yields nothing. Losing
+    // preflight is survivable (the gate re-establishes everything itself, the slow way); losing it
+    // twice while paying for both is the performance regression this step exists to prevent.
+    // The cost of the higher bound: preflight is serial before the gate, so a hung pass now burns up
+    // to 10min of wall clock (two dispatches) rather than 7. Bounded, and cheaper than the gate
+    // rediscovering its own environment on every run.
+    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
   if (preflight) {
     log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
       + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
       + ` · CI covers ${preflight.ciCovers?.length ? preflight.ciCovers.join(', ') : 'nothing'}`
       + `${preflight.missingTools?.length ? ` · missing: ${preflight.missingTools.join(', ')}` : ''}`
-      + `${/^\s*PARTIAL\b/i.test(preflight.notes || '') ? ' · ⚠️ PARTIAL — see notes' : ''}`)
+      + `${preflightIsPartial(preflight) ? ' · ⚠️ PARTIAL — see notes' : ''}`)
   } else {
     // Never silent: no preflight line at all would read as "this run had no preflight step".
     log(`⚠️ [${profile.id}] Preflight unavailable (failed or passed its deadline) — the gate establishes the environment itself, and its provenance says so.`)
+    // DELIBERATELY NOT `notRun`, unlike a dead scout. `notRun` drives the INCOMPLETE verdict and
+    // means "a review step did not happen; re-run it". A dead scout satisfies that: the plan
+    // degrades to the conservative fallback and the scouted intent is genuinely lost. A dead
+    // preflight loses no coverage — every fact it resolves is re-established by the gate, and
+    // preflightBrief() tells the gate to do exactly that. It costs time, not signal. Marking such a
+    // run INCOMPLETE would flag a pure performance fallback as an unfinished review and dilute the
+    // marker for the cases that mean it. The loss stays visible where it belongs: this log line and
+    // `preflight.status: 'unavailable'` in the run record.
   }
 
   // ---- Gate ----
@@ -1957,7 +1987,7 @@ async function reviewProfile(profile) {
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
     // that never answered — a bare `null` collapsed both into the same, more permissive, reading.
     preflight: preflight
-      ? { status: /^\s*PARTIAL\b/i.test(preflight.notes || '') ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes }
+      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes }
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
