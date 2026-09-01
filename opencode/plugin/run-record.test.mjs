@@ -20,6 +20,14 @@ test('parseVerdict picks the worst signal in the text', () => {
   assert.equal(parseVerdict('unblocked the pipeline'), 'Approve')
 })
 
+test('parseVerdict never turns a dimension that could not run into an Approve', () => {
+  assert.equal(parseVerdict('INCOMPLETE (not run) — cargo-semver-checks is absent'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('verdict: incomplete (not run)'), 'INCOMPLETE (not run)')
+  // A real signal still outranks it: partial coverage with findings is not merely "uncovered".
+  assert.equal(parseVerdict('Block — UB-found, and the rest is INCOMPLETE'), 'Block')
+  assert.equal(parseVerdict('Warning, plus one INCOMPLETE dimension'), 'Warning')
+})
+
 test('buildAuditRecord assembles dimensions, notRun, and a null findings field', () => {
   const rec = buildAuditRecord({
     results: [

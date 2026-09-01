@@ -57,20 +57,22 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     {
       label: "security",
       agent: "rust-security-scanner",
-      prompt: `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is installed) and consolidate into a severity-ranked verdict and findings. Note any absent tools.`,
+      prompt: `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is installed) and consolidate into a severity-ranked verdict and findings. Note any absent tools. If NONE of the tools is installed, so nothing was actually scanned, return verdict "INCOMPLETE (not run)" and name the missing tools — a scan that ran nothing is not an Approve.`,
     },
   ]
   if (hasUnsafe) {
     jobs.push({
       label: "miri",
       agent: "rust-miri",
-      prompt: `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric. Return a Clean / UB-found verdict and findings.`,
+      prompt: `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric. Return a Clean / UB-found verdict, or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.`,
     })
   }
 
   // Whole-project tool dimensions — no dedicated agent (run on the default session model). Each runs
-  // its tools, interprets, and degrades gracefully: a missing tool is an intentional skip (verdict
-  // Approve + a note), never a failure.
+  // its tools, interprets, and degrades gracefully: a missing tool is an intentional skip, never a
+  // failure — but a skip reports `INCOMPLETE (not run)`, not Approve. Approve stays reserved for
+  // "the tool ran and found nothing"; a reader of the dimension table must be able to tell those
+  // two apart.
   jobs.push(
     {
       label: "crate-decomposition",
@@ -80,27 +82,27 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     {
       label: "semver",
       agent: "",
-      prompt: `Check public-API semver compatibility across PUBLISHED crates: run \`cargo semver-checks check-release\` if installed. If cargo-semver-checks is absent or there is no published library crate, say so and return verdict "Approve" with a one-line skip note — do NOT fail. Load the rust-ecosystem skill. Report breaking changes vs the published baseline as findings.`,
+      prompt: `Check public-API semver compatibility across PUBLISHED crates: run \`cargo semver-checks check-release\` if installed. If cargo-semver-checks is absent, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill. Report breaking changes vs the published baseline as findings.`,
     },
     {
       label: "build-matrix",
       agent: "",
-      prompt: `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\`. Skip any absent tool/toolchain with a note and return "Approve" if nothing ran — do NOT fail. Report failing feature combinations or MSRV breakage as findings.`,
+      prompt: `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\`. Skip any absent tool/toolchain with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Report failing feature combinations or MSRV breakage as findings.`,
     },
     {
       label: "deps",
       agent: "",
-      prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail. Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.`,
+      prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.`,
     },
     {
       label: "unused-crates",
       agent: "",
-      prompt: `Find UNUSED crates in two classes, then VERIFY each before reporting: (a) ORPHAN workspace members — members that NO other workspace member depends on, excluding binaries and published libraries (from \`cargo metadata\`); (b) UNUSED dependencies — \`cargo machete\` (or \`cargo +nightly udeps\` if absent). For EACH candidate, try HARD to prove it IS used (cfg/feature-gated, macro-only, re-exported, build.rs, dev/bench/example usage, bin/published status) before accepting it; default to "used" when uncertain (recommending deletion of live code is the costly error). Skip any absent tool with a note — do NOT fail. Report ONLY verified-unused crates/deps as findings (severity Medium).`,
+      prompt: `Find UNUSED crates in two classes, then VERIFY each before reporting: (a) ORPHAN workspace members — members that NO other workspace member depends on, excluding binaries and published libraries (from \`cargo metadata\`); (b) UNUSED dependencies — \`cargo machete\` (or \`cargo +nightly udeps\` if absent). For EACH candidate, try HARD to prove it IS used (cfg/feature-gated, macro-only, re-exported, build.rs, dev/bench/example usage, bin/published status) before accepting it; default to "used" when uncertain (recommending deletion of live code is the costly error). Skip any absent tool with a note — do NOT fail. \`cargo metadata\` alone answers class (a), so it is enough to run: if the graph loads and there are no orphan members, that is a real "Approve". But if \`cargo metadata\` itself does not run, so NOTHING was inspected, return verdict "INCOMPLETE (not run)" naming what was missing — not "Approve". Report ONLY verified-unused crates/deps as findings (severity Medium).`,
     },
     {
       label: "tests-cov",
       agent: "",
-      prompt: `Assess test effectiveness and docs: \`cargo llvm-cov --summary-only\` if cargo-llvm-cov is installed; build docs cleanly (\`cargo doc --no-deps\`, flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any absent tool with a note — do NOT fail. Load the rust-testing skill. Report low-coverage hotspots, broken doc links, and failing doctests as findings.`,
+      prompt: `Assess test effectiveness and docs: \`cargo llvm-cov --summary-only\` if cargo-llvm-cov is installed; build docs cleanly (\`cargo doc --no-deps\`, flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any absent tool with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill. Report low-coverage hotspots, broken doc links, and failing doctests as findings.`,
     },
   )
 
@@ -110,8 +112,8 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
   const blob = results.map((r) => `### ${r.label} (${r.ok ? "ran" : "NOT RUN"})\n\n${r.text}`).join("\n\n")
   const synthPrompt = `You are consolidating a Rust audit. Below are the per-dimension results. Produce ONE markdown report — do not invent findings, only merge what is given:
 
-1. An **overall verdict** line — the worst case across dimensions. If any dimension is "NOT RUN", mark the audit INCOMPLETE.
-2. A **dimension → verdict** table; give any NOT RUN dimension the verdict \`NOT RUN\` (do not treat absence as a pass).
+1. An **overall verdict** line — the worst case across dimensions. If any dimension is "NOT RUN", or reported the verdict \`INCOMPLETE (not run)\` because its tooling was absent, mark the audit INCOMPLETE.
+2. A **dimension → verdict** table; give any NOT RUN dimension the verdict \`NOT RUN\` (do not treat absence as a pass). Any dimension whose own verdict is \`INCOMPLETE (not run)\` must be rendered as \`COULD NOT RUN\` with a note naming the missing tool, NEVER as Approve or as a blank/green cell: a reader must be able to tell "ran, found nothing" from "never ran".
 3. **Findings by severity** (Critical first), each tagged with its dimension and location + a one-line fix direction.
 4. A short **"Fix first"** list of the highest-leverage items.
 
