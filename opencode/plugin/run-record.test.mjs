@@ -38,6 +38,19 @@ test('parseVerdict does not read the bare word "incomplete" in prose as a verdic
   assert.equal(parseVerdict('## Verdict\nINCOMPLETE  ( not run ) — nothing was scanned'), 'INCOMPLETE (not run)')
 })
 
+test('parseVerdict keeps an unanticipated INCOMPLETE wording out of the green bucket', () => {
+  // Six rust-audit dimensions have no agent file — only a prompt string — so the exact phrase is not
+  // guaranteed. Anything SHOUTED and used as a verdict must land non-permissively, never on Approve.
+  assert.equal(parseVerdict('INCOMPLETE — cargo-hack is not installed'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE (not-run)'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('Verdict: INCOMPLETE, nothing was measured'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('## Verdict\nINCOMPLETE\n\nNo coverage tool is present.'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('| deps | INCOMPLETE |'), 'INCOMPLETE (not run)')
+  // ...and the prose sense still does not, in either direction.
+  assert.equal(parseVerdict('Approve. INCOMPLETE coverage of the powerset, but every build passed.'), 'Approve')
+  assert.equal(parseVerdict('Approve — the docs are incomplete.'), 'Approve')
+})
+
 test('buildAuditRecord assembles dimensions, notRun, and a null findings field', () => {
   const rec = buildAuditRecord({
     results: [

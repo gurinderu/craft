@@ -19,6 +19,16 @@ export function parseVerdict(text) {
   // bare word: this runs over an agent's entire free text, where prose like "coverage of untested
   // paths is incomplete" is ordinary — and a false INCOMPLETE teaches readers to ignore the marker.
   if (/INCOMPLETE\s*\(\s*not run\s*\)/i.test(t)) return 'INCOMPLETE (not run)'
+  // Six of the audit dimensions have no agent file: their only instruction is a prompt string, so a
+  // model can report the fact in a wording we did not anticipate — `INCOMPLETE — cargo-hack is not
+  // installed`, `INCOMPLETE (not-run)`. Those must NOT fall through to Approve; an unrecognised
+  // verdict defaulting to the permissive outcome is exactly what worstVerdict() in lib/run-record.mjs
+  // refuses. The discriminator is shape, not vocabulary: the prose sense is an ADJECTIVE and is
+  // followed on its own line by the word it qualifies ("INCOMPLETE coverage of the feature
+  // powerset"), and is normally lowercase besides ("the docs are incomplete"); a verdict is not —
+  // it is shouted and then terminated by punctuation, a table pipe, or the end of the line. So:
+  // uppercase, and NOT followed on the same line by a word.
+  if (/\bINCOMPLETE\b(?![ \t]+[A-Za-z])/.test(t)) return 'INCOMPLETE (not run)'
   return 'Approve'
 }
 
