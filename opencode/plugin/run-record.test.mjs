@@ -28,6 +28,58 @@ test('parseVerdict never turns a dimension that could not run into an Approve', 
   assert.equal(parseVerdict('Warning, plus one INCOMPLETE dimension'), 'Warning')
 })
 
+test('parseVerdict does not read the bare word "incomplete" in prose as a verdict', () => {
+  // This runs over an agent's whole free-text report, where "incomplete" is ordinary English.
+  // A false INCOMPLETE on a run that was fine is what trains readers to ignore the marker.
+  assert.equal(parseVerdict('Approve — coverage of untested paths is incomplete, but nothing found'), 'Approve')
+  assert.equal(parseVerdict('the docs are incomplete'), 'Approve')
+  assert.equal(parseVerdict('INCOMPLETE coverage of the feature powerset'), 'Approve')
+  // The verdict phrase itself still registers, whitespace-tolerantly.
+  assert.equal(parseVerdict('## Verdict\nINCOMPLETE  ( not run ) — nothing was scanned'), 'INCOMPLETE (not run)')
+})
+
+test('parseVerdict keeps an unanticipated INCOMPLETE wording out of the green bucket', () => {
+  // Six rust-audit dimensions have no agent file — only a prompt string — so the exact phrase is not
+  // guaranteed. Anything SHOUTED and used as a verdict must land non-permissively, never on Approve.
+  assert.equal(parseVerdict('INCOMPLETE — cargo-hack is not installed'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE (not-run)'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('Verdict: INCOMPLETE, nothing was measured'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('## Verdict\nINCOMPLETE\n\nNo coverage tool is present.'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('| deps | INCOMPLETE |'), 'INCOMPLETE (not run)')
+  // ...and the prose sense still does not, in either direction.
+  assert.equal(parseVerdict('Approve. INCOMPLETE coverage of the powerset, but every build passed.'), 'Approve')
+  assert.equal(parseVerdict('Approve — the docs are incomplete.'), 'Approve')
+})
+
+test('parseVerdict reads the prescribed wording with its punctuation dropped', () => {
+  // A model told to end with `INCOMPLETE (not run)` that writes `INCOMPLETE not run` has done what
+  // it was asked, near enough. Under a bare "not followed by a letter" shape test that is
+  // space-then-letter and falls through to Approve — a dimension that ran nothing recorded as a
+  // clean pass, the exact failure-reads-as-success direction this whole parser exists to close.
+  assert.equal(parseVerdict('INCOMPLETE not run'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE Not run'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE run: no toolchain'), 'INCOMPLETE (not run)')
+  // The rest of the closed continuation set: the words a REASON opens with.
+  assert.equal(parseVerdict('INCOMPLETE no toolchain available'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE nothing was scanned'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE never ran — no cargo-mutants'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE because cargo-hack is missing'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE since the toolchain is absent'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE due to a missing toolchain'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE cannot run miri here'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE unable to run miri'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE missing cargo-semver-checks'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE absent toolchain'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE unavailable in this environment'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE skipped: no unsafe blocks'), 'INCOMPLETE (not run)')
+  assert.equal(parseVerdict('INCOMPLETE skip — nothing to measure'), 'INCOMPLETE (not run)')
+  // Admitting those continuations must NOT reopen the adjective use.
+  assert.equal(parseVerdict('Approve — INCOMPLETE coverage of the feature powerset'), 'Approve')
+  assert.equal(parseVerdict('the docs are incomplete'), 'Approve')
+  assert.equal(parseVerdict('Approve. Test coverage is incomplete but adequate.'), 'Approve')
+  assert.equal(parseVerdict('Approve — INCOMPLETE documentation of the public API'), 'Approve')
+})
+
 test('buildAuditRecord assembles dimensions, notRun, and a null findings field', () => {
   const rec = buildAuditRecord({
     results: [

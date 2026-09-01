@@ -52,7 +52,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     {
       label: "architecture",
       agent: "rust-architecture-reviewer",
-      prompt: `Audit the architecture of this whole Rust project: build the crate/module dependency graph and judge it in both directions (layer leaks/god modules vs ghost abstractions/over-layering). Return your Healthy/Concerns/At-risk rating and findings.`,
+      prompt: `Audit the architecture of this whole Rust project: build the crate/module dependency graph and judge it in both directions (layer leaks/god modules vs ghost abstractions/over-layering). Return your Healthy/Concerns/At-risk rating and findings. If the graph could not be built at all — no manifest is readable and \`cargo metadata\` does not run — nothing was judged: return verdict "INCOMPLETE (not run)" naming what was missing, NOT Healthy.`,
     },
     {
       label: "security",
@@ -109,11 +109,15 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
   const results = await fanOut(ctx, jobs)
 
   // Synthesize through a fresh child session (no agent → the session's default model/persona).
-  const blob = results.map((r) => `### ${r.label} (${r.ok ? "ran" : "NOT RUN"})\n\n${r.text}`).join("\n\n")
+  // One machine-readable label for "this dimension checked nothing" — the same string the leaf
+  // agents report and the only one parseVerdict() recognises. A dispatcher-detected death and a
+  // dimension's own self-report are the same fact to a reader, and the blob is also the fallback
+  // report if synthesis fails, so its verdict must parse too.
+  const blob = results.map((r) => `### ${r.label} (${r.ok ? "ran" : "INCOMPLETE (not run)"})\n\n${r.text}`).join("\n\n")
   const synthPrompt = `You are consolidating a Rust audit. Below are the per-dimension results. Produce ONE markdown report — do not invent findings, only merge what is given:
 
-1. An **overall verdict** line — the worst case across dimensions. If any dimension is "NOT RUN", or reported the verdict \`INCOMPLETE (not run)\` because its tooling was absent, mark the audit INCOMPLETE.
-2. A **dimension → verdict** table; give any NOT RUN dimension the verdict \`NOT RUN\` (do not treat absence as a pass). Any dimension whose own verdict is \`INCOMPLETE (not run)\` must be rendered as \`COULD NOT RUN\` with a note naming the missing tool, NEVER as Approve or as a blank/green cell: a reader must be able to tell "ran, found nothing" from "never ran".
+1. An **overall verdict** line — the worst case across dimensions. If any dimension reported the verdict \`INCOMPLETE (not run)\` — because it never executed, or because its tooling was absent — the overall verdict line MUST contain that exact string \`INCOMPLETE (not run)\`.
+2. A **dimension → verdict** table. Any dimension that did not check anything gets the verdict \`INCOMPLETE (not run)\` — written exactly that way, with a note naming what was missing — NEVER Approve and never a blank or green cell. Use no other wording for it: a reader must be able to tell "ran, found nothing" from "never ran", and this exact string is the one that is machine-read.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location + a one-line fix direction.
 4. A short **"Fix first"** list of the highest-leverage items.
 

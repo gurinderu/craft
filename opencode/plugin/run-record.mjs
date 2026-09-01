@@ -15,8 +15,26 @@ export function parseVerdict(text) {
   if (/⚠️|\b(?:Warning|Concerns)\b/i.test(t)) return 'Warning'
   // A dimension whose tooling was absent checked nothing and says so with `INCOMPLETE (not run)`.
   // That must not land in the Approve bucket: an Approve is a claim about what was NOT found, and
-  // it only holds over what was actually looked at.
-  if (/INCOMPLETE/i.test(t)) return 'INCOMPLETE (not run)'
+  // it only holds over what was actually looked at. Anchored to the full verdict phrase, not to the
+  // bare word: this runs over an agent's entire free text, where prose like "coverage of untested
+  // paths is incomplete" is ordinary — and a false INCOMPLETE teaches readers to ignore the marker.
+  if (/INCOMPLETE\s*\(\s*not run\s*\)/i.test(t)) return 'INCOMPLETE (not run)'
+  // Six of the audit dimensions have no agent file: their only instruction is a prompt string, so a
+  // model can report the fact in a wording we did not anticipate — `INCOMPLETE — cargo-hack is not
+  // installed`, `INCOMPLETE (not-run)`. Those must NOT fall through to Approve; an unrecognised
+  // verdict defaulting to the permissive outcome is exactly what worstVerdict() in lib/run-record.mjs
+  // refuses. The discriminator is shape, not vocabulary: the prose sense is an ADJECTIVE and is
+  // followed on its own line by the word it qualifies ("INCOMPLETE coverage of the feature
+  // powerset"), and is normally lowercase besides ("the docs are incomplete"); a verdict is not —
+  // it is shouted and then terminated by punctuation, a table pipe, or the end of the line. So:
+  // uppercase, and NOT followed on the same line by a word — WITH one exception. The mandated
+  // wording is `INCOMPLETE (not run)`, and a model that drops the parentheses writes `INCOMPLETE
+  // not run`: space-then-letter, and the shape test alone would send the prescribed vocabulary,
+  // minus its punctuation, straight to Approve. So a small closed set of continuations is admitted
+  // explicitly — the words a REASON opens with (not / no / never / nothing / none, run, and the
+  // "it was absent" family). None of them is a noun an adjective would qualify, so admitting them
+  // does not reopen the prose false positive.
+  if (/\bINCOMPLETE\b(?:[ \t]*\(?[ \t]*(?:[Nn](?:ot|o|one|othing|ever)|[Rr]un|[Dd]ue|[Bb]ecause|[Ss]ince|[Cc]annot|[Uu]n(?:able|available)|[Mm]issing|[Aa]bsent|[Ss]kip(?:ped)?)\b|(?![ \t]+[A-Za-z]))/.test(t)) return 'INCOMPLETE (not run)'
   return 'Approve'
 }
 
