@@ -1,7 +1,7 @@
 ---
 name: nix-review
 description: >-
-  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules), the Approve/Warning/Block verdict, and the "what proves what" table. Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
+  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), and the "what proves what" table. Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
 ---
 
 # Nix Review
@@ -61,6 +61,23 @@ Establish each signal:
      nix flake check
      nix build                  # or: nix build .#<target>
      ```
+
+5. **The gate could not be established** — the third outcome. CI gave no usable signal *and*
+   nothing could execute locally: `nix` is not on PATH, flakes are disabled, evaluation cannot
+   fetch its locked inputs (offline, an input unreachable), and no linter (`statix`, `deadnix`, a
+   formatter) is installed either. Nothing was evaluated — that is neither red nor green.
+
+   | What happened | Gate status | Verdict |
+   |---|---|---|
+   | Ran and passed (CI or local) | PASSED | continue |
+   | Ran and failed | FAILED | **Block** |
+   | Could not run at all | **NOT ESTABLISHED** | **INCOMPLETE (not run)** — never Approve |
+
+   Read the diff and report findings anyway, but the verdict is `INCOMPLETE (not run)`: name what
+   was missing and say the change is UNVERIFIED, not clean. A Confirmed CRITICAL/HIGH found by
+   reading still wins — that is a **Block**. A *partial* gate (statix ran, `nix flake check` did
+   not) is a normal verdict with the gap named in the `## Gate` line; INCOMPLETE is only for
+   nothing having run, so the marker keeps meaning something.
 
 If any signal is red (CI or local), stop and report — don't review further. A green gate is
 the floor, not the ceiling.
@@ -205,6 +222,7 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 | **Approve** ✅ | gate green (CI or local), no **Confirmed** CRITICAL/HIGH/MEDIUM |
 | **Warning** ⚠️ | gate green (CI or local), **Confirmed** MEDIUM only — Suspected items listed but don't block |
 | **Block** ⛔ | gate red (CI or local), or any **Confirmed** CRITICAL/HIGH |
+| **INCOMPLETE (not run)** 🚫 | gate NOT ESTABLISHED (Step 1, item 5) — nothing in it could execute — and nothing Confirmed CRITICAL/HIGH was found by reading |
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md)
 catalog ID when the finding maps to one (e.g. `PUR-001`); novel findings need no ID. Be specific
