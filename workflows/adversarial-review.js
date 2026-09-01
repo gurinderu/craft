@@ -1,6 +1,6 @@
 export const meta = {
   name: 'adversarial-review',
-  description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose lenses, verifiers or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval. Subscription-friendly: steady request rate, no burst.',
+  description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
   whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine.',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
@@ -74,6 +74,20 @@ const WARMUP_SCHEMA = {
   properties: {
     indexed: { type: 'boolean', description: 'true if the codebase-memory index exists and covers the diff base' },
     notes: { type: 'string' },
+  },
+}
+
+// Deterministic re-read of the diff's file list, used only to gate the inert-only green exit.
+// `fileCount` comes from `wc -l`, `files` from the same command's output: the two disagreeing is
+// how the cross-check's OWN truncation is caught, so both are required.
+const CROSSCHECK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok', 'fileCount', 'files'],
+  properties: {
+    ok: { type: 'boolean', description: 'true only if git ran and files holds every path it printed, complete and verbatim' },
+    fileCount: { type: 'integer', description: 'the number printed by `git diff --name-only <base> | wc -l`' },
+    files: { type: 'array', items: { type: 'string' }, description: 'every path from `git diff --name-only <base>`, verbatim, untruncated' },
   },
 }
 
@@ -312,10 +326,37 @@ log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${sc
 // The scout enumerates the diff; three outcomes have to be told apart, and only the third is a
 // review. A dead scout is NOT an empty diff — it is an unknown one, so it opens `notRun` and the
 // review proceeds over all lenses rather than short-circuiting to a verdict about nothing.
+// A scout that came back WITHOUT a `changedFiles` array is the dead-scout case, not the empty-diff
+// one: the list is unknown, not empty. Folding it into `!scout` also keeps the `: null` below from
+// reaching `!changedFiles.length`, which threw a TypeError and aborted the run before any lens ran
+// and before any run record was filed — the most permissive failure there is, an invisible one.
+//
+// Two things are recorded per entry, and they are not the same thing.
+//   `label` goes in the RUN RECORD. `lib/analyze-runs.mjs` ranks `notRun` by EXACT STRING to
+//   surface fragility that REPEATS across runs, so a label must be bare and aggregatable — no
+//   counts, no lens lists, no file names. A note like "3 finder lens(es) never returned:
+//   correctness, concurrency" is unique to its run and fills the ranking with count-1 rows,
+//   sinking the real repeats. `lens:correctness` aggregates into `3× lens:correctness`.
+//   `note` is the human sentence: it goes to the log and to the returned object, where it is read
+//   once, by a person, about this run.
+//   `incomplete` decides whether the entry downgrades the VERDICT. Not everything recorded here is
+//   a coverage hole: a single verification check with no verdict, or coverage gaps skipped at the
+//   budget floor, leave their findings reported as Suspected — already the honest label — and they
+//   fire on routine runs. A marker that fires on every run stops being read, which is exactly what
+//   would destroy it on the runs where a dimension really did go unreviewed. So those are recorded
+//   (the fragility signal is kept) but advisory; only an unreviewed dimension downgrades. This is
+//   the same line `review.js` draws: dead lenses and skipped critics mark INCOMPLETE, individual
+//   unverified checks do not.
 const notRun = []
+const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note, incomplete })
+const notRunLabels = () => notRun.map(e => e.label)
+const notRunNotes = () => notRun.map(e => e.note)
+const notRunBlocking = () => notRun.filter(e => e.incomplete)
 const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(f => typeof f === 'string' && f.trim()) : null
-if (!scout) {
-  notRun.push('scout died — the diff was never enumerated, so what the lenses saw is unverified')
+if (!scout || !changedFiles) {
+  markNotRun('scout-dead', scout
+    ? 'the scout returned no file list — the diff was never enumerated, so what the lenses saw is unverified'
+    : 'scout died — the diff was never enumerated, so what the lenses saw is unverified')
 } else if (!changedFiles.length) {
   const msg = noChangedFilesMessage()
   log(`INCOMPLETE — ${msg}`)
@@ -325,13 +366,64 @@ if (!scout) {
     verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]),
     scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
     dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
-    notRun: [msg], outputTokens: budget.spent(),
+    notRun: ['empty-diff'], outputTokens: budget.spent(),
   })
   return { verdict: 'INCOMPLETE (empty diff)', confirmed: [], suspected: [], notRun: [msg], scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
 } else if (!materialUncovered(changedFiles).length) {
   // All inert (docs/assets/lockfiles/generated). Nothing ran AND nothing needed to — an honest
   // green, deliberately not marked INCOMPLETE: a marker that fires on every README-only change
   // stops being read on the diffs that do hide unreviewed code.
+  //
+  // But this is the ONE exit where a green rests entirely on the scout's file list, and that list
+  // comes from a model, not from `git`. A scout that truncated, globbed, or resolved the wrong base
+  // and happened to emit only docs and lockfiles would approve a real code diff. The script itself
+  // has no shell (the Workflow sandbox has no filesystem or Node API), so the deterministic route
+  // is a second, single-purpose agent that does nothing but transcribe `git diff --name-only`. It
+  // is cheap and only fires on this branch. The green is taken only if that independent list is
+  // complete by its own `wc -l`, agrees with the scout's size, and is itself entirely inert;
+  // anything else — including a dead cross-check — falls back to INCOMPLETE.
+  //
+  // The base is resolved INDEPENDENTLY, not taken from `plan.baseRef`. Pinning the cross-check to
+  // the scout's own base would leave the wrong-base case structurally invisible — both agents would
+  // diff the same wrong ref, agree perfectly, and the green would be granted. Resolving it again
+  // from the same deterministic ladder turns a wrong base into a differing file list, which the
+  // comparison below already catches. Only an explicit `diffBase` argument is passed through: there
+  // the base is the caller's, not the scout's, so there is nothing to cross-check.
+  //
+  // What this still does NOT catch: `fileCount` and `files` come from the same model in the same
+  // response, so the self-consistency arm is self-reported — a model that truncates the list AND
+  // lowers its own count to match defeats it. What that arm actually rules out is the ordinary
+  // failure (a list shortened while the count stays honest), not a coordinated one.
+  const cross = await agent(
+    `You are cross-checking a diff's file list. Run shell only — do NOT review, summarise, or judge anything.
+1. Resolve the diff base YOURSELF — do not take it from anyone else. ${diffBase ? `The caller pinned it: use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
+2. Run \`git diff --name-only <base>\` and \`git diff --name-only <base> | wc -l\`.
+3. Return every path VERBATIM in \`files\` — no truncation, no globbing, no sorting, no elision — and the \`wc -l\` number in \`fileCount\`.
+4. Set ok=true ONLY if the git command succeeded and \`files\` holds every path it printed. If anything failed, or you had to shorten the list for any reason, set ok=false.`,
+    { label: 'inert-crosscheck', phase: 'Prep', schema: CROSSCHECK_SCHEMA, model: 'haiku', effort: 'low' },
+  )
+  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter(f => typeof f === 'string' && f.trim()) : null
+  const agrees = !!crossFiles
+    && crossFiles.length === cross.fileCount
+    && crossFiles.length === changedFiles.length
+    && !materialUncovered(crossFiles).length
+  if (!agrees) {
+    const why = !crossFiles ? 'the cross-check never returned a usable list'
+      : crossFiles.length !== cross.fileCount ? `the cross-check list is incomplete (${crossFiles.length} paths vs ${cross.fileCount} reported by git)`
+        : crossFiles.length !== changedFiles.length ? `git reports ${crossFiles.length} changed file(s), the scout reported ${changedFiles.length}`
+          : `git's list contains reviewable code the scout did not report: ${materialUncovered(crossFiles).join(', ')}`
+    const msg = `NOT REVIEWED — the scout said every changed file was inert (docs/assets/lockfiles/generated), but ${why}. The scout's file list is the only thing that green rested on, so it is not granted: no lens ran, and this is not an approval. Re-run, checking the diff base.`
+    log(`INCOMPLETE — ${msg}`)
+    await logRun({
+      schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow',
+      name: 'adversarial-review', nested: !!viaArg, via: viaArg || null,
+      verdict: 'INCOMPLETE (unconfirmed inert diff)', findings: summarizeFindings([]),
+      scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
+      dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
+      notRun: ['inert-diff-unconfirmed'], outputTokens: budget.spent(),
+    })
+    return { verdict: 'INCOMPLETE (unconfirmed inert diff)', confirmed: [], suspected: [], notRun: [msg], scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+  }
   const msg = nothingToReviewMessage(changedFiles.length)
   log(msg)
   await logRun({
@@ -361,9 +453,11 @@ const deadLensJobs = await runThrottled(
 const deadLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
 if (deadLenses.length) {
   log(`WARNING: finder lens(es) returned nothing: ${deadLenses.join(', ')}`)
-  notRun.push(`${deadLenses.length} finder lens(es) never returned — their dimension went unreviewed: ${deadLenses.join(', ')}`)
+  // One entry PER dead lens: `lens:correctness` is what aggregates across runs into
+  // "3× lens:correctness", which is the whole point of ranking `notRun`.
+  for (const l of deadLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
 }
-if (plan.lenses.length && deadLenses.length === plan.lenses.length) notRun.push('EVERY finder lens died — no lens looked at this diff at all')
+if (plan.lenses.length && deadLenses.length === plan.lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
 
 const all = plan.lenses.flatMap(lens => {
   const r = lensResults.get(lens)
@@ -537,7 +631,7 @@ log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept
 const unverifiedJobs = await runThrottled(verifyJobs, 'Verify', 'Verify')
 if (unverifiedJobs.length) {
   log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
-  notRun.push(`${unverifiedJobs.length} verification check(s) got no verdict after retries — the findings they were judging stay Suspected`)
+  markNotRun('verify-checks-unjudged', `${unverifiedJobs.length} verification check(s) got no verdict after retries — the findings they were judging stay Suspected`, false)
 }
 
 let { confirmed, refuted, suspected } = judge(kept, votes)
@@ -561,7 +655,7 @@ if (!critic) {
   // Without this the critic's silence is indistinguishable from "coverage is complete": `?? []`
   // below yields zero gaps, and a diff whose blind spots were never looked for reads as covered.
   log('WARNING: coverage critic died twice — completeness was never checked')
-  notRun.push('the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
+  markNotRun('coverage-critic-dead', 'the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
 }
 
 // Critic findings do not bypass verification — they ride the same throttled pipeline.
@@ -578,18 +672,26 @@ if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage gaps: +${g.confirmed.length} confirmed · +${g.suspected.length} suspected · ${g.refuted.length} refuted`)
 } else if (gaps.length) {
   log(`Budget too low to verify ${gaps.length} coverage gap(s) -> reported as suspected`)
-  notRun.push(`${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, unjudged`)
+  // Blocking, unlike `verify-checks-unjudged`, and the difference is epistemic rather than a matter
+  // of degree. An unjudged *finding* is a claim that something is wrong; reporting it as Suspected
+  // is already the honest answer, and the review still looked. A coverage gap is the critic's claim
+  // that something went UNREVIEWED — the same category as a dead lens, which downgrades. Leaving it
+  // advisory would let a plain `Approve` stand on a run whose named blind spots nobody opened.
+  // It does not fire on routine runs: it needs the budget floor reached AND gaps raised.
+  markNotRun('coverage-gaps-unverified', `${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, and the blind spots they name went unopened`)
   suspected = suspected.concat(gaps.map(f => ({ ...f, confirmed: false, votes: [] })))
 }
 
-// A verdict must never claim more coverage than the run had. Anything in `notRun` means some part
-// of the review did not happen, so the verdict says so out loud instead of letting a run where the
-// work died read exactly like a clean one.
+// A verdict must never claim more coverage than the run had: a dimension that went unreviewed
+// downgrades the verdict, so a run where the work died cannot read exactly like a clean one. The
+// advisory entries (see `markNotRun`) are recorded and printed but do NOT downgrade — their
+// findings are already reported as Suspected, and a marker that fires on routine runs stops being
+// read on the runs that need it.
 const baseVerdict = confirmed.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
   : confirmed.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
-const verdict = notRun.length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
+const verdict = notRunBlocking().length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
 log(`Verdict: ${verdict} — ${confirmed.length} confirmed, ${suspected.length} suspected`)
-if (notRun.length) for (const n of notRun) log(`NOT RUN: ${n}`)
+for (const e of notRun) log(`${e.incomplete ? 'NOT RUN' : 'PARTIAL'}: ${e.note}`)
 
 // ---- run record ----
 const candidates = kept.length + gaps.length
@@ -610,7 +712,7 @@ await logRun({
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
   }),
   verification: { candidates, confirmed: confirmed.length, refuteRate: candidates ? Math.round((refutedTotal / candidates) * 100) / 100 : 0 },
-  notRun,
+  notRun: notRunLabels(),
   outputTokens: budget.spent(),
 })
 
@@ -618,6 +720,6 @@ return {
   verdict,
   confirmed: confirmed.map(({ votes: v, ...f }) => ({ ...f, votes: v.length, refutes: v.filter(x => x.refuted).length })),
   suspected: suspected.map(({ votes: v, ...f }) => f),
-  notRun,
+  notRun: notRunNotes(),
   scout: { size: plan.sizeBucket, lenses: plan.lenses, deadLenses },
 }
