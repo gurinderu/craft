@@ -77,6 +77,20 @@ const WARMUP_SCHEMA = {
   },
 }
 
+// Deterministic re-read of the diff's file list, used only to gate the inert-only green exit.
+// `fileCount` comes from `wc -l`, `files` from the same command's output: the two disagreeing is
+// how the cross-check's OWN truncation is caught, so both are required.
+const CROSSCHECK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok', 'fileCount', 'files'],
+  properties: {
+    ok: { type: 'boolean', description: 'true only if git ran and files holds every path it printed, complete and verbatim' },
+    fileCount: { type: 'integer', description: 'the number printed by `git diff --name-only <base> | wc -l`' },
+    files: { type: 'array', items: { type: 'string' }, description: 'every path from `git diff --name-only <base>`, verbatim, untruncated' },
+  },
+}
+
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
 const isEscalated = f => f.lens !== 'complexity' && (f.severity === 'critical' || f.severity === 'high')
 
@@ -338,6 +352,45 @@ if (!scout || !changedFiles) {
   // All inert (docs/assets/lockfiles/generated). Nothing ran AND nothing needed to — an honest
   // green, deliberately not marked INCOMPLETE: a marker that fires on every README-only change
   // stops being read on the diffs that do hide unreviewed code.
+  //
+  // But this is the ONE exit where a green rests entirely on the scout's file list, and that list
+  // comes from a model, not from `git`. A scout that truncated, globbed, or resolved the wrong base
+  // and happened to emit only docs and lockfiles would approve a real code diff. The script itself
+  // has no shell (the Workflow sandbox has no filesystem or Node API), so the deterministic route
+  // is a second, single-purpose agent that does nothing but transcribe `git diff --name-only`. It
+  // is cheap and only fires on this branch. The green is taken only if that independent list is
+  // complete by its own `wc -l`, agrees with the scout's size, and is itself entirely inert;
+  // anything else — including a dead cross-check — falls back to INCOMPLETE.
+  const cross = await agent(
+    `You are cross-checking a diff's file list. Run shell only — do NOT review, summarise, or judge anything.
+1. Resolve the diff base. ${plan.baseRef ? `Use \`${plan.baseRef}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
+2. Run \`git diff --name-only <base>\` and \`git diff --name-only <base> | wc -l\`.
+3. Return every path VERBATIM in \`files\` — no truncation, no globbing, no sorting, no elision — and the \`wc -l\` number in \`fileCount\`.
+4. Set ok=true ONLY if the git command succeeded and \`files\` holds every path it printed. If anything failed, or you had to shorten the list for any reason, set ok=false.`,
+    { label: 'inert-crosscheck', phase: 'Prep', schema: CROSSCHECK_SCHEMA, model: 'haiku', effort: 'low' },
+  )
+  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter(f => typeof f === 'string' && f.trim()) : null
+  const agrees = !!crossFiles
+    && crossFiles.length === cross.fileCount
+    && crossFiles.length === changedFiles.length
+    && !materialUncovered(crossFiles).length
+  if (!agrees) {
+    const why = !crossFiles ? 'the cross-check never returned a usable list'
+      : crossFiles.length !== cross.fileCount ? `the cross-check list is incomplete (${crossFiles.length} paths vs ${cross.fileCount} reported by git)`
+        : crossFiles.length !== changedFiles.length ? `git reports ${crossFiles.length} changed file(s), the scout reported ${changedFiles.length}`
+          : `git's list contains reviewable code the scout did not report: ${materialUncovered(crossFiles).join(', ')}`
+    const msg = `NOT REVIEWED — the scout said every changed file was inert (docs/assets/lockfiles/generated), but ${why}. The scout's file list is the only thing that green rested on, so it is not granted: no lens ran, and this is not an approval. Re-run, checking the diff base.`
+    log(`INCOMPLETE — ${msg}`)
+    await logRun({
+      schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow',
+      name: 'adversarial-review', nested: !!viaArg, via: viaArg || null,
+      verdict: 'INCOMPLETE (unconfirmed inert diff)', findings: summarizeFindings([]),
+      scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
+      dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
+      notRun: [msg], outputTokens: budget.spent(),
+    })
+    return { verdict: 'INCOMPLETE (unconfirmed inert diff)', confirmed: [], suspected: [], notRun: [msg], scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+  }
   const msg = nothingToReviewMessage(changedFiles.length)
   log(msg)
   await logRun({
