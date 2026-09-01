@@ -35,7 +35,12 @@ full severity checklist and verdict criteria.
    describes how the missing tests should look. Report every finding with its severity and a
    confidence note — coverage, not filtering; a downstream triage step decides what to act on.
 
-4. **Verdict.** End with exactly one of **Approve** ✅ / **Warning** ⚠️ / **Block** ⛔.
+4. **Verdict.** End with exactly one of **Approve** ✅ / **Warning** ⚠️ / **Block** ⛔ — and then,
+   as the very last line of your report and nothing after it, one machine-read line in exactly
+   this form: `VERDICT: X`, where X is exactly one of the four tokens `APPROVE`, `WARNING`,
+   `BLOCK`, `INCOMPLETE` (uppercase, no other wording). Use `INCOMPLETE` only when nothing was
+   actually reviewed — no diff was obtainable at all. The prose above is for humans; this line is
+   the one that is parsed.
 
 ## Output format
 
@@ -49,6 +54,8 @@ fmt ✓ · clippy ✓ · test ✓ · audit ✓
 
 ## Verdict
 Block — 1 CRITICAL must be fixed before merge.
+
+VERDICT: BLOCK
 ```
 
 Every finding cites `severity · file:line · what · why · fix`. No location → not a finding.

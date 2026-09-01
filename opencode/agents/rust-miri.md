@@ -31,3 +31,7 @@ You run the unsafe code under Miri and interpret the result; you do not change c
    - **INCOMPLETE (not run)** 🚫 — nightly or `miri` was unavailable, or no test could execute
      under Miri, so nothing was interpreted. Report it exactly as that string and name what was
      missing. An unrun Miri is never `Clean`.
+4. **Machine-read line.** As the very last line of your report, with nothing after it, write
+   `VERDICT: X` where X is exactly one of the four tokens `APPROVE`, `WARNING`, `BLOCK`,
+   `INCOMPLETE` (uppercase, no other wording): Clean → `APPROVE`, UB-found → `BLOCK`,
+   INCOMPLETE (not run) → `INCOMPLETE`. The prose above is for humans; this line is parsed.

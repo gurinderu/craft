@@ -31,3 +31,7 @@ You run the Rust security toolchain and consolidate its output; you do not chang
    holds over what was actually scanned: if nothing ran, name every missing tool and say plainly
    that the project's security posture is UNKNOWN, not clean. A partial run still gets a normal
    verdict, but note which tools were absent so a clean run isn't mistaken for full coverage.
+4. **Machine-read line.** As the very last line of your report, with nothing after it, write
+   `VERDICT: X` where X is exactly one of the four tokens `APPROVE`, `WARNING`, `BLOCK`,
+   `INCOMPLETE` (uppercase, no other wording) — `INCOMPLETE` exactly when no tool ran at all. The
+   prose above is for humans; this line is the one that is parsed.
