@@ -1,6 +1,6 @@
 export const meta = {
   name: 'adversarial-review',
-  description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. Subscription-friendly: steady request rate, no burst.',
+  description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose lenses, verifiers or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval. Subscription-friendly: steady request rate, no burst.',
   whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine.',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
@@ -58,11 +58,12 @@ const VERDICT = {
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['baseRef', 'sizeBucket', 'lenses', 'notes'],
+  required: ['baseRef', 'sizeBucket', 'lenses', 'changedFiles', 'notes'],
   properties: {
     baseRef: { type: 'string', description: 'git ref the diff was computed against; empty if none resolved' },
     sizeBucket: { type: 'string', enum: ['small', 'medium', 'large'] },
     lenses: { type: 'array', items: { type: 'string' }, description: 'subset of the lens catalog to run' },
+    changedFiles: { type: 'array', items: { type: 'string' }, description: 'EVERY path the diff touches, verbatim from `git diff --name-only` against the resolved base — repo-relative, no truncation, no globbing. An empty array means the diff genuinely resolved to no files; it is read as "nothing was reviewed", so never return [] as a shortcut' },
     notes: { type: 'string' },
   },
 }
@@ -210,13 +211,76 @@ async function runThrottled(jobs, tag, phaseTitle) {
   return pending
 }
 
+// ---- coverage honesty (VERBATIM mirror of lib/review-coverage.mjs — the sandbox can't import) ----
+// Only the LANGUAGE-AGNOSTIC half is mirrored here. This engine declares no language profiles, so
+// every material file is in scope for its lenses and there is no "matched no profile" gap to
+// report; what it does share with review.js is the pair of guards that stop a run which looked at
+// nothing from returning a bare Approve.
+// >>> craft-inline lib/review-coverage.mjs noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered nothingToReviewMessage
+// A diff that came back with NO files at all. Reachable legitimately — an already-merged branch, a
+// `path` scope matching nothing — and also when detection half-failed, which is why this stays
+// INCOMPLETE rather than green. But it is not a coverage hole: describing it with
+// noLanguageMessage(0, 0) produced "none of the 0 changed file(s) … and 0 of them went unreviewed",
+// a hole of size zero, which is self-contradictory and teaches readers to ignore the marker.
+function noChangedFilesMessage() {
+  return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
+}
+
+// Which unreviewed files actually lower the claim. Derived from the path alone and deliberately
+// conservative: when in doubt a file is MATERIAL. A false "material" costs one honest INCOMPLETE
+// marker; a false "inert" costs a silent overclaim, which is the bug this whole section exists to
+// prevent. Three narrow exemptions only — prose/asset extensions, lockfiles matched by their real
+// names, and artifacts whose path makes it unambiguous that a generator wrote them.
+const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
+
+const INERT_NAMES = new Set([
+  'license', 'licence', 'notice', 'codeowners', '.gitignore', '.gitattributes',
+  // Inert `.txt` files by NAME, not by extension. A blanket `.txt` rule was the lockfile bug again
+  // in another costume: `CMakeLists.txt`, `requirements.txt`, `conanfile.txt` and `Dependencies.txt`
+  // are build-system and dependency SOURCE, and a diff of nothing but those took the green
+  // "nothing needed reviewing" return. When in doubt, material.
+  'license.txt', 'licence.txt', 'notice.txt', 'copying.txt', 'authors.txt', 'contributors.txt',
+  'changelog.txt', 'changes.txt', 'readme.txt', 'robots.txt', 'humans.txt', 'todo.txt', 'notes.txt',
+  // Lockfiles, by the names they actually have. Matching a *shape* like `*lock.*` swallowed source
+  // code — `db/lock.sql`, `src/lock.rs`, `internal/spin-lock.go` — and silently exempted it.
+  'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock',
+  'cargo.lock', 'flake.lock', 'poetry.lock', 'pdm.lock', 'uv.lock', 'pipfile.lock', 'gemfile.lock',
+  'composer.lock', 'go.sum', 'deno.lock', 'mix.lock', 'pubspec.lock', 'podfile.lock', 'packages.lock.json',
+  'gradle.lockfile', 'cabal.project.freeze', 'conan.lock', 'herd.lock',
+])
+
+// Generated artifacts. Only where the PATH itself is unambiguous — a generator-stamped suffix or a
+// directory whose whole purpose is generated output. A hand-written file never lives here.
+const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
+
+const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
+
+function isInertUncovered(f) {
+  const base = String(f).split('/').pop().toLowerCase()
+  return INERT_EXT.test(f) || INERT_NAMES.has(base) || GENERATED_PATH.test(f) || GENERATED_FILE.test(f)
+}
+
+function materialUncovered(files) {
+  return files.filter(f => !isInertUncovered(f))
+}
+
+// The other half of the no-profile case: a diff whose changed files are ALL inert (prose, assets,
+// lockfiles, generated output). Nothing was reviewed AND nothing needed reviewing — a different
+// statement from "files went unreviewed", and it must not be dressed up as a coverage hole. A
+// marker that fires on every README-only change stops being read, which destroys the value of the
+// marker on the diffs that do hide unreviewed code.
+function nothingToReviewMessage(fileCount) {
+  return `NOTHING NEEDED REVIEWING — all ${fileCount} changed file(s) are documentation, assets, lockfiles or generated output; none carries reviewable code. No lens ran because none had anything to look at.`
+}
+// <<< craft-inline
+
 // ================= Prep: scout + index warm-up (2 agents, parallel) =================
 phase('Prep')
 const [scout, warmup] = await parallel([
   () => agent(
     `You are scouting a diff to plan an adversarial review. Use shell + read only — do NOT review yet.
 1. Resolve the diff base. ${diffBase ? `Use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
-2. Inspect \`git diff --stat\`. sizeBucket: small = a few files / < ~80 changed lines; large = many files / > ~400 lines or auth/money/concurrency-heavy; medium otherwise.
+2. Inspect \`git diff --stat\` and list every touched path with \`git diff --name-only\` (same base) into changedFiles — complete and verbatim. sizeBucket: small = a few files / < ~80 changed lines; large = many files / > ~400 lines or auth/money/concurrency-heavy; medium otherwise.
 3. lenses: choose from ${JSON.stringify(ALL_LENSES)}.
    - small: only the touched categories (minimum 2; always include 'correctness').
    - medium: the categories plausibly in play.
@@ -244,6 +308,43 @@ if (!(warmup?.indexed)) {
 }
 log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${scout?.notes ?? 'scout died, running all lenses'}`)
 
+// ---- coverage guard: a run that looked at nothing must not report a green Approve ----
+// The scout enumerates the diff; three outcomes have to be told apart, and only the third is a
+// review. A dead scout is NOT an empty diff — it is an unknown one, so it opens `notRun` and the
+// review proceeds over all lenses rather than short-circuiting to a verdict about nothing.
+const notRun = []
+const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(f => typeof f === 'string' && f.trim()) : null
+if (!scout) {
+  notRun.push('scout died — the diff was never enumerated, so what the lenses saw is unverified')
+} else if (!changedFiles.length) {
+  const msg = noChangedFilesMessage()
+  log(`INCOMPLETE — ${msg}`)
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow',
+    name: 'adversarial-review', nested: !!viaArg, via: viaArg || null,
+    verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]),
+    scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
+    dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
+    notRun: [msg], outputTokens: budget.spent(),
+  })
+  return { verdict: 'INCOMPLETE (empty diff)', confirmed: [], suspected: [], notRun: [msg], scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+} else if (!materialUncovered(changedFiles).length) {
+  // All inert (docs/assets/lockfiles/generated). Nothing ran AND nothing needed to — an honest
+  // green, deliberately not marked INCOMPLETE: a marker that fires on every README-only change
+  // stops being read on the diffs that do hide unreviewed code.
+  const msg = nothingToReviewMessage(changedFiles.length)
+  log(msg)
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow',
+    name: 'adversarial-review', nested: !!viaArg, via: viaArg || null,
+    verdict: 'Approve', findings: summarizeFindings([]),
+    scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
+    dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
+    notRun: [], outputTokens: budget.spent(),
+  })
+  return { verdict: 'Approve', confirmed: [], suspected: [], notRun: [], summary: msg, scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+}
+
 // ================= Review: throttled finder lenses =================
 phase('Review')
 const lensResults = new Map()
@@ -258,7 +359,11 @@ const deadLensJobs = await runThrottled(
   'Review', 'Review',
 )
 const deadLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
-if (deadLenses.length) log(`WARNING: finder lens(es) returned nothing: ${deadLenses.join(', ')}`)
+if (deadLenses.length) {
+  log(`WARNING: finder lens(es) returned nothing: ${deadLenses.join(', ')}`)
+  notRun.push(`${deadLenses.length} finder lens(es) never returned — their dimension went unreviewed: ${deadLenses.join(', ')}`)
+}
+if (plan.lenses.length && deadLenses.length === plan.lenses.length) notRun.push('EVERY finder lens died — no lens looked at this diff at all')
 
 const all = plan.lenses.flatMap(lens => {
   const r = lensResults.get(lens)
@@ -430,7 +535,10 @@ const votes = kept.map(() => [])
 const verifyJobs = buildVerifyJobs(kept, votes)
 log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept.filter(isEscalated).length} escalated to 3-lens panel), throttled to ${BATCH} concurrent`)
 const unverifiedJobs = await runThrottled(verifyJobs, 'Verify', 'Verify')
-if (unverifiedJobs.length) log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
+if (unverifiedJobs.length) {
+  log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
+  notRun.push(`${unverifiedJobs.length} verification check(s) got no verdict after retries — the findings they were judging stay Suspected`)
+}
 
 let { confirmed, refuted, suspected } = judge(kept, votes)
 log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${suspected.length} suspected (no verdict)`)
@@ -449,6 +557,12 @@ if (!critic) {
   log('Coverage critic failed, retrying once')
   critic = await agent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' })
 }
+if (!critic) {
+  // Without this the critic's silence is indistinguishable from "coverage is complete": `?? []`
+  // below yields zero gaps, and a diff whose blind spots were never looked for reads as covered.
+  log('WARNING: coverage critic died twice — completeness was never checked')
+  notRun.push('the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
+}
 
 // Critic findings do not bypass verification — they ride the same throttled pipeline.
 const gaps = (critic?.findings ?? []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
@@ -464,12 +578,18 @@ if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage gaps: +${g.confirmed.length} confirmed · +${g.suspected.length} suspected · ${g.refuted.length} refuted`)
 } else if (gaps.length) {
   log(`Budget too low to verify ${gaps.length} coverage gap(s) -> reported as suspected`)
+  notRun.push(`${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, unjudged`)
   suspected = suspected.concat(gaps.map(f => ({ ...f, confirmed: false, votes: [] })))
 }
 
-const verdict = confirmed.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
+// A verdict must never claim more coverage than the run had. Anything in `notRun` means some part
+// of the review did not happen, so the verdict says so out loud instead of letting a run where the
+// work died read exactly like a clean one.
+const baseVerdict = confirmed.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
   : confirmed.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
+const verdict = notRun.length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
 log(`Verdict: ${verdict} — ${confirmed.length} confirmed, ${suspected.length} suspected`)
+if (notRun.length) for (const n of notRun) log(`NOT RUN: ${n}`)
 
 // ---- run record ----
 const candidates = kept.length + gaps.length
@@ -490,7 +610,7 @@ await logRun({
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
   }),
   verification: { candidates, confirmed: confirmed.length, refuteRate: candidates ? Math.round((refutedTotal / candidates) * 100) / 100 : 0 },
-  notRun: deadLenses,
+  notRun,
   outputTokens: budget.spent(),
 })
 
@@ -498,5 +618,6 @@ return {
   verdict,
   confirmed: confirmed.map(({ votes: v, ...f }) => ({ ...f, votes: v.length, refutes: v.filter(x => x.refuted).length })),
   suspected: suspected.map(({ votes: v, ...f }) => f),
+  notRun,
   scout: { size: plan.sizeBucket, lenses: plan.lenses, deadLenses },
 }
