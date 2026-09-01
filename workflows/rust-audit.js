@@ -61,10 +61,16 @@ const FINDINGS_SCHEMA = {
     // actually constrained. With a bare `{type:'string'}` an agent answering "No UB detected" or
     // "OK" flipped a fully green audit to Warning. Constrain the vocabulary where it is PRODUCED;
     // normalizeDimensionVerdict() catches whatever still slips through.
+    //
+    // `INCOMPLETE (not run)` is the third outcome, and the reason it exists: an Approve is a claim
+    // about what was NOT found, and it only holds over what was actually looked at. A dimension
+    // whose tool is absent looked at nothing, so it must say so — worstVerdict() and
+    // normalizeDimensionVerdict() both read INCOMPLETE as non-green, and auditVerdict() marks the
+    // whole audit INCOMPLETE from it.
     verdict: {
       type: 'string',
-      enum: ['Approve', 'Warning', 'Block', 'Healthy', 'Concerns', 'At-risk', 'Clean', 'UB-found'],
-      description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found — use one of these words exactly',
+      enum: ['Approve', 'Warning', 'Block', 'Healthy', 'Concerns', 'At-risk', 'Clean', 'UB-found', 'INCOMPLETE (not run)'],
+      description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found — use one of these words exactly. Use "INCOMPLETE (not run)" when the tooling this dimension depends on was absent, so nothing was actually checked: a dimension that could not run is NOT an Approve.',
     },
     summary: { type: 'string', description: 'one-paragraph bottom line' },
     findings: {
@@ -173,8 +179,9 @@ function normalizeDimensionVerdict(v) {
   return t
 }
 
-// The audit verdict carries an (INCOMPLETE) marker when any dimension failed to run — unless the
-// aggregate is already an INCOMPLETE verdict in its own right.
+// The audit verdict carries an (INCOMPLETE) marker when any dimension failed to run OR could not
+// run (its tooling was absent, so it checked nothing) — unless the aggregate is already an
+// INCOMPLETE verdict in its own right.
 function auditVerdict(worst, notRun) {
   if (!notRun.length || /INCOMPLETE/i.test(worst)) return worst
   return `${worst} (INCOMPLETE)`
@@ -196,7 +203,7 @@ Steps:
 2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\` prints anything, else false.
 3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
 4. Take INDEX below, add the same four fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
-5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
+5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/couldNotRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
 Best-effort: if anything fails, report it but do NOT error the run.
 
 RECORD:
@@ -369,14 +376,14 @@ tasks.push(() => safeAgent(
 dispatched.push('architecture')
 
 tasks.push(() => safeAgent(
-  `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+  `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings. If NONE of the tools is installed, so nothing was actually scanned, return verdict "INCOMPLETE (not run)" and name the missing tools — a scan that ran nothing is not an Approve.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
 ).then(r => (r ? { ...r, dimension: 'security' } : null)))
 dispatched.push('security')
 
 if (hasUnsafe) {
   tasks.push(() => safeAgent(
-    `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found) and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+    `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found), or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
     { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
   ).then(r => (r ? { ...r, dimension: 'miri' } : null)))
   dispatched.push('miri')
@@ -385,23 +392,24 @@ if (hasUnsafe) {
 }
 
 // ---- Whole-project tool dimensions (D–G). Each runs its tools, interprets, and degrades
-// gracefully: a missing tool/toolchain is an intentional skip (verdict Approve + a note), never a
-// failure. ----
+// gracefully: a missing tool/toolchain is a SKIP, never a hard failure — but a skip reports
+// `INCOMPLETE (not run)`, not Approve. Approve stays reserved for "the tool ran and found
+// nothing"; a reader of the dimension table must be able to tell those two apart. ----
 
 tasks.push(() => agent(
-  `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, or there is no published library crate, say so and return verdict "Approve" with a one-line note that it was skipped — do NOT fail. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings.`,
+  `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings.`,
   { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ).then(r => (r ? { ...r, dimension: 'semver' } : null)))
 dispatched.push('semver')
 
 tasks.push(() => agent(
-  `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note, and return "Approve" if nothing could run — do NOT fail. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings.`,
+  `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings.`,
   { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ).then(r => (r ? { ...r, dimension: 'build-matrix' } : null)))
 dispatched.push('build-matrix')
 
 tasks.push(() => agent(
-  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail. Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings.`,
+  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings.`,
   { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ).then(r => (r ? { ...r, dimension: 'deps' } : null)))
 dispatched.push('deps')
@@ -419,7 +427,7 @@ tasks.push(async () => {
     `Find UNUSED crates in this Rust workspace, in two classes:
 (a) ORPHAN workspace members — from \`cargo metadata --format-version 1\`, workspace members that NO other workspace member depends on (any dependency kind), EXCLUDING binaries (a [[bin]] target or src/main.rs) and published libraries (Cargo.toml \`publish\` is not false / it is meant for crates.io).
 (b) UNUSED dependencies — run \`cargo machete\` (or \`cargo +nightly udeps\` if machete is absent) to list dependencies declared in a Cargo.toml but not used.
-Skip a tool that is not installed with a note — do NOT fail; if nothing runs and the graph is empty, return verdict "Approve" with an empty findings list.
+Skip a tool that is not installed with a note — do NOT fail. \`cargo metadata\` alone answers class (a), so it is enough to run: if the graph loads and there are no orphan members, that is a real "Approve" with an empty findings list. But if \`cargo metadata\` itself does not run, so NOTHING was inspected, return verdict "INCOMPLETE (not run)" naming what was missing — not "Approve".
 Load the rust-ecosystem skill (dependency / crate hygiene).
 These are CANDIDATES, not confirmed — they will be verified downstream. Return one finding per candidate: title = "orphan-member: <crate>" or "unused-dep: <dep> in <crate>", location = the owning manifest path, detail = why the graph/tool thinks it is unused. Use severity Info (verification sets the real severity).`,
     { label: 'unused-crates:find', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
@@ -455,7 +463,7 @@ Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; defa
 dispatched.push('unused-crates')
 
 tasks.push(() => agent(
-  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings.`,
+  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings.`,
   { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ).then(r => (r ? { ...r, dimension: 'tests-cov' } : null)))
 dispatched.push('tests-cov')
@@ -464,14 +472,26 @@ dispatched.push('tests-cov')
 // synthesis prompt all read the same vocabulary (reviewResult already normalised its own).
 const results = (await parallel(tasks)).filter(Boolean).map(r => ({ ...r, verdict: normalizeDimensionVerdict(r.verdict) }))
 
-// NOT RUN = a dispatched dimension that produced no result (its agent failed). Two intentional
-// skips avoid NOT-RUN by never being pushed to `dispatched`: contracts (no touched edges) and
-// Miri (no unsafe). The four tool dimensions (semver/build-matrix/deps/tests-cov) ARE pushed
-// unconditionally but avoid NOT-RUN differently — their agent always returns a result (verdict
-// Approve + a skip note) when the required tool is absent.
+// Two ways a dimension can fail to produce an answer, and BOTH have to reach the report:
+//   NOT RUN      — a dispatched dimension that produced no result at all (its agent failed).
+//   COULD NOT RUN — the agent came back, but the tooling it depends on was absent, so it checked
+//                   nothing and said so with the `INCOMPLETE (not run)` verdict.
+// The second case used to be spelled `Approve` on the tool dimensions
+// (semver/build-matrix/deps/unused-crates/tests-cov, plus security and Miri), which printed
+// `semver | Approve` for a semver check that never happened and left the audit looking complete.
+// An Approve is a claim about what was NOT found and only holds over what was looked at; a tool
+// that never ran looked at nothing. Both lists mark the audit INCOMPLETE.
+// Two intentional skips avoid NOT-RUN by never being pushed to `dispatched`: contracts (no touched
+// edges) and Miri (no unsafe) — those are genuine "nothing to check here", not "could not check".
 const ran = new Set(results.map(r => r.dimension))
 const notRun = dispatched.filter(d => !ran.has(d))
+// ANCHORED: only a verdict that is NOTHING BUT incomplete means "checked nothing". A severity-
+// suffixed one (`Block (INCOMPLETE)` from a partially-covered nested review) is a real finding
+// with partial coverage — worstVerdict() keeps it red; it does not belong in this list.
+const couldNotRun = results.filter(r => /^\s*INCOMPLETE/i.test(String(r.verdict || ''))).map(r => r.dimension)
+const incompleteDimensions = [...notRun, ...couldNotRun]
 if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
+if (couldNotRun.length) log(`Tooling absent, nothing checked: ${couldNotRun.join(', ')} — flagged COULD NOT RUN in the report.`)
 
 const stripped = results.map(stripInternal)
 
@@ -479,14 +499,15 @@ phase('Synthesize')
 const report = await agent(
   `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
 
-1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, mark the audit INCOMPLETE.
-2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass.
+1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, or could not run, mark the audit INCOMPLETE.
+2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass. Any dimension whose verdict is \`INCOMPLETE (not run)\` — listed under COULD NOT RUN below — must be rendered as \`COULD NOT RUN\` with a note naming the missing tool, NEVER as Approve or as a blank/green cell: a reader must be able to tell "ran, found nothing" from "never ran". Directly beneath the table, state in one line how many dimensions actually ran out of the total.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location, plus a one-line fix direction.
 4. A short **"Fix first"** list — the few highest-leverage items across all dimensions.
 5. A **"Crate boundaries"** note: summarise the \`crate-decomposition\` extract/merge recommendations (driver + boundary), if any.
 6. If a \`review:*\` dimension's summary names a **gate provenance** (CI vs local), surface it in one line under the verdict.
 
 NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
+COULD NOT RUN (agent reported back, but its tooling was absent so nothing was checked — treat as uncovered, never as a pass): ${couldNotRun.length ? couldNotRun.join(', ') : 'none'}
 
 RESULTS:
 ${JSON.stringify(stripped, null, 2)}`,
@@ -503,7 +524,7 @@ const auditRecord = {
   name: 'rust-audit',
   // worstVerdict already returns an INCOMPLETE verdict when there is nothing to aggregate;
   // don't stack a second marker onto it.
-  verdict: auditVerdict(worstVerdict(results.map(r => r.verdict)), notRun),
+  verdict: auditVerdict(worstVerdict(results.map(r => r.verdict)), incompleteDimensions),
   findings: summarizeFindings(results.flatMap(r => (Array.isArray(r.findings) ? r.findings : []))),
   nested: false,
   via: null,
@@ -522,6 +543,7 @@ const auditRecord = {
     }
     : null,
   notRun,
+  couldNotRun,
   outputTokens: budget.spent(),
 }
 await logRun(auditRecord)
