@@ -653,6 +653,13 @@ const CHANGED_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['changed', 'reason'],
   properties: { changed: { type: 'boolean' }, reason: { type: 'string' } },
 }
+const PR_COMMENTS_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['posted', 'reason'],
+  properties: {
+    posted: { type: 'integer', description: 'how many inline comments were actually created; 0 if none' },
+    reason: { type: 'string', description: 'the PR posted to, or why nothing was posted' },
+  },
+}
 const ADJUDICATE_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['status', 'currentLine', 'note', 'invariant', 'attack'],
   properties: {
@@ -2433,13 +2440,21 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
 )
 
 // Optional: post Confirmed findings as inline PR comments (best-effort).
+// Best-effort means it must not FAIL the run; it does not mean it may be INVISIBLE. The caller asked
+// for comments, so whether they landed is part of the answer: the outcome comes back under a schema
+// and is logged, including "the agent died and we do not know". Discarding the return value made the
+// prompt's own "report that" reach nobody — not the caller, not the run log.
 if (postComments && confirmed.length) {
-  await ragent(
-    `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, do nothing and report that — never fail.
+  const posted = await ragent(
+    `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, post nothing and say so in \`reason\` — never fail.
 For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
-${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}`,
-    { label: 'pr-comments', phase: 'Synthesize', effort: 'low' },
+${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}
+Return {posted: <how many comments you actually created>, reason: <one line: the PR you posted to, or why nothing was posted>}.`,
+    { label: 'pr-comments', phase: 'Synthesize', effort: 'low', schema: PR_COMMENTS_SCHEMA },
   )
+  if (posted == null) log(`⚠️ PR comments: the poster agent returned nothing — ${confirmed.length} Confirmed finding(s) may or may not have been posted; check the PR`)
+  else if (Number(posted.posted) > 0) log(`PR comments: posted ${Number(posted.posted)} of ${confirmed.length} Confirmed finding(s) — ${posted.reason || 'no detail'}`)
+  else log(`⚠️ PR comments: nothing was posted (${confirmed.length} Confirmed finding(s) requested) — ${posted.reason || 'no reason given'}`)
 }
 
 const allReviewFindings = confirmed.concat(suspected)
