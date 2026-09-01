@@ -8,7 +8,9 @@
     "lint": "eslint lib opencode/plugin --max-warnings 0",
     "check:workflows": "node lib/check-workflows.mjs",
     "check:skills": "node lib/check-skills.mjs",
-    "check:evals": "node lib/check-evals.mjs"
+    "check:evals": "node lib/check-evals.mjs",
+    "check:types": "npm --prefix opencode/plugin run typecheck",
+    "check:opencode-frontmatter": "python3 opencode/scripts/check-frontmatter.py agent opencode/agents/*.md && python3 opencode/scripts/check-frontmatter.py command opencode/commands/*.md"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
