@@ -1,5 +1,5 @@
 ---
-description: Runs the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep), consolidates the findings against the rust-security rubric, and returns a severity-ranked report with an Approve/Warning/Block verdict. Use to security-scan a Rust project or before a release.
+description: Runs the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep), consolidates the findings against the rust-security rubric, and returns a severity-ranked report with an Approve/Warning/Block verdict — or INCOMPLETE (not run) when no tool was available to run. Use to security-scan a Rust project or before a release.
 mode: subagent
 hidden: true
 tools:
@@ -25,5 +25,9 @@ You run the Rust security toolchain and consolidate its output; you do not chang
    ```
    If a local `./semgrep/` rules directory exists, add `--config=./semgrep` to the semgrep run.
 2. **Consolidate** into a severity-ranked report against the rubric.
-3. **Verdict.** End with exactly one of **Approve** ✅ / **Warning** ⚠️ / **Block** ⛔. Note which
-   tools were absent so a clean run isn't mistaken for full coverage.
+3. **Verdict.** End with exactly one of **Approve** ✅ / **Warning** ⚠️ / **Block** ⛔ — **unless
+   NO tool ran at all**, in which case the verdict is **INCOMPLETE (not run)** 🚫, reported
+   exactly as that string. An Approve is a claim about what the tools did not find, and it only
+   holds over what was actually scanned: if nothing ran, name every missing tool and say plainly
+   that the project's security posture is UNKNOWN, not clean. A partial run still gets a normal
+   verdict, but note which tools were absent so a clean run isn't mistaken for full coverage.

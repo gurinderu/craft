@@ -1,5 +1,5 @@
 ---
-description: Runs the unsafe code under Miri to detect undefined behavior (out-of-bounds, use-after-free, alignment violations, data races, leaks) and reports what it finds against the rust-unsafe rubric. Use for crates containing unsafe code, after writing/changing unsafe, or before releasing a crate with unsafe.
+description: Runs the unsafe code under Miri to detect undefined behavior (out-of-bounds, use-after-free, alignment violations, data races, leaks) and reports what it finds against the rust-unsafe rubric — reporting INCOMPLETE (not run) when nightly or miri is unavailable, never Clean. Use for crates containing unsafe code, after writing/changing unsafe, or before releasing a crate with unsafe.
 mode: subagent
 hidden: true
 tools:
@@ -19,9 +19,15 @@ You run the unsafe code under Miri and interpret the result; you do not change c
    rustup toolchain list | grep -q nightly || echo "nightly toolchain absent"
    cargo +nightly miri test
    ```
-   If nightly or the Miri component is missing, say so explicitly and stop (verdict: **cannot run —
-   soundness NOT verified**). Remember Miri only covers paths the tests exercise — a clean run is
-   not a proof of soundness for untested code.
+   If nightly or the Miri component is missing, nothing was executed under Miri: say which piece
+   was missing and stop with the verdict `INCOMPLETE (not run)` — soundness is UNVERIFIED, not
+   verified. Remember Miri only covers paths the tests exercise — a clean run is not a proof of
+   soundness for untested code.
 2. **Interpret** any UB Miri reports (out-of-bounds, use-after-free, alignment, data race, leak)
    against the rubric — explain the violated invariant and the direction of the fix.
-3. **Verdict.** End with exactly one of **Clean** / **UB-found**.
+3. **Verdict.** The vocabulary has **three** values, not two — end with exactly one of:
+   - **Clean** — Miri ran and found no UB on the paths the tests exercise.
+   - **UB-found** — Miri ran and found undefined behavior. ⛔
+   - **INCOMPLETE (not run)** 🚫 — nightly or `miri` was unavailable, or no test could execute
+     under Miri, so nothing was interpreted. Report it exactly as that string and name what was
+     missing. An unrun Miri is never `Clean`.

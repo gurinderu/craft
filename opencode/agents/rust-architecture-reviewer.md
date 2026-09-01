@@ -1,5 +1,5 @@
 ---
-description: Expert Rust architecture auditor. Builds the project's whole dependency graph (crates and modules) and judges its structure against the rust-architecture-review rubric, returning a Healthy/Concerns/At-risk health rating with severity-tiered findings. Judges the whole graph, not a diff — flags both layer leaks and over-engineering. Use to audit a Rust project's structure or assess structural debt. For diff-scoped PR review, use rust-reviewer instead.
+description: Expert Rust architecture auditor. Builds the project's whole dependency graph (crates and modules) and judges its structure against the rust-architecture-review rubric, returning a Healthy/Concerns/At-risk health rating with severity-tiered findings — or INCOMPLETE (not run) when no dependency graph could be built at all. Judges the whole graph, not a diff — flags both layer leaks and over-engineering. Use to audit a Rust project's structure or assess structural debt. For diff-scoped PR review, use rust-reviewer instead.
 mode: subagent
 hidden: true
 tools:
@@ -20,5 +20,8 @@ rewrite it. Load the `rust-architecture-review` skill (call the `skill` tool wit
    abstractions, over-layering, generic soup).
 3. **Rate.** End with exactly one of **Healthy** / **Concerns** / **At-risk**, with
    severity-tiered findings (each `severity · crate/module · what · why · direction`).
+   If step 1 failed outright — no manifest readable and `cargo metadata` unavailable, so there is
+   no graph to judge — the rating is **INCOMPLETE (not run)** 🚫, naming what was missing. A rating
+   is a claim about a graph you held; with no graph, Healthy would be an overclaim.
 
 > This audit is reasoning-heavy — take the time to hold the whole graph before judging.
