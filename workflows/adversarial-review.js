@@ -1,6 +1,6 @@
 export const meta = {
   name: 'adversarial-review',
-  description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose lenses, verifiers or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval. Subscription-friendly: steady request rate, no burst.',
+  description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
   whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine.',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
@@ -330,10 +330,31 @@ log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${sc
 // one: the list is unknown, not empty. Folding it into `!scout` also keeps the `: null` below from
 // reaching `!changedFiles.length`, which threw a TypeError and aborted the run before any lens ran
 // and before any run record was filed — the most permissive failure there is, an invisible one.
+//
+// Two things are recorded per entry, and they are not the same thing.
+//   `label` goes in the RUN RECORD. `lib/analyze-runs.mjs` ranks `notRun` by EXACT STRING to
+//   surface fragility that REPEATS across runs, so a label must be bare and aggregatable — no
+//   counts, no lens lists, no file names. A note like "3 finder lens(es) never returned:
+//   correctness, concurrency" is unique to its run and fills the ranking with count-1 rows,
+//   sinking the real repeats. `lens:correctness` aggregates into `3× lens:correctness`.
+//   `note` is the human sentence: it goes to the log and to the returned object, where it is read
+//   once, by a person, about this run.
+//   `incomplete` decides whether the entry downgrades the VERDICT. Not everything recorded here is
+//   a coverage hole: a single verification check with no verdict, or coverage gaps skipped at the
+//   budget floor, leave their findings reported as Suspected — already the honest label — and they
+//   fire on routine runs. A marker that fires on every run stops being read, which is exactly what
+//   would destroy it on the runs where a dimension really did go unreviewed. So those are recorded
+//   (the fragility signal is kept) but advisory; only an unreviewed dimension downgrades. This is
+//   the same line `review.js` draws: dead lenses and skipped critics mark INCOMPLETE, individual
+//   unverified checks do not.
 const notRun = []
+const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note, incomplete })
+const notRunLabels = () => notRun.map(e => e.label)
+const notRunNotes = () => notRun.map(e => e.note)
+const notRunBlocking = () => notRun.filter(e => e.incomplete)
 const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(f => typeof f === 'string' && f.trim()) : null
 if (!scout || !changedFiles) {
-  notRun.push(scout
+  markNotRun('scout-dead', scout
     ? 'the scout returned no file list — the diff was never enumerated, so what the lenses saw is unverified'
     : 'scout died — the diff was never enumerated, so what the lenses saw is unverified')
 } else if (!changedFiles.length) {
@@ -345,7 +366,7 @@ if (!scout || !changedFiles) {
     verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]),
     scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
     dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
-    notRun: [msg], outputTokens: budget.spent(),
+    notRun: ['empty-diff'], outputTokens: budget.spent(),
   })
   return { verdict: 'INCOMPLETE (empty diff)', confirmed: [], suspected: [], notRun: [msg], scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
 } else if (!materialUncovered(changedFiles).length) {
@@ -387,7 +408,7 @@ if (!scout || !changedFiles) {
       verdict: 'INCOMPLETE (unconfirmed inert diff)', findings: summarizeFindings([]),
       scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
       dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
-      notRun: [msg], outputTokens: budget.spent(),
+      notRun: ['inert-diff-unconfirmed'], outputTokens: budget.spent(),
     })
     return { verdict: 'INCOMPLETE (unconfirmed inert diff)', confirmed: [], suspected: [], notRun: [msg], scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
   }
@@ -420,9 +441,11 @@ const deadLensJobs = await runThrottled(
 const deadLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
 if (deadLenses.length) {
   log(`WARNING: finder lens(es) returned nothing: ${deadLenses.join(', ')}`)
-  notRun.push(`${deadLenses.length} finder lens(es) never returned — their dimension went unreviewed: ${deadLenses.join(', ')}`)
+  // One entry PER dead lens: `lens:correctness` is what aggregates across runs into
+  // "3× lens:correctness", which is the whole point of ranking `notRun`.
+  for (const l of deadLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
 }
-if (plan.lenses.length && deadLenses.length === plan.lenses.length) notRun.push('EVERY finder lens died — no lens looked at this diff at all')
+if (plan.lenses.length && deadLenses.length === plan.lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
 
 const all = plan.lenses.flatMap(lens => {
   const r = lensResults.get(lens)
@@ -596,7 +619,7 @@ log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept
 const unverifiedJobs = await runThrottled(verifyJobs, 'Verify', 'Verify')
 if (unverifiedJobs.length) {
   log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
-  notRun.push(`${unverifiedJobs.length} verification check(s) got no verdict after retries — the findings they were judging stay Suspected`)
+  markNotRun('verify-checks-unjudged', `${unverifiedJobs.length} verification check(s) got no verdict after retries — the findings they were judging stay Suspected`, false)
 }
 
 let { confirmed, refuted, suspected } = judge(kept, votes)
@@ -620,7 +643,7 @@ if (!critic) {
   // Without this the critic's silence is indistinguishable from "coverage is complete": `?? []`
   // below yields zero gaps, and a diff whose blind spots were never looked for reads as covered.
   log('WARNING: coverage critic died twice — completeness was never checked')
-  notRun.push('the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
+  markNotRun('coverage-critic-dead', 'the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
 }
 
 // Critic findings do not bypass verification — they ride the same throttled pipeline.
@@ -637,18 +660,20 @@ if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage gaps: +${g.confirmed.length} confirmed · +${g.suspected.length} suspected · ${g.refuted.length} refuted`)
 } else if (gaps.length) {
   log(`Budget too low to verify ${gaps.length} coverage gap(s) -> reported as suspected`)
-  notRun.push(`${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, unjudged`)
+  markNotRun('coverage-gaps-unverified', `${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, unjudged`, false)
   suspected = suspected.concat(gaps.map(f => ({ ...f, confirmed: false, votes: [] })))
 }
 
-// A verdict must never claim more coverage than the run had. Anything in `notRun` means some part
-// of the review did not happen, so the verdict says so out loud instead of letting a run where the
-// work died read exactly like a clean one.
+// A verdict must never claim more coverage than the run had: a dimension that went unreviewed
+// downgrades the verdict, so a run where the work died cannot read exactly like a clean one. The
+// advisory entries (see `markNotRun`) are recorded and printed but do NOT downgrade — their
+// findings are already reported as Suspected, and a marker that fires on routine runs stops being
+// read on the runs that need it.
 const baseVerdict = confirmed.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
   : confirmed.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
-const verdict = notRun.length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
+const verdict = notRunBlocking().length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
 log(`Verdict: ${verdict} — ${confirmed.length} confirmed, ${suspected.length} suspected`)
-if (notRun.length) for (const n of notRun) log(`NOT RUN: ${n}`)
+for (const e of notRun) log(`${e.incomplete ? 'NOT RUN' : 'PARTIAL'}: ${e.note}`)
 
 // ---- run record ----
 const candidates = kept.length + gaps.length
@@ -669,7 +694,7 @@ await logRun({
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
   }),
   verification: { candidates, confirmed: confirmed.length, refuteRate: candidates ? Math.round((refutedTotal / candidates) * 100) / 100 : 0 },
-  notRun,
+  notRun: notRunLabels(),
   outputTokens: budget.spent(),
 })
 
@@ -677,6 +702,6 @@ return {
   verdict,
   confirmed: confirmed.map(({ votes: v, ...f }) => ({ ...f, votes: v.length, refutes: v.filter(x => x.refuted).length })),
   suspected: suspected.map(({ votes: v, ...f }) => f),
-  notRun,
+  notRun: notRunNotes(),
   scout: { size: plan.sizeBucket, lenses: plan.lenses, deadLenses },
 }
