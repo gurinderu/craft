@@ -363,7 +363,7 @@ if (deadLenses.length) {
   log(`WARNING: finder lens(es) returned nothing: ${deadLenses.join(', ')}`)
   notRun.push(`${deadLenses.length} finder lens(es) never returned — their dimension went unreviewed: ${deadLenses.join(', ')}`)
 }
-if (deadLenses.length === plan.lenses.length) notRun.push('EVERY finder lens died — no lens looked at this diff at all')
+if (plan.lenses.length && deadLenses.length === plan.lenses.length) notRun.push('EVERY finder lens died — no lens looked at this diff at all')
 
 const all = plan.lenses.flatMap(lens => {
   const r = lensResults.get(lens)
