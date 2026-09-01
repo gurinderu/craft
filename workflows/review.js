@@ -907,9 +907,12 @@ const REPO_DIRECTIVE = repoArg
 // alone. Calibrating against execution time was a real and expensive mistake: Verify sat at 15min
 // against an 811s measured maximum, then a ~130-thunk wave queued agents for a quarter of an hour
 // before they ran, the deadline fired on agents that were merely waiting, and 23 findings cost 172
-// verification agents. Waves are bounded now (VERIFY_WAVE_AGENTS), which caps the queue term — and
-// these numbers are set against the SUM: at most ~24 agents in flight over an execution p90 of
-// ~360s is well under 15min of waiting, so 30min leaves real headroom above both parts. Lenses get
+// verification agents. Dispatch is windowed now (VERIFY_WAVE_AGENTS), which caps the queue term — and
+// these numbers are set against the SUM: ~24 agents dispatched in flight over an execution p90 of
+// ~360s is well under 15min of waiting, so 30min leaves real headroom above both parts. The window
+// bounds DISPATCH, not occupancy: the re-dispatch below leaves the abandoned agent holding its
+// harness slot, so occupancy can transiently reach ~48 — but only after a 30min deadline, so it
+// cannot rebuild the storm. Lenses get
 // 90min for a blunter reason: a single lens legitimately ran 46 minutes, so no threshold there can
 // separate "hung" from "thorough" — it is a backstop against an agent stuck for hours, nothing finer.
 const DEADLINE_HIT = { craftDeadline: true }
@@ -1575,16 +1578,21 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
 // ONE authoritative opus vote, so the cheap model can neither confirm nor drop a high-stakes finding alone.
 const CULL_MODEL = 'sonnet'
 
-// ---- verification wave bounding ----
+// ---- verification dispatch bounding ----
 // Pure helpers, tested as a real module in lib/review-waves.mjs and pasted back here by the
 // craft-inline gate, because this script cannot be imported (top-level export + await + return).
-// >>> craft-inline lib/review-waves.mjs VERIFY_WAVE_AGENTS verifyWeight weightedWaves
-// How many AGENTS one verification wave may put in flight. Chosen so the queue term of the Verify
+// >>> craft-inline lib/review-waves.mjs VERIFY_WAVE_AGENTS verifyWeight weightedWindow
+// How many AGENTS verification keeps in flight at once. Chosen so the queue term of the Verify
 // deadline stays small: ~24 agents over an execution p90 of ~360s is well under 15min of waiting,
 // which is what makes a 30min dispatch-clock deadline mean "stuck" rather than "popular".
+//
+// It bounds DISPATCH, not occupancy: ragent re-dispatches once after a deadline, and the abandoned
+// agent keeps its harness concurrency slot until it is reaped, so a window can transiently sit at up
+// to twice this number. That doubling costs a 30min deadline first, so it cannot recreate the
+// unbounded storm — but it is a real ceiling of ~48, not ~24.
 const VERIFY_WAVE_AGENTS = 24
 
-// Worst-case agent count for one verification thunk, so a wave can only ever come in under budget,
+// Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
 // never over. A batch thunk is one agent; a High/Critical opens with a cull + the authoritative
 // vote and, if they split, buys the remaining n1-1 culls — 1 + max(1, verifyVotes) in total.
 function verifyWeight(f, plan) {
@@ -1592,24 +1600,44 @@ function verifyWeight(f, plan) {
   return isHigh ? 1 + Math.max(1, Number(plan?.verifyVotes) || 1) : 1
 }
 
-// Split an ordered list of {run, weight} entries into waves whose weights sum to at most
-// `maxWeight`, PRESERVING ORDER. Order is the invariant that matters: the caller concatenates the
-// waves' results and slices them back apart positionally, so any reordering here would hand one
-// finding's verdict to another finding. An entry heavier than the whole budget forms its own wave
-// rather than being dropped.
-function weightedWaves(entries, maxWeight) {
+// Run an ordered list of {run, weight} entries keeping at most `maxWeight` weight in flight, with
+// NO barrier: as each entry settles, the next one that fits is dispatched immediately. Waves (a
+// barrier per batch) gave the same in-flight cap but made every batch wait for its slowest member —
+// ~9 barriers on a large run, against verification agents measured up to 811s.
+//
+// ORDER IS THE INVARIANT. The caller concatenates the results and slices them apart positionally,
+// so a verdict must land at its entry's index. Entries settle out of order here, so results are
+// assigned BY INDEX (`out[i]`), never by arrival. The returned array always has exactly
+// `entries.length` slots, in input order.
+//
+// `runOne(entry.run, i)` is injected so this stays pure and testable — the workflow passes a runner
+// that hands the thunk to the sandbox's parallel(), which turns a throwing thunk into null. Anything
+// runOne rejects with is recorded as null rather than tearing down the whole dispatch.
+//
+// An entry heavier than the whole budget still runs: it waits for an empty window, then goes alone.
+async function weightedWindow(entries, maxWeight, runOne) {
   const cap = Math.max(1, Number(maxWeight) || 1)
-  const waves = []
-  let cur = []
-  let w = 0
-  for (const e of entries) {
-    const ew = Math.max(1, Number(e.weight) || 1)
-    if (cur.length && w + ew > cap) { waves.push(cur); cur = []; w = 0 }
-    cur.push(e)
-    w += ew
-  }
-  if (cur.length) waves.push(cur)
-  return waves
+  const out = new Array(entries.length).fill(null)
+  let next = 0
+  let inflight = 0
+  await new Promise(resolve => {
+    const pump = () => {
+      while (next < entries.length) {
+        const w = Math.max(1, Number(entries[next].weight) || 1)
+        // `inflight > 0 &&`: an over-budget entry is never starved, it just never shares the window.
+        if (inflight > 0 && inflight + w > cap) break
+        const i = next++
+        inflight += w
+        Promise.resolve()
+          .then(() => runOne(entries[i].run, i))
+          .then(v => { out[i] = v ?? null }, () => { out[i] = null })
+          .then(() => { inflight -= w; pump() })
+      }
+      if (next >= entries.length && inflight === 0) resolve()
+    }
+    pump()
+  })
+  return out
 }
 // <<< craft-inline
 
@@ -1747,9 +1775,10 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // one bucket — so awaiting the batch wave before starting the individual one bought nothing but
   // latency. Measured on one run: batches ran +81..89min and individuals +89..102min, strictly
   // nose-to-tail. They are built as two thunk lists sharing ONE ordered work list, so the slowest
-  // batch no longer holds up the first verifier — but that list is dispatched in BOUNDED waves
-  // rather than all at once, because the per-agent deadline is measured from DISPATCH and an
-  // unbounded wave makes it fire on queue wait instead of on hanging (see VERIFY_WAVE_AGENTS).
+  // batch no longer holds up the first verifier — but that list is dispatched through a BOUNDED
+  // SLIDING WINDOW rather than all at once, because the per-agent deadline is measured from DISPATCH
+  // and an unbounded fan-out makes it fire on queue wait instead of on hanging. A window, not waves:
+  // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WAVE_AGENTS).
   const batchThunks = groups.map(group => () =>
     ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => group.map((f, i) => {
@@ -1791,17 +1820,18 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     })
   })
   // A batch thunk resolves to an ARRAY of judged findings (one per finding in the group), an
-  // individual thunk to a single one — flatten the batch side back out before merging. The waves
-  // preserve the order of `entries`, and the results are appended wave by wave, so the positional
-  // split below stays exactly as valid as it was under one parallel().
+  // individual thunk to a single one — flatten the batch side back out before merging. The window
+  // settles out of order but writes each result at ITS OWN index, so the positional split below
+  // stays exactly as valid as it was under one parallel().
   const entries = batchThunks.map(run => ({ run, weight: 1 }))
     .concat(route.individual.map((f, i) => ({ run: individualThunks[i], weight: verifyWeight(f, plan) })))
-  const waves = weightedWaves(entries, VERIFY_WAVE_AGENTS)
-  if (waves.length > 1) {
-    log(`[${profile.id}] Verify dispatched in ${waves.length} bounded wave(s) of ≤${VERIFY_WAVE_AGENTS} agents — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging`)
+  const totalWeight = entries.reduce((n, e) => n + e.weight, 0)
+  if (totalWeight > VERIFY_WAVE_AGENTS) {
+    log(`[${profile.id}] Verify dispatched through a sliding window of ≤${VERIFY_WAVE_AGENTS} agents (${totalWeight} worst-case agents queued) — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging; the window refills as each verifier settles, so nothing waits on a batch's slowest member`)
   }
-  const settledVerdicts = []
-  for (const wave of waves) settledVerdicts.push(...await parallel(wave.map(e => e.run)))
+  // parallel([run]) per entry, not one parallel() over all of them: it is the sandbox primitive that
+  // turns a throwing thunk into null, and a single-thunk barrier is no barrier at all.
+  const settledVerdicts = await weightedWindow(entries, VERIFY_WAVE_AGENTS, run => parallel([run]).then(rs => rs[0]))
   const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
   const judged = settledVerdicts.slice(batchThunks.length)
   const vp = judged.filter(Boolean).concat(batched, skipped)
@@ -1834,7 +1864,7 @@ async function reviewProfile(profile) {
   // verdict says INCOMPLETE rather than a clean Approve.
   const scoutFailed = !scout
   const scoutNotRun = scoutFailed
-    ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote), not a scouted one`]
+    ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one`]
     : []
   // hasOwn, not truthiness: a bucket of "constructor" would index Object.prototype and pass.
   const size = Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout.sizeBucket : 'medium'
