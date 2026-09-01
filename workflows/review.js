@@ -628,13 +628,19 @@ const CHANGED_SCHEMA = {
 const ADJUDICATE_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['status', 'currentLine', 'note', 'invariant', 'attack'],
   properties: {
-    status: { type: 'string', enum: ['resolved', 'still-open', 'regressed'] },
+    status: { type: 'string', enum: ['resolved', 'still-open', 'cannot-tell', 'regressed'] },
     currentLine: { type: 'integer', description: 're-located 1-based line; 0 if not found' },
     note: { type: 'string' },
     invariant: { type: 'string', description: 'one-sentence invariant the finding violated' },
     attack: { type: 'string', description: 'the successful attack on the fix; empty string if every attack failed' },
   },
 }
+// `cannot-tell` exists so that "I could not determine this" has somewhere to go OTHER than
+// `resolved`. Without it an adjudicator that cannot find the site (file deleted/renamed, symbol
+// gone, the diff unreadable) has only three boxes, and the one that means "no attack succeeded"
+// is the one it drifts into — closing a finding nobody verified. It routes to the still-open
+// track (the same safe direction a DEAD adjudicator already takes) and annotates `why`, so the
+// report shows the item as unverified rather than silently fixed. See adjudicateOne.
 // Red-team verdict on a "resolved" Critical/High prior: an independent attempt to defeat the fix.
 const ATTACK_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['defeated', 'attack'],
@@ -668,7 +674,7 @@ function sanitizeAttack(text) {
   // exact ` — <marker>: ` shape baseWhy parses is gone — so an attack/note that echoes a marker can
   // no longer re-introduce a parseable marker that would accrete a stale fragment each re-review round.
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '')
-    .replace(/ — (?=fix incomplete|REGRESSED after fix)/gi, ' ').trim()
+    .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED)/gi, ' ').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -729,7 +735,8 @@ function baseWhy(why) {
   const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
     .replace(/ — still-open \(adjudicator did not run[^)]*\)\s*$/, '')
     .replace(/ — REGRESSED after fix \(no detail[^)]*\)\s*$/, '')
-  const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix): /g
+    .replace(/ — UNVERIFIED \(adjudicator could not tell[^)]*\)\s*$/, '')
+  const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix|UNVERIFIED \(adjudicator could not tell\)): /g
   let last = -1, m
   while ((m = re.exec(s))) last = m.index
   return last === -1 ? s : s.slice(0, last)
@@ -774,7 +781,16 @@ function adjudicateOne(f, r) {
   const status = r.status || 'still-open'
   if (status === 'resolved' && attack) return { track: 'stillOpen', demoted: true, entry: { ...located, why: `${baseWhy(f.why)} — fix incomplete (adjudicator reported attack despite resolved): ${attack}` } }
   if (status === 'resolved') return { track: 'resolved', entry: { ...located, disposition: 'closed', ...(r.note ? { note: sanitizeAttack(r.note) } : {}) } }
+  // An adjudication that could not reach a conclusion is NOT a fix. Route it to still-open — the
+  // same direction a dead adjudicator takes — and mark `why` so a reader of the report can see the
+  // item was carried without verification rather than confirmed still broken.
+  if (status === 'cannot-tell') {
+    const note = sanitizeAttack(r.note) || sanitizeAttack(r.attack)
+    return { track: 'stillOpen', cannotTell: true, entry: { ...located, why: `${baseWhy(f.why)} — UNVERIFIED (adjudicator could not tell): ${note || 'no reason returned'}` } }
+  }
   if (status === 'regressed') { const note = sanitizeAttack(r.note); return { track: 'regressed', entry: { ...located, why: note ? `${baseWhy(f.why)} — REGRESSED after fix: ${note}` : `${baseWhy(f.why)} — REGRESSED after fix (no detail returned by adjudicator)` } } }
+  // still-open, and every status the schema does not know: an unrecognised verdict is an UNKNOWN,
+  // and an unknown must never land on the resolved track.
   return { track: 'stillOpen', entry: attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located }
 }
 
@@ -2054,6 +2070,7 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
   let redTeamDied = 0
   let invalidRedTeam = 0
   let adjudicatorDied = 0
+  let cannotTellCount = 0
   const redTeam = async (f, adj) => {
     if (!isHighSeverity(f.severity)) return adj
     const pf = promptFields(f)
@@ -2091,18 +2108,20 @@ METHOD:
   4. Decide:
   - "resolved": every attack fails — the fix closes the CLASS, not just the described instance.
   - "still-open": the defect is still present OR one of your attacks succeeds (cite the current file:line; put the attack in \`attack\`).
+  - "cannot-tell": you could NOT determine the answer — the file is gone or renamed, the symbol no longer exists, or you could not read enough of the code to judge. Say why in \`note\`. Use this rather than "resolved" whenever you are guessing: "resolved" means you checked and every attack failed, never "I could not find it".
   - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
 Return {status, currentLine, note, invariant, attack}.`,
       { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
     ).then(async r => ({ f, r: shouldRedTeam(r) ? await redTeam(f, r) : r }))
   }))).filter(Boolean)
   for (const { f, r } of checkResults) {
-    const { track, entry, demoted, adjudicatorDied: adjDied } = adjudicateOne(f, r)
+    const { track, entry, demoted, cannotTell, adjudicatorDied: adjDied } = adjudicateOne(f, r)
     if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
+    if (cannotTell) { cannotTellCount++; log(`⚠️ adjudicator for ${f.file}:${f.line} could not tell — kept still-open, marked UNVERIFIED in the report`) }
     if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
     adjudicated[track].push(entry)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${carryDied} carry died`)
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
 }
 
 // On a re-review, lenses can re-surface a finding that is already tracked on the adjudicate track —
