@@ -3,7 +3,7 @@ export const meta = {
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected report with a verdict. Rust and Nix profiles built in.',
   whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically.',
   phases: [
-    { title: 'Scout', detail: 'resolve the diff base, detect language(s), classify size/categories, pick lenses + rigor', model: 'haiku' },
+    { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
     { title: 'Lenses', detail: 'parallel per-lens review with context expansion; loop-until-dry' },
     { title: 'Verify', detail: 'cross-lens dedup, then adversarial refutation + self-verification of each finding' },
@@ -556,16 +556,17 @@ const DETECT_SCHEMA = {
   },
 }
 
+// Scout classifies; it does not budget. maxRounds/verifyVotes/lensModel are deterministic functions
+// of sizeBucket (RIGOR_BY_SIZE below), so the script derives them instead of asking a haiku to
+// recite a lookup table it could contradict — the same reason the "always" lenses are enforced in
+// code rather than in the prompt.
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['sizeBucket', 'lenses', 'maxRounds', 'verifyVotes', 'lensModel', 'isLibrary', 'securitySensitive', 'intent', 'churn', 'notes'],
+  required: ['sizeBucket', 'lenses', 'isLibrary', 'securitySensitive', 'intent', 'churn', 'notes'],
   properties: {
     sizeBucket: { type: 'string', enum: ['small', 'medium', 'large'] },
     lenses: { type: 'array', items: { type: 'string' }, description: 'subset of the profile lens catalog to run' },
-    maxRounds: { type: 'integer', description: 'loop-until-dry cap: 1 for small, 2 for medium, 3 for large' },
-    verifyVotes: { type: 'integer', description: 'skeptic votes for CRITICAL/HIGH findings (1 or 3); default-tier findings always get 1' },
-    lensModel: { type: 'string', enum: ['sonnet', 'opus'], description: 'model for lens + verify agents' },
     isLibrary: { type: 'boolean', description: 'true if a published library (→ semver-checks); always false where not applicable' },
     securitySensitive: { type: 'boolean' },
     intent: { type: 'string', description: 'what the change should do, from the brief/args; empty if unknown' },
@@ -1326,11 +1327,10 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
    - medium: the categories plausibly in play.
    - large: all of them.
    ${profile.scoutRules}${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
-3. maxRounds: small=1, medium=2, large=3. verifyVotes: small/medium=1, large=3. lensModel: opus for all sizes (review reasoning runs on Opus; depth scales via maxRounds/verifyVotes/lens count).
-4. isLibrary: ${profile.usesLibrary ? 'true if this is a published library (has `[lib]`/looks publishable) — best effort.' : 'always false (not applicable to this language).'}
-5. securitySensitive: true if the diff touches ${profile.securityHints}.
-6. intent: ${intentArg ? `the caller provided: "${intentArg}". Refine it from the diff if needed.` : 'infer the change\'s purpose from the diff and any PR/commit messages; empty string if unclear.'}
-7. churn: list up to 5 files in the diff that git shows as frequently changed (\`git log --oneline -n 50 -- <file> | wc -l\` is a rough proxy). May be empty.`
+3. isLibrary: ${profile.usesLibrary ? 'true if this is a published library (has `[lib]`/looks publishable) — best effort.' : 'always false (not applicable to this language).'}
+4. securitySensitive: true if the diff touches ${profile.securityHints}.
+5. intent: ${intentArg ? `the caller provided: "${intentArg}". Refine it from the diff if needed.` : 'infer the change\'s purpose from the diff and any PR/commit messages; empty string if unclear.'}
+6. churn: list up to 5 files in the diff that git shows as frequently changed (\`git log --oneline -n 50 -- <file> | wc -l\` is a rough proxy). May be empty.`
 }
 
 function negativeSpacePrompt(priorSummary, profile, plan) {
@@ -1747,16 +1747,35 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   }
 }
 
+// Rigor is a function of the size bucket, not a model's opinion: the scout classifies (sizeBucket,
+// lenses, securitySensitive, …) and the script budgets. `lensModel` is a constant — review reasoning
+// runs on Opus at every size; depth scales via rounds, votes and lens count.
+const RIGOR_BY_SIZE = {
+  small: { maxRounds: 1, verifyVotes: 1 },
+  medium: { maxRounds: 2, verifyVotes: 1 },
+  large: { maxRounds: 3, verifyVotes: 3 },
+}
+const LENS_MODEL = 'opus'
+
 // ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
 async function reviewProfile(profile) {
   // ---- Scout ----
   const scout = await ragent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
+  // A dead/timed-out scout falls back to the CONSERVATIVE plan (all lenses, security floor → 3-vote),
+  // never a permissive one — but it must not read as a successful classification either: the fallback
+  // loses the scouted intent, churn and size, so it is logged loudly and carried into `notRun` so the
+  // verdict says INCOMPLETE rather than a clean Approve.
+  const scoutFailed = !scout
+  const scoutNotRun = scoutFailed
+    ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote), not a scouted one`]
+    : []
+  const size = RIGOR_BY_SIZE[scout?.sizeBucket] ? scout.sizeBucket : 'medium'
   const plan = {
-    sizeBucket: scout?.sizeBucket ?? 'medium',
+    sizeBucket: size,
     lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : profile.lenses.slice()),
-    maxRounds: scout?.maxRounds ?? 2,
-    verifyVotes: scout?.verifyVotes ?? 1,
-    lensModel: scout?.lensModel ?? 'opus',
+    maxRounds: RIGOR_BY_SIZE[size].maxRounds,
+    verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
+    lensModel: LENS_MODEL,
     isLibrary: profile.usesLibrary ? (scout?.isLibrary ?? false) : false,
     securitySensitive: scout?.securitySensitive ?? true,
     intent: scout?.intent ?? intentArg,
@@ -1781,7 +1800,7 @@ async function reviewProfile(profile) {
   // readers (rolling deploy, already-stored rows) invisibly to the code-intrinsic lenses. Security-sensitive
   // diffs already get it via the all-lenses floor above (compat ∈ profile.lenses).
   if (plan.sizeBucket === 'large' && profile.lenses.includes('compat') && !plan.lenses.includes('compat')) plan.lenses.push('compat')
-  log(`[${profile.id}] ${scout?.notes ?? 'scout: medium/all lenses'} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
+  log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : scout.notes} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
   // registered in this session (stale plugin registry), fall back to the generic workflow
@@ -1862,7 +1881,7 @@ async function reviewProfile(profile) {
     preflight: preflight ? { runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers } : null,
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -1887,7 +1906,7 @@ async function reviewProfile(profile) {
   const seen = new Set()
   const pool = []
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
-  const notRun = []
+  const notRun = [...scoutNotRun]
   const ranAtLeastOnce = new Set()
   const lensRounds = []
   let dry = false
