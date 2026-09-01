@@ -128,25 +128,37 @@ ${profile.id === 'rust'
     : `   Check the concrete inputs: \`nix flake metadata\` resolving offline, and whether the flake's \`system\` matches this machine.`}
    Report each blocker as one plain line naming what cannot run and WHY. Report nothing you have not actually checked.
 
-3. MISSING TOOLS. Which of ${profile.id === 'rust' ? '`cargo-audit`, `cargo-deny`, `cargo-semver-checks`, `semgrep`' : '`statix`, `deadnix`, `nixpkgs-fmt`/`alejandra`, `nix-instantiate`'} are genuinely unavailable? Check BOTH ways — \`command -v <tool>\` bare AND with the runner prefix — and treat the tool as present if EITHER finds it, naming the invocation that works (e.g. "cargo-audit: ~/.cargo/bin/cargo-audit, outside the dev shell"). A dev shell usually has a NARROWER PATH than the login shell, so probing only inside it reports a tool as missing that is installed a directory away — that mistake silently dropped the entire \`cargo audit\` signal from a real run. Also try the well-known locations before concluding absence: \`~/.cargo/bin/<tool>\`. Only a tool that neither probe finds is missing — and that is an intentional skip downstream, never a failure.
+3. MISSING TOOLS. Which of ${profile.id === 'rust' ? '`cargo-audit`, `cargo-deny`, `cargo-semver-checks`, `semgrep`' : '`statix`, `deadnix`, `nixpkgs-fmt`/`alejandra`, `nix-instantiate`'} are genuinely unavailable? ONE command answers it for every tool at once — run it exactly, do not probe tool-by-tool:
+   \`\`\`
+   for t in ${profile.id === 'rust' ? 'cargo-audit cargo-deny cargo-semver-checks semgrep' : 'statix deadnix nixpkgs-fmt alejandra nix-instantiate'}; do
+     p=$(command -v "$t" 2>/dev/null); [ -z "$p" ] && [ -x "$HOME/.cargo/bin/$t" ] && p="$HOME/.cargo/bin/$t"
+     echo "$t: \${p:-MISSING}"
+   done
+   \`\`\`
+   A dev shell usually has a NARROWER PATH than the login shell, so if the runner prefix from step 1 is non-empty, run the same loop once more under it and treat a tool as PRESENT if EITHER pass found it — that mistake silently dropped the entire \`cargo audit\` signal from a real run. Name the invocation that works (e.g. "cargo-audit: ~/.cargo/bin/cargo-audit, outside the dev shell"). Only a tool MISSING in both passes goes in \`missingTools\` — an absent tool is an intentional skip downstream, never a failure.
 
-4. CI COVERAGE. Which signals does a GREEN check already establish for THIS EXACT commit? \`gh pr checks --json name,state,bucket,link\` resolves by branch name and returns nothing on a review worktree or detached HEAD — that false negative costs the whole CI shortcut, so when it comes up empty look the PR up by commit:
+4. CI COVERAGE. Which signals does a GREEN check already establish for THIS EXACT commit? ONE call answers it — the SHA-scoped check-runs endpoint. Do NOT also run \`gh pr checks\` or look the PR up by commit: those resolve by branch (empty on a review worktree or detached HEAD) or hand you a PR whose head may have moved past your commit, and both then need the SHA test this call satisfies by construction.
    \`\`\`
    SHA=$(git rev-parse HEAD)
-   gh api "repos/{owner}/{repo}/commits/$SHA/pulls" --jq '.[].number'
    gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" --jq '.check_runs[] | "\\(.name) \\(.status) \\(.conclusion)"'
+   gh api "repos/{owner}/{repo}/commits/$SHA/status" --jq '.statuses[] | "\\(.context) completed \\(.state)"'
    \`\`\`
-   Owner/repo from \`git remote get-url origin\`. Accept a check ONLY when it ran on your exact HEAD SHA — a PR whose head has moved past your commit proves nothing about your commit.
-   Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. But read NARROWLY — this is where the pass runs away with the clock: at most the handful of workflow files behind checks that are BOTH green AND map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale, never read a workflow behind a check you are not going to cite, and stop reading once every green check you intend to list is accounted for.
+   Owner/repo from \`git remote get-url origin\`. Both calls, once each: check-runs alone misses CI that reports through the older commit-status API, and that omission looks exactly like "no CI". Keep only \`completed\` rows whose conclusion/state is \`success\`.
+   Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. HARD CAP — this is where the pass runs away with the clock: read AT MOST 2 workflow files, only for green checks that map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale. Past the cap, list the remaining green checks by name only and say in notes which ones you did not open.
    List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
 
-BUDGET (hard): this pass is reconnaissance and must stay CHEAP — target ~90 seconds, and treat three minutes as the ceiling. If CI archaeology is still going at that point, STOP and return what you have with the rest listed as unknown in notes: a partial preflight still saves the gate its worst mistakes, while a thorough one that costs more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint to answer anything here.
+BUDGET (hard): reconnaissance, target ~90 seconds, three minutes is the ceiling — the dispatch is cut off shortly after it, so a pass still thinking at the ceiling returns NOTHING and the gate loses even the runner prefix. So at three minutes STOP and RETURN. A thorough preflight costing more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint here.
+
+PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four you did not finish: return the field EMPTY and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
 
 Return runner, blockers, missingTools, ciCovers, notes.`
 }
 // Rendered into every downstream prompt that might run a tool, so the answer travels with the work.
 function preflightBrief(pf) {
-  if (!pf) return ''
+  // A dead preflight must NOT render as a clean one. Returning '' left the downstream prompt with no
+  // preflight block at all — indistinguishable from a run where preflight said "nothing to report",
+  // which is the permissive reading of "we could not establish it". Say it out loud instead.
+  if (!pf) return `PREFLIGHT UNAVAILABLE — the preflight step failed or passed its deadline and returned nothing. Nothing below is resolved for you: no command prefix, no compile blockers, no tool inventory, no CI coverage. Establish what you need yourself, CHEAPLY (read the tree; never run a build to read its error), and say "preflight unavailable" in your provenance so the record shows this run was short one step.\n`
   const runner = pf.runner ? `\`${flattenField(pf.runner)}\`` : '(none needed — commands run bare)'
   const lines = [`PREFLIGHT (already resolved — do NOT rediscover any of this):`,
     `- Command prefix for every build/lint/test command: ${runner}. Commands run without it die in missing system libraries, not in your diff.`]
@@ -1901,13 +1913,21 @@ async function reviewProfile(profile) {
   // a preflight that dies just leaves the gate to work it out the old way.
   const preflight = await ragent(preflightPrompt(profile, { baseRef }),
     // A tight deadline is safe HERE and nowhere else: losing preflight costs a fallback, not the
-    // review — the gate still establishes everything itself, just the slow way.
-    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 420000 })
+    // review — the gate still establishes everything itself, just the slow way. 3.5min, not the
+    // phase default: the prompt declares three minutes as its ceiling, and a deadline at twice the
+    // declared ceiling makes the budget advisory — nothing then stops a pass that ignores it. The
+    // half-minute over is for the return trip, not for more work. (ragent re-dispatches once, so the
+    // worst case is 7min, which is what the single 7min allowance used to buy on the FIRST try.)
+    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 210000 })
   if (preflight) {
     log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
       + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
       + ` · CI covers ${preflight.ciCovers?.length ? preflight.ciCovers.join(', ') : 'nothing'}`
-      + `${preflight.missingTools?.length ? ` · missing: ${preflight.missingTools.join(', ')}` : ''}`)
+      + `${preflight.missingTools?.length ? ` · missing: ${preflight.missingTools.join(', ')}` : ''}`
+      + `${/^\s*PARTIAL\b/i.test(preflight.notes || '') ? ' · ⚠️ PARTIAL — see notes' : ''}`)
+  } else {
+    // Never silent: no preflight line at all would read as "this run had no preflight step".
+    log(`⚠️ [${profile.id}] Preflight unavailable (failed or passed its deadline) — the gate establishes the environment itself, and its provenance says so.`)
   }
 
   // ---- Gate ----
@@ -1934,7 +1954,11 @@ async function reviewProfile(profile) {
     language: profile.id, branch, head: baseRef,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
-    preflight: preflight ? { runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers } : null,
+    // `status` so a reader of the record can tell a preflight that ran and found nothing from one
+    // that never answered — a bare `null` collapsed both into the same, more permissive, reading.
+    preflight: preflight
+      ? { status: /^\s*PARTIAL\b/i.test(preflight.notes || '') ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes }
+      : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
     return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
