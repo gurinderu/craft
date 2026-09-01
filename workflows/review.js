@@ -668,7 +668,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey alreadyCarried
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -754,6 +754,49 @@ function adjudicateOne(f, r) {
 // markdown-only "attack" counts as none.
 function shouldRedTeam(r) {
   return r?.status === 'resolved' && !sanitizeAttack(r.attack)
+}
+
+// The coarse identity used to decide whether a lens finding is ALREADY on the adjudicate track:
+// file + ruleId, case- and whitespace-normalised. Empty when either half is missing — a finding
+// with no ruleId cannot be keyed this way, and the caller falls back to the exact matcher.
+function carriedKey(f) {
+  const file = String(f?.file ?? '').trim().toLowerCase()
+  const ruleId = String(f?.ruleId ?? '').trim().toLowerCase()
+  return file && ruleId ? `${file}\u0000${ruleId}` : ''
+}
+
+// True when `f` (a finding the lenses just discovered) is already being tracked by one of `priors`
+// (the still-live adjudicate track: still-open / regressed / carried).
+//
+// WHY FILE+RULEID AND NOT A TITLE MATCH. On a full re-scan the lenses see the whole diff and
+// re-invent every prior as a fresh finding. The old test — matchesPrior, which requires file and
+// ruleId to match AND the titles to overlap by 0.6 — recognised 2 of 59 such re-discoveries on a
+// measured branch, because two agents describing the same defect rarely reuse each other's words.
+// The other 57 were appended to the ledger alongside the prior they duplicate. Every carried
+// finding costs one adjudicator call next round, so the ledger — and the bill — grew round over
+// round. Dropping the title threshold entirely is what stops the accretion.
+//
+// THE COST, STATED HONESTLY: file+ruleId is coarser than the old test, so two GENUINELY DISTINCT
+// defects that share a file and a rule collapse into one ledger entry — the new one is dropped.
+// That is acceptable for exactly one reason: the prior it collapsed into REMAINS INDEPENDENTLY
+// CARRIED on the adjudicate track and is re-checked, by name, on its own next round. The new
+// finding is not lost information; it is a second report of a site already under scrutiny.
+//
+// THE CONDITION UNDER WHICH THIS STOPS BEING SAFE: if anything ever PRUNES the adjudicate track —
+// caps the carried set, expires priors after N rounds, drops the ones an adjudicator could not
+// re-locate, or trims the ledger by size — then the prior this drops into can vanish while the
+// finding it absorbed was never recorded anywhere, and the defect is silently lost. Any such
+// pruning must either keep this match exact or re-admit the absorbed findings first.
+//
+// `fallbackMatch` (the workflow passes matchesPrior) is used only when the finding or the prior has
+// no usable file+ruleId key: without a ruleId the coarse key would collapse everything in a file.
+function alreadyCarried(f, priors, fallbackMatch) {
+  const key = carriedKey(f)
+  return (priors || []).some(p => {
+    const pk = carriedKey(p)
+    if (key && pk) return key === pk
+    return typeof fallbackMatch === 'function' ? !!fallbackMatch(f, p) : false
+  })
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -2141,16 +2184,20 @@ Return {status, currentLine, note, invariant, attack}.`,
 
 // On a re-review, lenses can re-surface a finding that is already tracked on the adjudicate track —
 // always on a full re-scan (the lenses saw the whole diff), and even on the delta path when a fix
-// commit touches a still-open site. Drop new findings that match a still-LIVE prior
-// (still-open/regressed/carried) so they are not double-counted in the report or the persisted ledger.
+// commit touches a still-open site. Drop new findings that are already carried by a still-LIVE prior
+// (still-open/regressed/carried) so they are not double-counted in the report or appended to the
+// persisted ledger — the append is what made the carried set, and therefore the per-round adjudicator
+// bill, grow every round. The match is file+ruleId (alreadyCarried); the reasoning for that coarseness
+// and the condition under which it stops being safe are in lib/review-adjudicate.mjs. matchesPrior is
+// the fallback for a finding with no ruleId to key on.
 // Do NOT dedup against RESOLVED priors: a new finding matching a resolved one is a regression signal
 // and must survive.
 if (priorRound) {
   const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried]
   if (livePriors.length) {
     const before = confirmed.length + suspected.length
-    confirmed = confirmed.filter(f => !livePriors.some(p => matchesPrior(f, p)))
-    suspected = suspected.filter(f => !livePriors.some(p => matchesPrior(f, p)))
+    confirmed = confirmed.filter(f => !alreadyCarried(f, livePriors, matchesPrior))
+    suspected = suspected.filter(f => !alreadyCarried(f, livePriors, matchesPrior))
     const removed = before - (confirmed.length + suspected.length)
     if (removed) log(`Re-review: dropped ${removed} new finding(s) already tracked as a still-live prior (kept on the adjudicate track, not double-counted)`)
   }
