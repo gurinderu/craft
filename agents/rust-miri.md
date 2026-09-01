@@ -1,6 +1,6 @@
 ---
 name: rust-miri
-description: Runs the unsafe code under Miri to detect undefined behavior (out-of-bounds, use-after-free, alignment violations, data races, leaks) and reports what it finds against the rust-unsafe rubric. Use for crates containing unsafe code, after writing/changing unsafe, or before releasing a crate with unsafe.
+description: Runs the unsafe code under Miri to detect undefined behavior (out-of-bounds, use-after-free, alignment violations, data races, leaks) and reports what it finds against the rust-unsafe rubric — reporting INCOMPLETE (not run) when nightly or miri is unavailable, never Clean. Use for crates containing unsafe code, after writing/changing unsafe, or before releasing a crate with unsafe.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -19,10 +19,13 @@ Worth running when the crate (or a dependency you vendor) contains `unsafe`. If 
 0. **Check CI first.** If the current branch's PR has a green *required* check named `miri` (`gh pr checks --json name,state,bucket,link`; degrade to local if `gh`/PR is absent, unauthenticated, offline, or the check is pending), you may consume it as the soundness signal and note `via CI · PR #N`. Miri jobs in CI are rare, so you will usually run it locally as below. This mirrors the CI-aware gate in the `rust-review` skill.
 1. **Check Miri is available** (it's a nightly component):
    ```bash
-   rustup toolchain list | grep -q nightly || { echo "nightly not installed - skipping, soundness NOT verified"; exit 0; }
+   rustup toolchain list | grep -q nightly || { echo "nightly not installed - MIRI DID NOT RUN, soundness NOT verified"; exit 0; }
    rustup +nightly component add miri 2>/dev/null || true
-   cargo +nightly miri --version >/dev/null 2>&1 || { echo "miri not available - skipping, soundness NOT verified"; exit 0; }
+   cargo +nightly miri --version >/dev/null 2>&1 || { echo "miri not available - MIRI DID NOT RUN, soundness NOT verified"; exit 0; }
    ```
+   The script exits 0 in both cases so the dispatch does not fail — but a zero exit here means
+   **Miri never ran**, not that it ran clean. In either case stop and report the verdict
+   `INCOMPLETE (not run)` (see below). `Clean` is reserved for a Miri run that actually happened.
 2. **Run the test suite under Miri** (it interprets the code, catching UB at runtime):
    ```bash
    cargo +nightly miri test 2>&1 | tail -100
@@ -47,11 +50,30 @@ status: ran 42 tests · 1 error
 Block — Miri detected undefined behavior.
 ```
 
+The verdict vocabulary has **three** values, not two:
+
+- **Clean** — Miri ran and found no UB on the paths the tests exercise.
+- **UB-found** — Miri ran and found undefined behavior. ⛔ Block.
+- **INCOMPLETE (not run)** — nightly or `miri` was unavailable, or no test could execute under
+  Miri, so nothing was interpreted. Soundness is UNVERIFIED, not verified. Report it exactly as
+  that string, and say which piece was missing:
+
+```
+## Miri
+status: NOT RUN — nightly toolchain not installed
+
+## Findings
+(none — nothing was executed under Miri)
+
+## Verdict
+INCOMPLETE (not run) — soundness is unverified; this is not a Clean result.
+```
+
 Map each finding to the `unsafe` site and the violated invariant (reference the `// SAFETY:`
 comment if present — its claim is what failed). If Miri is clean: report "no UB detected" but
 note Miri only covers paths the tests exercise — it's not a proof of soundness for untested code.
-If Miri isn't installable or the tests can't run under it, say so explicitly rather than implying
-the code is sound.
+If Miri isn't installable or the tests can't run under it, the verdict is `INCOMPLETE (not run)`
+— never `Clean`. Say explicitly what was missing rather than implying the code is sound.
 
 ## Observability
 
@@ -62,4 +84,4 @@ logging failed.
 Append ONE compact JSON line to `~/.craft/runs/index.jsonl` (run `mkdir -p ~/.craft/runs` first),
 using a single atomic append (`printf '%s\n' "$LINE" >> ~/.craft/runs/index.jsonl`):
 
-`{"schemaVersion":1,"runtime":"claude-code","ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-miri","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Clean|UB-found>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null}`
+`{"schemaVersion":1,"runtime":"claude-code","ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-miri","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Clean|UB-found|INCOMPLETE (not run)>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null}`
