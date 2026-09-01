@@ -236,8 +236,12 @@ function unusedCratesResult(candidates, verdicts) {
     return {
       dimension: 'unused-crates',
       verdict: 'INCOMPLETE (not run)',
+      // Say what WAS established before saying what was not. An INCOMPLETE that omits the confirmed
+      // hits reads as "nothing came of this", and a summary-only reader then misses a real finding
+      // that is sitting in `findings` right below. And no "most": at 9 judged of 20 the unjudged
+      // share is under half, so the word would be false — give the counts and let them speak.
       summary: t.judged
-        ? `${t.candidates} candidate(s) flagged, but only ${t.judged} verifier(s) returned — ${t.died} died. Most of the unused-crate surface is UNVERIFIED, not clean.`
+        ? `${t.candidates} candidate(s) flagged; ${t.judged} judged (${t.confirmed} verified unused, ${t.refuted} refuted), ${t.died} verifier(s) died. ${t.candidates - t.judged} candidate(s) are UNVERIFIED — neither confirmed nor cleared.`
         : `${t.candidates} candidate(s) flagged, but every verifier failed to return — none was confirmed OR refuted. The unused-crate surface is UNVERIFIED, not clean.`,
       findings: confirmed.concat(unjudged),
       _verification,

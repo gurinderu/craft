@@ -30,7 +30,7 @@ answered. `node lib/analyze-runs.mjs --version latest` (or `--version 0.13.1`) a
 with no flag, a store holding more than one version says so in the report. Records written before
 these fields carry `null` and are simply outside any version filter.
 
-Workflows add: `scout`, `dimensions[]`, `verification {candidates, confirmed, refuteRate}`,
+Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, refuted, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero),
 `notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool). The `scout`
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
 rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
