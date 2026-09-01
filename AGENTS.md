@@ -51,8 +51,8 @@ Realm = the work (structure, open questions, what's next). Git = how we got here
 ### After a green push: self-check
 Quality gate green and the iteration finished → re-read your own diff for: bugs, fragile spots, weak error handling, DRY violations, repeated patterns, missing or useless tests, files over 150 lines, and god-units mixing many concerns. Fix in the **same branch** and push again — or say plainly that nothing surfaced. Do not invent findings. **Per stage, not only at the end:** a review deferred to the end reads a diff too large to hold, and the earliest mistakes are the ones all the later work stands on.
 
-### Cold review of an open PR
-**A self-check does not replace a cold review.** Re-reading your own work, you see what you meant, not what you wrote. A self-check catches sloppiness; only someone who did not see the frame catches the frame. Both, in this order: your own first, then the cold one on the open PR.
+### Cold review of the branch, before the PR
+**A self-check does not replace a cold review.** Re-reading your own work, you see what you meant, not what you wrote. A self-check catches sloppiness; only someone who did not see the frame catches the frame. Both, in this order: your own first, then the cold one — **on the branch, before `gh pr create`**. Push the branch; a reviewer reads a branch, not a PR. The rule and the measurement behind it are stated once, under "Review: craft reviews itself" below.
 
 The reviewer's field of work is three things, and all three are mandatory:
 - **the branch diff against trunk** (`git diff main...HEAD`) — the whole branch as the merger will see it, not the last commit;
