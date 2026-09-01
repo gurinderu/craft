@@ -201,6 +201,8 @@ This repo ships the review engine — so review here runs through it, not by eye
 | `unsafe` under Miri | agent `craft:rust-miri` |
 | Full audit — everything at once, one synthesized report | `craft:rust-audit` **workflow** |
 
+**The cold review happens BEFORE the PR is opened, not after.** Push the branch if you like — a reviewer reads a branch, not a PR — but do not `gh pr create` until a fresh cold reviewer has returned a verdict and its blocking findings are worked to green. (why: measured twice on 2026-09-01. Five PRs opened at once merged within ninety seconds, and both times the review landed after the merge. The first time a real regression shipped — a preflight deadline set three seconds above that pass's own measured cost, which no gate can see because it is a constant, not a test. An open PR is an invitation to merge, so opening one before the verdict makes the merge race the review, and the review loses.)
+
 **Self-review is a gate in the authoring loop, not a report you file and forget.** Before `gh pr create`, close the loop: run `craft:review` on `git diff main...HEAD` → feed every finding through `craft:triage-findings` (validate against the code, dedupe, order) → work them to green with `craft:addressing-findings` → re-review with a **fresh** agent and repeat until the verdict is **Approve** (or **Warning** with each remaining item explicitly justified in the PR body). A PR never goes up with open blocking findings the self-review already surfaced.
 
 ## What to update when
