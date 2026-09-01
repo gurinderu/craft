@@ -922,7 +922,7 @@ const REPO_DIRECTIVE = repoArg
 // alone. Calibrating against execution time was a real and expensive mistake: Verify sat at 15min
 // against an 811s measured maximum, then a ~130-thunk wave queued agents for a quarter of an hour
 // before they ran, the deadline fired on agents that were merely waiting, and 23 findings cost 172
-// verification agents. Dispatch is windowed now (VERIFY_WAVE_AGENTS), which caps the queue term — and
+// verification agents. Dispatch is windowed now (VERIFY_WINDOW_AGENTS), which caps the queue term — and
 // these numbers are set against the SUM: ~24 agents dispatched in flight over an execution p90 of
 // ~360s is well under 15min of waiting, so 30min leaves real headroom above both parts. The window
 // bounds DISPATCH, not occupancy: the re-dispatch below leaves the abandoned agent holding its
@@ -1596,7 +1596,7 @@ const CULL_MODEL = 'sonnet'
 // ---- verification dispatch bounding ----
 // Pure helpers, tested as a real module in lib/review-waves.mjs and pasted back here by the
 // craft-inline gate, because this script cannot be imported (top-level export + await + return).
-// >>> craft-inline lib/review-waves.mjs VERIFY_WAVE_AGENTS verifyWeight weightedWindow
+// >>> craft-inline lib/review-waves.mjs VERIFY_WINDOW_AGENTS verifyWeight weightedWindow
 // How many AGENTS verification keeps in flight at once. Chosen so the queue term of the Verify
 // deadline stays small: ~24 agents over an execution p90 of ~360s is well under 15min of waiting,
 // which is what makes a 30min dispatch-clock deadline mean "stuck" rather than "popular".
@@ -1605,7 +1605,7 @@ const CULL_MODEL = 'sonnet'
 // agent keeps its harness concurrency slot until it is reaped, so a window can transiently sit at up
 // to twice this number. That doubling costs a 30min deadline first, so it cannot recreate the
 // unbounded storm — but it is a real ceiling of ~48, not ~24.
-const VERIFY_WAVE_AGENTS = 24
+const VERIFY_WINDOW_AGENTS = 24
 
 // Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
 // never over. A batch thunk is one agent; a High/Critical opens with a cull + the authoritative
@@ -1793,7 +1793,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // batch no longer holds up the first verifier — but that list is dispatched through a BOUNDED
   // SLIDING WINDOW rather than all at once, because the per-agent deadline is measured from DISPATCH
   // and an unbounded fan-out makes it fire on queue wait instead of on hanging. A window, not waves:
-  // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WAVE_AGENTS).
+  // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
   const batchThunks = groups.map(group => () =>
     ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => group.map((f, i) => {
@@ -1841,12 +1841,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const entries = batchThunks.map(run => ({ run, weight: 1 }))
     .concat(route.individual.map((f, i) => ({ run: individualThunks[i], weight: verifyWeight(f, plan) })))
   const totalWeight = entries.reduce((n, e) => n + e.weight, 0)
-  if (totalWeight > VERIFY_WAVE_AGENTS) {
-    log(`[${profile.id}] Verify dispatched through a sliding window of ≤${VERIFY_WAVE_AGENTS} agents (${totalWeight} worst-case agents queued) — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging; the window refills as each verifier settles, so nothing waits on a batch's slowest member`)
+  if (totalWeight > VERIFY_WINDOW_AGENTS) {
+    log(`[${profile.id}] Verify dispatched through a sliding window of ≤${VERIFY_WINDOW_AGENTS} agents (${totalWeight} worst-case agents queued) — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging; the window refills as each verifier settles, so nothing waits on a batch's slowest member`)
   }
   // parallel([run]) per entry, not one parallel() over all of them: it is the sandbox primitive that
   // turns a throwing thunk into null, and a single-thunk barrier is no barrier at all.
-  const settledVerdicts = await weightedWindow(entries, VERIFY_WAVE_AGENTS, run => parallel([run]).then(rs => rs[0]))
+  const settledVerdicts = await weightedWindow(entries, VERIFY_WINDOW_AGENTS, run => parallel([run]).then(rs => rs[0]))
   const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
   const judged = settledVerdicts.slice(batchThunks.length)
   const vp = judged.filter(Boolean).concat(batched, skipped)
