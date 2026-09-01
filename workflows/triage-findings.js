@@ -176,6 +176,7 @@ if (pr) {
 
 const gatherResults = await parallel(gatherTasks)   // order preserved → align with requestedLocators
 const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
+if (notRunSources.length) log(`WARNING: source(s) that produced nothing: ${notRunSources.join(', ')} — the triage covers fewer sources than asked.`)
 const gathered = gatherResults.filter(Boolean)
 const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
@@ -190,6 +191,7 @@ const pin = base
   ? `Validate against ref \`${base}\` (the ref the findings were generated against), not the live working tree.`
   : 'Validate against the currently checked-out tree.'
 
+const deadValidations = []
 const validations = (await parallel(raw.map(f => () => {
   const id = idOf(f)
   const prior = priorById.get(id)
@@ -222,11 +224,20 @@ PREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outsid
 stable_id MUST be exactly: ${id}
 Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     { label: `validate:${(f.location || f.title).slice(0, 40)}`, phase: 'Validate', schema: VALIDATION_SCHEMA },
-  )
+  ).then(v => {
+    // A dead validator used to be dropped by `filter(Boolean)`, which removed the finding from the
+    // plan AND from the ledger: a Critical whose judge died did not appear as unjudged, it appeared
+    // as nothing. It is unjudged, so it becomes the verdict that already means "a human must look
+    // at this" — the one downstream vocabulary (carry-forward, prompt, ledger) already understands.
+    if (v) return v
+    deadValidations.push(id)
+    return { stable_id: id, verdict: 'needs-decision', reason: 'NOT JUDGED — the validator agent died; this finding was never checked against the code', fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
+  })
 }))).filter(Boolean)
 
 const accepted = validations.filter(v => v.verdict === 'accept')
 log(`Validated ${validations.length}: ${accepted.length} accept, ${validations.length - accepted.length} other.`)
+if (deadValidations.length) log(`WARNING: ${deadValidations.length} validator(s) died -> carried as needs-decision (unjudged), not dropped.`)
 
 // ---- Plan ----------------------------------------------------------------
 phase('Plan')
@@ -267,8 +278,21 @@ await logRun({
   via: null,
   sources: gathered.map(g => ({ source: g.source, count: Array.isArray(g.findings) ? g.findings.length : 0 })),
   triage: { gathered: raw.length, validated: validations.length, ...tallyVerdicts(ledger) },
-  notRun: notRunSources,
+  notRun: notRunSources.map(src => `gather:${src} died — findings from that source were never collected`)
+    .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged (validator died) — carried as needs-decision`] : []),
 })
 
 if (!plan) return 'Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.'
+
+// What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
+// agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
+// it is indistinguishable from one that covered everything.
+const incomplete = notRunSources.map(src => `source \`${src}\` produced nothing — its findings are NOT in this plan`)
+  .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan`] : [])
+if (incomplete.length) {
+  const banner = ['> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:', ...incomplete.map(l => `> - ${l}`), ''].join('\n')
+  plan.plan_markdown = `${banner}\n${plan.plan_markdown ?? ''}`
+  plan.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${plan.summary ?? ''}`
+  plan.notRun = incomplete
+}
 return plan
