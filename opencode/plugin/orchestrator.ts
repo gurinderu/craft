@@ -69,7 +69,7 @@ export async function fanOut(ctx: PluginCtx, jobs: Job[]): Promise<JobResult[]> 
           label: jobs[i].label,
           ok: false,
           text:
-            `NOT RUN — child session for "${jobs[i].agent}" produced no output after a concurrent ` +
+            `INCOMPLETE (not run) — child session for "${jobs[i].agent}" produced no output after a concurrent ` +
             `attempt and a sequential retry. This matches opencode child-session execution bugs ` +
             `(#8528/#6573); check your opencode version. ${retry.text}`.trim(),
         }
