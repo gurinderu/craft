@@ -142,8 +142,62 @@ test('buildAuditRecord rolls the top-level verdict up worst-wins over the dimens
     ],
     baseRef: '', hasUnsafe: false, synthesisText: 'VERDICT: WARNING',
   })
-  assert.equal(rec2.verdict, 'Block')
+  assert.equal(rec2.verdict, 'Block (INCOMPLETE)')
   assert.deepEqual(rec2.incomplete, ['deps'])
+})
+
+test('buildAuditRecord suffixes the verdict so partial coverage survives worst-wins', () => {
+  // worstOf ranks INCOMPLETE below Warning, so a partial run collapsed to the bare token "Warning"
+  // and lib/analyze-runs.mjs — which counts partial coverage with /INCOMPLETE/i over the verdict
+  // string — scored it as fully covered. The suffix is the shape that file already understands.
+  const warned = buildAuditRecord({
+    results: [
+      { label: 'review', ok: true, text: 'VERDICT: WARNING' },
+      { label: 'deps', ok: true, text: 'VERDICT: INCOMPLETE' },
+    ],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'VERDICT: WARNING',
+  })
+  assert.equal(warned.verdict, 'Warning (INCOMPLETE)')
+  assert.deepEqual(warned.incomplete, ['deps'])
+  // A dimension whose session never returned is partial coverage too, even though `incomplete` —
+  // which is about dimensions that RAN — cannot carry it.
+  const crashed = buildAuditRecord({
+    results: [
+      { label: 'review', ok: true, text: 'VERDICT: WARNING' },
+      { label: 'miri', ok: false, text: '' },
+    ],
+    baseRef: 'main', hasUnsafe: true, synthesisText: 'VERDICT: WARNING',
+  })
+  assert.equal(crashed.verdict, 'Warning (INCOMPLETE)')
+  assert.deepEqual(crashed.incomplete, [])
+  assert.deepEqual(crashed.notRun, ['miri'])
+  // Full coverage is never suffixed, and an all-incomplete roll-up keeps its own single token
+  // rather than growing a second one.
+  const clean = buildAuditRecord({
+    results: [{ label: 'review', ok: true, text: 'VERDICT: APPROVE' }],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'VERDICT: APPROVE',
+  })
+  assert.equal(clean.verdict, 'Approve')
+  const nothing = buildAuditRecord({
+    results: [{ label: 'deps', ok: true, text: 'VERDICT: INCOMPLETE' }],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'VERDICT: APPROVE',
+  })
+  assert.equal(nothing.verdict, 'INCOMPLETE (not run)')
+})
+
+test('the structured VERDICT line is authoritative only in the mandated uppercase', () => {
+  // Case-insensitivity made an ordinary prose closing line structural, so it outranked the evidence
+  // it contradicts — the exact inversion the fallback below was built to prevent.
+  assert.equal(parseVerdict('Critical: UB. Block.\n\nVerdict: Approve'), 'Block')
+  assert.equal(parseVerdict('Critical: UB. Block.\n\nverdict: approve'), 'Block')
+  assert.equal(parseVerdict('Concerns noted.\n\nVerdict: Approve'), 'Warning')
+  // With nothing to contradict it, a prose line still reads as Approve — via the fallback.
+  assert.equal(parseVerdict('Nothing found.\n\nVerdict: Approve'), 'Approve')
+  // The mandated form stays authoritative and still outranks contradicting evidence.
+  assert.equal(parseVerdict('## Verdict\nBlock — bad\n\nVERDICT: APPROVE'), 'Approve')
+  assert.equal(parseVerdict('looks fine\n\nVERDICT: BLOCK'), 'Block')
+  // A mixed-case token is not the mandated form: it falls through to be weighed, not obeyed.
+  assert.equal(parseVerdict('Critical: UB. Block.\n\nVERDICT: Approve'), 'Block')
 })
 
 test('buildAuditRecord assembles dimensions, notRun, and a null findings field', () => {
@@ -158,7 +212,8 @@ test('buildAuditRecord assembles dimensions, notRun, and a null findings field',
   assert.equal(rec.runtime, 'opencode')
   assert.equal(rec.kind, 'workflow')
   assert.equal(rec.name, 'rust-audit')
-  assert.equal(rec.verdict, 'Warning')           // parsed from synthesisText
+  // Warning from synthesisText, suffixed because `architecture` never ran.
+  assert.equal(rec.verdict, 'Warning (INCOMPLETE)')
   assert.equal(rec.findings, null)
   assert.equal(rec.nested, false)
   assert.equal(rec.via, null)
