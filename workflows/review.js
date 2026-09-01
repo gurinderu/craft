@@ -650,10 +650,6 @@ const ATTACK_SCHEMA = {
   },
 }
 
-// ---- adjudicate-track text hygiene (pure helpers; declared in the prefix so tests can eval them) ----
-// Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
-// prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
-// injected output cannot restyle the report or compound across re-review rounds.
 // The craft release that produced a run. Recorded on every run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, "did tightening that lens help?"
 // is unanswerable, because the numbers blend runs from every rubric the store has ever seen.
@@ -661,22 +657,105 @@ const ATTACK_SCHEMA = {
 // Pair it with craftCommit (the engine's git HEAD, added by the logger): the version identifies a
 // release, the commit separates two runs of the same release while the rubric is being edited.
 const CRAFT_VERSION = '0.16.0' // x-release-please-version
-const ATTACK_MAX = 500
 // Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
 // dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
 const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 // One-notch severity demotion (test-only reachability). In the declarations prefix alongside
 // SEV_RANK so the severity helpers stay unit-testable.
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
+// ---- adjudicate-track pure helpers ----
+// These live in lib/review-adjudicate.mjs — a real, linted module with real unit tests that IMPORT
+// it — and are pasted back in here by the craft-inline gate, because this script cannot be
+// imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
+// `node lib/check-workflows.mjs --fix`.
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam
+// Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
+// next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
+// flattenField, so one runaway agent response cannot balloon either path.
+const ATTACK_MAX = 500
+
+// Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
+// prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
+// injected output cannot restyle the report or compound across re-review rounds.
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
-  // `REGRESSED after fix` marker word to a plain space. The words survive (no content loss) but the
-  // exact ` — <marker>: ` shape baseWhy parses is gone — so an attack/note that echoes a marker can
-  // no longer re-introduce a parseable marker that would accrete a stale fragment each re-review round.
+  // `REGRESSED after fix` / `UNVERIFIED` marker word to a plain space. The words survive (no content
+  // loss) but the exact ` — <marker>: ` shape baseWhy parses is gone — so an attack/note that echoes
+  // a marker can no longer re-introduce a parseable marker that would accrete a stale fragment each
+  // re-review round.
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '')
     .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED)/gi, ' ').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
+
+// A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
+// Strip any PRIOR suffix first so stale attacks do not accrete and bias future adjudications (the
+// adjudicator and red-team derive the invariant from `why`). Honest invariant: `why` carries the
+// original rationale plus at most the LATEST attack. We strip on the LAST marker only (so a rationale
+// that legitimately QUOTES a marker phrase is not truncated). Attack/note text cannot re-introduce a
+// parseable marker: sanitizeAttack now breaks the ` — <marker>: ` delimiter (collapses the em-dash),
+// so the ONLY markers in `why` are the real per-round appends plus any in the original (unsanitized)
+// rationale. The LAST-marker split then both PREVENTS accretion (each round strips the prior append
+// before re-appending — `why` is stable round-over-round) AND preserves a rationale that quotes a marker.
+function baseWhy(why) {
+  const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
+    .replace(/ — still-open \(adjudicator did not run[^)]*\)\s*$/, '')
+    .replace(/ — REGRESSED after fix \(no detail[^)]*\)\s*$/, '')
+    .replace(/ — UNVERIFIED \(adjudicator could not tell[^)]*\)\s*$/, '')
+  const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix|UNVERIFIED \(adjudicator could not tell\)): /g
+  let last = -1, m
+  while ((m = re.exec(s))) last = m.index
+  return last === -1 ? s : s.slice(0, last)
+}
+
+// Case-insensitive Critical/High gate. LEDGER_ITEM.severity has no enum (deliberately — clamping it
+// would fail the whole prior-round ledger load and silently degrade re-review to a first pass), so a
+// drifted `critical`/`CRITICAL` value must still trip the red-team gate. Exact-match `=== 'Critical'`
+// would silently skip red-team on such a prior.
+function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
+
+// Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
+// adjusted adjudication plus degradation flags; the caller does the logging/counting.
+function classifyRedTeam(f, adj, rt) {
+  if (!isHighSeverity(f.severity)) return { adj, died: false, overturned: false, invalid: false }
+  if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false, invalid: false }
+  const atk = sanitizeAttack(rt.attack)
+  if (rt.defeated && !atk) return { adj: { ...adj, note: `${adj.note || ''} [red-team claimed defeat with no attack — invalid verdict discarded; resolved on the adjudicator's attack pass alone]`.trim() }, died: false, overturned: false, invalid: true }
+  if (rt.defeated) return { adj: { ...adj, status: 'still-open', attack: `(red-team) ${atk}` }, died: false, overturned: true, invalid: false }
+  return { adj, died: false, overturned: false, invalid: false }
+}
+
+// Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
+// and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
+function adjudicateOne(f, r) {
+  const located = { ...f, line: r?.currentLine || f.line }
+  const attack = sanitizeAttack(r?.attack)
+  if (r == null) return { track: 'stillOpen', adjudicatorDied: true, entry: { ...located, why: `${baseWhy(f.why)} — still-open (adjudicator did not run — agent died; kept still-open by default)` } }
+  const status = r.status || 'still-open'
+  if (status === 'resolved' && attack) return { track: 'stillOpen', demoted: true, entry: { ...located, why: `${baseWhy(f.why)} — fix incomplete (adjudicator reported attack despite resolved): ${attack}` } }
+  if (status === 'resolved') return { track: 'resolved', entry: { ...located, disposition: 'closed', ...(r.note ? { note: sanitizeAttack(r.note) } : {}) } }
+  // An adjudication that could not reach a conclusion is NOT a fix. Route it to still-open — the
+  // same direction a dead adjudicator takes — and mark `why` so a reader of the report can see the
+  // item was carried without verification rather than confirmed still broken.
+  if (status === 'cannot-tell') {
+    const note = sanitizeAttack(r.note) || sanitizeAttack(r.attack)
+    return { track: 'stillOpen', cannotTell: true, entry: { ...located, why: `${baseWhy(f.why)} — UNVERIFIED (adjudicator could not tell): ${note || 'no reason returned'}` } }
+  }
+  if (status === 'regressed') { const note = sanitizeAttack(r.note); return { track: 'regressed', entry: { ...located, why: note ? `${baseWhy(f.why)} — REGRESSED after fix: ${note}` : `${baseWhy(f.why)} — REGRESSED after fix (no detail returned by adjudicator)` } } }
+  // still-open, and every status the schema does not know: an unrecognised verdict is an UNKNOWN,
+  // and an unknown must never land on the resolved track.
+  return { track: 'stillOpen', entry: attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located }
+}
+
+// Whether a "resolved" verdict is worth an independent red-team pass. A resolved verdict that
+// ALREADY carries an attack is self-contradictory — adjudicateOne demotes it — so red-teaming it
+// wastes an opus call and lets the red-team overwrite the adjudicator's own attack. Only a genuinely
+// clean resolved (no attack) gets red-teamed. Emptiness is judged on the SANITIZED attack so a
+// markdown-only "attack" counts as none.
+function shouldRedTeam(r) {
+  return r?.status === 'resolved' && !sanitizeAttack(r.attack)
+}
+// <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
 // single-value prompt field is the NEWLINE (it lets injected text pose as a fresh instruction line);
 // markdown structure chars are inert there. So flatten newlines (the vector) while PRESERVING
@@ -722,31 +801,6 @@ function isCommitish(s) {
   if (/^[0-9a-fA-F]{7,40}$/.test(v)) return true
   return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(v)
 }
-// A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
-// Strip any PRIOR suffix first so stale attacks do not accrete and bias future adjudications (the
-// adjudicator and red-team derive the invariant from `why`). Honest invariant: `why` carries the
-// original rationale plus at most the LATEST attack. We strip on the LAST marker only (so a rationale
-// that legitimately QUOTES a marker phrase is not truncated). Attack/note text cannot re-introduce a
-// parseable marker: sanitizeAttack now breaks the ` — <marker>: ` delimiter (collapses the em-dash),
-// so the ONLY markers in `why` are the real per-round appends plus any in the original (unsanitized)
-// rationale. The LAST-marker split then both PREVENTS accretion (each round strips the prior append
-// before re-appending — `why` is stable round-over-round) AND preserves a rationale that quotes a marker.
-function baseWhy(why) {
-  const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
-    .replace(/ — still-open \(adjudicator did not run[^)]*\)\s*$/, '')
-    .replace(/ — REGRESSED after fix \(no detail[^)]*\)\s*$/, '')
-    .replace(/ — UNVERIFIED \(adjudicator could not tell[^)]*\)\s*$/, '')
-  const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix|UNVERIFIED \(adjudicator could not tell\)): /g
-  let last = -1, m
-  while ((m = re.exec(s))) last = m.index
-  return last === -1 ? s : s.slice(0, last)
-}
-
-// Case-insensitive Critical/High gate. LEDGER_ITEM.severity has no enum (deliberately — clamping it
-// would fail the whole prior-round ledger load and silently degrade re-review to a first pass), so a
-// drifted `critical`/`CRITICAL` value must still trip the red-team gate. Exact-match `=== 'Critical'`
-// would silently skip red-team on such a prior.
-function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
 
 // >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity
 // Canonicalize a ledger severity ONCE at the prior-round load boundary. LEDGER_ITEM.severity has no
@@ -761,38 +815,7 @@ const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', l
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
 // <<< craft-inline
 
-// Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
-// adjusted adjudication plus degradation flags; the caller does the logging/counting.
-function classifyRedTeam(f, adj, rt) {
-  if (!isHighSeverity(f.severity)) return { adj, died: false, overturned: false, invalid: false }
-  if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false, invalid: false }
-  const atk = sanitizeAttack(rt.attack)
-  if (rt.defeated && !atk) return { adj: { ...adj, note: `${adj.note || ''} [red-team claimed defeat with no attack — invalid verdict discarded; resolved on the adjudicator's attack pass alone]`.trim() }, died: false, overturned: false, invalid: true }
-  if (rt.defeated) return { adj: { ...adj, status: 'still-open', attack: `(red-team) ${atk}` }, died: false, overturned: true, invalid: false }
-  return { adj, died: false, overturned: false, invalid: false }
-}
 
-// Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
-// and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
-function adjudicateOne(f, r) {
-  const located = { ...f, line: r?.currentLine || f.line }
-  const attack = sanitizeAttack(r?.attack)
-  if (r == null) return { track: 'stillOpen', adjudicatorDied: true, entry: { ...located, why: `${baseWhy(f.why)} — still-open (adjudicator did not run — agent died; kept still-open by default)` } }
-  const status = r.status || 'still-open'
-  if (status === 'resolved' && attack) return { track: 'stillOpen', demoted: true, entry: { ...located, why: `${baseWhy(f.why)} — fix incomplete (adjudicator reported attack despite resolved): ${attack}` } }
-  if (status === 'resolved') return { track: 'resolved', entry: { ...located, disposition: 'closed', ...(r.note ? { note: sanitizeAttack(r.note) } : {}) } }
-  // An adjudication that could not reach a conclusion is NOT a fix. Route it to still-open — the
-  // same direction a dead adjudicator takes — and mark `why` so a reader of the report can see the
-  // item was carried without verification rather than confirmed still broken.
-  if (status === 'cannot-tell') {
-    const note = sanitizeAttack(r.note) || sanitizeAttack(r.attack)
-    return { track: 'stillOpen', cannotTell: true, entry: { ...located, why: `${baseWhy(f.why)} — UNVERIFIED (adjudicator could not tell): ${note || 'no reason returned'}` } }
-  }
-  if (status === 'regressed') { const note = sanitizeAttack(r.note); return { track: 'regressed', entry: { ...located, why: note ? `${baseWhy(f.why)} — REGRESSED after fix: ${note}` : `${baseWhy(f.why)} — REGRESSED after fix (no detail returned by adjudicator)` } } }
-  // still-open, and every status the schema does not know: an unrecognised verdict is an UNKNOWN,
-  // and an unknown must never land on the resolved track.
-  return { track: 'stillOpen', entry: attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located }
-}
 
 // The invariant string interpolated into the red-team prompt is model-authored (from the
 // adjudicator's own verdict, falling back to the finding `why`). Route it through sanitizeAttack
@@ -801,14 +824,6 @@ function redTeamInvariant(adj, f) {
   return sanitizeAttack(adj.invariant) || sanitizeAttack(f.why)
 }
 
-// Whether a "resolved" verdict is worth an independent red-team pass. A resolved verdict that
-// ALREADY carries an attack is self-contradictory — adjudicateOne demotes it — so red-teaming it
-// wastes an opus call and lets the red-team overwrite the adjudicator's own attack. Only a genuinely
-// clean resolved (no attack) gets red-teamed. Emptiness is judged on the SANITIZED attack so a
-// markdown-only "attack" counts as none.
-function shouldRedTeam(r) {
-  return r?.status === 'resolved' && !sanitizeAttack(r.attack)
-}
 
 // ---- resilient agent call ----
 // agent() returns null when the subagent dies on a terminal API error (after the harness's own
