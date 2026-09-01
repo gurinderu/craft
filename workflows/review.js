@@ -703,7 +703,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -721,9 +721,15 @@ function sanitizeAttack(text) {
   // a parseable marker that accretes a stale fragment each round, nor forge an "also reported at"
   // site that would render a fabricated file:line in the report and consume an ABSORBED_MAX slot.
   // ` (reopened: ` is collapsed for the same reason: baseWhy strips it when it lands at the end.
+  // The overflow counter's own `(+` is broken too, for BOTH its spellings — ` — (+N more report(s)`
+  // as noteAbsorbed persists it, and `(+N further report(s) at this site` as absorbedPromptBlock
+  // renders it. Collapsing only the leading ` — ` left the phrase itself intact, so a model-authored
+  // file/title carrying it still rendered a convincing "further reports" fragment INSIDE a prompt
+  // block line (no forged list item — the newline is already gone — but a forged sentence).
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '')
-    .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED|still-open|also reported at|\(\+\d+ more report)/gi, ' ')
-    .replace(/ \(reopened: /gi, ' (reopened ').trim()
+    .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED|still-open|also reported at|\(\+\d+ (?:more|further) report)/gi, ' ')
+    .replace(/ \(reopened: /gi, ' (reopened ')
+    .replace(/\(\+(?=\d+ (?:more|further) report\(s\))/gi, '(').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 
@@ -838,6 +844,13 @@ function carriedKey(f) {
 //
 // `fallbackMatch` (the workflow passes matchesPrior) is used only when the finding or the prior has
 // no usable file+ruleId key: without a ruleId the coarse key would collapse everything in a file.
+//
+// FIRST MATCH WINS, AND THE ORDER IS THE CALLER'S CONTRACT. Several priors can share a file+ruleId;
+// `.find` takes the earliest. The workflow builds `livePriors` as
+// [...stillOpen, ...regressed, ...carried, ...retired] — retired LAST on purpose, so a host that
+// reaches the next ledger is preferred over one that is leaving it (partitionAbsorbed would
+// otherwise keep the finding at a retired host that a live host could have absorbed). That
+// preference is positional, not enforced here; a caller reordering that array changes it.
 function findCarrier(f, priors, fallbackMatch) {
   const key = carriedKey(f)
   return (priors || []).find(p => {
@@ -901,8 +914,17 @@ function absorbInto(hostWhy, f) {
 // Lift the absorbed clauses back OFF a host's `why`. Returns the rationale as it stood before any
 // absorption (`base`), the individually-named sites, and the overflow count. Parsing is done on
 // baseWhy(why) so a per-round marker suffix — which may itself contain the mark's words — cannot be
-// mistaken for a clause; sanitizeAttack has already broken the mark's shape in every model-authored
-// part, so what splits here is only what noteAbsorbed wrote.
+// mistaken for a clause.
+//
+// WHAT THIS DOES NOT DEFEND AGAINST, STATED PLAINLY. sanitizeAttack breaks the mark's shape in every
+// part that passes THROUGH it — attacks, notes, and the file/title of a clause. It does not run over
+// a fresh lens finding's `why`: that comes straight from the lens schema and reaches this parser
+// unsanitized the moment the finding becomes a host. So a rationale that literally contains
+// ` — also reported at nowhere.rs:1: fabricated` splits wrong in BOTH directions: withoutAbsorbed
+// hands the adjudicator a TRUNCATED rationale, and absorbedPromptBlock renders the fabricated site
+// as a real absorbed report. It needs the exact em-dash phrasing, so it is unlikely — but it is not
+// prevented, and the delimiter is textual, so no amount of sanitising downstream can prevent it.
+// (This is the same honesty baseWhy's own comment keeps about a rationale that QUOTES a marker.)
 function splitAbsorbed(why) {
   const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
   let head = baseWhy(why)
@@ -945,9 +967,12 @@ function absorbedPromptBlock(why) {
 // same rule, in code that DID move, would be dropped by a host whose own region did not. That is the
 // exact loss class this design set out to close. Keeping the finding costs nothing: the retired
 // prior is leaving the ledger anyway, so there is no double-listing to avoid.
-function partitionAbsorbed(findings, livePriors, retired, fallbackMatch) {
+// `seed` carries absorptions ALREADY decided for these same hosts by an earlier call (see
+// absorbAcross): the returned `updates` is cumulative, seeded entries included, and a host present
+// in it extends THAT text rather than its own un-absorbed `why`.
+function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
-  const kept = [], updates = new Map()
+  const kept = [], updates = new Map(seed || [])
   let absorbed = 0, keptAtRetired = 0
   for (const f of findings || []) {
     const host = findCarrier(f, livePriors, fallbackMatch)
@@ -957,6 +982,34 @@ function partitionAbsorbed(findings, livePriors, retired, fallbackMatch) {
     updates.set(host, absorbInto(updates.has(host) ? updates.get(host) : host.why, f))
   }
   return { kept, absorbed, keptAtRetired, updates }
+}
+
+// Absorb SEVERAL finding lists (the workflow's confirmed and suspected tracks) against ONE shared
+// set of hosts, and say — once — how every host's `why` must change.
+//
+// WHY THIS EXISTS RATHER THAN TWO CALLS. The tracks share hosts: `livePriors` is matched on
+// file+ruleId, and the confirmed/suspected split is orthogonal to that key, so a host absorbing from
+// both is ordinary. Two INDEPENDENT calls each compute their clause from the same un-absorbed
+// `host.why`, and applying their `updates` afterwards is a lost update — the second map's value
+// overwrites the first's and the confirmed track's absorbed report lands in no track at all: not
+// kept as a finding, not on the host, not in the ledger. Here each list is threaded into the next
+// through the seed, so the clauses accumulate.
+//
+// Pure, like partitionAbsorbed: hosts are not mutated. The caller applies `updates` once.
+function absorbAcross(lists, livePriors, retired, fallbackMatch) {
+  const runs = []
+  let updates = new Map()
+  for (const list of lists || []) {
+    const r = partitionAbsorbed(list, livePriors, retired, fallbackMatch, updates)
+    updates = r.updates
+    runs.push(r)
+  }
+  return {
+    runs,
+    updates,
+    absorbed: runs.reduce((n, r) => n + r.absorbed, 0),
+    keptAtRetired: runs.reduce((n, r) => n + r.keptAtRetired, 0),
+  }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -2412,11 +2465,25 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
   // can invalidate it is the code around it changing. So one carry-check that says "unchanged" is
   // the whole answer, and re-asking it every round forever buys nothing — it was the only track
   // with no exit at all, costing one agent per dismissal per round in perpetuity. A retired prior
-  // is not forgotten into silence: if that code is EVER touched again, the change is in a later
-  // round's delta and the lenses raise the finding fresh, on its merits — which is exactly what the
-  // `changed === true` branch does here, minus the stale `rejected` label. What retiring costs is
-  // therefore one label on a re-raise, not a finding. An INDETERMINATE carry-check (agent died)
-  // retires nothing: it stays carried and is asked again next round.
+  // is not forgotten into silence: the lenses raise the finding fresh, on its merits — which is
+  // exactly what the `changed === true` branch does here, minus the stale `rejected` label.
+  //
+  // WHEN THE RE-RAISE HAPPENS, HONESTLY. Not only "if that code is ever touched again". On a full
+  // re-scan the lenses see the whole diff and re-invent every prior, so the re-discovery can land in
+  // the SAME round the dismissal retires: partitionAbsorbed refuses to absorb into a retired host
+  // (it is not persisted), the finding is KEPT, and it enters the next ledger as `open`. The
+  // author's dismissal is then undone with no code change, and next round it costs a full
+  // adjudicator instead of a cheap carry agent.
+  //
+  // THAT IS THE ACCEPTED COST, AND THE ALTERNATIVE IS WORSE. Dropping a finding whose only carrier
+  // retired would reinstate exactly the loss class partitionAbsorbed exists to close: retirement is
+  // judged at REGION granularity while the carrier matches on file+ruleId, so a genuinely NEW defect
+  // elsewhere in the same file under the same rule would be discarded by a host whose own region did
+  // not move — silently, into no report and no ledger. Losing a label is recoverable (the author
+  // re-dismisses it, once); losing a defect is not.
+  //
+  // An INDETERMINATE carry-check (agent died) retires nothing: it stays carried and is asked again
+  // next round.
   let carryDied = 0
   for (const { f, changed } of carriedResults) {
     if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
@@ -2508,12 +2575,15 @@ if (priorRound) {
     // the reasoning (and why the granularity mismatch makes this the loss class the design set out
     // to close) is in lib/review-adjudicate.mjs.
     const retired = new Set(adjudicated.retired)
-    const runs = [confirmed, suspected].map(list => partitionAbsorbed(list, livePriors, retired, matchesPrior))
-    for (const { updates } of runs) for (const [host, why] of updates) host.why = why
+    // ONE threaded accumulation across both tracks, not two independent ones: the tracks share
+    // hosts (the carrier key is file+ruleId, orthogonal to the confirmed/suspected split), and two
+    // independent partitions would each compute their clause from the same un-absorbed `host.why`,
+    // so applying them afterwards would drop one report entirely — into no track, no host and no
+    // ledger. absorbAcross returns the cumulative `updates`; it is applied once.
+    const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
+    for (const [host, why] of updates) host.why = why
     confirmed = runs[0].kept
     suspected = runs[1].kept
-    const absorbed = runs[0].absorbed + runs[1].absorbed
-    const keptAtRetired = runs[0].keptAtRetired + runs[1].keptAtRetired
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
@@ -2618,11 +2688,18 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
   .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
   recordVerdict = 'Block'
 }
-// Persist the ledger so round N+1 can find round N. On a re-review, carry the still-relevant priors
-// forward (still-open/regressed as 'open', dismissed carried with their disposition) UNIONed with the
-// new delta findings; resolved priors are intentionally dropped. Without this the ledger would hold
-// only this round's delta, and a finding open across 3+ rounds — or a dismissed finding — would
-// silently vanish after one hop.
+// Persist the ledger so round N+1 can find round N. On a re-review it grows by FOUR paths, not the
+// three that are obvious: (1) the new delta findings; (2) still-open/regressed priors, as 'open';
+// (3) dismissed priors still carried, with their disposition; and (4) — easy to miss because it
+// enters through (1) — a NEW finding whose only carrier RETIRED this round. partitionAbsorbed keeps
+// such a finding rather than absorbing it into a host that will not be persisted, so on a full
+// re-scan a dismissal can retire and its own re-discovery re-enter the very same ledger as 'open',
+// stripped of the author's disposition. That is deliberate and its cost is argued at the retirement
+// comment above (losing a label beats losing a defect) — but it is a path, and an enumeration that
+// omits it reads as a guarantee it does not make.
+// `resolved` and `retired` priors are intentionally dropped. Without this carry-forward the ledger
+// would hold only this round's delta, and a finding open across 3+ rounds — or a dismissed finding —
+// would silently vanish after one hop.
 const toLedgerEntry = (f, disposition, tier) => ({
   fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
   severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
