@@ -6,52 +6,126 @@ import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-// Worst-signal-wins, mirroring the Claude Code workflows' verdict precedence.
+// The verdict vocabulary is CLOSED, and every dimension prompt in rust-audit.ts and every agent
+// file in opencode/agents/ mandates a terminal `VERDICT: <TOKEN>` line drawn from it. Parsing that
+// line — instead of scanning an agent's whole prose report for keywords — is what makes the signal
+// structural: a quoted instruction is never the LAST such line, and an emphasised adjective
+// ("coverage is **INCOMPLETE**") is never a `VERDICT:` line at all. The free-text scan below is
+// only a fallback for output carrying no structured line, and it reads the TAIL, not the whole
+// report: the mandated verdict sits at the end, and scanning everything is precisely what let a
+// quoted instruction forty lines up decide the verdict.
+const VERDICT_TOKEN = {
+  APPROVE: 'Approve',
+  WARNING: 'Warning',
+  BLOCK: 'Block',
+  INCOMPLETE: 'INCOMPLETE (not run)',
+}
+
+// `VERDICT: TOKEN` starting a line, tolerating markdown decoration (bold, code, blockquote, bullet,
+// table pipe) around the label and the token.
+const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gim
+
+// How much of the report the fallback scan is allowed to see.
+const TAIL_LINES = 20
+
+// A labelled verdict statement — `Verdict: Approve`, `Overall rating: INCOMPLETE`. Used only to
+// decide between Approve and INCOMPLETE; Block/Warning evidence outranks it.
+const LABELLED = /\b(?:overall[ \t]+)?(?:verdict|rating|outcome)[ \t]*:[ \t]*[*_`]*[ \t]*(Approve|Clean|Healthy|INCOMPLETE)\b/gi
+
+// The words a "nothing ran" reason opens with. A closed set that no longer has to grow, because a
+// conforming agent never reaches this arm.
+const REASON =
+  '(?:[Nn](?:ot|o|one|othing|ever)|[Rr]un|[Dd]ue|[Bb]ecause|[Ss]ince|[Cc](?:annot|ould|an)' +
+  '|[Uu]n(?:able|available)|[Mm]issing|[Aa]bsent|[Ss]kip(?:ped)?)'
+
+// INCOMPLETE used as a verdict rather than as an adjective. The discriminator is position plus what
+// follows: it must START a line (an adjective in prose — "coverage here is INCOMPLETE" — does not),
+// and then either nothing word-like follows, or a reason-word does, or a short label does and is
+// closed by `:` / `(` / a dash ("INCOMPLETE result: cargo-deny is not installed"). An adjective is
+// followed by the bare noun it qualifies with no such punctuation ("INCOMPLETE coverage of the
+// feature powerset"), which matches none of the three.
+const INCOMPLETE_LINE = new RegExp(
+  '^[ \\t>|*_`#-]*INCOMPLETE\\b(?:' +
+    '[ \\t]*\\(?[ \\t]*' + REASON + '\\b' +
+    '|[ \\t]+[A-Za-z][\\w-]*(?:[ \\t]+[A-Za-z][\\w-]*)?[ \\t]*[:(—–-]' +
+    '|(?![ \\t]+[A-Za-z])' +
+  ')',
+  'm',
+)
+// A whole table cell holding the token, e.g. `| deps | INCOMPLETE |`.
+const INCOMPLETE_CELL = /\|[ \t]*\**[ \t]*INCOMPLETE[ \t]*\**[ \t]*\|/
+
+function lastMatch(re, t) {
+  re.lastIndex = 0
+  let m, last = null
+  while ((m = re.exec(t)) !== null) last = m[1]
+  return last
+}
+
 export function parseVerdict(text) {
   const t = String(text || '')
+
+  // 1. Structural: the last `VERDICT: <TOKEN>` line wins, and is authoritative when present.
+  const structured = lastMatch(VERDICT_LINE, t)
+  if (structured) return VERDICT_TOKEN[structured.toUpperCase()]
+
+  // 2. Fallback for non-conforming output, over the tail only.
+  const tail = t.split('\n').slice(-TAIL_LINES).join('\n')
   // Word boundaries (and the verdict emoji) so prose like "no blocking issues" / "unblocked"
-  // doesn't collide with the Block keyword. Worst signal still wins (Block before Warning).
-  if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(t)) return 'Block'
-  if (/⚠️|\b(?:Warning|Concerns)\b/i.test(t)) return 'Warning'
-  // A dimension whose tooling was absent checked nothing and says so with `INCOMPLETE (not run)`.
-  // That must not land in the Approve bucket: an Approve is a claim about what was NOT found, and
-  // it only holds over what was actually looked at. Anchored to the full verdict phrase, not to the
-  // bare word: this runs over an agent's entire free text, where prose like "coverage of untested
-  // paths is incomplete" is ordinary — and a false INCOMPLETE teaches readers to ignore the marker.
-  if (/INCOMPLETE\s*\(\s*not run\s*\)/i.test(t)) return 'INCOMPLETE (not run)'
-  // Six of the audit dimensions have no agent file: their only instruction is a prompt string, so a
-  // model can report the fact in a wording we did not anticipate — `INCOMPLETE — cargo-hack is not
-  // installed`, `INCOMPLETE (not-run)`. Those must NOT fall through to Approve; an unrecognised
-  // verdict defaulting to the permissive outcome is exactly what worstVerdict() in lib/run-record.mjs
-  // refuses. The discriminator is shape, not vocabulary: the prose sense is an ADJECTIVE and is
-  // followed on its own line by the word it qualifies ("INCOMPLETE coverage of the feature
-  // powerset"), and is normally lowercase besides ("the docs are incomplete"); a verdict is not —
-  // it is shouted and then terminated by punctuation, a table pipe, or the end of the line. So:
-  // uppercase, and NOT followed on the same line by a word — WITH one exception. The mandated
-  // wording is `INCOMPLETE (not run)`, and a model that drops the parentheses writes `INCOMPLETE
-  // not run`: space-then-letter, and the shape test alone would send the prescribed vocabulary,
-  // minus its punctuation, straight to Approve. So a small closed set of continuations is admitted
-  // explicitly — the words a REASON opens with (not / no / never / nothing / none, run, and the
-  // "it was absent" family). None of them is a noun an adjective would qualify, so admitting them
-  // does not reopen the prose false positive.
-  if (/\bINCOMPLETE\b(?:[ \t]*\(?[ \t]*(?:[Nn](?:ot|o|one|othing|ever)|[Rr]un|[Dd]ue|[Bb]ecause|[Ss]ince|[Cc]annot|[Uu]n(?:able|available)|[Mm]issing|[Aa]bsent|[Ss]kip(?:ped)?)\b|(?![ \t]+[A-Za-z]))/.test(t)) return 'INCOMPLETE (not run)'
+  // doesn't collide with the Block keyword. Worst signal still wins (Block before Warning), and
+  // both outrank a labelled statement: an agent claiming Approve while reporting UB is not taken
+  // at its word.
+  if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(tail)) return 'Block'
+  if (/⚠️|\b(?:Warning|Concerns)\b/i.test(tail)) return 'Warning'
+  // A labelled statement decides between the remaining two. This is what stops a report that merely
+  // MENTIONS incompleteness — quoting its own instructions, or tabling one dimension as INCOMPLETE
+  // — from overriding the verdict the agent actually stated.
+  const labelled = lastMatch(LABELLED, tail)
+  if (labelled) return /incomplete/i.test(labelled) ? 'INCOMPLETE (not run)' : 'Approve'
+  // A dimension whose tooling was absent checked nothing. That must not land in the Approve bucket:
+  // an Approve is a claim about what was NOT found, and it only holds over what was looked at.
+  if (INCOMPLETE_LINE.test(tail) || INCOMPLETE_CELL.test(tail)) return 'INCOMPLETE (not run)'
+  // Approve is the fallthrough on purpose: this reads an agent's whole prose report, where a clean
+  // dimension legitimately contains no keyword at all. (Contrast worstVerdict() in
+  // lib/run-record.mjs, which receives already-parsed tokens and rightly refuses to default.)
   return 'Approve'
+}
+
+// Precedence for the top-level roll-up, worst wins.
+const RANK = { Approve: 0, 'INCOMPLETE (not run)': 1, Warning: 2, Block: 3 }
+
+export function worstOf(verdicts) {
+  return verdicts.reduce((a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a), 'Approve')
 }
 
 export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText }) {
   const rs = Array.isArray(results) ? results : []
+  const dimensions = rs.map((r) => ({
+    dimension: r.label, ran: !!r.ok, verdict: r.ok ? parseVerdict(r.text) : '',
+  }))
+  // The top-level verdict is the worst of the synthesis's own verdict and every dimension's, so it
+  // no longer depends on the synthesising model restating the roll-up correctly — and no longer on
+  // the word "Warning" happening to appear somewhere in a dimension table.
+  const verdict = worstOf([
+    parseVerdict(synthesisText),
+    ...dimensions.map((d) => (d.ran ? d.verdict : 'INCOMPLETE (not run)')),
+  ])
   return {
     schemaVersion: 1,
     runtime: 'opencode',
     kind: 'workflow',
     name: 'rust-audit',
-    verdict: parseVerdict(synthesisText),
+    verdict,
     findings: null,
     nested: false,
     via: null,
     scout: { baseRef: baseRef || '', hasUnsafe: !!hasUnsafe },
-    dimensions: rs.map((r) => ({ dimension: r.label, ran: !!r.ok, verdict: r.ok ? parseVerdict(r.text) : '' })),
+    dimensions,
     notRun: rs.filter((r) => !r.ok).map((r) => r.label),
+    // Dimensions that RAN but reported their own tooling absent. `notRun` cannot carry these (their
+    // child session succeeded), and worst-wins precedence hides them at top level whenever any
+    // other dimension is Warning or Block — which is most real runs. This keeps the fact reachable.
+    incomplete: dimensions.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension),
   }
 }
 
