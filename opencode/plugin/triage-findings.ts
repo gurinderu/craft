@@ -37,9 +37,10 @@ export async function runTriageFindings(ctx: PluginCtx, args: { locator: string 
 Finding: ${f}
 
 Decide exactly one outcome: accept | reject | defer | needs-decision | conflict, with one or two
-sentences of reasoning grounded in the code (cite file:line if you can). Output:
-OUTCOME: <one of the five>
-REASON: <grounded reasoning>`,
+sentences of reasoning grounded in the code (cite file:line if you can). Output, with the OUTCOME
+line LAST and nothing after it — it is machine-read, like the VERDICT line elsewhere in craft:
+REASON: <grounded reasoning>
+OUTCOME: <exactly one of the five, lowercase>`,
   }))
 
   const validated = await fanOut(ctx, jobs)

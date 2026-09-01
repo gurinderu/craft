@@ -23,5 +23,9 @@ rewrite it. Load the `rust-architecture-review` skill (call the `skill` tool wit
    If step 1 failed outright — no manifest readable and `cargo metadata` unavailable, so there is
    no graph to judge — the rating is **INCOMPLETE (not run)** 🚫, naming what was missing. A rating
    is a claim about a graph you held; with no graph, Healthy would be an overclaim.
+4. **Machine-read line.** As the very last line of your report, with nothing after it, write
+   `VERDICT: X` where X is exactly one of the four tokens `APPROVE`, `WARNING`, `BLOCK`,
+   `INCOMPLETE` (uppercase, no other wording). Map your rating onto it: Healthy → `APPROVE`,
+   Concerns → `WARNING`, At-risk → `BLOCK`, INCOMPLETE (not run) → `INCOMPLETE`.
 
 > This audit is reasoning-heavy — take the time to hold the whole graph before judging.
