@@ -1,7 +1,7 @@
 ---
 name: rust-review
 description: >-
-  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines, the Approve/Warning/Block verdict, and how to dispatch the craft review agents. Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
+  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines, the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), and how to dispatch the craft review agents. Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
 ---
 
 # Rust Review
@@ -55,6 +55,20 @@ Establish each signal:
    cargo deny check                   # if cargo-deny present
    ```
    Setting up / interpreting `cargo audit` + `cargo deny` → `rust-security`.
+
+4. **The gate could not be established** — the third outcome, and the one that is easy to lose. CI gave no usable signal *and* the local command could not **execute**: `cargo` is not on PATH, the toolchain or a required component is missing, dependencies cannot be fetched (offline, private registry), or the command died before it judged anything. That is not a red gate and it is emphatically not a green one — nothing was computed.
+
+   Distinguish the three, and never collapse them:
+
+   | What happened | Gate status | Verdict |
+   |---|---|---|
+   | The command ran and passed (CI or local) | PASSED | continue to Step 2 |
+   | The command ran and failed | FAILED | **Block**, cite the failure |
+   | The command could not run at all | **NOT ESTABLISHED** | **INCOMPLETE (not run)** — never Approve |
+
+   With the gate NOT ESTABLISHED, you may still read the diff and report findings — a human read is worth something — but the verdict cannot be **Approve**: an Approve asserts the mechanical gate is green, and here it was never computed. Report the verdict `INCOMPLETE (not run)`, name exactly which commands could not execute and why, and say plainly that the change is UNVERIFIED, not clean. If the read turns up a Critical or High, that still wins: a **Block** on found evidence outranks INCOMPLETE.
+
+   Partial execution is not INCOMPLETE: if `cargo test` ran but `clippy` is unavailable, that is a normal verdict with the gap named in the provenance line. INCOMPLETE is reserved for **nothing in the gate ran** — a marker that fires on healthy runs teaches readers to ignore it.
 
 If any `fmt`/`clippy`/`test`/`build` signal is red (CI or local), stop and report — don't review further. A green gate is the floor, not the ceiling — whatever its provenance, it means the change is *reviewable*, not that it's good.
 
@@ -325,12 +339,13 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 | **Approve** ✅ | gate green (CI or local), no **Confirmed** CRITICAL/HIGH/MEDIUM |
 | **Warning** ⚠️ | gate green (CI or local), **Confirmed** MEDIUM only — Suspected items listed but don't block |
 | **Block** ⛔ | gate red (CI or local), or any **Confirmed** CRITICAL/HIGH |
+| **INCOMPLETE (not run)** 🚫 | gate NOT ESTABLISHED (Step 1, item 4) — nothing in it could execute — and nothing Confirmed CRITICAL/HIGH was found by reading |
 
 In **strict mode**, the maintainability bar applies: a Confirmed maintainability finding (code judo missed, file-size explosion, spaghetti branching, hacky abstraction) is a **presumptive Block** unless the author justified it — escalated from its default MEDIUM. Outside strict mode those findings stay MEDIUM (Warning at most).
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md) catalog ID when the finding maps to one (e.g. `CON-003`); novel findings need no ID. Be specific and cite the line; a finding without a location isn't actionable.
 
-"Gate green / red" is read from Step 1 — the signal may come from a green CI check or a local run. Cite which in the `## Gate` line of the output.
+"Gate green / red" is read from Step 1 — the signal may come from a green CI check or a local run. Cite which in the `## Gate` line of the output. When the gate could not be established at all, the `## Gate` line says so (`NOT ESTABLISHED — cargo not on PATH`) and the verdict is `INCOMPLETE (not run)`, never Approve: silence from a gate that never ran is not a pass.
 
 ## Requesting a review & acting on the verdict
 
