@@ -382,9 +382,21 @@ if (!scout || !changedFiles) {
   // is cheap and only fires on this branch. The green is taken only if that independent list is
   // complete by its own `wc -l`, agrees with the scout's size, and is itself entirely inert;
   // anything else — including a dead cross-check — falls back to INCOMPLETE.
+  //
+  // The base is resolved INDEPENDENTLY, not taken from `plan.baseRef`. Pinning the cross-check to
+  // the scout's own base would leave the wrong-base case structurally invisible — both agents would
+  // diff the same wrong ref, agree perfectly, and the green would be granted. Resolving it again
+  // from the same deterministic ladder turns a wrong base into a differing file list, which the
+  // comparison below already catches. Only an explicit `diffBase` argument is passed through: there
+  // the base is the caller's, not the scout's, so there is nothing to cross-check.
+  //
+  // What this still does NOT catch: `fileCount` and `files` come from the same model in the same
+  // response, so the self-consistency arm is self-reported — a model that truncates the list AND
+  // lowers its own count to match defeats it. What that arm actually rules out is the ordinary
+  // failure (a list shortened while the count stays honest), not a coordinated one.
   const cross = await agent(
     `You are cross-checking a diff's file list. Run shell only — do NOT review, summarise, or judge anything.
-1. Resolve the diff base. ${plan.baseRef ? `Use \`${plan.baseRef}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
+1. Resolve the diff base YOURSELF — do not take it from anyone else. ${diffBase ? `The caller pinned it: use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
 2. Run \`git diff --name-only <base>\` and \`git diff --name-only <base> | wc -l\`.
 3. Return every path VERBATIM in \`files\` — no truncation, no globbing, no sorting, no elision — and the \`wc -l\` number in \`fileCount\`.
 4. Set ok=true ONLY if the git command succeeded and \`files\` holds every path it printed. If anything failed, or you had to shorten the list for any reason, set ok=false.`,
@@ -660,7 +672,13 @@ if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage gaps: +${g.confirmed.length} confirmed · +${g.suspected.length} suspected · ${g.refuted.length} refuted`)
 } else if (gaps.length) {
   log(`Budget too low to verify ${gaps.length} coverage gap(s) -> reported as suspected`)
-  markNotRun('coverage-gaps-unverified', `${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, unjudged`, false)
+  // Blocking, unlike `verify-checks-unjudged`, and the difference is epistemic rather than a matter
+  // of degree. An unjudged *finding* is a claim that something is wrong; reporting it as Suspected
+  // is already the honest answer, and the review still looked. A coverage gap is the critic's claim
+  // that something went UNREVIEWED — the same category as a dead lens, which downgrades. Leaving it
+  // advisory would let a plain `Approve` stand on a run whose named blind spots nobody opened.
+  // It does not fire on routine runs: it needs the budget floor reached AND gaps raised.
+  markNotRun('coverage-gaps-unverified', `${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, and the blind spots they name went unopened`)
   suspected = suspected.concat(gaps.map(f => ({ ...f, confirmed: false, votes: [] })))
 }
 
