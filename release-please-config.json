@@ -11,7 +11,10 @@
         { "type": "json", "path": ".claude-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.plugins[0].version" },
-        { "type": "generic", "path": "workflows/review.js" }
+        { "type": "generic", "path": "workflows/review.js" },
+        { "type": "generic", "path": "workflows/adversarial-review.js" },
+        { "type": "generic", "path": "workflows/rust-audit.js" },
+        { "type": "generic", "path": "workflows/triage-findings.js" }
       ]
     }
   }

@@ -79,6 +79,13 @@ const WARMUP_SCHEMA = {
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
 const isEscalated = f => f.lens !== 'complexity' && (f.severity === 'critical' || f.severity === 'high')
 
+// The craft release that produced a run. Recorded on the run record and index line so an
+// aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
+// has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
+// fails the build if it drifts. Kept OUTSIDE the craft-inline fence below, whose contents are
+// byte-compared against lib/run-record.mjs.
+const CRAFT_VERSION = '0.16.0' // x-release-please-version
+
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings indexProjection
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
@@ -470,6 +477,7 @@ const refutedTotal = refuted.length + refutedGaps
 await logRun({
   schemaVersion: 1,
   runtime: 'claude-code',
+  craftVersion: CRAFT_VERSION,
   kind: 'workflow',
   name: 'adversarial-review',
   nested: !!viaArg,
