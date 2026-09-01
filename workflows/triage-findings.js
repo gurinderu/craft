@@ -278,7 +278,29 @@ ${JSON.stringify(validations, null, 2)}`,
 // ---- Observability: persist a run record (best-effort) -------------------
 // Prefer the plan's ledger (it carries the cross-finding `conflict` disposition); fall back to the
 // solo validations when the Plan phase produced nothing.
-const ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
+let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
+
+// The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
+// summarising model paraphrases a one-line free-text reason as a matter of course, and the marker
+// is the ONLY thing that tells the next run this finding was never judged: lose it and the finding
+// reads as settled forever — exactly the bug this marker exists to prevent, returning silently on
+// run three. So the script re-injects it deterministically. `validations` is the local record of
+// what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
+// re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
+if (ledger !== validations) {
+  const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
+  if (unjudged.size) {
+    const seen = new Set()
+    ledger = ledger.map(e => {
+      const v = e && unjudged.get(e.stable_id)
+      if (!v) return e
+      seen.add(e.stable_id)
+      return String(e.reason || '').includes(UNJUDGED_MARKER) ? e : { ...e, verdict: v.verdict, reason: v.reason }
+    })
+    for (const [id, v] of unjudged) if (!seen.has(id)) ledger.push({ stable_id: id, verdict: v.verdict, reason: v.reason })
+    plan.ledger = ledger
+  }
+}
 await logRun({
   schemaVersion: 1,
   runtime: 'claude-code',
