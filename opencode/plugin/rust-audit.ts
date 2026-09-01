@@ -52,7 +52,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     {
       label: "architecture",
       agent: "rust-architecture-reviewer",
-      prompt: `Audit the architecture of this whole Rust project: build the crate/module dependency graph and judge it in both directions (layer leaks/god modules vs ghost abstractions/over-layering). Return your Healthy/Concerns/At-risk rating and findings.`,
+      prompt: `Audit the architecture of this whole Rust project: build the crate/module dependency graph and judge it in both directions (layer leaks/god modules vs ghost abstractions/over-layering). Return your Healthy/Concerns/At-risk rating and findings. If the graph could not be built at all — no manifest is readable and \`cargo metadata\` does not run — nothing was judged: return verdict "INCOMPLETE (not run)" naming what was missing, NOT Healthy.`,
     },
     {
       label: "security",
