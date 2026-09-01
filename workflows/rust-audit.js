@@ -446,18 +446,37 @@ Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; defa
       { label: `unused-crates:verify#${i + 1}`, phase: 'Verify', schema: UNUSED_VERDICT_SCHEMA, model: 'opus' },
     ).then(v => ({ c, v })),
   ))
-  const confirmed = verdicts.filter(Boolean).filter(x => x.v?.confirmedUnused).map(x => ({
+  // A verifier that DIED and a verifier that REFUTED both leave the candidate unconfirmed, and the
+  // old summary described both as "dropped as likely false positives" — asserting a judgement that,
+  // for a dead agent, nobody made. Count them apart: `refuted` is a real result, `died` is a hole.
+  const alive = verdicts.filter(Boolean)
+  const died = candidates.length - alive.length
+  const confirmed = alive.filter(x => x.v?.confirmedUnused).map(x => ({
     severity: 'Medium',
     title: x.c.title,
     location: x.c.location || '',
     detail: `${x.v.evidence || ''}${x.v.removal ? `\nRemove: ${x.v.removal}` : ''}`.trim() || (x.c.detail || ''),
   }))
+  const refuted = alive.length - confirmed.length
+  // Every verifier died → nothing was verified at all. `Approve` there would be the permissive
+  // default this dimension exists to avoid: it would read as "the detector's candidates were all
+  // false positives", which is precisely what was never established.
+  if (candidates.length && !alive.length) {
+    return {
+      dimension: 'unused-crates',
+      verdict: 'INCOMPLETE (not run)',
+      summary: `${candidates.length} candidate(s) flagged, but every verifier failed to return — none was confirmed OR refuted. The unused-crate surface is UNVERIFIED, not clean.`,
+      findings: candidates.map(c => ({ severity: 'Info', title: `unverified: ${c.title}`, location: c.location || '', detail: `${c.detail || ''}\nVerification did not run for this candidate — it is neither confirmed unused nor cleared.`.trim() })),
+      _verification: { candidates: candidates.length, confirmed: 0, refuted: 0, died },
+    }
+  }
+  const diedNote = died ? ` ${died} verifier(s) died — those candidates are UNVERIFIED, neither confirmed nor cleared.` : ''
   return {
     dimension: 'unused-crates',
     verdict: confirmed.length ? 'Warning' : 'Approve',
-    summary: `${candidates.length} candidate(s) flagged; ${confirmed.length} verified unused after trying to refute each (unverified dropped as likely false positives).`,
-    findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${candidates.length} candidate(s) flagged, none survived verification.` }],
-    _verification: { candidates: candidates.length, confirmed: confirmed.length },
+    summary: `${candidates.length} candidate(s) flagged; ${confirmed.length} verified unused after trying to refute each; ${refuted} refuted (kept).${diedNote}`,
+    findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${candidates.length} candidate(s) flagged, ${refuted} refuted by verification.${diedNote}` }],
+    _verification: { candidates: candidates.length, confirmed: confirmed.length, refuted, died },
   }
 })
 dispatched.push('unused-crates')
