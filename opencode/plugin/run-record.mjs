@@ -22,8 +22,11 @@ const VERDICT_TOKEN = {
 }
 
 // `VERDICT: TOKEN` starting a line, tolerating markdown decoration (bold, code, blockquote, bullet,
-// table pipe) around the label and the token.
-const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gim
+// table pipe) around the label and the token. CASE-SENSITIVE on purpose: the mandate says uppercase
+// and no other wording, and only that shape is authoritative. A prose closing line in ordinary case
+// — `Verdict: Approve` — is exactly what LABELLED below was written to weigh against the evidence,
+// so matching it here would let it outrank a report of UB instead of losing to it.
+const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
 // How much of the report the fallback scan is allowed to see.
 const TAIL_LINES = 20
@@ -67,7 +70,7 @@ export function parseVerdict(text) {
 
   // 1. Structural: the last `VERDICT: <TOKEN>` line wins, and is authoritative when present.
   const structured = lastMatch(VERDICT_LINE, t)
-  if (structured) return VERDICT_TOKEN[structured.toUpperCase()]
+  if (structured) return VERDICT_TOKEN[structured]
 
   // 2. Fallback for non-conforming output, over the tail only.
   const tail = t.split('\n').slice(-TAIL_LINES).join('\n')
@@ -106,10 +109,19 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText })
   // The top-level verdict is the worst of the synthesis's own verdict and every dimension's, so it
   // no longer depends on the synthesising model restating the roll-up correctly — and no longer on
   // the word "Warning" happening to appear somewhere in a dimension table.
-  const verdict = worstOf([
+  const worst = worstOf([
     parseVerdict(synthesisText),
     ...dimensions.map((d) => (d.ran ? d.verdict : 'INCOMPLETE (not run)')),
   ])
+  const notRun = rs.filter((r) => !r.ok).map((r) => r.label)
+  const incomplete = dimensions.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
+  // Worst-wins ranks INCOMPLETE below Warning, so partial coverage vanishes from the top-level
+  // token whenever anything else is worse. The SUFFIXED form is the shape lib/analyze-runs.mjs
+  // already reads (`/INCOMPLETE/i` over the verdict string, severity-first bucketing), so emitting
+  // `Warning (INCOMPLETE)` keeps both readers working: the severity is still the severity, and the
+  // run is still counted as partial coverage.
+  const partial = incomplete.length > 0 || notRun.length > 0
+  const verdict = partial && !/INCOMPLETE/.test(worst) ? `${worst} (INCOMPLETE)` : worst
   return {
     schemaVersion: 1,
     runtime: 'opencode',
@@ -121,11 +133,11 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText })
     via: null,
     scout: { baseRef: baseRef || '', hasUnsafe: !!hasUnsafe },
     dimensions,
-    notRun: rs.filter((r) => !r.ok).map((r) => r.label),
+    notRun,
     // Dimensions that RAN but reported their own tooling absent. `notRun` cannot carry these (their
     // child session succeeded), and worst-wins precedence hides them at top level whenever any
     // other dimension is Warning or Block — which is most real runs. This keeps the fact reachable.
-    incomplete: dimensions.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension),
+    incomplete,
   }
 }
 
