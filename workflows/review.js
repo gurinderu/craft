@@ -912,9 +912,9 @@ const REPO_DIRECTIVE = repoArg
 // ~360s is well under 15min of waiting, so 30min leaves real headroom above both parts. The window
 // bounds DISPATCH, not occupancy: the re-dispatch below leaves the abandoned agent holding its
 // harness slot, so occupancy can transiently reach ~48 — but only after a 30min deadline, so it
-// cannot rebuild the storm. Lenses get
-// 90min for a blunter reason: a single lens legitimately ran 46 minutes, so no threshold there can
-// separate "hung" from "thorough" — it is a backstop against an agent stuck for hours, nothing finer.
+// cannot rebuild the storm. Lenses get 90min for a blunter reason: a single lens legitimately ran
+// 46 minutes, so no threshold there can separate "hung" from "thorough" — it is a backstop against
+// an agent stuck for hours, nothing finer.
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
