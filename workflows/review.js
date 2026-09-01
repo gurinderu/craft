@@ -703,7 +703,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX noteAbsorbed absorbInto
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -714,12 +714,16 @@ const ATTACK_MAX = 500
 // injected output cannot restyle the report or compound across re-review rounds.
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
-  // `REGRESSED after fix` / `UNVERIFIED` marker word to a plain space. The words survive (no content
-  // loss) but the exact ` — <marker>: ` shape baseWhy parses is gone — so an attack/note that echoes
-  // a marker can no longer re-introduce a parseable marker that would accrete a stale fragment each
-  // re-review round.
+  // `REGRESSED after fix` / `UNVERIFIED` / `still-open` marker word to a plain space, and likewise
+  // the ` — ` before the absorb mark (`also reported at`) and its overflow counter. The words
+  // survive (no content loss) but the exact ` — <marker> ` shape baseWhy / splitAbsorbed parse is
+  // gone — so a model-authored attack, note or TITLE that echoes a marker can neither re-introduce
+  // a parseable marker that accretes a stale fragment each round, nor forge an "also reported at"
+  // site that would render a fabricated file:line in the report and consume an ABSORBED_MAX slot.
+  // ` (reopened: ` is collapsed for the same reason: baseWhy strips it when it lands at the end.
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '')
-    .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED)/gi, ' ').trim()
+    .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED|still-open|also reported at|\(\+\d+ more report)/gi, ' ')
+    .replace(/ \(reopened: /gi, ' (reopened ').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 
@@ -820,10 +824,17 @@ function carriedKey(f) {
 // an incremental round its site is out of the lens base, so nothing re-discovers it.
 //
 // So absorption is not free and not silent: the absorbed finding LANDS — as a clause on the host's
-// `why` (absorbInto), which is a persisted ledger field. The host therefore cannot leave the ledger
-// without an adjudicator that was told, by file:line and title, that a second defect was reported
-// at this site. The clause is written INTO the base rationale, ahead of the per-round markers, so
-// baseWhy's marker-stripping cannot take it away again.
+// `why` (absorbInto), which is a persisted ledger field. The clause is written INTO the base
+// rationale, ahead of the per-round markers, so baseWhy's marker-stripping cannot take it away
+// again, and it renders in the round's report.
+//
+// AND IT IS DELIVERED, NOT MERELY STORED. `why` is interpolated into the adjudicate and red-team
+// prompts through sanitizeAttack, which caps at ATTACK_MAX — and the clauses sit at the END of the
+// rationale, so on any realistic (paragraph-length) rationale they were cut off before the model
+// ever saw them. They therefore travel OUTSIDE that field: splitAbsorbed lifts them off the `why`,
+// withoutAbsorbed is what gets interpolated, and absorbedPromptBlock renders each site on its own
+// line with the sentence that says what it means for the verdict. Only then is it true that the
+// host cannot leave the ledger without an adjudicator that was TOLD a second defect was reported here.
 //
 // `fallbackMatch` (the workflow passes matchesPrior) is used only when the finding or the prior has
 // no usable file+ruleId key: without a ruleId the coarse key would collapse everything in a file.
@@ -851,10 +862,25 @@ const ABSORBED_MAX = 3
 // Re-absorbing the identical report is a no-op, so a defect the lenses re-discover every round does
 // not grow the string round over round. The clause shape is deliberately unlike the ` — <marker>: `
 // shape baseWhy parses, so it is never mistaken for a per-round append and stripped.
+// Per-part caps for an absorbed clause. ATTACK_MAX (500) is the cap for a rationale-sized field; a
+// path and a finding title are not that, and at up to 3 clauses a host's `why` — already the bulk of
+// the transport payload — could grow by ~3 KB on these two fields alone. A path needs ~120 and a
+// title ~160; past that the part is elided, which costs recognisability, not the site itself.
+const ABSORB_FILE_MAX = 120
+
+const ABSORB_TITLE_MAX = 160
+
+// sanitizeAttack, then a tighter cap. Shares the sanitiser so the marker-collapsing (and therefore
+// the forgery defence) applies to every part of a clause.
+function clampField(text, max) {
+  const s = sanitizeAttack(text)
+  return s.length > max ? `${s.slice(0, max)}…` : s
+}
+
 function noteAbsorbed(baseText, f) {
   const base = String(baseText ?? '')
   const mark = ' — also reported at '
-  const clause = `${mark}${sanitizeAttack(f?.file) || '?'}:${Number(f?.line) || 0}: ${sanitizeAttack(f?.title) || 'untitled'}`
+  const clause = `${mark}${clampField(f?.file, ABSORB_FILE_MAX) || '?'}:${Number(f?.line) || 0}: ${clampField(f?.title, ABSORB_TITLE_MAX) || 'untitled'}`
   if (base.includes(clause)) return base
   if (base.split(mark).length - 1 < ABSORBED_MAX) return base + clause
   const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
@@ -870,6 +896,67 @@ function absorbInto(hostWhy, f) {
   const s = String(hostWhy ?? '')
   const base = baseWhy(s)
   return noteAbsorbed(base, f) + s.slice(base.length)
+}
+
+// Lift the absorbed clauses back OFF a host's `why`. Returns the rationale as it stood before any
+// absorption (`base`), the individually-named sites, and the overflow count. Parsing is done on
+// baseWhy(why) so a per-round marker suffix — which may itself contain the mark's words — cannot be
+// mistaken for a clause; sanitizeAttack has already broken the mark's shape in every model-authored
+// part, so what splits here is only what noteAbsorbed wrote.
+function splitAbsorbed(why) {
+  const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
+  let head = baseWhy(why)
+  const m = head.match(overflow)
+  const more = m ? Number(m[1]) : 0
+  if (m) head = head.replace(overflow, '')
+  const parts = head.split(' — also reported at ')
+  return { base: parts[0], sites: parts.slice(1).map(s => s.trim()).filter(Boolean), more }
+}
+
+// The `why` as it should be interpolated into a prompt: the rationale plus this round's marker
+// suffix, with the absorbed clauses removed — they are delivered separately (absorbedPromptBlock)
+// because this field is passed through sanitizeAttack's ATTACK_MAX cap and a trailing clause on a
+// paragraph-length rationale is simply cut off.
+function withoutAbsorbed(why) {
+  const s = String(why ?? '')
+  return splitAbsorbed(s).base + s.slice(baseWhy(s).length)
+}
+
+// The prompt lines that DELIVER the absorbed reports to an adjudicator or red-teamer: outside the
+// capped `why` field, one site per line, and — the half a bare list leaves out — a sentence saying
+// what their presence means for the verdict. Empty string when nothing was absorbed, so the caller
+// can interpolate it unconditionally.
+function absorbedPromptBlock(why) {
+  const { sites, more } = splitAbsorbed(why)
+  if (!sites.length && !more) return ''
+  const lines = sites.map(s => `  - ${s}`)
+  if (more) lines.push(`  - (+${more} further report(s) at this site, not named individually)`)
+  return `\nALSO REPORTED AT THIS SITE (further defects later rounds raised at the same file+rule; they are tracked ONLY through this finding and leave the ledger when it does):\n${lines.join('\n')}\nThey are part of what you are adjudicating: "resolved" requires that every one of them is gone too. If any of them still stands, return "still-open" and cite it in \`attack\`.\n`
+}
+
+// Split freshly-discovered findings into the ones that stay and the ones absorbed into a still-live
+// prior, and say how each host's `why` must change. Pure: hosts are not mutated — the caller applies
+// `updates`.
+//
+// A RETIRED host absorbs NOTHING. It is not persisted, so a clause written on it would not survive
+// the round: the report would exist in no report and no ledger. And the granularities do not even
+// line up — retirement is judged at REGION granularity ("was the enclosing symbol touched"), while a
+// carrier matches on file+ruleId, so a genuinely new defect elsewhere in the same file under the
+// same rule, in code that DID move, would be dropped by a host whose own region did not. That is the
+// exact loss class this design set out to close. Keeping the finding costs nothing: the retired
+// prior is leaving the ledger anyway, so there is no double-listing to avoid.
+function partitionAbsorbed(findings, livePriors, retired, fallbackMatch) {
+  const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
+  const kept = [], updates = new Map()
+  let absorbed = 0, keptAtRetired = 0
+  for (const f of findings || []) {
+    const host = findCarrier(f, livePriors, fallbackMatch)
+    if (!host) { kept.push(f); continue }
+    if (isRetired(host)) { keptAtRetired++; kept.push(f); continue }
+    absorbed++
+    updates.set(host, absorbInto(updates.has(host) ? updates.get(host) : host.why, f))
+  }
+  return { kept, absorbed, keptAtRetired, updates }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -2354,7 +2441,7 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
       `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
 FINDING: [${pf.severity}] ${pf.title}
   originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
-  why it mattered: ${sanitizeAttack(f.why)}
+  why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
 Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
@@ -2376,7 +2463,7 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
       `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
 FINDING: [${pf.severity}] ${pf.title}
   originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
-  why it mattered: ${sanitizeAttack(f.why)}
+  why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 METHOD:
   1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
   2. Re-locate the symbol (grep it — the line has likely moved) and read the fix.
@@ -2416,26 +2503,19 @@ Return {status, currentLine, note, invariant, attack}.`,
 if (priorRound) {
   const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried, ...adjudicated.retired]
   if (livePriors.length) {
-    // A RETIRED host absorbs silently, and that is the one narrowing this design makes knowingly:
-    // it is not persisted, so a clause written on it would not survive the round. Recording the
-    // absorbed finding elsewhere would mean un-retiring the host — and since the lenses re-invent
-    // every dismissed prior on a full re-scan, that would un-retire it every round and the carried
-    // track would have no exit again. What is dropped is therefore a second report keyed to a
-    // file+rule the author has already ruled on, in code that has not moved since the ruling. If
-    // that code is ever touched, the retired prior is gone from the ledger and the report lands as
-    // a new finding on its merits.
+    // A RETIRED host absorbs NOTHING — it is not persisted, so a clause on it would leave the
+    // absorbed report in no report and no ledger. partitionAbsorbed keeps those findings instead;
+    // the reasoning (and why the granularity mismatch makes this the loss class the design set out
+    // to close) is in lib/review-adjudicate.mjs.
     const retired = new Set(adjudicated.retired)
-    let absorbed = 0
-    const keep = f => {
-      const host = findCarrier(f, livePriors, matchesPrior)
-      if (!host) return true
-      absorbed++
-      if (!retired.has(host)) host.why = absorbInto(host.why, f)
-      return false
-    }
-    confirmed = confirmed.filter(keep)
-    suspected = suspected.filter(keep)
-    if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why so they outlive it, not listed twice`)
+    const runs = [confirmed, suspected].map(list => partitionAbsorbed(list, livePriors, retired, matchesPrior))
+    for (const { updates } of runs) for (const [host, why] of updates) host.why = why
+    confirmed = runs[0].kept
+    suspected = runs[1].kept
+    const absorbed = runs[0].absorbed + runs[1].absorbed
+    const keptAtRetired = runs[0].keptAtRetired + runs[1].keptAtRetired
+    if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
+    if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
 }
 
