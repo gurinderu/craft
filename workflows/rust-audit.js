@@ -158,6 +158,105 @@ function indexProjection(r) {
 }
 // <<< craft-inline
 
+// The unused-crates find→verify pipeline's bookkeeping. Extracted to lib/ because its interesting
+// cases are the DEATH paths — a verifier that resolves null, one that throws, most of a fan-out
+// dying — and nothing in this sandbox can exercise them; lib/audit-verification.test.mjs does, and
+// the craft-inline gate pastes the tested source back in here.
+// >>> craft-inline lib/audit-verification.mjs wrapVerdict VERIFY_MIN_JUDGED tallyVerification verificationIncomplete unusedCratesResult
+// A verifier that DIED and a verifier that REFUTED both leave a candidate unconfirmed, and folding
+// them together is the failure this module exists to prevent: a refutation is a judgement somebody
+// made, a death is a hole where no judgement happened.
+//
+// The load-bearing detail: `agent()` RESOLVES to null when the subagent dies on a terminal API
+// error or is skipped (it only throws on budget exhaustion) — the same contract `safeAgent` tests
+// with `if (res != null)`. So a bare `.then(v => ({ c, v }))` wraps a death into a TRUTHY object,
+// `filter(Boolean)` drops nothing, and every dead verifier is silently counted as a refutation.
+// Wrapping through here keeps the null a null all the way to the tally.
+function wrapVerdict(c, v) {
+  return v == null ? null : { c, v }
+}
+
+// Fraction of candidates that must have been JUDGED (confirmed or refuted) for the dimension to
+// claim it verified anything. Below it the surface is mostly unexamined and the dimension reports
+// INCOMPLETE rather than a green.
+//
+// Why a fraction rather than "any death at all": one flaky agent in a large fan-out is the ordinary
+// weather of this engine, and a marker that fires on every run stops being read. Why not the old
+// "only when EVERY verifier died": 3 deaths out of 4 is not one flaky agent, and the audit table
+// rendered that run as a green dimension over a surface nobody looked at. Half is the line: at or
+// above it a majority of the candidates carry a real judgement, below it the summary would be
+// speaking mostly about candidates nothing was established for.
+const VERIFY_MIN_JUDGED = 0.5
+
+// Split the settled verifier results into judgements and holes. `verdicts` is what `parallel()`
+// returns for the per-candidate thunks: `{ c, v }` for a verifier that answered, null for one that
+// died (resolved-null, kept null by wrapVerdict; or threw, which parallel() turns into null).
+function tallyVerification(candidates, verdicts) {
+  const list = Array.isArray(candidates) ? candidates : []
+  const alive = (Array.isArray(verdicts) ? verdicts : []).filter(Boolean)
+  const confirmedItems = alive.filter(x => x && x.v && x.v.confirmedUnused)
+  const judged = alive.length
+  const died = list.length - judged
+  return {
+    candidates: list.length,
+    judged,
+    judgedItems: alive,
+    died: died > 0 ? died : 0,
+    confirmedItems,
+    confirmed: confirmedItems.length,
+    refuted: judged - confirmedItems.length,
+    // Rate over what was actually JUDGED — never over the candidate count, which would charge the
+    // deaths to the detector as if they had been refutations. Null when nothing was judged: there
+    // is no rate, and 0 would read as "this lens refutes nothing".
+    refuteRate: judged ? Math.round(((judged - confirmedItems.length) / judged) * 100) / 100 : null,
+  }
+}
+
+// True when too few candidates were judged for the dimension's verdict to mean anything.
+function verificationIncomplete(t) {
+  return t.candidates > 0 && t.judged < Math.ceil(t.candidates * VERIFY_MIN_JUDGED)
+}
+
+// The whole `unused-crates` dimension result, verdict included, derived from the candidates and the
+// settled verifier results. `_verification` is the internal tally the run record projects.
+function unusedCratesResult(candidates, verdicts) {
+  const t = tallyVerification(candidates, verdicts)
+  const _verification = { candidates: t.candidates, confirmed: t.confirmed, refuted: t.refuted, died: t.died, judged: t.judged, refuteRate: t.refuteRate }
+  const diedNote = t.died ? ` ${t.died} verifier(s) died — those candidates are UNVERIFIED, neither confirmed nor cleared.` : ''
+  const confirmed = t.confirmedItems.map(x => ({
+    severity: 'Medium',
+    title: x.c.title,
+    location: x.c.location || '',
+    detail: `${x.v.evidence || ''}${x.v.removal ? `\nRemove: ${x.v.removal}` : ''}`.trim() || (x.c.detail || ''),
+  }))
+  if (verificationIncomplete(t)) {
+    const unjudged = (Array.isArray(candidates) ? candidates : [])
+      .filter(c => !t.judgedItems.some(x => x.c === c))
+      .map(c => ({ severity: 'Info', title: `unverified: ${c.title}`, location: c.location || '', detail: `${c.detail || ''}\nVerification did not run for this candidate — it is neither confirmed unused nor cleared.`.trim() }))
+    return {
+      dimension: 'unused-crates',
+      verdict: 'INCOMPLETE (not run)',
+      // Say what WAS established before saying what was not. An INCOMPLETE that omits the confirmed
+      // hits reads as "nothing came of this", and a summary-only reader then misses a real finding
+      // that is sitting in `findings` right below. And no "most": at 9 judged of 20 the unjudged
+      // share is under half, so the word would be false — give the counts and let them speak.
+      summary: t.judged
+        ? `${t.candidates} candidate(s) flagged; ${t.judged} judged (${t.confirmed} verified unused, ${t.refuted} refuted), ${t.died} verifier(s) died. ${t.candidates - t.judged} candidate(s) are UNVERIFIED — neither confirmed nor cleared.`
+        : `${t.candidates} candidate(s) flagged, but every verifier failed to return — none was confirmed OR refuted. The unused-crate surface is UNVERIFIED, not clean.`,
+      findings: confirmed.concat(unjudged),
+      _verification,
+    }
+  }
+  return {
+    dimension: 'unused-crates',
+    verdict: confirmed.length ? 'Warning' : 'Approve',
+    summary: `${t.candidates} candidate(s) flagged; ${t.confirmed} verified unused after trying to refute each; ${t.refuted} refuted (kept).${diedNote}`,
+    findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${t.candidates} candidate(s) flagged, ${t.refuted} refuted by verification.${diedNote}` }],
+    _verification,
+  }
+}
+// <<< craft-inline
+
 // Free text in, vocabulary out. worstVerdict() treats anything it cannot read as green as a Warning
 // — the right default over a CONSTRAINED vocabulary, and a false alarm over free text: "No UB
 // detected", "OK" and "No issues" are green answers to the miri prompt's "Clean / UB-found" and used
@@ -435,7 +534,7 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
   if (!found) return null
   const candidates = (Array.isArray(found.findings) ? found.findings : [])
     .filter(f => /^(orphan-member|unused-dep):/.test(f.title || ''))
-  if (!candidates.length) return { ...found, dimension: 'unused-crates', _verification: { candidates: 0, confirmed: 0 } }
+  if (!candidates.length) return { ...found, dimension: 'unused-crates', _verification: { candidates: 0, confirmed: 0, refuted: 0, died: 0, judged: 0, refuteRate: null } }
   // Verify each candidate: prove it is USED. Default to "used" (drop it) when uncertain —
   // recommending deletion of live code is the costly error here.
   const verdicts = await parallel(candidates.map((c, i) => () =>
@@ -444,40 +543,9 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
 Check the usages machete/udeps and the dependency graph miss: \`use\`/path references; cfg-gated and feature-gated usage; macro-only and re-exported (\`pub use\`) usage; build.rs / [build-dependencies]; [dev-dependencies] exercised only in tests, benches, or examples; and for an orphan member whether it is actually a bin, an example/bench/xtask, or consumed/published outside this workspace. Grep the source to confirm.
 Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; default to false when uncertain.`,
       { label: `unused-crates:verify#${i + 1}`, phase: 'Verify', schema: UNUSED_VERDICT_SCHEMA, model: 'opus' },
-    ).then(v => ({ c, v })),
+    ).then(v => wrapVerdict(c, v)),
   ))
-  // A verifier that DIED and a verifier that REFUTED both leave the candidate unconfirmed, and the
-  // old summary described both as "dropped as likely false positives" — asserting a judgement that,
-  // for a dead agent, nobody made. Count them apart: `refuted` is a real result, `died` is a hole.
-  const alive = verdicts.filter(Boolean)
-  const died = candidates.length - alive.length
-  const confirmed = alive.filter(x => x.v?.confirmedUnused).map(x => ({
-    severity: 'Medium',
-    title: x.c.title,
-    location: x.c.location || '',
-    detail: `${x.v.evidence || ''}${x.v.removal ? `\nRemove: ${x.v.removal}` : ''}`.trim() || (x.c.detail || ''),
-  }))
-  const refuted = alive.length - confirmed.length
-  // Every verifier died → nothing was verified at all. `Approve` there would be the permissive
-  // default this dimension exists to avoid: it would read as "the detector's candidates were all
-  // false positives", which is precisely what was never established.
-  if (candidates.length && !alive.length) {
-    return {
-      dimension: 'unused-crates',
-      verdict: 'INCOMPLETE (not run)',
-      summary: `${candidates.length} candidate(s) flagged, but every verifier failed to return — none was confirmed OR refuted. The unused-crate surface is UNVERIFIED, not clean.`,
-      findings: candidates.map(c => ({ severity: 'Info', title: `unverified: ${c.title}`, location: c.location || '', detail: `${c.detail || ''}\nVerification did not run for this candidate — it is neither confirmed unused nor cleared.`.trim() })),
-      _verification: { candidates: candidates.length, confirmed: 0, refuted: 0, died },
-    }
-  }
-  const diedNote = died ? ` ${died} verifier(s) died — those candidates are UNVERIFIED, neither confirmed nor cleared.` : ''
-  return {
-    dimension: 'unused-crates',
-    verdict: confirmed.length ? 'Warning' : 'Approve',
-    summary: `${candidates.length} candidate(s) flagged; ${confirmed.length} verified unused after trying to refute each; ${refuted} refuted (kept).${diedNote}`,
-    findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${candidates.length} candidate(s) flagged, ${refuted} refuted by verification.${diedNote}` }],
-    _verification: { candidates: candidates.length, confirmed: confirmed.length, refuted, died },
-  }
+  return unusedCratesResult(candidates, verdicts)
 })
 dispatched.push('unused-crates')
 
@@ -552,13 +620,20 @@ const auditRecord = {
     const s = summarizeFindings(r.findings)
     return { dimension: r.dimension, verdict: r.verdict, findingCount: s.total, bySeverity: s.bySeverity }
   }),
+  // The rate is over what was JUDGED, not over the candidates: charging the deaths to the detector
+  // is the same conflation the dimension's verdict was fixed for, and this record — not the console
+  // report — is what analyze-runs averages into the "noisy lens" call. `refuted` and `died` ride
+  // along so a reader can see the two apart; `refuteRate` keeps its name and its 0..1 range, so an
+  // older reader keeps working (analyze-runs skips a non-number, which is what an unjudged run now
+  // stores instead of a fabricated 0).
   verification: uc && uc._verification
     ? {
       candidates: uc._verification.candidates,
       confirmed: uc._verification.confirmed,
-      refuteRate: uc._verification.candidates
-        ? Math.round(((uc._verification.candidates - uc._verification.confirmed) / uc._verification.candidates) * 100) / 100
-        : 0,
+      refuted: uc._verification.refuted ?? null,
+      died: uc._verification.died ?? null,
+      judged: uc._verification.judged ?? null,
+      refuteRate: uc._verification.refuteRate ?? null,
     }
     : null,
   notRun,

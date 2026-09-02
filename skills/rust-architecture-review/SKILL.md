@@ -1,7 +1,7 @@
 ---
 name: rust-architecture-review
 description: >-
-  Rust architecture-audit rubric — builds a whole-project dependency graph (crates and modules), then judges it against a checklist (cycles, inverted dependencies, layer leaks, god modules, anemic domain) and over-engineering (ghost abstractions, over-layering), issuing a Healthy/Concerns/At-risk rating. Use when auditing a Rust project's architecture or structural debt. Triggers: structural debt, dependency cycle, layer leak, god module, is this over-engineered.
+  Rust architecture-audit rubric — builds a whole-project dependency graph (crates and modules), then judges it against a checklist (cycles, inverted dependencies, layer leaks, god modules, anemic domain) and over-engineering (ghost abstractions, over-layering), issuing a Healthy/Concerns/At-risk rating — and INCOMPLETE (not run) when no graph could be built at all, never Healthy. Use when auditing a Rust project's architecture or structural debt. Triggers: structural debt, dependency cycle, layer leak, god module, is this over-engineered.
 ---
 
 # Rust Architecture Review
@@ -33,6 +33,15 @@ cargo modules structure --package <pkg>        # if cargo-modules is installed
 ```
 
 If a tool is absent, say so (`cargo-modules not installed — using source analysis`) and fall back to `Grep` over `use`, `mod`, and `pub use` declarations plus the `[dependencies]` tables in each `Cargo.toml`. Never block on a missing tool — the gate is "did we get a graph", not "is the tool present".
+
+**A missing tool is not a missing graph; a missing graph is not a healthy graph.** The fallback is
+mandatory before any rating: with `cargo metadata` unavailable, `Grep` still reads `use` / `mod` /
+`pub use` and the `[dependencies]` tables, and a graph read that way earns an ordinary rating with
+the method named. Only when NO method produced a graph — no manifest, no sources, nothing readable —
+is there no subject to rate: report `INCOMPLETE (not run)`, name what was missing, and say the
+architecture is UNASSESSED. An empty graph and an unreadable one look identical in the output and
+are opposites in meaning; a `Healthy` over a graph nobody read is the failure this row exists to
+prevent.
 
 ## Step 2 — Severity checklist
 
@@ -67,7 +76,8 @@ Thresholds (fan-in > 8, > 500 LOC) are tunable defaults — apply judgment aroun
 |---|---|
 | **At-risk** ⛔ | any CRITICAL, or ≥ 3 HIGH |
 | **Concerns** ⚠️ | ≥ 1 HIGH, or several MEDIUM |
-| **Healthy** ✅ | only LOW / INFO |
+| **Healthy** ✅ | a graph was read (by any method) and it holds only LOW / INFO |
+| **INCOMPLETE (not run)** 🚫 | no graph could be built by any method — nothing was analyzed. Never Healthy: an empty graph reads exactly like an unread one |
 
 ## Boundaries
 
