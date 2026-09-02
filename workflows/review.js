@@ -1350,7 +1350,7 @@ Run exactly this:
 cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-rec.json
+${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}${!runDir && checkpointFailed ? '--rejoin ' : ''}--project "$PWD" < /tmp/craft-rec.json
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, craftCommit), names the file, appends the index line, folds in this run's phase checkpoints and verifies the readback. You compute NONE of that.
