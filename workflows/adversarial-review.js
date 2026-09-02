@@ -678,7 +678,9 @@ function judgeVotes(findings, sink, SEV_RANK) {
   // was not. Only used once the two extremes agree that the verdict cannot swing either way.
   const calibrate = (f, votes, missing) => calibrateWith(f, votes, missing, f.severity)
   const judged = findings.map((f, idx) => {
-    const all = sink[idx]
+    // Malformed votes become absences, so the two-assignment machinery below decides them rather than
+    // letting an unreadable object count as a non-refuting, non-supporting, severity-less confirmation.
+    const all = (sink[idx] || []).map(v => (v && !v.missing && usableVote(v, SEV_RANK)) ? v : { lens: v && v.lens, missing: true })
     // A missing vote must not decide — but "missing" is not the same as "undecidable". Ask what the
     // absent votes COULD have changed, and only fall back when they could have changed the answer.
     // Both traps are real and both were measured on this engine:
@@ -719,7 +721,16 @@ function judgeVotes(findings, sink, SEV_RANK) {
     const confirmed = survives && !premiseUnsupported && !premiseUndecided && !severityUndecided
     // `undecidedByAbsence` is the honest label for "nobody decided this": it is what a caller must
     // surface in the VERDICT, because a finding parked in Suspected does not downgrade anything.
-    return { ...f, confirmed, premiseUnsupported, undecidedByAbsence: missing > 0 && (undecided || votes.length === 0), votes, severity: confirmed ? calibrate(f, votes, missing) : f.severity }
+    // What the run would have printed had the absent votes come back at their worst. The caller must
+    // gate its blocking entry on THIS, not on the finder's own label: the finder's severity and lens
+    // are what shaped the panel, not what the verdict would have been. A single verifier can calibrate
+    // a `medium` finding up to `critical`, and a `high` complexity finding gets one verifier and no
+    // panel — both are "nobody decided this, and deciding it would have blocked the run".
+    const undecidedByAbsence = missing > 0 && (undecided || votes.length === 0)
+    const reachable = votes.length ? calibrateWith(f, votes, missing, MOST) : MOST
+    // Only meaningful on a finding nobody decided: on a decided one the answer is the answer.
+    const couldHaveBlocked = undecidedByAbsence && tierOf(reachable) === 'block'
+    return { ...f, confirmed, premiseUnsupported, couldHaveBlocked, undecidedByAbsence, votes, severity: confirmed ? calibrate(f, votes, missing) : f.severity }
   })
   return {
     confirmed: judged.filter(v => v.confirmed),
@@ -748,7 +759,12 @@ log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${su
 // a run whose panels all voted and cleared them. Blocking, and narrow: it needs an escalated
 // (critical/high) finding whose absent vote was the deciding one, which is the exact case where the
 // engine cannot say whether this run should have blocked.
-const undecidedEscalated = [...confirmed, ...refuted, ...suspected].filter(f => f.undecidedByAbsence && isEscalated(f))
+// Gated on what the absent vote could have DECIDED, never on the finder's label. `isEscalated` reads
+// the finder's severity and lens — the fields that shaped the panel — and both of its clauses leak
+// here: a complexity finding is excluded by lens although the lens emits `high` and gets a single
+// verifier, and a `medium` finding is excluded by severity although one verifier can calibrate it to
+// `critical`. The judge computes the reachable tier instead.
+const undecidedEscalated = [...confirmed, ...refuted, ...suspected].filter(f => f.undecidedByAbsence && f.couldHaveBlocked)
 if (undecidedEscalated.length) {
   markNotRun('escalated-findings-undecided', `${undecidedEscalated.length} critical/high finding(s) lost the panel vote that would have decided them — this run cannot say whether it should have blocked`)
 }
