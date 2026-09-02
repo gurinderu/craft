@@ -651,7 +651,21 @@ function buildVerifyJobs(findings, sink) {
   return jobs
 }
 
-// >>> craft-inline lib/adversarial-judge.mjs judgeVotes
+// >>> craft-inline lib/adversarial-judge.mjs usableVote judgeVotes
+// A verdict object we cannot read is not a verdict. `onResult` spreads whatever the agent returned
+// (`{...true}` and `{...{}}` both yield an object with none of the fields), and this engine already
+// records a live agent returning WITHOUT a schema-`required` field — so `required` in the schema is
+// not a guarantee. Unread fields would otherwise vote: a missing `refuted` counts as non-refuting, a
+// missing `premiseSupported` as non-supporting, and an `undefined` severity survives into the median
+// where `SEV_RANK[undefined]` makes the comparator NaN and the confirmed finding can come out with no
+// severity at all — which `baseVerdict` reads as neither critical nor high, i.e. Approve.
+function usableVote(v, SEV_RANK) {
+  return !!v && typeof v === 'object'
+    && typeof v.refuted === 'boolean'
+    && typeof v.premiseSupported === 'boolean'
+    && (v.severity === 'not-an-issue' || SEV_RANK[v.severity] != null)
+}
+
 function judgeVotes(findings, sink, SEV_RANK) {
 
   // Severity is the THIRD decision axis, and the one that produces the verdict: `baseVerdict` reads
