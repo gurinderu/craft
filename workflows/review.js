@@ -512,17 +512,23 @@ function uncoveredNotRunNote(material) {
 // write teaches everyone to ignore the marker); it is reported instead. Returns '' for a healthy run,
 // so the marker cannot appear where nothing was lost — a marker that fires on healthy runs is one
 // people stop reading, which is the same defect wearing the opposite sign.
-// The body speaks about the WRITE, never about the run: out() appends it to every exit, including
-// those whose verdict says nothing was reviewed (dead base resolution, unknown language pin, empty
-// diff). Reassurance that "the review ran" would contradict the verdict two lines above it there.
+// The body speaks about the WRITE, never about the run: it goes on every exit, including those whose
+// verdict says nothing was reviewed (dead base resolution, unknown language pin, empty diff), where
+// reassurance that "the review ran" would contradict the verdict itself. And it says "could not be
+// confirmed", not "did not land": two of the three ways an entry gets here — an abandoned deadline
+// (the logger agent is NOT cancelled and may still write) and a malformed reply — are compatible with
+// a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
+// It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
+// embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
 function telemetryLostSection(lost) {
   const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
   return [
-    ``,
     `## ⚠️ Telemetry lost`,
-    `${lines.length} record write(s) for this run did not land, so the run store is missing or incomplete for it. Read the verdict above — not the store — for what this run actually did: the store's silence about it is a bookkeeping failure and says nothing either way about the review.`,
+    `${lines.length} record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.`,
     ...lines.map(l => `- ${l}`),
+    ``,
+    ``,
   ].join('\n')
 }
 // <<< craft-inline
@@ -1153,11 +1159,18 @@ async function ragent(prompt, opts = {}) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
     let timer = null
-    const res = await Promise.race([
-      agent(`${REPO_DIRECTIVE}${prompt}`, o),
-      new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), ms) }),
-    ])
-    clearTimeout(timer)
+    // try/finally, not a bare clearTimeout after the await: a rejection from agent() used to skip it
+    // and leave the timer pending. That was invisible while a throw killed the run outright; now that
+    // ragentQuietly swallows it, a leaked timer would hold the run open for the whole deadline.
+    let res
+    try {
+      res = await Promise.race([
+        agent(`${REPO_DIRECTIVE}${prompt}`, o),
+        new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), ms) }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
     if (res === DEADLINE_HIT) {
       const mins = Math.round(ms / 60000)
       log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${attempt < AGENT_TRIES ? ' and re-dispatching once' : ' (giving up; treated as a dead agent)'}`)
@@ -1235,10 +1248,11 @@ function noteTelemetryLoss(what, why) {
   telemetryLost.push(line)
   log(`⚠️ telemetry lost: ${line}`)
 }
-// The only ragent call whose FAILURE is not the caller's problem. Every other agent in this engine
-// produces review content, so a throw there should stop the run; a telemetry write must not, and the
-// final one runs AFTER the report already exists in memory — losing it to a bookkeeping write would
-// throw away the whole run's product.
+// For the ragent calls whose FAILURE is not the caller's problem: the run record, the phase
+// checkpoints and the prior-round read. They are bookkeeping — every other agent in this engine
+// produces review content, so a throw there should stop the run. These must not: the final logRun
+// runs AFTER the report already exists in memory, so losing it to a bookkeeping write would throw
+// away the whole run's product.
 async function ragentQuietly(prompt, opts) {
   try {
     return await ragent(prompt, opts)
@@ -1251,7 +1265,7 @@ async function ragentQuietly(prompt, opts) {
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 function out(reportText) {
-  return `${reportText}${telemetryLostSection(telemetryLost)}`
+  return `${telemetryLostSection(telemetryLost)}${reportText}`
 }
 
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
@@ -1486,7 +1500,7 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // non-ancestor → treat as a fresh first review). `fresh` skips the whole mechanism.
 let priorRound = null
 if (!freshArg && branch && head) {
-  priorRound = await ragent(
+  priorRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
 Run exactly this:
@@ -1503,6 +1517,18 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
   if (!priorRound?.found) {
     if (priorRound?.reason) log(`No prior round: ${priorRound.reason}`)
+    // A read that FAILED is the same lost-record class as a write that failed, and its silence is
+    // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
+    // track is skipped) and the report cannot be told apart from a genuine first pass.
+    // Narrow on purpose: the loader tells "there IS no prior round" (no-candidate-rows, no-branch, an
+    // ancestry rejection after a rebase — health, and the common case: every first review) apart from
+    // "the read could not run". Only the latter is a lost record; marking the former would fire the
+    // marker on every first review, which is precisely how a marker stops being read.
+    const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
+    const readFailed = !priorRound || !!priorRound.__threw || READ_FAILURES.some(r => String(priorRound.reason || '').startsWith(r))
+    if (readFailed) {
+      noteTelemetryLoss('the prior-round ledger', priorRound?.__threw || priorRound?.reason || 'the loader agent returned no result')
+    }
     priorRound = null
   }
   // Harden the model-authored ledger `head` at the LOAD boundary before it ever reaches a shell
