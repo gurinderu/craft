@@ -201,25 +201,35 @@ Return {findings: []-shaped JSON}.`
 // The runner reports its own leftovers into `notRun`; callers that report them their own way (the
 // finder lenses, which mark one BLOCKING entry per dead dimension) pass `reportUnjudged: false`.
 // >>> craft-inline lib/throttled-runner.mjs unjudgedNotRun makeThrottledRunner
-// One advisory not-run entry per throttled pass that ended with unfinished jobs — and NONE when the
-// pass finished, which is the whole discipline: a marker that fires on healthy runs is one people
-// stop reading. Advisory (`incomplete: false`) on purpose: an unjudged check leaves its finding
-// reported as Suspected, which is already the honest label, so it does not by itself make the
-// verdict INCOMPLETE. An unreviewed *dimension* is the blocking case, and its callers mark it.
-function unjudgedNotRun(tag, unfinished) {
+// One not-run entry per throttled pass that ended with unfinished jobs — and NONE when the pass
+// finished, which is the whole discipline: a marker that fires on healthy runs is one people stop
+// reading.
+// It used to claim the unjudged findings "stay Suspected". That was FALSE for an escalated finding:
+// its panel members are separate jobs, so one dead lens leaves a 1-1 split that `judge` reads as a
+// refutation, and refuted findings are dropped from the report entirely. The premise is now enforced
+// at the judge instead of asserted here (a panel that lost a member decides nothing), and this note
+// no longer promises an outcome it does not produce.
+// Advisory by default, blocking when the pass judged NOTHING — the two are genuinely different: a
+// gap in a panel is a weakened judgement, an empty pass is no judgement at all.
+function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
   const count = Array.isArray(unfinished) ? unfinished.length : Number(unfinished) || 0
   if (count <= 0) return []
   const key = String(tag || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'checks'
+  // A pass that judged NOTHING is not an advisory footnote: no finding in it was verified at all,
+  // and a verdict built on that is a verdict about nothing. It downgrades the run like a dead lens.
+  const wholePass = total > 0 && count >= total
   return [{
     label: `${key}-checks-unjudged`,
-    note: `${count} ${tag} check(s) got no verdict after retries — the findings they were judging stay Suspected`,
-    incomplete: false,
+    note: wholePass
+      ? `the entire ${tag} pass produced no verdict (${count} check(s)) — nothing it was judging was verified`
+      : `${count} ${tag} check(s) got no verdict — the findings they were judging were decided on a partial panel, or not decided at all`,
+    incomplete: wholePass,
   }]
 }
 
 // Runs `jobs` in batches of `batch`, retrying whatever produced no result in quieter rounds of
 // `retryBatch`, and stops spawning below the budget floor. Returns the jobs that never produced a
-// result. Each job: {prompt, label, schema, effort, onResult}.
+// result. Each job: {prompt, label, schema, effort, onResult, onMissing?}.
 function makeThrottledRunner(deps) {
   const { agent, parallel, log, markNotRun, batch: BATCH, retryBatch, maxRetryRounds, budget, budgetFloor } = deps
   return async function runThrottled(jobs, tag, phaseTitle, { reportUnjudged = true } = {}) {
@@ -248,7 +258,14 @@ function makeThrottledRunner(deps) {
       if (!unfinished) pending = failed
     }
     if (!unfinished) unfinished = pending
-    if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished)) markNotRun(e.label, e.note, e.incomplete)
+    // A job that never produced a verdict must leave a TRACE where the verdict would have gone, not
+    // only a line in the run record. Its absence is what the judge has to see: a panel silently one
+    // vote short reads as a whole panel, and a 1-1 split then counts as a refutation.
+    for (const j of unfinished) if (typeof j.onMissing === 'function') j.onMissing()
+    // `total` lets the entry tell a gap apart from a pass that judged nothing — including the pass
+    // stopped by the budget guard before it spawned its first agent, which returned an empty
+    // leftover list and therefore reported as clean.
+    if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished, { total: jobs.length })) markNotRun(e.label, e.note, e.incomplete)
     return unfinished
   }
 }
@@ -623,6 +640,9 @@ function buildVerifyJobs(findings, sink) {
       schema: VERDICT,
       effort,
       onResult: v => sink[idx].push({ lens, ...v }),
+      // A check that never returned leaves a placeholder, so the judge can SEE the panel is short.
+      // Without it a 3-lens panel that lost one member is indistinguishable from a 2-lens panel.
+      onMissing: () => sink[idx].push({ lens, missing: true }),
     })
     if (f.lens === 'complexity') push('metric', COMBINED_METRIC_INSTR, 'low', true)
     else if (isEscalated(f)) for (const [lens, instr] of PANEL_LENSES) push(lens, instr, 'high', true)
@@ -631,33 +651,45 @@ function buildVerifyJobs(findings, sink) {
   return jobs
 }
 
-// Strict majority of received votes must NOT refute. One formula covers the single
-// verifier (1 vote: confirmed = !refuted), the full panel (refutes <= 1 of 3), and a
-// degraded panel (a tie or a lone surviving refuter never confirms).
-function judge(findings, sink) {
+// >>> craft-inline lib/adversarial-judge.mjs judgeVotes
+function judgeVotes(findings, sink, SEV_RANK) {
+
   const calibrate = (f, votes) => {
     const sevs = votes.filter(v => !v.refuted && v.severity !== 'not-an-issue')
       .map(v => v.severity).sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
     return sevs.length ? sevs[Math.floor(sevs.length / 2)] : f.severity
   }
   const judged = findings.map((f, idx) => {
-    const votes = sink[idx]
+    const all = sink[idx]
+    // A panel that lost a member decides NOTHING — neither for the finding nor against it. Measured
+    // on the shipped formula: `[refute, confirm, confirm]` confirms, and dropping one confirming
+    // lens turns the SAME finding into `refutes * 2 < votes.length` = false, i.e. refuted — and
+    // refuted findings never reach the report, they are fed forward as "adversarially disproven, do
+    // not re-report". The mirror is as bad: two dead lenses leave a lone vote that confirms
+    // unconditionally, so one flaky lens can manufacture a Block. Silence must not vote either way.
+    const degraded = all.some(v => v.missing)
+    const votes = all.filter(v => !v.missing)
     const refutes = votes.filter(v => v.refuted).length
-    const survives = votes.length > 0 && refutes * 2 < votes.length
+    const survives = !degraded && votes.length > 0 && refutes * 2 < votes.length
     // An off-site premise no verifier could pin to real code is UNSUPPORTED, not disproven. It costs
     // the finding its Confirmed tier, but it must NOT be filed as refuted: the refuted list is fed
     // back to the next round as "adversarially disproven — do not re-report", which would bury a
     // possibly-real finding for the rest of the run over a missing citation.
     const premiseUnsupported = survives && votes.filter(v => v.premiseSupported).length * 2 <= votes.length
     const confirmed = survives && !premiseUnsupported
-    return { ...f, confirmed, premiseUnsupported, votes, severity: confirmed ? calibrate(f, votes) : f.severity }
+    return { ...f, confirmed, premiseUnsupported, degraded, votes, severity: confirmed ? calibrate(f, votes) : f.severity }
   })
   return {
     confirmed: judged.filter(v => v.confirmed),
-    refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && v.votes.length > 0),
-    suspected: judged.filter(v => v.votes.length === 0 || v.premiseUnsupported),
+    // `degraded` is excluded here for the same reason `premiseUnsupported` is: the refuted list is
+    // fed forward as "do NOT re-report — adversarially disproven", and a panel that never finished
+    // disproved nothing. It falls to Suspected, which is what the not-run note has always claimed.
+    refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && !v.degraded && v.votes.length > 0),
+    suspected: judged.filter(v => v.degraded || v.votes.length === 0 || v.premiseUnsupported),
   }
 }
+// <<< craft-inline
+const judge = (findings, sink) => judgeVotes(findings, sink, SEV_RANK)
 
 const votes = kept.map(() => [])
 const verifyJobs = buildVerifyJobs(kept, votes)
@@ -696,8 +728,17 @@ let refutedGaps = 0
 if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
   const gapVotes = gaps.map(() => [])
-  const unverifiedGapJobs = await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage')
-  if (unverifiedGapJobs.length) log(`WARNING: ${unverifiedGapJobs.length} coverage-gap checks got no verdict after retries`)
+  // Opts out of the runner's advisory entry and marks its own BLOCKING one, for the reason the
+  // else-branch below spells out: a coverage gap is the critic's claim that something went
+  // UNREVIEWED. Crossing the budget floor midway through this pass leaves exactly the same blind
+  // spots unopened as failing to start it, so the two must land on the same side of the line —
+  // otherwise the identical run reads `Approve` or `Approve (INCOMPLETE)` depending only on which
+  // side of the first batch the floor happened to fall. Same label, so analyze-runs aggregates both.
+  const unverifiedGapJobs = await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage', { reportUnjudged: false })
+  if (unverifiedGapJobs.length) {
+    log(`WARNING: ${unverifiedGapJobs.length} coverage-gap checks got no verdict`)
+    markNotRun('coverage-gaps-unverified', `${unverifiedGapJobs.length} coverage-gap check(s) got no verdict — the blind spots they name went unopened`)
+  }
   const g = judge(gaps, gapVotes)
   confirmed = confirmed.concat(g.confirmed)
   suspected = suspected.concat(g.suspected)
