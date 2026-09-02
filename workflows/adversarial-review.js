@@ -197,33 +197,62 @@ CONFIDENCE: report everything you suspect, located to file:line. Do NOT self-cen
 Return {findings: []-shaped JSON}.`
 }
 
-// ---- throttled runner: batches of `BATCH`, retry rounds of `RETRY_BATCH`, budget guard ----
-// Returns the jobs that never produced a result. Each job: {prompt, label, schema, effort, onResult}.
-async function runThrottled(jobs, tag, phaseTitle) {
-  let pending = jobs
-  let done = 0
-  for (let round = 0; round <= MAX_RETRY_ROUNDS && pending.length; round++) {
-    const size = round === 0 ? BATCH : RETRY_BATCH
-    if (round > 0) log(`${tag} retry round ${round}: ${pending.length} failed calls, batches of ${size}`)
-    const failed = []
-    for (let i = 0; i < pending.length; i += size) {
-      if (budget.total && budget.remaining() < BUDGET_FLOOR) {
-        const skipped = pending.length - i + failed.length
-        log(`Budget guard: ~${Math.round(budget.remaining() / 1000)}k tokens left -> stopping ${tag}, ${skipped} calls skipped`)
-        return pending.slice(i).concat(failed)
-      }
-      const batch = pending.slice(i, i + size)
-      const res = await parallel(batch.map(j => () =>
-        agent(j.prompt, { label: (round ? `retry${round}:` : '') + j.label, phase: phaseTitle, schema: j.schema, effort: j.effort })))
-      res.forEach((v, k) => {
-        if (v) { batch[k].onResult(v); done++ } else failed.push(batch[k])
-      })
-      log(`${tag}: ${done}/${jobs.length} calls done`)
-    }
-    pending = failed
-  }
-  return pending
+// ---- throttled runner (VERBATIM mirror of lib/throttled-runner.mjs — the sandbox can't import) ----
+// The runner reports its own leftovers into `notRun`; callers that report them their own way (the
+// finder lenses, which mark one BLOCKING entry per dead dimension) pass `reportUnjudged: false`.
+// >>> craft-inline lib/throttled-runner.mjs unjudgedNotRun makeThrottledRunner
+// One advisory not-run entry per throttled pass that ended with unfinished jobs — and NONE when the
+// pass finished, which is the whole discipline: a marker that fires on healthy runs is one people
+// stop reading. Advisory (`incomplete: false`) on purpose: an unjudged check leaves its finding
+// reported as Suspected, which is already the honest label, so it does not by itself make the
+// verdict INCOMPLETE. An unreviewed *dimension* is the blocking case, and its callers mark it.
+function unjudgedNotRun(tag, unfinished) {
+  const count = Array.isArray(unfinished) ? unfinished.length : Number(unfinished) || 0
+  if (count <= 0) return []
+  const key = String(tag || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'checks'
+  return [{
+    label: `${key}-checks-unjudged`,
+    note: `${count} ${tag} check(s) got no verdict after retries — the findings they were judging stay Suspected`,
+    incomplete: false,
+  }]
 }
+
+// Runs `jobs` in batches of `batch`, retrying whatever produced no result in quieter rounds of
+// `retryBatch`, and stops spawning below the budget floor. Returns the jobs that never produced a
+// result. Each job: {prompt, label, schema, effort, onResult}.
+function makeThrottledRunner(deps) {
+  const { agent, parallel, log, markNotRun, batch: BATCH, retryBatch, maxRetryRounds, budget, budgetFloor } = deps
+  return async function runThrottled(jobs, tag, phaseTitle, { reportUnjudged = true } = {}) {
+    let pending = jobs
+    let done = 0
+    let unfinished = null
+    for (let round = 0; round <= maxRetryRounds && pending.length && !unfinished; round++) {
+      const size = round === 0 ? BATCH : retryBatch
+      if (round > 0) log(`${tag} retry round ${round}: ${pending.length} failed calls, batches of ${size}`)
+      const failed = []
+      for (let i = 0; i < pending.length; i += size) {
+        if (budget.total && budget.remaining() < budgetFloor) {
+          const skipped = pending.length - i + failed.length
+          log(`Budget guard: ~${Math.round(budget.remaining() / 1000)}k tokens left -> stopping ${tag}, ${skipped} calls skipped`)
+          unfinished = pending.slice(i).concat(failed)
+          break
+        }
+        const slice = pending.slice(i, i + size)
+        const res = await parallel(slice.map(j => () =>
+          agent(j.prompt, { label: (round ? `retry${round}:` : '') + j.label, phase: phaseTitle, schema: j.schema, effort: j.effort })))
+        res.forEach((v, k) => {
+          if (v) { slice[k].onResult(v); done++ } else failed.push(slice[k])
+        })
+        log(`${tag}: ${done}/${jobs.length} calls done`)
+      }
+      if (!unfinished) pending = failed
+    }
+    if (!unfinished) unfinished = pending
+    if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished)) markNotRun(e.label, e.note, e.incomplete)
+    return unfinished
+  }
+}
+// <<< craft-inline
 
 // ---- coverage honesty (VERBATIM mirror of lib/review-coverage.mjs — the sandbox can't import) ----
 // Only the LANGUAGE-AGNOSTIC half is mirrored here. This engine declares no language profiles, so
@@ -352,6 +381,11 @@ const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
 const notRunBlocking = () => notRun.filter(e => e.incomplete)
+const runThrottled = makeThrottledRunner({
+  agent, parallel, log, markNotRun,
+  batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
+  budget, budgetFloor: BUDGET_FLOOR,
+})
 const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(f => typeof f === 'string' && f.trim()) : null
 if (!scout || !changedFiles) {
   markNotRun('scout-dead', scout
@@ -448,7 +482,7 @@ const deadLensJobs = await runThrottled(
     effort: 'medium',
     onResult: r => lensResults.set(lens, r),
   })),
-  'Review', 'Review',
+  'Review', 'Review', { reportUnjudged: false },
 )
 const deadLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
 if (deadLenses.length) {
@@ -628,11 +662,9 @@ function judge(findings, sink) {
 const votes = kept.map(() => [])
 const verifyJobs = buildVerifyJobs(kept, votes)
 log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept.filter(isEscalated).length} escalated to 3-lens panel), throttled to ${BATCH} concurrent`)
+// `runThrottled` records the unjudged checks in `notRun` itself (advisory) — see the region above.
 const unverifiedJobs = await runThrottled(verifyJobs, 'Verify', 'Verify')
-if (unverifiedJobs.length) {
-  log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
-  markNotRun('verify-checks-unjudged', `${unverifiedJobs.length} verification check(s) got no verdict after retries — the findings they were judging stay Suspected`, false)
-}
+if (unverifiedJobs.length) log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
 
 let { confirmed, refuted, suspected } = judge(kept, votes)
 log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${suspected.length} suspected (no verdict)`)
@@ -664,7 +696,8 @@ let refutedGaps = 0
 if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
   const gapVotes = gaps.map(() => [])
-  await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage')
+  const unverifiedGapJobs = await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage')
+  if (unverifiedGapJobs.length) log(`WARNING: ${unverifiedGapJobs.length} coverage-gap checks got no verdict after retries`)
   const g = judge(gaps, gapVotes)
   confirmed = confirmed.concat(g.confirmed)
   suspected = suspected.concat(g.suspected)
