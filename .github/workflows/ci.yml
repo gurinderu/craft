@@ -15,12 +15,22 @@ jobs:
           node-version: '22'
       - name: Install dev tooling
         run: npm ci
+      # The opencode plugin has its own dependency closure (pinned exact + package-lock.json), kept
+      # out of the root package.json so the shipped plugin still installs with nothing to fetch.
+      # `npm ci` here is what makes the typecheck step below possible.
+      - name: Install opencode plugin deps
+        run: npm ci --prefix opencode/plugin
       # Lint reaches only the .mjs files under lib/ and opencode/plugin/. workflows/*.js cannot be
       # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
-      # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs and have
-      # no gate here at all. Keep this command identical to package.json's "lint" script.
+      # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs — the
+      # typecheck step below is their gate. Keep this command identical to package.json's "lint".
       - name: Lint
         run: npx eslint lib opencode/plugin --max-warnings 0
+      # tsc --strict over opencode/plugin/*.ts (config in opencode/plugin/tsconfig.json). This is the
+      # only gate that compiles the TypeScript at all; before it existed a syntax error there shipped
+      # green. It type-checks only — no emit — and does not cover the .md agents/commands beside it.
+      - name: Typecheck opencode plugin
+        run: npm run check:types
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
       - name: Unit tests
         run: node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'
@@ -32,6 +42,12 @@ jobs:
       # Validate skill/agent frontmatter and that every internal craft:<slug> reference resolves.
       - name: Check skills & agents
         run: node lib/check-skills.mjs
+      # The opencode delivery's agents/commands answer to a different frontmatter contract than the
+      # Claude Code ones above (no `name`, no pinned `model`, `mode: subagent`, `hidden: true`,
+      # `tools` a map with write/edit false), so it gets its own checker rather than a widened one.
+      # Shape only — it says nothing about whether an agent's description makes it trigger.
+      - name: Check opencode agent/command frontmatter
+        run: npm run check:opencode-frontmatter
       # Static shape-check of the skill-triggering eval corpus (evals/evals.json): well-formed cases,
       # every referenced skill exists. The model-based triggering evals themselves are a local
       # harness (need a live model) — see evals/README.md — and are intentionally NOT run in CI.
