@@ -51,9 +51,10 @@ When NOT run as a lens (a manual whole-diff review), also run the mechanical gat
 `nix eval`/`nix build` for eval errors — then issue the verdict yourself. That vocabulary has
 **four** values: Approve / Warning / Block / **INCOMPLETE (not run)**.
 
-If the gate could not be **established at all** — `nix` is not on PATH, flakes are disabled in the
-daemon config, or evaluation could not fetch its inputs (offline, a locked input unreachable) and no
-linter was installed either — then nothing was evaluated. Report your read of the diff, but the
+If the gate could not be **established at all** — no command in it could execute: nix is unusable
+(`nix` not on PATH, flakes disabled in the daemon config, or evaluation could not fetch its inputs
+— offline, a locked input unreachable) **and** no linter (`statix`, `deadnix`, a formatter
+`--check`) was installed either — then nothing was evaluated. Report your read of the diff, but the
 verdict is `INCOMPLETE (not run)`: name what was missing and say the change is UNVERIFIED, not
 clean. A Confirmed Critical/High found by reading still outranks it — that is a **Block**. A partial
 gate (`statix` ran, `nix flake check` unavailable) is a normal verdict with the gap named in the
