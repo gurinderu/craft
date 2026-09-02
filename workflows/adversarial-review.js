@@ -661,31 +661,43 @@ function judgeVotes(findings, sink, SEV_RANK) {
   }
   const judged = findings.map((f, idx) => {
     const all = sink[idx]
-    // A panel that lost a member decides NOTHING — neither for the finding nor against it. Measured
-    // on the shipped formula: `[refute, confirm, confirm]` confirms, and dropping one confirming
-    // lens turns the SAME finding into `refutes * 2 < votes.length` = false, i.e. refuted — and
-    // refuted findings never reach the report, they are fed forward as "adversarially disproven, do
-    // not re-report". The mirror is as bad: two dead lenses leave a lone vote that confirms
-    // unconditionally, so one flaky lens can manufacture a Block. Silence must not vote either way.
-    const degraded = all.some(v => v.missing)
+    // A missing vote must not decide — but "missing" is not the same as "undecidable". Ask what the
+    // absent votes COULD have changed, and only fall back when they could have changed the answer.
+    // Both traps are real and both were measured on this engine:
+    //   [refute, confirm, confirm] confirms; losing one confirming lens made `refutes * 2 < votes`
+    //     false, so the SAME finding was filed as refuted — and refuted findings never reach the
+    //     report, they are fed forward as "adversarially disproven, do not re-report".
+    //   Demoting on ANY absence is the inverse trap: [confirm, confirm, missing] cannot change —
+    //     even a refuting third vote leaves 1*2 < 3 — so demoting it to Suspected drops a critical
+    //     finding out of `confirmed`, and the verdict is built from `confirmed` alone. A silent
+    //     Approve, in place of the Block that two independent lenses had earned.
+    const missing = all.filter(v => v.missing).length
     const votes = all.filter(v => !v.missing)
     const refutes = votes.filter(v => v.refuted).length
-    const survives = !degraded && votes.length > 0 && refutes * 2 < votes.length
+    // The two extreme assignments of the absent votes. They agree → the absence changes nothing and
+    // the answer stands; they disagree → the absent vote is the deciding one, and nobody cast it.
+    const survivesIfAbsentRefute = votes.length > 0 && (refutes + missing) * 2 < all.length
+    const survivesIfAbsentConfirm = votes.length > 0 && refutes * 2 < all.length
+    const undecided = survivesIfAbsentRefute !== survivesIfAbsentConfirm
+    const survives = !undecided && survivesIfAbsentRefute
     // An off-site premise no verifier could pin to real code is UNSUPPORTED, not disproven. It costs
     // the finding its Confirmed tier, but it must NOT be filed as refuted: the refuted list is fed
     // back to the next round as "adversarially disproven — do not re-report", which would bury a
     // possibly-real finding for the rest of the run over a missing citation.
-    const premiseUnsupported = survives && votes.filter(v => v.premiseSupported).length * 2 <= votes.length
+    // Counted against the FULL panel, so an absent vote is assumed unsupporting here too.
+    const premiseUnsupported = survives && votes.filter(v => v.premiseSupported).length * 2 <= all.length
     const confirmed = survives && !premiseUnsupported
-    return { ...f, confirmed, premiseUnsupported, degraded, votes, severity: confirmed ? calibrate(f, votes) : f.severity }
+    // `undecidedByAbsence` is the honest label for "nobody decided this": it is what a caller must
+    // surface in the VERDICT, because a finding parked in Suspected does not downgrade anything.
+    return { ...f, confirmed, premiseUnsupported, undecidedByAbsence: missing > 0 && (undecided || votes.length === 0), votes, severity: confirmed ? calibrate(f, votes) : f.severity }
   })
   return {
     confirmed: judged.filter(v => v.confirmed),
     // `degraded` is excluded here for the same reason `premiseUnsupported` is: the refuted list is
     // fed forward as "do NOT re-report — adversarially disproven", and a panel that never finished
     // disproved nothing. It falls to Suspected, which is what the not-run note has always claimed.
-    refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && !v.degraded && v.votes.length > 0),
-    suspected: judged.filter(v => v.degraded || v.votes.length === 0 || v.premiseUnsupported),
+    refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && !v.undecidedByAbsence && v.votes.length > 0),
+    suspected: judged.filter(v => v.undecidedByAbsence || v.votes.length === 0 || v.premiseUnsupported),
   }
 }
 // <<< craft-inline
@@ -700,6 +712,16 @@ if (unverifiedJobs.length) log(`WARNING: ${unverifiedJobs.length} checks got no 
 
 let { confirmed, refuted, suspected } = judge(kept, votes)
 log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${suspected.length} suspected (no verdict)`)
+// A finding nobody decided must reach the VERDICT, not only the Suspected list. Suspected downgrades
+// nothing — `baseVerdict` is computed from `confirmed` alone — so a run in which every escalated
+// finding lost the one panel member that would have decided it prints a bare `Approve`, identical to
+// a run whose panels all voted and cleared them. Blocking, and narrow: it needs an escalated
+// (critical/high) finding whose absent vote was the deciding one, which is the exact case where the
+// engine cannot say whether this run should have blocked.
+const undecidedEscalated = [...confirmed, ...refuted, ...suspected].filter(f => f.undecidedByAbsence && isEscalated(f))
+if (undecidedEscalated.length) {
+  markNotRun('escalated-findings-undecided', `${undecidedEscalated.length} critical/high finding(s) lost the panel vote that would have decided them — this run cannot say whether it should have blocked`)
+}
 
 // ================= Coverage: critic, then verify its gaps through the same pipeline =================
 phase('Coverage')
