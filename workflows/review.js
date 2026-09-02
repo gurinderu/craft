@@ -342,7 +342,7 @@ PROFILES.nix = {
 // language roster they need is the mutable PROFILES table above, so it is passed in as an argument
 // rather than read: that argument is exactly what keeps them extractable.
 
-// >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote
+// >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote telemetryLostSection
 // The human-readable roster of what the engine can review, named in every coverage message so a
 // caller reading "nothing was reviewed" also learns what would have been.
 function supportedLangLabel(profiles) {
@@ -501,6 +501,35 @@ function nothingToReviewMessage(fileCount) {
 function uncoveredNotRunNote(material) {
   const shown = material.slice(0, 5).join(', ')
   return `${material.length} changed file(s) matched no language profile and were NOT reviewed (${shown}${material.length > 5 ? `, +${material.length - 5} more` : ''})`
+}
+
+// ---- telemetry honesty ----
+// A run record is written by an agent shelling out to lib/craft-log-run.mjs, so the write can fail
+// while the review itself is perfectly healthy: a craftRoot that has moved, a dead logger agent, a
+// damaged store. Losing it used to be pure silence, and silence in the store is read as "this review
+// was never run" — the permissive default wearing the face of a fact.
+// The recorded decision is that this NEVER fails the run (a three-hour review killed by a bookkeeping
+// write teaches everyone to ignore the marker); it is reported instead. Returns '' for a healthy run,
+// so the marker cannot appear where nothing was lost — a marker that fires on healthy runs is one
+// people stop reading, which is the same defect wearing the opposite sign.
+// The body speaks about the WRITE, never about the run: it goes on every exit, including those whose
+// verdict says nothing was reviewed (dead base resolution, unknown language pin, empty diff), where
+// reassurance that "the review ran" would contradict the verdict itself. And it says "could not be
+// confirmed", not "did not land": two of the three ways an entry gets here — an abandoned deadline
+// (the logger agent is NOT cancelled and may still write) and a malformed reply — are compatible with
+// a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
+// It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
+// embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
+function telemetryLostSection(lost) {
+  const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
+  if (!lines.length) return ''
+  return [
+    `## ⚠️ Telemetry lost`,
+    `${lines.length} record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.`,
+    ...lines.map(l => `- ${l}`),
+    ``,
+    ``,
+  ].join('\n')
 }
 // <<< craft-inline
 
@@ -1130,11 +1159,18 @@ async function ragent(prompt, opts = {}) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
     let timer = null
-    const res = await Promise.race([
-      agent(`${REPO_DIRECTIVE}${prompt}`, o),
-      new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), ms) }),
-    ])
-    clearTimeout(timer)
+    // try/finally, not a bare clearTimeout after the await: a rejection from agent() used to skip it
+    // and leave the timer pending. That was invisible while a throw killed the run outright; now that
+    // ragentQuietly swallows it, a leaked timer would hold the run open for the whole deadline.
+    let res
+    try {
+      res = await Promise.race([
+        agent(`${REPO_DIRECTIVE}${prompt}`, o),
+        new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), ms) }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
     if (res === DEADLINE_HIT) {
       const mins = Math.round(ms / 60000)
       log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${attempt < AGENT_TRIES ? ' and re-dispatching once' : ' (giving up; treated as a dead agent)'}`)
@@ -1199,11 +1235,58 @@ function finalVerdict(confirmed) {
 // its job is to survive the run, not to duplicate the final record early. `runDir` is threaded back
 // out of the first call so every later checkpoint lands in the same directory without the sandbox
 // needing a clock or a run id (it has neither).
+// Telemetry is written by an agent shelling out to lib/craft-log-run.mjs, so it fails for reasons the
+// run itself survives: a craftRoot that no longer exists, a dead logger agent, a damaged store. That
+// failure used to be pure silence — the review finished, the store stayed empty, and an empty store
+// is indistinguishable from "this review was never run" (realm @nick/craft, node #24).
+// The choice is deliberate and recorded (realm @nick/craft, node #34): a lost record NEVER fails the
+// run. Killing a three-hour review over a bookkeeping write would teach everyone to ignore the very
+// marker this exists to raise. It is reported instead, in the report a human actually reads.
+const telemetryLost = []
+function noteTelemetryLoss(what, why) {
+  const line = `${what}${why ? ` — ${why}` : ''}`
+  telemetryLost.push(line)
+  log(`⚠️ telemetry lost: ${line}`)
+}
+// For the ragent calls whose FAILURE is not the caller's problem: the run record, the phase
+// checkpoints and the prior-round read. They are bookkeeping — every other agent in this engine
+// produces review content, so a throw there should stop the run. These must not: the final logRun
+// runs AFTER the report already exists in memory, so losing it to a bookkeeping write would throw
+// away the whole run's product.
+async function ragentQuietly(prompt, opts) {
+  try {
+    return await ragent(prompt, opts)
+  } catch (e) {
+    return { __threw: String(e?.message || e) }
+  }
+}
+
+// Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
+// ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
+// on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
+function out(reportText) {
+  return `${telemetryLostSection(telemetryLost)}${reportText}`
+}
+
+// Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
+const LOGRUN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok'],
+  properties: {
+    ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
+    error: { type: 'string', description: 'when ok is false, the failing line verbatim; empty otherwise' },
+  },
+}
+
 const CHECKPOINT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['runDir'],
-  properties: { runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' } },
+  properties: {
+    runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' },
+    error: { type: 'string', description: 'when runDir is empty, the failing line verbatim; empty otherwise' },
+  },
 }
 let runDir = ''
 async function checkpoint(phase, payloadIn, group) {
@@ -1212,7 +1295,11 @@ async function checkpoint(phase, payloadIn, group) {
   // `…Z-unknown-unknown` directory on the first live run — recoverable, but recovered as a run of
   // nothing. They belong on every slice, not just the final record.
   const payload = { kind: 'workflow', name: 'review', ...payloadIn }
-  const res = await ragent(
+  // ragent does NOT catch a budget-exceeded throw (see its comment), and agent() throws for harness
+  // reasons too — so a rejection, not just a null, is a real outcome here. It has to land in the same
+  // place as every other failed write: the report. Letting it propagate would abort the whole review
+  // over a bookkeeping write, which is exactly what this whole path exists to prevent.
+  const res = await ragentQuietly(
     `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
 Run exactly this, then return the runDir the script prints:
@@ -1231,6 +1318,7 @@ ${JSON.stringify(payload, null, 2)}`,
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   if (res?.runDir) runDir = res.runDir
+  else noteTelemetryLoss(`phase checkpoint '${phase}'`, res?.__threw || res?.error || 'the logger agent returned no runDir')
 }
 
 // Persisting the record is deterministic work, and it is now done by lib/craft-log-run.mjs. The model
@@ -1244,7 +1332,7 @@ async function logRun(record) {
   // silent truncation came from. Size the model to the payload.
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
-  await ragent(
+  const res = await ragentQuietly(
     `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -1260,12 +1348,15 @@ The script computes every field (ts, project, commit, dirty, craftCommit), names
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 
-If the script prints a line starting \`craft-log-run FAILED\`, report that line verbatim and stop — do NOT fall back to writing the file by hand. Otherwise report its stdout. Best-effort either way: never error the run over this.
+If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true}. Best-effort either way: never error the run over this.
 
 RECORD:
 ${JSON.stringify(record, null, 2)}`,
-    { label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`, phase: 'Synthesize', model: big ? 'sonnet' : 'haiku', effort: 'low' },
+    { label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`, phase: 'Synthesize', schema: LOGRUN_SCHEMA, model: big ? 'sonnet' : 'haiku', effort: 'low' },
   )
+  // A dead logger agent and a failed script are the same outcome here — no record on disk — so both
+  // are reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
+  if (!res || res.ok !== true) noteTelemetryLoss('the run record', res?.__threw || res?.error || 'the logger agent returned no result')
 }
 
 function key(f) {
@@ -1393,7 +1484,7 @@ if (!detected) {
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection'], outputTokens: budget.spent(),
   })
-  return [`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n')
+  return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n'))
 }
 const baseRef = detected?.baseRef ?? baseArg
 const changedFiles = Array.isArray(detected?.files) ? detected.files : []
@@ -1409,7 +1500,7 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // non-ancestor → treat as a fresh first review). `fresh` skips the whole mechanism.
 let priorRound = null
 if (!freshArg && branch && head) {
-  priorRound = await ragent(
+  priorRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
 Run exactly this:
@@ -1426,6 +1517,18 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
   if (!priorRound?.found) {
     if (priorRound?.reason) log(`No prior round: ${priorRound.reason}`)
+    // A read that FAILED is the same lost-record class as a write that failed, and its silence is
+    // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
+    // track is skipped) and the report cannot be told apart from a genuine first pass.
+    // Narrow on purpose: the loader tells "there IS no prior round" (no-candidate-rows, no-branch, an
+    // ancestry rejection after a rebase — health, and the common case: every first review) apart from
+    // "the read could not run". Only the latter is a lost record; marking the former would fire the
+    // marker on every first review, which is precisely how a marker stops being read.
+    const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
+    const readFailed = !priorRound || !!priorRound.__threw || READ_FAILURES.some(r => String(priorRound.reason || '').startsWith(r))
+    if (readFailed) {
+      noteTelemetryLoss('the prior-round ledger', priorRound?.__threw || priorRound?.reason || 'the loader agent returned no result')
+    }
     priorRound = null
   }
   // Harden the model-authored ledger `head` at the LOAD boundary before it ever reaches a shell
@@ -1475,7 +1578,7 @@ if (unknownLangs.length) {
     languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
     notRun: [`nothing ran — ${msg}`], outputTokens: budget.spent(),
   })
-  return [`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n')
+  return out([`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n'))
 }
 const detectedActive = Object.values(PROFILES).filter(p => (!pinnedLangs || pinnedLangs.includes(p.id)) && p.detect(changedFiles))
 // ORDER IS LOAD-BEARING, and it lives in resolveCoverage: the guards are decided from
@@ -1493,10 +1596,10 @@ if (coverage.outcome === 'empty') {
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: [], notRun: [emptyMsg], outputTokens: budget.spent(),
   })
-  return [
+  return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
     ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
-  ].join('\n')
+  ].join('\n'))
 }
 if (coverage.outcome === 'nothing-to-review') {
   // Nothing was reviewed AND nothing needed reviewing — an honest green, not a coverage hole. A
@@ -1507,11 +1610,11 @@ if (coverage.outcome === 'nothing-to-review') {
     languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: changedFiles, notRun: [], outputTokens: budget.spent(),
   })
-  return [
+  return out([
     `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
     ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
-  ].join('\n')
+  ].join('\n'))
 }
 if (coverage.outcome === 'no-profile') {
   const msg = noLanguageMessage(PROFILES, changedFiles.length, coverage.material.length)
@@ -1520,11 +1623,11 @@ if (coverage.outcome === 'no-profile') {
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: changedFiles, notRun: [msg], outputTokens: budget.spent(),
   })
-  return [
+  return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${msg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
     ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map(f => `- ${f}`)] : []),
-  ].join('\n')
+  ].join('\n'))
 }
 log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 
@@ -2409,7 +2512,7 @@ function reviewRecord(extra) {
 
 if (gateFailed.length) {
   await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
-  return [
+  return out([
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
     ``,
@@ -2419,7 +2522,7 @@ if (gateFailed.length) {
     carriedSection(),
     ``,
     `Fix the gate before a semantic review is worthwhile.`,
-  ].join('\n')
+  ].join('\n'))
 }
 
 let confirmed = results.flatMap(r => r.confirmed)
@@ -2611,9 +2714,9 @@ if (!confirmed.length && !suspected.length && !hasAdjudicated) {
   const verdictLine = incompleteNotes.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
-  return [`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
+  return out([`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
-  ].join('\n')
+  ].join('\n'))
 }
 
 // ================= Synthesize one merged report =================
@@ -2763,4 +2866,4 @@ function fallbackReport() {
   ].join('\n')
 }
 
-return report || fallbackReport()
+return out(report || fallbackReport())
