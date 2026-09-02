@@ -654,11 +654,29 @@ function buildVerifyJobs(findings, sink) {
 // >>> craft-inline lib/adversarial-judge.mjs judgeVotes
 function judgeVotes(findings, sink, SEV_RANK) {
 
-  const calibrate = (f, votes) => {
+  // Severity is the THIRD decision axis, and the one that produces the verdict: `baseVerdict` reads
+  // Block from a confirmed critical/high, Warning from a medium, Approve otherwise. So the absent
+  // vote must be asked the same question here as on the other two — and it was not, which is how a
+  // dead lens turned Block into Approve while both other axes agreed and nothing was flagged.
+  // The median is taken over the FULL panel: a panel of three whose members voted [high, low] and
+  // lost one has median index 1 of TWO, i.e. the milder — absence pulling severity down.
+  const ranks = Object.keys(SEV_RANK).sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
+  const MOST = ranks[0]
+  const LEAST = ranks[ranks.length - 1]
+  // Which side of the verdict this severity falls on. Comparing TIERS, not severities, keeps the
+  // marker narrow: critical vs high both mean Block, and flagging that as undecided would fire on
+  // runs where the absence changed nothing — a false INCOMPLETE is no safer here than a false clean.
+  const tierOf = sev => (SEV_RANK[sev] <= SEV_RANK.high ? 'block' : sev === 'medium' ? 'warning' : 'approve')
+  const calibrateWith = (f, votes, missing, pad) => {
     const sevs = votes.filter(v => !v.refuted && v.severity !== 'not-an-issue')
-      .map(v => v.severity).sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
+      .map(v => v.severity)
+      .concat(Array.from({ length: missing }, () => pad))
+      .sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
     return sevs.length ? sevs[Math.floor(sevs.length / 2)] : f.severity
   }
+  // The absent votes padded with what the FINDER claimed — a neutral stand-in, where their silence
+  // was not. Only used once the two extremes agree that the verdict cannot swing either way.
+  const calibrate = (f, votes, missing) => calibrateWith(f, votes, missing, f.severity)
   const judged = findings.map((f, idx) => {
     const all = sink[idx]
     // A missing vote must not decide — but "missing" is not the same as "undecidable". Ask what the
@@ -695,11 +713,13 @@ function judgeVotes(findings, sink, SEV_RANK) {
     const unsupportedIfAbsentSupported = (supported + missing) * 2 <= all.length
     const premiseUndecided = survives && unsupportedIfAbsentUnsupported !== unsupportedIfAbsentSupported
     const premiseUnsupported = survives && !premiseUndecided && unsupportedIfAbsentUnsupported
-    const undecided = refuteUndecided || premiseUndecided
-    const confirmed = survives && !premiseUnsupported && !premiseUndecided
+    const severityUndecided = survives && !premiseUnsupported && missing > 0
+      && tierOf(calibrateWith(f, votes, missing, MOST)) !== tierOf(calibrateWith(f, votes, missing, LEAST))
+    const undecided = refuteUndecided || premiseUndecided || severityUndecided
+    const confirmed = survives && !premiseUnsupported && !premiseUndecided && !severityUndecided
     // `undecidedByAbsence` is the honest label for "nobody decided this": it is what a caller must
     // surface in the VERDICT, because a finding parked in Suspected does not downgrade anything.
-    return { ...f, confirmed, premiseUnsupported, undecidedByAbsence: missing > 0 && (undecided || votes.length === 0), votes, severity: confirmed ? calibrate(f, votes) : f.severity }
+    return { ...f, confirmed, premiseUnsupported, undecidedByAbsence: missing > 0 && (undecided || votes.length === 0), votes, severity: confirmed ? calibrate(f, votes, missing) : f.severity }
   })
   return {
     confirmed: judged.filter(v => v.confirmed),
