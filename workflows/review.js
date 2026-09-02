@@ -653,6 +653,13 @@ const CHANGED_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['changed', 'reason'],
   properties: { changed: { type: 'boolean' }, reason: { type: 'string' } },
 }
+const PR_COMMENTS_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['posted', 'reason'],
+  properties: {
+    posted: { type: 'integer', description: 'how many inline comments were actually created; 0 if none' },
+    reason: { type: 'string', description: 'the PR posted to, or why nothing was posted' },
+  },
+}
 const ADJUDICATE_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['status', 'currentLine', 'note', 'invariant', 'attack'],
   properties: {
@@ -696,7 +703,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey alreadyCarried
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -707,12 +714,22 @@ const ATTACK_MAX = 500
 // injected output cannot restyle the report or compound across re-review rounds.
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
-  // `REGRESSED after fix` / `UNVERIFIED` marker word to a plain space. The words survive (no content
-  // loss) but the exact ` — <marker>: ` shape baseWhy parses is gone — so an attack/note that echoes
-  // a marker can no longer re-introduce a parseable marker that would accrete a stale fragment each
-  // re-review round.
+  // `REGRESSED after fix` / `UNVERIFIED` / `still-open` marker word to a plain space, and likewise
+  // the ` — ` before the absorb mark (`also reported at`) and its overflow counter. The words
+  // survive (no content loss) but the exact ` — <marker> ` shape baseWhy / splitAbsorbed parse is
+  // gone — so a model-authored attack, note or TITLE that echoes a marker can neither re-introduce
+  // a parseable marker that accretes a stale fragment each round, nor forge an "also reported at"
+  // site that would render a fabricated file:line in the report and consume an ABSORBED_MAX slot.
+  // ` (reopened: ` is collapsed for the same reason: baseWhy strips it when it lands at the end.
+  // The overflow counter's own `(+` is broken too, for BOTH its spellings — ` — (+N more report(s)`
+  // as noteAbsorbed persists it, and `(+N further report(s) at this site` as absorbedPromptBlock
+  // renders it. Collapsing only the leading ` — ` left the phrase itself intact, so a model-authored
+  // file/title carrying it still rendered a convincing "further reports" fragment INSIDE a prompt
+  // block line (no forged list item — the newline is already gone — but a forged sentence).
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '')
-    .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED)/gi, ' ').trim()
+    .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED|still-open|also reported at|\(\+\d+ (?:more|further) report)/gi, ' ')
+    .replace(/ \(reopened: /gi, ' (reopened ')
+    .replace(/\(\+(?=\d+ (?:more|further) report\(s\))/gi, '(').trim()
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 
@@ -793,8 +810,8 @@ function carriedKey(f) {
   return file && ruleId ? `${file}\u0000${ruleId}` : ''
 }
 
-// True when `f` (a finding the lenses just discovered) is already being tracked by one of `priors`
-// (the still-live adjudicate track: still-open / regressed / carried).
+// The prior a freshly-discovered finding is ALREADY tracked by, or null. `priors` is the still-live
+// adjudicate track (still-open / regressed / carried / retired).
 //
 // WHY FILE+RULEID AND NOT A TITLE MATCH. On a full re-scan the lenses see the whole diff and
 // re-invent every prior as a fresh finding. The old test — matchesPrior, which requires file and
@@ -804,27 +821,195 @@ function carriedKey(f) {
 // finding costs one adjudicator call next round, so the ledger — and the bill — grew round over
 // round. Dropping the title threshold entirely is what stops the accretion.
 //
-// THE COST, STATED HONESTLY: file+ruleId is coarser than the old test, so two GENUINELY DISTINCT
-// defects that share a file and a rule collapse into one ledger entry — the new one is dropped.
-// That is acceptable for exactly one reason: the prior it collapsed into REMAINS INDEPENDENTLY
-// CARRIED on the adjudicate track and is re-checked, by name, on its own next round. The new
-// finding is not lost information; it is a second report of a site already under scrutiny.
+// THE COST, AND WHERE IT IS PAID. file+ruleId is coarser than the old test, so two GENUINELY
+// DISTINCT defects that share a file and a rule collapse into one ledger entry. That would be a
+// silent loss — a prior does not have to be PRUNED to vanish, it vanishes the round it RESOLVES,
+// and `adjudicated.resolved` is deliberately not written to the next ledger. Within a round the
+// collapse is already safe (the caller never dedups against the resolved track), but a finding
+// absorbed in round N whose host resolves in round N+1 would be unrecorded and untracked — and on
+// an incremental round its site is out of the lens base, so nothing re-discovers it.
 //
-// THE CONDITION UNDER WHICH THIS STOPS BEING SAFE: if anything ever PRUNES the adjudicate track —
-// caps the carried set, expires priors after N rounds, drops the ones an adjudicator could not
-// re-locate, or trims the ledger by size — then the prior this drops into can vanish while the
-// finding it absorbed was never recorded anywhere, and the defect is silently lost. Any such
-// pruning must either keep this match exact or re-admit the absorbed findings first.
+// So absorption is not free and not silent: the absorbed finding LANDS — as a clause on the host's
+// `why` (absorbInto), which is a persisted ledger field. The clause is written INTO the base
+// rationale, ahead of the per-round markers, so baseWhy's marker-stripping cannot take it away
+// again, and it renders in the round's report.
+//
+// AND IT IS DELIVERED, NOT MERELY STORED. `why` is interpolated into the adjudicate and red-team
+// prompts through sanitizeAttack, which caps at ATTACK_MAX — and the clauses sit at the END of the
+// rationale, so on any realistic (paragraph-length) rationale they were cut off before the model
+// ever saw them. They therefore travel OUTSIDE that field: splitAbsorbed lifts them off the `why`,
+// withoutAbsorbed is what gets interpolated, and absorbedPromptBlock renders each site on its own
+// line with the sentence that says what it means for the verdict. Only then is it true that the
+// host cannot leave the ledger without an adjudicator that was TOLD a second defect was reported here.
 //
 // `fallbackMatch` (the workflow passes matchesPrior) is used only when the finding or the prior has
 // no usable file+ruleId key: without a ruleId the coarse key would collapse everything in a file.
-function alreadyCarried(f, priors, fallbackMatch) {
+//
+// FIRST MATCH WINS, AND THE ORDER IS THE CALLER'S CONTRACT. Several priors can share a file+ruleId;
+// `.find` takes the earliest. The workflow builds `livePriors` as
+// [...stillOpen, ...regressed, ...carried, ...retired] — retired LAST on purpose, so a host that
+// reaches the next ledger is preferred over one that is leaving it (partitionAbsorbed would
+// otherwise keep the finding at a retired host that a live host could have absorbed). That
+// preference is positional, not enforced here; a caller reordering that array changes it.
+function findCarrier(f, priors, fallbackMatch) {
   const key = carriedKey(f)
-  return (priors || []).some(p => {
+  return (priors || []).find(p => {
     const pk = carriedKey(p)
     if (key && pk) return key === pk
     return typeof fallbackMatch === 'function' ? !!fallbackMatch(f, p) : false
-  })
+  }) || null
+}
+
+// True when `f` (a finding the lenses just discovered) is already tracked by one of `priors`.
+function alreadyCarried(f, priors, fallbackMatch) {
+  return !!findCarrier(f, priors, fallbackMatch)
+}
+
+// How many absorbed reports are named individually on one host before the rest collapse to a count.
+// Not a prune: past the cap the host still says a further N reports landed here, so "this site holds
+// more than one defect" survives — only the extra file:line/title detail is traded for a bounded
+// `why`, which is re-interpolated into every subsequent prompt and rendered in the report.
+const ABSORBED_MAX = 3
+
+// The absorbed finding's landing place: the host's BASE `why`, extended by one bounded clause.
+// Re-absorbing the identical report is a no-op, so a defect the lenses re-discover every round does
+// not grow the string round over round. The clause shape is deliberately unlike the ` — <marker>: `
+// shape baseWhy parses, so it is never mistaken for a per-round append and stripped.
+// Per-part caps for an absorbed clause. ATTACK_MAX (500) is the cap for a rationale-sized field; a
+// path and a finding title are not that, and at up to 3 clauses a host's `why` — already the bulk of
+// the transport payload — could grow by ~3 KB on these two fields alone. A path needs ~120 and a
+// title ~160; past that the part is elided, which costs recognisability, not the site itself.
+const ABSORB_FILE_MAX = 120
+
+const ABSORB_TITLE_MAX = 160
+
+// sanitizeAttack, then a tighter cap. Shares the sanitiser so the marker-collapsing (and therefore
+// the forgery defence) applies to every part of a clause.
+function clampField(text, max) {
+  const s = sanitizeAttack(text)
+  return s.length > max ? `${s.slice(0, max)}…` : s
+}
+
+function noteAbsorbed(baseText, f) {
+  const base = String(baseText ?? '')
+  const mark = ' — also reported at '
+  const clause = `${mark}${clampField(f?.file, ABSORB_FILE_MAX) || '?'}:${Number(f?.line) || 0}: ${clampField(f?.title, ABSORB_TITLE_MAX) || 'untitled'}`
+  if (base.includes(clause)) return base
+  if (base.split(mark).length - 1 < ABSORBED_MAX) return base + clause
+  const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
+  const m = base.match(overflow)
+  return `${m ? base.replace(overflow, '') : base} — (+${m ? Number(m[1]) + 1 : 1} more report(s) at this site)`
+}
+
+// Record `f` on its host's `why`. baseWhy is a PREFIX function (every rule it applies strips a
+// TRAILING marker), so the base can be extended and this round's marker suffix re-attached
+// unchanged — which is what keeps the clause alive across rounds: next round's baseWhy strips the
+// marker and keeps everything the clause sits in.
+function absorbInto(hostWhy, f) {
+  const s = String(hostWhy ?? '')
+  const base = baseWhy(s)
+  return noteAbsorbed(base, f) + s.slice(base.length)
+}
+
+// Lift the absorbed clauses back OFF a host's `why`. Returns the rationale as it stood before any
+// absorption (`base`), the individually-named sites, and the overflow count. Parsing is done on
+// baseWhy(why) so a per-round marker suffix — which may itself contain the mark's words — cannot be
+// mistaken for a clause.
+//
+// WHAT THIS DOES NOT DEFEND AGAINST, STATED PLAINLY. sanitizeAttack breaks the mark's shape in every
+// part that passes THROUGH it — attacks, notes, and the file/title of a clause. It does not run over
+// a fresh lens finding's `why`: that comes straight from the lens schema and reaches this parser
+// unsanitized the moment the finding becomes a host. So a rationale that literally contains
+// ` — also reported at nowhere.rs:1: fabricated` splits wrong in BOTH directions: withoutAbsorbed
+// hands the adjudicator a TRUNCATED rationale, and absorbedPromptBlock renders the fabricated site
+// as a real absorbed report. It needs the exact em-dash phrasing, so it is unlikely — but it is not
+// prevented, and the delimiter is textual, so no amount of sanitising downstream can prevent it.
+// (This is the same honesty baseWhy's own comment keeps about a rationale that QUOTES a marker.)
+function splitAbsorbed(why) {
+  const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
+  let head = baseWhy(why)
+  const m = head.match(overflow)
+  const more = m ? Number(m[1]) : 0
+  if (m) head = head.replace(overflow, '')
+  const parts = head.split(' — also reported at ')
+  return { base: parts[0], sites: parts.slice(1).map(s => s.trim()).filter(Boolean), more }
+}
+
+// The `why` as it should be interpolated into a prompt: the rationale plus this round's marker
+// suffix, with the absorbed clauses removed — they are delivered separately (absorbedPromptBlock)
+// because this field is passed through sanitizeAttack's ATTACK_MAX cap and a trailing clause on a
+// paragraph-length rationale is simply cut off.
+function withoutAbsorbed(why) {
+  const s = String(why ?? '')
+  return splitAbsorbed(s).base + s.slice(baseWhy(s).length)
+}
+
+// The prompt lines that DELIVER the absorbed reports to an adjudicator or red-teamer: outside the
+// capped `why` field, one site per line, and — the half a bare list leaves out — a sentence saying
+// what their presence means for the verdict. Empty string when nothing was absorbed, so the caller
+// can interpolate it unconditionally.
+function absorbedPromptBlock(why) {
+  const { sites, more } = splitAbsorbed(why)
+  if (!sites.length && !more) return ''
+  const lines = sites.map(s => `  - ${s}`)
+  if (more) lines.push(`  - (+${more} further report(s) at this site, not named individually)`)
+  return `\nALSO REPORTED AT THIS SITE (further defects later rounds raised at the same file+rule; they are tracked ONLY through this finding and leave the ledger when it does):\n${lines.join('\n')}\nThey are part of what you are adjudicating: "resolved" requires that every one of them is gone too. If any of them still stands, return "still-open" and cite it in \`attack\`.\n`
+}
+
+// Split freshly-discovered findings into the ones that stay and the ones absorbed into a still-live
+// prior, and say how each host's `why` must change. Pure: hosts are not mutated — the caller applies
+// `updates`.
+//
+// A RETIRED host absorbs NOTHING. It is not persisted, so a clause written on it would not survive
+// the round: the report would exist in no report and no ledger. And the granularities do not even
+// line up — retirement is judged at REGION granularity ("was the enclosing symbol touched"), while a
+// carrier matches on file+ruleId, so a genuinely new defect elsewhere in the same file under the
+// same rule, in code that DID move, would be dropped by a host whose own region did not. That is the
+// exact loss class this design set out to close. Keeping the finding costs nothing: the retired
+// prior is leaving the ledger anyway, so there is no double-listing to avoid.
+// `seed` carries absorptions ALREADY decided for these same hosts by an earlier call (see
+// absorbAcross): the returned `updates` is cumulative, seeded entries included, and a host present
+// in it extends THAT text rather than its own un-absorbed `why`.
+function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
+  const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
+  const kept = [], updates = new Map(seed || [])
+  let absorbed = 0, keptAtRetired = 0
+  for (const f of findings || []) {
+    const host = findCarrier(f, livePriors, fallbackMatch)
+    if (!host) { kept.push(f); continue }
+    if (isRetired(host)) { keptAtRetired++; kept.push(f); continue }
+    absorbed++
+    updates.set(host, absorbInto(updates.has(host) ? updates.get(host) : host.why, f))
+  }
+  return { kept, absorbed, keptAtRetired, updates }
+}
+
+// Absorb SEVERAL finding lists (the workflow's confirmed and suspected tracks) against ONE shared
+// set of hosts, and say — once — how every host's `why` must change.
+//
+// WHY THIS EXISTS RATHER THAN TWO CALLS. The tracks share hosts: `livePriors` is matched on
+// file+ruleId, and the confirmed/suspected split is orthogonal to that key, so a host absorbing from
+// both is ordinary. Two INDEPENDENT calls each compute their clause from the same un-absorbed
+// `host.why`, and applying their `updates` afterwards is a lost update — the second map's value
+// overwrites the first's and the confirmed track's absorbed report lands in no track at all: not
+// kept as a finding, not on the host, not in the ledger. Here each list is threaded into the next
+// through the seed, so the clauses accumulate.
+//
+// Pure, like partitionAbsorbed: hosts are not mutated. The caller applies `updates` once.
+function absorbAcross(lists, livePriors, retired, fallbackMatch) {
+  const runs = []
+  let updates = new Map()
+  for (const list of lists || []) {
+    const r = partitionAbsorbed(list, livePriors, retired, fallbackMatch, updates)
+    updates = r.updates
+    runs.push(r)
+  }
+  return {
+    runs,
+    updates,
+    absorbed: runs.reduce((n, r) => n + r.absorbed, 0),
+    keptAtRetired: runs.reduce((n, r) => n + r.keptAtRetired, 0),
+  }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -922,7 +1107,7 @@ const REPO_DIRECTIVE = repoArg
 // alone. Calibrating against execution time was a real and expensive mistake: Verify sat at 15min
 // against an 811s measured maximum, then a ~130-thunk wave queued agents for a quarter of an hour
 // before they ran, the deadline fired on agents that were merely waiting, and 23 findings cost 172
-// verification agents. Dispatch is windowed now (VERIFY_WAVE_AGENTS), which caps the queue term — and
+// verification agents. Dispatch is windowed now (VERIFY_WINDOW_AGENTS), which caps the queue term — and
 // these numbers are set against the SUM: ~24 agents dispatched in flight over an execution p90 of
 // ~360s is well under 15min of waiting, so 30min leaves real headroom above both parts. The window
 // bounds DISPATCH, not occupancy: the re-dispatch below leaves the abandoned agent holding its
@@ -1596,7 +1781,7 @@ const CULL_MODEL = 'sonnet'
 // ---- verification dispatch bounding ----
 // Pure helpers, tested as a real module in lib/review-waves.mjs and pasted back here by the
 // craft-inline gate, because this script cannot be imported (top-level export + await + return).
-// >>> craft-inline lib/review-waves.mjs VERIFY_WAVE_AGENTS verifyWeight weightedWindow
+// >>> craft-inline lib/review-waves.mjs VERIFY_WINDOW_AGENTS verifyWeight weightedWindow
 // How many AGENTS verification keeps in flight at once. Chosen so the queue term of the Verify
 // deadline stays small: ~24 agents over an execution p90 of ~360s is well under 15min of waiting,
 // which is what makes a 30min dispatch-clock deadline mean "stuck" rather than "popular".
@@ -1605,7 +1790,7 @@ const CULL_MODEL = 'sonnet'
 // agent keeps its harness concurrency slot until it is reaped, so a window can transiently sit at up
 // to twice this number. That doubling costs a 30min deadline first, so it cannot recreate the
 // unbounded storm — but it is a real ceiling of ~48, not ~24.
-const VERIFY_WAVE_AGENTS = 24
+const VERIFY_WINDOW_AGENTS = 24
 
 // Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
 // never over. A batch thunk is one agent; a High/Critical opens with a cull + the authoritative
@@ -1793,7 +1978,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // batch no longer holds up the first verifier — but that list is dispatched through a BOUNDED
   // SLIDING WINDOW rather than all at once, because the per-agent deadline is measured from DISPATCH
   // and an unbounded fan-out makes it fire on queue wait instead of on hanging. A window, not waves:
-  // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WAVE_AGENTS).
+  // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
   const batchThunks = groups.map(group => () =>
     ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => group.map((f, i) => {
@@ -1841,12 +2026,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const entries = batchThunks.map(run => ({ run, weight: 1 }))
     .concat(route.individual.map((f, i) => ({ run: individualThunks[i], weight: verifyWeight(f, plan) })))
   const totalWeight = entries.reduce((n, e) => n + e.weight, 0)
-  if (totalWeight > VERIFY_WAVE_AGENTS) {
-    log(`[${profile.id}] Verify dispatched through a sliding window of ≤${VERIFY_WAVE_AGENTS} agents (${totalWeight} worst-case agents queued) — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging; the window refills as each verifier settles, so nothing waits on a batch's slowest member`)
+  if (totalWeight > VERIFY_WINDOW_AGENTS) {
+    log(`[${profile.id}] Verify dispatched through a sliding window of ≤${VERIFY_WINDOW_AGENTS} agents (${totalWeight} worst-case agents queued) — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging; the window refills as each verifier settles, so nothing waits on a batch's slowest member`)
   }
   // parallel([run]) per entry, not one parallel() over all of them: it is the sandbox primitive that
   // turns a throwing thunk into null, and a single-thunk barrier is no barrier at all.
-  const settledVerdicts = await weightedWindow(entries, VERIFY_WAVE_AGENTS, run => parallel([run]).then(rs => rs[0]))
+  const settledVerdicts = await weightedWindow(entries, VERIFY_WINDOW_AGENTS, run => parallel([run]).then(rs => rs[0]))
   const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
   const judged = settledVerdicts.slice(batchThunks.length)
   const vp = judged.filter(Boolean).concat(batched, skipped)
@@ -2244,7 +2429,11 @@ let suspected = results.flatMap(r => r.suspected)
 // For each prior-round finding, decide its fate this round. rejected/justified are carried (not
 // re-raised) unless the code around them changed; open/deferred/confirmed priors get a targeted
 // "is it still here?" check against the current tree.
-const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [] }
+// `retired` is the carried track's EXIT: a dismissed prior whose carry-check reported the code
+// around it unchanged has had its one confirmation and leaves the ledger. It still lives here for
+// the rest of THIS round — it suppresses a lens re-discovery (below) and renders in the report's
+// carried section — but it is not re-persisted, so it never costs another carry agent.
+const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], retired: [] }
 if (priorRound?.ledger?.length) {
   phase('Adjudicate')
   // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
@@ -2271,11 +2460,35 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
   // A dead carry agent (changed == null) is indeterminate — keep the dismissed prior as carried (do
   // NOT reopen on an indeterminate carry), but count + ⚠️-log it like the other death paths so this
   // is no longer the one unaudited death path.
+  //
+  // THE EXIT, AND WHY IT LOSES NOTHING. A dismissal is the author's decision; the only thing that
+  // can invalidate it is the code around it changing. So one carry-check that says "unchanged" is
+  // the whole answer, and re-asking it every round forever buys nothing — it was the only track
+  // with no exit at all, costing one agent per dismissal per round in perpetuity. A retired prior
+  // is not forgotten into silence: the lenses raise the finding fresh, on its merits — which is
+  // exactly what the `changed === true` branch does here, minus the stale `rejected` label.
+  //
+  // WHEN THE RE-RAISE HAPPENS, HONESTLY. Not only "if that code is ever touched again". On a full
+  // re-scan the lenses see the whole diff and re-invent every prior, so the re-discovery can land in
+  // the SAME round the dismissal retires: partitionAbsorbed refuses to absorb into a retired host
+  // (it is not persisted), the finding is KEPT, and it enters the next ledger as `open`. The
+  // author's dismissal is then undone with no code change, and next round it costs a full
+  // adjudicator instead of a cheap carry agent.
+  //
+  // THAT IS THE ACCEPTED COST, AND THE ALTERNATIVE IS WORSE. Dropping a finding whose only carrier
+  // retired would reinstate exactly the loss class partitionAbsorbed exists to close: retirement is
+  // judged at REGION granularity while the carrier matches on file+ruleId, so a genuinely NEW defect
+  // elsewhere in the same file under the same rule would be discarded by a host whose own region did
+  // not move — silently, into no report and no ledger. Losing a label is recoverable (the author
+  // re-dismisses it, once); losing a defect is not.
+  //
+  // An INDETERMINATE carry-check (agent died) retires nothing: it stays carried and is asked again
+  // next round.
   let carryDied = 0
   for (const { f, changed } of carriedResults) {
     if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
     else if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
-    else adjudicated.carried.push(f)
+    else adjudicated.retired.push(f)
   }
 
   // Open/deferred/confirmed priors: is the defect CLASS still present at its (re-located) site?
@@ -2295,7 +2508,7 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
       `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
 FINDING: [${pf.severity}] ${pf.title}
   originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
-  why it mattered: ${sanitizeAttack(f.why)}
+  why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
 Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
@@ -2317,7 +2530,7 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
       `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
 FINDING: [${pf.severity}] ${pf.title}
   originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
-  why it mattered: ${sanitizeAttack(f.why)}
+  why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 METHOD:
   1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
   2. Re-locate the symbol (grep it — the line has likely moved) and read the fix.
@@ -2338,27 +2551,41 @@ Return {status, currentLine, note, invariant, attack}.`,
     if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
     adjudicated[track].push(entry)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
+  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${adjudicated.retired.length} carried→retired (code unchanged; leaves the ledger) · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
 }
 
 // On a re-review, lenses can re-surface a finding that is already tracked on the adjudicate track —
 // always on a full re-scan (the lenses saw the whole diff), and even on the delta path when a fix
-// commit touches a still-open site. Drop new findings that are already carried by a still-LIVE prior
-// (still-open/regressed/carried) so they are not double-counted in the report or appended to the
-// persisted ledger — the append is what made the carried set, and therefore the per-round adjudicator
-// bill, grow every round. The match is file+ruleId (alreadyCarried); the reasoning for that coarseness
-// and the condition under which it stops being safe are in lib/review-adjudicate.mjs. matchesPrior is
+// commit touches a still-open site. A new finding already carried by a still-LIVE prior
+// (still-open/regressed/carried/retired) is ABSORBED into that prior rather than listed separately,
+// so it is not double-counted in the report or appended to the persisted ledger — the append is what
+// made the carried set, and therefore the per-round adjudicator bill, grow every round.
+// ABSORBED IS NOT DISCARDED: the finding is recorded onto its host's `why` (absorbInto), a persisted
+// ledger field, so it outlives the round the host RESOLVES and leaves the ledger — the failure mode
+// the old comment named as future and which was in fact already live. The match is file+ruleId
+// (findCarrier); the reasoning for that coarseness is in lib/review-adjudicate.mjs. matchesPrior is
 // the fallback for a finding with no ruleId to key on.
 // Do NOT dedup against RESOLVED priors: a new finding matching a resolved one is a regression signal
 // and must survive.
 if (priorRound) {
-  const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried]
+  const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried, ...adjudicated.retired]
   if (livePriors.length) {
-    const before = confirmed.length + suspected.length
-    confirmed = confirmed.filter(f => !alreadyCarried(f, livePriors, matchesPrior))
-    suspected = suspected.filter(f => !alreadyCarried(f, livePriors, matchesPrior))
-    const removed = before - (confirmed.length + suspected.length)
-    if (removed) log(`Re-review: dropped ${removed} new finding(s) already tracked as a still-live prior (kept on the adjudicate track, not double-counted)`)
+    // A RETIRED host absorbs NOTHING — it is not persisted, so a clause on it would leave the
+    // absorbed report in no report and no ledger. partitionAbsorbed keeps those findings instead;
+    // the reasoning (and why the granularity mismatch makes this the loss class the design set out
+    // to close) is in lib/review-adjudicate.mjs.
+    const retired = new Set(adjudicated.retired)
+    // ONE threaded accumulation across both tracks, not two independent ones: the tracks share
+    // hosts (the carrier key is file+ruleId, orthogonal to the confirmed/suspected split), and two
+    // independent partitions would each compute their clause from the same un-absorbed `host.why`,
+    // so applying them afterwards would drop one report entirely — into no track, no host and no
+    // ledger. absorbAcross returns the cumulative `updates`; it is applied once.
+    const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
+    for (const [host, why] of updates) host.why = why
+    confirmed = runs[0].kept
+    suspected = runs[1].kept
+    if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
+    if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
 }
 
@@ -2378,7 +2605,7 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 // A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
 // through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
 // here would wrongly erase still-open/regressed priors.
-const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length)
+const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length || adjudicated.retired.length)
 if (!confirmed.length && !suspected.length && !hasAdjudicated) {
   await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = incompleteNotes.length
@@ -2394,7 +2621,11 @@ phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
   resolved: adjudicated.resolved, stillOpen: adjudicated.stillOpen,
-  regressed: adjudicated.regressed, carried: adjudicated.carried, neu: confirmed,
+  // `retired` is NOT folded into `carried`: they answer different questions for the reader. A
+  // carried prior is re-checked next round; a retired one leaves the ledger, and on a full rescan
+  // its re-discovery is kept as a New Confirmed finding — so folding them made the report say a
+  // defect was "carried forward unchanged" while listing the same defect under New.
+  regressed: adjudicated.regressed, carried: adjudicated.carried, retired: adjudicated.retired, neu: confirmed,
 } : null
 const report = await ragent(
   `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
@@ -2416,7 +2647,8 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
 6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
-7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) carried forward unchanged, collapsed to a count + one-line list; omit if empty.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
+7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
+7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${incompleteNotes.length ? ` Append " · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
@@ -2433,13 +2665,21 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
 )
 
 // Optional: post Confirmed findings as inline PR comments (best-effort).
+// Best-effort means it must not FAIL the run; it does not mean it may be INVISIBLE. The caller asked
+// for comments, so whether they landed is part of the answer: the outcome is returned under a schema
+// and logged, including "the agent died and we do not know". Discarding the return value made the
+// prompt's own "report that" reach nobody.
 if (postComments && confirmed.length) {
-  await ragent(
-    `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, do nothing and report that — never fail.
+  const posted = await ragent(
+    `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, post nothing and say so in \`reason\` — never fail.
 For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
-${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}`,
-    { label: 'pr-comments', phase: 'Synthesize', effort: 'low' },
+${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}
+Return {posted: <how many comments you actually created>, reason: <one line: the PR you posted to, or why nothing was posted>}.`,
+    { label: 'pr-comments', phase: 'Synthesize', effort: 'low', schema: PR_COMMENTS_SCHEMA },
   )
+  if (posted == null) log(`⚠️ PR comments: the poster agent returned nothing — ${confirmed.length} Confirmed finding(s) may or may not have been posted; check the PR`)
+  else if (Number(posted.posted) > 0) log(`PR comments: posted ${Number(posted.posted)} of ${confirmed.length} Confirmed finding(s) — ${posted.reason || 'no detail'}`)
+  else log(`⚠️ PR comments: nothing was posted (${confirmed.length} Confirmed finding(s) requested) — ${posted.reason || 'no reason given'}`)
 }
 
 const allReviewFindings = confirmed.concat(suspected)
@@ -2453,11 +2693,18 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
   .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
   recordVerdict = 'Block'
 }
-// Persist the ledger so round N+1 can find round N. On a re-review, carry the still-relevant priors
-// forward (still-open/regressed as 'open', dismissed carried with their disposition) UNIONed with the
-// new delta findings; resolved priors are intentionally dropped. Without this the ledger would hold
-// only this round's delta, and a finding open across 3+ rounds — or a dismissed finding — would
-// silently vanish after one hop.
+// Persist the ledger so round N+1 can find round N. On a re-review it grows by FOUR paths, not the
+// three that are obvious: (1) the new delta findings; (2) still-open/regressed priors, as 'open';
+// (3) dismissed priors still carried, with their disposition; and (4) — easy to miss because it
+// enters through (1) — a NEW finding whose only carrier RETIRED this round. partitionAbsorbed keeps
+// such a finding rather than absorbing it into a host that will not be persisted, so on a full
+// re-scan a dismissal can retire and its own re-discovery re-enter the very same ledger as 'open',
+// stripped of the author's disposition. That is deliberate and its cost is argued at the retirement
+// comment above (losing a label beats losing a defect) — but it is a path, and an enumeration that
+// omits it reads as a guarantee it does not make.
+// `resolved` and `retired` priors are intentionally dropped. Without this carry-forward the ledger
+// would hold only this round's delta, and a finding open across 3+ rounds — or a dismissed finding —
+// would silently vanish after one hop.
 const toLedgerEntry = (f, disposition, tier) => ({
   fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
   severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
@@ -2470,6 +2717,8 @@ const reviewLedger = isRereview
     ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
     ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
     ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
+    // `adjudicated.retired` is deliberately absent, like `resolved`: a dismissed prior whose
+    // carry-check confirmed the code around it is unchanged has been answered and leaves the ledger.
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', confirmed.includes(f) ? 'confirmed' : 'suspected'))
