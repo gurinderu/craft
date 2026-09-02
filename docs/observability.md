@@ -23,12 +23,26 @@ Common: `ts`, `runtime` (`"claude-code"` | `"opencode"`), `kind` (`workflow`|`ag
 (craft's own git HEAD, best-effort via `$CLAUDE_PLUGIN_ROOT`). Distinct from `commit`, which is the
 **reviewed project's** HEAD, and from `schemaVersion`, which versions this record format.
 
-Both ride in `index.jsonl` as well as the detail file, because filtering an aggregate to one engine
-version is done by scanning the index. Without them, findings-per-run and refute rates average
-across every rubric change the store has ever seen, so "did tightening that lens help?" cannot be
-answered. `node lib/analyze-runs.mjs --version latest` (or `--version 0.13.1`) applies the filter;
-with no flag, a store holding more than one version says so in the report. Records written before
-these fields carry `null` and are simply outside any version filter.
+Both ride in `index.jsonl` as well as the detail file. Without them, findings-per-run and refute
+rates average across every rubric change the store has ever seen, so "did tightening that lens
+help?" cannot be answered.
+
+**But a release version does not identify an engine, and that is the whole point of the
+`engineRevision` field.** One version can span a behaviour change — the run that made rigor
+deterministic shipped under `0.16.0` and no release followed, so records of two different engines
+carry the same string and only a timestamp separates them. `engineRevision` is the discriminator:
+a hand-bumped integer in `lib/run-record.mjs`, stamped at the single write choke point, forming an
+engine identity of `runtime + craftVersion + rN`. Bump it in the same commit that changes what the
+telemetry means. Nothing can enforce that, and a missed bump asserts sameness — which is why a
+record carrying no revision reads as `r?` and is never folded into the current engine.
+
+`node lib/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
+engine; `--version` still exists and still filters, but a version slice is not an engine slice.
+With no flag the report names the engines it spans **before** any rate, and says so plainly when it
+cannot separate them — a caveat under the numbers arrives after they have been read as a
+before/after. `engineRevision` is not in `indexProjection`: the workflow writers stamp none, so the
+column would be a permanent `null`, and the only engine-aware reader loads the detail files anyway.
+Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, refuted, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero),
 `notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool). The `scout`
