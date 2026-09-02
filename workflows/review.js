@@ -1289,6 +1289,7 @@ const CHECKPOINT_SCHEMA = {
   },
 }
 let runDir = ''
+let checkpointFailed = false
 async function checkpoint(phase, payloadIn, group) {
   // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
   // that name to rebuild a dead run's identity. A payload without them produced a real
@@ -1308,7 +1309,7 @@ Run exactly this, then return the runDir the script prints:
 cat > /tmp/craft-ckpt.json <<'CRAFT_CKPT_EOF'
 …PAYLOAD below, byte for byte…
 CRAFT_CKPT_EOF
-${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-ckpt.json
+${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}${!runDir && checkpointFailed ? '--rejoin ' : ''}--project "$PWD" < /tmp/craft-ckpt.json
 \`\`\`
 
 The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
@@ -1318,7 +1319,15 @@ ${JSON.stringify(payload, null, 2)}`,
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   if (res?.runDir) runDir = res.runDir
-  else noteTelemetryLoss(`phase checkpoint '${phase}'`, res?.__threw || res?.error || 'the logger agent returned no runDir')
+  else {
+    // Remember it: with no runDir to thread, every later checkpoint would mint a directory of its
+    // own and this run would fragment into orphan partials that `recover` promotes as unrelated
+    // half-runs. `--rejoin` lets the script re-enter the directory this run already has. It is opt-in
+    // for a reason — asking for it unconditionally would make a SECOND, concurrent review adopt this
+    // one's directory, and concurrent reviews on one machine are ordinary.
+    checkpointFailed = true
+    noteTelemetryLoss(`phase checkpoint '${phase}'`, res?.__threw || res?.error || 'the logger agent returned no runDir')
+  }
 }
 
 // Persisting the record is deterministic work, and it is now done by lib/craft-log-run.mjs. The model
