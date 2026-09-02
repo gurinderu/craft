@@ -512,13 +512,16 @@ function uncoveredNotRunNote(material) {
 // write teaches everyone to ignore the marker); it is reported instead. Returns '' for a healthy run,
 // so the marker cannot appear where nothing was lost — a marker that fires on healthy runs is one
 // people stop reading, which is the same defect wearing the opposite sign.
+// The body speaks about the WRITE, never about the run: out() appends it to every exit, including
+// those whose verdict says nothing was reviewed (dead base resolution, unknown language pin, empty
+// diff). Reassurance that "the review ran" would contradict the verdict two lines above it there.
 function telemetryLostSection(lost) {
   const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
   return [
     ``,
     `## ⚠️ Telemetry lost`,
-    `The review ran and the verdict above stands, but ${lines.length} record write(s) did not land. The run store is therefore missing or incomplete for this run: its ABSENCE there is NOT evidence that the review never ran.`,
+    `${lines.length} record write(s) for this run did not land, so the run store is missing or incomplete for it. Read the verdict above — not the store — for what this run actually did: the store's silence about it is a bookkeeping failure and says nothing either way about the review.`,
     ...lines.map(l => `- ${l}`),
   ].join('\n')
 }
@@ -1232,6 +1235,18 @@ function noteTelemetryLoss(what, why) {
   telemetryLost.push(line)
   log(`⚠️ telemetry lost: ${line}`)
 }
+// The only ragent call whose FAILURE is not the caller's problem. Every other agent in this engine
+// produces review content, so a throw there should stop the run; a telemetry write must not, and the
+// final one runs AFTER the report already exists in memory — losing it to a bookkeeping write would
+// throw away the whole run's product.
+async function ragentQuietly(prompt, opts) {
+  try {
+    return await ragent(prompt, opts)
+  } catch (e) {
+    return { __threw: String(e?.message || e) }
+  }
+}
+
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
@@ -1266,7 +1281,11 @@ async function checkpoint(phase, payloadIn, group) {
   // `…Z-unknown-unknown` directory on the first live run — recoverable, but recovered as a run of
   // nothing. They belong on every slice, not just the final record.
   const payload = { kind: 'workflow', name: 'review', ...payloadIn }
-  const res = await ragent(
+  // ragent does NOT catch a budget-exceeded throw (see its comment), and agent() throws for harness
+  // reasons too — so a rejection, not just a null, is a real outcome here. It has to land in the same
+  // place as every other failed write: the report. Letting it propagate would abort the whole review
+  // over a bookkeeping write, which is exactly what this whole path exists to prevent.
+  const res = await ragentQuietly(
     `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
 Run exactly this, then return the runDir the script prints:
@@ -1285,7 +1304,7 @@ ${JSON.stringify(payload, null, 2)}`,
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   if (res?.runDir) runDir = res.runDir
-  else noteTelemetryLoss(`phase checkpoint '${phase}'`, res?.error || 'the logger agent returned no runDir')
+  else noteTelemetryLoss(`phase checkpoint '${phase}'`, res?.__threw || res?.error || 'the logger agent returned no runDir')
 }
 
 // Persisting the record is deterministic work, and it is now done by lib/craft-log-run.mjs. The model
@@ -1299,7 +1318,7 @@ async function logRun(record) {
   // silent truncation came from. Size the model to the payload.
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
-  const res = await ragent(
+  const res = await ragentQuietly(
     `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -1323,7 +1342,7 @@ ${JSON.stringify(record, null, 2)}`,
   )
   // A dead logger agent and a failed script are the same outcome here — no record on disk — so both
   // are reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
-  if (!res || res.ok !== true) noteTelemetryLoss('the run record', res?.error || 'the logger agent returned no result')
+  if (!res || res.ok !== true) noteTelemetryLoss('the run record', res?.__threw || res?.error || 'the logger agent returned no result')
 }
 
 function key(f) {

@@ -83,6 +83,15 @@ files. The shaping helpers are tested in `lib/run-record.mjs`; the workflow scri
 copies (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
 section, suppressed when run as a workflow sub-agent.
 
+### When a record is missing
+
+The write can fail while the review itself is fine — a `craftRoot` that has moved, a dead logger
+agent, a damaged store. So an absent record is **not** evidence that a review never ran. The generic
+engine reports it instead of dying: every report it returns ends with a `⚠️ Telemetry lost` section
+naming each write that did not land and why, and that section stays absent on a healthy run. Read the
+report, not the store's silence — and note that only `review.js` does this today; the other engines
+(`adversarial-review`, `rust-audit`, `triage-findings`) still lose a record without saying so.
+
 ## Studying the data
 
 ```bash
