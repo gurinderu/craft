@@ -116,6 +116,10 @@ Every carrier below was observed by running it on 2026-08-31; none is inferred. 
 | "trunk actually contains this" | `origin/main` at the forge, never a local ref | `gh api repos/gurinderu/craft/commits/main --jq .sha` | agent |
 | "the released plugin behaves this way for a consumer" | the installed plugin in a consuming repo | install from the marketplace and exercise it there | user |
 
+**A gate attests to form, not to behaviour.** It proves the thing compiles, parses, and matches its fixture. It never proves that a function is called with what you think it is called with. Measured on 2026-09-01/02: three separate fixes passed every gate and did not work — a `null` wrapped into a truthy object, so `filter(Boolean)` dropped nothing and dead agents counted as refutations; a clause appended into a field the prompt truncates at 500 characters, so it never reached the model; and a verdict parser rewritten five times, each revision breaking the previous one's blind spot in the opposite direction. Each had a green suite.
+
+So: **a claim about behaviour is closed by executing it with the before/after shown, never by explaining why it is now correct.** Revert the change, watch the test fail, restore it — a test that passes without the fix is testing nothing. And where a check can only be a string match over a file that cannot be imported (`workflows/*.js`), say so explicitly rather than letting it read as coverage: it catches a deletion, not a defect.
+
 **Ceiling** — claim classes with no reachable observation here, and why:
 - **"this skill triggers on this prompt"** — the triggering evals are a local harness that needs a live model and are deliberately excluded from CI (`evals/README.md`). A green CI says nothing about triggering. The honest ceiling is a local eval run; never close this from a passing checker.
 - **"the review engine produces good findings"** — the engine's output is a judgment over someone else's code; there is no carrier in this repo that decides it. Closed only by the owner's reading of a real run's `run-record`.
