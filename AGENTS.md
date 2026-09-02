@@ -51,8 +51,8 @@ Realm = the work (structure, open questions, what's next). Git = how we got here
 ### After a green push: self-check
 Quality gate green and the iteration finished → re-read your own diff for: bugs, fragile spots, weak error handling, DRY violations, repeated patterns, missing or useless tests, files over 150 lines, and god-units mixing many concerns. Fix in the **same branch** and push again — or say plainly that nothing surfaced. Do not invent findings. **Per stage, not only at the end:** a review deferred to the end reads a diff too large to hold, and the earliest mistakes are the ones all the later work stands on.
 
-### Cold review of an open PR
-**A self-check does not replace a cold review.** Re-reading your own work, you see what you meant, not what you wrote. A self-check catches sloppiness; only someone who did not see the frame catches the frame. Both, in this order: your own first, then the cold one on the open PR.
+### Cold review of the branch, before the PR
+**A self-check does not replace a cold review.** Re-reading your own work, you see what you meant, not what you wrote. A self-check catches sloppiness; only someone who did not see the frame catches the frame. Both, in this order: your own first, then the cold one — **on the branch, before `gh pr create`**. Push the branch; a reviewer reads a branch, not a PR. The rule and the measurement behind it are stated once, under "Review: craft reviews itself" below.
 
 The reviewer's field of work is three things, and all three are mandatory:
 - **the branch diff against trunk** (`git diff main...HEAD`) — the whole branch as the merger will see it, not the last commit;
@@ -200,6 +200,8 @@ This repo ships the review engine — so review here runs through it, not by eye
 | Security / dependencies / unsafe surface | agent `craft:rust-security-scanner` |
 | `unsafe` under Miri | agent `craft:rust-miri` |
 | Full audit — everything at once, one synthesized report | `craft:rust-audit` **workflow** |
+
+**The cold review happens BEFORE the PR is opened, not after.** Push the branch if you like — a reviewer reads a branch, not a PR — but do not `gh pr create` until a fresh cold reviewer has returned a verdict and its blocking findings are worked to green. (why: measured twice on 2026-09-01. Five PRs opened at once merged within ninety seconds, and both times the review landed after the merge. The first time a real regression shipped — a preflight deadline set three seconds above that pass's own measured cost, which no gate can see because it is a constant, not a test. An open PR is an invitation to merge, so opening one before the verdict makes the merge race the review, and the review loses.)
 
 **Self-review is a gate in the authoring loop, not a report you file and forget.** Before `gh pr create`, close the loop: run `craft:review` on `git diff main...HEAD` → feed every finding through `craft:triage-findings` (validate against the code, dedupe, order) → work them to green with `craft:addressing-findings` → re-review with a **fresh** agent and repeat until the verdict is **Approve** (or **Warning** with each remaining item explicitly justified in the PR body). A PR never goes up with open blocking findings the self-review already surfaced.
 
