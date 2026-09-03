@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.18.0](https://github.com/gurinderu/craft/compare/v0.17.0...v0.18.0) (2026-09-03)
+
+
+### Features
+
+* **review:** the intent lens attacks claims made inside the diff ([deaa17e](https://github.com/gurinderu/craft/commit/deaa17e8fc983532039b7176da840aa1c9b210c1))
+* **review:** the intent lens attacks claims made inside the diff, not only the PR text ([765bb80](https://github.com/gurinderu/craft/commit/765bb80089371dea2ab45f0ac49a52606d7d2f17))
+
+
+### Bug Fixes
+
+* a checkpoint rejoin must prove the run's identity ([bfe78f2](https://github.com/gurinderu/craft/commit/bfe78f263f34ab32d2c4a39dd3f3e150f4279363))
+* a directory nobody could read must not be deleted for it ([d985c3d](https://github.com/gurinderu/craft/commit/d985c3d9d38ffb6f8a40e542ae9c5c518347cd5b))
+* **adversarial-review:** a panel that lost a member decides nothing ([cf7a296](https://github.com/gurinderu/craft/commit/cf7a2963ee322653faedf36b2b40fe359be23c18))
+* **adversarial-review:** a verdict nobody cast must not decide a finding ([af54db0](https://github.com/gurinderu/craft/commit/af54db03568c7901641a33aa34f6fcedc2296b08))
+* **adversarial-review:** ask the same question of the premise axis ([215a7e4](https://github.com/gurinderu/craft/commit/215a7e441b4911a14bff8c00220ec3d55b247cf9))
+* **adversarial-review:** ask what the absent vote could have changed ([0821fad](https://github.com/gurinderu/craft/commit/0821fada44402fa3ea0381a281be0f565f16fb8e))
+* **adversarial-review:** gate on what the absent vote could have decided, and read no vote we cannot parse ([ddfd2d6](https://github.com/gurinderu/craft/commit/ddfd2d67d687891aa7470fac353934e7b512eeb9))
+* **adversarial-review:** the severity axis is the third one silence decided ([66c579e](https://github.com/gurinderu/craft/commit/66c579e1d58018569d5d8c20df870babfd90d2f8))
+* **adversarial-review:** unjudged coverage-gap checks reach notRun ([bf97c6a](https://github.com/gurinderu/craft/commit/bf97c6a467e65ba71fe041d4f6bcb6e6796da3b4))
+* **adversarial-review:** unjudged coverage-gap checks reach notRun ([8fa6d7c](https://github.com/gurinderu/craft/commit/8fa6d7c9259f3021835b121763ab16a135099a05))
+* an unbounded retry, two ungated properties, and a gotcha that named the wrong file ([8fcadeb](https://github.com/gurinderu/craft/commit/8fcadeb28ac32c345e3a45ae8c65cd25cd66dfb7))
+* keep one run's checkpoints in one directory when the first one failed ([42abf61](https://github.com/gurinderu/craft/commit/42abf61642f968d48dce6373e17b840d89926deb))
+* land the gotcha correction for real, and stop pinning a race with a coin flip ([4d1d9ca](https://github.com/gurinderu/craft/commit/4d1d9cabee6e3f6f9d74b62cf709f62ac4209d04))
+* make the checkpoint rejoin opt-in, so concurrent runs cannot merge ([1d1a338](https://github.com/gurinderu/craft/commit/1d1a33813301aecea54645420cd05aaf620ff18b))
+* refuse a model-supplied --dir outside the store, and stop attributing a record to a repo nobody reviewed ([226adc4](https://github.com/gurinderu/craft/commit/226adc49f903a64a05fc90e8090aec770f1fc422))
+* rejoin one run's checkpoints when the first one failed ([9ae6377](https://github.com/gurinderu/craft/commit/9ae6377c0a99e97f0040b18573fb9b12a269c556))
+* **review:** close the six findings from the cold review of this branch ([bbaff06](https://github.com/gurinderu/craft/commit/bbaff06de2f93959700ba9a9942ae21a3a60f3f9))
+* **review:** report a lost run record instead of losing it silently ([10fc985](https://github.com/gurinderu/craft/commit/10fc98560a354faa822d335fda32941389cdcd20))
+* **review:** report a lost run record instead of losing it silently ([d3c9e5c](https://github.com/gurinderu/craft/commit/d3c9e5cb3151cd4d797a3032725cef0a79553238))
+* **review:** restage the regenerated inline region ([a7087ec](https://github.com/gurinderu/craft/commit/a7087ec938bc8d40c0b4c2f887707e15cccbbfae))
+* **review:** separate the two halves of the intent brief ([13388c2](https://github.com/gurinderu/craft/commit/13388c280a50b85643c5c5963d21a829dbb967a8))
+* **review:** the inlined judge called a helper the fence never carried ([e1ee42e](https://github.com/gurinderu/craft/commit/e1ee42eb62003d7249e6cc787b40abe4a3b1a1f2))
+* **review:** the prior-round read is telemetry too, and the marker leads the report ([a89b843](https://github.com/gurinderu/craft/commit/a89b843a3ad77288a6347bb17e3259c1ef4b9ee2))
+* round three — the loud failure leaked the record, and the copy drifted again ([6041eaa](https://github.com/gurinderu/craft/commit/6041eaa62d7c2e238f8c3a5db16d212c7826593b))
+* **telemetry:** a checkpoint rejoin must prove the run's identity ([845fcdd](https://github.com/gurinderu/craft/commit/845fcdd6ef2dd176eaa8fc5c74e30ea67ede4fa1))
+* the correction was itself wrong, and the banner fix reached one engine of four ([5887094](https://github.com/gurinderu/craft/commit/5887094bc7eae265696e2de82969f8f84aff1a86))
+* the guard must cost the directory, never the record — and three runs must not share one ([022d0bb](https://github.com/gurinderu/craft/commit/022d0bbd14f42625322c0f9022d770be03142995))
+* the name must be claimed, not probed — and a minted directory must be said out loud ([e6dd39a](https://github.com/gurinderu/craft/commit/e6dd39af3910c2208cdb64fcfeb757912becb97a))
+* the rejoin's identity was empty on every path that could arm it ([b8def1f](https://github.com/gurinderu/craft/commit/b8def1f7caa73c42af22842b2f60c58dac8a4939))
+* **workflows:** stage each run record through its own temp file ([41dfb0b](https://github.com/gurinderu/craft/commit/41dfb0b4ee550aaa56c033b47e75ccbeb89aa55f))
+
 ## [0.17.0](https://github.com/gurinderu/craft/compare/v0.16.0...v0.17.0) (2026-09-02)
 
 
