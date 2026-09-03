@@ -317,6 +317,19 @@ function loggerPrelude(craftRoot) {
 // The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
 // readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
 // review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
+// THE STAGING FILE IS PER-RUN, AND THAT IS LOAD-BEARING. It used to be the fixed `/tmp/craft-rec.json`
+// in one engine; extracting the prompt propagated that path to all four, which is three new ways to
+// be wrong at once. (a) `cat >` follows a symlink, so any other local uid can pre-create that name
+// pointing at a file this user owns and have the next run truncate it — an arbitrary-overwrite
+// primitive on a shared or CI box, and `/tmp`'s sticky bit does not stop CREATING an entry. (b) The
+// record holds every finding title, path and quoted snippet from the reviewed repo, and a default
+// umask leaves it world-readable, never removed. (c) A fixed name carries no run id, while craft's
+// own fan-out puts several runs in flight — rust-audit dispatches one nested review per changed crate
+// through `parallel` — so between one agent's `cat >` and its own redirect another can overwrite the
+// file: run A files run B's record under A's identity, the script succeeds, the readback verifies,
+// `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
+// created without following anything. The exit code is carried past the cleanup so a failed write
+// still reports as one.
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
@@ -324,10 +337,11 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
 Run exactly this:
 
 \`\`\`
-cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
+CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
+cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-${loggerPrelude(craftRoot)}cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < /tmp/craft-rec.json
+${loggerPrelude(craftRoot)}cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
@@ -757,4 +771,9 @@ await logRun(auditRecord)
 
 // The marker LEADS the report: a reader who is about to go look this audit up in the store has to
 // learn here that it may not be there.
+// `report` comes from an unguarded agent call, and every other agent result in this file is checked
+// for death. Interpolating it turns a dead synthesizer into the literal four-character string "null",
+// which reads as a successful audit with an empty body — and that is exactly the run where the
+// telemetry marker is also empty, so nothing at all says the synthesis died.
+if (!report) return `${telemetryLostSection(telemetryLost)}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
 return `${telemetryLostSection(telemetryLost)}${report}`
