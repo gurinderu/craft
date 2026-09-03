@@ -251,8 +251,14 @@ function quietly(call) {
 // to ignore the very marker this exists to raise. It is reported instead — in the notRun notes a
 // human actually reads, because an empty store is otherwise indistinguishable from "never run".
 const telemetryLost = []
-const telemetryNotes = () => telemetryLost.map(l =>
-  `⚠️ telemetry lost: ${l} — this run may be missing or incomplete in the run store. Read this verdict, not the store, for what it did.`)
+// "lost" is asserted per line, not stamped on every line: the record landing while its run DIRECTORY
+// was refused is a different fact, and calling it a lost record is the same conflation the other
+// three engines dropped — the one that teaches a reader to skip the marker. A line that says the
+// record itself landed keeps its own wording.
+const telemetryNotes = () => telemetryLost.map(l => (
+  /^the run directory \(the record itself landed\)/.test(l)
+    ? `⚠️ telemetry: ${l} — the record for this run is in the store; what the directory held may not be.`
+    : `⚠️ telemetry lost: ${l} — this run may be missing or incomplete in the run store. Read this verdict, not the store, for what it did.`))
 
 const agentQuietly = quietly(agent)
 
