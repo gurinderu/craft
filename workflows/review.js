@@ -1350,7 +1350,7 @@ Run exactly this:
 cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}--project "$PWD" < /tmp/craft-rec.json
+${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}${!runDir && checkpointFailed ? '--rejoin ' : ''}--project "$PWD" < /tmp/craft-rec.json
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, craftCommit), names the file, appends the index line, folds in this run's phase checkpoints and verifies the readback. You compute NONE of that.
@@ -2408,8 +2408,12 @@ async function reviewProfile(profile) {
   const ranLenses = plan.lenses.filter(l => ranAtLeastOnce.has(l))
   // The lens phase is the expensive half of a review and the half most often lost: on the run that
   // prompted this, verification died to a usage limit and took every lens's yield with it.
+  // `branch`/`head` on every checkpoint, not only the first. `--rejoin` can be armed ONLY after a
+  // checkpoint failed, so it is never armed on the `-plan` payload — and `-plan` was the only one
+  // carrying identity. The rejoin search therefore saw `{project, '', ''}` on exactly the paths where
+  // it fires, and matched on the repository alone: any concurrent review of the same repo qualified.
   await checkpoint(`${profile.id}-lenses`, {
-    language: profile.id, ranLenses, droppedLenses, lensRounds,
+    language: profile.id, branch, head: baseRef, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
     notRun,
@@ -2424,7 +2428,7 @@ async function reviewProfile(profile) {
   let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, toolProvenance)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
   await checkpoint(`${profile.id}-verify`, {
-    language: profile.id,
+    language: profile.id, branch, head: baseRef,
     verdict: finalVerdict(confirmed),
     findings: summarizeFindings(confirmed),
     verification: { candidates: deduped.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped },
