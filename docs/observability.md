@@ -40,8 +40,14 @@ record carrying no revision reads as `r?` and is never folded into the current e
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.
 With no flag the report names the engines it spans **before** any rate, and says so plainly when it
 cannot separate them — a caveat under the numbers arrives after they have been read as a
-before/after. `engineRevision` is not in `indexProjection`: the workflow writers stamp none, so the
-column would be a permanent `null`, and the only engine-aware reader loads the detail files anyway.
+before/after. `engineRevision` is not in `indexProjection`: nothing outside the write script can stamp it, so as
+an index column it would only ever be whatever a caller guessed, and the one engine-aware reader
+loads the detail files anyway. This is also why every record-filing engine — `review`,
+`adversarial-review`, `rust-audit`, `triage-findings` — writes through
+`lib/craft-log-run.mjs` rather than instructing a model to assemble the record: an engine that
+computes the fields from a prompt cannot produce this one at all, so every record it files is
+excluded from `--engine latest` by construction. The shared write path is `lib/run-logging.mjs`,
+inlined into each engine by the `craft-inline` gate.
 Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, refuted, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero),
@@ -78,8 +84,12 @@ adds `findingsTotal`).
 ## How it is produced
 
 Workflow scripts are sandboxed (no filesystem, no clock), so they assemble the record object and
-hand it to a cheap **logger agent** that stamps `ts`/`project`/`commit`/`dirty` and writes the
-files. The shaping helpers are tested in `lib/run-record.mjs`; the workflow scripts inline verbatim
+hand it to a cheap **logger agent** whose whole job is transport: it stages the record through a
+per-run `mktemp` file and runs `lib/craft-log-run.mjs`, which computes every field
+(`ts`/`project`/`commit`/`dirty`/`engineRevision`/`craftCommit`), names the file, appends the index
+line and verifies the readback. All four engines go through that one path — the prompt itself is
+built by `lib/run-logging.mjs` and inlined into each. A write that does not land is asserted, not
+inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `lib/run-record.mjs`; the workflow scripts inline verbatim
 copies (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
 section, suppressed when run as a workflow sub-agent.
 
@@ -87,10 +97,28 @@ section, suppressed when run as a workflow sub-agent.
 
 The write can fail while the review itself is fine — a `craftRoot` that has moved, a dead logger
 agent, a damaged store. So an absent record is **not** evidence that a review never ran. The generic
-engine reports it instead of dying: every report it returns ends with a `⚠️ Telemetry lost` section
-naming each write that did not land and why, and that section stays absent on a healthy run. Read the
-report, not the store's silence — and note that only `review.js` does this today; the other engines
-(`adversarial-review`, `rust-audit`, `triage-findings`) still lose a record without saying so.
+engine reports it instead of dying: every report it returns **leads** with a telemetry section naming
+each write that did not land and why, and that section stays absent on a healthy run. It leads rather
+than trails so a consumer that truncates cannot clip it. Read the report, not the store's silence.
+
+The heading says which of two things happened, and they are not the same fact: `⚠️ Telemetry lost`
+means a record nobody can find; `⚠️ Telemetry incomplete` means the record is in the store but a run
+directory could not be folded into it. A run with both keeps the louder heading. Grepping for one
+fixed string will therefore miss the other.
+
+`review.js`, `rust-audit` and `triage-findings` render that section (from `telemetryLostSection` in
+`lib/review-coverage.mjs`, inlined into each). `adversarial-review` returns a structured object
+rather than report markdown, so it has **no section**: the same distinction reaches its `notRun`
+notes through `telemetryNotes()`.
+
+### Launching an engine from a checkout
+
+Installed as a plugin, `CLAUDE_PLUGIN_ROOT` is set and the logger resolves itself. Launched by
+`scriptPath` from a checkout it is **not**, and the logger has no way to find `craft-log-run.mjs` —
+so pass `craftRoot` (the craft checkout) in the workflow args, and `repo` when the engine's agents
+are pointed at a different checkout than the session's cwd. Without `craftRoot` in that mode the run
+still completes and reports its verdict; only the record is lost, and the report says so. The path
+is never guessed from the working directory: that directory is the repository under review.
 
 ## Studying the data
 

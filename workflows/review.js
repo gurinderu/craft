@@ -50,11 +50,9 @@ const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
 // Every logger command runs as `cd <reviewed repo> && node <logger>`, so the `:-.` fallback would be
 // resolved AFTER the cd — against the reviewed repo, where the script is not. That lost every
 // checkpoint, the finalize record and the prior-round chain to "Cannot find module", silently.
-// Resolve the path to an absolute one FIRST, in a variable, then change directory.
-const LOGGER_PRELUDE = `CRAFT_LOGGER=${craftRootArg
-  ? `${shq(craftRootArg)}/lib/craft-log-run.mjs`
-  : '"$(cd "${CLAUDE_PLUGIN_ROOT:-.}" 2>/dev/null && pwd)/lib/craft-log-run.mjs"'}
-`
+// Resolve the path to an absolute one FIRST, in a variable, then change directory. The prelude
+// itself is shared with every other record-filing engine (lib/run-logging.mjs, inlined below).
+const LOGGER_PRELUDE = loggerPrelude(craftRootArg)
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
 const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
@@ -520,13 +518,26 @@ function uncoveredNotRunNote(material) {
 // a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
 // It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
 // embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
+// Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
+// agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
+// structure — a heading, a verdict line — above the verdict the engine actually computed.
 function telemetryLostSection(lost) {
   const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
+  // A record that LANDED while its run directory did not is a different fact from a record nobody
+  // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the
+  // list of things readers skip. The two are counted separately and the heading follows whichever is
+  // actually true — the section is still one section, because both mean the store is not the whole
+  // story for this run.
+  const landed = lines.filter(l => /^the run directory \(the record itself landed\)/.test(String(l)))
+  const unconfirmed = lines.length - landed.length
+  const head = unconfirmed
+    ? `${unconfirmed} record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.`
+    : `This run's record is in the store, but ${landed.length} run director${landed.length === 1 ? 'y' : 'ies'} could not be folded into it, so what those held is not there. Read the verdict below for what this run actually did.`
   return [
-    `## ⚠️ Telemetry lost`,
-    `${lines.length} record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.`,
-    ...lines.map(l => `- ${l}`),
+    unconfirmed ? `## ⚠️ Telemetry lost` : `## ⚠️ Telemetry incomplete`,
+    head,
+    ...lines.map(l => `- ${String(l).replace(/[\r\n]+/g, ' ').slice(0, 300)}`),
     ``,
     ``,
   ].join('\n')
@@ -1074,6 +1085,11 @@ function promptFields(f) {
 // JSON.stringify does NOT make a value shell-safe — it only escapes `"`/`\`/control chars, and inside
 // a double-quoted shell context `$(...)`, backtick and `$VAR` still expand; single-quoting is what
 // neutralizes them.
+// UNGATED TWIN: this `shq` lives OUTSIDE the craft-inline fence and is excluded from that region's
+// name list to avoid a duplicate declaration — so `check-workflows` byte-compares the escaper against
+// lib/run-logging.mjs in the other three engines and is blind to it here. A hardening that lands on
+// the source therefore regenerates into three engines and silently skips the fourth, which is the
+// only one passing model-authored `repo`/`runDir` through it. Change one, change this by hand.
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // A conservative "is this a safe commit-ish?" gate for a model-authored ledger `head` before it is
 // interpolated into a shell command. Accept a git SHA (7–40 hex) or a ref name drawn only from
@@ -1248,18 +1264,10 @@ function noteTelemetryLoss(what, why) {
   telemetryLost.push(line)
   log(`⚠️ telemetry lost: ${line}`)
 }
-// For the ragent calls whose FAILURE is not the caller's problem: the run record, the phase
-// checkpoints and the prior-round read. They are bookkeeping — every other agent in this engine
-// produces review content, so a throw there should stop the run. These must not: the final logRun
-// runs AFTER the report already exists in memory, so losing it to a bookkeeping write would throw
-// away the whole run's product.
-async function ragentQuietly(prompt, opts) {
-  try {
-    return await ragent(prompt, opts)
-  } catch (e) {
-    return { __threw: String(e?.message || e) }
-  }
-}
+// The bookkeeping calls — the run record, the phase checkpoints, the prior-round read — must not
+// take the run down when they throw. `quietly` is the shared wrapper (lib/run-logging.mjs, inlined
+// below); here it is bound to `ragent` so the retry-once behaviour still applies underneath.
+const ragentQuietly = quietly(ragent)
 
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
@@ -1268,6 +1276,10 @@ function out(reportText) {
   return `${telemetryLostSection(telemetryLost)}${reportText}`
 }
 
+// ---- the one write path (shared with every other record-filing engine) ----
+// The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
+// does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
@@ -1275,9 +1287,142 @@ const LOGRUN_SCHEMA = {
   required: ['ok'],
   properties: {
     ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
-    error: { type: 'string', description: 'when ok is false, the failing line verbatim; empty otherwise' },
+    // The description is what the model steers this field by, so it has to name the WARNING case too:
+    // reading "empty otherwise" it returns '' on a landed-but-degraded run, and the engine's
+    // telemetry-loss branch — the whole reason the field is populated on success — never fires.
+    error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
+
+// Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
+// AFTER the cd points at the REVIEWED repo, where the script is not — that lost every record to a
+// silent "Cannot find module". Resolve the logger to an absolute path FIRST, into a variable, and
+// only then change directory. `craftRoot` is passed when the engine is launched by scriptPath from
+// a checkout (CLAUDE_PLUGIN_ROOT is unset then); as an installed plugin the env var is set for us.
+// The `:-.` fallback is GONE, and that is a security fix, not tidying. It resolved before the `cd`,
+// so `.` was the logger agent's starting directory — which, in the deployment this plugin is built
+// for, is the repository under REVIEW. A reviewed repository shipping its own `lib/craft-log-run.mjs`
+// would then be executed with the user's privileges by a workflow whose whole premise is that the
+// reviewed repo is untrusted. Extraction would have carried that from one engine to four.
+// It is emitted FIRST, before any staging: `${VAR:?}` is a hard abort in a non-interactive shell, so
+// after the `cat` it killed the block before `rm -f` and left the whole record in TMPDIR — on exactly
+// the path this loud failure was added for.
+// A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
+// noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
+function loggerPrelude(craftRoot) {
+  if (craftRoot) return `CRAFT_LOGGER=${shq(craftRoot)}/lib/craft-log-run.mjs\n`
+  return 'CRAFT_LOGGER="${CLAUDE_PLUGIN_ROOT:?craft-log-run FAILED: neither craftRoot nor CLAUDE_PLUGIN_ROOT is set — refusing to resolve the logger against the reviewed repository}/lib/craft-log-run.mjs"\n'
+}
+
+// The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
+// readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
+// review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
+// THE STAGING FILE IS PER-RUN, AND THAT IS LOAD-BEARING. It used to be the fixed `/tmp/craft-rec.json`
+// in one engine; extracting the prompt propagated that path to all four, which is three new ways to
+// be wrong at once. (a) `cat >` follows a symlink, so any other local uid can pre-create that name
+// pointing at a file this user owns and have the next run truncate it — an arbitrary-overwrite
+// primitive on a shared or CI box, and `/tmp`'s sticky bit does not stop CREATING an entry. (b) The
+// record holds every finding title, path and quoted snippet from the reviewed repo, and a default
+// umask leaves it world-readable, never removed. (c) A fixed name carries no run id, while craft's
+// own fan-out puts several runs in flight — rust-audit dispatches one nested review per changed crate
+// through `parallel` — so between one agent's `cat >` and its own redirect another can overwrite the
+// file: run A files run B's record under A's identity, the script succeeds, the readback verifies,
+// `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
+// created without following anything. The exit code is carried past the cleanup so a failed write
+// still reports as one.
+// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
+// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
+// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
+// repository the run never looked at — a lie in the one field the store is keyed by.
+function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
+  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
+  return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
+
+Run exactly this:
+
+\`\`\`
+${loggerPrelude(craftRoot)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
+cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
+…RECORD below, byte for byte…
+CRAFT_RECORD_EOF
+cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
+\`\`\`
+
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+
+COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
+
+If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true} — and if it ALSO printed a line starting \`craft-log-run WARNING\`, return {"ok": true, "error": "<that line verbatim>"}: the record landed, but something about the run directory did not, and the engine has to be able to say so. Best-effort either way: never error the run over this.
+
+RECORD:
+${JSON.stringify(record, null, 2)}`
+}
+
+// Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
+// but a full review record carries every finding plus the ledger, and the cheap model is where the
+// silent truncation came from. Size the model to the payload.
+function logRunDispatch(record, { phase = '' } = {}) {
+  const payloadKB = JSON.stringify(record).length / 1024
+  const big = payloadKB > 24
+  return {
+    label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
+    phase,
+    schema: LOGRUN_SCHEMA,
+    model: big ? 'sonnet' : 'haiku',
+    effort: 'low',
+  }
+}
+
+function logRunOutcome(res) {
+  // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
+  // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
+  // marker that fires on a landed write is one people stop reading. But it must not vanish either —
+  // the caller gets `ok: true` with a reason to surface.
+  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
+  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+}
+
+// For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
+// checkpoints, the prior-round read. They are bookkeeping — every other agent in these engines
+// produces review content, so a throw there should stop the run. These must not: the record is
+// written AFTER the report already exists in memory, so losing it to a bookkeeping write would
+// throw away the whole run's product.
+function quietly(call) {
+  return async (prompt, opts) => {
+    try {
+      return await call(prompt, opts)
+    } catch (e) {
+      return { __threw: String((e && e.message) || e) }
+    }
+  }
+}
+
+// A dead logger agent and a failed script are the same outcome — no record on disk — so both are
+// reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
+// The checkpoint prompt was a hand-copy of the record one, and copies drift the moment a fix lands
+// on the original: the fixed staging path, the prelude ordering and the exit-code carry each had to
+// be applied twice, and each time the second copy was the one nearly missed. Same builder, one
+// difference — the checkpoint carries a phase and asks for the runDir back.
+function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
+  const flags = `--phase ${shq(phase)} ${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
+  return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
+
+Run exactly this, then return the runDir the script prints:
+
+\`\`\`
+${loggerPrelude(craftRoot)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-ckpt.XXXXXX")"
+cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
+…PAYLOAD below, byte for byte…
+CRAFT_RECORD_EOF
+cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" checkpoint ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
+\`\`\`
+
+The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
+
+PAYLOAD:
+${JSON.stringify(payload, null, 2)}`
+}
+// <<< craft-inline
 
 const CHECKPOINT_SCHEMA = {
   type: 'object',
@@ -1285,7 +1430,7 @@ const CHECKPOINT_SCHEMA = {
   required: ['runDir'],
   properties: {
     runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' },
-    error: { type: 'string', description: 'when runDir is empty, the failing line verbatim; empty otherwise' },
+    error: { type: 'string', description: 'when runDir is empty, the failing line verbatim; when the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
 let runDir = ''
@@ -1300,26 +1445,23 @@ async function checkpoint(phase, payloadIn, group) {
   // reasons too — so a rejection, not just a null, is a real outcome here. It has to land in the same
   // place as every other failed write: the report. Letting it propagate would abort the whole review
   // over a bookkeeping write, which is exactly what this whole path exists to prevent.
+  const asked = runDir
   const res = await ragentQuietly(
-    `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
-
-Run exactly this, then return the runDir the script prints:
-
-\`\`\`
-cat > /tmp/craft-ckpt.json <<'CRAFT_CKPT_EOF'
-…PAYLOAD below, byte for byte…
-CRAFT_CKPT_EOF
-${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} checkpoint --phase ${shq(phase)} ${runDir ? `--dir ${shq(runDir)} ` : ''}${!runDir && checkpointFailed ? '--rejoin ' : ''}--project "$PWD" < /tmp/craft-ckpt.json
-\`\`\`
-
-The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
-
-PAYLOAD:
-${JSON.stringify(payload, null, 2)}`,
+    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: !runDir && checkpointFailed }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
-  if (res?.runDir) runDir = res.runDir
-  else {
+  if (res?.runDir) {
+    // A refused `--dir` does not fail the checkpoint: the script MINTS a fresh directory, prints a
+    // WARNING on stderr and returns a perfectly valid runDir on stdout. Taking it silently strands
+    // every slice written into the directory we asked for — finalize folds only the new one, its
+    // `kept` warning cannot fire (the old directory was never its target), and the report calls the
+    // run clean. The engine can see this without trusting the model to relay stderr: we know which
+    // directory we asked for, so a different one coming back IS the refusal.
+    if (asked && res.runDir !== asked) {
+      noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${res.runDir} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
+    }
+    runDir = res.runDir
+  } else {
     // Remember it: with no runDir to thread, every later checkpoint would mint a directory of its
     // own and this run would fragment into orphan partials that `recover` promotes as unrelated
     // half-runs. `--rejoin` lets the script re-enter the directory this run already has. It is opt-in
@@ -1336,36 +1478,21 @@ ${JSON.stringify(payload, null, 2)}`,
 // hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
 // review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
 async function logRun(record) {
-  // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
-  // but a full review record carries every finding plus the ledger, and the cheap model is where the
-  // silent truncation came from. Size the model to the payload.
-  const payloadKB = JSON.stringify(record).length / 1024
-  const big = payloadKB > 24
+  // `finalize`, not `write`: this is the one engine that checkpoints, so the script folds this run's
+  // phase slices into the record it writes. Everything else — the prompt, the schema, the model
+  // sizing, the outcome check — is the write path shared with the other three engines.
   const res = await ragentQuietly(
-    `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
-
-Run exactly this:
-
-\`\`\`
-cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
-…RECORD below, byte for byte…
-CRAFT_RECORD_EOF
-${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} finalize ${runDir ? `--dir ${shq(runDir)} ` : ''}${!runDir && checkpointFailed ? '--rejoin ' : ''}--project "$PWD" < /tmp/craft-rec.json
-\`\`\`
-
-The script computes every field (ts, project, commit, dirty, craftCommit), names the file, appends the index line, folds in this run's phase checkpoints and verifies the readback. You compute NONE of that.
-
-COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
-
-If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true}. Best-effort either way: never error the run over this.
-
-RECORD:
-${JSON.stringify(record, null, 2)}`,
-    { label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`, phase: 'Synthesize', schema: LOGRUN_SCHEMA, model: big ? 'sonnet' : 'haiku', effort: 'low' },
+    logRunPrompt({
+      record, craftRoot: craftRootArg, repo: repoArg,
+      command: 'finalize', dir: runDir, rejoin: checkpointFailed,
+    }),
+    logRunDispatch(record, { phase: 'Synthesize' }),
   )
-  // A dead logger agent and a failed script are the same outcome here — no record on disk — so both
-  // are reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
-  if (!res || res.ok !== true) noteTelemetryLoss('the run record', res?.__threw || res?.error || 'the logger agent returned no result')
+  const landed = logRunOutcome(res)
+  if (!landed.ok) noteTelemetryLoss('the run record', landed.reason)
+  // The record landed and the script still had something to say — a run directory refused or left
+  // behind. Not a lost record, so it must not read as one, but not silence either.
+  else if (landed.reason) noteTelemetryLoss('the run directory (the record itself landed)', landed.reason)
 }
 
 function key(f) {
