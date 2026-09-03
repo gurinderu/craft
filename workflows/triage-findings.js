@@ -148,6 +148,9 @@ function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // for, is the repository under REVIEW. A reviewed repository shipping its own `lib/craft-log-run.mjs`
 // would then be executed with the user's privileges by a workflow whose whole premise is that the
 // reviewed repo is untrusted. Extraction would have carried that from one engine to four.
+// It is emitted FIRST, before any staging: `${VAR:?}` is a hard abort in a non-interactive shell, so
+// after the `cat` it killed the block before `rm -f` and left the whole record in TMPDIR — on exactly
+// the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
 function loggerPrelude(craftRoot) {
@@ -182,18 +185,18 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
 Run exactly this:
 
 \`\`\`
-CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
+${loggerPrelude(craftRoot)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
 cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-${loggerPrelude(craftRoot)}cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
+cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 
-If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true}. Best-effort either way: never error the run over this.
+If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true} — and if it ALSO printed a line starting \`craft-log-run WARNING\`, return {"ok": true, "error": "<that line verbatim>"}: the record landed, but something about the run directory did not, and the engine has to be able to say so. Best-effort either way: never error the run over this.
 
 RECORD:
 ${JSON.stringify(record, null, 2)}`
@@ -214,10 +217,12 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
-// A dead logger agent and a failed script are the same outcome — no record on disk — so both are
-// reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
 function logRunOutcome(res) {
-  if (res && res.ok === true) return { ok: true, reason: '' }
+  // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
+  // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
+  // marker that fires on a landed write is one people stop reading. But it must not vanish either —
+  // the caller gets `ok: true` with a reason to surface.
+  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
   return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
 }
 
@@ -255,13 +260,16 @@ function quietly(call) {
 // a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
 // It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
 // embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
+// Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
+// agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
+// structure — a heading, a verdict line — above the verdict the engine actually computed.
 function telemetryLostSection(lost) {
   const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
   return [
     `## ⚠️ Telemetry lost`,
     `${lines.length} record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.`,
-    ...lines.map(l => `- ${l}`),
+    ...lines.map(l => `- ${String(l).replace(/[\r\n]+/g, ' ').slice(0, 300)}`),
     ``,
     ``,
   ].join('\n')
@@ -283,7 +291,13 @@ async function logRun(record) {
   if (!landed.ok) {
     telemetryLost.push(`the run record — ${landed.reason}`)
     log(`⚠️ telemetry lost: the run record — ${landed.reason}`)
+  }  // The record landed and the script still had something to say — a run directory refused or left
+  // behind. Not a lost record, so it must not read as one, but not silence either.
+  else if (landed.reason) {
+    telemetryLost.push(`the run directory (the record itself landed) — ${landed.reason}`)
+    log(`⚠️ telemetry: ${landed.reason}`)
   }
+
 }
 
 // ---- Gather --------------------------------------------------------------
