@@ -1301,6 +1301,10 @@ function loggerPrelude(craftRoot) {
 // `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
 // created without following anything. The exit code is carried past the cleanup so a failed write
 // still reports as one.
+// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
+// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
+// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
+// repository the run never looked at — a lie in the one field the store is keyed by.
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
