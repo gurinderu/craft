@@ -97,10 +97,19 @@ section, suppressed when run as a workflow sub-agent.
 
 The write can fail while the review itself is fine — a `craftRoot` that has moved, a dead logger
 agent, a damaged store. So an absent record is **not** evidence that a review never ran. The generic
-engine reports it instead of dying: every report it returns ends with a `⚠️ Telemetry lost` section
-naming each write that did not land and why, and that section stays absent on a healthy run. Read the
-report, not the store's silence. All four engines do this: `review.js`, `adversarial-review`,
-`rust-audit` and `triage-findings` each carry the section and emit it on a lost write.
+engine reports it instead of dying: every report it returns **leads** with a telemetry section naming
+each write that did not land and why, and that section stays absent on a healthy run. It leads rather
+than trails so a consumer that truncates cannot clip it. Read the report, not the store's silence.
+
+The heading says which of two things happened, and they are not the same fact: `⚠️ Telemetry lost`
+means a record nobody can find; `⚠️ Telemetry incomplete` means the record is in the store but a run
+directory could not be folded into it. A run with both keeps the louder heading. Grepping for one
+fixed string will therefore miss the other.
+
+`review.js`, `rust-audit` and `triage-findings` render that section (from `telemetryLostSection` in
+`lib/review-coverage.mjs`, inlined into each). `adversarial-review` returns a structured object
+rather than report markdown, so it has **no section**: the same distinction reaches its `notRun`
+notes through `telemetryNotes()`.
 
 ### Launching an engine from a checkout
 
