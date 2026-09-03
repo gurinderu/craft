@@ -143,11 +143,16 @@ function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // silent "Cannot find module". Resolve the logger to an absolute path FIRST, into a variable, and
 // only then change directory. `craftRoot` is passed when the engine is launched by scriptPath from
 // a checkout (CLAUDE_PLUGIN_ROOT is unset then); as an installed plugin the env var is set for us.
+// The `:-.` fallback is GONE, and that is a security fix, not tidying. It resolved before the `cd`,
+// so `.` was the logger agent's starting directory — which, in the deployment this plugin is built
+// for, is the repository under REVIEW. A reviewed repository shipping its own `lib/craft-log-run.mjs`
+// would then be executed with the user's privileges by a workflow whose whole premise is that the
+// reviewed repo is untrusted. Extraction would have carried that from one engine to four.
+// A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
+// noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
 function loggerPrelude(craftRoot) {
-  return `CRAFT_LOGGER=${craftRoot
-    ? `${shq(craftRoot)}/lib/craft-log-run.mjs`
-    : '"$(cd "${CLAUDE_PLUGIN_ROOT:-.}" 2>/dev/null && pwd)/lib/craft-log-run.mjs"'}
-`
+  if (craftRoot) return `CRAFT_LOGGER=${shq(craftRoot)}/lib/craft-log-run.mjs\n`
+  return 'CRAFT_LOGGER="${CLAUDE_PLUGIN_ROOT:?craft-log-run FAILED: neither craftRoot nor CLAUDE_PLUGIN_ROOT is set — refusing to resolve the logger against the reviewed repository}/lib/craft-log-run.mjs"\n'
 }
 
 // The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
