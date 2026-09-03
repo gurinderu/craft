@@ -201,25 +201,35 @@ Return {findings: []-shaped JSON}.`
 // The runner reports its own leftovers into `notRun`; callers that report them their own way (the
 // finder lenses, which mark one BLOCKING entry per dead dimension) pass `reportUnjudged: false`.
 // >>> craft-inline lib/throttled-runner.mjs unjudgedNotRun makeThrottledRunner
-// One advisory not-run entry per throttled pass that ended with unfinished jobs — and NONE when the
-// pass finished, which is the whole discipline: a marker that fires on healthy runs is one people
-// stop reading. Advisory (`incomplete: false`) on purpose: an unjudged check leaves its finding
-// reported as Suspected, which is already the honest label, so it does not by itself make the
-// verdict INCOMPLETE. An unreviewed *dimension* is the blocking case, and its callers mark it.
-function unjudgedNotRun(tag, unfinished) {
+// One not-run entry per throttled pass that ended with unfinished jobs — and NONE when the pass
+// finished, which is the whole discipline: a marker that fires on healthy runs is one people stop
+// reading.
+// It used to claim the unjudged findings "stay Suspected". That was FALSE for an escalated finding:
+// its panel members are separate jobs, so one dead lens leaves a 1-1 split that `judge` reads as a
+// refutation, and refuted findings are dropped from the report entirely. The premise is now enforced
+// at the judge instead of asserted here (a panel that lost a member decides nothing), and this note
+// no longer promises an outcome it does not produce.
+// Advisory by default, blocking when the pass judged NOTHING — the two are genuinely different: a
+// gap in a panel is a weakened judgement, an empty pass is no judgement at all.
+function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
   const count = Array.isArray(unfinished) ? unfinished.length : Number(unfinished) || 0
   if (count <= 0) return []
   const key = String(tag || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'checks'
+  // A pass that judged NOTHING is not an advisory footnote: no finding in it was verified at all,
+  // and a verdict built on that is a verdict about nothing. It downgrades the run like a dead lens.
+  const wholePass = total > 0 && count >= total
   return [{
     label: `${key}-checks-unjudged`,
-    note: `${count} ${tag} check(s) got no verdict after retries — the findings they were judging stay Suspected`,
-    incomplete: false,
+    note: wholePass
+      ? `the entire ${tag} pass produced no verdict (${count} check(s)) — nothing it was judging was verified`
+      : `${count} ${tag} check(s) got no verdict — the findings they were judging were decided on a partial panel, or not decided at all`,
+    incomplete: wholePass,
   }]
 }
 
 // Runs `jobs` in batches of `batch`, retrying whatever produced no result in quieter rounds of
 // `retryBatch`, and stops spawning below the budget floor. Returns the jobs that never produced a
-// result. Each job: {prompt, label, schema, effort, onResult}.
+// result. Each job: {prompt, label, schema, effort, onResult, onMissing?}.
 function makeThrottledRunner(deps) {
   const { agent, parallel, log, markNotRun, batch: BATCH, retryBatch, maxRetryRounds, budget, budgetFloor } = deps
   return async function runThrottled(jobs, tag, phaseTitle, { reportUnjudged = true } = {}) {
@@ -248,7 +258,14 @@ function makeThrottledRunner(deps) {
       if (!unfinished) pending = failed
     }
     if (!unfinished) unfinished = pending
-    if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished)) markNotRun(e.label, e.note, e.incomplete)
+    // A job that never produced a verdict must leave a TRACE where the verdict would have gone, not
+    // only a line in the run record. Its absence is what the judge has to see: a panel silently one
+    // vote short reads as a whole panel, and a 1-1 split then counts as a refutation.
+    for (const j of unfinished) if (typeof j.onMissing === 'function') j.onMissing()
+    // `total` lets the entry tell a gap apart from a pass that judged nothing — including the pass
+    // stopped by the budget guard before it spawned its first agent, which returned an empty
+    // leftover list and therefore reported as clean.
+    if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished, { total: jobs.length })) markNotRun(e.label, e.note, e.incomplete)
     return unfinished
   }
 }
@@ -623,6 +640,9 @@ function buildVerifyJobs(findings, sink) {
       schema: VERDICT,
       effort,
       onResult: v => sink[idx].push({ lens, ...v }),
+      // A check that never returned leaves a placeholder, so the judge can SEE the panel is short.
+      // Without it a 3-lens panel that lost one member is indistinguishable from a 2-lens panel.
+      onMissing: () => sink[idx].push({ lens, missing: true }),
     })
     if (f.lens === 'complexity') push('metric', COMBINED_METRIC_INSTR, 'low', true)
     else if (isEscalated(f)) for (const [lens, instr] of PANEL_LENSES) push(lens, instr, 'high', true)
@@ -631,33 +651,112 @@ function buildVerifyJobs(findings, sink) {
   return jobs
 }
 
-// Strict majority of received votes must NOT refute. One formula covers the single
-// verifier (1 vote: confirmed = !refuted), the full panel (refutes <= 1 of 3), and a
-// degraded panel (a tie or a lone surviving refuter never confirms).
-function judge(findings, sink) {
-  const calibrate = (f, votes) => {
+// >>> craft-inline lib/adversarial-judge.mjs usableVote judgeVotes
+// A verdict object we cannot read is not a verdict. `onResult` spreads whatever the agent returned
+// (`{...true}` and `{...{}}` both yield an object with none of the fields), and this engine already
+// records a live agent returning WITHOUT a schema-`required` field — so `required` in the schema is
+// not a guarantee. Unread fields would otherwise vote: a missing `refuted` counts as non-refuting, a
+// missing `premiseSupported` as non-supporting, and an `undefined` severity survives into the median
+// where `SEV_RANK[undefined]` makes the comparator NaN and the confirmed finding can come out with no
+// severity at all — which `baseVerdict` reads as neither critical nor high, i.e. Approve.
+function usableVote(v, SEV_RANK) {
+  return !!v && typeof v === 'object'
+    && typeof v.refuted === 'boolean'
+    && typeof v.premiseSupported === 'boolean'
+    && (v.severity === 'not-an-issue' || SEV_RANK[v.severity] != null)
+}
+
+function judgeVotes(findings, sink, SEV_RANK) {
+
+  // Severity is the THIRD decision axis, and the one that produces the verdict: `baseVerdict` reads
+  // Block from a confirmed critical/high, Warning from a medium, Approve otherwise. So the absent
+  // vote must be asked the same question here as on the other two — and it was not, which is how a
+  // dead lens turned Block into Approve while both other axes agreed and nothing was flagged.
+  // The median is taken over the FULL panel: a panel of three whose members voted [high, low] and
+  // lost one has median index 1 of TWO, i.e. the milder — absence pulling severity down.
+  const ranks = Object.keys(SEV_RANK).sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
+  const MOST = ranks[0]
+  const LEAST = ranks[ranks.length - 1]
+  // Which side of the verdict this severity falls on. Comparing TIERS, not severities, keeps the
+  // marker narrow: critical vs high both mean Block, and flagging that as undecided would fire on
+  // runs where the absence changed nothing — a false INCOMPLETE is no safer here than a false clean.
+  const tierOf = sev => (SEV_RANK[sev] <= SEV_RANK.high ? 'block' : sev === 'medium' ? 'warning' : 'approve')
+  const calibrateWith = (f, votes, missing, pad) => {
     const sevs = votes.filter(v => !v.refuted && v.severity !== 'not-an-issue')
-      .map(v => v.severity).sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
+      .map(v => v.severity)
+      .concat(Array.from({ length: missing }, () => pad))
+      .sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
     return sevs.length ? sevs[Math.floor(sevs.length / 2)] : f.severity
   }
+  // The absent votes padded with what the FINDER claimed — a neutral stand-in, where their silence
+  // was not. Only used once the two extremes agree that the verdict cannot swing either way.
+  const calibrate = (f, votes, missing) => calibrateWith(f, votes, missing, f.severity)
   const judged = findings.map((f, idx) => {
-    const votes = sink[idx]
+    // Malformed votes become absences, so the two-assignment machinery below decides them rather than
+    // letting an unreadable object count as a non-refuting, non-supporting, severity-less confirmation.
+    const all = (sink[idx] || []).map(v => (v && !v.missing && usableVote(v, SEV_RANK)) ? v : { lens: v && v.lens, missing: true })
+    // A missing vote must not decide — but "missing" is not the same as "undecidable". Ask what the
+    // absent votes COULD have changed, and only fall back when they could have changed the answer.
+    // Both traps are real and both were measured on this engine:
+    //   [refute, confirm, confirm] confirms; losing one confirming lens made `refutes * 2 < votes`
+    //     false, so the SAME finding was filed as refuted — and refuted findings never reach the
+    //     report, they are fed forward as "adversarially disproven, do not re-report".
+    //   Demoting on ANY absence is the inverse trap: [confirm, confirm, missing] cannot change —
+    //     even a refuting third vote leaves 1*2 < 3 — so demoting it to Suspected drops a critical
+    //     finding out of `confirmed`, and the verdict is built from `confirmed` alone. A silent
+    //     Approve, in place of the Block that two independent lenses had earned.
+    const missing = all.filter(v => v.missing).length
+    const votes = all.filter(v => !v.missing)
     const refutes = votes.filter(v => v.refuted).length
-    const survives = votes.length > 0 && refutes * 2 < votes.length
+    // The two extreme assignments of the absent votes. They agree → the absence changes nothing and
+    // the answer stands; they disagree → the absent vote is the deciding one, and nobody cast it.
+    const survivesIfAbsentRefute = votes.length > 0 && (refutes + missing) * 2 < all.length
+    const survivesIfAbsentConfirm = votes.length > 0 && refutes * 2 < all.length
+    const refuteUndecided = survivesIfAbsentRefute !== survivesIfAbsentConfirm
+    const survives = !refuteUndecided && survivesIfAbsentRefute
     // An off-site premise no verifier could pin to real code is UNSUPPORTED, not disproven. It costs
     // the finding its Confirmed tier, but it must NOT be filed as refuted: the refuted list is fed
     // back to the next round as "adversarially disproven — do not re-report", which would bury a
     // possibly-real finding for the rest of the run over a missing citation.
-    const premiseUnsupported = survives && votes.filter(v => v.premiseSupported).length * 2 <= votes.length
-    const confirmed = survives && !premiseUnsupported
-    return { ...f, confirmed, premiseUnsupported, votes, severity: confirmed ? calibrate(f, votes) : f.severity }
+    // The SAME two-assignment question is asked here. Resolving the absence pessimistically on this
+    // axis ("assume the missing vote did not support") looks conservative and is not: it drops the
+    // finding out of `confirmed`, the verdict is built from `confirmed` alone, and the run prints a
+    // bare Approve — a missing vote deciding a critical finding, in the permissive direction, which
+    // is the whole defect. `premiseSupported` is a required verifier field and a 1-1 split on a
+    // 3-lens panel is an ordinary outcome, not a corner case.
+    const supported = votes.filter(v => v.premiseSupported).length
+    const unsupportedIfAbsentUnsupported = supported * 2 <= all.length
+    const unsupportedIfAbsentSupported = (supported + missing) * 2 <= all.length
+    const premiseUndecided = survives && unsupportedIfAbsentUnsupported !== unsupportedIfAbsentSupported
+    const premiseUnsupported = survives && !premiseUndecided && unsupportedIfAbsentUnsupported
+    const severityUndecided = survives && !premiseUnsupported && missing > 0
+      && tierOf(calibrateWith(f, votes, missing, MOST)) !== tierOf(calibrateWith(f, votes, missing, LEAST))
+    const undecided = refuteUndecided || premiseUndecided || severityUndecided
+    const confirmed = survives && !premiseUnsupported && !premiseUndecided && !severityUndecided
+    // `undecidedByAbsence` is the honest label for "nobody decided this": it is what a caller must
+    // surface in the VERDICT, because a finding parked in Suspected does not downgrade anything.
+    // What the run would have printed had the absent votes come back at their worst. The caller must
+    // gate its blocking entry on THIS, not on the finder's own label: the finder's severity and lens
+    // are what shaped the panel, not what the verdict would have been. A single verifier can calibrate
+    // a `medium` finding up to `critical`, and a `high` complexity finding gets one verifier and no
+    // panel — both are "nobody decided this, and deciding it would have blocked the run".
+    const undecidedByAbsence = missing > 0 && (undecided || votes.length === 0)
+    const reachable = votes.length ? calibrateWith(f, votes, missing, MOST) : MOST
+    // Only meaningful on a finding nobody decided: on a decided one the answer is the answer.
+    const couldHaveBlocked = undecidedByAbsence && tierOf(reachable) === 'block'
+    return { ...f, confirmed, premiseUnsupported, couldHaveBlocked, undecidedByAbsence, votes, severity: confirmed ? calibrate(f, votes, missing) : f.severity }
   })
   return {
     confirmed: judged.filter(v => v.confirmed),
-    refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && v.votes.length > 0),
-    suspected: judged.filter(v => v.votes.length === 0 || v.premiseUnsupported),
+    // `degraded` is excluded here for the same reason `premiseUnsupported` is: the refuted list is
+    // fed forward as "do NOT re-report — adversarially disproven", and a panel that never finished
+    // disproved nothing. It falls to Suspected, which is what the not-run note has always claimed.
+    refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && !v.undecidedByAbsence && v.votes.length > 0),
+    suspected: judged.filter(v => v.undecidedByAbsence || v.votes.length === 0 || v.premiseUnsupported),
   }
 }
+// <<< craft-inline
+const judge = (findings, sink) => judgeVotes(findings, sink, SEV_RANK)
 
 const votes = kept.map(() => [])
 const verifyJobs = buildVerifyJobs(kept, votes)
@@ -668,6 +767,21 @@ if (unverifiedJobs.length) log(`WARNING: ${unverifiedJobs.length} checks got no 
 
 let { confirmed, refuted, suspected } = judge(kept, votes)
 log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${suspected.length} suspected (no verdict)`)
+// A finding nobody decided must reach the VERDICT, not only the Suspected list. Suspected downgrades
+// nothing — `baseVerdict` is computed from `confirmed` alone — so a run in which every escalated
+// finding lost the one panel member that would have decided it prints a bare `Approve`, identical to
+// a run whose panels all voted and cleared them. Blocking, and narrow: it needs an escalated
+// (critical/high) finding whose absent vote was the deciding one, which is the exact case where the
+// engine cannot say whether this run should have blocked.
+// Gated on what the absent vote could have DECIDED, never on the finder's label. `isEscalated` reads
+// the finder's severity and lens — the fields that shaped the panel — and both of its clauses leak
+// here: a complexity finding is excluded by lens although the lens emits `high` and gets a single
+// verifier, and a `medium` finding is excluded by severity although one verifier can calibrate it to
+// `critical`. The judge computes the reachable tier instead.
+const undecidedEscalated = [...confirmed, ...refuted, ...suspected].filter(f => f.undecidedByAbsence && f.couldHaveBlocked)
+if (undecidedEscalated.length) {
+  markNotRun('escalated-findings-undecided', `${undecidedEscalated.length} critical/high finding(s) lost the panel vote that would have decided them — this run cannot say whether it should have blocked`)
+}
 
 // ================= Coverage: critic, then verify its gaps through the same pipeline =================
 phase('Coverage')
@@ -696,8 +810,17 @@ let refutedGaps = 0
 if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
   const gapVotes = gaps.map(() => [])
-  const unverifiedGapJobs = await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage')
-  if (unverifiedGapJobs.length) log(`WARNING: ${unverifiedGapJobs.length} coverage-gap checks got no verdict after retries`)
+  // Opts out of the runner's advisory entry and marks its own BLOCKING one, for the reason the
+  // else-branch below spells out: a coverage gap is the critic's claim that something went
+  // UNREVIEWED. Crossing the budget floor midway through this pass leaves exactly the same blind
+  // spots unopened as failing to start it, so the two must land on the same side of the line —
+  // otherwise the identical run reads `Approve` or `Approve (INCOMPLETE)` depending only on which
+  // side of the first batch the floor happened to fall. Same label, so analyze-runs aggregates both.
+  const unverifiedGapJobs = await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage', { reportUnjudged: false })
+  if (unverifiedGapJobs.length) {
+    log(`WARNING: ${unverifiedGapJobs.length} coverage-gap checks got no verdict`)
+    markNotRun('coverage-gaps-unverified', `${unverifiedGapJobs.length} coverage-gap check(s) got no verdict — the blind spots they name went unopened`)
+  }
   const g = judge(gaps, gapVotes)
   confirmed = confirmed.concat(g.confirmed)
   suspected = suspected.concat(g.suspected)
