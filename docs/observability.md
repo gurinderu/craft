@@ -40,8 +40,14 @@ record carrying no revision reads as `r?` and is never folded into the current e
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.
 With no flag the report names the engines it spans **before** any rate, and says so plainly when it
 cannot separate them — a caveat under the numbers arrives after they have been read as a
-before/after. `engineRevision` is not in `indexProjection`: the workflow writers stamp none, so the
-column would be a permanent `null`, and the only engine-aware reader loads the detail files anyway.
+before/after. `engineRevision` is not in `indexProjection`: nothing outside the write script can stamp it, so as
+an index column it would only ever be whatever a caller guessed, and the one engine-aware reader
+loads the detail files anyway. This is also why every record-filing engine — `review`,
+`adversarial-review`, `rust-audit`, `triage-findings` — writes through
+`lib/craft-log-run.mjs` rather than instructing a model to assemble the record: an engine that
+computes the fields from a prompt cannot produce this one at all, so every record it files is
+excluded from `--engine latest` by construction. The shared write path is `lib/run-logging.mjs`,
+inlined into each engine by the `craft-inline` gate.
 Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, refuted, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero),
