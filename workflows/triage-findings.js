@@ -25,7 +25,6 @@ const priorLedger = Array.isArray(argv.priorLedger) ? argv.priorLedger : []
 // lives so the logger can find lib/craft-log-run.mjs. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the triaged repo — where the script is not. Pass craftRoot then.
-const repoArg = argv.repo ? String(argv.repo) : ''
 const craftRootArg = argv.craftRoot ? String(argv.craftRoot) : ''
 
 const RAW_SCHEMA = {
@@ -167,6 +166,10 @@ function loggerPrelude(craftRoot) {
 // `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
 // created without following anything. The exit code is carried past the cleanup so a failed write
 // still reports as one.
+// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
+// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
+// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
+// repository the run never looked at — a lie in the one field the store is keyed by.
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
@@ -268,7 +271,7 @@ const agentQuietly = quietly(agent)
 
 async function logRun(record) {
   const res = await agentQuietly(
-    logRunPrompt({ record, craftRoot: craftRootArg, repo: repoArg }),
+    logRunPrompt({ record, craftRoot: craftRootArg }),
     logRunDispatch(record, { phase: 'Plan' }),
   )
   const landed = logRunOutcome(res)
