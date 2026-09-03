@@ -84,8 +84,12 @@ adds `findingsTotal`).
 ## How it is produced
 
 Workflow scripts are sandboxed (no filesystem, no clock), so they assemble the record object and
-hand it to a cheap **logger agent** that stamps `ts`/`project`/`commit`/`dirty` and writes the
-files. The shaping helpers are tested in `lib/run-record.mjs`; the workflow scripts inline verbatim
+hand it to a cheap **logger agent** whose whole job is transport: it stages the record through a
+per-run `mktemp` file and runs `lib/craft-log-run.mjs`, which computes every field
+(`ts`/`project`/`commit`/`dirty`/`engineRevision`/`craftCommit`), names the file, appends the index
+line and verifies the readback. All four engines go through that one path — the prompt itself is
+built by `lib/run-logging.mjs` and inlined into each. A write that does not land is asserted, not
+inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `lib/run-record.mjs`; the workflow scripts inline verbatim
 copies (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
 section, suppressed when run as a workflow sub-agent.
 
@@ -97,6 +101,15 @@ engine reports it instead of dying: every report it returns ends with a `⚠️ 
 naming each write that did not land and why, and that section stays absent on a healthy run. Read the
 report, not the store's silence — and note that only `review.js` does this today; the other engines
 (`adversarial-review`, `rust-audit`, `triage-findings`) still lose a record without saying so.
+
+### Launching an engine from a checkout
+
+Installed as a plugin, `CLAUDE_PLUGIN_ROOT` is set and the logger resolves itself. Launched by
+`scriptPath` from a checkout it is **not**, and the logger has no way to find `craft-log-run.mjs` —
+so pass `craftRoot` (the craft checkout) in the workflow args, and `repo` when the engine's agents
+are pointed at a different checkout than the session's cwd. Without `craftRoot` in that mode the run
+still completes and reports its verdict; only the record is lost, and the report says so. The path
+is never guessed from the working directory: that directory is the repository under review.
 
 ## Studying the data
 
