@@ -14,6 +14,12 @@ export const meta = {
 // mutation-testing pass in the tests-cov dimension.
 const baseArg = (args && typeof args === 'object' && args.base) ? String(args.base) : ''
 const runMutants = !!(args && typeof args === 'object' && args.mutants)
+// The repo under audit, when it is NOT the directory the session runs in, and where craft itself
+// lives so the logger can find lib/craft-log-run.mjs. As an installed plugin CLAUDE_PLUGIN_ROOT is
+// set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
+// against the audited repo — where the script is not. Pass craftRoot then.
+const repoArg = (args && typeof args === 'object' && args.repo) ? String(args.repo) : ''
+const craftRootArg = (args && typeof args === 'object' && args.craftRoot) ? String(args.craftRoot) : ''
 
 const CRATE_ITEM = {
   type: 'object',
@@ -111,7 +117,7 @@ const UNUSED_VERDICT_SCHEMA = {
 const CRAFT_VERSION = '0.17.0' // x-release-please-version
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
-// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings worstVerdict indexProjection
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings worstVerdict
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
 function countBySeverity(findings) {
@@ -142,19 +148,6 @@ function worstVerdict(verdicts) {
   if (vs.some(v => /Warning|Concerns/i.test(v))) return 'Warning'
   if (vs.some(v => /INCOMPLETE/i.test(v) || !/Approve|Healthy|Clean|Pass/i.test(v))) return 'Warning'
   return 'Approve'
-}
-
-function indexProjection(r) {
-  return {
-    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
-    // craftVersion/craftCommit must ride in the INDEX, not just the detail file: the whole point is
-    // filtering an aggregate down to one engine version, and that is done by scanning index.jsonl.
-    craftVersion: r.craftVersion ?? null, craftCommit: r.craftCommit ?? null,
-    project: r.project, commit: r.commit, dirty: r.dirty,
-    branch: r.branch ?? null, head: r.head ?? null, round: r.round ?? 0,
-    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : 0,
-    nested: r.nested, via: r.via, outputTokens: r.outputTokens ?? null,
-  }
 }
 // <<< craft-inline
 
@@ -292,26 +285,146 @@ function stripInternal(obj) {
   for (const k of Object.keys(obj)) if (!k.startsWith('_')) out[k] = obj[k]
   return out
 }
-// Persist a run record to ~/.craft/runs via a cheap logger agent (the script has no FS/clock).
-async function logRun(record) {
-  const index = indexProjection(record)
-  await agent(
-    `You are the craft observability logger. Persist ONE run record to the global store \`~/.craft/runs/\`. This is mechanical IO — do not analyze.
-Steps:
-1. \`mkdir -p ~/.craft/runs\`.
-2. Compute: TS=\`date -u +%Y-%m-%dT%H-%M-%SZ\`; PROJECT=\`pwd\`; COMMIT=\`git rev-parse --short HEAD 2>/dev/null\` (empty string if not a git repo); DIRTY=true if \`git status --porcelain\` prints anything, else false.
-3. Take RECORD below, add fields {"ts":TS,"project":PROJECT,"commit":COMMIT,"dirty":DIRTY}, and write the result as pretty JSON to \`~/.craft/runs/<TS>-<kind>-<name>.json\` (kind and name are fields in RECORD).
-4. Take INDEX below, add the same four fields, and append it as ONE compact line (single atomic \`>>\`) to \`~/.craft/runs/index.jsonl\`.
-5. If \`~/.craft/runs/README.md\` does not exist, create it describing the store: "craft run records. index.jsonl = one compact JSON line per run (load with jq); <ts>-<kind>-<name>.json = full per-run detail. Common fields: schemaVersion, ts, kind (workflow|agent), name, project, commit, dirty, verdict, findings{total,bySeverity}, nested, via. Workflows add scout/dimensions/verification/notRun/couldNotRun/outputTokens; agents add toolsRun." Include two jq examples: \`jq -s 'group_by(.name)[]|{name:.[0].name,runs:length}' index.jsonl\` and \`jq 'select(.verdict|test("Block"))' index.jsonl\`.
-Best-effort: if anything fails, report it but do NOT error the run.
+// ---- the one write path (shared with every other record-filing engine) ----
+// The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
+// does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly
+// Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
+const LOGRUN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok'],
+  properties: {
+    ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
+    error: { type: 'string', description: 'when ok is false, the failing line verbatim; empty otherwise' },
+  },
+}
+
+function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
+
+// Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
+// AFTER the cd points at the REVIEWED repo, where the script is not — that lost every record to a
+// silent "Cannot find module". Resolve the logger to an absolute path FIRST, into a variable, and
+// only then change directory. `craftRoot` is passed when the engine is launched by scriptPath from
+// a checkout (CLAUDE_PLUGIN_ROOT is unset then); as an installed plugin the env var is set for us.
+function loggerPrelude(craftRoot) {
+  return `CRAFT_LOGGER=${craftRoot
+    ? `${shq(craftRoot)}/lib/craft-log-run.mjs`
+    : '"$(cd "${CLAUDE_PLUGIN_ROOT:-.}" 2>/dev/null && pwd)/lib/craft-log-run.mjs"'}
+`
+}
+
+// The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
+// readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
+// review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
+function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
+  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
+  return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
+
+Run exactly this:
+
+\`\`\`
+cat > /tmp/craft-rec.json <<'CRAFT_RECORD_EOF'
+…RECORD below, byte for byte…
+CRAFT_RECORD_EOF
+${loggerPrelude(craftRoot)}cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < /tmp/craft-rec.json
+\`\`\`
+
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+
+COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
+
+If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true}. Best-effort either way: never error the run over this.
 
 RECORD:
-${JSON.stringify(record, null, 2)}
+${JSON.stringify(record, null, 2)}`
+}
 
-INDEX:
-${JSON.stringify(index)}`,
-    { label: 'log-run', phase: 'Synthesize', model: 'haiku', effort: 'low' },
+// Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
+// but a full review record carries every finding plus the ledger, and the cheap model is where the
+// silent truncation came from. Size the model to the payload.
+function logRunDispatch(record, { phase = '' } = {}) {
+  const payloadKB = JSON.stringify(record).length / 1024
+  const big = payloadKB > 24
+  return {
+    label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
+    phase,
+    schema: LOGRUN_SCHEMA,
+    model: big ? 'sonnet' : 'haiku',
+    effort: 'low',
+  }
+}
+
+// A dead logger agent and a failed script are the same outcome — no record on disk — so both are
+// reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
+function logRunOutcome(res) {
+  if (res && res.ok === true) return { ok: true, reason: '' }
+  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+}
+
+// For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
+// checkpoints, the prior-round read. They are bookkeeping — every other agent in these engines
+// produces review content, so a throw there should stop the run. These must not: the record is
+// written AFTER the report already exists in memory, so losing it to a bookkeeping write would
+// throw away the whole run's product.
+function quietly(call) {
+  return async (prompt, opts) => {
+    try {
+      return await call(prompt, opts)
+    } catch (e) {
+      return { __threw: String((e && e.message) || e) }
+    }
+  }
+}
+// <<< craft-inline
+// The banner that leads the report when a write did not land — the same one review.js uses.
+// >>> craft-inline lib/review-coverage.mjs telemetryLostSection
+// ---- telemetry honesty ----
+// A run record is written by an agent shelling out to lib/craft-log-run.mjs, so the write can fail
+// while the review itself is perfectly healthy: a craftRoot that has moved, a dead logger agent, a
+// damaged store. Losing it used to be pure silence, and silence in the store is read as "this review
+// was never run" — the permissive default wearing the face of a fact.
+// The recorded decision is that this NEVER fails the run (a three-hour review killed by a bookkeeping
+// write teaches everyone to ignore the marker); it is reported instead. Returns '' for a healthy run,
+// so the marker cannot appear where nothing was lost — a marker that fires on healthy runs is one
+// people stop reading, which is the same defect wearing the opposite sign.
+// The body speaks about the WRITE, never about the run: it goes on every exit, including those whose
+// verdict says nothing was reviewed (dead base resolution, unknown language pin, empty diff), where
+// reassurance that "the review ran" would contradict the verdict itself. And it says "could not be
+// confirmed", not "did not land": two of the three ways an entry gets here — an abandoned deadline
+// (the logger agent is NOT cancelled and may still write) and a malformed reply — are compatible with
+// a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
+// It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
+// embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
+function telemetryLostSection(lost) {
+  const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
+  if (!lines.length) return ''
+  return [
+    `## ⚠️ Telemetry lost`,
+    `${lines.length} record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.`,
+    ...lines.map(l => `- ${l}`),
+    ``,
+    ``,
+  ].join('\n')
+}
+// <<< craft-inline
+
+// A lost record NEVER fails the audit: killing it over a bookkeeping write would teach everyone to
+// ignore the very marker this exists to raise. It is reported instead, at the head of the report a
+// human actually reads — an empty store is otherwise indistinguishable from "never run".
+const telemetryLost = []
+const agentQuietly = quietly(agent)
+
+async function logRun(record) {
+  const res = await agentQuietly(
+    logRunPrompt({ record, craftRoot: craftRootArg, repo: repoArg }),
+    logRunDispatch(record, { phase: 'Synthesize' }),
   )
+  const landed = logRunOutcome(res)
+  if (!landed.ok) {
+    telemetryLost.push(`the run record — ${landed.reason}`)
+    log(`⚠️ telemetry lost: the run record — ${landed.reason}`)
+  }
 }
 
 // Plugin agent types (craft:*) are frequently absent from the workflow sandbox's registry. Dispatch
@@ -642,4 +755,6 @@ const auditRecord = {
 }
 await logRun(auditRecord)
 
-return report
+// The marker LEADS the report: a reader who is about to go look this audit up in the store has to
+// learn here that it may not be there.
+return `${telemetryLostSection(telemetryLost)}${report}`
