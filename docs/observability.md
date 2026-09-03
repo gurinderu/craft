@@ -99,8 +99,8 @@ The write can fail while the review itself is fine — a `craftRoot` that has mo
 agent, a damaged store. So an absent record is **not** evidence that a review never ran. The generic
 engine reports it instead of dying: every report it returns ends with a `⚠️ Telemetry lost` section
 naming each write that did not land and why, and that section stays absent on a healthy run. Read the
-report, not the store's silence — and note that only `review.js` does this today; the other engines
-(`adversarial-review`, `rust-audit`, `triage-findings`) still lose a record without saying so.
+report, not the store's silence. All four engines do this: `review.js`, `adversarial-review`,
+`rust-audit` and `triage-findings` each carry the section and emit it on a lost write.
 
 ### Launching an engine from a checkout
 

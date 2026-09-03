@@ -1075,6 +1075,11 @@ function promptFields(f) {
 // JSON.stringify does NOT make a value shell-safe — it only escapes `"`/`\`/control chars, and inside
 // a double-quoted shell context `$(...)`, backtick and `$VAR` still expand; single-quoting is what
 // neutralizes them.
+// UNGATED TWIN: this `shq` lives OUTSIDE the craft-inline fence and is excluded from that region's
+// name list to avoid a duplicate declaration — so `check-workflows` byte-compares the escaper against
+// lib/run-logging.mjs in the other three engines and is blind to it here. A hardening that lands on
+// the source therefore regenerates into three engines and silently skips the fourth, which is the
+// only one passing model-authored `repo`/`runDir` through it. Change one, change this by hand.
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // A conservative "is this a safe commit-ish?" gate for a model-authored ledger `head` before it is
 // interpolated into a shell command. Accept a git SHA (7–40 hex) or a ref name drawn only from
@@ -1272,7 +1277,10 @@ const LOGRUN_SCHEMA = {
   required: ['ok'],
   properties: {
     ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
-    error: { type: 'string', description: 'when ok is false, the failing line verbatim; empty otherwise' },
+    // The description is what the model steers this field by, so it has to name the WARNING case too:
+    // reading "empty otherwise" it returns '' on a landed-but-degraded run, and the engine's
+    // telemetry-loss branch — the whole reason the field is populated on success — never fires.
+    error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
 
@@ -1412,7 +1420,7 @@ const CHECKPOINT_SCHEMA = {
   required: ['runDir'],
   properties: {
     runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' },
-    error: { type: 'string', description: 'when runDir is empty, the failing line verbatim; empty otherwise' },
+    error: { type: 'string', description: 'when runDir is empty, the failing line verbatim; when the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
 let runDir = ''
@@ -1427,12 +1435,23 @@ async function checkpoint(phase, payloadIn, group) {
   // reasons too — so a rejection, not just a null, is a real outcome here. It has to land in the same
   // place as every other failed write: the report. Letting it propagate would abort the whole review
   // over a bookkeeping write, which is exactly what this whole path exists to prevent.
+  const asked = runDir
   const res = await ragentQuietly(
     checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: !runDir && checkpointFailed }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
-  if (res?.runDir) runDir = res.runDir
-  else {
+  if (res?.runDir) {
+    // A refused `--dir` does not fail the checkpoint: the script MINTS a fresh directory, prints a
+    // WARNING on stderr and returns a perfectly valid runDir on stdout. Taking it silently strands
+    // every slice written into the directory we asked for — finalize folds only the new one, its
+    // `kept` warning cannot fire (the old directory was never its target), and the report calls the
+    // run clean. The engine can see this without trusting the model to relay stderr: we know which
+    // directory we asked for, so a different one coming back IS the refusal.
+    if (asked && res.runDir !== asked) {
+      noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${res.runDir} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
+    }
+    runDir = res.runDir
+  } else {
     // Remember it: with no runDir to thread, every later checkpoint would mint a directory of its
     // own and this run would fragment into orphan partials that `recover` promotes as unrelated
     // half-runs. `--rejoin` lets the script re-enter the directory this run already has. It is opt-in
