@@ -28,6 +28,23 @@ const VERDICT_TOKEN = {
 // so matching it here would let it outrank a report of UB instead of losing to it.
 const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
+// The SAME shape, asked as a yes/no by the dispatcher to decide whether a dimension answered at all.
+// Exported rather than re-spelled: written twice, the two drifted immediately and in the direction
+// that loses severity — a bolded `**VERDICT: BLOCK**` is what a model ordinarily writes, and a
+// stricter copy judged it "unanswered", so a real Block was re-run and then recorded as INCOMPLETE,
+// which `worstOf` ranks BELOW Block. That is the defect this discriminator exists to prevent,
+// inverted. A fresh regex per call because /g carries lastIndex between uses.
+export function hasVerdictLine(text) {
+  return new RegExp(VERDICT_LINE.source, 'm').test(String(text ?? ''))
+}
+
+// Same argument for the triage outcome line.
+const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/m
+
+export function hasOutcomeLine(text) {
+  return OUTCOME_LINE.test(String(text ?? ''))
+}
+
 // How much of the report the fallback scan is allowed to see.
 const TAIL_LINES = 20
 
@@ -101,7 +118,12 @@ export function worstOf(verdicts) {
   return verdicts.reduce((a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a), 'Approve')
 }
 
-export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText }) {
+// `synthesized: false` says the consolidation step never delivered. Without it the record read the
+// verdict out of the RAW dimension blob that stands in for the report — whose last VERDICT line is
+// whatever the final dimension wrote, commonly APPROVE. The human then saw INCOMPLETE while the
+// index recorded Approve for the same run, which is worse than either alone: the store and the
+// report disagree, and only the store is machine-read afterwards.
+export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, synthesized = true }) {
   const rs = Array.isArray(results) ? results : []
   const dimensions = rs.map((r) => ({
     dimension: r.label, ran: !!r.ok, verdict: r.ok ? parseVerdict(r.text) : '',
@@ -110,7 +132,7 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText })
   // no longer depends on the synthesising model restating the roll-up correctly — and no longer on
   // the word "Warning" happening to appear somewhere in a dimension table.
   const worst = worstOf([
-    parseVerdict(synthesisText),
+    synthesized ? parseVerdict(synthesisText) : 'INCOMPLETE (not run)',
     ...dimensions.map((d) => (d.ran ? d.verdict : 'INCOMPLETE (not run)')),
   ])
   const notRun = rs.filter((r) => !r.ok).map((r) => r.label)
