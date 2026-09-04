@@ -17,31 +17,39 @@ export const meta = {
 // through every `typeof args === 'object'` guard, so every option reverted to its default and the
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
-// >>> craft-inline lib/workflow-args.mjs parsePairs normalizeArgs
-function parsePairs(text) {
-  // `key=value key2="value with spaces" flag` — the shell-ish form. Values may be bare, single- or
-  // double-quoted; a bare key is a flag; a value that parses as JSON (a list, a number, a boolean)
-  // becomes that, so `languages=["rust"]` and `mutants=true` mean what they look like.
-  //
-  // Built here rather than at module scope for two reasons, and both bit: a `/g` regex carries
-  // `lastIndex` between calls, so a second parse would resume mid-string; and only exported
-  // declarations are copied into the engines' inlined regions, so a module-level const would arrive
-  // as a ReferenceError at the first call in every engine.
-  const pair = /(\w[\w-]*)=("([^"]*)"|'([^']*)'|[^\s]+)|(\w[\w-]*)/g
+// >>> craft-inline lib/workflow-args.mjs parseOptions normalizeArgs
+// Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
+// A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
+// otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
+// invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
+// or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+function parseOptions(text) {
+  const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
   const out = {}
+  let pairs = 0
+  const ignored = []
   let m
+  let cursor = 0
   while ((m = pair.exec(text)) !== null) {
-    if (m[5]) { out[m[5]] = true; continue }
-    const raw = m[3] ?? m[4] ?? m[2]
-    // A quoted value is taken literally: `intent="[draft] fix"` is a sentence, not a JSON array.
-    if (m[3] !== undefined || m[4] !== undefined) { out[m[1]] = raw; continue }
+    // Anything skipped over between matches is prose, not an option: collect it so the caller can say
+    // what it ignored instead of silently swallowing half the input.
+    const gap = text.slice(cursor, m.index).trim()
+    if (gap) ignored.push(...gap.split(/\s+/))
+    cursor = pair.lastIndex
+    if (m[7]) { out[m[7]] = true; pairs++; continue }
+    const key = m[2]
+    const quoted = m[4] ?? m[5]
+    if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
-      out[m[1]] = JSON.parse(raw)
+      out[key] = JSON.parse(m[3])
     } catch {
-      out[m[1]] = raw
+      out[key] = m[3]
     }
+    pairs++
   }
-  return out
+  const tail = text.slice(cursor).trim()
+  if (tail) ignored.push(...tail.split(/\s+/))
+  return { options: out, pairs, ignored }
 }
 
 function normalizeArgs(args, warn = () => {}) {
@@ -68,14 +76,17 @@ function normalizeArgs(args, warn = () => {}) {
       return {}
     }
   }
-  // At least one real `key=value` is required before this is read as the pair form. A string with no
-  // `=` at all is prose — a pasted intent, a sentence, a typo — and turning its words into flags
-  // would invent options the caller never wrote, which is worse than dropping them: an invented
-  // `strict` or `fresh` changes what the run does.
-  const pairs = text.includes('=') ? parsePairs(text) : {}
-  if (Object.values(pairs).some(v => v !== true)) {
+  const { options, pairs, ignored } = parseOptions(text)
+  if (pairs) {
+    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
+    // and testing "is any value not true" threw away every string made only of boolean options —
+    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
+    // requested mutation pass would silently not run.
     warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
-    return pairs
+    if (ignored.length) {
+      warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
+    }
+    return options
   }
   // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
   // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
