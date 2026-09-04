@@ -124,7 +124,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
   // it per job would be ten chances to forget one, and the one forgotten is the one that reports
   // Approve on a dead session. The predicate comes FROM the parser that will later read the same
   // line, so the gate and the reader cannot disagree about what an answer looks like.
-  const results = await fanOut(ctx, jobs.map((j) => ({ ...j, answered: hasVerdictLine })))
+  const results = await fanOut(ctx, jobs.map((j) => ({ ...j, answered: hasVerdictLine, requires: "VERDICT: line" })))
 
   // Synthesize through a fresh child session (no agent → the session's default model/persona).
   // One machine-readable label for "this dimension checked nothing" — a dispatcher-detected death
