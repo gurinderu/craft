@@ -292,13 +292,28 @@ function loggerPrelude(craftRoot, version = '', repo = '') {
   // `..` climb and a symlinked parent collapse to the same comparison. The `case` patterns are
   // quoted and slash-anchored, so a sibling that merely shares a prefix (`/x/repo-evil` beside
   // `/x/repo`) is NOT inside — the collision this project already met once in `insideStore`.
+  // EVERY exit from this predicate that is not a clean, fully resolved, outside-the-repo path is a
+  // REFUSAL. Three of them used to fall through to acceptance, and one was reachable: exhausting the
+  // hop bound left the loop with the path still a symlink, the comparison then tested an unresolved
+  // string, nothing matched, and the candidate was accepted — a 21-link chain ending inside the
+  // reviewed repository executed its script. A bound that fails open is not a bound; it is a longer
+  // attack.
+  //
+  // Two of the three refusals are belt-and-braces and are labelled as such rather than dressed up as
+  // covered: with `CRAFT_REPO` empty the `case` pattern degenerates to `/*`, which matches every
+  // absolute path and refuses anyway; and `pwd -P` can only fail on a directory with no `x` bit,
+  // where `[ -f ]` has already failed one line earlier. Removing either guard changes no observable
+  // behaviour, so no test distinguishes them — stated here instead of implied by a test that would
+  // pass either way.
   const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
 craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
   case "$1" in /*) ;; *) return 1 ;; esac
   [ -f "$1" ] || return 1
+  [ -n "$CRAFT_REPO" ] || return 1   # belt to the braces below; see the note in the comment above
   CRAFT_REAL="$1"
   CRAFT_HOPS=0
-  while [ -L "$CRAFT_REAL" ] && [ "$CRAFT_HOPS" -lt 16 ]; do
+  while [ -L "$CRAFT_REAL" ]; do
+    [ "$CRAFT_HOPS" -lt 16 ] || return 1
     CRAFT_LINK="$(readlink "$CRAFT_REAL")"
     case "$CRAFT_LINK" in
       /*) CRAFT_REAL="$CRAFT_LINK" ;;
@@ -306,8 +321,10 @@ craft_usable() {   # a line that is exactly '}' at column 0 would end the extrac
     esac
     CRAFT_HOPS=$((CRAFT_HOPS + 1))
   done
-  CRAFT_REAL="$(cd "$(dirname "$CRAFT_REAL")" 2>/dev/null && pwd -P)/$(basename "$CRAFT_REAL")"
-  [ -n "$CRAFT_REPO" ] && case "$CRAFT_REAL" in
+  CRAFT_DIR="$(cd "$(dirname "$CRAFT_REAL")" 2>/dev/null && pwd -P)" || return 1
+  [ -n "$CRAFT_DIR" ] || return 1
+  CRAFT_REAL="$CRAFT_DIR/$(basename "$CRAFT_REAL")"
+  case "$CRAFT_REAL" in
     "$CRAFT_REPO"/*|"$CRAFT_REPO") return 1 ;;
   esac
   return 0
