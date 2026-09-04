@@ -173,7 +173,7 @@ ${ledger}`
     planPrompt,
     hasPlanMarkerLine,
     undefined,
-    "terminal PLAN: line",
+    "PLAN: READY line",
   ).catch((e) => ({
     ok: false,
     text: "",

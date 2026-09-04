@@ -94,7 +94,11 @@ test('a synthesis that merely republishes its input is not a consolidation', asy
   // reader as the consolidated report. Same echo hole the plan marker closed, one file over.
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis, agent }) => {
-      if (!isSynthesis) return `${agent} checked things\n\nVERDICT: APPROVE`
+      // Lines long enough to be substantial to the echo guard — the earlier fixture's only ≥20-char
+      // lines were the `### label (ran)` headings, so the guard was exercised on headings alone.
+      if (!isSynthesis) {
+        return `- ${agent}: src/a.rs:10 unbounded growth in the retry buffer\n- ${agent}: src/b.rs:22 the lock is held across an await point\n\nVERDICT: APPROVE`
+      }
       return null // filled below
     })
     // Re-wrap so the synthesis can echo exactly what it was given.
@@ -109,7 +113,7 @@ test('a synthesis that merely republishes its input is not a consolidation', asy
         const blob = text
           .slice(text.indexOf('RESULTS:') + 'RESULTS:'.length)
           .split('\n')
-          .filter(l => /^###|checked things|^VERDICT: APPROVE$/.test(l.trim()))
+          .filter(l => /^###|^- |^VERDICT: APPROVE$/.test(l.trim()))
           .join('\n\n')
         assert.ok(blob.length > 400, 'the fixture blob must be long enough for the guard to probe')
         assert.ok(/VERDICT: APPROVE/.test(blob), 'and must carry the verdict lines the echo relies on')
@@ -124,6 +128,48 @@ test('a synthesis that merely republishes its input is not a consolidation', asy
     const report = await runRustAudit(ctx, {})
     assert.match(report, /INCOMPLETE \(not run\) — the audit was not consolidated/, 'the echo is not the report')
     assert.match(record(dir).verdict, /INCOMPLETE/)
+  })
+})
+
+test('a faithful consolidation that reuses the input lines is NOT an echo', async () => {
+  // The other side of the echo guard, and the one that costs more when it is wrong: the prompt
+  // orders "only merge what is given" and asks for each finding tagged with its location, so a
+  // real consolidation of a small audit is largely lines lifted from the blob. Rejecting it throws
+  // the whole audit away under an INCOMPLETE banner and hands the reader the raw blob.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isSynthesis, agent }) => {
+      if (!isSynthesis) {
+        return `- ${agent}: src/a.rs:10 unbounded growth in the retry buffer\n- ${agent}: src/b.rs:22 the lock is held across an await point\n\nVERDICT: APPROVE`
+      }
+      return null
+    })
+    const inner = ctx.client.session.prompt
+    ctx.client.session.prompt = async (req) => {
+      const text = req?.body?.parts?.[0]?.text ?? ''
+      if (/consolidating a Rust audit/.test(text)) {
+        const findings = text.split('\n').filter(l => l.startsWith('- '))
+        const merged = [
+          '# Rust audit',
+          '',
+          '## Findings by severity, each tagged with its dimension and location',
+          // One input heading quoted in passing — legitimate, and the case that pins the guard's
+          // threshold at two rather than one.
+          (text.split('\n').find(l => /^###[ \t]/.test(l.trim())) ?? '').trim(),
+          ...findings,
+          '',
+          '## Fix first',
+          '1. The await-point lock is the one that can deadlock under load; take it after.',
+          '',
+          'VERDICT: WARNING',
+        ].join('\n')
+        return { parts: [{ type: 'text', text: merged }] }
+      }
+      return inner(req)
+    }
+    const report = await runRustAudit(ctx, {})
+    assert.match(report, /Fix first/, 'the consolidation is used')
+    assert.ok(!/was not consolidated/.test(report), 'and is not thrown away as a republication')
+    assert.equal(record(dir).verdict, 'Warning')
   })
 })
 

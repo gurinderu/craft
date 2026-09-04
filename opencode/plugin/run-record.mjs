@@ -41,11 +41,24 @@ const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|B
 // Approve is the fallthrough on purpose (a clean prose report carries no keyword at all), and that
 // is exactly the case a silent or refusing session also lands in — which is why the fallthrough,
 // and only the fallthrough, is what "did not answer" means.
+// What a session says when it did NOT run: an inability, not a judgement. Narrow on purpose — this
+// decides only the weakest arm, where the alternative was to throw away reported severity.
+const DECLINED =
+  /\b(?:I(?:'m| am)? (?:un)?able to|I (?:cannot|can't|could not|couldn't|won't|will not)|unable to|not able to|(?:do|does|did) not have permission|lack(?:s|ed)? permission|not permitted|no permission)\b/i
+
 export function hasVerdictLine(text) {
-  const e = verdictEvidence(String(text ?? ''))
-  // `keyword` is deliberately NOT an answer. See LABELLED_ANY: the reader and the gate ask the same
-  // body precisely so they cannot drift, and differ only in what they do with the weakest evidence.
-  return e !== null && e.by !== 'keyword'
+  const t = String(text ?? '')
+  const e = verdictEvidence(t)
+  if (e === null) return false
+  // Bare-keyword evidence is the only ambiguous arm, and BOTH ways of resolving it wholesale are
+  // wrong. Admitting it read cargo's own `warning:` in a refusal as a judgement, and filed a
+  // dimension that declined as one that ran. Rejecting it threw away reported severity — "Miri
+  // reported UB-found in two tests." parses as Block, and calling that unanswered files it
+  // INCOMPLETE, which worstOf ranks BELOW Block; the same gate still admitted an unlabelled
+  // "Verdict: Approve". That asymmetry runs against everything this branch is for.
+  // So the discriminator is what the text says about ITSELF: a keyword stands as an answer unless
+  // the session also said it could not do the work.
+  return e.by !== 'keyword' || !DECLINED.test(t)
 }
 
 // Same argument for the triage outcome line.
@@ -75,12 +88,22 @@ const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|def
 // are not symmetric and the rule is set where the cheaper one falls. What that concedes, said
 // plainly: a reply that emits the marker and then retracts it in the next paragraph is accepted.
 // The reader still sees the retraction — it is the text they are handed.
-const PLAN_MARKER = /^[ \t>|*_`#-]*PLAN:[ \t]*[*_`]*[ \t]*READY[ \t]*[*_`.]*[ \t]*$/i
+// No blockquote and no backtick in the decoration class, and fenced blocks are skipped: those are
+// exactly the three ways a refusal puts the marker on a line of its own while quoting it. Bold,
+// emphasis and a list bullet stay, because those are how a model DECORATES its own final line.
+const PLAN_MARKER = /^[ \t*_#-]*PLAN:[ \t]*[*_]*[ \t]*READY[ \t]*[*_.]*[ \t]*$/i
+const FENCE = /^[ \t]*(?:`{3,}|~{3,})/
 
 export function hasPlanMarkerLine(text) {
-  return String(text ?? '')
-    .split('\n')
-    .some((l) => PLAN_MARKER.test(l))
+  let inFence = false
+  for (const l of String(text ?? '').split('\n')) {
+    if (FENCE.test(l)) {
+      inFence = !inFence
+      continue
+    }
+    if (!inFence && PLAN_MARKER.test(l)) return true
+  }
+  return false
 }
 
 export function hasOutcomeLine(text) {

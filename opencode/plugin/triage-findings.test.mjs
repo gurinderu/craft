@@ -228,6 +228,11 @@ test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy 
   for (const refusal of [
     'I cannot triage these.\n\n`PLAN: READY` is what the instructions ask for, but there is nothing to plan.',
     '> PLAN: READY was requested; I refuse.',
+    // A blockquote or a fence puts the marker on a line of its OWN — which is exactly how a refusal
+    // quotes an instruction, and is what the whole-line rule newly admitted until the decoration
+    // class stopped swallowing `>` and backticks and fenced blocks were skipped.
+    'I cannot plan these.\n\n> PLAN: READY\n\nThere is nothing here to order.',
+    'I cannot plan these. The instruction was:\n\n```\nPLAN: READY\n```\n\nBut there is nothing to order.',
   ]) {
     await withStore(async dir => {
       const ctx = fakeCtx(({ isPlan }) => (isPlan ? refusal : 'checked\n\nOUTCOME: accept'))
@@ -289,7 +294,7 @@ test('a planner failure carries its cause into the banner', async () => {
   await withStore(async () => {
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'I will not do that.' : 'checked\n\nOUTCOME: accept'))
     const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
-    assert.match(out, /without the terminal PLAN: line/, 'the cause is named')
+    assert.match(out, /without the PLAN: READY line/, 'the cause is named')
     assert.match(out, /I will not do that/, 'and the planner\'s own words are shown')
   })
 
