@@ -242,6 +242,17 @@ test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy 
     })
   }
 
+  // An unterminated or decorative fence must not hide the plan behind it: `See:\n```rust\nfn f(){}`
+  // opened a block that never closed, and toggling on any fence-looking line discarded a real plan
+  // — forty child sessions already paid for — on a guess. Same asymmetric cost the splitter one
+  // file over already reasons about, and the same CommonMark closer rule.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan ? '1. fix a\n\nSee:\n```rust\nfn f(){}\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept')
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.equal(record(dir).planned, true, 'an unterminated fence does not swallow the plan')
+  })
+
   // The other direction, which the first version of this gate got wrong: requiring the marker to be
   // the LAST non-blank line discarded well-formed plans over a closing fence or one trailing line of
   // courtesy — throwing away up to forty child sessions already paid for and filing `planned: false`

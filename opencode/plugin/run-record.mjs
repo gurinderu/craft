@@ -41,33 +41,29 @@ const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|B
 // Approve is the fallthrough on purpose (a clean prose report carries no keyword at all), and that
 // is exactly the case a silent or refusing session also lands in — which is why the fallthrough,
 // and only the fallthrough, is what "did not answer" means.
-// What a session says when it did NOT run: an inability, not a judgement. Narrow on purpose — this
-// decides only the weakest arm, where the alternative was to throw away reported severity.
+// A session reporting that IT could not do the work. First person and explicitly negated, because
+// the alternatives are otherwise ordinary review English about the CODE: "the caller is unable to
+// distinguish the two states" and "values not permitted by the schema are accepted" are findings,
+// not self-reports, and a bare `unable to` / `not permitted` swallowed both. `(?:un)?` was optional
+// once, which made "I am able to reproduce the UB" a refusal.
 const DECLINED =
-  /\b(?:I(?:'m| am)? (?:un)?able to|I (?:cannot|can't|could not|couldn't|won't|will not)|unable to|not able to|(?:do|does|did) not have permission|lack(?:s|ed)? permission|not permitted|no permission)\b/i
+  /\bI(?:'m| am| was)?[ \t]+(?:un(?:able)|not[ \t]+able)[ \t]+to\b|\bI[ \t]+(?:cannot|can't|could[ \t]+not|couldn't|won't|will[ \t]+not)\b|\bI[ \t]+(?:do|did|does)[ \t]+not[ \t]+have[ \t]+permission\b|\bI[ \t]+lack[ \t]+(?:the[ \t]+)?permission\b/i
 
 export function hasVerdictLine(text) {
   const t = String(text ?? '')
   const e = verdictEvidence(t)
   if (e === null) return false
-  // Bare-keyword evidence is the only ambiguous arm, and BOTH ways of resolving it wholesale are
-  // wrong. Admitting it read cargo's own `warning:` in a refusal as a judgement, and filed a
-  // dimension that declined as one that ran. Rejecting it threw away reported severity — "Miri
-  // reported UB-found in two tests." parses as Block, and calling that unanswered files it
-  // INCOMPLETE, which worstOf ranks BELOW Block; the same gate still admitted an unlabelled
-  // "Verdict: Approve". That asymmetry runs against everything this branch is for.
-  // So the discriminator is what the text says about ITSELF: a keyword stands as an answer unless
-  // the session also said it could not do the work.
-  return e.by !== 'keyword' || !DECLINED.test(t)
+  // A mandated `VERDICT: <TOKEN>` line is authoritative and nothing overrides it — an agent may
+  // legitimately say it could not do one thing and still deliver the line it was asked for.
+  if (e.by === 'structured') return true
+  // Everything weaker loses to a session's own statement that it could not do the work. Consulting
+  // this on the keyword arm ALONE was the previous shape, and it left the more expensive half open:
+  // "I am unable to run cargo in this sandbox. / Verdict: Approve" was admitted and filed
+  // ran:true, verdict:Approve — a refusal read as an approval, which is the whole subject of this
+  // branch. Nothing in the suite could tell the arm-specific rule from this one, either; a
+  // discriminator no falsifier can reach is a decoration.
+  return !DECLINED.test(t)
 }
-
-// Same argument for the triage outcome line.
-// Case-INSENSITIVE on the token, and the difference from VERDICT is not an oversight. `parseVerdict`
-// is case-sensitive because a lowercase `Verdict: Approve` is deliberately weighed differently by a
-// second reader; there is no second reader here, so the same strictness would only punish a
-// validation that answered correctly and capitalised — re-running it and then filing it not-run,
-// which is the inversion this predicate exists to prevent.
-const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/mi
 
 // The plan marker must BE the last thing said, not merely appear somewhere. An any-line boolean is
 // satisfied by a refusal that quotes or reconstructs the marker — `\`PLAN: READY\` is what the
@@ -92,19 +88,38 @@ const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|def
 // exactly the three ways a refusal puts the marker on a line of its own while quoting it. Bold,
 // emphasis and a list bullet stay, because those are how a model DECORATES its own final line.
 const PLAN_MARKER = /^[ \t*_#-]*PLAN:[ \t]*[*_]*[ \t]*READY[ \t]*[*_.]*[ \t]*$/i
-const FENCE = /^[ \t]*(?:`{3,}|~{3,})/
+const FENCE = /^[ \t]*(`{3,}|~{3,})/
 
+// A closer must match its opener in character and length — the CommonMark rule the sibling splitter
+// already implements, and for the same asymmetric-cost reason: toggling on any fence-looking line
+// meant a truncated or decorative one ("See:\n```rust\nfn f(){}") hid a real plan behind it and
+// discarded up to forty child sessions already paid for. An unterminated fence loses nothing here,
+// because the marker is looked for on every line the fence never closed over.
 export function hasPlanMarkerLine(text) {
-  let inFence = false
-  for (const l of String(text ?? '').split('\n')) {
-    if (FENCE.test(l)) {
-      inFence = !inFence
+  const lines = String(text ?? '').split('\n')
+  let openedWith = null
+  for (const l of lines) {
+    const f = l.match(FENCE)
+    if (f) {
+      if (openedWith === null) openedWith = f[1]
+      else if (f[1][0] === openedWith[0] && f[1].length >= openedWith.length) openedWith = null
       continue
     }
-    if (!inFence && PLAN_MARKER.test(l)) return true
+    if (openedWith === null && PLAN_MARKER.test(l)) return true
   }
+  // An opener that never closed took the input's tail with it on a guess. Read that tail rather
+  // than throw the plan away.
+  if (openedWith !== null) return lines.some((l) => !FENCE.test(l) && PLAN_MARKER.test(l))
   return false
 }
+
+// Same argument for the triage outcome line.
+// Case-INSENSITIVE on the token, and the difference from VERDICT is not an oversight. `parseVerdict`
+// is case-sensitive because a lowercase `Verdict: Approve` is deliberately weighed differently by a
+// second reader; there is no second reader here, so the same strictness would only punish a
+// validation that answered correctly and capitalised — re-running it and then filing it not-run,
+// which is the inversion this predicate exists to prevent.
+const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/mi
 
 export function hasOutcomeLine(text) {
   return OUTCOME_LINE.test(String(text ?? ''))
