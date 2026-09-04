@@ -1417,17 +1417,33 @@ function loggerPrelude(craftRoot, version = '') {
   // The layout being relied on here belongs to the harness, not to craft (realm @nick/craft, node
   // #48, observed rather than documented). It can move without notice, which is why a miss is
   // ordinary rather than exceptional: not found means the loud refusal below, never a guess.
+  // The version is a real quoted shell word. It was interpolated with the quotes STRIPPED off for one
+  // commit, which made a version containing `"; echo …` a command-injection hole — unreachable
+  // today, since every craftVersion traces to the release-please literal, but the invariant was
+  // stated and false, and a version sourced from anywhere else would have landed as execution.
+  //
+  // And the config directory must be ABSOLUTE. A relative value re-opens exactly the hole the `:-.`
+  // removal closed, by a different door: `[ -f ]` is evaluated in the logger agent's cwd, but
+  // `node "$CRAFT_LOGGER"` runs AFTER the cd into the reviewed repository, so a relative candidate
+  // resolves THERE. A hostile repo shipping .claude/plugins/cache/craft/craft/<version>/lib/
+  // craft-log-run.mjs — the version is public in the manifest — would be executed with the user's
+  // privileges. A non-absolute value is therefore refused outright rather than normalized: guessing
+  // what the user meant is how this class keeps coming back.
   const search = version
     ? `if [ ! -f "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_CFG="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  CRAFT_CAND="$CRAFT_CFG/plugins/cache/craft/craft/${shq(version).slice(1, -1)}/lib/craft-log-run.mjs"
-  [ -f "$CRAFT_CAND" ] && CRAFT_LOGGER="$CRAFT_CAND"
+  case "$CRAFT_CFG" in /*) ;; *) CRAFT_CFG="" ;; esac
+  CRAFT_VER=${shq(version)}
+  if [ -n "$CRAFT_CFG" ]; then
+    CRAFT_CAND="$CRAFT_CFG/plugins/cache/craft/craft/$CRAFT_VER/lib/craft-log-run.mjs"
+    [ -f "$CRAFT_CAND" ] && CRAFT_LOGGER="$CRAFT_CAND"
+  fi
 fi
 `
     : ''
   return `CRAFT_LOGGER="\${CLAUDE_PLUGIN_ROOT:-}"
 [ -n "$CRAFT_LOGGER" ] && CRAFT_LOGGER="$CRAFT_LOGGER/lib/craft-log-run.mjs"
-${search}[ -f "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no logger found — craftRoot unset, CLAUDE_PLUGIN_ROOT unset, and no installed copy of ${version || 'this version'} under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
+${search}[ -f "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no logger found — craftRoot unset, CLAUDE_PLUGIN_ROOT unset, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
 `
 }
 
@@ -1524,7 +1540,13 @@ function quietly(call) {
 // on the original: the fixed staging path, the prelude ordering and the exit-code carry each had to
 // be applied twice, and each time the second copy was the one nearly missed. Same builder, one
 // difference — the checkpoint carries a phase and asks for the runDir back.
-function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false, version = '' } = {}) {
+function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
+  // DERIVED from the payload, never passed alongside it. As a plumbing argument with a silent ''
+  // default it was forgettable, and it was duly forgotten at one of three call sites — deleting it
+  // there left every gate green while that engine's checkpoints went back to refusing exactly as
+  // before the fix, with finalize and prior-round succeeding beside them. A checkpoint describes the
+  // same run as the record, so the version belongs on the payload anyway.
+  const version = String(payload?.craftVersion ?? '')
   const flags = `--phase ${shq(phase)} ${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
   return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
@@ -1561,14 +1583,16 @@ async function checkpoint(phase, payloadIn, group) {
   // that name to rebuild a dead run's identity. A payload without them produced a real
   // `…Z-unknown-unknown` directory on the first live run — recoverable, but recovered as a run of
   // nothing. They belong on every slice, not just the final record.
-  const payload = { kind: 'workflow', name: 'review', ...payloadIn }
+  // craftVersion rides on every slice: it is what the checkpoint's own logger lookup derives its
+  // version from, and a slice that cannot say which build wrote it is a slice `recover` cannot place.
+  const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn }
   // ragent does NOT catch a budget-exceeded throw (see its comment), and agent() throws for harness
   // reasons too — so a rejection, not just a null, is a real outcome here. It has to land in the same
   // place as every other failed write: the report. Letting it propagate would abort the whole review
   // over a bookkeeping write, which is exactly what this whole path exists to prevent.
   const asked = runDir
   const res = await ragentQuietly(
-    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: !runDir && checkpointFailed, version: CRAFT_VERSION }),
+    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: !runDir && checkpointFailed }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   if (res?.runDir) {
