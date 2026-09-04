@@ -151,7 +151,15 @@ ${blob}${VERDICT_RULE}`
   // Held to the same standard as every dimension: the synth prompt ends with the same VERDICT_RULE,
   // so text without that line is not a consolidation — it is a refusal or a preamble, and treating
   // it as the report filed an Approve for a run nobody consolidated.
-  const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine, undefined, "VERDICT: line").catch(
+  // The prompt embeds `blob`, which carries every dimension's real VERDICT: line — so a synthesis
+  // that refuses while quoting the results back satisfies any verdict-line gate and is accepted as
+  // the consolidated report. The record's roll-up is worst-wins over dimensions, so this is a
+  // report-TEXT hazard rather than a false approval, but it is the same echo hole the plan marker
+  // just closed. A consolidation restates; it does not reproduce. Verbatim republication of the
+  // input is therefore not an answer, whatever line it ends with.
+  const echoed = (t: string) => blob.length > 200 && t.includes(blob.slice(0, 200))
+  const answeredSynthesis = (t: string) => hasVerdictLine(t) && !echoed(t)
+  const synthesis = await runAnswering(ctx, "", synthPrompt, answeredSynthesis, undefined, "VERDICT: line").catch(
     (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),
   )
   // WHY it died, in the reader's hands. A refusal, a twenty-minute timeout and an errored session are

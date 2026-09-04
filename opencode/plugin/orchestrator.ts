@@ -91,7 +91,7 @@ export async function runAnswering(
   // but not to the same REPORTING.
   const job = { label: agent || "default", agent, prompt, answered, timeoutMs, requires }
   const r = await tryOne(ctx, job)
-  return { ok: r.ok, text: r.text, note: r.ok ? "" : notRunNote(job, r.why, r.text) }
+  return { ok: r.ok, text: r.text, note: r.ok ? "" : notRunNote(job, r.why, r.text, false, false) }
 }
 export interface JobResult { label: string; ok: boolean; text: string }
 
@@ -121,7 +121,18 @@ async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Fai
 // "no result within 10 minutes" for a 20-minute job clipped by what was left — and a reader either
 // hunts for that deadline or raises `timeoutMs` and sees nothing change, because the budget bound it.
 // The `left <= 0` guard below catches only the exactly-exhausted case; everything between is here.
-function notRunNote(job: Job, why: Failure | undefined, detail: string, boundByBudget = false): string {
+function notRunNote(
+  job: Job,
+  why: Failure | undefined,
+  detail: string,
+  boundByBudget = false,
+  // How many attempts were actually made. The fall-through arm below said "after a concurrent
+  // attempt and a sequential retry … check your opencode version", which `fanOut` earns and
+  // `runAnswering` does not: it makes exactly one call and has no retry. A reader was told two
+  // attempts happened and sent after an upstream bug that is not implicated — the wrong cause on
+  // the very path this branch exists to keep honest.
+  retried = true,
+): string {
   const ms = job.timeoutMs ?? STUCK_MS
   // Seconds below a minute: `Math.round` turned every short deadline into "within 0 minutes", which
   // is what a test drove without noticing, because it asserted only the prefix.
@@ -137,7 +148,9 @@ function notRunNote(job: Job, why: Failure | undefined, detail: string, boundByB
           ? `it answered, but without the ${job.requires ?? "machine-readable line"} the prompt requires — so nothing it said can be read as a result. Its output is kept below`
           : why === "error"
             ? `the child session errored on its last attempt`
-            : `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
+            : retried
+              ? `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
+              : `the child session produced no output on its single attempt. This step is not retried, so there is nothing more to read into it than that the session returned nothing`
   return `INCOMPLETE (not run) — the child session for "${job.agent || "the default model"}" did not deliver a result: ${cause}. ${detail}`.trim()
 }
 

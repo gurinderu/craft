@@ -3,7 +3,7 @@
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
-import { buildTriageRecord, hasOutcomeLine, writeRecord } from "./run-record.mjs"
+import { buildTriageRecord, endsWithPlanMarker, hasOutcomeLine, writeRecord } from "./run-record.mjs"
 import { existsSync, readFileSync } from "node:fs"
 
 // Read the locator as a file when it points at one; otherwise treat it as literal findings text.
@@ -156,7 +156,7 @@ ${ledger}`
     ctx,
     "",
     planPrompt,
-    (t) => /^\s*[*_`>|-]*\s*PLAN:\s*READY\b/mi.test(t),
+    endsWithPlanMarker,
     undefined,
     "terminal PLAN: line",
   ).catch((e) => ({
@@ -168,7 +168,7 @@ ${ledger}`
   // The record carries what the reader was told: a plan that never came, and findings that were
   // never triaged. The audit's record gained exactly this a commit ago; leaving the sibling without
   // it is how "no trace in the output OR the run record" stayed half true.
-  await writeRecord(ctx, buildTriageRecord({ results: validated, planned: planned.ok, untriaged: dropped }))
+  await writeRecord(ctx, buildTriageRecord({ results: validated, planned: planned.ok, untriaged: dropped, skipped }))
   // The warning LEADS. Placed at the end it is the last thing on a long page — and the case it
   // exists for is precisely the one that makes the page long.
   return `${coverage}${skippedNote}${plan}`

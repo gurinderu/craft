@@ -220,6 +220,45 @@ test('a plan is not accepted from a refusal that quotes its own instructions', a
   })
 })
 
+test('a plan marker that is not the last word is not a plan', async () => {
+  // Third iteration of the same pattern: the literal line left the PROMPT, which addressed the
+  // example, while the property — a refusal can always reconstruct a short marker — was untouched.
+  // An any-line boolean was satisfied by both of these, and the refusal was returned AS the plan
+  // with `planned: true`. The marker must now BE the last thing said.
+  for (const refusal of [
+    'I cannot triage these.\n\n`PLAN: READY` is what the instructions ask for, but there is nothing to plan.',
+    '> PLAN: READY was requested; I refuse.',
+    'PLAN: READY\n\nActually, on reflection I am unable to do this.',
+  ]) {
+    await withStore(async dir => {
+      const ctx = fakeCtx(({ isPlan }) => (isPlan ? refusal : 'checked\n\nOUTCOME: accept'))
+      const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+      assert.match(out, /INCOMPLETE \(not run\) — the fix plan was not produced/, refusal)
+      assert.equal(record(dir).planned, false)
+    })
+  }
+
+  // And a real plan still passes, decorated or not.
+  for (const good of ['## Ledger\n\n1. fix a\n\nPLAN: READY', '## Ledger\n\n1. fix a\n\n**PLAN: READY**\n']) {
+    await withStore(async dir => {
+      const ctx = fakeCtx(({ isPlan }) => (isPlan ? good : 'checked\n\nOUTCOME: accept'))
+      await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+      assert.equal(record(dir).planned, true, good)
+    })
+  }
+})
+
+test('lines the splitter ate reach the run record, not only the screen', async () => {
+  // `dropped` reached both; `skipped` reached only the screen — and the fence path, which is the
+  // loss path this delivery introduced, is counted by `skipped`. Half a rule.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept'))
+    const locator = '- Critical: src/a.rs:10 growth\n```\nsample output\nmore sample\n```\n- High: src/b.rs:2 panic'
+    await runTriageFindings(ctx, { locator })
+    assert.equal(record(dir).skipped, 2, 'the two fenced lines are counted in the store')
+  })
+})
+
 test('a closing fence must match the one that opened it', async () => {
   // The other half of the delimiter property, and the same silent loss as the inline-span defect by
   // a different door: a ```` block quoting a ``` example was closed by the inner marker, and every

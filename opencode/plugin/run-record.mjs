@@ -28,14 +28,21 @@ const VERDICT_TOKEN = {
 // so matching it here would let it outrank a report of UB instead of losing to it.
 const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
-// The SAME shape, asked as a yes/no by the dispatcher to decide whether a dimension answered at all.
-// Exported rather than re-spelled: written twice, the two drifted immediately and in the direction
-// that loses severity — a bolded `**VERDICT: BLOCK**` is what a model ordinarily writes, and a
-// stricter copy judged it "unanswered", so a real Block was re-run and then recorded as INCOMPLETE,
-// which `worstOf` ranks BELOW Block. That is the defect this discriminator exists to prevent,
-// inverted. A fresh regex per call because /g carries lastIndex between uses.
+// Whether a dimension ANSWERED, asked of the parser itself rather than of one of its arms.
+//
+// Spelling the structural arm twice was the first mistake and it was fixed by exporting the regex —
+// but exporting one ARM left the gate strictly narrower than the reader, which is the same defect
+// with a smaller gap. `parseVerdict` also reads a prose tail: "Found a use-after-free in
+// src/x.rs:10.\n\nVerdict: Block" parses as Block while a VERDICT_LINE test says "unanswered", so a
+// security dimension that found UB was re-run at full cost and then filed INCOMPLETE — which
+// `worstOf` ranks BELOW Block. Severity lost, by the gate that exists to stop severity being lost.
+//
+// So the gate is now: did the parser reach a verdict from EVIDENCE, or only by its fallthrough?
+// Approve is the fallthrough on purpose (a clean prose report carries no keyword at all), and that
+// is exactly the case a silent or refusing session also lands in — which is why the fallthrough,
+// and only the fallthrough, is what "did not answer" means.
 export function hasVerdictLine(text) {
-  return new RegExp(VERDICT_LINE.source, 'm').test(String(text ?? ''))
+  return verdictEvidence(String(text ?? '')) !== null
 }
 
 // Same argument for the triage outcome line.
@@ -45,6 +52,24 @@ export function hasVerdictLine(text) {
 // validation that answered correctly and capitalised — re-running it and then filing it not-run,
 // which is the inversion this predicate exists to prevent.
 const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/mi
+
+// The plan marker must BE the last thing said, not merely appear somewhere. An any-line boolean is
+// satisfied by a refusal that quotes or reconstructs the marker — `\`PLAN: READY\` is what the
+// instructions ask for, but there is nothing to plan` passed, and the refusal was returned as the
+// fix plan with `planned: true`. Removing the literal line from the prompt addressed the example;
+// the property is that a short marker can always be reconstructed, and the only thing a refusal
+// cannot do is stop refusing. The audit side survives the same shape only by accident, because
+// `parseVerdict` reads the LAST such line rather than any.
+//
+// So: the last non-blank line, with markdown decoration stripped, must be the marker and nothing
+// else — trailing prose on the same line disqualifies it.
+const PLAN_MARKER = /^[ \t>|*_`#-]*PLAN:[ \t]*[*_`]*[ \t]*READY[ \t]*[*_`.]*[ \t]*$/i
+
+export function endsWithPlanMarker(text) {
+  const lines = String(text ?? '').split('\n').filter((l) => l.trim() !== '')
+  const last = lines[lines.length - 1]
+  return last !== undefined && PLAN_MARKER.test(last)
+}
 
 export function hasOutcomeLine(text) {
   return OUTCOME_LINE.test(String(text ?? ''))
@@ -87,12 +112,13 @@ function lastMatch(re, t) {
   return last
 }
 
-export function parseVerdict(text) {
-  const t = String(text || '')
-
+// The single body both the reader and the gate ask. Returns the verdict together with WHAT decided
+// it, or null when nothing did — the two callers below differ only in which of those they keep, so
+// they cannot drift apart again.
+function verdictEvidence(t) {
   // 1. Structural: the last `VERDICT: <TOKEN>` line wins, and is authoritative when present.
   const structured = lastMatch(VERDICT_LINE, t)
-  if (structured) return VERDICT_TOKEN[structured]
+  if (structured) return { verdict: VERDICT_TOKEN[structured], by: 'structured' }
 
   // 2. Fallback for non-conforming output, over the tail only.
   const tail = t.split('\n').slice(-TAIL_LINES).join('\n')
@@ -100,20 +126,29 @@ export function parseVerdict(text) {
   // doesn't collide with the Block keyword. Worst signal still wins (Block before Warning), and
   // both outrank a labelled statement: an agent claiming Approve while reporting UB is not taken
   // at its word.
-  if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(tail)) return 'Block'
-  if (/⚠️|\b(?:Warning|Concerns)\b/i.test(tail)) return 'Warning'
+  if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(tail)) return { verdict: 'Block', by: 'keyword' }
+  if (/⚠️|\b(?:Warning|Concerns)\b/i.test(tail)) return { verdict: 'Warning', by: 'keyword' }
   // A labelled statement decides between the remaining two. This is what stops a report that merely
   // MENTIONS incompleteness — quoting its own instructions, or tabling one dimension as INCOMPLETE
   // — from overriding the verdict the agent actually stated.
   const labelled = lastMatch(LABELLED, tail)
-  if (labelled) return /incomplete/i.test(labelled) ? 'INCOMPLETE (not run)' : 'Approve'
+  if (labelled) {
+    return { verdict: /incomplete/i.test(labelled) ? 'INCOMPLETE (not run)' : 'Approve', by: 'labelled' }
+  }
   // A dimension whose tooling was absent checked nothing. That must not land in the Approve bucket:
   // an Approve is a claim about what was NOT found, and it only holds over what was looked at.
-  if (INCOMPLETE_LINE.test(tail) || INCOMPLETE_CELL.test(tail)) return 'INCOMPLETE (not run)'
-  // Approve is the fallthrough on purpose: this reads an agent's whole prose report, where a clean
-  // dimension legitimately contains no keyword at all. (Contrast worstVerdict() in
-  // lib/run-record.mjs, which receives already-parsed tokens and rightly refuses to default.)
-  return 'Approve'
+  if (INCOMPLETE_LINE.test(tail) || INCOMPLETE_CELL.test(tail)) {
+    return { verdict: 'INCOMPLETE (not run)', by: 'incomplete-line' }
+  }
+  // Nothing decided it. The READER still answers Approve here on purpose — this reads an agent's
+  // whole prose report, where a clean dimension legitimately contains no keyword at all (contrast
+  // worstVerdict() in lib/run-record.mjs, which receives already-parsed tokens and rightly refuses
+  // to default) — while the GATE reads the same absence as "did not answer".
+  return null
+}
+
+export function parseVerdict(text) {
+  return verdictEvidence(String(text || ''))?.verdict ?? 'Approve'
 }
 
 // Precedence for the top-level roll-up, worst wins.
@@ -176,7 +211,10 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
 // They are their OWN fields; `verdict` stays empty. A triage has no verdict — that is deliberate and
 // pinned by a test — and widening a field other readers already interpret, to carry a fact that has
 // no home yet, is how two writers come to disagree about what a column means.
-export function buildTriageRecord({ results, planned = true, untriaged = 0 }) {
+// `skipped` is here for the same reason `untriaged` is: it counts lines the splitter ATE, and the
+// fence path is the loss path this delivery introduced — the one the store could not see, while the
+// screen could. "No trace in the output OR the run record" is not half a rule.
+export function buildTriageRecord({ results, planned = true, untriaged = 0, skipped = 0 }) {
   const rs = Array.isArray(results) ? results : []
   return {
     schemaVersion: 1,
@@ -185,6 +223,7 @@ export function buildTriageRecord({ results, planned = true, untriaged = 0 }) {
     name: 'triage-findings',
     planned,
     untriaged,
+    skipped,
     verdict: '',
     findings: null,
     nested: false,

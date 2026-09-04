@@ -88,6 +88,31 @@ test('the reader is told WHY the synthesis failed, not merely that it did', asyn
   })
 })
 
+test('a synthesis that merely republishes its input is not a consolidation', async () => {
+  // The synth prompt embeds the dimension blob, which carries every real VERDICT: line — so a reply
+  // that refuses while quoting the results back satisfies a verdict-line gate and is served to the
+  // reader as the consolidated report. Same echo hole the plan marker closed, one file over.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isSynthesis, agent }) => {
+      if (!isSynthesis) return `${agent} checked things\n\nVERDICT: APPROVE`
+      return null // filled below
+    })
+    // Re-wrap so the synthesis can echo exactly what it was given.
+    const inner = ctx.client.session.prompt
+    ctx.client.session.prompt = async (req) => {
+      const text = req?.body?.parts?.[0]?.text ?? ''
+      if (/consolidating a Rust audit/.test(text)) {
+        const blob = text.slice(text.indexOf('RESULTS:') + 'RESULTS:'.length).trim()
+        return { parts: [{ type: 'text', text: `I cannot consolidate this. The results were:\n\n${blob}` }] }
+      }
+      return inner(req)
+    }
+    const report = await runRustAudit(ctx, {})
+    assert.match(report, /INCOMPLETE \(not run\) — the audit was not consolidated/, 'the echo is not the report')
+    assert.match(record(dir).verdict, /INCOMPLETE/)
+  })
+})
+
 test('a real synthesis is used, and the store matches it', async () => {
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis }) =>
