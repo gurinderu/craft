@@ -270,11 +270,25 @@ function loggerPrelude(craftRoot, version = '') {
   // way round first, the loop overwrote a perfectly good path from CLAUDE_PLUGIN_ROOT with whatever
   // the cache happened to hold — a launch from a checkout would have silently logged through some
   // other installed version.
+  // ONE candidate, and it is version-pinned. The marketplace directory was a second candidate for
+  // exactly one commit, and it was wrong in the way this pin exists to prevent: it is a git clone
+  // tracking the marketplace, not a versioned release, so a machine whose clone had moved on would
+  // have executed a NEWER script — which stamps engineRevision and craftCommit from its own build —
+  // while the record body said this version. A record misdescribing which engine ran is worse than
+  // no record, because it is counted.
+  //
+  // `$CLAUDE_CONFIG_DIR` is honoured because a session configured that way keeps its plugins
+  // elsewhere entirely, and hardcoding `~/.claude` would leave that user with the defect unfixed and
+  // no sign of it.
+  //
+  // The layout being relied on here belongs to the harness, not to craft (realm @nick/craft, node
+  // #48, observed rather than documented). It can move without notice, which is why a miss is
+  // ordinary rather than exceptional: not found means the loud refusal below, never a guess.
   const search = version
     ? `if [ ! -f "\${CRAFT_LOGGER:-}" ]; then
-  for d in "$HOME/.claude/plugins/cache/craft/craft/${version}" "$HOME/.claude/plugins/marketplaces/craft"; do
-    [ -f "$d/lib/craft-log-run.mjs" ] && CRAFT_LOGGER="$d/lib/craft-log-run.mjs" && break
-  done
+  CRAFT_CFG="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  CRAFT_CAND="$CRAFT_CFG/plugins/cache/craft/craft/${shq(version).slice(1, -1)}/lib/craft-log-run.mjs"
+  [ -f "$CRAFT_CAND" ] && CRAFT_LOGGER="$CRAFT_CAND"
 fi
 `
     : ''

@@ -125,7 +125,12 @@ const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
 // checkpoint, the finalize record and the prior-round chain to "Cannot find module", silently.
 // Resolve the path to an absolute one FIRST, in a variable, then change directory. The prelude
 // itself is shared with every other record-filing engine (lib/run-logging.mjs, inlined below).
-const LOGGER_PRELUDE = loggerPrelude(craftRootArg)
+// A FUNCTION, not a constant, and the reason is mechanical: `CRAFT_VERSION` is declared far below
+// (release-please owns that line and its position), so computing the prelude here would either hit
+// the temporal dead zone or — as it did for one commit — quietly omit the version and leave this
+// engine's third logger command, the prior-round read, refusing exactly as before the fix while the
+// other two found their script. Deferring the call to use time is what lets all three agree.
+const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION)
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
 const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
@@ -1398,11 +1403,25 @@ function loggerPrelude(craftRoot, version = '') {
   // way round first, the loop overwrote a perfectly good path from CLAUDE_PLUGIN_ROOT with whatever
   // the cache happened to hold — a launch from a checkout would have silently logged through some
   // other installed version.
+  // ONE candidate, and it is version-pinned. The marketplace directory was a second candidate for
+  // exactly one commit, and it was wrong in the way this pin exists to prevent: it is a git clone
+  // tracking the marketplace, not a versioned release, so a machine whose clone had moved on would
+  // have executed a NEWER script — which stamps engineRevision and craftCommit from its own build —
+  // while the record body said this version. A record misdescribing which engine ran is worse than
+  // no record, because it is counted.
+  //
+  // `$CLAUDE_CONFIG_DIR` is honoured because a session configured that way keeps its plugins
+  // elsewhere entirely, and hardcoding `~/.claude` would leave that user with the defect unfixed and
+  // no sign of it.
+  //
+  // The layout being relied on here belongs to the harness, not to craft (realm @nick/craft, node
+  // #48, observed rather than documented). It can move without notice, which is why a miss is
+  // ordinary rather than exceptional: not found means the loud refusal below, never a guess.
   const search = version
     ? `if [ ! -f "\${CRAFT_LOGGER:-}" ]; then
-  for d in "$HOME/.claude/plugins/cache/craft/craft/${version}" "$HOME/.claude/plugins/marketplaces/craft"; do
-    [ -f "$d/lib/craft-log-run.mjs" ] && CRAFT_LOGGER="$d/lib/craft-log-run.mjs" && break
-  done
+  CRAFT_CFG="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  CRAFT_CAND="$CRAFT_CFG/plugins/cache/craft/craft/${shq(version).slice(1, -1)}/lib/craft-log-run.mjs"
+  [ -f "$CRAFT_CAND" ] && CRAFT_LOGGER="$CRAFT_CAND"
 fi
 `
     : ''
@@ -1744,7 +1763,7 @@ if (!freshArg && branch && head) {
 Run exactly this:
 
 \`\`\`
-${LOGGER_PRELUDE}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
+${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
 \`\`\`
 
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, reason:"loader-did-not-run"}.`,
