@@ -18,23 +18,58 @@ test('a bullet list is one finding per bullet', () => {
   assert.equal(skipped, 0)
 })
 
-test('a wrapped continuation stays with its finding', () => {
-  // It was split into two: the continuation carries a file:line, which an earlier rule read as a
-  // finding of its own — so half a sentence was validated as if it were a defect report.
-  const { findings } = splitFindings('- Critical: the parser drops bytes\n  see src/parse.rs:88 for the site')
-  assert.equal(findings.length, 1, 'the continuation belongs to the bullet above it')
-  assert.match(findings[0], /drops bytes see src\/parse\.rs:88/)
+test('a wrapped continuation stays with its finding, indented or not', () => {
+  // Indented was the easy half. Markdown wraps at column ZERO, so "indented means continuation" was
+  // true of code and false of prose — and an ordinary report then saturated the cap on paragraph
+  // fragments while real findings past it were dropped.
+  const indented = splitFindings('- Critical: the parser drops bytes\n  see src/parse.rs:88 for the site')
+  assert.equal(indented.findings.length, 1, 'an indented continuation belongs to the bullet above')
+  assert.match(indented.findings[0], /drops bytes see src\/parse\.rs:88/)
+
+  const wrapped = splitFindings('- Critical: the parser drops bytes\nsee src/parse.rs:88 for the site')
+  assert.equal(wrapped.findings.length, 1, 'and so does one wrapped at column zero')
 })
 
-test('prose findings are triaged, not discarded because something else was structured', () => {
+test('a paragraph is ONE finding, and a blank line ends it', () => {
+  // The measurement that made this necessary: docs/observability.md, 141 lines, produced 40 findings
+  // (the cap) and dropped 52 before this rule — forty child sessions spent on half-sentences. With
+  // paragraphs coalesced it produces 17 and drops none.
+  const { findings } = splitFindings('The parser drops bytes\nwhen the buffer wraps.\n\nThe retry loop\nnever terminates.')
+  assert.equal(findings.length, 2, 'two paragraphs, two findings')
+  assert.match(findings[0], /drops bytes when the buffer wraps/)
+  assert.match(findings[1], /retry loop never terminates/)
+})
+
+test('rules and lone bold headings are furniture, quoted notes are not', () => {
+  // A `---` or `***` separator is layout. A `> quoted note` might well BE the finding, and the cost
+  // of keeping it is one wasted validation against the cost of dropping a real one.
+  const { findings, skipped } = splitFindings('- a\n---\n***\n> quoted note\n**Bold heading**\n- b')
+  assert.deepEqual(findings, ['- a', '> quoted note', '- b'])
+  assert.equal(skipped, 3, 'the two rules and the bold heading are counted as skipped')
+})
+
+test('prose is triaged, not discarded because something else was structured', () => {
   // The trap in the first attempt: one structured line anywhere flipped the whole blob into
-  // "structured mode" and every plain sentence was dropped. A mixed report is the ordinary case, so
-  // that lost real findings in exactly the situation the tool is used for.
+  // "structured mode" and every plain sentence was DROPPED. A mixed report is the ordinary case, so
+  // that lost real findings in exactly the situation the tool is used for. Nothing is dropped now.
+  //
+  // What it costs, said plainly rather than papered over: two adjacent prose lines with no blank
+  // line between them are INDISTINGUISHABLE from one wrapped paragraph, so they arrive as a single
+  // finding. That is a deliberate trade and it is not free — the validator judges both sentences in
+  // one job. It is chosen because the opposite error is far worse: splitting wrapped prose produced
+  // forty fragment-findings on an ordinary report and dropped everything past the cap. Merging
+  // degrades a judgment; splitting loses findings outright.
   const { findings, skipped } = splitFindings(
     'The parser drops trailing bytes.\nThe retry loop never terminates.\n- src/a.rs:10 unbounded growth',
   )
-  assert.equal(findings.length, 3, 'all three are findings')
+  assert.equal(findings.length, 2, 'the prose block is one finding, the bullet is another')
+  assert.match(findings[0], /drops trailing bytes.*never terminates/, 'and neither sentence is lost')
+  assert.match(findings[1], /src\/a\.rs:10/)
   assert.equal(skipped, 0)
+
+  // Separated by a blank line, they are two findings — which is how a report that means two says so.
+  const separated = splitFindings('The parser drops trailing bytes.\n\nThe retry loop never terminates.')
+  assert.equal(separated.findings.length, 2)
 })
 
 test('code fences are not findings', () => {

@@ -2,7 +2,7 @@
 // → render one ordered fix plan + triage ledger. No edits. Delegates the per-finding code-check to
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
 import type { PluginCtx } from "./index.ts"
-import { fanOut, runAgent, type Job } from "./orchestrator.ts"
+import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
 import { buildTriageRecord, hasOutcomeLine, writeRecord } from "./run-record.mjs"
 import { existsSync, readFileSync } from "node:fs"
 
@@ -28,30 +28,30 @@ export function splitFindings(blob: string): { findings: string[]; dropped: numb
   const items: string[] = []
   let skipped = 0
   let inFence = false
+  let open = false // whether the last item is still accepting continuation lines
   for (const line of raw) {
     const l = line.trim()
-    // A fenced block is code or sample output, not findings. Numbered lines inside one were being
-    // triaged as if a user had written them.
+    // A fenced block is code or sample output, not findings.
     if (/^(```|~~~)/.test(l)) { inFence = !inFence; continue }
-    if (!l.length) continue
-    // Counted, not merely skipped: the caller says how much of the input was not treated as
-    // findings, so a reader can tell "there was nothing else" from "the rest was swallowed".
-    if (inFence) { skipped++; continue }
-    if (/^#{1,6}\s/.test(l)) continue
-    // A table's |---|---| rule is furniture. Its header row is not — it is content, and telling a
-    // header from a first finding reliably is not something a splitter can do.
-    if (/^\|[\s|:-]*\|$/.test(l)) { skipped++; continue }
+    if (inFence) { if (l.length) skipped++; continue }
+    // A blank line ends an item. This is what makes a PARAGRAPH one finding instead of one per line:
+    // markdown wraps at column zero, so "indented means continuation" was true of code and false of
+    // prose — and an ordinary multi-KB report then saturated the cap on paragraph fragments alone,
+    // spending forty child sessions on half-sentences while real findings past the cap were dropped.
+    if (!l.length) { open = false; continue }
+    if (/^#{1,6}\s/.test(l)) { open = false; continue }
+    // Furniture: a horizontal rule, a table's |---|---| rule, a lone bold heading.
+    if (/^([-*_])\1{2,}$/.test(l.replace(/\s+/g, "")) || /^\|[\s|:-]*\|$/.test(l) || /^\*\*[^*]+\*\*$/.test(l)) {
+      skipped++
+      open = false
+      continue
+    }
     const starts = /^[-*+]\s+\S/.test(l) || /^\d+[.)]\s+\S/.test(l) || /^\|.*\|$/.test(l)
-    if (starts) { items.push(l); continue }
-    // An indented or unmarked line directly under an item is its CONTINUATION — the file:line it
-    // carries belongs to the finding above, and splitting there triaged half a sentence as its own
-    // finding while the commit message claimed otherwise.
-    const isContinuation = items.length > 0 && /^\s/.test(line)
-    if (isContinuation) { items[items.length - 1] += ` ${l}`; continue }
-    // Anything left is an unmarked line at column zero. In a report that is prose; in a pasted list
-    // of sentences it is the finding itself. Keeping it costs a wasted validation at worst, and
-    // dropping it costs a Critical nobody looked at — so it is kept, and the count is reported.
-    items.push(l)
+    if (starts) { items.push(l); open = true; continue }
+    // Anything else continues the item above it — including a line at column zero, which is what a
+    // wrapped bullet and a wrapped paragraph both look like. Only when no item is open does it start
+    // one, so a paragraph becomes a single finding rather than one per line.
+    if (open && items.length) { items[items.length - 1] += ` ${l}` } else { items.push(l); open = true }
   }
   const findings = items.slice(0, MAX_FINDINGS)
   return { findings, dropped: Math.max(0, items.length - MAX_FINDINGS), skipped }
@@ -102,7 +102,12 @@ ${ledger}`
   // A dead planner used to hand back the raw ledger, which reads like a finished triage. It is not
   // one: nothing was ordered, and the open questions were never separated out.
   const unplanned = `## ⚠️ INCOMPLETE (not run) — the fix plan was not produced\n\nThe planning step returned nothing, so what follows is the raw validation ledger rather than an ordered plan. Nothing here is a decision about what to fix first.\n\n${ledger}`
-  const plan = (await runAgent(ctx, "", planPrompt).catch(() => "")) || unplanned
+  // The planner is gated too, though more weakly: its prompt mandates no single machine-readable
+  // line, so what is asked of it is that it produced the sections it was told to produce. Prose that
+  // contains neither is a refusal, not a plan.
+  const planned = await runAnswering(ctx, "", planPrompt, (t) => /triage ledger/i.test(t) || /fix plan/i.test(t))
+    .catch(() => ({ ok: false, text: "" }))
+  const plan = planned.ok ? planned.text : unplanned
   await writeRecord(ctx, buildTriageRecord({ results: validated }))
   // The warning LEADS. Placed at the end it is the last thing on a long page — and the case it
   // exists for is precisely the one that makes the page long.
