@@ -11,15 +11,90 @@ export const meta = {
 }
 
 // ---- args ----
-const diffBase = (args && typeof args === 'object' && args.diffBase) ? String(args.diffBase) : ''
-const intentArg = (args && typeof args === 'object' && args.intent) ? String(args.intent) : ''
-const viaArg = (args && typeof args === 'object' && args._via) ? String(args._via) : ''   // set by a parent workflow
+// ---- args ----
+// Three plausible spellings arrive here — a real object, a JSON string, and the `key=value` form the
+// skill's own invocation line advertises — and only the first used to work. The other two fell
+// through every `typeof args === 'object'` guard, so every option reverted to its default and the
+// run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
+// nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
+// >>> craft-inline lib/workflow-args.mjs parsePairs normalizeArgs
+function parsePairs(text) {
+  // `key=value key2="value with spaces" flag` — the shell-ish form. Values may be bare, single- or
+  // double-quoted; a bare key is a flag; a value that parses as JSON (a list, a number, a boolean)
+  // becomes that, so `languages=["rust"]` and `mutants=true` mean what they look like.
+  //
+  // Built here rather than at module scope for two reasons, and both bit: a `/g` regex carries
+  // `lastIndex` between calls, so a second parse would resume mid-string; and only exported
+  // declarations are copied into the engines' inlined regions, so a module-level const would arrive
+  // as a ReferenceError at the first call in every engine.
+  const pair = /(\w[\w-]*)=("([^"]*)"|'([^']*)'|[^\s]+)|(\w[\w-]*)/g
+  const out = {}
+  let m
+  while ((m = pair.exec(text)) !== null) {
+    if (m[5]) { out[m[5]] = true; continue }
+    const raw = m[3] ?? m[4] ?? m[2]
+    // A quoted value is taken literally: `intent="[draft] fix"` is a sentence, not a JSON array.
+    if (m[3] !== undefined || m[4] !== undefined) { out[m[1]] = raw; continue }
+    try {
+      out[m[1]] = JSON.parse(raw)
+    } catch {
+      out[m[1]] = raw
+    }
+  }
+  return out
+}
+
+function normalizeArgs(args, warn = () => {}) {
+  if (args && typeof args === 'object' && !Array.isArray(args)) return args
+  if (typeof args !== 'string' || !args.trim()) return {}
+  const text = args.trim()
+  // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
+  // below: `[1,2,3]` and `"a sentence"` would otherwise become flags named after their own contents.
+  if (text.startsWith('[') || text.startsWith('"')) {
+    warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
+    return {}
+  }
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        warn('⚠️ args arrived as a JSON string, not an object — parsed it; pass a real object to avoid this')
+        return parsed
+      }
+      warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
+      return {}
+    } catch (e) {
+      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      return {}
+    }
+  }
+  // At least one real `key=value` is required before this is read as the pair form. A string with no
+  // `=` at all is prose — a pasted intent, a sentence, a typo — and turning its words into flags
+  // would invent options the caller never wrote, which is worse than dropping them: an invented
+  // `strict` or `fresh` changes what the run does.
+  const pairs = text.includes('=') ? parsePairs(text) : {}
+  if (Object.values(pairs).some(v => v !== true)) {
+    warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
+    return pairs
+  }
+  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
+  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
+  // verdict that reads exactly like a requested one.
+  warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
+  return {}
+}
+// <<< craft-inline
+const A = normalizeArgs(args, log)
+
+const diffBase = A.diffBase ? String(args.diffBase) : ''
+const intentArg = A.intent ? String(args.intent) : ''
+const viaArg = A._via ? String(args._via) : ''   // set by a parent workflow
 // The repo under review, when it is NOT the directory the session runs in, and where craft itself
 // lives so the logger can find lib/craft-log-run.mjs. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the reviewed repo — where the script is not. Pass craftRoot then.
-const craftRootArg = (args && typeof args === 'object' && args.craftRoot) ? String(args.craftRoot) : ''
-const BATCH = (args && typeof args === 'object' && args.batch) ? Math.max(1, Number(args.batch)) : 4
+const craftRootArg = A.craftRoot ? String(args.craftRoot) : ''
+const BATCH = A.batch ? Math.max(1, Number(args.batch)) : 4
 const RETRY_BATCH = 2                 // retry rounds run even quieter than the main pass
 const MAX_RETRY_ROUNDS = (args && typeof args === 'object' && args.maxRetries != null) ? Math.max(0, Number(args.maxRetries)) : 2
 const BUDGET_FLOOR = 40_000           // stop spawning agents below this many remaining tokens
