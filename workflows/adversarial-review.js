@@ -310,6 +310,11 @@ craft_usable() {   # a line that is exactly '}' at column 0 would end the extrac
   case "$1" in /*) ;; *) return 1 ;; esac
   [ -f "$1" ] || return 1
   [ -n "$CRAFT_REPO" ] || return 1   # belt to the braces below; see the note in the comment above
+  # A repo of "/" contains everything, so nothing can be outside it. The pattern below cannot say
+  # that: "$CRAFT_REPO"/* becomes //* and matches no ordinary path, so every candidate reads as
+  # outside and the guard inverts into an allow-all. Degenerate input, but the whole point of this
+  # predicate is that it fails closed.
+  [ "$CRAFT_REPO" = "/" ] && return 1
   CRAFT_REAL="$1"
   CRAFT_HOPS=0
   while [ -L "$CRAFT_REAL" ]; do
@@ -331,9 +336,14 @@ craft_usable() {   # a line that is exactly '}' at column 0 would end the extrac
  }
 CRAFT_LOGGER=""
 `
+  // The RESOLVED path is what gets used, not the candidate string that was validated. Between the
+  // check and `node "$CRAFT_LOGGER"` sit the mktemp, the whole heredoc of a record that can be
+  // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
+  // candidate can be re-pointed into the reviewed repository. Handing over the path that was
+  // actually checked closes that window and costs nothing.
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
-  craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_TRY"
+  craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
 fi
 `
   const explicit = craftRoot ? tryCandidate(`${shq(craftRoot)}"/lib/craft-log-run.mjs"`) : ''
