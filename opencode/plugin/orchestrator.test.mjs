@@ -184,11 +184,20 @@ test('a session that says it could not do the work is not answering, however it 
     assert.equal(r.ok, false, `a declined run is not an answer: ${JSON.stringify(text)}`)
   }
 
-  // But a mandated VERDICT: line is authoritative and nothing overrides it — an agent may say it
-  // could not do ONE thing and still deliver exactly the line it was asked for.
+  // A mandated VERDICT: line is authoritative — an agent may say it could not do ONE thing and still
+  // deliver exactly the line it was asked for.
   const ctx = fakeCtx({ 'rust-security-scanner': 'I could not run miri.\n\nVERDICT: INCOMPLETE' })
   const [ok] = await fanOut(ctx, [job()])
   assert.equal(ok.ok, true, 'the structured line still answers')
+
+  // Except when it claims APPROVE. A blanket exemption made the refusal vocabulary inert on the one
+  // population that follows the mandate — every conforming agent — so the sentence the vocabulary
+  // was broadened to catch sailed through in its CONFORMING spelling while being caught in prose.
+  const claimed = fakeCtx({
+    'rust-security-scanner': 'Cargo is not available in this environment; no checks were run.\n\nVERDICT: APPROVE',
+  })
+  const [refused] = await fanOut(claimed, [job()])
+  assert.equal(refused.ok, false, 'an Approve holds only over what was looked at')
 })
 
 test('prose about the CODE is not a session declining', async () => {

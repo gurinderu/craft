@@ -360,6 +360,20 @@ test('findings past the cap are named on screen AND in the store', async () => {
   })
 })
 
+test('a validation that refuses while quoting the outcome line has not validated', async () => {
+  // The branch's highest-volume path — up to forty jobs — and the one predicate that never got the
+  // anti-echo discipline: `hasOutcomeLine` stayed any-line, with `>` and backticks in its
+  // decoration class and no fence skipping, exactly the three things the plan marker was hardened
+  // twice to exclude. So a validation that could not read the file and quoted its instructions was
+  // filed as having validated, and the finding reached the plan carrying a refusal as its reasoning.
+  await withStore(async dir => {
+    const refusal = 'I could not read src/a.rs, so I have nothing to validate.\nThe instructions ask for:\n```\nOUTCOME: accept\n```'
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : refusal))
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.deepEqual(record(dir).notRun, ['f1'], 'the refusal is filed as not-run')
+  })
+})
+
 test('a validation answering in the wrong case is still an answer', async () => {
   // `OUTCOME: Accept` is correct and capitalised. Judged strictly it was re-run at full cost and
   // then filed not-run — the inversion the shared predicate exists to prevent, and there is no

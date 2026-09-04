@@ -157,24 +157,16 @@ ${blob}${VERDICT_RULE}`
   // report-TEXT hazard rather than a false approval, but it is the same echo hole the plan marker
   // just closed. A consolidation restates; it does not reproduce. Verbatim republication of the
   // input is therefore not an answer, whatever line it ends with.
-  // What separates republication from consolidation, sharply: the per-dimension SECTION HEADINGS.
-  // An echo carries the blob's structure with it; a consolidation is asked for a dimension→verdict
-  // table and has no reason to reproduce `### security (ran)` verbatim. Overlap fraction was tried
-  // first and is the wrong measure — the prompt orders "do not invent findings, only merge what is
-  // given" and asks for each finding tagged with its location, so a faithful merge of a small audit
-  // is mostly lines lifted from the input, and any threshold low enough to catch an echo also threw
-  // away the real thing. A false not-run here discards the whole audit under an INCOMPLETE banner,
-  // which is the expensive error everywhere else on this branch.
-  const headings = blob.split("\n").map((l) => l.trim()).filter((l) => /^###[ \t]/.test(l))
-  // MORE THAN ONE — stated as the floor it is, not as a measured number. One heading quoted in
-  // passing is something a consolidation may legitimately do; carrying the input's section headings
-  // is reproducing its structure. Only the lower side is pinned by a test, and raising 2 to 3 or 5
-  // breaks nothing, so calling 2 "measured" would be a claim no falsifier can reach — which is
-  // exactly what was wrong with the overlap fraction it replaced.
-  const echoed = (t: string) => headings.length >= 2 && headings.filter((h) => t.includes(h)).length >= 2
-  const answeredSynthesis = (t: string) => hasVerdictLine(t) && !echoed(t)
-
-  const synthesis = await runAnswering(ctx, "", synthPrompt, answeredSynthesis, undefined, "VERDICT: line").catch(
+  // There was a guard here that tried to tell a consolidation from a republication of its input.
+  // It is gone, and that is the honest disposition rather than a regression: every version of it —
+  // a 200-character prefix probe, a line-overlap fraction, a count of section headings — rejected
+  // real consolidations, and a false not-run here throws the whole audit away and hands the reader
+  // the raw blob under an INCOMPLETE banner, which is the expensive error everywhere on this
+  // branch. What it bought was near nothing: the record's roll-up is worst-wins over dimensions and
+  // already carries `synthesized`, so an echo cannot produce a false approval in the store, and the
+  // text a reader sees on a caught echo embeds the same blob the echo would have shown. Five rounds
+  // of refinement on a guard whose threshold no falsifier could reach is its own verdict.
+  const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine, undefined, "VERDICT: line").catch(
     (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),
   )
   // WHY it died, in the reader's hands. A refusal, a twenty-minute timeout and an errored session are
