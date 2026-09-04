@@ -3,7 +3,7 @@
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAgent, type Job } from "./orchestrator.ts"
-import { buildTriageRecord, writeRecord } from "./run-record.mjs"
+import { buildTriageRecord, hasOutcomeLine, writeRecord } from "./run-record.mjs"
 import { existsSync, readFileSync } from "node:fs"
 
 // Read the locator as a file when it points at one; otherwise treat it as literal findings text.
@@ -23,16 +23,38 @@ const MAX_FINDINGS = 40
 // every line meant prose, table rows and wrapped continuations each became a "finding" and each
 // spawned a child session, while the real findings past the cap were dropped; the plan then
 // presented itself as a complete triage of the input.
-function splitFindings(blob: string): { findings: string[]; dropped: number; skipped: number } {
-  const lines = blob.split("\n").map((l) => l.trim()).filter((l) => l.length > 0 && !/^#{1,6}\s/.test(l))
-  const looksLikeFinding = (l: string) =>
-    /^[-*+]\s+\S/.test(l) || /^\d+[.)]\s+\S/.test(l) || /\S+\.[A-Za-z0-9]+:\d+/.test(l) || /^\|.*\|$/.test(l)
-  const candidates = lines.filter(looksLikeFinding)
-  // Prose-only input is still a finding — a user pasting one sentence means that sentence. Falling
-  // back to every line is right THERE and wrong for a report, so the fallback is scoped to the case
-  // where nothing structured was found at all.
-  const chosen = candidates.length ? candidates : lines
-  return { findings: chosen.slice(0, MAX_FINDINGS), dropped: Math.max(0, chosen.length - MAX_FINDINGS), skipped: lines.length - chosen.length }
+export function splitFindings(blob: string): { findings: string[]; dropped: number; skipped: number } {
+  const raw = blob.split("\n")
+  const items: string[] = []
+  let skipped = 0
+  let inFence = false
+  for (const line of raw) {
+    const l = line.trim()
+    // A fenced block is code or sample output, not findings. Numbered lines inside one were being
+    // triaged as if a user had written them.
+    if (/^(```|~~~)/.test(l)) { inFence = !inFence; continue }
+    if (!l.length) continue
+    // Counted, not merely skipped: the caller says how much of the input was not treated as
+    // findings, so a reader can tell "there was nothing else" from "the rest was swallowed".
+    if (inFence) { skipped++; continue }
+    if (/^#{1,6}\s/.test(l)) continue
+    // A table's |---|---| rule is furniture. Its header row is not — it is content, and telling a
+    // header from a first finding reliably is not something a splitter can do.
+    if (/^\|[\s|:-]*\|$/.test(l)) { skipped++; continue }
+    const starts = /^[-*+]\s+\S/.test(l) || /^\d+[.)]\s+\S/.test(l) || /^\|.*\|$/.test(l)
+    if (starts) { items.push(l); continue }
+    // An indented or unmarked line directly under an item is its CONTINUATION — the file:line it
+    // carries belongs to the finding above, and splitting there triaged half a sentence as its own
+    // finding while the commit message claimed otherwise.
+    const isContinuation = items.length > 0 && /^\s/.test(line)
+    if (isContinuation) { items[items.length - 1] += ` ${l}`; continue }
+    // Anything left is an unmarked line at column zero. In a report that is prose; in a pasted list
+    // of sentences it is the finding itself. Keeping it costs a wasted validation at worst, and
+    // dropping it costs a Critical nobody looked at — so it is kept, and the count is reported.
+    items.push(l)
+  }
+  const findings = items.slice(0, MAX_FINDINGS)
+  return { findings, dropped: Math.max(0, items.length - MAX_FINDINGS), skipped }
 }
 
 export async function runTriageFindings(ctx: PluginCtx, args: { locator: string }): Promise<string> {
@@ -43,9 +65,9 @@ export async function runTriageFindings(ctx: PluginCtx, args: { locator: string 
   // claim about findings nobody looked at — a Critical one past the cap vanished with no trace in
   // the output OR the run record.
   const coverage = dropped
-    ? `\n\n> ⚠️ **INCOMPLETE — ${dropped} finding(s) past the first ${MAX_FINDINGS} were NOT triaged.** This plan covers only what is listed below; scope the input down and re-run to cover the rest.`
+    ? `> ⚠️ **INCOMPLETE — ${dropped} finding(s) past the first ${MAX_FINDINGS} were NOT triaged.** This plan covers only what is listed below; scope the input down and re-run to cover the rest.\n`
     : ""
-  const skippedNote = skipped ? `\n> ${skipped} line(s) in the input did not look like findings and were not triaged.` : ""
+  const skippedNote = skipped ? `> ${skipped} line(s) inside code fences or table furniture were not treated as findings.\n` : ""
 
   const jobs: Job[] = findings.map((f, i) => ({
     label: `f${i + 1}`,
@@ -62,7 +84,7 @@ OUTCOME: <exactly one of the five, lowercase>`,
 
   // Same discriminator as the audit: these prompts demand an OUTCOME line, so carrying one is what
   // it means to have answered. Without it a refusal counted as a validation.
-  const validated = await fanOut(ctx, jobs.map((j) => ({ ...j, expect: /^\s*OUTCOME:\s*(accept|reject|defer|needs-decision|conflict)\b/mi })))
+  const validated = await fanOut(ctx, jobs.map((j) => ({ ...j, answered: hasOutcomeLine })))
   const ledger = validated
     .map((r, i) => `- **${r.label}** (${r.ok ? "validated" : "INCOMPLETE (not run)"}): ${findings[i]}\n  ${r.text.replace(/\n/g, "\n  ")}`)
     .join("\n")
@@ -82,5 +104,7 @@ ${ledger}`
   const unplanned = `## ⚠️ INCOMPLETE (not run) — the fix plan was not produced\n\nThe planning step returned nothing, so what follows is the raw validation ledger rather than an ordered plan. Nothing here is a decision about what to fix first.\n\n${ledger}`
   const plan = (await runAgent(ctx, "", planPrompt).catch(() => "")) || unplanned
   await writeRecord(ctx, buildTriageRecord({ results: validated }))
-  return `${plan}${coverage}${skippedNote}`
+  // The warning LEADS. Placed at the end it is the last thing on a long page — and the case it
+  // exists for is precisely the one that makes the page long.
+  return `${coverage}${skippedNote}${plan}`
 }

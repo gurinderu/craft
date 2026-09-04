@@ -57,14 +57,15 @@ function extractText(res: any): string {
 // inferred from `text.length > 0`, so a refusal, a tool-permission error, or "I'll start by looking
 // at the repo" counted as success — and that text then reached the verdict parser, which falls
 // through to APPROVE. A dimension whose session errored out therefore reported Approve. Callers that
-// require a machine-readable line pass its pattern here; a job with no `expect` keeps the old
-// non-empty rule, which is honest for jobs whose output is prose by design.
-export interface Job { label: string; agent: string; prompt: string; expect?: RegExp; timeoutMs?: number }
+// require a machine-readable line pass the PARSER'S OWN predicate here — not a second regex, which
+// drifted from the parser the moment it existed. A job with no `answered` keeps the old non-empty
+// rule, which is honest for jobs whose output is prose by design.
+export interface Job { label: string; agent: string; prompt: string; answered?: (text: string) => boolean; timeoutMs?: number }
 export interface JobResult { label: string; ok: boolean; text: string }
 
 // Why the job failed, in the words a reader can act on. Conflating these was half the defect: a
 // deadline reported as "no output" sent people to look for an opencode bug.
-type Failure = "timeout" | "empty" | "unanswered" | "error"
+type Failure = "timeout" | "empty" | "unanswered" | "error" | "budget"
 
 async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Failure }> {
   try {
@@ -76,7 +77,7 @@ async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Fai
     if (!text.length) return { label: job.label, ok: false, text, why: "empty" }
     // Output that does not carry what the job asked for is not a result. Keeping the text matters:
     // a refusal or an error message is the most useful thing to show the reader about why.
-    if (job.expect && !job.expect.test(text)) return { label: job.label, ok: false, text, why: "unanswered" }
+    if (job.answered && !job.answered(text)) return { label: job.label, ok: false, text, why: "unanswered" }
     return { label: job.label, ok: true, text }
   } catch (e) {
     return { label: job.label, ok: false, text: `error: ${e instanceof Error ? e.message : String(e)}`, why: "error" }
@@ -85,16 +86,29 @@ async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Fai
 
 function notRunNote(job: Job, why: Failure | undefined, detail: string): string {
   const ms = job.timeoutMs ?? STUCK_MS
+  // Seconds below a minute: `Math.round` turned every short deadline into "within 0 minutes", which
+  // is what a test drove without noticing, because it asserted only the prefix.
+  const span = ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 1000)} seconds`
   const cause =
-    why === "timeout"
-      ? `it produced no result within ${Math.round(ms / 60_000)} minutes, twice. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
-      : why === "unanswered"
-        ? `it answered, but without the machine-readable verdict line the prompt requires — so nothing it said can be read as a result. Its output is kept below`
-        : why === "error"
-          ? `the child session errored, twice`
-          : `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
+    why === "budget"
+      ? `the retry budget for this run was already spent on earlier jobs, so it was not attempted a second time`
+      : why === "timeout"
+        ? `it produced no result within ${span}. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
+        : why === "unanswered"
+          ? `it answered, but without the machine-readable verdict line the prompt requires — so nothing it said can be read as a result. Its output is kept below`
+          : why === "error"
+            ? `the child session errored on its last attempt`
+            : `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
   return `INCOMPLETE (not run) — the child session for "${job.agent || "the default model"}" did not deliver a result: ${cause}. ${detail}`.trim()
 }
+
+// The SEQUENTIAL pass needs a budget of its own, because its cost is per job rather than shared.
+// Raising the per-job deadline to twenty minutes made that arithmetic unlivable: ten audit
+// dimensions retried one after another is nearly four hours with nothing on screen, and forty
+// triage findings is over half a day. A deadline that turns a hang into a longer hang has not
+// helped anyone. So the retries share one wall-clock budget: whoever is left when it runs out is
+// reported not-run without being attempted, which is the truthful thing to say about them.
+const RETRY_BUDGET_MS = 30 * 60_000
 
 export async function fanOut(ctx: PluginCtx, jobs: Job[]): Promise<JobResult[]> {
   // Pass 1: concurrent.
@@ -103,8 +117,14 @@ export async function fanOut(ctx: PluginCtx, jobs: Job[]): Promise<JobResult[]> 
   if (failedIdx.length === 0) return first
 
   // Pass 2: sequential retry of the stuck/failed jobs (the #8528/#6573 mitigation).
+  const deadline = Date.now() + RETRY_BUDGET_MS
   for (const i of failedIdx) {
-    const retry = await tryOne(ctx, jobs[i])
+    const left = deadline - Date.now()
+    if (left <= 0) {
+      first[i] = { label: jobs[i].label, ok: false, text: notRunNote(jobs[i], "budget", first[i].text) }
+      continue
+    }
+    const retry = await tryOne(ctx, { ...jobs[i], timeoutMs: Math.min(jobs[i].timeoutMs ?? STUCK_MS, left) })
     first[i] = retry.ok ? retry : { label: jobs[i].label, ok: false, text: notRunNote(jobs[i], retry.why, retry.text) }
   }
   return first

@@ -13,6 +13,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fanOut } from './orchestrator.ts'
+// The PRODUCTION predicate, imported rather than re-spelled. A local copy is what let the gate and
+// the parser drift apart in the first place: the copy rejected a bolded `**VERDICT: BLOCK**` that
+// the parser accepts, so a real Block was re-run and then filed as INCOMPLETE — which ranks BELOW
+// Block, so the Block vanished from the top-level verdict.
+import { hasVerdictLine } from './run-record.mjs'
 
 // Answers keyed by agent name; a function may answer differently per attempt, which is how the
 // sequential retry is exercised.
@@ -35,8 +40,7 @@ function fakeCtx(answers, calls = []) {
   }
 }
 
-const VERDICT = /^\s*VERDICT:\s*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/mi
-const job = (over = {}) => ({ label: 'security', agent: 'rust-security-scanner', prompt: 'p', expect: VERDICT, ...over })
+const job = (over = {}) => ({ label: 'security', agent: 'rust-security-scanner', prompt: 'p', answered: hasVerdictLine, ...over })
 
 test('output without the answer the job asked for is NOT a result', async () => {
   // The defect, in its own words: a session that says something but answers nothing used to be
@@ -81,7 +85,7 @@ test('a job that times out says so, and does not blame an opencode bug', async (
   // told to run clippy and the test suite — and the message then sent the reader looking for a
   // version problem. A deadline must report itself as a deadline.
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
-  const [r] = await fanOut(ctx, [{ label: 'review', agent: 'slow', prompt: 'p', expect: VERDICT, timeoutMs: 20 }])
+  const [r] = await fanOut(ctx, [{ label: 'review', agent: 'slow', prompt: 'p', answered: hasVerdictLine, timeoutMs: 20 }])
   assert.equal(r.ok, false)
   assert.match(r.text, /no result within/, 'the cause named is the deadline')
   assert.match(r.text, /may simply need longer/, 'and the reader is pointed at the real remedy')
@@ -102,9 +106,42 @@ test('one dead dimension does not take the live ones down with it', async () => 
     bad: '',
   })
   const rs = await fanOut(ctx, [
-    { label: 'a', agent: 'good', prompt: 'p', expect: VERDICT },
-    { label: 'b', agent: 'bad', prompt: 'p', expect: VERDICT },
+    { label: 'a', agent: 'good', prompt: 'p', answered: hasVerdictLine },
+    { label: 'b', agent: 'bad', prompt: 'p', answered: hasVerdictLine },
   ])
   assert.deepEqual(rs.map(r => r.ok), [true, false])
   assert.match(rs[1].text, /INCOMPLETE \(not run\)/)
+})
+
+test('a verdict a model would ordinarily write — decorated — still counts as an answer', async () => {
+  // The gate and the parser must agree about what an answer looks like, and the parser tolerates
+  // markdown decoration on purpose. A stricter gate does not fail safe: it re-runs a dimension that
+  // DID answer, and on the second bolded verdict files it as INCOMPLETE — which worstOf ranks below
+  // Block, so a real Block disappears from the top-level verdict.
+  for (const line of ['**VERDICT: BLOCK**', '> VERDICT: BLOCK', '`VERDICT: BLOCK`', '- VERDICT: BLOCK', '| VERDICT: BLOCK |']) {
+    const ctx = fakeCtx({ 'rust-security-scanner': `findings above\n\n${line}` })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `decorated verdict must be accepted: ${line}`)
+  }
+})
+
+test('lowercase prose is NOT an answer, because the parser does not treat it as one', async () => {
+  // `Verdict: Approve` in ordinary case is explicitly non-authoritative for the parser — it exists to
+  // be weighed against evidence, not to decide. A gate that accepted it would admit exactly the
+  // shape the parser refuses to trust.
+  const ctx = fakeCtx({ 'rust-security-scanner': 'looks fine to me.\n\nVerdict: Approve' })
+  const [r] = await fanOut(ctx, [job()])
+  assert.equal(r.ok, false)
+  assert.match(r.text, /INCOMPLETE \(not run\)/)
+})
+
+test('a settled race leaves no timer behind', async () => {
+  // The regression this catches presents as a CI job that STALLS for the whole deadline, not as a
+  // named failure — so it is asserted directly rather than left to be noticed by a hang. Node keeps
+  // a pending setTimeout in its handle list; a job that answered immediately must leave none.
+  const before = process.getActiveResourcesInfo().filter(r => r === 'Timeout').length
+  const ctx = fakeCtx({ 'rust-security-scanner': 'done\n\nVERDICT: APPROVE' })
+  await fanOut(ctx, [job({ timeoutMs: 60_000 })])
+  const after = process.getActiveResourcesInfo().filter(r => r === 'Timeout').length
+  assert.equal(after, before, 'the deadline timer must be cleared when the job settles first')
 })
