@@ -42,7 +42,10 @@ const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|B
 // is exactly the case a silent or refusing session also lands in — which is why the fallthrough,
 // and only the fallthrough, is what "did not answer" means.
 export function hasVerdictLine(text) {
-  return verdictEvidence(String(text ?? '')) !== null
+  const e = verdictEvidence(String(text ?? ''))
+  // `keyword` is deliberately NOT an answer. See LABELLED_ANY: the reader and the gate ask the same
+  // body precisely so they cannot drift, and differ only in what they do with the weakest evidence.
+  return e !== null && e.by !== 'keyword'
 }
 
 // Same argument for the triage outcome line.
@@ -61,14 +64,23 @@ const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|def
 // cannot do is stop refusing. The audit side survives the same shape only by accident, because
 // `parseVerdict` reads the LAST such line rather than any.
 //
-// So: the last non-blank line, with markdown decoration stripped, must be the marker and nothing
-// else — trailing prose on the same line disqualifies it.
+// So: the marker must be a LINE OF ITS OWN — decoration allowed, trailing prose not. That is what a
+// quotation cannot survive, because a refusal quoting the instruction says something on either side
+// of it.
+//
+// Terminality was the first attempt and it was too strong in the other direction: requiring the
+// marker to be the LAST non-blank line discarded well-formed plans over a closing fence or a
+// trailing "Let me know if you want more." A false not-run there throws away up to forty child
+// sessions already paid for and files `planned: false` about a plan that exists, so the two errors
+// are not symmetric and the rule is set where the cheaper one falls. What that concedes, said
+// plainly: a reply that emits the marker and then retracts it in the next paragraph is accepted.
+// The reader still sees the retraction — it is the text they are handed.
 const PLAN_MARKER = /^[ \t>|*_`#-]*PLAN:[ \t]*[*_`]*[ \t]*READY[ \t]*[*_`.]*[ \t]*$/i
 
-export function endsWithPlanMarker(text) {
-  const lines = String(text ?? '').split('\n').filter((l) => l.trim() !== '')
-  const last = lines[lines.length - 1]
-  return last !== undefined && PLAN_MARKER.test(last)
+export function hasPlanMarkerLine(text) {
+  return String(text ?? '')
+    .split('\n')
+    .some((l) => PLAN_MARKER.test(l))
 }
 
 export function hasOutcomeLine(text) {
@@ -81,6 +93,17 @@ const TAIL_LINES = 20
 // A labelled verdict statement — `Verdict: Approve`, `Overall rating: INCOMPLETE`. Used only to
 // decide between Approve and INCOMPLETE; Block/Warning evidence outranks it.
 const LABELLED = /\b(?:overall[ \t]+)?(?:verdict|rating|outcome)[ \t]*:[ \t]*[*_`]*[ \t]*(Approve|Clean|Healthy|INCOMPLETE)\b/gi
+
+// The same statement with the whole vocabulary, used ONLY to decide whether the session answered.
+// The distinction the gate needs and the reader does not: a LABELLED statement is a judgement the
+// agent chose to make, while a bare keyword in the tail is just a word — and `warning:` is what
+// cargo prints. Without this split the gate read "warning: unused variable `x` / I was unable to
+// complete the review." as an answer and filed a refusing dimension `ran: true, verdict: Warning`,
+// which is the branch's own property broken by the guard installed to hold it. The reader keeps
+// weighing bare keywords, because for a session that DID run they are evidence that outranks a
+// claimed Approve; for one that did not, they are noise.
+const LABELLED_ANY =
+  /\b(?:overall[ \t]+)?(?:verdict|rating|outcome)[ \t]*:[ \t]*[*_`]*[ \t]*(Approve|Clean|Healthy|INCOMPLETE|Block|Warning|Concerns|At-risk|UB-found)\b/gi
 
 // The words a "nothing ran" reason opens with. A closed set that no longer has to grow, because a
 // conforming agent never reaches this arm.
@@ -126,8 +149,10 @@ function verdictEvidence(t) {
   // doesn't collide with the Block keyword. Worst signal still wins (Block before Warning), and
   // both outrank a labelled statement: an agent claiming Approve while reporting UB is not taken
   // at its word.
-  if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(tail)) return { verdict: 'Block', by: 'keyword' }
-  if (/⚠️|\b(?:Warning|Concerns)\b/i.test(tail)) return { verdict: 'Warning', by: 'keyword' }
+  // A labelled statement anywhere in the tail is what makes a bare keyword count as an ANSWER.
+  const stated = lastMatch(LABELLED_ANY, tail) !== null
+  if (/⛔|\b(?:Block|At-risk|UB-found)\b/i.test(tail)) return { verdict: 'Block', by: stated ? 'labelled' : 'keyword' }
+  if (/⚠️|\b(?:Warning|Concerns)\b/i.test(tail)) return { verdict: 'Warning', by: stated ? 'labelled' : 'keyword' }
   // A labelled statement decides between the remaining two. This is what stops a report that merely
   // MENTIONS incompleteness — quoting its own instructions, or tabling one dimension as INCOMPLETE
   // — from overriding the verdict the agent actually stated.

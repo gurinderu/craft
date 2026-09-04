@@ -102,8 +102,22 @@ test('a synthesis that merely republishes its input is not a consolidation', asy
     ctx.client.session.prompt = async (req) => {
       const text = req?.body?.parts?.[0]?.text ?? ''
       if (/consolidating a Rust audit/.test(text)) {
-        const blob = text.slice(text.indexOf('RESULTS:') + 'RESULTS:'.length).trim()
-        return { parts: [{ type: 'text', text: `I cannot consolidate this. The results were:\n\n${blob}` }] }
+        // The dimension blob ONLY. Slicing from `RESULTS:` to the end swept in the trailing verdict
+        // RULE, whose half of the text carries no VERDICT: token — so the reply was rejected as
+        // unanswered and the test passed without ever reaching the echo guard. A falsifier that did
+        // not go red is what surfaced it.
+        const blob = text
+          .slice(text.indexOf('RESULTS:') + 'RESULTS:'.length)
+          .split('\n')
+          .filter(l => /^###|checked things|^VERDICT: APPROVE$/.test(l.trim()))
+          .join('\n\n')
+        assert.ok(blob.length > 400, 'the fixture blob must be long enough for the guard to probe')
+        assert.ok(/VERDICT: APPROVE/.test(blob), 'and must carry the verdict lines the echo relies on')
+        // Quoted from the MIDDLE, not the head: `includes(blob.slice(0, 200))` caught only an echo
+        // that starts at the beginning, so a refusal quoting from the second dimension onward walked
+        // past the guard — the guard written against the observed sample, not the property.
+        const tail = blob.slice(Math.floor(blob.length / 2))
+        return { parts: [{ type: 'text', text: `I cannot consolidate this. The results were:\n\n${tail}` }] }
       }
       return inner(req)
     }

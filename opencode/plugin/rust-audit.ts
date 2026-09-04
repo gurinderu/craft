@@ -157,7 +157,22 @@ ${blob}${VERDICT_RULE}`
   // report-TEXT hazard rather than a false approval, but it is the same echo hole the plan marker
   // just closed. A consolidation restates; it does not reproduce. Verbatim republication of the
   // input is therefore not an answer, whatever line it ends with.
-  const echoed = (t: string) => blob.length > 200 && t.includes(blob.slice(0, 200))
+  // Measured as OVERLAP, not as a substring probe. `includes(blob.slice(0, 200))` caught only an
+  // echo that reproduces the head verbatim: quoting from the second dimension onward, or reflowing
+  // the blanks, walked past it. The property is "a consolidation restates, it does not reproduce",
+  // and what expresses it is how much of the reply is lines lifted whole out of the input.
+  const substantial = (t: string) =>
+    t
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length >= 20)
+  const source = new Set(substantial(blob))
+  const echoed = (t: string) => {
+    const lines = substantial(t)
+    if (source.size < 3 || lines.length < 3) return false
+    const lifted = lines.filter((l) => source.has(l)).length
+    return lifted / lines.length >= 0.6
+  }
   const answeredSynthesis = (t: string) => hasVerdictLine(t) && !echoed(t)
   const synthesis = await runAnswering(ctx, "", synthPrompt, answeredSynthesis, undefined, "VERDICT: line").catch(
     (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),

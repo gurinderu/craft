@@ -220,7 +220,7 @@ test('a plan is not accepted from a refusal that quotes its own instructions', a
   })
 })
 
-test('a plan marker that is not the last word is not a plan', async () => {
+test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy line still is', async () => {
   // Third iteration of the same pattern: the literal line left the PROMPT, which addressed the
   // example, while the property — a refusal can always reconstruct a short marker — was untouched.
   // An any-line boolean was satisfied by both of these, and the refusal was returned AS the plan
@@ -228,7 +228,6 @@ test('a plan marker that is not the last word is not a plan', async () => {
   for (const refusal of [
     'I cannot triage these.\n\n`PLAN: READY` is what the instructions ask for, but there is nothing to plan.',
     '> PLAN: READY was requested; I refuse.',
-    'PLAN: READY\n\nActually, on reflection I am unable to do this.',
   ]) {
     await withStore(async dir => {
       const ctx = fakeCtx(({ isPlan }) => (isPlan ? refusal : 'checked\n\nOUTCOME: accept'))
@@ -238,8 +237,17 @@ test('a plan marker that is not the last word is not a plan', async () => {
     })
   }
 
-  // And a real plan still passes, decorated or not.
-  for (const good of ['## Ledger\n\n1. fix a\n\nPLAN: READY', '## Ledger\n\n1. fix a\n\n**PLAN: READY**\n']) {
+  // The other direction, which the first version of this gate got wrong: requiring the marker to be
+  // the LAST non-blank line discarded well-formed plans over a closing fence or one trailing line of
+  // courtesy — throwing away up to forty child sessions already paid for and filing `planned: false`
+  // about a plan that exists. The two errors are not symmetric, so the rule sits where the cheaper
+  // one falls: the marker must be a line of its own, wherever it is.
+  for (const good of [
+    '## Ledger\n\n1. fix a\n\nPLAN: READY',
+    '## Ledger\n\n1. fix a\n\n**PLAN: READY**\n',
+    '## Ledger\n\n1. fix a\n\nPLAN: READY\n```',
+    '## Ledger\n\n1. fix a\n\nPLAN: READY\n\nLet me know if you want more detail.',
+  ]) {
     await withStore(async dir => {
       const ctx = fakeCtx(({ isPlan }) => (isPlan ? good : 'checked\n\nOUTCOME: accept'))
       await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
