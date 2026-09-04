@@ -192,7 +192,7 @@ const PLAN_SCHEMA = {
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
 // fails the build if it drifts. Kept OUTSIDE the craft-inline fence below, whose contents are
 // byte-compared against lib/run-record.mjs.
-const CRAFT_VERSION = '0.18.0' // x-release-please-version
+const CRAFT_VERSION = '0.18.1' // x-release-please-version
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings tallyVerdicts
