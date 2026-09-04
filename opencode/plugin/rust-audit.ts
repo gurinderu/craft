@@ -157,23 +157,22 @@ ${blob}${VERDICT_RULE}`
   // report-TEXT hazard rather than a false approval, but it is the same echo hole the plan marker
   // just closed. A consolidation restates; it does not reproduce. Verbatim republication of the
   // input is therefore not an answer, whatever line it ends with.
-  // Measured as OVERLAP, not as a substring probe. `includes(blob.slice(0, 200))` caught only an
-  // echo that reproduces the head verbatim: quoting from the second dimension onward, or reflowing
-  // the blanks, walked past it. The property is "a consolidation restates, it does not reproduce",
-  // and what expresses it is how much of the reply is lines lifted whole out of the input.
-  const substantial = (t: string) =>
-    t
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length >= 20)
-  const source = new Set(substantial(blob))
-  const echoed = (t: string) => {
-    const lines = substantial(t)
-    if (source.size < 3 || lines.length < 3) return false
-    const lifted = lines.filter((l) => source.has(l)).length
-    return lifted / lines.length >= 0.6
-  }
+  // What separates republication from consolidation, sharply: the per-dimension SECTION HEADINGS.
+  // An echo carries the blob's structure with it; a consolidation is asked for a dimension→verdict
+  // table and has no reason to reproduce `### security (ran)` verbatim. Overlap fraction was tried
+  // first and is the wrong measure — the prompt orders "do not invent findings, only merge what is
+  // given" and asks for each finding tagged with its location, so a faithful merge of a small audit
+  // is mostly lines lifted from the input, and any threshold low enough to catch an echo also threw
+  // away the real thing. A false not-run here discards the whole audit under an INCOMPLETE banner,
+  // which is the expensive error everywhere else on this branch.
+  const headings = blob.split("\n").map((l) => l.trim()).filter((l) => /^###[ \t]/.test(l))
+  // TWO of them, not a fraction: one heading quoted in passing is something a consolidation may
+  // legitimately do, while carrying two or more of the input's section headings verbatim is
+  // reproducing its structure. A fraction was tried and nothing could pin it — every test that
+  // passed at half passed at one, so the threshold was a number no falsifier could reach.
+  const echoed = (t: string) => headings.length >= 2 && headings.filter((h) => t.includes(h)).length >= 2
   const answeredSynthesis = (t: string) => hasVerdictLine(t) && !echoed(t)
+
   const synthesis = await runAnswering(ctx, "", synthPrompt, answeredSynthesis, undefined, "VERDICT: line").catch(
     (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),
   )

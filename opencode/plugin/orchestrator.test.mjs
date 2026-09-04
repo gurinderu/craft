@@ -163,6 +163,26 @@ test('a keyword in prose is not a judgement, however the parser weighs it', asyn
   assert.equal(parseVerdict('warning: unused variable `x`\n\nI was unable to complete the review.'), 'Warning')
 })
 
+test('reported severity in prose IS an answer, even unlabelled', async () => {
+  // Both wholesale resolutions of the keyword arm are wrong, and this is the second one: rejecting
+  // it outright threw away reported severity. "Miri reported UB-found in two tests." parses as
+  // Block; calling it unanswered files the dimension INCOMPLETE, which worstOf ranks BELOW Block —
+  // and the same gate still admitted an unlabelled "Verdict: Approve". Severity discarded while a
+  // claimed approval is kept is the asymmetry this whole branch exists against. So the
+  // discriminator is what the text says about ITSELF: a keyword stands unless the session also
+  // said it could not do the work.
+  for (const text of [
+    'Miri reported UB-found in two tests.',
+    '⛔ This must not merge.',
+    'Summary: At-risk. The graph has three cycles.',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `reported severity is an answer: ${JSON.stringify(text)}`)
+    assert.equal(parseVerdict(text), 'Block')
+  }
+})
+
 test('a session that decided nothing is not an answer', async () => {
   // The other side of the same property. `parseVerdict` falls through to Approve for text carrying
   // no signal at all — which is right for a reader (a clean prose report has no keyword) and fatal
