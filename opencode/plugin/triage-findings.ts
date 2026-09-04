@@ -144,16 +144,27 @@ ${ledger}`
 
   // A dead planner used to hand back the raw ledger, which reads like a finished triage. It is not
   // one: nothing was ordered, and the open questions were never separated out.
-  const unplanned = `## ⚠️ INCOMPLETE (not run) — the fix plan was not produced\n\nThe planning step returned nothing, so what follows is the raw validation ledger rather than an ordered plan. Nothing here is a decision about what to fix first.\n\n${ledger}`
+  const unplanned = (why: string) =>
+    `## ⚠️ INCOMPLETE (not run) — the fix plan was not produced\n\n${why}\n\nThe planning step returned nothing, so what follows is the raw validation ledger rather than an ordered plan. Nothing here is a decision about what to fix first.\n\n${ledger}`
   // Gated on a terminal marker the prompt DOES NOT SPELL. Asking for keywords the prompt supplies
   // tested nothing — "I cannot build the triage ledger" passed as a plan. Spelling the marker itself
   // was the same mistake one step later: a refusal that quotes its own instruction ("the instruction
   // asked me to end with `PLAN: READY`, but I have nothing to plan") carries the line and passed
   // too. The audit prompt already avoids this by writing `VERDICT: X` as a placeholder so the
   // literal final line appears nowhere in the instructions; this now does the same.
-  const planned = await runAnswering(ctx, "", planPrompt, (t) => /^\s*[*_`>|-]*\s*PLAN:\s*READY\b/mi.test(t))
-    .catch(() => ({ ok: false, text: "" }))
-  const plan = planned.ok ? planned.text : unplanned
+  const planned = await runAnswering(
+    ctx,
+    "",
+    planPrompt,
+    (t) => /^\s*[*_`>|-]*\s*PLAN:\s*READY\b/mi.test(t),
+    undefined,
+    "terminal PLAN: line",
+  ).catch((e) => ({
+    ok: false,
+    text: "",
+    note: `The planning call itself threw: ${e instanceof Error ? e.message : String(e)}`,
+  }))
+  const plan = planned.ok ? planned.text : unplanned(planned.note)
   // The record carries what the reader was told: a plan that never came, and findings that were
   // never triaged. The audit's record gained exactly this a commit ago; leaving the sibling without
   // it is how "no trace in the output OR the run record" stayed half true.

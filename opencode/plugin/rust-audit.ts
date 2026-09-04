@@ -136,7 +136,8 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
   // The blob ends with whatever VERDICT: line the LAST dimension wrote — commonly APPROVE. Handing
   // it over as the report when synthesis dies therefore hands the reader an approval nobody made.
   // The run record was already safe (worst-wins over dimensions); the text a human reads was not.
-  const unsynthesized = `## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\nThe synthesis step did not return a report, so what follows is the raw per-dimension output. Nothing here is an approval: read each dimension's own verdict below, and note that any \`VERDICT:\` line at the very end belongs to the last dimension, not to the audit.\n\n${blob}`
+  const unsynthesized = (why: string) =>
+    `## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\n${why}\n\nThe synthesis step did not return a report, so what follows is the raw per-dimension output. Nothing here is an approval: read each dimension's own verdict below, and note that any \`VERDICT:\` line at the very end belongs to the last dimension, not to the audit.\n\n${blob}`
   const synthPrompt = `You are consolidating a Rust audit. Below are the per-dimension results. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across dimensions. If any dimension reported the verdict \`INCOMPLETE (not run)\` — because it never executed, or because its tooling was absent — the overall verdict line MUST contain that exact string \`INCOMPLETE (not run)\`.
@@ -150,8 +151,12 @@ ${blob}${VERDICT_RULE}`
   // Held to the same standard as every dimension: the synth prompt ends with the same VERDICT_RULE,
   // so text without that line is not a consolidation — it is a refusal or a preamble, and treating
   // it as the report filed an Approve for a run nobody consolidated.
-  const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine).catch(() => ({ ok: false, text: "" }))
-  const report = synthesis.ok ? synthesis.text : unsynthesized
+  const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine, undefined, "VERDICT: line").catch(
+    (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),
+  )
+  // WHY it died, in the reader's hands. A refusal, a twenty-minute timeout and an errored session are
+  // three different things to do next, and they used to print the same sentence.
+  const report = synthesis.ok ? synthesis.text : unsynthesized(synthesis.note)
   // The record is told the synthesis died, rather than left to infer it from text: the fallback
   // report embeds the dimension blob, so reading a verdict out of it picks up the LAST dimension's
   // line and files an Approve for a run that was never consolidated.

@@ -83,9 +83,15 @@ export async function runAnswering(
   prompt: string,
   answered: (text: string) => boolean,
   timeoutMs = STUCK_MS,
-): Promise<{ ok: boolean; text: string }> {
-  const r = await tryOne(ctx, { label: agent || "default", agent, prompt, answered, timeoutMs })
-  return { ok: r.ok, text: r.text }
+  requires?: string,
+): Promise<{ ok: boolean; text: string; note: string }> {
+  // The cause travels with the failure. Returning only `{ok, text}` made a refusal, a twenty-minute
+  // timeout and an errored session produce the byte-identical banner at the caller — the fan-out path
+  // keeps that text on purpose (see `tryOne`), and the single-call path was held to the same GATE
+  // but not to the same REPORTING.
+  const job = { label: agent || "default", agent, prompt, answered, timeoutMs, requires }
+  const r = await tryOne(ctx, job)
+  return { ok: r.ok, text: r.text, note: r.ok ? "" : notRunNote(job, r.why, r.text) }
 }
 export interface JobResult { label: string; ok: boolean; text: string }
 
@@ -110,7 +116,12 @@ async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Fai
   }
 }
 
-function notRunNote(job: Job, why: Failure | undefined, detail: string): string {
+// `boundByBudget` says the deadline this attempt ran under was the shared retry budget's remainder,
+// not anything the job or the config chose. Without it the note named a span that exists nowhere —
+// "no result within 10 minutes" for a 20-minute job clipped by what was left — and a reader either
+// hunts for that deadline or raises `timeoutMs` and sees nothing change, because the budget bound it.
+// The `left <= 0` guard below catches only the exactly-exhausted case; everything between is here.
+function notRunNote(job: Job, why: Failure | undefined, detail: string, boundByBudget = false): string {
   const ms = job.timeoutMs ?? STUCK_MS
   // Seconds below a minute: `Math.round` turned every short deadline into "within 0 minutes", which
   // is what a test drove without noticing, because it asserted only the prefix.
@@ -119,7 +130,9 @@ function notRunNote(job: Job, why: Failure | undefined, detail: string): string 
     why === "budget"
       ? `the retry budget for this run was already spent on earlier jobs, so it was not attempted a second time`
       : why === "timeout"
-        ? `it produced no result within ${span}. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
+        ? boundByBudget
+          ? `it produced no result within ${span} — which is all that was left of this run's shared retry budget, not its own deadline. Earlier retries spent the rest; raising this job's timeout would not have helped`
+          : `it produced no result within ${span}. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
         : why === "unanswered"
           ? `it answered, but without the ${job.requires ?? "machine-readable line"} the prompt requires — so nothing it said can be read as a result. Its output is kept below`
           : why === "error"
@@ -157,8 +170,11 @@ export async function fanOut(ctx: PluginCtx, jobs: Job[], retryBudgetMs = RETRY_
     // describe. Reading the unclipped one told the reader "no result within 20 minutes" about a job
     // that was given ninety seconds — a false span pointing at a deadline that never fired.
     const effective = { ...jobs[i], timeoutMs: Math.min(jobs[i].timeoutMs ?? STUCK_MS, left) }
+    const clipped = effective.timeoutMs < (jobs[i].timeoutMs ?? STUCK_MS)
     const retry = await tryOne(ctx, effective)
-    first[i] = retry.ok ? retry : { label: jobs[i].label, ok: false, text: notRunNote(effective, retry.why, retry.text) }
+    first[i] = retry.ok
+      ? retry
+      : { label: jobs[i].label, ok: false, text: notRunNote(effective, retry.why, retry.text, clipped) }
   }
   return first
 }
