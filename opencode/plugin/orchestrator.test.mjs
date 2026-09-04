@@ -231,11 +231,37 @@ test('a verdict line quoted out of the instructions does not certify an answer',
     assert.equal(r.ok, false, `a quoted verdict line is not an answer: ${JSON.stringify(text)}`)
   }
 
-  // And a line the session wrote as its own still answers, decorated or not.
-  for (const text of ['checked\n\nVERDICT: APPROVE', 'checked\n\n**VERDICT: APPROVE**']) {
+  // And a line the session wrote as its own still answers, decorated or not — a TABLE ROW included.
+  // Excluding the table pipe was the boundary the strict gate introduced: `| overall | VERDICT:
+  // APPROVE |` is the most likely shape for an audit synthesis's final verdict, and it fell through
+  // to the refusal arm, so a clean run that named an absent tool was retried on the shared budget
+  // and rolled up INCOMPLETE for the whole audit. A table cannot plausibly be an instruction
+  // quotation; a blockquote and an inline tick can, and stay out.
+  for (const text of [
+    'checked\n\nVERDICT: APPROVE',
+    'checked\n\n**VERDICT: APPROVE**',
+    '| dimension | result |\n\ncargo-geiger is not available; the other three ran clean.\n\n| overall | VERDICT: APPROVE |',
+  ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
     assert.equal(r.ok, true, `its own line still answers: ${JSON.stringify(text)}`)
+  }
+})
+
+test('prose about the CODE does not read as the session declining', async () => {
+  // NOTHING_RAN is the only thing allowed to override an agent's own mandated verdict, so a false
+  // positive costs a full re-run and then an INCOMPLETE for a dimension that ran and approved.
+  // Widening it swept in findings text: "no tests were run for the new module in CI" and "the
+  // fallback path did not execute anything when the queue drained" are things the REVIEWED CODE
+  // does. The self-report clauses are anchored on the pronoun now — here that is the right anchor,
+  // because the subject is exactly what distinguishes them.
+  for (const text of [
+    'Note: no tests were run for the new module in CI, but coverage elsewhere is fine.\n\nVERDICT: APPROVE',
+    'The fallback path did not execute anything when the queue drained; that is intended.\n\nVERDICT: APPROVE',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `a finding is not a refusal: ${JSON.stringify(text)}`)
   }
 })
 

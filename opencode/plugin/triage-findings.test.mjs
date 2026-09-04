@@ -286,6 +286,12 @@ test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy 
     '## Ledger\n\n1. fix a\n\n**PLAN: READY**\n',
     '## Ledger\n\n1. fix a\n\nPLAN: READY\n```',
     '## Ledger\n\n1. fix a\n\nPLAN: READY\n\nLet me know if you want more detail.',
+    // CRLF, with a line after the marker so the marker's own `\r` survives — `extractText` trims the
+    // reply, so a CRLF fixture ENDING at the marker loses the carriage return and tests nothing.
+    // Found because the falsifier did not go red. The plan marker is the only one anchored with `$`,
+    // so a Windows-line-ending reply lost its plan over a line ending: forty paid-for child sessions
+    // discarded and `planned: false` about a plan that exists.
+    '## Ledger\r\n\r\n1. fix a\r\n\r\nPLAN: READY\r\n\r\nLet me know if you want more detail.',
   ]) {
     await withStore(async dir => {
       const ctx = fakeCtx(({ isPlan }) => (isPlan ? good : 'checked\n\nOUTCOME: accept'))
