@@ -255,7 +255,7 @@ function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
-function loggerPrelude(craftRoot, version = '') {
+function loggerPrelude(craftRoot, version = '', repo = '') {
   // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
   // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
   // before the absoluteness check and before the refusal, so a review launched with `craftRoot=.`
@@ -285,12 +285,28 @@ function loggerPrelude(craftRoot, version = '') {
 fi
 `
   const explicit = craftRoot ? tryCandidate(`${shq(craftRoot)}"/lib/craft-log-run.mjs"`) : ''
+  // ABSOLUTE IS NOT ENOUGH, and the comment above used to promise more than the code gave: an
+  // absolute path may still name the reviewed repository, and `craftRoot` arrives in the
+  // model-composed args string. `craftRoot=<the repo>` — or `<anywhere>/../<the repo>` — was
+  // accepted and run. So the resolved logger is compared against the directory the command is about
+  // to cd into, and refused if it lies within it. Both sides go through `pwd -P`, which resolves
+  // symlinks: a candidate that is a link INTO the repo is caught by the same test, and no amount of
+  // `..` climbing gets past a comparison made after normalization. This is the constraint `--dir`
+  // already carries; the logger path had only half of it.
+  const containment = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
+if [ -n "\${CRAFT_LOGGER:-}" ] && [ -n "$CRAFT_REPO" ]; then
+  CRAFT_REAL="$(cd "$(dirname "$CRAFT_LOGGER")" 2>/dev/null && pwd -P)/$(basename "$CRAFT_LOGGER")"
+  case "$CRAFT_REAL" in
+    "$CRAFT_REPO"/*|"$CRAFT_REPO") echo "craft-log-run FAILED: the logger resolved inside the repository under review ($CRAFT_REAL); refusing to execute code from the repo being reviewed"; exit 1 ;;
+  esac
+fi
+`
   const fromEnv = tryCandidate('"${CLAUDE_PLUGIN_ROOT:-}/lib/craft-log-run.mjs"')
   const installed = version
     ? tryCandidate(`"\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/"${shq(version)}"/lib/craft-log-run.mjs"`)
     : ''
   return `CRAFT_LOGGER=""
-${explicit}${fromEnv}${installed}[ -n "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no logger found — no absolute craftRoot, no CLAUDE_PLUGIN_ROOT, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
+${explicit}${fromEnv}${installed}${containment}[ -n "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no logger found — no absolute craftRoot, no CLAUDE_PLUGIN_ROOT, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
 `
 }
 
@@ -325,7 +341,7 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
 Run exactly this:
 
 \`\`\`
-${loggerPrelude(craftRoot, version)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
+${loggerPrelude(craftRoot, version, repo)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
 cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
