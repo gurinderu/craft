@@ -60,7 +60,17 @@ function extractText(res: any): string {
 // require a machine-readable line pass the PARSER'S OWN predicate here — not a second regex, which
 // drifted from the parser the moment it existed. A job with no `answered` keeps the old non-empty
 // rule, which is honest for jobs whose output is prose by design.
-export interface Job { label: string; agent: string; prompt: string; answered?: (text: string) => boolean; timeoutMs?: number }
+export interface Job {
+  label: string
+  agent: string
+  prompt: string
+  answered?: (text: string) => boolean
+  timeoutMs?: number
+  // What the job asked for, in the reader's words. Hard-coding "verdict line" sent the forty triage
+  // jobs looking for a line their prompt never mentioned — the same wrong-cause reporting this file
+  // fixed for timeout-versus-silence.
+  requires?: string
+}
 
 // One call, held to the same standard as a fan-out job. The consolidation step used to bypass all of
 // it — no predicate, no deadline — which left the audit's most authoritative text as the single path
@@ -111,7 +121,7 @@ function notRunNote(job: Job, why: Failure | undefined, detail: string): string 
       : why === "timeout"
         ? `it produced no result within ${span}. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
         : why === "unanswered"
-          ? `it answered, but without the machine-readable verdict line the prompt requires — so nothing it said can be read as a result. Its output is kept below`
+          ? `it answered, but without the ${job.requires ?? "machine-readable line"} the prompt requires — so nothing it said can be read as a result. Its output is kept below`
           : why === "error"
             ? `the child session errored on its last attempt`
             : `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
@@ -126,14 +136,17 @@ function notRunNote(job: Job, why: Failure | undefined, detail: string): string 
 // reported not-run without being attempted, which is the truthful thing to say about them.
 const RETRY_BUDGET_MS = 30 * 60_000
 
-export async function fanOut(ctx: PluginCtx, jobs: Job[]): Promise<JobResult[]> {
+// The budget is a PARAMETER, not only a constant, because a test that cannot shrink it cannot reach
+// the clipping branch at all: with thirty minutes remaining, `Math.min(job.timeoutMs, left)` is
+// always the job's own value, so the assertion held whether or not the clipping existed.
+export async function fanOut(ctx: PluginCtx, jobs: Job[], retryBudgetMs = RETRY_BUDGET_MS): Promise<JobResult[]> {
   // Pass 1: concurrent.
   const first = await Promise.all(jobs.map((j) => tryOne(ctx, j)))
   const failedIdx = first.map((r, i) => (r.ok ? -1 : i)).filter((i) => i >= 0)
   if (failedIdx.length === 0) return first
 
   // Pass 2: sequential retry of the stuck/failed jobs (the #8528/#6573 mitigation).
-  const deadline = Date.now() + RETRY_BUDGET_MS
+  const deadline = Date.now() + retryBudgetMs
   for (const i of failedIdx) {
     const left = deadline - Date.now()
     if (left <= 0) {

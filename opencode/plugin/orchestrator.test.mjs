@@ -50,7 +50,7 @@ test('output without the answer the job asked for is NOT a result', async () => 
   const [r] = await fanOut(ctx, [job()])
   assert.equal(r.ok, false, 'a refusal is not a verdict')
   assert.match(r.text, /INCOMPLETE \(not run\)/, 'and it is reported as not run')
-  assert.match(r.text, /without the machine-readable verdict line/, 'naming why, not blaming an unrelated bug')
+  assert.match(r.text, /without the machine-readable line/, 'naming why, not blaming an unrelated bug')
   assert.match(r.text, /I cannot run that command/, 'while keeping what the session actually said')
 })
 
@@ -189,4 +189,39 @@ test('a retry clipped by the budget is described by the deadline it actually ran
   const [r] = await fanOut(ctx, [{ label: 'd', agent: 'slow', prompt: 'p', answered: hasVerdictLine, timeoutMs: 30 }])
   assert.match(r.text, /no result within 30 ms/, 'the span named is the one that applied')
   assert.ok(!/minutes/.test(r.text), 'and not a deadline that never ran')
+})
+
+test('the note names the line THIS job required, not a line from another engine', async () => {
+  // Hard-coded, it sent the forty triage jobs looking for a `VERDICT:` line their prompt never
+  // mentions — the same wrong-cause reporting this file fixed for timeout-versus-silence.
+  const ctx = fakeCtx({ validator: 'I cannot judge this one.' })
+  const [r] = await fanOut(ctx, [{
+    label: 'f1', agent: 'validator', prompt: 'p', answered: () => false, requires: 'OUTCOME: line',
+  }])
+  assert.match(r.text, /without the OUTCOME: line the prompt requires/)
+  assert.ok(!/verdict/i.test(r.text), 'and never names a line the job did not ask for')
+})
+
+test('a retry is clipped to what is left of the shared budget', async () => {
+  // The previous version of this test could not reach the clipping branch: with thirty minutes
+  // remaining, Math.min(job.timeoutMs, left) is always the job's own value, so the assertion held
+  // whether or not the clipping existed. The budget is injectable now, so the case is constructible.
+  const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
+  const jobs = [
+    { label: 'a', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 30 },
+    { label: 'b', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 60_000 },
+  ]
+  const rs = await fanOut(ctx, jobs, 80) // 80ms of retry budget for both
+  assert.match(rs[1].text, /no result within/, 'the second retry ran under a clipped deadline')
+  assert.ok(!/60 seconds|1 minutes/.test(rs[1].text), 'and is not described by the deadline it never got')
+})
+
+test('a job left over when the budget is spent is not attempted, and says so', async () => {
+  const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
+  const jobs = Array.from({ length: 3 }, (_, i) => ({
+    label: `d${i}`, agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 50,
+  }))
+  const rs = await fanOut(ctx, jobs, 60)
+  const skipped = rs.filter(r => /retry budget for this run was already spent/.test(r.text))
+  assert.ok(skipped.length >= 1, 'at least one job is honestly reported as never retried')
 })

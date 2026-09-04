@@ -241,6 +241,25 @@ test('buildTriageRecord uses an empty verdict and per-finding dimensions', () =>
     { dimension: 'f2', ran: false },
   ])
   assert.deepEqual(rec.notRun, ['f2'])
+  // Defaults: a caller that says nothing means "the plan came and nothing was left over", which is
+  // what every existing caller meant before these fields existed.
+  assert.equal(rec.planned, true)
+  assert.equal(rec.untriaged, 0)
+})
+
+test('a triage record can say the plan never came and what went untriaged', () => {
+  // The output half of this was fixed a commit earlier; the record was left unable to say either, so
+  // the store showed an ordinary-looking run while the reader had been told on screen that neither
+  // held. `verdict` stays empty on purpose — a triage has no verdict, and widening a field other
+  // readers interpret is how two writers come to disagree about what a column means.
+  const rec = buildTriageRecord({
+    results: [{ label: 'f1', ok: true, text: 'OUTCOME: accept' }],
+    planned: false,
+    untriaged: 12,
+  })
+  assert.equal(rec.planned, false, 'the plan never came, and the store knows')
+  assert.equal(rec.untriaged, 12, 'and how many findings nobody looked at')
+  assert.equal(rec.verdict, '', 'without redefining a field other readers already interpret')
 })
 
 test('indexProjection carries runtime and nulls findingsTotal when findings is null', () => {

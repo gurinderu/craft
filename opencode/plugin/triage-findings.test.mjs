@@ -9,7 +9,10 @@
 // continuation of one.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { splitFindings } from './triage-findings.ts'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { splitFindings, runTriageFindings } from './triage-findings.ts'
 
 test('a bullet list is one finding per bullet', () => {
   const { findings, dropped, skipped } = splitFindings('- first thing\n- second thing\n* third thing')
@@ -38,6 +41,41 @@ test('a paragraph is ONE finding, and a blank line ends it', () => {
   assert.equal(findings.length, 2, 'two paragraphs, two findings')
   assert.match(findings[0], /drops bytes when the buffer wraps/)
   assert.match(findings[1], /retry loop never terminates/)
+})
+
+test('an inline code span is not a fence, and does not swallow the findings after it', () => {
+  // A line that opens AND closes backticks on itself is not a block delimiter. Toggling on it made
+  // every finding after that line vanish — and silently, because `dropped` stayed 0, so the loud
+  // "N were NOT triaged" banner never fired. That was a loss path this file INVENTED: before it,
+  // no fence could lose a finding.
+  // The discriminating shape, and finding it took a falsifier that did NOT go red: with only an
+  // inline span and no real block afterwards, the unterminated-fence recovery hands the swallowed
+  // lines back at EOF, so the bug and the fix look identical. They part company when a genuine
+  // fenced block closes later — the close then discards what the phantom fence had collected, and
+  // the finding between them is gone for good.
+  const { findings, dropped } = splitFindings(
+    [
+      '- Critical: src/a.rs:10 growth',
+      '```cargo test``` fails on main',
+      '- High: src/b.rs:20 panic',
+      '```',
+      'some sample output',
+      '```',
+      '- Medium: src/c.rs:5 unwrap',
+    ].join('\n'),
+  )
+  assert.equal(findings.length, 3, 'all three findings survive the inline span and the real block')
+  assert.match(findings[1], /src\/b\.rs:20/, 'the one between them is not eaten by a phantom fence')
+  assert.match(findings[2], /src\/c\.rs:5/)
+  assert.ok(!findings.some(f => /sample output/.test(f)), 'and the real block is still not a finding')
+  assert.equal(dropped, 0)
+})
+
+test('an unterminated fence returns what it held rather than eating the rest', () => {
+  // A stray ``` used as a divider, or a truncated paste. Swallowing the remainder loses findings on
+  // a guess; re-reading it costs some noise, and noise is visible where a missing Critical is not.
+  const { findings } = splitFindings('- one\n```\n- two\n- three')
+  assert.equal(findings.length, 3, 'nothing is lost to a fence that never closed')
 })
 
 test('rules and lone bold headings are furniture, quoted notes are not', () => {
@@ -108,4 +146,85 @@ test('the cap is reported, because a dropped finding is one nobody looked at', (
 test('an empty blob yields nothing rather than a phantom finding', () => {
   assert.deepEqual(splitFindings('').findings, [])
   assert.deepEqual(splitFindings('\n\n   \n').findings, [])
+})
+
+// ---- the wiring, through the real entry point ------------------------------------------------
+// The sibling file gained this a commit ago and this one did not, which is why two defects in it —
+// a planner predicate satisfied by a refusal, and a record that could not say the plan never came —
+// were invisible to a suite that covered the splitter thoroughly.
+
+function fakeCtx(answerFor) {
+  return {
+    directory: '/repo',
+    worktree: '/repo',
+    $: () => ({ quiet: async () => ({ stdout: '' }) }),
+    client: {
+      session: {
+        create: async () => ({ id: 's' }),
+        prompt: async ({ body }) => {
+          const text = body?.parts?.[0]?.text ?? ''
+          const isPlan = /ordered fix plan/i.test(text)
+          return { parts: [{ type: 'text', text: answerFor({ isPlan }) }] }
+        },
+      },
+    },
+  }
+}
+
+function withStore(fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'craft-triage-'))
+  const prev = process.env.CRAFT_RUNS_DIR
+  process.env.CRAFT_RUNS_DIR = dir
+  return Promise.resolve(fn(dir)).finally(() => {
+    if (prev === undefined) delete process.env.CRAFT_RUNS_DIR
+    else process.env.CRAFT_RUNS_DIR = prev
+    rmSync(dir, { recursive: true, force: true })
+  })
+}
+
+const record = dir => JSON.parse(readFileSync(join(dir, readdirSync(dir).find(f => f.endsWith('.json'))), 'utf8'))
+
+test('a planner that refuses does not produce a plan, on screen or in the store', async () => {
+  // The first predicate accepted "I cannot build the triage ledger from these results", because
+  // "triage ledger" is a phrase the PROMPT supplies in bold. A keyword the prompt hands the model
+  // tests nothing; the terminal marker tests whether it got to the end.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan ? 'I cannot build the triage ledger from these results.' : 'checked\n\nOUTCOME: accept')
+    const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.match(out, /INCOMPLETE \(not run\) — the fix plan was not produced/)
+    assert.equal(record(dir).planned, false, 'and the store says so too')
+  })
+})
+
+test('a real plan is used, and the store agrees', async () => {
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan ? '## Triage ledger\n\n1. fix a\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept')
+    const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.match(out, /Triage ledger/)
+    assert.ok(!/was not produced/.test(out))
+    assert.equal(record(dir).planned, true)
+  })
+})
+
+test('findings past the cap are named on screen AND in the store', async () => {
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept'))
+    const many = Array.from({ length: 45 }, (_, i) => `- f${i}: src/a.rs:${i} thing`).join('\n')
+    const out = await runTriageFindings(ctx, { locator: many })
+    assert.match(out, /5 finding\(s\) past the first 40 were NOT triaged/, 'the reader is told first')
+    assert.equal(record(dir).untriaged, 5, 'and the store carries the same number')
+  })
+})
+
+test('a validation answering in the wrong case is still an answer', async () => {
+  // `OUTCOME: Accept` is correct and capitalised. Judged strictly it was re-run at full cost and
+  // then filed not-run — the inversion the shared predicate exists to prevent, and there is no
+  // second reader here whose strictness would justify it.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : 'looks right\n\nOUTCOME: Accept'))
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.deepEqual(record(dir).notRun, [], 'nothing is filed as not-run')
+  })
 })

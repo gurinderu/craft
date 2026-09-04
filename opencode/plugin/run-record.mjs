@@ -39,7 +39,12 @@ export function hasVerdictLine(text) {
 }
 
 // Same argument for the triage outcome line.
-const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/m
+// Case-INSENSITIVE on the token, and the difference from VERDICT is not an oversight. `parseVerdict`
+// is case-sensitive because a lowercase `Verdict: Approve` is deliberately weighed differently by a
+// second reader; there is no second reader here, so the same strictness would only punish a
+// validation that answered correctly and capitalised — re-running it and then filing it not-run,
+// which is the inversion this predicate exists to prevent.
+const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/mi
 
 export function hasOutcomeLine(text) {
   return OUTCOME_LINE.test(String(text ?? ''))
@@ -163,13 +168,23 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
   }
 }
 
-export function buildTriageRecord({ results }) {
+// `planned: false` and a non-zero `untriaged` are the two ways a triage run is incomplete, and the
+// record has to be able to say so: the plan that never came, and the findings past the cap that
+// nobody looked at. Without them the store showed a run that looked ordinary while the reader had
+// been told, on screen only, that neither held.
+//
+// They are their OWN fields; `verdict` stays empty. A triage has no verdict — that is deliberate and
+// pinned by a test — and widening a field other readers already interpret, to carry a fact that has
+// no home yet, is how two writers come to disagree about what a column means.
+export function buildTriageRecord({ results, planned = true, untriaged = 0 }) {
   const rs = Array.isArray(results) ? results : []
   return {
     schemaVersion: 1,
     runtime: 'opencode',
     kind: 'workflow',
     name: 'triage-findings',
+    planned,
+    untriaged,
     verdict: '',
     findings: null,
     nested: false,
