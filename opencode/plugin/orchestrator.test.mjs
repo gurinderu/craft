@@ -169,8 +169,14 @@ test('a session that says it could not do the work is not answering, however it 
   // Approve" and filed it ran:true, verdict:Approve. A refusal read as an approval is the subject of
   // this branch. Nothing in the suite could tell the arm-specific rule from the simple one either,
   // which is its own verdict on it.
+  // Five identical refusals, separated only by whether they used a pronoun — which is exactly what
+  // the first-person rule keyed on, so four of them were filed ran:true, verdict:Approve.
   for (const text of [
     'I am unable to run cargo in this sandbox.\n\nVerdict: Approve',
+    'Unable to run cargo in this sandbox.\n\nVerdict: Approve',
+    'We were unable to run cargo.\n\nVerdict: Approve',
+    'Permission denied when invoking cargo.\n\nVerdict: Approve',
+    'Cargo is not available in this environment; no checks were run.\n\nVerdict: Approve',
     "I can't reach the network, so dependencies were not checked.\n\nOverall rating: Clean",
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
@@ -196,6 +202,10 @@ test('prose about the CODE is not a session declining', async () => {
     'Values not permitted by the schema are accepted.\n\nBlock: use-after-free at src/x.rs:10.',
     'I am able to reproduce the UB under miri. Block.',
   ]) {
+    // These stand because the verdict is BLOCK, not because a regex told prose about the code from
+    // a self-report. That distinction is grammar, and the attempt to draw it with a pronoun split
+    // five identical refusals by whether they used one. Reported Block outranks everything; the
+    // vocabulary can then be broad, and what it costs is stated where it is applied.
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
     assert.equal(r.ok, true, `this is a finding, not a self-report: ${JSON.stringify(text)}`)
