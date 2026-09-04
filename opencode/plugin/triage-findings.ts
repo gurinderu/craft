@@ -16,19 +16,36 @@ function gather(locator: string): string {
   }
 }
 
-// Split a findings blob into individual items (one per non-empty line that looks like a finding).
-function splitFindings(blob: string): string[] {
-  return blob
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !/^#{1,6}\s/.test(l)) // drop markdown headings
-    .slice(0, 40) // cap; a triage of >40 raw lines should be scoped down first
+const MAX_FINDINGS = 40
+
+// Split a findings blob into individual items. What counts as a finding is a LINE THAT LOOKS LIKE
+// ONE — a list item, or a line carrying a file:line reference — not merely a non-empty line. Taking
+// every line meant prose, table rows and wrapped continuations each became a "finding" and each
+// spawned a child session, while the real findings past the cap were dropped; the plan then
+// presented itself as a complete triage of the input.
+function splitFindings(blob: string): { findings: string[]; dropped: number; skipped: number } {
+  const lines = blob.split("\n").map((l) => l.trim()).filter((l) => l.length > 0 && !/^#{1,6}\s/.test(l))
+  const looksLikeFinding = (l: string) =>
+    /^[-*+]\s+\S/.test(l) || /^\d+[.)]\s+\S/.test(l) || /\S+\.[A-Za-z0-9]+:\d+/.test(l) || /^\|.*\|$/.test(l)
+  const candidates = lines.filter(looksLikeFinding)
+  // Prose-only input is still a finding — a user pasting one sentence means that sentence. Falling
+  // back to every line is right THERE and wrong for a report, so the fallback is scoped to the case
+  // where nothing structured was found at all.
+  const chosen = candidates.length ? candidates : lines
+  return { findings: chosen.slice(0, MAX_FINDINGS), dropped: Math.max(0, chosen.length - MAX_FINDINGS), skipped: lines.length - chosen.length }
 }
 
 export async function runTriageFindings(ctx: PluginCtx, args: { locator: string }): Promise<string> {
   const blob = gather(args.locator)
-  const findings = splitFindings(blob)
+  const { findings, dropped, skipped } = splitFindings(blob)
   if (findings.length === 0) return "No findings parsed from the locator."
+  // Said out loud, at the top of the plan. Dropping input silently is what turns "triaged" into a
+  // claim about findings nobody looked at — a Critical one past the cap vanished with no trace in
+  // the output OR the run record.
+  const coverage = dropped
+    ? `\n\n> ⚠️ **INCOMPLETE — ${dropped} finding(s) past the first ${MAX_FINDINGS} were NOT triaged.** This plan covers only what is listed below; scope the input down and re-run to cover the rest.`
+    : ""
+  const skippedNote = skipped ? `\n> ${skipped} line(s) in the input did not look like findings and were not triaged.` : ""
 
   const jobs: Job[] = findings.map((f, i) => ({
     label: `f${i + 1}`,
@@ -43,7 +60,9 @@ REASON: <grounded reasoning>
 OUTCOME: <exactly one of the five, lowercase>`,
   }))
 
-  const validated = await fanOut(ctx, jobs)
+  // Same discriminator as the audit: these prompts demand an OUTCOME line, so carrying one is what
+  // it means to have answered. Without it a refusal counted as a validation.
+  const validated = await fanOut(ctx, jobs.map((j) => ({ ...j, expect: /^\s*OUTCOME:\s*(accept|reject|defer|needs-decision|conflict)\b/mi })))
   const ledger = validated
     .map((r, i) => `- **${r.label}** (${r.ok ? "validated" : "INCOMPLETE (not run)"}): ${findings[i]}\n  ${r.text.replace(/\n/g, "\n  ")}`)
     .join("\n")
@@ -58,7 +77,10 @@ Below is each finding with its validation outcome. Build:
 VALIDATED FINDINGS:
 ${ledger}`
 
-  const plan = (await runAgent(ctx, "", planPrompt).catch(() => ledger)) || ledger
+  // A dead planner used to hand back the raw ledger, which reads like a finished triage. It is not
+  // one: nothing was ordered, and the open questions were never separated out.
+  const unplanned = `## ⚠️ INCOMPLETE (not run) — the fix plan was not produced\n\nThe planning step returned nothing, so what follows is the raw validation ledger rather than an ordered plan. Nothing here is a decision about what to fix first.\n\n${ledger}`
+  const plan = (await runAgent(ctx, "", planPrompt).catch(() => "")) || unplanned
   await writeRecord(ctx, buildTriageRecord({ results: validated }))
-  return plan
+  return `${plan}${coverage}${skippedNote}`
 }
