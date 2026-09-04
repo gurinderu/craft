@@ -153,7 +153,7 @@ test('an empty blob yields nothing rather than a phantom finding', () => {
 // a planner predicate satisfied by a refusal, and a record that could not say the plan never came —
 // were invisible to a suite that covered the splitter thoroughly.
 
-function fakeCtx(answerFor) {
+function fakeCtx(answerFor, prompts = []) {
   return {
     directory: '/repo',
     worktree: '/repo',
@@ -163,6 +163,7 @@ function fakeCtx(answerFor) {
         create: async () => ({ id: 's' }),
         prompt: async ({ body }) => {
           const text = body?.parts?.[0]?.text ?? ''
+          prompts.push(text)
           const isPlan = /ordered fix plan/i.test(text)
           return { parts: [{ type: 'text', text: answerFor({ isPlan }) }] }
         },
@@ -195,6 +196,44 @@ test('a planner that refuses does not produce a plan, on screen or in the store'
     assert.match(out, /INCOMPLETE \(not run\) — the fix plan was not produced/)
     assert.equal(record(dir).planned, false, 'and the store says so too')
   })
+})
+
+test('a plan is not accepted from a refusal that quotes its own instructions', async () => {
+  // Pattern #38 again, fourth occurrence: the marker moved from a phrase to a terminal line, but the
+  // PROMPT still spelled the line out — so a session that refused and quoted its instructions back
+  // emitted the marker verbatim and passed the gate. The instruction now describes the line as a
+  // placeholder; nothing a model can echo from it satisfies the predicate.
+  // Asserted on the text ACTUALLY SENT, not on the source: the predicate must of course name the
+  // marker, so grepping the file would only prove the gate exists. What matters is that the prompt
+  // does not hand the model a line it can copy.
+  const prompts = []
+  await withStore(async dir => {
+    const quoted =
+      'I cannot triage these. My instructions say to end with ONE line in the form `PLAN: X` where X is READY.'
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? quoted : 'checked\n\nOUTCOME: accept'), prompts)
+    const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    const plan = prompts.find(t => /ordered fix plan/i.test(t)) ?? ''
+    assert.ok(plan, 'the planner was prompted at all')
+    assert.ok(!/PLAN:\s*READY/.test(plan), 'and its prompt never spells the terminal line out')
+    assert.match(out, /INCOMPLETE \(not run\) — the fix plan was not produced/)
+    assert.equal(record(dir).planned, false)
+  })
+})
+
+test('a closing fence must match the one that opened it', async () => {
+  // The other half of the delimiter property, and the same silent loss as the inline-span defect by
+  // a different door: a ```` block quoting a ``` example was closed by the inner marker, and every
+  // finding after it was discarded as code with `dropped` still 0 — so the banner never fired.
+  const nested = ['- A: src/a.rs:1', '````', '- CRITICAL: src/x.rs:1 leak', '```', '- B: src/b.rs:2'].join('\n')
+  const r = splitFindings(nested)
+  assert.ok(r.findings.some(f => /src\/x\.rs:1/.test(f)), 'the shorter inner marker did not close the block')
+
+  // A backtick marker cannot close a tilde block, so that block never terminates — and the
+  // unterminated-fence recovery then hands its contents back rather than eating the rest. Noise,
+  // deliberately, over loss: `- B` survives either way.
+  const tilde = ['- A: src/a.rs:1', '~~~', 'sample', '```', '- B: src/b.rs:2'].join('\n')
+  const t = splitFindings(tilde)
+  assert.ok(t.findings.some(f => /src\/b\.rs:2/.test(f)), 'the finding after a tilde block is not lost')
 })
 
 test('a real plan is used, and the store agrees', async () => {

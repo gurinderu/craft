@@ -209,11 +209,14 @@ test('a retry is clipped to what is left of the shared budget', async () => {
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
   const jobs = [
     { label: 'a', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 30 },
-    { label: 'b', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 60_000 },
+    // Large enough that the shared budget must clip it, small enough that pass 1 — which runs it in
+    // full — does not cost a minute. A test that spends the suite's whole runtime proving a
+    // millisecond of arithmetic buys nothing the same branch cannot show in 300ms.
+    { label: 'b', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 300 },
   ]
   const rs = await fanOut(ctx, jobs, 80) // 80ms of retry budget for both
   assert.match(rs[1].text, /no result within/, 'the second retry ran under a clipped deadline')
-  assert.ok(!/60 seconds|1 minutes/.test(rs[1].text), 'and is not described by the deadline it never got')
+  assert.ok(!/300 ms/.test(rs[1].text), 'and is not described by the deadline it never got')
 })
 
 test('a job left over when the budget is spent is not attempted, and says so', async () => {
