@@ -17,7 +17,7 @@ import { fanOut, runAnswering } from './orchestrator.ts'
 // the parser drift apart in the first place: the copy rejected a bolded `**VERDICT: BLOCK**` that
 // the parser accepts, so a real Block was re-run and then filed as INCOMPLETE — which ranks BELOW
 // Block, so the Block vanished from the top-level verdict.
-import { hasVerdictLine } from './run-record.mjs'
+import { hasVerdictLine, parseVerdict } from './run-record.mjs'
 
 // Answers keyed by agent name; a function may answer differently per attempt, which is how the
 // sequential retry is exercised.
@@ -141,6 +141,26 @@ test('the gate accepts everything the parser reads as a verdict, prose included'
     const [r] = await fanOut(ctx, [job()])
     assert.equal(r.ok, true, `the parser reads this, so the gate must too: ${JSON.stringify(text)}`)
   }
+})
+
+test('a keyword in prose is not a judgement, however the parser weighs it', async () => {
+  // The boundary the previous fix INTRODUCED: widening the gate to "the parser reached a verdict"
+  // swept in the bare-keyword arm, and `warning:` is what cargo prints. So "warning: unused variable
+  // `x` / I was unable to complete the review." was filed `ran: true, verdict: Warning` — a refusing
+  // dimension recorded as one that ran and judged, which is this branch's own property broken by the
+  // guard installed to hold it. A LABELLED statement is a judgement the agent chose to make; a
+  // keyword alone is a word. The READER still weighs it, because for a session that did run it is
+  // evidence outranking a claimed Approve — the two differ only here, at the weakest evidence.
+  for (const text of [
+    'warning: unused variable `x`\n\nI was unable to complete the review.',
+    '⚠️ I do not have permission to run cargo, so I cannot review this.',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, false, `a bare keyword is not an answer: ${JSON.stringify(text)}`)
+  }
+  // And the reader is unchanged: it still reads severity out of exactly that text.
+  assert.equal(parseVerdict('warning: unused variable `x`\n\nI was unable to complete the review.'), 'Warning')
 })
 
 test('a session that decided nothing is not an answer', async () => {

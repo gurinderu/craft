@@ -3,7 +3,7 @@
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
-import { buildTriageRecord, endsWithPlanMarker, hasOutcomeLine, writeRecord } from "./run-record.mjs"
+import { buildTriageRecord, hasPlanMarkerLine, hasOutcomeLine, writeRecord } from "./run-record.mjs"
 import { existsSync, readFileSync } from "node:fs"
 
 // Read the locator as a file when it points at one; otherwise treat it as literal findings text.
@@ -18,11 +18,19 @@ function gather(locator: string): string {
 
 const MAX_FINDINGS = 40
 
-// Split a findings blob into individual items. What counts as a finding is a LINE THAT LOOKS LIKE
-// ONE — a list item, or a line carrying a file:line reference — not merely a non-empty line. Taking
-// every line meant prose, table rows and wrapped continuations each became a "finding" and each
-// spawned a child session, while the real findings past the cap were dropped; the plan then
-// presented itself as a complete triage of the input.
+// Split a findings blob into individual items.
+//
+// What counts as a finding, as the code actually decides it: everything that is not structurally
+// FURNITURE is either an item or the continuation of one. Furniture is a code fence and its
+// contents, a horizontal or table rule, a heading, a lone bold line; a blank line ends an item, and
+// an unmarked line continues the one above. There is no file:line rule — an earlier version of this
+// comment claimed one, and a reader who believed it would expect `Findings:` to be dropped, which it
+// is not: it becomes item #1 and costs a child session and a cap slot.
+//
+// The asymmetry that sets the rule: a line wrongly TREATED as a finding costs one wasted validation
+// and is visible; a line wrongly DROPPED is a finding nobody looked at, inside a plan presenting
+// itself as a complete triage. So prose is kept and counted rather than judged. What that does NOT
+// excuse is the cap: prose still consumes the forty slots, and `dropped` is what says so out loud.
 export function splitFindings(blob: string): { findings: string[]; dropped: number; skipped: number } {
   const raw = blob.split("\n")
   const items: string[] = []
@@ -106,9 +114,16 @@ export async function runTriageFindings(ctx: PluginCtx, args: { locator: string 
     : ""
   const skippedNote = skipped ? `> ${skipped} line(s) inside code fences or table furniture were not treated as findings.\n` : ""
 
+  // A validation reads ONE finding against the code. The twenty-minute default was sized for an audit
+  // dimension running `cargo clippy --all-targets` and `cargo test`, and its escape hatch — "jobs
+  // that know they are cheap can say so" — was advertised and used by nobody, so forty line-sized
+  // jobs inherited a build-sized deadline and a hung one cost twenty minutes instead of ninety
+  // seconds. Five is generous for reading a file and answering one line.
+  const VALIDATION_MS = 5 * 60_000
   const jobs: Job[] = findings.map((f, i) => ({
     label: `f${i + 1}`,
     agent: "rust-reviewer",
+    timeoutMs: VALIDATION_MS,
     prompt: `Validate this single review finding against the actual code. Do NOT fix anything.
 Finding: ${f}
 
@@ -156,7 +171,7 @@ ${ledger}`
     ctx,
     "",
     planPrompt,
-    endsWithPlanMarker,
+    hasPlanMarkerLine,
     undefined,
     "terminal PLAN: line",
   ).catch((e) => ({
