@@ -88,10 +88,13 @@ test('the reader is told WHY the synthesis failed, not merely that it did', asyn
   })
 })
 
-test('a synthesis that merely republishes its input is not a consolidation', async () => {
+test('a refusal that quotes the results back is not the consolidated report', async () => {
   // The synth prompt embeds the dimension blob, which carries every real VERDICT: line — so a reply
-  // that refuses while quoting the results back satisfies a verdict-line gate and is served to the
-  // reader as the consolidated report. Same echo hole the plan marker closed, one file over.
+  // that refuses while quoting the results back once satisfied the gate and was served to the
+  // reader as the report. What catches it now is the plain rule and not a structural echo test: the
+  // reply says it could not do the work, and a claimed Approve does not survive that. Three
+  // successive echo guards were tried here and every one of them rejected real consolidations; the
+  // crude rule catches the case they were written for.
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis, agent }) => {
       // Lines long enough to be substantial to the echo guard — the earlier fixture's only ≥20-char
@@ -131,11 +134,12 @@ test('a synthesis that merely republishes its input is not a consolidation', asy
   })
 })
 
-test('a faithful consolidation that reuses the input lines is NOT an echo', async () => {
-  // The other side of the echo guard, and the one that costs more when it is wrong: the prompt
-  // orders "only merge what is given" and asks for each finding tagged with its location, so a
-  // real consolidation of a small audit is largely lines lifted from the blob. Rejecting it throws
-  // the whole audit away under an INCOMPLETE banner and hands the reader the raw blob.
+test('a faithful consolidation that reuses the input lines is used, not thrown away', async () => {
+  // The side that costs more when it is wrong, and the one every echo guard got wrong: the prompt
+  // orders "only merge what is given" and asks for each finding tagged with its location, so a real
+  // consolidation of a small audit is largely lines lifted from the blob. Rejecting it throws the
+  // whole audit away under an INCOMPLETE banner and hands the reader the raw blob — which is the
+  // fallback the guard existed to avoid.
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis, agent }) => {
       if (!isSynthesis) {

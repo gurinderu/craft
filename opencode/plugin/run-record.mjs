@@ -53,9 +53,13 @@ export function hasVerdictLine(text) {
   const t = String(text ?? '')
   const e = verdictEvidence(t)
   if (e === null) return false
-  // A mandated `VERDICT: <TOKEN>` line is authoritative and nothing overrides it — an agent may
-  // legitimately say it could not do one thing and still deliver the line it was asked for.
-  if (e.by === 'structured') return true
+  // A mandated `VERDICT: <TOKEN>` line is authoritative — an agent may legitimately say it could not
+  // do one thing and still deliver the line it was asked for. EXCEPT when that line claims APPROVE:
+  // the vocabulary below was broadened precisely to catch "Cargo is not available in this
+  // environment; no checks were run", and a blanket exemption made it inert on exactly the
+  // population that follows the mandate, which is every conforming agent. An Approve is a claim
+  // about what was not found, and it holds only over what was looked at.
+  if (e.by === 'structured' && e.verdict !== 'Approve') return true
   // REPORTED BLOCK also stands, whatever else the text says. This is the asymmetry that makes a
   // broad vocabulary affordable: "the caller is unable to distinguish the two states" is a finding
   // about the CODE, and reading it as a refusal files a use-after-free as INCOMPLETE, which
@@ -96,12 +100,14 @@ export function hasVerdictLine(text) {
 const PLAN_MARKER = /^[ \t*_#-]*PLAN:[ \t]*[*_]*[ \t]*READY[ \t]*[*_.]*[ \t]*$/i
 const FENCE = /^[ \t]*(`{3,}|~{3,})/
 
-// A closer must match its opener in character and length — the CommonMark rule the sibling splitter
-// already implements, and for the same asymmetric-cost reason: toggling on any fence-looking line
-// meant a truncated or decorative one ("See:\n```rust\nfn f(){}") hid a real plan behind it and
-// discarded up to forty child sessions already paid for. An unterminated fence loses nothing here,
-// because the marker is looked for on every line the fence never closed over.
-export function hasPlanMarkerLine(text) {
+// One anti-echo rule for every marker: outside fenced blocks, on a line of its own. Written once
+// because it was got right once and then not carried: `hasOutcomeLine` kept the any-line form with
+// `>` and backticks in its decoration class and no fence skipping — the three things the plan
+// marker was hardened twice to exclude — on the branch's highest-volume path, so a validation
+// answering "I could not read src/a.rs ... the instructions ask for: ```OUTCOME: accept```" was
+// filed as having validated, and a Critical finding reached the plan carrying a refusal as its
+// reasoning.
+function markerLine(text, marker) {
   const lines = String(text ?? '').split('\n')
   let openedWith = null
   let openedAt = -1
@@ -117,16 +123,27 @@ export function hasPlanMarkerLine(text) {
       }
       continue
     }
-    if (openedWith === null && PLAN_MARKER.test(lines[i])) return true
+    if (openedWith === null && marker.test(lines[i])) return true
   }
   // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
   // only that tail. Re-reading every line instead re-admitted the contents of every properly closed
   // fence before it, so one truncated final code block was enough to make a marker quoted inside an
-  // earlier fenced block count as a plan: the regression this function exists to prevent, restored
-  // by its own fallback.
-  if (openedWith !== null) return lines.slice(openedAt + 1).some((l) => !FENCE.test(l) && PLAN_MARKER.test(l))
+  // earlier block count as an answer. Which error this chooses, said plainly: a marker quoted inside
+  // the UNCLOSED trailing fence is still accepted. Losing a real answer to a truncated paste costs
+  // work already paid for; accepting one quoted inside a block nobody closed costs a re-read.
+  if (openedWith !== null) return lines.slice(openedAt + 1).some((l) => !FENCE.test(l) && marker.test(l))
   return false
 }
+
+// A closer must match its opener in character and length — the CommonMark rule the sibling splitter
+// already implements, and for the same asymmetric-cost reason: toggling on any fence-looking line
+// meant a truncated or decorative one ("See:\n```rust\nfn f(){}") hid a real plan behind it and
+// discarded up to forty child sessions already paid for. An unterminated fence loses nothing here,
+// because the marker is looked for on every line the fence never closed over.
+export function hasPlanMarkerLine(text) {
+  return markerLine(text, PLAN_MARKER)
+}
+
 
 // Same argument for the triage outcome line.
 // Case-INSENSITIVE on the token, and the difference from VERDICT is not an oversight. `parseVerdict`
@@ -134,10 +151,13 @@ export function hasPlanMarkerLine(text) {
 // second reader; there is no second reader here, so the same strictness would only punish a
 // validation that answered correctly and capitalised — re-running it and then filing it not-run,
 // which is the inversion this predicate exists to prevent.
-const OUTCOME_LINE = /^[ \t>|*_`#-]*OUTCOME:[ \t]*[*_`]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/mi
+// No blockquote, no backtick, no `m` flag: this goes through `markerLine`, which walks lines itself
+// and skips fenced blocks. Trailing prose on the line is allowed — unlike the plan marker, the
+// outcome word is followed by the one or two sentences of reasoning the prompt asks for.
+const OUTCOME_LINE = /^[ \t*_#-]*OUTCOME:[ \t]*[*_]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/i
 
 export function hasOutcomeLine(text) {
-  return OUTCOME_LINE.test(String(text ?? ''))
+  return markerLine(text, OUTCOME_LINE)
 }
 
 // How much of the report the fallback scan is allowed to see.
