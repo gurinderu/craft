@@ -193,14 +193,49 @@ test('a session that says it could not do the work is not answering, however it 
   // Except a claimed APPROVE over a run that checked NOTHING. A blanket exemption made the refusal
   // vocabulary inert on the one population that follows the mandate — every conforming agent — so
   // the sentence it was broadened to catch sailed through in its CONFORMING spelling.
+  // Drawn from how a model actually says it checked nothing, not from the regex spelled back in
+  // prose — the first corpus here was the alternation restated, so it could not see its own gaps,
+  // and ten of fourteen plausible refusals stood as Approve.
   for (const text of [
     'Cargo is not available in this environment; no checks were run.\n\nVERDICT: APPROVE',
     'None of the tools is installed.\n\nVERDICT: APPROVE',
     'I could not run any of the checks.\n\nVERDICT: APPROVE',
+    'I do not have permission to run shell commands, so no commands were executed.\n\nVERDICT: APPROVE',
+    'I was unable to run any of the checks in this sandbox.\n\nVERDICT: APPROVE',
+    "I couldn't run anything here.\n\nVERDICT: APPROVE",
+    'I did not perform any checks.\n\nVERDICT: APPROVE',
+    'cargo is not installed, so I reviewed nothing.\n\nVERDICT: APPROVE',
+    'The sandbox blocked all tool use, so nothing ran.\n\nVERDICT: APPROVE',
   ]) {
     const claimed = fakeCtx({ 'rust-security-scanner': text })
     const [refused] = await fanOut(claimed, [job()])
     assert.equal(refused.ok, false, `an Approve holds only over what was looked at: ${JSON.stringify(text)}`)
+  }
+})
+
+test('a verdict line quoted out of the instructions does not certify an answer', async () => {
+  // The one marker the anti-echo rule never reached. `hasPlanMarkerLine` and `hasOutcomeLine` were
+  // each hardened twice against exactly these three shapes — a fence, a blockquote, an inline tick —
+  // and the verdict marker, which is the most authoritative of the three, kept them. A sandboxed
+  // scanner that refused and quoted its instructions back was filed ran:true, verdict:Approve, with
+  // no retry spent and nothing for worst-wins to protect: the refusal reached the store as a clean
+  // dimension. The READER still accepts a decorated line, because a report that ran may well bold
+  // or quote its verdict; only the liveness gate is strict.
+  for (const text of [
+    'I cannot review this repo. The instructions ask me to end with:\n```\nVERDICT: APPROVE\n```\nbut there is nothing to review.',
+    'I am unable to review this.\n\n> VERDICT: APPROVE',
+    'I cannot review this.\n\n`VERDICT: APPROVE`',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, false, `a quoted verdict line is not an answer: ${JSON.stringify(text)}`)
+  }
+
+  // And a line the session wrote as its own still answers, decorated or not.
+  for (const text of ['checked\n\nVERDICT: APPROVE', 'checked\n\n**VERDICT: APPROVE**']) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `its own line still answers: ${JSON.stringify(text)}`)
   }
 })
 
