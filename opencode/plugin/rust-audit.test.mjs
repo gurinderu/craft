@@ -88,49 +88,31 @@ test('the reader is told WHY the synthesis failed, not merely that it did', asyn
   })
 })
 
-test('a refusal that quotes the results back is not the consolidated report', async () => {
-  // The synth prompt embeds the dimension blob, which carries every real VERDICT: line — so a reply
-  // that refuses while quoting the results back once satisfied the gate and was served to the
-  // reader as the report. What catches it now is the plain rule and not a structural echo test: the
-  // reply says it could not do the work, and a claimed Approve does not survive that. Three
-  // successive echo guards were tried here and every one of them rejected real consolidations; the
-  // crude rule catches the case they were written for.
+test('an echoed synthesis cannot lift the record above what the dimensions said', async () => {
+  // Three echo guards were tried here and deleted; this is what stands in their place, stated as
+  // what it is. A reply that refuses while quoting the results back CAN still be shown to the
+  // reader as the report — it carries the blob's own VERDICT lines, and no cheap test told that
+  // from a faithful merge without also rejecting faithful merges. What cannot happen is the thing
+  // that mattered: buildAuditRecord rolls worst-wins over the dimensions, so an echo ending in
+  // APPROVE cannot bury a Block one of them reported.
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis, agent }) => {
-      // Lines long enough to be substantial to the echo guard — the earlier fixture's only ≥20-char
-      // lines were the `### label (ran)` headings, so the guard was exercised on headings alone.
-      if (!isSynthesis) {
-        return `- ${agent}: src/a.rs:10 unbounded growth in the retry buffer\n- ${agent}: src/b.rs:22 the lock is held across an await point\n\nVERDICT: APPROVE`
-      }
-      return null // filled below
+      if (isSynthesis) return null
+      return agent === 'rust-security-scanner'
+        ? '- use-after-free in src/x.rs:10\n\nVERDICT: BLOCK'
+        : `- ${agent}: nothing found\n\nVERDICT: APPROVE`
     })
-    // Re-wrap so the synthesis can echo exactly what it was given.
     const inner = ctx.client.session.prompt
     ctx.client.session.prompt = async (req) => {
       const text = req?.body?.parts?.[0]?.text ?? ''
       if (/consolidating a Rust audit/.test(text)) {
-        // The dimension blob ONLY. Slicing from `RESULTS:` to the end swept in the trailing verdict
-        // RULE, whose half of the text carries no VERDICT: token — so the reply was rejected as
-        // unanswered and the test passed without ever reaching the echo guard. A falsifier that did
-        // not go red is what surfaced it.
-        const blob = text
-          .slice(text.indexOf('RESULTS:') + 'RESULTS:'.length)
-          .split('\n')
-          .filter(l => /^###|^- |^VERDICT: APPROVE$/.test(l.trim()))
-          .join('\n\n')
-        assert.ok(blob.length > 400, 'the fixture blob must be long enough for the guard to probe')
-        assert.ok(/VERDICT: APPROVE/.test(blob), 'and must carry the verdict lines the echo relies on')
-        // Quoted from the MIDDLE, not the head: `includes(blob.slice(0, 200))` caught only an echo
-        // that starts at the beginning, so a refusal quoting from the second dimension onward walked
-        // past the guard — the guard written against the observed sample, not the property.
-        const tail = blob.slice(Math.floor(blob.length / 2))
-        return { parts: [{ type: 'text', text: `I cannot consolidate this. The results were:\n\n${tail}` }] }
+        const blob = text.slice(text.indexOf('RESULTS:') + 'RESULTS:'.length).trim()
+        return { parts: [{ type: 'text', text: `I cannot consolidate this. The results were:\n\n${blob}` }] }
       }
       return inner(req)
     }
-    const report = await runRustAudit(ctx, {})
-    assert.match(report, /INCOMPLETE \(not run\) — the audit was not consolidated/, 'the echo is not the report')
-    assert.match(record(dir).verdict, /INCOMPLETE/)
+    await runRustAudit(ctx, {})
+    assert.equal(record(dir).verdict, 'Block', 'the reported Block survives an echoed consolidation')
   })
 })
 

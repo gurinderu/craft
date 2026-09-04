@@ -151,12 +151,6 @@ ${blob}${VERDICT_RULE}`
   // Held to the same standard as every dimension: the synth prompt ends with the same VERDICT_RULE,
   // so text without that line is not a consolidation — it is a refusal or a preamble, and treating
   // it as the report filed an Approve for a run nobody consolidated.
-  // The prompt embeds `blob`, which carries every dimension's real VERDICT: line — so a synthesis
-  // that refuses while quoting the results back satisfies any verdict-line gate and is accepted as
-  // the consolidated report. The record's roll-up is worst-wins over dimensions, so this is a
-  // report-TEXT hazard rather than a false approval, but it is the same echo hole the plan marker
-  // just closed. A consolidation restates; it does not reproduce. Verbatim republication of the
-  // input is therefore not an answer, whatever line it ends with.
   // There was a guard here that tried to tell a consolidation from a republication of its input.
   // It is gone, and that is the honest disposition rather than a regression: every version of it —
   // a 200-character prefix probe, a line-overlap fraction, a count of section headings — rejected
