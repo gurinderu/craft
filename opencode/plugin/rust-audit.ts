@@ -4,7 +4,7 @@
 // elastic rust-review engine has no opencode equivalent, so the "review" dimension is a single-pass
 // rust-reviewer (no per-crate / inter-crate-contract fan-out); see opencode/README.md parity caveats.
 import type { PluginCtx } from "./index.ts"
-import { fanOut, runAgent, type Job } from "./orchestrator.ts"
+import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
 import { buildAuditRecord, hasVerdictLine, writeRecord } from "./run-record.mjs"
 
 // Every dimension — and the synthesis — ends with ONE machine-readable line from a closed
@@ -136,7 +136,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
   // The blob ends with whatever VERDICT: line the LAST dimension wrote — commonly APPROVE. Handing
   // it over as the report when synthesis dies therefore hands the reader an approval nobody made.
   // The run record was already safe (worst-wins over dimensions); the text a human reads was not.
-  const unsynthesized = `## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\nThe synthesis step returned nothing, so what follows is the raw per-dimension output rather than a report. Nothing here is an approval: read each dimension's own verdict below, and note that any \`VERDICT:\` line at the very end belongs to the last dimension, not to the audit.\n\n${blob}`
+  const unsynthesized = `## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\nThe synthesis step did not return a report, so what follows is the raw per-dimension output. Nothing here is an approval: read each dimension's own verdict below, and note that any \`VERDICT:\` line at the very end belongs to the last dimension, not to the audit.\n\n${blob}`
   const synthPrompt = `You are consolidating a Rust audit. Below are the per-dimension results. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across dimensions. If any dimension reported the verdict \`INCOMPLETE (not run)\` — because it never executed, or because its tooling was absent — the overall verdict line MUST contain that exact string \`INCOMPLETE (not run)\`.
@@ -147,11 +147,14 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
 RESULTS:
 ${blob}${VERDICT_RULE}`
 
-  const synthesis = await runAgent(ctx, "", synthPrompt).catch(() => "")
-  const report = synthesis || unsynthesized
+  // Held to the same standard as every dimension: the synth prompt ends with the same VERDICT_RULE,
+  // so text without that line is not a consolidation — it is a refusal or a preamble, and treating
+  // it as the report filed an Approve for a run nobody consolidated.
+  const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine).catch(() => ({ ok: false, text: "" }))
+  const report = synthesis.ok ? synthesis.text : unsynthesized
   // The record is told the synthesis died, rather than left to infer it from text: the fallback
   // report embeds the dimension blob, so reading a verdict out of it picks up the LAST dimension's
   // line and files an Approve for a run that was never consolidated.
-  await writeRecord(ctx, buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText: report, synthesized: !!synthesis }))
+  await writeRecord(ctx, buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText: report, synthesized: synthesis.ok }))
   return report
 }

@@ -12,7 +12,7 @@
 // drives the whole dispatcher, which is the same shape the Claude Code engines are tested with.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fanOut } from './orchestrator.ts'
+import { fanOut, runAnswering } from './orchestrator.ts'
 // The PRODUCTION predicate, imported rather than re-spelled. A local copy is what let the gate and
 // the parser drift apart in the first place: the copy rejected a bolded `**VERDICT: BLOCK**` that
 // the parser accepts, so a real Block was re-run and then filed as INCOMPLETE — which ranks BELOW
@@ -144,4 +144,49 @@ test('a settled race leaves no timer behind', async () => {
   await fanOut(ctx, [job({ timeoutMs: 60_000 })])
   const after = process.getActiveResourcesInfo().filter(r => r === 'Timeout').length
   assert.equal(after, before, 'the deadline timer must be cleared when the job settles first')
+})
+
+test('a single call is held to the same standard as a fan-out job', async () => {
+  // The consolidation step bypassed all of this — no predicate, no deadline — so the audit's most
+  // authoritative text was the one path exempt from the rule the rest of this file is about. A
+  // refusal from that session was non-empty, so it became the report AND was filed as a verdict.
+  const refusing = fakeCtx({ '': 'I am not able to consolidate this audit because the results are unclear.' })
+  const bad = await runAnswering(refusing, '', 'p', hasVerdictLine)
+  assert.equal(bad.ok, false, 'prose without the mandated line is not a consolidation')
+
+  const answering = fakeCtx({ '': 'the report\n\nVERDICT: WARNING' })
+  const good = await runAnswering(answering, '', 'p', hasVerdictLine)
+  assert.equal(good.ok, true)
+  assert.match(good.text, /VERDICT: WARNING/)
+})
+
+test('a single call carries a deadline, so a hung session cannot hang the run', async () => {
+  const ctx = fakeCtx({ '': () => new Promise(() => {}) })
+  const r = await runAnswering(ctx, '', 'p', hasVerdictLine, 20)
+  assert.equal(r.ok, false, 'it must give up rather than wait forever')
+})
+
+test('the sequential retries share one budget instead of multiplying the deadline', async () => {
+  // Raising the per-job deadline made the retry arithmetic unlivable: ten dimensions retried one
+  // after another is hours with nothing on screen. Whoever is left when the budget runs out is
+  // reported not-run WITHOUT being attempted, which is the truthful thing to say about them.
+  const calls = []
+  const ctx = fakeCtx({ slow: () => new Promise(() => {}) }, calls)
+  const jobs = Array.from({ length: 3 }, (_, i) => ({
+    label: `d${i}`, agent: 'slow', prompt: 'p', answered: hasVerdictLine, timeoutMs: 40,
+  }))
+  const rs = await fanOut(ctx, jobs)
+  assert.deepEqual(rs.map(r => r.ok), [false, false, false])
+  assert.equal(calls.length, 6, 'three concurrent attempts and three retries, none skipped at this budget')
+  for (const r of rs) assert.match(r.text, /INCOMPLETE \(not run\)/)
+})
+
+test('a retry clipped by the budget is described by the deadline it actually ran under', async () => {
+  // It used to read the UNCLIPPED deadline, so a job given ninety seconds was told the reader "no
+  // result within 20 minutes … it may simply need longer" — a false span pointing at a deadline
+  // that never fired.
+  const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
+  const [r] = await fanOut(ctx, [{ label: 'd', agent: 'slow', prompt: 'p', answered: hasVerdictLine, timeoutMs: 30 }])
+  assert.match(r.text, /no result within 30 ms/, 'the span named is the one that applied')
+  assert.ok(!/minutes/.test(r.text), 'and not a deadline that never ran')
 })

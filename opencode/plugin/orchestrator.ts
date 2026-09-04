@@ -61,6 +61,22 @@ function extractText(res: any): string {
 // drifted from the parser the moment it existed. A job with no `answered` keeps the old non-empty
 // rule, which is honest for jobs whose output is prose by design.
 export interface Job { label: string; agent: string; prompt: string; answered?: (text: string) => boolean; timeoutMs?: number }
+
+// One call, held to the same standard as a fan-out job. The consolidation step used to bypass all of
+// it — no predicate, no deadline — which left the audit's most authoritative text as the single path
+// exempt from the rule the rest of the branch is about: a refusal from the synthesising session was
+// non-empty, so it was treated as the report AND filed as a verdict, and parseVerdict falls through
+// to Approve. A hung synthesis also hung the whole run, since only dimensions had a deadline.
+export async function runAnswering(
+  ctx: PluginCtx,
+  agent: string,
+  prompt: string,
+  answered: (text: string) => boolean,
+  timeoutMs = STUCK_MS,
+): Promise<{ ok: boolean; text: string }> {
+  const r = await tryOne(ctx, { label: agent || "default", agent, prompt, answered, timeoutMs })
+  return { ok: r.ok, text: r.text }
+}
 export interface JobResult { label: string; ok: boolean; text: string }
 
 // Why the job failed, in the words a reader can act on. Conflating these was half the defect: a
@@ -88,7 +104,7 @@ function notRunNote(job: Job, why: Failure | undefined, detail: string): string 
   const ms = job.timeoutMs ?? STUCK_MS
   // Seconds below a minute: `Math.round` turned every short deadline into "within 0 minutes", which
   // is what a test drove without noticing, because it asserted only the prefix.
-  const span = ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 1000)} seconds`
+  const span = ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : ms >= 1000 ? `${Math.round(ms / 1000)} seconds` : `${ms} ms`
   const cause =
     why === "budget"
       ? `the retry budget for this run was already spent on earlier jobs, so it was not attempted a second time`
@@ -124,8 +140,12 @@ export async function fanOut(ctx: PluginCtx, jobs: Job[]): Promise<JobResult[]> 
       first[i] = { label: jobs[i].label, ok: false, text: notRunNote(jobs[i], "budget", first[i].text) }
       continue
     }
-    const retry = await tryOne(ctx, { ...jobs[i], timeoutMs: Math.min(jobs[i].timeoutMs ?? STUCK_MS, left) })
-    first[i] = retry.ok ? retry : { label: jobs[i].label, ok: false, text: notRunNote(jobs[i], retry.why, retry.text) }
+    // The clipped deadline is what the retry actually ran under, so it is what the note must
+    // describe. Reading the unclipped one told the reader "no result within 20 minutes" about a job
+    // that was given ninety seconds — a false span pointing at a deadline that never fired.
+    const effective = { ...jobs[i], timeoutMs: Math.min(jobs[i].timeoutMs ?? STUCK_MS, left) }
+    const retry = await tryOne(ctx, effective)
+    first[i] = retry.ok ? retry : { label: jobs[i].label, ok: false, text: notRunNote(effective, retry.why, retry.text) }
   }
   return first
 }
