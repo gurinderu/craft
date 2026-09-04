@@ -26,7 +26,11 @@ const VERDICT_TOKEN = {
 // and no other wording, and only that shape is authoritative. A prose closing line in ordinary case
 // — `Verdict: Approve` — is exactly what LABELLED below was written to weigh against the evidence,
 // so matching it here would let it outrank a report of UB instead of losing to it.
-const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
+// `(?:[^\n|]*\|){0,4}` lets the line be a TABLE ROW: `| overall | VERDICT: APPROVE |` is the most
+// likely shape for an audit synthesis's final verdict, and reading it as unstructured sent it down
+// the prose arms — where a clean run that named an absent tool was then filed not-run.
+const VERDICT_LINE =
+  /^(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
 // The same line as the GATE reads it: no blockquote, no backtick, and `markerLine` skips fenced
 // blocks. The reader keeps the permissive form above — a report that ran may well bold or quote its
@@ -55,8 +59,24 @@ const VERDICT_GATE_LINE = /^[ \t*_#-]*VERDICT:[ \t]*[*_]*[ \t]*(APPROVE|WARNING|
 // A total non-execution, stated as such. Deliberately tiny and unambiguous: this is the only thing
 // allowed to override a mandated `VERDICT: APPROVE` line, so anything that could also describe the
 // CODE, or a partial gap, must stay out of it.
-const NOTHING_RAN =
-  /\b(?:no[ \t]+(?:checks|tools|analysis|scans|commands|tests)[ \t]+(?:were|was|could[ \t]+be)[ \t]+(?:run|performed|executed)|nothing[ \t]+(?:was|could[ \t]+be)[ \t]+(?:checked|verified|analysed|analyzed|run|executed)|nothing[ \t]+ran\b|none[ \t]+of[ \t]+the[ \t]+(?:tools|checks|commands)[ \t]+(?:is|are|was|were)[ \t]+(?:installed|available|run)|(?:could|did|can)(?:n't|[ \t]+not)[ \t]+(?:run|perform|execute)[ \t]+(?:any|anything)|un(?:able)[ \t]+to[ \t]+run[ \t]+(?:any|anything)|reviewed[ \t]+nothing)\b/i
+const NOTHING_RAN = new RegExp(
+  [
+    // Unambiguous statements about the run itself. `tests` is deliberately NOT in the noun set:
+    // "no tests were run for the new module in CI" is a FINDING about the code, and this vocabulary
+    // is the only thing allowed to override an agent's own mandated verdict.
+    'no[ \\t]+(?:checks|tools|analysis|scans|commands)[ \\t]+(?:were|was|could[ \\t]+be)[ \\t]+(?:run|performed|executed)',
+    'none[ \\t]+of[ \\t]+the[ \\t]+(?:tools|checks|commands)[ \\t]+(?:is|are|was|were)[ \\t]+(?:installed|available|run)',
+    'nothing[ \\t]+(?:was|could[ \\t]+be)[ \\t]+(?:checked|verified|analysed|analyzed|run|executed)',
+    'nothing[ \\t]+ran\\b',
+    // Self-reports. Anchored on the pronoun BECAUSE the subject is what distinguishes them: "the
+    // fallback path did not execute anything when the queue drained" is a finding, and an unanchored
+    // clause read it as a refusal and filed a dimension that approved as not-run.
+    '(?:I|we)[ \\t]+(?:could|did|can|do)(?:n\'t|[ \\t]+not)[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
+    '(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*un(?:able)[ \\t]+to[ \\t]+run[ \\t]+(?:any|anything)',
+    '(?:I|we)[ \\t]+reviewed[ \\t]+nothing',
+  ].join('|'),
+  'i',
+)
 
 const DECLINED =
   /\b(?:un(?:able|available)|not[ \t]+able[ \t]+to|cannot|can't|could[ \t]+not|couldn't|won't|will[ \t]+not|not[ \t]+available|permission[ \t]+denied|(?:do|does|did)[ \t]+not[ \t]+have[ \t]+permission|lack(?:s|ed)?[ \t]+(?:the[ \t]+)?permission|not[ \t]+permitted|no[ \t]+permission|nothing[ \t]+was[ \t]+checked|no[ \t]+checks[ \t]+were[ \t]+run)\b/i
@@ -134,8 +154,23 @@ const FENCE = /^[ \t]*(`{3,}|~{3,})/
 // answering "I could not read src/a.rs ... the instructions ask for: ```OUTCOME: accept```" was
 // filed as having validated, and a Critical finding reached the plan carrying a refusal as its
 // reasoning.
+// A table row's CELLS are lines of their own, in table terms. Without this, `| overall | VERDICT:
+// APPROVE |` — the single most likely shape for an audit synthesis's final verdict — failed the
+// strict gate and fell through to the refusal arm, so a clean run was retried on the shared budget
+// and then rolled up INCOMPLETE for the whole audit. A table cannot plausibly be an instruction
+// quotation, which is what the strict gate is for; a blockquote and an inline tick can, and stay
+// out. That concedes a genuine report that blockquotes its verdict, and the direction is chosen:
+// admitting a quoted refusal as an Approve is the worse of the two.
+function ownLine(line, marker) {
+  if (marker.test(line)) return true
+  if (!/^[ \t]*\|/.test(line)) return false
+  return line.split('|').some((cell) => marker.test(cell.trim()))
+}
+
 function markerLine(text, marker) {
-  const lines = String(text ?? '').split('\n')
+  // `\r` stripped: `PLAN_MARKER` is the one marker anchored with `$`, so a CRLF reply lost its plan
+  // and discarded forty paid-for child sessions over a line ending.
+  const lines = String(text ?? '').split('\n').map((l) => l.replace(/\r$/, ''))
   let openedWith = null
   let openedAt = -1
   for (let i = 0; i < lines.length; i++) {
@@ -150,7 +185,7 @@ function markerLine(text, marker) {
       }
       continue
     }
-    if (openedWith === null && marker.test(lines[i])) return true
+    if (openedWith === null && ownLine(lines[i], marker)) return true
   }
   // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
   // only that tail. Re-reading every line instead re-admitted the contents of every properly closed
@@ -158,7 +193,7 @@ function markerLine(text, marker) {
   // earlier block count as an answer. Which error this chooses, said plainly: a marker quoted inside
   // the UNCLOSED trailing fence is still accepted. Losing a real answer to a truncated paste costs
   // work already paid for; accepting one quoted inside a block nobody closed costs a re-read.
-  if (openedWith !== null) return lines.slice(openedAt + 1).some((l) => !FENCE.test(l) && marker.test(l))
+  if (openedWith !== null) return lines.slice(openedAt + 1).some((l) => !FENCE.test(l) && ownLine(l, marker))
   return false
 }
 
