@@ -125,14 +125,51 @@ test('a verdict a model would ordinarily write — decorated — still counts as
   }
 })
 
-test('lowercase prose is NOT an answer, because the parser does not treat it as one', async () => {
-  // `Verdict: Approve` in ordinary case is explicitly non-authoritative for the parser — it exists to
-  // be weighed against evidence, not to decide. A gate that accepted it would admit exactly the
-  // shape the parser refuses to trust.
-  const ctx = fakeCtx({ 'rust-security-scanner': 'looks fine to me.\n\nVerdict: Approve' })
-  const [r] = await fanOut(ctx, [job()])
+test('the gate accepts everything the parser reads as a verdict, prose included', async () => {
+  // The inversion this predicate exists to prevent, in the gap the previous version left open: the
+  // gate tested ONE of the parser's arms, so a dimension whose finding closes in prose — "Found a
+  // use-after-free … Verdict: Block" — was judged unanswered, retried at full cost, and then filed
+  // INCOMPLETE, which worstOf ranks BELOW Block. Severity lost, by the guard against losing it.
+  // (The previous test here pinned the opposite with a rationale that was simply false: the parser
+  // does read `Verdict: Approve`, via its LABELLED arm.)
+  for (const text of [
+    'Found a use-after-free in src/x.rs:10.\n\nVerdict: Block',
+    'looks fine to me.\n\nVerdict: Approve',
+    'cargo-deny is not installed.\n\nOverall rating: INCOMPLETE',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `the parser reads this, so the gate must too: ${JSON.stringify(text)}`)
+  }
+})
+
+test('a session that decided nothing is not an answer', async () => {
+  // The other side of the same property. `parseVerdict` falls through to Approve for text carrying
+  // no signal at all — which is right for a reader (a clean prose report has no keyword) and fatal
+  // for a gate, because a refusal and a permission error land in exactly that bucket.
+  for (const text of ['I cannot run those tools here.', "I'll start by looking at the repo."]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, false, `nothing decided this: ${JSON.stringify(text)}`)
+    assert.match(r.text, /INCOMPLETE \(not run\)/)
+  }
+})
+
+test('a single-call failure does not claim a retry that never happened', async () => {
+  // `runAnswering` makes exactly one call. The fall-through note said "after a concurrent attempt
+  // and a sequential retry … check your opencode version" — two attempts a reader never got, and an
+  // upstream bug that is not implicated. The wrong cause, on the path this branch exists to keep
+  // honest.
+  const ctx = fakeCtx({ 'rust-security-scanner': '' })
+  const r = await runAnswering(ctx, 'rust-security-scanner', 'p', hasVerdictLine)
   assert.equal(r.ok, false)
-  assert.match(r.text, /INCOMPLETE \(not run\)/)
+  assert.match(r.note, /single attempt/, 'the note says how many attempts there were')
+  assert.ok(!/sequential retry|#8528/.test(r.note), 'and does not invoke a retry or an upstream bug')
+
+  // fanOut DOES retry, so it keeps the original wording — the two notes differ because the two
+  // paths differ, which is the whole point.
+  const [f] = await fanOut(ctx, [{ label: 'd', agent: 'rust-security-scanner', prompt: 'p', answered: hasVerdictLine }])
+  assert.match(f.text, /sequential retry/)
 })
 
 test('a settled race leaves no timer behind', async () => {
