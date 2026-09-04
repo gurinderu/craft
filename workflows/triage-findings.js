@@ -284,17 +284,33 @@ function loggerPrelude(craftRoot, version = '') {
   // The layout being relied on here belongs to the harness, not to craft (realm @nick/craft, node
   // #48, observed rather than documented). It can move without notice, which is why a miss is
   // ordinary rather than exceptional: not found means the loud refusal below, never a guess.
+  // The version is a real quoted shell word. It was interpolated with the quotes STRIPPED off for one
+  // commit, which made a version containing `"; echo …` a command-injection hole — unreachable
+  // today, since every craftVersion traces to the release-please literal, but the invariant was
+  // stated and false, and a version sourced from anywhere else would have landed as execution.
+  //
+  // And the config directory must be ABSOLUTE. A relative value re-opens exactly the hole the `:-.`
+  // removal closed, by a different door: `[ -f ]` is evaluated in the logger agent's cwd, but
+  // `node "$CRAFT_LOGGER"` runs AFTER the cd into the reviewed repository, so a relative candidate
+  // resolves THERE. A hostile repo shipping .claude/plugins/cache/craft/craft/<version>/lib/
+  // craft-log-run.mjs — the version is public in the manifest — would be executed with the user's
+  // privileges. A non-absolute value is therefore refused outright rather than normalized: guessing
+  // what the user meant is how this class keeps coming back.
   const search = version
     ? `if [ ! -f "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_CFG="\${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  CRAFT_CAND="$CRAFT_CFG/plugins/cache/craft/craft/${shq(version).slice(1, -1)}/lib/craft-log-run.mjs"
-  [ -f "$CRAFT_CAND" ] && CRAFT_LOGGER="$CRAFT_CAND"
+  case "$CRAFT_CFG" in /*) ;; *) CRAFT_CFG="" ;; esac
+  CRAFT_VER=${shq(version)}
+  if [ -n "$CRAFT_CFG" ]; then
+    CRAFT_CAND="$CRAFT_CFG/plugins/cache/craft/craft/$CRAFT_VER/lib/craft-log-run.mjs"
+    [ -f "$CRAFT_CAND" ] && CRAFT_LOGGER="$CRAFT_CAND"
+  fi
 fi
 `
     : ''
   return `CRAFT_LOGGER="\${CLAUDE_PLUGIN_ROOT:-}"
 [ -n "$CRAFT_LOGGER" ] && CRAFT_LOGGER="$CRAFT_LOGGER/lib/craft-log-run.mjs"
-${search}[ -f "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no logger found — craftRoot unset, CLAUDE_PLUGIN_ROOT unset, and no installed copy of ${version || 'this version'} under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
+${search}[ -f "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no logger found — craftRoot unset, CLAUDE_PLUGIN_ROOT unset, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
 `
 }
 
