@@ -190,14 +190,38 @@ test('a session that says it could not do the work is not answering, however it 
   const [ok] = await fanOut(ctx, [job()])
   assert.equal(ok.ok, true, 'the structured line still answers')
 
-  // Except when it claims APPROVE. A blanket exemption made the refusal vocabulary inert on the one
-  // population that follows the mandate — every conforming agent — so the sentence the vocabulary
-  // was broadened to catch sailed through in its CONFORMING spelling while being caught in prose.
-  const claimed = fakeCtx({
-    'rust-security-scanner': 'Cargo is not available in this environment; no checks were run.\n\nVERDICT: APPROVE',
-  })
-  const [refused] = await fanOut(claimed, [job()])
-  assert.equal(refused.ok, false, 'an Approve holds only over what was looked at')
+  // Except a claimed APPROVE over a run that checked NOTHING. A blanket exemption made the refusal
+  // vocabulary inert on the one population that follows the mandate — every conforming agent — so
+  // the sentence it was broadened to catch sailed through in its CONFORMING spelling.
+  for (const text of [
+    'Cargo is not available in this environment; no checks were run.\n\nVERDICT: APPROVE',
+    'None of the tools is installed.\n\nVERDICT: APPROVE',
+    'I could not run any of the checks.\n\nVERDICT: APPROVE',
+  ]) {
+    const claimed = fakeCtx({ 'rust-security-scanner': text })
+    const [refused] = await fanOut(claimed, [job()])
+    assert.equal(refused.ok, false, `an Approve holds only over what was looked at: ${JSON.stringify(text)}`)
+  }
+})
+
+test('a conforming Approve survives ordinary prose about what could not be done', async () => {
+  // The boundary the previous fix INTRODUCED, and it was wide: applying the broad refusal vocabulary
+  // to a structural line made a clean verdict nearly unreachable. The security prompt instructs the
+  // agent to NAME absent tools, so an Approve that names one is exactly what a clean run looks like
+  // — and it was filed unanswered, retried on the shared budget, and rolled up as INCOMPLETE for the
+  // whole audit, with a cause ("without the VERDICT: line the prompt requires") about a reply that
+  // carried the line. The wrong cause on the highest-authority path, which is this branch's own
+  // error inverted. Only a stated TOTAL non-execution overrides a mandated line now.
+  for (const text of [
+    'cargo-audit and cargo-deny ran clean. cargo-geiger is not available in this environment; the other three tools were run.\n\nVERDICT: APPROVE',
+    'the parser cannot overflow because len is checked.\n\nVERDICT: APPROVE',
+    'I could not reproduce any failure.\n\nVERDICT: APPROVE',
+    "This code won't panic.\n\nVERDICT: APPROVE",
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `a conforming Approve must remain reachable: ${JSON.stringify(text)}`)
+  }
 })
 
 test('prose about the CODE is not a session declining', async () => {

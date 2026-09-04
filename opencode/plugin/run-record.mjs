@@ -46,6 +46,12 @@ const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|B
 // Verdict: Approve" was caught while "Unable to run cargo", "We were unable to", "Permission
 // denied when invoking cargo" and "Cargo is not available in this environment" all sailed through
 // and were filed ran:true, verdict:Approve. Only the pronoun separated them.
+// A total non-execution, stated as such. Deliberately tiny and unambiguous: this is the only thing
+// allowed to override a mandated `VERDICT: APPROVE` line, so anything that could also describe the
+// CODE, or a partial gap, must stay out of it.
+const NOTHING_RAN =
+  /\b(?:no[ \t]+(?:checks|tools|analysis|scans)[ \t]+(?:were|was|could[ \t]+be)[ \t]+(?:run|performed|executed)|nothing[ \t]+(?:was|could[ \t]+be)[ \t]+(?:checked|verified|analysed|analyzed|run)|none[ \t]+of[ \t]+the[ \t]+(?:tools|checks)[ \t]+(?:is|are|was|were)[ \t]+(?:installed|available)|(?:could|did)[ \t]+not[ \t]+run[ \t]+any)\b/i
+
 const DECLINED =
   /\b(?:un(?:able|available)|not[ \t]+able[ \t]+to|cannot|can't|could[ \t]+not|couldn't|won't|will[ \t]+not|not[ \t]+available|permission[ \t]+denied|(?:do|does|did)[ \t]+not[ \t]+have[ \t]+permission|lack(?:s|ed)?[ \t]+(?:the[ \t]+)?permission|not[ \t]+permitted|no[ \t]+permission|nothing[ \t]+was[ \t]+checked|no[ \t]+checks[ \t]+were[ \t]+run)\b/i
 
@@ -54,12 +60,18 @@ export function hasVerdictLine(text) {
   const e = verdictEvidence(t)
   if (e === null) return false
   // A mandated `VERDICT: <TOKEN>` line is authoritative — an agent may legitimately say it could not
-  // do one thing and still deliver the line it was asked for. EXCEPT when that line claims APPROVE:
-  // the vocabulary below was broadened precisely to catch "Cargo is not available in this
-  // environment; no checks were run", and a blanket exemption made it inert on exactly the
-  // population that follows the mandate, which is every conforming agent. An Approve is a claim
-  // about what was not found, and it holds only over what was looked at.
-  if (e.by === 'structured' && e.verdict !== 'Approve') return true
+  // do one thing and still deliver the line it was asked for. The one exception is a claimed
+  // APPROVE over a run that checked NOTHING: an Approve is a claim about what was not found, and it
+  // holds only over what was looked at.
+  //
+  // NOTHING_RAN, not the broad vocabulary, decides that. Applying `DECLINED` here made a conforming
+  // Approve nearly unreachable — the security prompt instructs the agent to NAME absent tools, so
+  // "cargo-geiger is not available in this environment; the other three were run. VERDICT: APPROVE"
+  // is exactly what a clean run looks like, and it was filed unanswered, retried on the shared
+  // budget, and rolled up as INCOMPLETE for the whole audit. So did "the parser cannot overflow
+  // because len is checked" and "I could not reproduce any failure". The wrong cause on the
+  // highest-authority path, which is the same error this branch exists against, inverted.
+  if (e.by === 'structured') return e.verdict !== 'Approve' || !NOTHING_RAN.test(t)
   // REPORTED BLOCK also stands, whatever else the text says. This is the asymmetry that makes a
   // broad vocabulary affordable: "the caller is unable to distinguish the two states" is a finding
   // about the CODE, and reading it as a refusal files a use-after-free as INCOMPLETE, which
@@ -154,6 +166,12 @@ export function hasPlanMarkerLine(text) {
 // No blockquote, no backtick, no `m` flag: this goes through `markerLine`, which walks lines itself
 // and skips fenced blocks. Trailing prose on the line is allowed — unlike the plan marker, the
 // outcome word is followed by the one or two sentences of reasoning the prompt asks for.
+//
+// What that concedes, and it is a real concession this marker has that the plan marker did not:
+// fencing a machine-read final line is a common model habit, so a GENUINE validation that writes
+// ```\nOUTCOME: accept\n``` is now re-run at full cost and then excluded from the plan as not-run.
+// Kept anyway, because the alternative admitted a validation that could not read the file and
+// quoted its instructions back — and that one reaches the plan as a finding's reasoning.
 const OUTCOME_LINE = /^[ \t*_#-]*OUTCOME:[ \t]*[*_]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/i
 
 export function hasOutcomeLine(text) {
