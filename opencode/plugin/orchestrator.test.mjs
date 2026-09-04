@@ -225,6 +225,11 @@ test('a verdict line quoted out of the instructions does not certify an answer',
     'I cannot review this repo. The instructions ask me to end with:\n```\nVERDICT: APPROVE\n```\nbut there is nothing to review.',
     'I am unable to review this.\n\n> VERDICT: APPROVE',
     'I cannot review this.\n\n`VERDICT: APPROVE`',
+    // Prose that merely CARRIES a pipe is not a table row. Without the leading-pipe anchor the row
+    // prefix matched any line with up to four pipes in it, so a refusal quoting the required shape
+    // certified itself as structured — and a structural line is the one thing the weak arms never
+    // get to review.
+    'I cannot review this. The instructions ask for | overall | VERDICT: APPROVE |.',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
@@ -246,6 +251,24 @@ test('a verdict line quoted out of the instructions does not certify an answer',
     const [r] = await fanOut(ctx, [job()])
     assert.equal(r.ok, true, `its own line still answers: ${JSON.stringify(text)}`)
   }
+})
+
+test('a dimension table does not overrule the verdict line above it', async () => {
+  // The boundary teaching the reader about tables INTRODUCED, and it is a severity inversion, which
+  // is worse than any not-run: a synthesis states its overall verdict as a line of its own and then
+  // tables the dimensions, so last-wins across both let the final table ROW decide. `VERDICT: BLOCK`
+  // followed by a table ending `| deps | VERDICT: APPROVE |` parsed as Approve — a Block filed as
+  // clean. A row is read only when no line of its own carried a verdict.
+  assert.equal(
+    parseVerdict('VERDICT: BLOCK\n\n| dimension | result |\n|---|---|\n| security | VERDICT: BLOCK |\n| deps | VERDICT: APPROVE |'),
+    'Block',
+  )
+  // And the prefix is anchored on a leading pipe, so prose that merely CARRIES one is not a verdict
+  // line: a closing note quoting the required shape silently became the verdict without it.
+  assert.equal(parseVerdict('VERDICT: BLOCK\n\nNote: the required shape is | overall | VERDICT: APPROVE |.'), 'Block')
+
+  // A table-only synthesis is still read, which is the case the table shape was taught for.
+  assert.equal(parseVerdict('| dimension | result |\n|---|---|\n| overall | VERDICT: APPROVE |'), 'Approve')
 })
 
 test('prose about the CODE does not read as the session declining', async () => {

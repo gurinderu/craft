@@ -26,11 +26,20 @@ const VERDICT_TOKEN = {
 // and no other wording, and only that shape is authoritative. A prose closing line in ordinary case
 // — `Verdict: Approve` — is exactly what LABELLED below was written to weigh against the evidence,
 // so matching it here would let it outrank a report of UB instead of losing to it.
-// `(?:[^\n|]*\|){0,4}` lets the line be a TABLE ROW: `| overall | VERDICT: APPROVE |` is the most
-// likely shape for an audit synthesis's final verdict, and reading it as unstructured sent it down
-// the prose arms — where a clean run that named an absent tool was then filed not-run.
-const VERDICT_LINE =
-  /^(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
+// The mandated line, as a line of its own.
+const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
+
+// The same token inside a markdown TABLE ROW — `| overall | VERDICT: APPROVE |`, which is how an
+// audit synthesis usually writes its verdict. Read SECOND, and only when no line of its own carried
+// one: a synthesis states its overall verdict as a line and then tables the dimensions, so taking
+// last-wins across both made the last table ROW override the overall line. Executed on a real
+// shape, `VERDICT: BLOCK` followed by a dimension table ending `| deps | VERDICT: APPROVE |` parsed
+// as Approve — a Block filed as clean, which is worse than any not-run this branch exists to fix.
+// Anchored on a leading `|` so it can only be a row: without that the prefix matched any prose
+// carrying pipes. That anchor is defensive rather than load-bearing — the gate rejects such a line
+// anyway, and no falsifier through the public surface can reach it, so it is not claimed as pinned.
+const VERDICT_ROW =
+  /^\|(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
 // The same line as the GATE reads it: no blockquote, no backtick, and `markerLine` skips fenced
 // blocks. The reader keeps the permissive form above — a report that ran may well bold or quote its
@@ -281,7 +290,7 @@ function lastMatch(re, t) {
 // they cannot drift apart again.
 function verdictEvidence(t) {
   // 1. Structural: the last `VERDICT: <TOKEN>` line wins, and is authoritative when present.
-  const structured = lastMatch(VERDICT_LINE, t)
+  const structured = lastMatch(VERDICT_LINE, t) ?? lastMatch(VERDICT_ROW, t)
   if (structured) return { verdict: VERDICT_TOKEN[structured], by: 'structured' }
 
   // 2. Fallback for non-conforming output, over the tail only.
