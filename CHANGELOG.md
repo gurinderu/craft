@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.18.1](https://github.com/gurinderu/craft/compare/v0.18.0...v0.18.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* a bound that fails open is not a bound ([5b00ca5](https://github.com/gurinderu/craft/commit/5b00ca58ff65df21ab80a5f484795db1d0df4e2d))
+* absolute is not enough — refuse a logger that resolves inside the reviewed repo ([f6e6724](https://github.com/gurinderu/craft/commit/f6e6724d1c49b344e9c84b596767e9bfd2ad4234))
+* let the engine find its own installed logger instead of filing nothing ([e74d4a7](https://github.com/gurinderu/craft/commit/e74d4a7b77ad7859906264e529bea989f5c9856b))
+* let the engine find its own installed logger instead of filing nothing ([3ab0ce3](https://github.com/gurinderu/craft/commit/3ab0ce3374801a23cb695ada88259883ce98a0a0))
+* one containment predicate, one table of cases, both implementations ([3909d19](https://github.com/gurinderu/craft/commit/3909d19a6ce6ec782e5a321d38cf1c00e71fa214))
+* one guarded pipeline for every way the logger can be named ([00962ff](https://github.com/gurinderu/craft/commit/00962ff5fffe1c160fbbfe3fcd62c0dab3873d61))
+* pin the search to one version, and give the third logger command its version too ([c5addb8](https://github.com/gurinderu/craft/commit/c5addb891fbe383957fcd2be4c4d27484bc8e9d8))
+* read the options the invocation line actually advertises ([bd19b3a](https://github.com/gurinderu/craft/commit/bd19b3a15485e2b8b5b18526c313e189b3d8e510))
+* refuse a relative config dir, and derive the checkpoint version from its payload ([5a4a9f8](https://github.com/gurinderu/craft/commit/5a4a9f8cd2f0ca18d11f928a7fea80f8d43d5108))
+* **test:** make the agreement absolute, and bind the three engine rosters ([2082da9](https://github.com/gurinderu/craft/commit/2082da997848c5146f3149b6986e884af99f9bda))
+* **test:** restore the mixed-case coverage, and make three stubs honest ([bb77317](https://github.com/gurinderu/craft/commit/bb77317115685eff4044b8d89d7d2dbdeee685fd))
+* the absoluteness guard had no test, and the root repo inverted the predicate ([d2f5232](https://github.com/gurinderu/craft/commit/d2f523295df73e77197df51c5782f92e9bf5f528))
+* the guard added last round had no test, and the resolver swallowed every error ([c539ce8](https://github.com/gurinderu/craft/commit/c539ce8b5d04b32934ad5967afc87521c86fc196))
+* the option must LAND, not merely parse ([64dcbc1](https://github.com/gurinderu/craft/commit/64dcbc109e0ffb58fbef9abf673b067bb3ee9397))
+* the two thin pins take the same args, and a key must not reach through the prototype ([e7b1750](https://github.com/gurinderu/craft/commit/e7b17503813030500b9e086d24dc17fddad1a65a))
+
 ## [0.18.0](https://github.com/gurinderu/craft/compare/v0.17.0...v0.18.0) (2026-09-03)
 
 
