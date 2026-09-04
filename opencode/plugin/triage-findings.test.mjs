@@ -236,6 +236,23 @@ test('a closing fence must match the one that opened it', async () => {
   assert.ok(t.findings.some(f => /src\/b\.rs:2/.test(f)), 'the finding after a tilde block is not lost')
 })
 
+test('a planner failure carries its cause into the banner', async () => {
+  // Same defect as the audit's synthesis banner, in the sibling: a refusal and a dead session read
+  // identically to whoever has to decide what to do next.
+  await withStore(async () => {
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'I will not do that.' : 'checked\n\nOUTCOME: accept'))
+    const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.match(out, /without the terminal PLAN: line/, 'the cause is named')
+    assert.match(out, /I will not do that/, 'and the planner\'s own words are shown')
+  })
+
+  await withStore(async () => {
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? '' : 'checked\n\nOUTCOME: accept'))
+    const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.match(out, /produced no output/, 'and silence is distinguishable from a refusal')
+  })
+})
+
 test('a real plan is used, and the store agrees', async () => {
   await withStore(async dir => {
     const ctx = fakeCtx(({ isPlan }) =>

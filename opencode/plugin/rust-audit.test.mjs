@@ -67,6 +67,27 @@ test('a refusing synthesis is not a report, and is not filed as a verdict', asyn
   })
 })
 
+test('the reader is told WHY the synthesis failed, not merely that it did', async () => {
+  // A refusal, a timeout and an errored session are three different things to do next, and the
+  // single-call path printed one sentence for all three: `runAnswering` returned {ok, text} and
+  // dropped both the cause and the text. The fan-out path keeps them on purpose; this one was held
+  // to the same gate but not the same reporting.
+  await withStore(async () => {
+    const ctx = fakeCtx(({ isSynthesis }) =>
+      isSynthesis ? 'I am not able to consolidate this audit.' : 'checked\n\nVERDICT: APPROVE')
+    const refused = await runRustAudit(ctx, {})
+    assert.match(refused, /answered, but without the VERDICT: line/, 'a refusal is named as an unanswered one')
+    assert.match(refused, /I am not able to consolidate/, 'and its own words are shown')
+  })
+
+  await withStore(async () => {
+    const ctx = fakeCtx(({ isSynthesis }) => (isSynthesis ? '' : 'checked\n\nVERDICT: APPROVE'))
+    const silent = await runRustAudit(ctx, {})
+    assert.match(silent, /produced no output/, 'silence is named as silence')
+    assert.ok(!/without the VERDICT: line/.test(silent), 'and is not confused with an unanswered reply')
+  })
+})
+
 test('a real synthesis is used, and the store matches it', async () => {
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis }) =>

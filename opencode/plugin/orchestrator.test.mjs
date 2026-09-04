@@ -219,6 +219,25 @@ test('a retry is clipped to what is left of the shared budget', async () => {
   assert.ok(!/300 ms/.test(rs[1].text), 'and is not described by the deadline it never got')
 })
 
+test('a retry clipped by the budget names the budget, not a deadline that exists nowhere', async () => {
+  // The branch's own failure mode, one door along: `Math.min` clips the retry, and the note then
+  // described that remainder as the job's deadline — "no result within 10 minutes" for a job whose
+  // configured deadline is twenty. That span exists nowhere in the code, so the reader either hunts
+  // for it or raises `timeoutMs` and sees nothing change, because the budget is what bound it.
+  const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
+  const jobs = [
+    { label: 'first', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 80 },
+    { label: 'clipped', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 80 },
+  ]
+  const rs = await fanOut(ctx, jobs, 100) // enough for the first retry, not for the second's full span
+  assert.match(rs[0].text, /may simply need longer than that deadline/, 'the unclipped one still says so')
+  assert.match(rs[1].text, /all that was left of this run's shared retry budget/, 'the clipped one names the budget')
+  assert.ok(
+    !/may simply need longer than that deadline/.test(rs[1].text),
+    'and does not send the reader after a per-job deadline that was never the limit',
+  )
+})
+
 test('a job left over when the budget is spent is not attempted, and says so', async () => {
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
   const jobs = Array.from({ length: 3 }, (_, i) => ({
