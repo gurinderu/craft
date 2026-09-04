@@ -53,7 +53,7 @@ function extractText(res: any): string {
   return text || (typeof root?.text === "string" ? root.text.trim() : "")
 }
 
-// `expect` is what makes a job's answer an ANSWER rather than merely output. Without it liveness was
+// `answered` is what makes a job's answer an ANSWER rather than merely output. Without it liveness was
 // inferred from `text.length > 0`, so a refusal, a tool-permission error, or "I'll start by looking
 // at the repo" counted as success — and that text then reached the verdict parser, which falls
 // through to APPROVE. A dimension whose session errored out therefore reported Approve. Callers that

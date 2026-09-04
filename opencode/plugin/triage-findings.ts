@@ -30,6 +30,7 @@ export function splitFindings(blob: string): { findings: string[]; dropped: numb
   let inFence = false
   let open = false // whether the last item is still accepting continuation lines
   const pending: string[] = [] // lines held inside a fence that may turn out never to close
+  let openedWith = "" // the exact marker that opened the current block, so only its match can close it
   for (const line of raw) {
     const l = line.trim()
     // A fence DELIMITER is a line that opens or closes a block — not any line that happens to start
@@ -39,10 +40,27 @@ export function splitFindings(blob: string): { findings: string[]; dropped: numb
     // the previous behaviour a fence could not lose a finding, and the test at the top of the test
     // file says a wrongly-dropped line is the expensive error. The property is "an opener has a
     // partner", not "the line starts with a fence".
+    // A closer must match its opener in CHARACTER and be at least as long — the CommonMark rule, and
+    // the other half of the property. Without it a ```` fence wrapping a ``` example was closed by
+    // the inner marker, and the findings after it were discarded as "code" with `dropped` still 0,
+    // so the loud banner never fired. Same silent loss as the inline-span defect, by the other door.
     const fence = l.match(/^(`{3,}|~{3,})/)
-    if (fence && !l.slice(fence[0].length).includes(fence[1][0].repeat(3))) {
-      inFence = !inFence
-      if (!inFence) pending.length = 0 // it closed: what it held really was code
+    const isDelimiter = fence && !l.slice(fence[0].length).includes(fence[1][0].repeat(3))
+    if (isDelimiter && !inFence) {
+      inFence = true
+      openedWith = fence[1]
+      continue
+    }
+    if (isDelimiter && inFence) {
+      const closes = fence[1][0] === openedWith[0] && fence[1].length >= openedWith.length
+      if (closes) {
+        inFence = false
+        pending.length = 0 // it really did close: what it held was code
+        continue
+      }
+      // A shorter or different marker inside a block is content, not a closer.
+      skipped++
+      pending.push(l)
       continue
     }
     if (inFence) { if (l.length) { skipped++; pending.push(l) } continue }
@@ -115,8 +133,11 @@ Below is each finding with its validation outcome. Build:
 2. An **ordered fix plan** containing ONLY the \`accept\`ed findings, sequenced so prerequisites come first, each as a short task with file:line and the fix direction.
 3. A short **open questions** list for any \`needs-decision\` / \`conflict\` items.
 
-FINALLY, after everything else, end with ONE line on its own, exactly: \`PLAN: READY\` — nothing after
-it. It is machine-read: it is how the caller tells a finished plan from a preamble or a refusal.
+FINALLY, after everything else, end with ONE line on its own, in exactly this form: \`PLAN: X\` —
+where X is the single uppercase word READY. Nothing after it. Written as a placeholder on purpose:
+the literal final line must not appear anywhere in these instructions, or quoting them back would
+count as having produced a plan. It is machine-read: it is how the caller tells a finished plan from
+a preamble or a refusal.
 
 VALIDATED FINDINGS:
 ${ledger}`
@@ -124,11 +145,12 @@ ${ledger}`
   // A dead planner used to hand back the raw ledger, which reads like a finished triage. It is not
   // one: nothing was ordered, and the open questions were never separated out.
   const unplanned = `## ⚠️ INCOMPLETE (not run) — the fix plan was not produced\n\nThe planning step returned nothing, so what follows is the raw validation ledger rather than an ordered plan. Nothing here is a decision about what to fix first.\n\n${ledger}`
-  // Gated on a TERMINAL MARKER the prompt mandates, not on keywords the prompt itself supplies. The
-  // first attempt asked for "triage ledger" or "fix plan" — both of which appear in the instructions
-  // in bold, so "I cannot build the triage ledger from these results" passed as a plan. A phrase the
-  // prompt hands the model tests nothing; a line the model must choose to emit tests whether it got
-  // to the end.
+  // Gated on a terminal marker the prompt DOES NOT SPELL. Asking for keywords the prompt supplies
+  // tested nothing — "I cannot build the triage ledger" passed as a plan. Spelling the marker itself
+  // was the same mistake one step later: a refusal that quotes its own instruction ("the instruction
+  // asked me to end with `PLAN: READY`, but I have nothing to plan") carries the line and passed
+  // too. The audit prompt already avoids this by writing `VERDICT: X` as a placeholder so the
+  // literal final line appears nowhere in the instructions; this now does the same.
   const planned = await runAnswering(ctx, "", planPrompt, (t) => /^\s*[*_`>|-]*\s*PLAN:\s*READY\b/mi.test(t))
     .catch(() => ({ ok: false, text: "" }))
   const plan = planned.ok ? planned.text : unplanned
