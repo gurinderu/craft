@@ -279,34 +279,52 @@ function loggerPrelude(craftRoot, version = '', repo = '') {
   // elsewhere, and never looks at the reviewed repository at all. That cache layout belongs to the
   // harness, not to craft (realm @nick/craft, node #48 — observed, not documented), so a miss is
   // ordinary: not found means the refusal below, never a guess.
+  // ONE predicate, applied to every candidate, and applied BEFORE it is accepted rather than to the
+  // winner afterwards. Written as a terminal check on the winner, an explicit craftRoot naming the
+  // repo killed the whole command instead of being rejected in favour of the next candidate — which
+  // is craft reviewing its own checkout, the mode this repo mandates for itself.
+  //
+  // A candidate qualifies only if it is ABSOLUTE (`[ -f ]` runs in the agent's cwd while `node` runs
+  // after the cd, so a relative path resolves in the reviewed repository), PRESENT, and OUTSIDE the
+  // directory the command is about to cd into. The last is checked on the FULLY resolved path:
+  // symlinks are followed to their target — a link whose FILE points into the repo passed for one
+  // commit because only the directory went through `pwd -P` — and both sides are normalized, so a
+  // `..` climb and a symlinked parent collapse to the same comparison. The `case` patterns are
+  // quoted and slash-anchored, so a sibling that merely shares a prefix (`/x/repo-evil` beside
+  // `/x/repo`) is NOT inside — the collision this project already met once in `insideStore`.
+  const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
+craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
+  case "$1" in /*) ;; *) return 1 ;; esac
+  [ -f "$1" ] || return 1
+  CRAFT_REAL="$1"
+  CRAFT_HOPS=0
+  while [ -L "$CRAFT_REAL" ] && [ "$CRAFT_HOPS" -lt 16 ]; do
+    CRAFT_LINK="$(readlink "$CRAFT_REAL")"
+    case "$CRAFT_LINK" in
+      /*) CRAFT_REAL="$CRAFT_LINK" ;;
+      *) CRAFT_REAL="$(dirname "$CRAFT_REAL")/$CRAFT_LINK" ;;
+    esac
+    CRAFT_HOPS=$((CRAFT_HOPS + 1))
+  done
+  CRAFT_REAL="$(cd "$(dirname "$CRAFT_REAL")" 2>/dev/null && pwd -P)/$(basename "$CRAFT_REAL")"
+  [ -n "$CRAFT_REPO" ] && case "$CRAFT_REAL" in
+    "$CRAFT_REPO"/*|"$CRAFT_REPO") return 1 ;;
+  esac
+  return 0
+ }
+CRAFT_LOGGER=""
+`
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
-  case "$CRAFT_TRY" in /*) [ -f "$CRAFT_TRY" ] && CRAFT_LOGGER="$CRAFT_TRY" ;; esac
+  craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_TRY"
 fi
 `
   const explicit = craftRoot ? tryCandidate(`${shq(craftRoot)}"/lib/craft-log-run.mjs"`) : ''
-  // ABSOLUTE IS NOT ENOUGH, and the comment above used to promise more than the code gave: an
-  // absolute path may still name the reviewed repository, and `craftRoot` arrives in the
-  // model-composed args string. `craftRoot=<the repo>` — or `<anywhere>/../<the repo>` — was
-  // accepted and run. So the resolved logger is compared against the directory the command is about
-  // to cd into, and refused if it lies within it. Both sides go through `pwd -P`, which resolves
-  // symlinks: a candidate that is a link INTO the repo is caught by the same test, and no amount of
-  // `..` climbing gets past a comparison made after normalization. This is the constraint `--dir`
-  // already carries; the logger path had only half of it.
-  const containment = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
-if [ -n "\${CRAFT_LOGGER:-}" ] && [ -n "$CRAFT_REPO" ]; then
-  CRAFT_REAL="$(cd "$(dirname "$CRAFT_LOGGER")" 2>/dev/null && pwd -P)/$(basename "$CRAFT_LOGGER")"
-  case "$CRAFT_REAL" in
-    "$CRAFT_REPO"/*|"$CRAFT_REPO") echo "craft-log-run FAILED: the logger resolved inside the repository under review ($CRAFT_REAL); refusing to execute code from the repo being reviewed"; exit 1 ;;
-  esac
-fi
-`
   const fromEnv = tryCandidate('"${CLAUDE_PLUGIN_ROOT:-}/lib/craft-log-run.mjs"')
   const installed = version
     ? tryCandidate(`"\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/"${shq(version)}"/lib/craft-log-run.mjs"`)
     : ''
-  return `CRAFT_LOGGER=""
-${explicit}${fromEnv}${installed}${containment}[ -n "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no logger found — no absolute craftRoot, no CLAUDE_PLUGIN_ROOT, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
+  return `${preamble}${explicit}${fromEnv}${installed}[ -n "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no usable logger — no absolute craftRoot outside the reviewed repo, no CLAUDE_PLUGIN_ROOT, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
 `
 }
 
