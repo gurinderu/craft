@@ -163,6 +163,46 @@ test('a keyword in prose is not a judgement, however the parser weighs it', asyn
   assert.equal(parseVerdict('warning: unused variable `x`\n\nI was unable to complete the review.'), 'Warning')
 })
 
+test('a session that says it could not do the work is not answering, however it signs off', async () => {
+  // The half the arm-specific rule left open, and the more expensive one: consulting the refusal
+  // shape on the KEYWORD arm alone admitted "I am unable to run cargo in this sandbox. / Verdict:
+  // Approve" and filed it ran:true, verdict:Approve. A refusal read as an approval is the subject of
+  // this branch. Nothing in the suite could tell the arm-specific rule from the simple one either,
+  // which is its own verdict on it.
+  for (const text of [
+    'I am unable to run cargo in this sandbox.\n\nVerdict: Approve',
+    "I can't reach the network, so dependencies were not checked.\n\nOverall rating: Clean",
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, false, `a declined run is not an answer: ${JSON.stringify(text)}`)
+  }
+
+  // But a mandated VERDICT: line is authoritative and nothing overrides it — an agent may say it
+  // could not do ONE thing and still deliver exactly the line it was asked for.
+  const ctx = fakeCtx({ 'rust-security-scanner': 'I could not run miri.\n\nVERDICT: INCOMPLETE' })
+  const [ok] = await fanOut(ctx, [job()])
+  assert.equal(ok.ok, true, 'the structured line still answers')
+})
+
+test('prose about the CODE is not a session declining', async () => {
+  // The other direction, and it was live: `\bunable to\b` and `\bnot permitted\b` are ordinary
+  // review English about the subject under review. A security dimension reporting a use-after-free
+  // was retried at full cost and then filed INCOMPLETE — which worstOf ranks BELOW Block, the exact
+  // regression the refusal shape was introduced to fix. And `(?:un)?` was optional, so "I am able
+  // to reproduce the UB" read as a refusal.
+  for (const text of [
+    'Reviewed the diff. The caller is unable to distinguish the two states.\n\nSeverity: Block — use-after-free in src/x.rs:10.',
+    'Values not permitted by the schema are accepted.\n\nBlock: use-after-free at src/x.rs:10.',
+    'I am able to reproduce the UB under miri. Block.',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `this is a finding, not a self-report: ${JSON.stringify(text)}`)
+    assert.equal(parseVerdict(text), 'Block')
+  }
+})
+
 test('reported severity in prose IS an answer, even unlabelled', async () => {
   // Both wholesale resolutions of the keyword arm are wrong, and this is the second one: rejecting
   // it outright threw away reported severity. "Miri reported UB-found in two tests." parses as

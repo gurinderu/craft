@@ -166,10 +166,11 @@ ${blob}${VERDICT_RULE}`
   // away the real thing. A false not-run here discards the whole audit under an INCOMPLETE banner,
   // which is the expensive error everywhere else on this branch.
   const headings = blob.split("\n").map((l) => l.trim()).filter((l) => /^###[ \t]/.test(l))
-  // TWO of them, not a fraction: one heading quoted in passing is something a consolidation may
-  // legitimately do, while carrying two or more of the input's section headings verbatim is
-  // reproducing its structure. A fraction was tried and nothing could pin it — every test that
-  // passed at half passed at one, so the threshold was a number no falsifier could reach.
+  // MORE THAN ONE — stated as the floor it is, not as a measured number. One heading quoted in
+  // passing is something a consolidation may legitimately do; carrying the input's section headings
+  // is reproducing its structure. Only the lower side is pinned by a test, and raising 2 to 3 or 5
+  // breaks nothing, so calling 2 "measured" would be a claim no falsifier can reach — which is
+  // exactly what was wrong with the overlap fraction it replaced.
   const echoed = (t: string) => headings.length >= 2 && headings.filter((h) => t.includes(h)).length >= 2
   const answeredSynthesis = (t: string) => hasVerdictLine(t) && !echoed(t)
 
