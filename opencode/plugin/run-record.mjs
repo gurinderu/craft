@@ -41,13 +41,13 @@ const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|B
 // Approve is the fallthrough on purpose (a clean prose report carries no keyword at all), and that
 // is exactly the case a silent or refusing session also lands in — which is why the fallthrough,
 // and only the fallthrough, is what "did not answer" means.
-// A session reporting that IT could not do the work. First person and explicitly negated, because
-// the alternatives are otherwise ordinary review English about the CODE: "the caller is unable to
-// distinguish the two states" and "values not permitted by the schema are accepted" are findings,
-// not self-reports, and a bare `unable to` / `not permitted` swallowed both. `(?:un)?` was optional
-// once, which made "I am able to reproduce the UB" a refusal.
+// Refusal vocabulary — broad, and deliberately not anchored on a pronoun. Narrowing it to a
+// literal `I` split five identical refusals by whether they used one: "I am unable to run cargo /
+// Verdict: Approve" was caught while "Unable to run cargo", "We were unable to", "Permission
+// denied when invoking cargo" and "Cargo is not available in this environment" all sailed through
+// and were filed ran:true, verdict:Approve. Only the pronoun separated them.
 const DECLINED =
-  /\bI(?:'m| am| was)?[ \t]+(?:un(?:able)|not[ \t]+able)[ \t]+to\b|\bI[ \t]+(?:cannot|can't|could[ \t]+not|couldn't|won't|will[ \t]+not)\b|\bI[ \t]+(?:do|did|does)[ \t]+not[ \t]+have[ \t]+permission\b|\bI[ \t]+lack[ \t]+(?:the[ \t]+)?permission\b/i
+  /\b(?:un(?:able|available)|not[ \t]+able[ \t]+to|cannot|can't|could[ \t]+not|couldn't|won't|will[ \t]+not|not[ \t]+available|permission[ \t]+denied|(?:do|does|did)[ \t]+not[ \t]+have[ \t]+permission|lack(?:s|ed)?[ \t]+(?:the[ \t]+)?permission|not[ \t]+permitted|no[ \t]+permission|nothing[ \t]+was[ \t]+checked|no[ \t]+checks[ \t]+were[ \t]+run)\b/i
 
 export function hasVerdictLine(text) {
   const t = String(text ?? '')
@@ -56,12 +56,18 @@ export function hasVerdictLine(text) {
   // A mandated `VERDICT: <TOKEN>` line is authoritative and nothing overrides it — an agent may
   // legitimately say it could not do one thing and still deliver the line it was asked for.
   if (e.by === 'structured') return true
-  // Everything weaker loses to a session's own statement that it could not do the work. Consulting
-  // this on the keyword arm ALONE was the previous shape, and it left the more expensive half open:
-  // "I am unable to run cargo in this sandbox. / Verdict: Approve" was admitted and filed
-  // ran:true, verdict:Approve — a refusal read as an approval, which is the whole subject of this
-  // branch. Nothing in the suite could tell the arm-specific rule from this one, either; a
-  // discriminator no falsifier can reach is a decoration.
+  // REPORTED BLOCK also stands, whatever else the text says. This is the asymmetry that makes a
+  // broad vocabulary affordable: "the caller is unable to distinguish the two states" is a finding
+  // about the CODE, and reading it as a refusal files a use-after-free as INCOMPLETE, which
+  // `worstOf` ranks BELOW Block — severity lost, the very inversion this gate exists to prevent.
+  // Trying to tell the two apart by grammar is what produced the pronoun rule, and grammar is not
+  // something a regex can be trusted with.
+  if (e.verdict === 'Block') return true
+  // Everything weaker loses to refusal vocabulary anywhere in the text. What that costs, plainly: a
+  // genuine Warning whose prose happens to say "unable to" is filed not-run — one rank down, and
+  // loudly, under an INCOMPLETE banner. What it buys is that a sandboxed dimension which checked
+  // nothing can no longer sign off with Approve, which is this branch's whole subject and the far
+  // more expensive error.
   return !DECLINED.test(t)
 }
 
@@ -98,18 +104,27 @@ const FENCE = /^[ \t]*(`{3,}|~{3,})/
 export function hasPlanMarkerLine(text) {
   const lines = String(text ?? '').split('\n')
   let openedWith = null
-  for (const l of lines) {
-    const f = l.match(FENCE)
+  let openedAt = -1
+  for (let i = 0; i < lines.length; i++) {
+    const f = lines[i].match(FENCE)
     if (f) {
-      if (openedWith === null) openedWith = f[1]
-      else if (f[1][0] === openedWith[0] && f[1].length >= openedWith.length) openedWith = null
+      if (openedWith === null) {
+        openedWith = f[1]
+        openedAt = i
+      } else if (f[1][0] === openedWith[0] && f[1].length >= openedWith.length) {
+        openedWith = null
+        openedAt = -1
+      }
       continue
     }
-    if (openedWith === null && PLAN_MARKER.test(l)) return true
+    if (openedWith === null && PLAN_MARKER.test(lines[i])) return true
   }
-  // An opener that never closed took the input's tail with it on a guess. Read that tail rather
-  // than throw the plan away.
-  if (openedWith !== null) return lines.some((l) => !FENCE.test(l) && PLAN_MARKER.test(l))
+  // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
+  // only that tail. Re-reading every line instead re-admitted the contents of every properly closed
+  // fence before it, so one truncated final code block was enough to make a marker quoted inside an
+  // earlier fenced block count as a plan: the regression this function exists to prevent, restored
+  // by its own fallback.
+  if (openedWith !== null) return lines.slice(openedAt + 1).some((l) => !FENCE.test(l) && PLAN_MARKER.test(l))
   return false
 }
 

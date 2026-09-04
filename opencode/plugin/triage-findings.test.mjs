@@ -242,6 +242,29 @@ test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy 
     })
   }
 
+  // The closer rule itself, pinned. It was the headline of the commit that introduced it and no
+  // falsifier reached it: reverting to "any fence-looking line toggles" left the whole suite green,
+  // because the similarly named test one file over exercises `splitFindings`, a different
+  // implementation. Here a ``` inside a ```` block is content, so the block stays open and the
+  // marker after it is inside a fence — not a plan.
+  await withStore(async dir => {
+    const quoted = '1. fix a\n\n````\nexample:\n```\nPLAN: READY\n```\n````\n\nI cannot order these.'
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? quoted : 'checked\n\nOUTCOME: accept'))
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.equal(record(dir).planned, false, 'a shorter marker inside a longer block does not close it')
+  })
+
+  // And the fallback reads the unclosed TAIL, not every line. Re-reading all of them re-admitted
+  // the contents of every properly closed fence before the truncated one, so a single unterminated
+  // final block restored exactly the regression this predicate exists to prevent.
+  await withStore(async dir => {
+    const refusal =
+      'The instructions ask for:\n```\nPLAN: READY\n```\nbut there is nothing to plan. Here is the file:\n```rust\nfn f(){}'
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? refusal : 'checked\n\nOUTCOME: accept'))
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.equal(record(dir).planned, false, 'a closed fence stays closed when a later one is truncated')
+  })
+
   // An unterminated or decorative fence must not hide the plan behind it: `See:\n```rust\nfn f(){}`
   // opened a block that never closed, and toggling on any fence-looking line discarded a real plan
   // — forty child sessions already paid for — on a guess. Same asymmetric cost the splitter one
