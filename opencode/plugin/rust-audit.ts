@@ -20,6 +20,13 @@ const VERDICT_RULE =
   "domain-specific rating you used above onto these four (Healthy/Clean → APPROVE, Concerns → " +
   "WARNING, At-risk/UB-found → BLOCK). Write nothing after that line — it is machine-read."
 
+// The same line the prompt demands, read back as proof that the dimension ANSWERED. Liveness used to
+// be "the session said something", so a refusal, a tool-permission error or an opening pleasantry
+// counted as a result — and that text then reached parseVerdict(), which falls through to APPROVE.
+// A dimension whose child session errored out therefore reported Approve, which is the one outcome
+// this whole engine exists to make impossible.
+export const VERDICT_LINE = /^\s*VERDICT:\s*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/mi
+
 async function sh(ctx: PluginCtx, cmd: string): Promise<string> {
   try {
     const r = await ctx.$`bash -lc ${cmd}`.quiet()
@@ -119,7 +126,11 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     },
   )
 
-  const results = await fanOut(ctx, jobs)
+  // Asked of EVERY dimension in one place rather than repeated per job: every prompt above ends with
+  // VERDICT_RULE, so carrying that line is what it means for any of them to have answered. Attaching
+  // it per job would be ten chances to forget one, and the one forgotten is the one that reports
+  // Approve on a dead session.
+  const results = await fanOut(ctx, jobs.map((j) => ({ ...j, expect: VERDICT_LINE })))
 
   // Synthesize through a fresh child session (no agent → the session's default model/persona).
   // One machine-readable label for "this dimension checked nothing" — a dispatcher-detected death
@@ -128,6 +139,10 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
   // wrote, which is harmless because buildAuditRecord() rolls the record verdict up worst-wins over
   // every dimension rather than trusting a single text scan.
   const blob = results.map((r) => `### ${r.label} (${r.ok ? "ran" : "INCOMPLETE (not run)"})\n\n${r.text}`).join("\n\n")
+  // The blob ends with whatever VERDICT: line the LAST dimension wrote — commonly APPROVE. Handing
+  // it over as the report when synthesis dies therefore hands the reader an approval nobody made.
+  // The run record was already safe (worst-wins over dimensions); the text a human reads was not.
+  const unsynthesized = `## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\nThe synthesis step returned nothing, so what follows is the raw per-dimension output rather than a report. Nothing here is an approval: read each dimension's own verdict below, and note that any \`VERDICT:\` line at the very end belongs to the last dimension, not to the audit.\n\n${blob}`
   const synthPrompt = `You are consolidating a Rust audit. Below are the per-dimension results. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across dimensions. If any dimension reported the verdict \`INCOMPLETE (not run)\` — because it never executed, or because its tooling was absent — the overall verdict line MUST contain that exact string \`INCOMPLETE (not run)\`.
@@ -138,7 +153,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
 RESULTS:
 ${blob}${VERDICT_RULE}`
 
-  const report = (await runAgent(ctx, "", synthPrompt).catch(() => blob)) || blob
+  const report = (await runAgent(ctx, "", synthPrompt).catch(() => "")) || unsynthesized
   await writeRecord(ctx, buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText: report }))
   return report
 }

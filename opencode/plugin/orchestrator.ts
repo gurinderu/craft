@@ -7,10 +7,25 @@
 // `tsc` will flag any mismatch against the installed @opencode-ai/sdk types — adjust there.
 import type { PluginCtx } from "./index.ts"
 
-const STUCK_MS = 90_000
+// A dimension that runs `cargo clippy --all-targets` and `cargo test` on a real workspace takes
+// minutes, not seconds. The old 90s ceiling therefore fired on essentially every Rust repository
+// this plugin exists for, and the timeout was then reported as an opencode child-session bug — so
+// the user went looking for a version problem instead of a deadline. A deadline exists to stop a
+// hang, so it belongs far past the slowest legitimate run; jobs that know they are cheap can say so.
+const STUCK_MS = 20 * 60_000
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | { __timeout: true }> {
-  return Promise.race([p, new Promise<{ __timeout: true }>((r) => setTimeout(() => r({ __timeout: true }), ms))])
+  // The timer is CLEARED when the race settles. Left pending it kept one live timer per job for the
+  // whole deadline — invisible at 90 seconds in a long-lived process, and immediately visible once
+  // the deadline became twenty minutes: any host that waits for the event loop to drain simply
+  // stops. `unref` alone would hide it rather than fix it.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const ticking = new Promise<{ __timeout: true }>((r) => {
+    timer = setTimeout(() => r({ __timeout: true }), ms)
+  })
+  return Promise.race([p, ticking]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
 }
 
 // Spawn one child session bound to a hidden agent and return its final text.
@@ -38,20 +53,47 @@ function extractText(res: any): string {
   return text || (typeof root?.text === "string" ? root.text.trim() : "")
 }
 
-export interface Job { label: string; agent: string; prompt: string }
+// `expect` is what makes a job's answer an ANSWER rather than merely output. Without it liveness was
+// inferred from `text.length > 0`, so a refusal, a tool-permission error, or "I'll start by looking
+// at the repo" counted as success — and that text then reached the verdict parser, which falls
+// through to APPROVE. A dimension whose session errored out therefore reported Approve. Callers that
+// require a machine-readable line pass its pattern here; a job with no `expect` keeps the old
+// non-empty rule, which is honest for jobs whose output is prose by design.
+export interface Job { label: string; agent: string; prompt: string; expect?: RegExp; timeoutMs?: number }
 export interface JobResult { label: string; ok: boolean; text: string }
 
-async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult> {
+// Why the job failed, in the words a reader can act on. Conflating these was half the defect: a
+// deadline reported as "no output" sent people to look for an opencode bug.
+type Failure = "timeout" | "empty" | "unanswered" | "error"
+
+async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Failure }> {
   try {
-    const out = await withTimeout(runAgent(ctx, job.agent, job.prompt), STUCK_MS)
+    const out = await withTimeout(runAgent(ctx, job.agent, job.prompt), job.timeoutMs ?? STUCK_MS)
     if (out && typeof out === "object" && (out as any).__timeout) {
-      return { label: job.label, ok: false, text: "" } // stuck — eligible for sequential retry
+      return { label: job.label, ok: false, text: "", why: "timeout" }
     }
     const text = String(out)
-    return { label: job.label, ok: text.length > 0, text }
+    if (!text.length) return { label: job.label, ok: false, text, why: "empty" }
+    // Output that does not carry what the job asked for is not a result. Keeping the text matters:
+    // a refusal or an error message is the most useful thing to show the reader about why.
+    if (job.expect && !job.expect.test(text)) return { label: job.label, ok: false, text, why: "unanswered" }
+    return { label: job.label, ok: true, text }
   } catch (e) {
-    return { label: job.label, ok: false, text: `error: ${e instanceof Error ? e.message : String(e)}` }
+    return { label: job.label, ok: false, text: `error: ${e instanceof Error ? e.message : String(e)}`, why: "error" }
   }
+}
+
+function notRunNote(job: Job, why: Failure | undefined, detail: string): string {
+  const ms = job.timeoutMs ?? STUCK_MS
+  const cause =
+    why === "timeout"
+      ? `it produced no result within ${Math.round(ms / 60_000)} minutes, twice. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
+      : why === "unanswered"
+        ? `it answered, but without the machine-readable verdict line the prompt requires — so nothing it said can be read as a result. Its output is kept below`
+        : why === "error"
+          ? `the child session errored, twice`
+          : `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
+  return `INCOMPLETE (not run) — the child session for "${job.agent || "the default model"}" did not deliver a result: ${cause}. ${detail}`.trim()
 }
 
 export async function fanOut(ctx: PluginCtx, jobs: Job[]): Promise<JobResult[]> {
@@ -63,16 +105,7 @@ export async function fanOut(ctx: PluginCtx, jobs: Job[]): Promise<JobResult[]> 
   // Pass 2: sequential retry of the stuck/failed jobs (the #8528/#6573 mitigation).
   for (const i of failedIdx) {
     const retry = await tryOne(ctx, jobs[i])
-    first[i] = retry.ok
-      ? retry
-      : {
-          label: jobs[i].label,
-          ok: false,
-          text:
-            `INCOMPLETE (not run) — child session for "${jobs[i].agent}" produced no output after a concurrent ` +
-            `attempt and a sequential retry. This matches opencode child-session execution bugs ` +
-            `(#8528/#6573); check your opencode version. ${retry.text}`.trim(),
-        }
+    first[i] = retry.ok ? retry : { label: jobs[i].label, ok: false, text: notRunNote(jobs[i], retry.why, retry.text) }
   }
   return first
 }
