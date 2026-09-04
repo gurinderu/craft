@@ -255,9 +255,104 @@ function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
-function loggerPrelude(craftRoot) {
-  if (craftRoot) return `CRAFT_LOGGER=${shq(craftRoot)}/lib/craft-log-run.mjs\n`
-  return 'CRAFT_LOGGER="${CLAUDE_PLUGIN_ROOT:?craft-log-run FAILED: neither craftRoot nor CLAUDE_PLUGIN_ROOT is set — refusing to resolve the logger against the reviewed repository}/lib/craft-log-run.mjs"\n'
+function loggerPrelude(craftRoot, version = '', repo = '') {
+  // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
+  // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
+  // before the absoluteness check and before the refusal, so a review launched with `craftRoot=.`
+  // emitted `CRAFT_LOGGER='.'/lib/craft-log-run.mjs` and then `cd <reviewed repo> && node
+  // "$CRAFT_LOGGER"` — the removed `:-.` hole restored verbatim, bypassing the version pin and the
+  // loud refusal too. `craftRoot` arrives in the model-composed args string, so it is exactly as
+  // untrusted as the `--dir` this project already refuses.
+  //
+  // Three properties now hold for every candidate without exception:
+  //   ABSOLUTE — `[ -f ]` is evaluated in the logger agent's cwd while `node` runs AFTER the cd into
+  //     the reviewed repository, so any relative path resolves THERE. Refused outright rather than
+  //     normalized: guessing what the caller meant is how this class keeps coming back.
+  //   PRESENT — a path that names no file is not a logger.
+  //   ORDERED — explicit root, then the environment, then this engine's own installed copy. The
+  //     search is a fallback, never an override: written the other way round it overwrote a good
+  //     path with whatever the cache held, so a launch from a checkout logged through another build.
+  //
+  // The search is version-pinned to what this engine is stamped with (a record filed by another
+  // build's script misdescribes which engine ran, and gets counted), looks only under the user's own
+  // plugin cache, honours $CLAUDE_CONFIG_DIR because a session configured that way keeps its plugins
+  // elsewhere, and never looks at the reviewed repository at all. That cache layout belongs to the
+  // harness, not to craft (realm @nick/craft, node #48 — observed, not documented), so a miss is
+  // ordinary: not found means the refusal below, never a guess.
+  // ONE predicate, applied to every candidate, and applied BEFORE it is accepted rather than to the
+  // winner afterwards. Written as a terminal check on the winner, an explicit craftRoot naming the
+  // repo killed the whole command instead of being rejected in favour of the next candidate — which
+  // is craft reviewing its own checkout, the mode this repo mandates for itself.
+  //
+  // A candidate qualifies only if it is ABSOLUTE (`[ -f ]` runs in the agent's cwd while `node` runs
+  // after the cd, so a relative path resolves in the reviewed repository), PRESENT, and OUTSIDE the
+  // directory the command is about to cd into. The last is checked on the FULLY resolved path:
+  // symlinks are followed to their target — a link whose FILE points into the repo passed for one
+  // commit because only the directory went through `pwd -P` — and both sides are normalized, so a
+  // `..` climb and a symlinked parent collapse to the same comparison. The `case` patterns are
+  // quoted and slash-anchored, so a sibling that merely shares a prefix (`/x/repo-evil` beside
+  // `/x/repo`) is NOT inside — the collision this project already met once in `insideStore`.
+  // EVERY exit from this predicate that is not a clean, fully resolved, outside-the-repo path is a
+  // REFUSAL. Three of them used to fall through to acceptance, and one was reachable: exhausting the
+  // hop bound left the loop with the path still a symlink, the comparison then tested an unresolved
+  // string, nothing matched, and the candidate was accepted — a 21-link chain ending inside the
+  // reviewed repository executed its script. A bound that fails open is not a bound; it is a longer
+  // attack.
+  //
+  // Two of the three refusals are belt-and-braces and are labelled as such rather than dressed up as
+  // covered: with `CRAFT_REPO` empty the `case` pattern degenerates to `/*`, which matches every
+  // absolute path and refuses anyway; and `pwd -P` can only fail on a directory with no `x` bit,
+  // where `[ -f ]` has already failed one line earlier. Removing either guard changes no observable
+  // behaviour, so no test distinguishes them — stated here instead of implied by a test that would
+  // pass either way.
+  const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
+craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
+  case "$1" in /*) ;; *) return 1 ;; esac
+  [ -f "$1" ] || return 1
+  [ -n "$CRAFT_REPO" ] || return 1   # belt to the braces below; see the note in the comment above
+  # A repo of "/" contains everything, so nothing can be outside it. The pattern below cannot say
+  # that: "$CRAFT_REPO"/* becomes //* and matches no ordinary path, so every candidate reads as
+  # outside and the guard inverts into an allow-all. Degenerate input, but the whole point of this
+  # predicate is that it fails closed.
+  [ "$CRAFT_REPO" = "/" ] && return 1
+  CRAFT_REAL="$1"
+  CRAFT_HOPS=0
+  while [ -L "$CRAFT_REAL" ]; do
+    [ "$CRAFT_HOPS" -lt 16 ] || return 1
+    CRAFT_LINK="$(readlink "$CRAFT_REAL")"
+    case "$CRAFT_LINK" in
+      /*) CRAFT_REAL="$CRAFT_LINK" ;;
+      *) CRAFT_REAL="$(dirname "$CRAFT_REAL")/$CRAFT_LINK" ;;
+    esac
+    CRAFT_HOPS=$((CRAFT_HOPS + 1))
+  done
+  CRAFT_DIR="$(cd "$(dirname "$CRAFT_REAL")" 2>/dev/null && pwd -P)" || return 1
+  [ -n "$CRAFT_DIR" ] || return 1
+  CRAFT_REAL="$CRAFT_DIR/$(basename "$CRAFT_REAL")"
+  case "$CRAFT_REAL" in
+    "$CRAFT_REPO"/*|"$CRAFT_REPO") return 1 ;;
+  esac
+  return 0
+ }
+CRAFT_LOGGER=""
+`
+  // The RESOLVED path is what gets used, not the candidate string that was validated. Between the
+  // check and `node "$CRAFT_LOGGER"` sit the mktemp, the whole heredoc of a record that can be
+  // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
+  // candidate can be re-pointed into the reviewed repository. Handing over the path that was
+  // actually checked closes that window and costs nothing.
+  const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
+  CRAFT_TRY=${expr}
+  craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
+fi
+`
+  const explicit = craftRoot ? tryCandidate(`${shq(craftRoot)}"/lib/craft-log-run.mjs"`) : ''
+  const fromEnv = tryCandidate('"${CLAUDE_PLUGIN_ROOT:-}/lib/craft-log-run.mjs"')
+  const installed = version
+    ? tryCandidate(`"\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/"${shq(version)}"/lib/craft-log-run.mjs"`)
+    : ''
+  return `${preamble}${explicit}${fromEnv}${installed}[ -n "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no usable logger — no absolute craftRoot outside the reviewed repo, no CLAUDE_PLUGIN_ROOT, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
+`
 }
 
 // The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
@@ -281,13 +376,17 @@ function loggerPrelude(craftRoot) {
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
+  // The version comes off the RECORD rather than from a parameter of its own: it is already there,
+  // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
+  // the record claims to be — which would file a record describing a run some other build made.
+  const version = String(record?.craftVersion ?? '')
   const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
 
 \`\`\`
-${loggerPrelude(craftRoot)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
+${loggerPrelude(craftRoot, version, repo)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
 cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
