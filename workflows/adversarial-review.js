@@ -36,8 +36,19 @@ function parseOptions(text) {
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
     cursor = pair.lastIndex
-    if (m[7]) { out[m[7]] = true; pairs++; continue }
+    // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
+    // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
+    // private helper reaches every engine as a ReferenceError on first use, with the gate green.
+    const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
+    if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
     const key = m[2]
+    // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
+    // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
+    // the logger agent is handed. The args string is model-composed, so this is the same threat shape
+    // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
+    // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
+    // legitimate option names, so they are refused by name and reported.
+    if (banned(key)) { ignored.push(key); continue }
     const quoted = m[4] ?? m[5]
     if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
@@ -736,11 +747,11 @@ const all = plan.lenses.flatMap(lens => {
 // loses a finding — stay conservative.
 const normTokens = t => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, ' ').split(' ').filter(w => w.length > 2))
 function titleSimilar(a, b) {
-  const A = normTokens(a), B = normTokens(b)
-  if (!A.size || !B.size) return false
+  const tokensA = normTokens(a), B = normTokens(b)
+  if (!tokensA.size || !B.size) return false
   let inter = 0
-  for (const w of A) if (B.has(w)) inter++
-  return inter / (A.size + B.size - inter) > 0.5
+  for (const w of tokensA) if (B.has(w)) inter++
+  return inter / (tokensA.size + B.size - inter) > 0.5
 }
 const buckets = new Map()   // `${file}:${bucket}` -> entries in that bucket
 const merged = []
