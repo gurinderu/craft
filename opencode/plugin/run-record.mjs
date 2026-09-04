@@ -28,6 +28,12 @@ const VERDICT_TOKEN = {
 // so matching it here would let it outrank a report of UB instead of losing to it.
 const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
+// The same line as the GATE reads it: no blockquote, no backtick, and `markerLine` skips fenced
+// blocks. The reader keeps the permissive form above — a report that ran may well bold or quote its
+// verdict — while what certifies "this session answered" must be a line the session wrote as its
+// own, not one it copied out of its instructions.
+const VERDICT_GATE_LINE = /^[ \t*_#-]*VERDICT:[ \t]*[*_]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/
+
 // Whether a dimension ANSWERED, asked of the parser itself rather than of one of its arms.
 //
 // Spelling the structural arm twice was the first mistake and it was fixed by exporting the regex —
@@ -50,7 +56,7 @@ const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|B
 // allowed to override a mandated `VERDICT: APPROVE` line, so anything that could also describe the
 // CODE, or a partial gap, must stay out of it.
 const NOTHING_RAN =
-  /\b(?:no[ \t]+(?:checks|tools|analysis|scans)[ \t]+(?:were|was|could[ \t]+be)[ \t]+(?:run|performed|executed)|nothing[ \t]+(?:was|could[ \t]+be)[ \t]+(?:checked|verified|analysed|analyzed|run)|none[ \t]+of[ \t]+the[ \t]+(?:tools|checks)[ \t]+(?:is|are|was|were)[ \t]+(?:installed|available)|(?:could|did)[ \t]+not[ \t]+run[ \t]+any)\b/i
+  /\b(?:no[ \t]+(?:checks|tools|analysis|scans|commands|tests)[ \t]+(?:were|was|could[ \t]+be)[ \t]+(?:run|performed|executed)|nothing[ \t]+(?:was|could[ \t]+be)[ \t]+(?:checked|verified|analysed|analyzed|run|executed)|nothing[ \t]+ran\b|none[ \t]+of[ \t]+the[ \t]+(?:tools|checks|commands)[ \t]+(?:is|are|was|were)[ \t]+(?:installed|available|run)|(?:could|did|can)(?:n't|[ \t]+not)[ \t]+(?:run|perform|execute)[ \t]+(?:any|anything)|un(?:able)[ \t]+to[ \t]+run[ \t]+(?:any|anything)|reviewed[ \t]+nothing)\b/i
 
 const DECLINED =
   /\b(?:un(?:able|available)|not[ \t]+able[ \t]+to|cannot|can't|could[ \t]+not|couldn't|won't|will[ \t]+not|not[ \t]+available|permission[ \t]+denied|(?:do|does|did)[ \t]+not[ \t]+have[ \t]+permission|lack(?:s|ed)?[ \t]+(?:the[ \t]+)?permission|not[ \t]+permitted|no[ \t]+permission|nothing[ \t]+was[ \t]+checked|no[ \t]+checks[ \t]+were[ \t]+run)\b/i
@@ -71,7 +77,16 @@ export function hasVerdictLine(text) {
   // budget, and rolled up as INCOMPLETE for the whole audit. So did "the parser cannot overflow
   // because len is checked" and "I could not reproduce any failure". The wrong cause on the
   // highest-authority path, which is the same error this branch exists against, inverted.
-  if (e.by === 'structured') return e.verdict !== 'Approve' || !NOTHING_RAN.test(t)
+  // A structural line only certifies that the session ANSWERED if it is a line of its own, outside
+  // any fenced block — the same rule the plan and outcome markers carry, and the one place it was
+  // never applied. `VERDICT_LINE` keeps `>` and backticks because `parseVerdict` must still read a
+  // bolded or quoted line out of a report that ran; but promoting that same regex to the liveness
+  // gate meant a refusal quoting its instructions back inside a fence certified itself as having
+  // answered, and was filed ran:true, verdict:Approve with no retry and nothing for worst-wins to
+  // protect. A quoted line falls through to the weaker rules below, where the refusal is visible.
+  if (e.by === 'structured' && markerLine(t, VERDICT_GATE_LINE)) {
+    return e.verdict !== 'Approve' || !NOTHING_RAN.test(t)
+  }
   // REPORTED BLOCK also stands, whatever else the text says. This is the asymmetry that makes a
   // broad vocabulary affordable: "the caller is unable to distinguish the two states" is a finding
   // about the CODE, and reading it as a refusal files a use-after-free as INCOMPLETE, which
