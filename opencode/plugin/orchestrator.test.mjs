@@ -154,6 +154,12 @@ test('a keyword in prose is not a judgement, however the parser weighs it', asyn
   for (const text of [
     'warning: unused variable `x`\n\nI was unable to complete the review.',
     '⚠️ I do not have permission to run cargo, so I cannot review this.',
+    // No refusal words at all — a session that died after echoing a build log fragment. The
+    // labelled/keyword split existed for exactly this and was never wired to anything: `e.by` was
+    // read in one place and only for 'structured', so replacing the split with a constant left the
+    // whole suite green. It is the gate's rule now, and below Block nothing rides on a bare word.
+    'warning: unused variable `x` in src/a.rs\nThe session ended here.',
+    'Concerns: the retry loop may spin under load.',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
@@ -246,6 +252,11 @@ test('a verdict line quoted out of the instructions does not certify an answer',
     'checked\n\nVERDICT: APPROVE',
     'checked\n\n**VERDICT: APPROVE**',
     '| dimension | result |\n\ncargo-geiger is not available; the other three ran clean.\n\n| overall | VERDICT: APPROVE |',
+    // Indented, which is still a table. Requiring column zero made the reader and the gate disagree
+    // about one: `parseVerdict` read it, `hasVerdictLine` did not, so a conforming clean run fell to
+    // the prose arm and was rolled up INCOMPLETE for the whole audit.
+    'cargo-geiger is not available; the rest ran clean.\n\n  | VERDICT: APPROVE |',
+    'cargo-geiger is not available; the rest ran clean.\n\n  | overall | VERDICT: APPROVE |',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
