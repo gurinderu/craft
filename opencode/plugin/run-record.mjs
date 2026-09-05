@@ -252,7 +252,10 @@ export function hasVerdictLine(text) {
 // quoting it. Bold,
 // emphasis and a list bullet stay, because those are how a model DECORATES its own final line.
 const PLAN_MARKER = /^[ \t*_#-]*PLAN:[ \t]*[*_]*[ \t]*READY[ \t]*[*_.]*[ \t]*$/i
-const INDENTED = /^(?:[ ]{4}|\t)/
+// CommonMark advances a tab to the next multiple-of-four column, so up to three spaces THEN a tab
+// is an indented block too. Counting the shape rather than the columns missed every mixed form —
+// the same refusal, one space earlier.
+const INDENTED = /^(?: {0,3}\t| {4})/
 const FENCE = /^[ \t]*(`{3,}|~{3,})/
 
 // One anti-echo rule for every marker: outside fenced blocks, on a line of its own. Written once
@@ -527,6 +530,11 @@ export function buildTriageRecord({ results, planned = true, untriaged = 0, skip
     planned,
     untriaged,
     skipped,
+    // Empty on purpose — a triage has no verdict, and widening a field other readers interpret is
+    // how two writers come to disagree about a column. The consequence, stated here because this is
+    // the only place a reader will look: `indexProjection` does not project `planned`, `untriaged`
+    // or `skipped`, so in `index.jsonl` a triage whose plan never came looks like one that
+    // succeeded. The detail file carries them; only the scan cannot see them.
     verdict: '',
     findings: null,
     nested: false,

@@ -424,6 +424,21 @@ test('an indented quotation of the marker is not an answer', async () => {
     assert.equal(r.planned, false)
   })
 
+  // A space THEN a tab, which CommonMark also reads as an indented block: a tab advances to the
+  // next multiple-of-four column, so up to three spaces before it still lands there. Matching the
+  // shape rather than the columns missed every mixed form — the same refusal one space earlier, and
+  // the same defect the bare-tab fix was written for.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan
+        ? 'The sandbox rejected the call.\nThe instructions want:\n\n \tPLAN: READY\n\nbut there is no basis.'
+        : 'The sandbox blocked my file reads, so I have no view of src/a.rs.\nThe form asks for:\n\n   \tOUTCOME: accept\n\nbut I cannot say that.')
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    const r = record(dir)
+    assert.deepEqual(r.notRun, ['f1'], 'a mixed-indent quotation is a quotation too')
+    assert.equal(r.planned, false)
+  })
+
   // The unterminated-fence TAIL arm carries the same guard and had no falsifier of its own: the
   // fixtures above contain no fence, so they never reach it, and it is the copy a future reader
   // deletes as dead defence — which is exactly what happened to the main arm one commit ago.
