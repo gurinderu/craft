@@ -194,6 +194,11 @@ test('a session that says it could not do the work is not answering, however it 
     "I can't run any of the checks.\n\nVERDICT: APPROVE",
     'I can\u2019t run any of the tools in this sandbox.\n\nVERDICT: APPROVE',
     'I couldn\u2019t run anything here.\n\nVERDICT: APPROVE',
+    // A line wrapped at eighty columns. Every clause joined its words with `[ \t]`, so this walked
+    // past all of them — the fourth spelling seam in as many rounds, and likelier in real output
+    // than the three before it. The text is normalised now instead of the vocabulary widened again.
+    'I cannot run\nany of the tools in this sandbox.\n\nVERDICT: APPROVE',
+    'I cannot run\u00a0any of the tools.\n\nVERDICT: APPROVE',
     'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
@@ -332,6 +337,12 @@ test('prose about the CODE does not read as the session declining', async () => 
     // What a clean review says at the end, and what a docs-only diff honestly reports.
     'No issues found in the diff. Nothing to report.\n\nVERDICT: APPROVE',
     'The diff touches only docs, so no scans were run.\n\nVERDICT: APPROVE',
+    // The mandated partial note takes `any` naturally, so the required object was never the
+    // discriminator the comment claimed; and an authorization finding is the commonest shape there
+    // is. Both were read as refusals.
+    'We could not access any dependency metadata, so licenses were unchecked.\n\nVERDICT: APPROVE',
+    'The delete endpoint does not have permission checks (api/routes.rs:88).\n\nVERDICT: APPROVE',
+    'we do not validate any input before deserializing.\n\nVERDICT: APPROVE',
     // The answer `opencode/agents/rust-miri.md` mandates for a crate with no unsafe code. Catching
     // it retried the dimension off the shared budget and then filed it INCOMPLETE, which worstOf
     // ranks below Block.

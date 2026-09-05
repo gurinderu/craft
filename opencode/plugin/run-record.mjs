@@ -89,8 +89,11 @@ const VERDICT_ROW =
 // reviewed code: a report about a codebase does not say "no checks were run" or "nothing to review".
 //
 // The ceiling this leaves is real and is not closable by vocabulary: a session that refuses in the
-// passive voice, or in another language, or with no prose at all, and then writes a conforming
-// `VERDICT: APPROVE`, is indistinguishable from an answer by text. What stands behind it is not this
+// passive voice, in a language other than English, or with no prose at all, and then writes a
+// conforming `VERDICT: APPROVE`, is indistinguishable from an answer by text. Also missed, and
+// conceded deliberately rather than chased: a first-person inability whose verb is not one of
+// run/perform/execute — "I can't read any of the files" — because widening that verb set is what
+// swept in the mandated partial note and ordinary findings prose. What stands behind it is not this
 // regex — it is thinner than that: worst-wins can only PROPAGATE a severity some dimension
 // supplied, so when every dimension refuses in a conceded shape it has nothing to propagate, and
 // `synthesized` is true because the synthesis did deliver. In that scenario — a total silent
@@ -98,39 +101,49 @@ const VERDICT_ROW =
 // to answer INCOMPLETE.
 const REFUSED = new RegExp(
   [
-    'no[ \\t]+(?:checks|tools|analysis|commands)[ \\t]+(?:were|was|could[ \\t]+be)[ \\t]+(?:run|performed|executed)',
-    'none[ \\t]+of[ \\t]+the[ \\t]+(?:tools|checks|commands)[ \\t]+(?:is|are|was|were)[ \\t]+(?:installed|available|run)',
-    'nothing[ \\t]+(?:was|could[ \\t]+be)[ \\t]+(?:checked|verified|analysed|analyzed|inspected|reviewed|examined|run|executed)',
-    'nothing[ \\t]+ran\\b',
-    'nothing[ \\t]+to[ \\t]+(?:review|plan|order|validate|judge|triage|consolidate|inspect)\\b',
-    // `[ \\t]*not`, not `[ \\t]+not`: the contracted spelling CANNOT is the commonest English form,
-    // and requiring a space between `can` and `not` let "I cannot run any of the tools in this
-    // sandbox." plus a conforming VERDICT: APPROVE be filed ran:true, verdict:Approve. Not the
-    // conceded ceiling — that names passive voice, another language, or no prose at all. Every
-    // `cannot` in the corpus happened to be caught by a different arm, so the one combination that
-    // breaks it appeared nowhere.
-    // The verb list may be wide here BECAUSE `any|anything` is required: "I could not check
-    // licenses" is the mandated partial note and has no such object, while "I can't read any of
-    // the files" is a validation that judged nothing.
-    '(?:I|we)[ \\t]+(?:cannot|can\'t|could[ \\t]*not|couldn\'t|did[ \\t]*not|didn\'t|do[ \\t]*not|don\'t)[ \\t]+(?:run|perform|execute|read|check|inspect|open|access|validate)[ \\t]+(?:any|anything)',
-    '(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*un(?:able)[ \\t]+to[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
-    '(?:I|we)[ \\t]+reviewed[ \\t]+nothing',
-    '(?:could|can)[ \\t]*not[ \\t]+be[ \\t]+(?:run|executed|performed)',
-    // `denied BY`, not `denied for`: "the access control check is denied for anonymous callers" is a
-    // finding about the code, and a wide denial clause read it as a refusal.
-    'permission[ \\t]+denied',
-    '(?:do|does|did)[ \\t]+not[ \\t]+have[ \\t]+permission',
-    'access[ \\t\\w]{0,40}?denied[ \\t]+by\\b',
+    // Whole-run statements. Nothing here can describe reviewed code: a report about a codebase does
+    // not say "no checks were run" or "nothing to review".
+    'no (?:checks|tools|analysis|commands) (?:were|was|could be) (?:run|performed|executed)',
+    'none of the (?:tools|checks|commands) (?:is|are|was|were) (?:installed|available|run)',
+    'nothing (?:was|could be) (?:checked|verified|analysed|analyzed|inspected|reviewed|examined|run|executed)',
+    'nothing ran\\b',
+    'nothing to (?:review|plan|order|validate|judge|triage|consolidate|inspect)\\b',
+    '(?:could|can) ?not be (?:run|executed|performed)',
+    // First person, and the verb set is TOOLS-only. It was widened to `read|check|inspect|open|
+    // access|validate` on the theory that a required `any|anything` object kept it off findings and
+    // off mandated notes. Both halves of that were false: "We could not access any dependency
+    // metadata, so licenses were unchecked" is the mandated partial note and takes `any` naturally,
+    // and "we do not validate any input before deserializing" is a FINDING — which on the triage
+    // paths, where this predicate is consulted unconditionally, excluded a correctly validated
+    // Critical from the plan. What it costs to narrow back: "I can't read any of the files" is
+    // missed. Discarding paid work on ordinary review prose is the more expensive error.
+    '(?:I|we) (?:cannot|can\'t|could ?not|couldn\'t|did ?not|didn\'t|do ?not|don\'t|(?:was |were |am |are )?(?:un(?:able)|not able) to) (?:run|perform|execute) (?:any|anything)',
+    '(?:I|we) reviewed nothing',
+    // Anchored on the SESSION. Unanchored, `does not have permission` read the commonest
+    // authorization finding there is — "the delete endpoint does not have permission checks
+    // (api/routes.rs:88)" — as a refusal, and threw away a finished plan with forty paid
+    // validations behind it. Same rule the `denied by` / `denied for` split already states one line
+    // down; these two arms simply never got it.
+    '(?:I|we) (?:do|did|does) not have permission',
+    '(?:I|we) (?:was |were |am |are )?denied permission',
+    'permission denied(?: when| while|[.,;:]|$)',
+    'access[ \\w]{0,40}?denied by\\b',
   ].join('|'),
   'i',
 )
 
-// A model writes `can’t` as often as `can't`. Spelling every clause twice is how the last two
-// rounds' defects were built — `cannot` was missed because the alternation produced `cann't`, and a
-// unicode apostrophe defeated every contraction arm at once. So the text is normalised before the
-// refusal test rather than the vocabulary being widened again.
+// Normalise, do not enumerate. Three refutations in three rounds came from the same place — a
+// spelling the vocabulary did not list: `cannot` (the clause demanded a space), `can't` (the fix's
+// own alternation produced `cann't`), then the unicode apostrophe. The fourth was the whitespace
+// class: every clause joined its words with `[ \t]`, so a line wrapped at eighty columns — "I cannot
+// run\nany of the tools" — walked past all of them, and so did U+00A0 and U+202F. Both are more
+// likely in real output than any of the three already fixed. So the TEXT is made uniform here and
+// the clauses above are written in plain words: one place to get right, instead of one alternation
+// per spelling forever.
 function plain(text) {
-  return String(text ?? '').replace(/[\u2018\u2019\u02bc]/g, "'")
+  return String(text ?? '')
+    .replace(/[\u2018\u2019\u02bc]/g, "'")
+    .replace(/\s+/g, ' ')
 }
 
 export function hasVerdictLine(text) {
