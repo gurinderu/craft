@@ -345,3 +345,29 @@ test('the default keeps every existing caller honest', () => {
   const r = buildAuditRecord({ results, baseRef: '', hasUnsafe: false, synthesisText: 'VERDICT: WARNING' })
   assert.equal(r.verdict, 'Warning')
 })
+
+
+test('an unconsolidated audit is partial in the record, at every severity', async () => {
+  // Not only when every dimension approved. `worstOf` lifts the all-Approve case to INCOMPLETE by
+  // accident, so the two tests covering this passed whether or not the property held — an
+  // unconsolidated Warning run was byte-identical to a consolidated one, and the reader was shown
+  // the "not consolidated" banner while the store said Warning.
+  const { buildAuditRecord } = await import('./run-record.mjs')
+  for (const token of ['WARNING', 'BLOCK']) {
+    const r = buildAuditRecord({
+      results: [
+        { label: 'a', ok: true, text: `VERDICT: ${token}` },
+        { label: 'b', ok: true, text: `VERDICT: ${token}` },
+      ],
+      synthesisText: 'raw blob',
+      synthesized: false,
+    })
+    assert.match(r.verdict, /INCOMPLETE/, `an unconsolidated ${token} run is partial`)
+  }
+  const whole = buildAuditRecord({
+    results: [{ label: 'a', ok: true, text: 'VERDICT: WARNING' }],
+    synthesisText: 'consolidated\n\nVERDICT: WARNING',
+    synthesized: true,
+  })
+  assert.equal(whole.verdict, 'Warning', 'and a consolidated one is not')
+})

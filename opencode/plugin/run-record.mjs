@@ -78,25 +78,33 @@ const VERDICT_ROW =
 // is often the FINDING: "I could not open that file — the PR deletes it. Stale finding. OUTCOME:
 // reject", and "the crate cannot compile without this" inside a finished plan.
 //
+// Three wordings were trimmed after they caught mandated notes in a second phrasing: `scans` (a
+// docs-only diff honestly reports "no scans were run" and still approves), `nothing to report` (what
+// a clean review says), and `could not be found` ("cargo-deny could not be found on PATH, so
+// licenses were not checked" is the same partial note as "is not installed").
+//
 // So only a stated TOTAL non-execution counts, plus a denial of access. Nothing here can describe
 // reviewed code: a report about a codebase does not say "no checks were run" or "nothing to review".
 //
 // The ceiling this leaves is real and is not closable by vocabulary: a session that refuses in the
 // passive voice, or in another language, or with no prose at all, and then writes a conforming
 // `VERDICT: APPROVE`, is indistinguishable from an answer by text. What stands behind it is not this
-// regex — it is worst-wins over dimensions, `synthesized` in the record, and the prompts, which tell
-// a refusing agent to answer INCOMPLETE.
+// regex — it is thinner than that: worst-wins can only PROPAGATE a severity some dimension
+// supplied, so when every dimension refuses in a conceded shape it has nothing to propagate, and
+// `synthesized` is true because the synthesis did deliver. In that scenario — a total silent
+// approval, not a partially caught one — what remains is the prompts, which tell a refusing agent
+// to answer INCOMPLETE.
 const REFUSED = new RegExp(
   [
-    'no[ \\t]+(?:checks|tools|analysis|scans|commands)[ \\t]+(?:were|was|could[ \\t]+be)[ \\t]+(?:run|performed|executed)',
+    'no[ \\t]+(?:checks|tools|analysis|commands)[ \\t]+(?:were|was|could[ \\t]+be)[ \\t]+(?:run|performed|executed)',
     'none[ \\t]+of[ \\t]+the[ \\t]+(?:tools|checks|commands)[ \\t]+(?:is|are|was|were)[ \\t]+(?:installed|available|run)',
     'nothing[ \\t]+(?:was|could[ \\t]+be)[ \\t]+(?:checked|verified|analysed|analyzed|inspected|reviewed|examined|run|executed)',
     'nothing[ \\t]+ran\\b',
-    'nothing[ \\t]+to[ \\t]+(?:review|report|check|plan|order|validate|judge|triage|consolidate|inspect)\\b',
+    'nothing[ \\t]+to[ \\t]+(?:review|plan|order|validate|judge|triage|consolidate|inspect)\\b',
     '(?:I|we)[ \\t]+(?:could|did|can|do)(?:n\'t|[ \\t]+not)[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*un(?:able)[ \\t]+to[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+reviewed[ \\t]+nothing',
-    '(?:could|can)[ \\t]*not[ \\t]+be[ \\t]+(?:run|executed|performed|found)',
+    '(?:could|can)[ \\t]*not[ \\t]+be[ \\t]+(?:run|executed|performed)',
     // `denied BY`, not `denied for`: "the access control check is denied for anonymous callers" is a
     // finding about the code, and a wide denial clause read it as a refusal.
     'permission[ \\t]+denied',
@@ -355,7 +363,12 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
   // already reads (`/INCOMPLETE/i` over the verdict string, severity-first bucketing), so emitting
   // `Warning (INCOMPLETE)` keeps both readers working: the severity is still the severity, and the
   // run is still counted as partial coverage.
-  const partial = incomplete.length > 0 || notRun.length > 0
+  // `!synthesized` belongs here, and its absence made the record disagree with the reader for every
+  // audit worse than clean: an unconsolidated Warning run was byte-identical to a consolidated one,
+  // because worst-wins only lifts the all-Approve case to INCOMPLETE by accident. The reader saw the
+  // banner, the store said Warning. This also makes the fact reachable — every reader of the store
+  // reads `verdict`, and none of them reads `synthesized`.
+  const partial = incomplete.length > 0 || notRun.length > 0 || !synthesized
   const verdict = partial && !/INCOMPLETE/.test(worst) ? `${worst} (INCOMPLETE)` : worst
   return {
     schemaVersion: 1,
