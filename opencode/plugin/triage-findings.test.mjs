@@ -215,6 +215,11 @@ test('a plan is not accepted from a refusal that quotes its own instructions', a
     const plan = prompts.find(t => /ordered fix plan/i.test(t)) ?? ''
     assert.ok(plan, 'the planner was prompted at all')
     assert.ok(!/PLAN:\s*READY/.test(plan), 'and its prompt never spells the terminal line out')
+    // Nor shows it in backticks. The marker rejects a backticked line as a quotation — which is
+    // right — but the prompt was DISPLAYING the backticked form, so a planner echoing the shape it
+    // was shown had its finished plan filed not-run, discarding up to forty paid validations. The
+    // audit prompt has no such mismatch: its verdict pattern accepts backticks.
+    assert.ok(!/`PLAN: X`/.test(plan), 'and does not display a form the marker refuses')
     assert.match(out, /INCOMPLETE \(not run\) — the fix plan was not produced/)
     assert.equal(record(dir).planned, false)
   })
@@ -462,6 +467,20 @@ test('a marker in a table row is the session\'s own line', async () => {
     const r = record(dir)
     assert.deepEqual(r.notRun, [], 'a validation answering in a table row has answered')
     assert.equal(r.planned, true, 'and so has a plan')
+  })
+})
+
+test('a ledger cell that opens with the phrase is a finding, not a refusal', async () => {
+  // The deliverable this path produces is a ledger table, and authz findings are exactly the ones
+  // phrased this way. The table arm matched at CELL START, so one such row discarded the whole plan
+  // — up to forty paid validations. The phrase must be the whole cell.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan
+        ? '| f3 | accept | permission denied is returned before the ownership check |\n\nPLAN: READY'
+        : 'checked\n\nOUTCOME: accept')
+    await runTriageFindings(ctx, { locator: '- Critical: api/routes.rs:88 missing authz' })
+    assert.equal(record(dir).planned, true, 'a finding in a ledger cell is not a refusal')
   })
 })
 
