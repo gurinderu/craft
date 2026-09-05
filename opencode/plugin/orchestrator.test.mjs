@@ -234,6 +234,11 @@ test('a session that says it could not do the work is not answering, however it 
     '**Permission denied**\n\nVERDICT: APPROVE',
     '- Permission denied\n\nVERDICT: APPROVE',
     '| tool | Permission denied |\n\nVERDICT: APPROVE',
+    // A row WITHOUT the trailing pipe, which GitHub-flavoured markdown allows and models omit. The
+    // whole-cell lookahead was `(?=\\||$)` in a regex with no `m` flag, so `$` meant end of document
+    // — the start anchor spells `(?:^|\\n)` for exactly that reason and the end anchor did not.
+    '| security | permission denied\n\nVERDICT: APPROVE',
+    '| security | permission denied\n| deps | ok |\n\nVERDICT: APPROVE',
     '> Permission denied\n\nVERDICT: APPROVE',
     'Attempting cargo audit\nPermission denied\n\nVERDICT: APPROVE',
     'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
