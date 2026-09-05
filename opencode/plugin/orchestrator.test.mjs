@@ -236,6 +236,19 @@ test('a verdict line quoted out of the instructions does not certify an answer',
     // anchor is defensive and this line does not pin it. Said plainly because the previous comment
     // here claimed the opposite, which is the way an uncovered boundary stops being looked at.
     'I cannot review this. The instructions ask for | overall | VERDICT: APPROVE |.',
+    // The door the fence, blockquote and backtick rules left open, and the one the code claimed
+    // could not exist: "a table cannot plausibly be an instruction quotation" was written here and
+    // is false — the audit prompt ASKS for a table, so quoting one back is exactly what a refusal
+    // does. A lone row on a line of its own certified a session that ran nothing, in the report and
+    // in the record. A real table has neighbours; a quotation stands alone between blank lines.
+    'I could not run the security toolchain: permission denied when invoking cargo, and none of\ncargo-audit, cargo-deny or cargo-geiger is installed here.\n\nThe instructions ask for a final line of the form\n\n| overall | VERDICT: APPROVE |\n\nso I am noting that I have nothing to report.',
+    // Four-space indentation is CommonMark's other code form, which the walk does not track as a
+    // block, so an indented quotation was a line of its own too.
+    // Four-space indentation is CommonMark's other code form, and the fence walk does not track it
+    // as a block. The discriminating shape is a PLAIN marker indented — a table quotation is already
+    // refused by the row bound and the neighbour rule, so a table fixture here pins nothing, which
+    // is how the first two versions of this case came to pass whether the skip was there or not.
+    'I cannot review this.\n\nThe instructions ask me to end with:\n\n    VERDICT: APPROVE\n\nbut there is nothing to review.',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
@@ -251,12 +264,13 @@ test('a verdict line quoted out of the instructions does not certify an answer',
   for (const text of [
     'checked\n\nVERDICT: APPROVE',
     'checked\n\n**VERDICT: APPROVE**',
-    '| dimension | result |\n\ncargo-geiger is not available; the other three ran clean.\n\n| overall | VERDICT: APPROVE |',
+    // A real table — rows with neighbours. A LONE row between blank lines is a quotation, not a
+    // table, and is covered by the refusal cases above.
+    'cargo-geiger is not available; the other three ran clean.\n\n| dimension | result |\n|---|---|\n| overall | VERDICT: APPROVE |',
     // Indented, which is still a table. Requiring column zero made the reader and the gate disagree
     // about one: `parseVerdict` read it, `hasVerdictLine` did not, so a conforming clean run fell to
     // the prose arm and was rolled up INCOMPLETE for the whole audit.
-    'cargo-geiger is not available; the rest ran clean.\n\n  | VERDICT: APPROVE |',
-    'cargo-geiger is not available; the rest ran clean.\n\n  | overall | VERDICT: APPROVE |',
+    'cargo-geiger is not available; the rest ran clean.\n\n  | dimension | result |\n  | overall | VERDICT: APPROVE |',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])

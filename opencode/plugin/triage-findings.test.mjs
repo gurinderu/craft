@@ -232,6 +232,8 @@ test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy 
     // quotes an instruction, and is what the whole-line rule newly admitted until the decoration
     // class stopped swallowing `>` and backticks and fenced blocks were skipped.
     'I cannot plan these.\n\n> PLAN: READY\n\nThere is nothing here to order.',
+    // Same door, same shape: a lone table row is a quotation, not a table.
+    'I am unable to build a plan.\n\nThe instructions want:\n\n| PLAN: READY |\n\nbut there is nothing to order.',
     'I cannot plan these. The instruction was:\n\n```\nPLAN: READY\n```\n\nBut there is nothing to order.',
   ]) {
     await withStore(async dir => {
@@ -373,7 +375,8 @@ test('a validation that refuses while quoting the outcome line has not validated
   // twice to exclude. So a validation that could not read the file and quoted its instructions was
   // filed as having validated, and the finding reached the plan carrying a refusal as its reasoning.
   await withStore(async dir => {
-    const refusal = 'I could not read src/a.rs, so I have nothing to validate.\nThe instructions ask for:\n```\nOUTCOME: accept\n```'
+    const refusal =
+      'I could not read src/a.rs, so I have nothing to validate.\n\nThe form asked for:\n\n| OUTCOME: accept | reason |\n\nbut there is nothing to judge.'
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : refusal))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.deepEqual(record(dir).notRun, ['f1'], 'the refusal is filed as not-run')
