@@ -199,6 +199,18 @@ test('a session that says it could not do the work is not answering, however it 
     // than the three before it. The text is normalised now instead of the vocabulary widened again.
     'I cannot run\nany of the tools in this sandbox.\n\nVERDICT: APPROVE',
     'I cannot run\u00a0any of the tools.\n\nVERDICT: APPROVE',
+    // A stray severity word far from the end. `verdictEvidence` is entirely line-structured — the
+    // structural arms are `^`-anchored and the keyword fallback reads a twenty-LINE tail — so
+    // handing it the flattened text left it one line, and any `Block`/`warning:` anywhere routed the
+    // evidence to the keyword arm, where the refusal test is never consulted. The gate reads raw
+    // text now; only the refusal test sees the flattened one.
+    'The sandbox Block on egress.\n' + 'x\n'.repeat(40) + 'I cannot run any of the tools.\n\nVERDICT: APPROVE',
+    // Contractions the clauses spelled only in expanded form: `I'm` and `don't` are the commonest
+    // first-person shapes a model writes. Expanded in `plain()` rather than added as a sixth
+    // alternation — that habit is what built the four seams before this one.
+    "I'm unable to run any commands.\n\nVERDICT: APPROVE",
+    "we're unable to run any tools.\n\nVERDICT: APPROVE",
+    "I don't have permission to run the tools.\n\nVERDICT: APPROVE",
     'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
