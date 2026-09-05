@@ -181,6 +181,11 @@ test('a session that says it could not do the work is not answering, however it 
     'Permission denied when invoking cargo.\n\nVerdict: Approve',
     'Cargo is not available in this environment; no checks were run.\n\nVerdict: Approve',
     'The Rust toolchain could not be found in this environment; nothing was inspected.\n\nVerdict: Approve',
+    // CANNOT, contracted — the commonest English form, and the one combination the corpus never had:
+    // every other `cannot` in these tests is caught by a different arm, so requiring a space between
+    // `can` and `not` went unnoticed while a denied session signed off clean.
+    'I cannot run any of the tools in this sandbox.\n\nVERDICT: APPROVE',
+    'We cannot perform any checks here.\n\nVERDICT: APPROVE',
     'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })

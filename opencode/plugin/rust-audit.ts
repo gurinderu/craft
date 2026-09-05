@@ -157,6 +157,9 @@ ${blob}${VERDICT_RULE}`
   // already carries `synthesized`, so an echo cannot produce a false approval in the store, and the
   // text a reader sees on a caught echo embeds the same blob the echo would have shown. Five rounds
   // of refinement on a guard whose threshold no falsifier could reach is its own verdict.
+  // The catch is belt-and-braces and unreachable today: `tryOne` already catches everything
+  // `runAgent` can throw, and `notRunNote` cannot throw. Kept so a future throw kills one step
+  // rather than the whole audit; no falsifier reaches it, and it is not claimed as covered.
   const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine, undefined, "VERDICT: line").catch(
     (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),
   )

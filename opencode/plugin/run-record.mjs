@@ -78,7 +78,7 @@ const VERDICT_ROW =
 // is often the FINDING: "I could not open that file — the PR deletes it. Stale finding. OUTCOME:
 // reject", and "the crate cannot compile without this" inside a finished plan.
 //
-// Three wordings were trimmed after they caught mandated notes in a second phrasing: `scans` (a
+// Four wordings were trimmed after they caught mandated notes in a second phrasing: `scans` (a
 // docs-only diff honestly reports "no scans were run" and still approves), `nothing to report` (what
 // a clean review says), `could not be found` ("cargo-deny could not be found on PATH, so licenses
 // were not checked" is the same partial note as "is not installed"), and `nothing to check` — which
@@ -103,7 +103,13 @@ const REFUSED = new RegExp(
     'nothing[ \\t]+(?:was|could[ \\t]+be)[ \\t]+(?:checked|verified|analysed|analyzed|inspected|reviewed|examined|run|executed)',
     'nothing[ \\t]+ran\\b',
     'nothing[ \\t]+to[ \\t]+(?:review|plan|order|validate|judge|triage|consolidate|inspect)\\b',
-    '(?:I|we)[ \\t]+(?:could|did|can|do)(?:n\'t|[ \\t]+not)[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
+    // `[ \\t]*not`, not `[ \\t]+not`: the contracted spelling CANNOT is the commonest English form,
+    // and requiring a space between `can` and `not` let "I cannot run any of the tools in this
+    // sandbox." plus a conforming VERDICT: APPROVE be filed ran:true, verdict:Approve. Not the
+    // conceded ceiling — that names passive voice, another language, or no prose at all. Every
+    // `cannot` in the corpus happened to be caught by a different arm, so the one combination that
+    // breaks it appeared nowhere.
+    '(?:I|we)[ \\t]+(?:could|did|can|do)(?:n\'t|[ \\t]*not)[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*un(?:able)[ \\t]+to[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+reviewed[ \\t]+nothing',
     '(?:could|can)[ \\t]*not[ \\t]+be[ \\t]+(?:run|executed|performed)',
