@@ -153,8 +153,10 @@ Below is each finding with its validation outcome. Build:
 2. An **ordered fix plan** containing ONLY the \`accept\`ed findings, sequenced so prerequisites come first, each as a short task with file:line and the fix direction.
 3. A short **open questions** list for any \`needs-decision\` / \`conflict\` items.
 
-FINALLY, after everything else, end with ONE line on its own, in exactly this form: \`PLAN: X\` —
-where X is the single uppercase word READY. Nothing after it. Written as a placeholder on purpose:
+FINALLY, after everything else, end with ONE line on its own, in exactly this form — PLAN: X —
+where X is the single uppercase word READY. Nothing after it, and no backticks or quotes around
+it: the line is read as the session's own, and a decorated copy reads as a quotation of these
+instructions rather than an answer to them. Written as a placeholder on purpose:
 the literal final line must not appear anywhere in these instructions, or quoting them back would
 count as having produced a plan. It is machine-read: it is how the caller tells a finished plan from
 a preamble or a refusal.
