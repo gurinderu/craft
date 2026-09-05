@@ -117,7 +117,7 @@ const REFUSED = new RegExp(
     // paths, where this predicate is consulted unconditionally, excluded a correctly validated
     // Critical from the plan. What it costs to narrow back: "I can't read any of the files" is
     // missed. Discarding paid work on ordinary review prose is the more expensive error.
-    '(?:I|we) (?:cannot|can\'t|could ?not|couldn\'t|did ?not|didn\'t|do ?not|don\'t|(?:was |were |am |are )?(?:un(?:able)|not able) to) (?:run|perform|execute) (?:any|anything)',
+    '(?:I|we) (?:can ?not|could not|did not|do not|(?:was |were |am |are )?(?:unable|not able) to) (?:run|perform|execute) (?:any|anything)',
     '(?:I|we) reviewed nothing',
     // Anchored on the SESSION. Unanchored, `does not have permission` read the commonest
     // authorization finding there is — "the delete endpoint does not have permission checks
@@ -141,13 +141,33 @@ const REFUSED = new RegExp(
 // the clauses above are written in plain words: one place to get right, instead of one alternation
 // per spelling forever.
 function plain(text) {
-  return String(text ?? '')
-    .replace(/[\u2018\u2019\u02bc]/g, "'")
-    .replace(/\s+/g, ' ')
+  return (
+    String(text ?? '')
+      .replace(/[\u2018\u2019\u02bc]/g, "'")
+      // Contractions expand HERE, not in a sixth alternation. `I'm` and `don't` are the commonest
+      // first-person forms a model writes, and the clauses below carried `am|are` and `do not`
+      // without them — the fifth seam of the same class, after `cannot`, `can't`, U+2019 and the
+      // whitespace class. `can't`/`won't`/`shan't` are irregular and expand by name; the rest follow
+      // the `n't` rule.
+      .replace(/\bcan't\b/gi, 'can not')
+      .replace(/\bwon't\b/gi, 'will not')
+      .replace(/\bshan't\b/gi, 'shall not')
+      .replace(/n't\b/gi, ' not')
+      .replace(/\b([iI])'m\b/g, '$1 am')
+      .replace(/\b(\w+)'re\b/gi, '$1 are')
+      .replace(/\s+/g, ' ')
+  )
 }
 
 export function hasVerdictLine(text) {
-  const t = plain(text)
+  // RAW for the evidence, flattened only for the refusal test. `verdictEvidence` is entirely
+  // line-structured — `VERDICT_LINE`/`VERDICT_ROW` are `^`-anchored and the keyword fallback reads a
+  // twenty-LINE tail — so handing it collapsed text left it with one line: the structural arms could
+  // only match at offset zero, and the tail window became the whole document. A stray `Block` or
+  // `warning:` anywhere in a refusal then routed the evidence to the keyword arm, where REFUSED is
+  // never consulted, and the refusal was filed as an Approve. Same split the two markers below
+  // already use.
+  const t = String(text ?? '')
   const e = verdictEvidence(t)
   if (e === null) return false
   // Reported Block stands whatever else the text says: reading a finding as a refusal files a
@@ -157,7 +177,7 @@ export function hasVerdictLine(text) {
   if (e.by === 'keyword') return false
   // A claimed APPROVE is a claim about what was not found, and it holds only over what was looked
   // at. Everything else — Warning, INCOMPLETE — is an agent reporting a limit, which is honest.
-  if (e.verdict === 'Approve') return !REFUSED.test(t)
+  if (e.verdict === 'Approve') return !REFUSED.test(plain(t))
   return true
 }
 
