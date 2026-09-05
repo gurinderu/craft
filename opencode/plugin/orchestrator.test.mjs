@@ -650,7 +650,9 @@ test('a job left over when the budget is spent is not attempted, and says so', a
   const jobs = Array.from({ length: 3 }, (_, i) => ({
     label: `d${i}`, agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 50,
   }))
-  const rs = await fanOut(ctx, jobs, 60)
+  // 60ms against three 50ms jobs left ~10ms of slack and flaked once in twenty runs; the sibling
+  // test above was widened for the same reason and this one was left.
+  const rs = await fanOut(ctx, jobs, 90)
   const skipped = rs.filter(r => /retry budget for this run was already spent/.test(r.text))
   assert.ok(skipped.length >= 1, 'at least one job is honestly reported as never retried')
 })
