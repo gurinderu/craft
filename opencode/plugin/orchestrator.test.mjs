@@ -186,6 +186,14 @@ test('a session that says it could not do the work is not answering, however it 
     // `can` and `not` went unnoticed while a denied session signed off clean.
     'I cannot run any of the tools in this sandbox.\n\nVERDICT: APPROVE',
     'We cannot perform any checks here.\n\nVERDICT: APPROVE',
+    // `can't`, which the previous fix's own alternation could not produce — it spelled `can` + `n't`
+    // as `cann't`. And the unicode right single quote, which models emit routinely and which
+    // defeated EVERY contraction arm at once. Neither is the conceded ceiling: both are English,
+    // active voice, first person, in prose. The text is normalised now rather than the vocabulary
+    // widened a third time.
+    "I can't run any of the checks.\n\nVERDICT: APPROVE",
+    'I can\u2019t run any of the tools in this sandbox.\n\nVERDICT: APPROVE',
+    'I couldn\u2019t run anything here.\n\nVERDICT: APPROVE',
     'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })

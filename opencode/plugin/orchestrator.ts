@@ -28,8 +28,10 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | { __timeout: tru
   })
 }
 
-// Spawn one child session bound to a hidden agent and return its final text.
-export async function runAgent(ctx: PluginCtx, agentName: string, prompt: string): Promise<string> {
+// Spawn one child session bound to a hidden agent and return its final text. NOT exported: both
+// callers moved to runAnswering/fanOut, and an exported un-gated spawn is exactly the bypass this
+// file closes everywhere else — the next caller would get no predicate and no deadline.
+async function runAgent(ctx: PluginCtx, agentName: string, prompt: string): Promise<string> {
   const session = await ctx.client.session.create({ body: { title: `craft:${agentName}` } })
   const path = { id: session.id ?? session.data?.id }
   const res = await ctx.client.session.prompt({
