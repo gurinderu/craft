@@ -319,6 +319,10 @@ test('prose about the CODE does not read as the session declining', async () => 
     // What a clean review says at the end, and what a docs-only diff honestly reports.
     'No issues found in the diff. Nothing to report.\n\nVERDICT: APPROVE',
     'The diff touches only docs, so no scans were run.\n\nVERDICT: APPROVE',
+    // The answer `opencode/agents/rust-miri.md` mandates for a crate with no unsafe code. Catching
+    // it retried the dimension off the shared budget and then filed it INCOMPLETE, which worstOf
+    // ranks below Block.
+    'This crate contains no unsafe code, so there is nothing to check.\n\nVERDICT: APPROVE',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
@@ -465,8 +469,15 @@ test('a single call is held to the same standard as a fan-out job', async () => 
   // authoritative text was the one path exempt from the rule the rest of this file is about. A
   // refusal from that session was non-empty, so it became the report AND was filed as a verdict.
   const refusing = fakeCtx({ '': 'I am not able to consolidate this audit because the results are unclear.' })
-  const bad = await runAnswering(refusing, '', 'p', hasVerdictLine)
+  const bad = await runAnswering(refusing, '', 'p', hasVerdictLine, undefined, 'VERDICT: line')
   assert.equal(bad.ok, false, 'prose without the mandated line is not a consolidation')
+  // The CAUSE, not only the fact. Replacing `r.why` with undefined in notRunNote's call left every
+  // test here green: three of them exercise three different causes and only one reads `.note`, and
+  // that one's assertion is satisfied by the fall-through wording too. So a refusing synthesis
+  // would have printed "produced no output on its single attempt" into the banner a human reads —
+  // directly contradicting the refusal text carried below it.
+  assert.match(bad.note, /without the VERDICT: line/, 'a refusal is named as an unanswered reply')
+  assert.ok(!/produced no output/.test(bad.note), 'and not as silence')
 
   const answering = fakeCtx({ '': 'the report\n\nVERDICT: WARNING' })
   const good = await runAnswering(answering, '', 'p', hasVerdictLine)
@@ -478,6 +489,8 @@ test('a single call carries a deadline, so a hung session cannot hang the run', 
   const ctx = fakeCtx({ '': () => new Promise(() => {}) })
   const r = await runAnswering(ctx, '', 'p', hasVerdictLine, 20)
   assert.equal(r.ok, false, 'it must give up rather than wait forever')
+  assert.match(r.note, /no result within 20 ms/, 'and the note names the deadline, not silence')
+  assert.ok(!/produced no output/.test(r.note), 'a timeout is not an empty reply')
 })
 
 test('the sequential retries share one budget instead of multiplying the deadline', async () => {
