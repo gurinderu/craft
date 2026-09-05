@@ -152,7 +152,13 @@ const REFUSED_LINE =
   new RegExp(
     [
       // opening a line, however the line is decorated — heading, bullet, blockquote, table cell
-      '(?:^|\\n)[ \\t>*_#-]*(?:[^\\n|]*\\|)*[ \\t*_]*permission denied',
+      '(?:^|\\n)[ \\t>*_#-]*permission denied',
+      // A TABLE ROW, anchored on the leading pipe. Without that anchor the cell prefix accepted any
+      // prose carrying a `|`, which contradicts the rule stated above: "REASON: the middleware chain
+      // `authz | permission denied` is inverted (mw.rs:44)" is a validation grounding itself in a
+      // log excerpt, and reading it as a refusal files the finding not-run and retries it off the
+      // shared budget.
+      '(?:^|\\n)[ \\t]{0,3}\\|(?:[^\\n|]*\\|)*[ \\t*_]*permission denied',
       // opening a sentence inside a line: "I could not run the toolchain: permission denied when …"
       '[.;:!?] permission denied',
       // quoted as a tool error
@@ -286,9 +292,6 @@ function markerLine(text, marker) {
       }
       continue
     }
-    // Four spaces or more is CommonMark's other code form, which this walk does not track as a block
-    // — so an indented quotation of the marker is not the session's own line either.
-    if (/^[ \t]{4,}/.test(lines[i])) continue
     if (openedWith === null && ownLine(lines[i], marker)) return true
   }
   // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
@@ -299,7 +302,7 @@ function markerLine(text, marker) {
   // work already paid for; accepting one quoted inside a block nobody closed costs a re-read.
   if (openedWith !== null) {
     const tail = lines.slice(openedAt + 1)
-    return tail.some((l) => !FENCE.test(l) && !/^[ \t]{4,}/.test(l) && ownLine(l, marker))
+    return tail.some((l) => !FENCE.test(l) && ownLine(l, marker))
   }
   return false
 }

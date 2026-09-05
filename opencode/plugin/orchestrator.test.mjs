@@ -550,6 +550,17 @@ test('a single call is held to the same standard as a fan-out job', async () => 
   assert.match(good.text, /VERDICT: WARNING/)
 })
 
+test('a sub-minute deadline is reported in seconds', async () => {
+  // The `seconds` branch of `span` had no falsifier — deleting it left the suite green, because both
+  // covering tests use millisecond deadlines. That is the same class the comment above it records
+  // having already shipped once: "within 0 minutes", asserted only by its prefix. Any deadline
+  // between one second and a minute rendered unverified.
+  const ctx = fakeCtx({ '': () => new Promise(() => {}) })
+  const r = await runAnswering(ctx, '', 'p', hasVerdictLine, 1500)
+  assert.equal(r.ok, false)
+  assert.match(r.note, /within 2 seconds/, 'seconds, not "0 minutes" and not raw milliseconds')
+})
+
 test('a single call carries a deadline, so a hung session cannot hang the run', async () => {
   const ctx = fakeCtx({ '': () => new Promise(() => {}) })
   const r = await runAnswering(ctx, '', 'p', hasVerdictLine, 20)
@@ -621,7 +632,11 @@ test('a retry clipped by the budget names the budget, not a deadline that exists
     { label: 'first', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 80 },
     { label: 'clipped', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 80 },
   ]
-  const rs = await fanOut(ctx, jobs, 100) // enough for the first retry, not for the second's full span
+  // 130ms against two 80ms jobs: the first retry spends 80, so ~50 remains — less than the second
+  // job's own deadline, which is what makes it CLIPPED, and comfortably above zero, which is what
+  // stops a scheduling stall flipping it to "already spent". The previous 100ms left 20ms of slack
+  // and could flake into the wrong branch.
+  const rs = await fanOut(ctx, jobs, 130)
   assert.match(rs[0].text, /may simply need longer than that deadline/, 'the unclipped one still says so')
   assert.match(rs[1].text, /all that was left of this run's shared retry budget/, 'the clipped one names the budget')
   assert.ok(

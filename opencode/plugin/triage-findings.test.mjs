@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { splitFindings, runTriageFindings } from './triage-findings.ts'
+import { splitFindings, runTriageFindings, VALIDATION_MS } from './triage-findings.ts'
 
 test('a bullet list is one finding per bullet', () => {
   const { findings, dropped, skipped } = splitFindings('- first thing\n- second thing\n* third thing')
@@ -385,6 +385,30 @@ test('a validation that refuses while quoting the outcome line has not validated
   })
 })
 
+test('a per-finding validation carries a line-sized deadline, not a build-sized one', async () => {
+  // The escape hatch this branch added, and the one thing about it no test could see: mutating the
+  // constant to twenty minutes left all 542 green. Forty validations inheriting the audit's
+  // build-sized deadline is the arithmetic that made the sequential retry unlivable in the first
+  // place — a hung one then costs twenty minutes instead of five, forty times over.
+  assert.equal(VALIDATION_MS, 5 * 60_000)
+  const src = readFileSync(new URL('./triage-findings.ts', import.meta.url), 'utf8')
+  assert.match(src, /timeoutMs: VALIDATION_MS/, 'and the jobs actually carry it')
+})
+
+test('a marker in a table row is the session\'s own line', async () => {
+  // `ownLine`'s table branch had no test on the marker paths: `hasVerdictLine` does not route
+  // through `markerLine`, so the audit's table fixtures never reached it, and there was no PLAN or
+  // OUTCOME row anywhere. Mutating the branch to `return false` left the suite green.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan ? '| step | note |\n| PLAN: READY | ordered |' : '| finding | outcome |\n| f1 | OUTCOME: accept |')
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    const r = record(dir)
+    assert.deepEqual(r.notRun, [], 'a validation answering in a table row has answered')
+    assert.equal(r.planned, true, 'and so has a plan')
+  })
+})
+
 test('ordinary review prose in a finished plan is not a refusal', async () => {
   // The structural gap behind three of this round's findings: on the triage paths `REFUSED` is
   // consulted UNCONDITIONALLY — not, as on the audit path, only under a claimed Approve — and every
@@ -395,7 +419,10 @@ test('ordinary review prose in a finished plan is not a refusal', async () => {
     const ctx = fakeCtx(({ isPlan }) =>
       isPlan
         ? '| f1 | accept | The delete endpoint does not have permission checks (api/routes.rs:88). |\n\nPLAN: READY'
-        : 'OUTCOME: accept — we do not validate any input before deserializing.')
+        // A log excerpt carrying a pipe. The permission arm's cell prefix was not anchored to a
+        // table, so any prose with a `|` before the phrase read as a refusal — the over-matching
+        // direction the file names as the expensive one.
+        : 'REASON: the middleware chain `authz | permission denied` is inverted (mw.rs:44).\n\nOUTCOME: accept')
     await runTriageFindings(ctx, { locator: '- Critical: api/routes.rs:88 missing authz' })
     const r = record(dir)
     assert.deepEqual(r.notRun, [], 'the validation stands')
