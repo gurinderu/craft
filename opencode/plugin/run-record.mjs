@@ -158,10 +158,15 @@ const REFUSED_LINE =
       // `authz | permission denied` is inverted (mw.rs:44)" is a validation grounding itself in a
       // log excerpt, and reading it as a refusal files the finding not-run and retries it off the
       // shared budget.
+      // `\\n` in the lookahead, not just `$`: this regex has no `m` flag — which is why its START
+      // spells `(?:^|\\n)` — so `$` alone meant end of DOCUMENT, and a row without a trailing pipe
+      // (optional in GitHub-flavoured markdown, and models omit it) was only caught when it happened
+      // to be the last line. The end anchor did not get the treatment the start anchor did.
+      //
       // The phrase must be the WHOLE cell, not merely open it: a triage ledger row like
       // `| f3 | accept | permission denied is returned before the ownership check |` is a FINDING,
       // and reading it as a refusal discards the very deliverable this path produces.
-      '(?:^|\\n)[ \\t]{0,3}\\|(?:[^\\n|]*\\|)*[ \\t*_]*permission denied[ \\t*_.]*(?=\\||$)',
+      '(?:^|\\n)[ \\t]{0,3}\\|(?:[^\\n|]*\\|)*[ \\t*_]*permission denied[ \\t*_.]*(?=\\||\\n|$)',
       // opening a sentence inside a line: "I could not run the toolchain: permission denied when …"
       '[.;:!?] permission denied',
       // quoted as a tool error
