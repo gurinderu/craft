@@ -178,12 +178,10 @@ test('a session that says it could not do the work is not answering, however it 
   // Five identical refusals, separated only by whether they used a pronoun — which is exactly what
   // the first-person rule keyed on, so four of them were filed ran:true, verdict:Approve.
   for (const text of [
-    'I am unable to run cargo in this sandbox.\n\nVerdict: Approve',
-    'Unable to run cargo in this sandbox.\n\nVerdict: Approve',
-    'We were unable to run cargo.\n\nVerdict: Approve',
     'Permission denied when invoking cargo.\n\nVerdict: Approve',
     'Cargo is not available in this environment; no checks were run.\n\nVerdict: Approve',
-    "I can't reach the network, so dependencies were not checked.\n\nOverall rating: Clean",
+    'The Rust toolchain could not be found in this environment; nothing was inspected.\n\nVerdict: Approve',
+    'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
@@ -219,7 +217,7 @@ test('a session that says it could not do the work is not answering, however it 
   }
 })
 
-test('a verdict line quoted out of the instructions does not certify an answer', async () => {
+test('quoting the instructions is not answering them', async () => {
   // The one marker the anti-echo rule never reached. `hasPlanMarkerLine` and `hasOutcomeLine` were
   // each hardened twice against exactly these three shapes — a fence, a blockquote, an inline tick —
   // and the verdict marker, which is the most authoritative of the three, kept them. A sandboxed
@@ -229,13 +227,13 @@ test('a verdict line quoted out of the instructions does not certify an answer',
   // or quote its verdict; only the liveness gate is strict.
   for (const text of [
     'I cannot review this repo. The instructions ask me to end with:\n```\nVERDICT: APPROVE\n```\nbut there is nothing to review.',
-    'I am unable to review this.\n\n> VERDICT: APPROVE',
-    'I cannot review this.\n\n`VERDICT: APPROVE`',
+    'There is nothing to review in this workspace.\n\n> VERDICT: APPROVE',
+    'There is nothing to review in this workspace.\n\n`VERDICT: APPROVE`',
     // Prose that merely CARRIES a pipe is not a table row. This case is caught by the refusal
     // vocabulary, not by the row anchor — stripping `^\|` from VERDICT_ROW leaves it green, so the
     // anchor is defensive and this line does not pin it. Said plainly because the previous comment
     // here claimed the opposite, which is the way an uncovered boundary stops being looked at.
-    'I cannot review this. The instructions ask for | overall | VERDICT: APPROVE |.',
+    'There is nothing to review here. The instructions ask for | overall | VERDICT: APPROVE |.',
     // A quoted table. "A table cannot plausibly be an instruction quotation" was once written into
     // the code as a reason, and it is false — the audit prompt ASKS for a table. What refuses this
     // is the refusal itself, not the shape.
@@ -307,6 +305,14 @@ test('prose about the CODE does not read as the session declining', async () => 
   for (const text of [
     'Note: no tests were run for the new module in CI, but coverage elsewhere is fine.\n\nVERDICT: APPROVE',
     'The fallback path did not execute anything when the queue drained; that is intended.\n\nVERDICT: APPROVE',
+    // `denied BY` is a sandbox refusing the session; `denied FOR` is what the reviewed code does.
+    // A denial clause matching the bare word read this finding as a refusal.
+    'The access control check is denied for anonymous callers, which is correct.\n\nVERDICT: APPROVE',
+    // The mandated partial note. `rust-audit.ts` tells every dimension to skip an absent tool WITH
+    // A NOTE, and the natural note is first person — so an inability clause keyed on a work verb
+    // retried all ten dimensions on the shared budget and filed ten successful runs as not-run.
+    'cargo-audit ran clean over 214 crates. cargo-deny is not installed, so I could not check licenses.\n\nVERDICT: APPROVE',
+    'cargo llvm-cov is absent so I did not run coverage, but doctests all pass.\n\nVERDICT: APPROVE',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
@@ -326,7 +332,7 @@ test('no markdown shape lets a refusal certify itself', async () => {
     'Permission denied when invoking cargo, so I did not inspect the workspace.\n\nThe required output format is:\n\n| dimension | verdict |\n| overall | VERDICT: APPROVE |',
     'Permission denied.\n\n# VERDICT: APPROVE',
     'Permission denied.\n\n<details><summary>format</summary>\nVERDICT: APPROVE\n</details>',
-    'I could not read the workspace.\n\n    VERDICT: APPROVE',
+    'I have nothing to review here.\n\n    VERDICT: APPROVE',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])

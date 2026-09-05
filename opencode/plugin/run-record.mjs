@@ -67,43 +67,41 @@ const VERDICT_ROW =
 // Approve is the fallthrough on purpose (a clean prose report carries no keyword at all), and that
 // is exactly the case a silent or refusing session also lands in — which is why the fallthrough,
 // and only the fallthrough, is what "did not answer" means.
-// A total non-execution, stated as such. Deliberately tiny and unambiguous: this is the only thing
-// besides an inability to do the work that is allowed to override an agent's own mandated verdict,
-// so anything that could describe the CODE — "no tests were run for the new module in CI" — must
-// stay out of it.
-const NOTHING_RAN = new RegExp(
+// A session saying it did NOTHING — the whole of the refusal test, and deliberately the whole of it.
+//
+// An earlier version also matched an inability followed by a work verb ("I could not inspect the
+// workspace"), and that was wrong in the direction this branch is most careful about. The audit
+// prompts MANDATE a partial note — "Skip any absent tool with a note", "Note any absent tools" — and
+// the natural note is first person: "cargo-audit ran clean over 214 crates. cargo-deny is not
+// installed, so I could not check licenses." Ten dimensions that all ran were retried on the shared
+// budget and then filed not-run. The same clause discarded correct triage work, where an inability
+// is often the FINDING: "I could not open that file — the PR deletes it. Stale finding. OUTCOME:
+// reject", and "the crate cannot compile without this" inside a finished plan.
+//
+// So only a stated TOTAL non-execution counts, plus a denial of access. Nothing here can describe
+// reviewed code: a report about a codebase does not say "no checks were run" or "nothing to review".
+//
+// The ceiling this leaves is real and is not closable by vocabulary: a session that refuses in the
+// passive voice, or in another language, or with no prose at all, and then writes a conforming
+// `VERDICT: APPROVE`, is indistinguishable from an answer by text. What stands behind it is not this
+// regex — it is worst-wins over dimensions, `synthesized` in the record, and the prompts, which tell
+// a refusing agent to answer INCOMPLETE.
+const REFUSED = new RegExp(
   [
     'no[ \\t]+(?:checks|tools|analysis|scans|commands)[ \\t]+(?:were|was|could[ \\t]+be)[ \\t]+(?:run|performed|executed)',
     'none[ \\t]+of[ \\t]+the[ \\t]+(?:tools|checks|commands)[ \\t]+(?:is|are|was|were)[ \\t]+(?:installed|available|run)',
-    'nothing[ \\t]+(?:was|could[ \\t]+be)[ \\t]+(?:checked|verified|analysed|analyzed|run|executed)',
+    'nothing[ \\t]+(?:was|could[ \\t]+be)[ \\t]+(?:checked|verified|analysed|analyzed|inspected|reviewed|examined|run|executed)',
     'nothing[ \\t]+ran\\b',
+    'nothing[ \\t]+to[ \\t]+(?:review|report|check|plan|order|validate|judge|triage|consolidate|inspect)\\b',
     '(?:I|we)[ \\t]+(?:could|did|can|do)(?:n\'t|[ \\t]+not)[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
+    '(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*un(?:able)[ \\t]+to[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+reviewed[ \\t]+nothing',
-  ].join('|'),
-  'i',
-)
-
-// A session saying it could not do THE WORK — the one thing a refusal cannot avoid saying, in any
-// markdown shape. Three parts, each narrow for its own reason: a stated total non-execution; a
-// first-person inability followed by a WORK verb (so "I could not reproduce any failure" stays a
-// finding while "I could not inspect the workspace" is a refusal); and a permission denial, which
-// no clean report has occasion to write.
-const WORK = 'run|execute|inspect|review|analyse|analyze|check|scan|access|read|open|build|compile|validate|triage|reach|invoke|install|launch'
-const REFUSED = new RegExp(
-  [
-    NOTHING_RAN.source,
-    // The pronoun is optional: "Unable to run cargo in this sandbox." is the same refusal without
-    // it, and five identical refusals were once split by whether they used one. What keeps this off
-    // findings text is the WORK verb, not the subject.
-    // Two forms, and the pronoun is optional in only ONE of them. An explicit inability — "Unable
-    // to run cargo in this sandbox." — is a refusal whoever writes it, and five identical refusals
-    // were once split by whether they used a pronoun. But "did not / does not" reads naturally
-    // about the CODE ("the fallback path did not execute anything when the queue drained"), so that
-    // form keeps its subject. The WORK verb does the rest.
-    `\\b(?:(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*)?(?:un(?:able)[ \\t]+to|not[ \\t]+able[ \\t]+to|cannot|can't|could[ \\t]+not|couldn't|will[ \\t]+not|won't)[ \\t]+(?:${WORK})\\b`,
-    `\\b(?:I|we)[ \\t]+(?:did[ \\t]+not|didn't|do[ \\t]+not|don't)[ \\t]+(?:${WORK})\\b`,
-    '\\bpermission[ \\t]+denied\\b',
-    '\\b(?:do|does|did)[ \\t]+not[ \\t]+have[ \\t]+permission\\b',
+    '(?:could|can)[ \\t]*not[ \\t]+be[ \\t]+(?:run|executed|performed|found)',
+    // `denied BY`, not `denied for`: "the access control check is denied for anonymous callers" is a
+    // finding about the code, and a wide denial clause read it as a refusal.
+    'permission[ \\t]+denied',
+    '(?:do|does|did)[ \\t]+not[ \\t]+have[ \\t]+permission',
+    'access[ \\t\\w]{0,40}?denied[ \\t]+by\\b',
   ].join('|'),
   'i',
 )
