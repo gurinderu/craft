@@ -126,15 +126,6 @@ const REFUSED = new RegExp(
     // down; these two arms simply never got it.
     '(?:I|we) (?:do|did|does) not have permission',
     '(?:I|we) (?:was |were |am |are )?denied permission',
-    // Anchored at a SENTENCE START, not by a trailing delimiter. The delimiter set was written for
-    // one text shape and evaluated against another — the sixth seam of that class — and its `$`
-    // alternative was dead on every path that reaches here: `REFUSED` is only consulted after a
-    // marker was found, so the refusal is never last, and `plain()` has already flattened the text,
-    // so no line anchor survives. "Permission denied" followed by a space was therefore a silent
-    // Approve, in the single most likely shape a refused tool invocation produces. Widening to `\\s`
-    // is not the fix: "the endpoint returns permission denied for anonymous users" is a FINDING, and
-    // reading it as a refusal discards a validated plan on the triage path.
-    '(?:^|[.;:!?] |\\) )permission denied',
     'access[ \\w]{0,40}?denied by\\b',
   ].join('|'),
   'i',
@@ -148,6 +139,41 @@ const REFUSED = new RegExp(
 // likely in real output than any of the three already fixed. So the TEXT is made uniform here and
 // the clauses above are written in plain words: one place to get right, instead of one alternation
 // per spelling forever.
+// A refusal that OPENS A LINE, however the line is decorated. This one arm is anchored, and the
+// anchor cannot live in the flattened text: `plain()` collapses newlines, so `^` there means byte
+// zero of the whole document — a heading, a bullet, a table cell, a bolded line, or simply a second
+// line of output all escaped it. The fix that closed the line-wrap seam is what killed this anchor,
+// which is the shape of every seam on this branch: each fix moved the text under the next rule.
+//
+// `(permission denied)` in parentheses is the other real rendering, and it is included by name. A
+// mid-line mention without parentheses stays out: "the endpoint returns permission denied for
+// anonymous users" is a FINDING, and reading it as a refusal discards a validated plan.
+const REFUSED_LINE =
+  new RegExp(
+    [
+      // opening a line, however the line is decorated — heading, bullet, blockquote, table cell
+      '(?:^|\\n)[ \\t>*_#-]*(?:[^\\n|]*\\|)*[ \\t*_]*permission denied',
+      // opening a sentence inside a line: "I could not run the toolchain: permission denied when …"
+      '[.;:!?] permission denied',
+      // quoted as a tool error
+      '\\(permission denied\\)',
+    ].join('|'),
+    'i',
+  )
+
+// THE VOCABULARY ABOVE IS FROZEN. Seven seams of one class were found in seven consecutive rounds,
+// three of them created by the fix for the round before. The set of English refusal phrasings is
+// unbounded, so each round buys a narrower slice at a rising risk of the opposite error — reading
+// ordinary findings prose as a refusal and discarding paid work. Extending it further is not the
+// way to close what remains; asking for positive evidence of work is. The honest next move is a
+// second mandated field (a `CHECKED:` line naming tools, files or commands) read alongside the
+// verdict, so that a claimed Approve with nothing checked is INCOMPLETE by construction rather than
+// by vocabulary. That moves the residue from "a phrasing we did not list" to "a deliberate
+// fabrication", and it would let this regex shrink rather than grow.
+
+// `norm` keeps line structure; `flat` does not. The unanchored arms need the flat text, because a
+// clause wrapped at eighty columns must still read as one sentence; the anchored arm needs the
+// lines, because that is what it anchors to.
 function plain(text) {
   return (
     String(text ?? '')
@@ -163,8 +189,14 @@ function plain(text) {
       .replace(/n't\b/gi, ' not')
       .replace(/\b([iI])'m\b/g, '$1 am')
       .replace(/\b(\w+)'re\b/gi, '$1 are')
-      .replace(/\s+/g, ' ')
+      .replace(/[^\S\n]+/g, ' ')
   )
+}
+
+// One entry point, so no caller has to remember which normalisation an arm needs.
+function refused(text) {
+  const norm = plain(text)
+  return REFUSED.test(norm.replace(/\n+/g, ' ')) || REFUSED_LINE.test(norm)
 }
 
 export function hasVerdictLine(text) {
@@ -185,7 +217,7 @@ export function hasVerdictLine(text) {
   if (e.by === 'keyword') return false
   // A claimed APPROVE is a claim about what was not found, and it holds only over what was looked
   // at. Everything else — Warning, INCOMPLETE — is an agent reporting a limit, which is honest.
-  if (e.verdict === 'Approve') return !REFUSED.test(plain(t))
+  if (e.verdict === 'Approve') return !refused(t)
   return true
 }
 
@@ -278,7 +310,7 @@ function markerLine(text, marker) {
 // discarded up to forty child sessions already paid for. An unterminated fence loses nothing here,
 // because the marker is looked for on every line the fence never closed over.
 export function hasPlanMarkerLine(text) {
-  return markerLine(text, PLAN_MARKER) && !REFUSED.test(plain(text))
+  return markerLine(text, PLAN_MARKER) && !refused(text)
 }
 
 
@@ -300,7 +332,7 @@ export function hasPlanMarkerLine(text) {
 const OUTCOME_LINE = /^[ \t*_#-]*OUTCOME:[ \t]*[*_]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/i
 
 export function hasOutcomeLine(text) {
-  return markerLine(text, OUTCOME_LINE) && !REFUSED.test(plain(text))
+  return markerLine(text, OUTCOME_LINE) && !refused(text)
 }
 
 // How much of the report the fallback scan is allowed to see.

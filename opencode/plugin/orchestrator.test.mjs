@@ -220,7 +220,22 @@ test('a session that says it could not do the work is not answering, however it 
     'Permission denied\n\nVERDICT: APPROVE',
     'Permission denied\nI stopped there.\n\nVERDICT: APPROVE',
     'permission denied reading the workspace\n\nVERDICT: APPROVE',
-    'The tool exited (permission denied) so nothing ran.\n\nVERDICT: APPROVE',
+    // Parenthesised, and WITHOUT a second refusal clause: the previous fixture ended "so nothing
+    // ran", which is what actually caught it — the `\\) ` delimiter it read as coverage could never
+    // fire, because the character before `permission` is `(`. A test that passes either way is how
+    // the dead alternative before it survived a whole round.
+    'The tool exited (permission denied) and stopped.\n\nVERDICT: APPROVE',
+    // Opening a LINE, however decorated. `plain()` collapses newlines before the refusal test, so a
+    // `^` anchor there means byte zero of the whole document — a heading, a bullet, a table cell, a
+    // bolded line, or simply a second line of output all escaped it. The fix that closed the
+    // line-wrap seam is what killed this anchor: every seam on this branch has that shape, each fix
+    // moving the text under the next rule.
+    '## Result\n\nPermission denied\n\nVERDICT: APPROVE',
+    '**Permission denied**\n\nVERDICT: APPROVE',
+    '- Permission denied\n\nVERDICT: APPROVE',
+    '| tool | Permission denied |\n\nVERDICT: APPROVE',
+    '> Permission denied\n\nVERDICT: APPROVE',
+    'Attempting cargo audit\nPermission denied\n\nVERDICT: APPROVE',
     'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
