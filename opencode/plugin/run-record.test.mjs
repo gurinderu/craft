@@ -241,6 +241,25 @@ test('buildTriageRecord uses an empty verdict and per-finding dimensions', () =>
     { dimension: 'f2', ran: false },
   ])
   assert.deepEqual(rec.notRun, ['f2'])
+  // Defaults: a caller that says nothing means "the plan came and nothing was left over", which is
+  // what every existing caller meant before these fields existed.
+  assert.equal(rec.planned, true)
+  assert.equal(rec.untriaged, 0)
+})
+
+test('a triage record can say the plan never came and what went untriaged', () => {
+  // The output half of this was fixed a commit earlier; the record was left unable to say either, so
+  // the store showed an ordinary-looking run while the reader had been told on screen that neither
+  // held. `verdict` stays empty on purpose — a triage has no verdict, and widening a field other
+  // readers interpret is how two writers come to disagree about what a column means.
+  const rec = buildTriageRecord({
+    results: [{ label: 'f1', ok: true, text: 'OUTCOME: accept' }],
+    planned: false,
+    untriaged: 12,
+  })
+  assert.equal(rec.planned, false, 'the plan never came, and the store knows')
+  assert.equal(rec.untriaged, 12, 'and how many findings nobody looked at')
+  assert.equal(rec.verdict, '', 'without redefining a field other readers already interpret')
 })
 
 test('indexProjection carries runtime and nulls findingsTotal when findings is null', () => {
@@ -294,4 +313,61 @@ test('writeRecord writes a detail file and appends one index line', async () => 
   } finally {
     delete process.env.CRAFT_RUNS_DIR
   }
+})
+
+test('a run that was never consolidated is not filed as Approve', () => {
+  // The text fix was real but text-only: the fallback report EMBEDS the dimension blob, so
+  // parseVerdict picked up the last dimension's VERDICT line and filed an Approve for a run nobody
+  // consolidated. The human saw INCOMPLETE and index.jsonl saw Approve for the same run — worse
+  // than either alone, since only the store is machine-read afterwards.
+  const results = [
+    { label: 'review', ok: true, text: 'nothing found\n\nVERDICT: APPROVE' },
+    { label: 'tests-cov', ok: true, text: 'coverage fine\n\nVERDICT: APPROVE' },
+  ]
+  const fallback = '## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\n' +
+    results.map(r => `### ${r.label}\n\n${r.text}`).join('\n\n')
+
+  const died = buildAuditRecord({ results, baseRef: 'main', hasUnsafe: false, synthesisText: fallback, synthesized: false })
+  assert.match(died.verdict, /INCOMPLETE/, 'a run that was not consolidated cannot be an Approve')
+
+  // And the ordinary path is unaffected: a real synthesis still decides with the dimensions.
+  const lived = buildAuditRecord({
+    results, baseRef: 'main', hasUnsafe: false,
+    synthesisText: 'all clear\n\nVERDICT: APPROVE', synthesized: true,
+  })
+  assert.equal(lived.verdict, 'Approve')
+})
+
+test('the default keeps every existing caller honest', () => {
+  // `synthesized` defaults to true, so a caller that does not pass it behaves exactly as before —
+  // the flag adds a way to say "this never ran", it does not quietly change what the others mean.
+  const results = [{ label: 'review', ok: true, text: 'VERDICT: WARNING' }]
+  const r = buildAuditRecord({ results, baseRef: '', hasUnsafe: false, synthesisText: 'VERDICT: WARNING' })
+  assert.equal(r.verdict, 'Warning')
+})
+
+
+test('an unconsolidated audit is partial in the record, at every severity', async () => {
+  // Not only when every dimension approved. `worstOf` lifts the all-Approve case to INCOMPLETE by
+  // accident, so the two tests covering this passed whether or not the property held — an
+  // unconsolidated Warning run was byte-identical to a consolidated one, and the reader was shown
+  // the "not consolidated" banner while the store said Warning.
+  const { buildAuditRecord } = await import('./run-record.mjs')
+  for (const token of ['WARNING', 'BLOCK']) {
+    const r = buildAuditRecord({
+      results: [
+        { label: 'a', ok: true, text: `VERDICT: ${token}` },
+        { label: 'b', ok: true, text: `VERDICT: ${token}` },
+      ],
+      synthesisText: 'raw blob',
+      synthesized: false,
+    })
+    assert.match(r.verdict, /INCOMPLETE/, `an unconsolidated ${token} run is partial`)
+  }
+  const whole = buildAuditRecord({
+    results: [{ label: 'a', ok: true, text: 'VERDICT: WARNING' }],
+    synthesisText: 'consolidated\n\nVERDICT: WARNING',
+    synthesized: true,
+  })
+  assert.equal(whole.verdict, 'Warning', 'and a consolidated one is not')
 })

@@ -4,8 +4,8 @@
 // elastic rust-review engine has no opencode equivalent, so the "review" dimension is a single-pass
 // rust-reviewer (no per-crate / inter-crate-contract fan-out); see opencode/README.md parity caveats.
 import type { PluginCtx } from "./index.ts"
-import { fanOut, runAgent, type Job } from "./orchestrator.ts"
-import { buildAuditRecord, writeRecord } from "./run-record.mjs"
+import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
+import { buildAuditRecord, hasVerdictLine, writeRecord } from "./run-record.mjs"
 
 // Every dimension — and the synthesis — ends with ONE machine-readable line from a closed
 // vocabulary. run-record.mjs's parseVerdict() reads the LAST such line, which is what keeps a
@@ -119,15 +119,22 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     },
   )
 
-  const results = await fanOut(ctx, jobs)
+  // Asked of EVERY dimension in one place rather than repeated per job: every prompt above ends with
+  // VERDICT_RULE, so carrying that line is what it means for any of them to have answered. Attaching
+  // it per job would be ten chances to forget one, and the one forgotten is the one that reports
+  // Approve on a dead session. The predicate comes FROM the parser that will later read the same
+  // line, so the gate and the reader cannot disagree about what an answer looks like.
+  const results = await fanOut(ctx, jobs.map((j) => ({ ...j, answered: hasVerdictLine, requires: "VERDICT: line" })))
 
   // Synthesize through a fresh child session (no agent → the session's default model/persona).
   // One machine-readable label for "this dimension checked nothing" — a dispatcher-detected death
-  // and a dimension's own self-report are the same fact to a reader. The blob is also the fallback
-  // report if synthesis fails; its own last VERDICT: line is then whatever the last dimension
-  // wrote, which is harmless because buildAuditRecord() rolls the record verdict up worst-wins over
-  // every dimension rather than trusting a single text scan.
+  // and a dimension's own self-report are the same fact to a reader.
   const blob = results.map((r) => `### ${r.label} (${r.ok ? "ran" : "INCOMPLETE (not run)"})\n\n${r.text}`).join("\n\n")
+  // The blob ends with whatever VERDICT: line the LAST dimension wrote — commonly APPROVE. Handing
+  // it over as the report when synthesis dies therefore hands the reader an approval nobody made.
+  // The run record was already safe (worst-wins over dimensions); the text a human reads was not.
+  const unsynthesized = (why: string) =>
+    `## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\n${why}\n\nThe synthesis step did not return a report, so what follows is the raw per-dimension output. Nothing here is an approval: read each dimension's own verdict below, and note that any \`VERDICT:\` line at the very end belongs to the last dimension, not to the audit.\n\n${blob}`
   const synthPrompt = `You are consolidating a Rust audit. Below are the per-dimension results. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across dimensions. If any dimension reported the verdict \`INCOMPLETE (not run)\` — because it never executed, or because its tooling was absent — the overall verdict line MUST contain that exact string \`INCOMPLETE (not run)\`.
@@ -138,7 +145,30 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
 RESULTS:
 ${blob}${VERDICT_RULE}`
 
-  const report = (await runAgent(ctx, "", synthPrompt).catch(() => blob)) || blob
-  await writeRecord(ctx, buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText: report }))
+  // Held to the same standard as every dimension: the synth prompt ends with the same VERDICT_RULE,
+  // so text without that line is not a consolidation — it is a refusal or a preamble, and treating
+  // it as the report filed an Approve for a run nobody consolidated.
+  // There was a guard here that tried to tell a consolidation from a republication of its input.
+  // It is gone, and that is the honest disposition rather than a regression: every version of it —
+  // a 200-character prefix probe, a line-overlap fraction, a count of section headings — rejected
+  // real consolidations, and a false not-run here throws the whole audit away and hands the reader
+  // the raw blob under an INCOMPLETE banner, which is the expensive error everywhere on this
+  // branch. What it bought was near nothing: the record's roll-up is worst-wins over dimensions and
+  // already carries `synthesized`, so an echo cannot produce a false approval in the store, and the
+  // text a reader sees on a caught echo embeds the same blob the echo would have shown. Five rounds
+  // of refinement on a guard whose threshold no falsifier could reach is its own verdict.
+  // The catch is belt-and-braces and unreachable today: `tryOne` already catches everything
+  // `runAgent` can throw, and `notRunNote` cannot throw. Kept so a future throw kills one step
+  // rather than the whole audit; no falsifier reaches it, and it is not claimed as covered.
+  const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine, undefined, "VERDICT: line").catch(
+    (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),
+  )
+  // WHY it died, in the reader's hands. A refusal, a twenty-minute timeout and an errored session are
+  // three different things to do next, and they used to print the same sentence.
+  const report = synthesis.ok ? synthesis.text : unsynthesized(synthesis.note)
+  // The record is told the synthesis died, rather than left to infer it from text: the fallback
+  // report embeds the dimension blob, so reading a verdict out of it picks up the LAST dimension's
+  // line and files an Approve for a run that was never consolidated.
+  await writeRecord(ctx, buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText: report, synthesized: synthesis.ok }))
   return report
 }
