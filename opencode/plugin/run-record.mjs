@@ -80,8 +80,10 @@ const VERDICT_ROW =
 //
 // Three wordings were trimmed after they caught mandated notes in a second phrasing: `scans` (a
 // docs-only diff honestly reports "no scans were run" and still approves), `nothing to report` (what
-// a clean review says), and `could not be found` ("cargo-deny could not be found on PATH, so
-// licenses were not checked" is the same partial note as "is not installed").
+// a clean review says), `could not be found` ("cargo-deny could not be found on PATH, so licenses
+// were not checked" is the same partial note as "is not installed"), and `nothing to check` — which
+// is the answer `opencode/agents/rust-miri.md` MANDATES for a crate with no unsafe code, so keeping
+// it filed a clean miri dimension as not-run after a full retry off the shared budget.
 //
 // So only a stated TOTAL non-execution counts, plus a denial of access. Nothing here can describe
 // reviewed code: a report about a codebase does not say "no checks were run" or "nothing to review".
