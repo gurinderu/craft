@@ -31,6 +31,11 @@ const MAX_FINDINGS = 40
 // and is visible; a line wrongly DROPPED is a finding nobody looked at, inside a plan presenting
 // itself as a complete triage. So prose is kept and counted rather than judged. What that does NOT
 // excuse is the cap: prose still consumes the forty slots, and `dropped` is what says so out loud.
+// Exported so the deadline itself can be asserted. It is the escape hatch this branch added, and
+// its own comment records that the hatch "was advertised and used by nobody" — a constant no test
+// can see is exactly how that recurs.
+export const VALIDATION_MS = 5 * 60_000
+
 export function splitFindings(blob: string): { findings: string[]; dropped: number; skipped: number } {
   const raw = blob.split("\n")
   const items: string[] = []
@@ -119,7 +124,7 @@ export async function runTriageFindings(ctx: PluginCtx, args: { locator: string 
   // that know they are cheap can say so" — was advertised and used by nobody, so forty line-sized
   // jobs inherited a build-sized deadline and a hung one cost twenty minutes instead of ninety
   // seconds. Five is generous for reading a file and answering one line.
-  const VALIDATION_MS = 5 * 60_000
+
   const jobs: Job[] = findings.map((f, i) => ({
     label: `f${i + 1}`,
     agent: "rust-reviewer",
