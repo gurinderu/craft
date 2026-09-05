@@ -383,6 +383,24 @@ test('a validation that refuses while quoting the outcome line has not validated
   })
 })
 
+test('an inability that IS the finding does not discard the work', async () => {
+  // The other half of the same over-reach, on the paths where an inability is often the answer: a
+  // validation whose point is that the file is gone, and a finished plan with a sentence about the
+  // code. Keyed on a work verb, the first was re-run and then excluded from the plan — so a
+  // correctly refuted stale finding vanished instead of being rejected — and the second threw away
+  // up to forty already-paid validations over the word "compile".
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan
+        ? 'Fix order:\n1. src/a.rs — the crate cannot compile without this.\n\nPLAN: READY'
+        : 'The finding points at src/old.rs:12, but I could not open that file — the PR deletes it. Stale finding.\n\nOUTCOME: reject')
+    await runTriageFindings(ctx, { locator: '- Critical: src/old.rs:12 growth' })
+    const r = record(dir)
+    assert.deepEqual(r.notRun, [], 'the validation stands')
+    assert.equal(r.planned, true, 'and so does the plan')
+  })
+})
+
 test('a validation answering in the wrong case is still an answer', async () => {
   // `OUTCOME: Accept` is correct and capitalised. Judged strictly it was re-run at full cost and
   // then filed not-run — the inversion the shared predicate exists to prevent, and there is no
