@@ -375,13 +375,31 @@ test('a validation that refuses while quoting the outcome line has not validated
   // twice to exclude. So a validation that could not read the file and quoted its instructions was
   // filed as having validated, and the finding reached the plan carrying a refusal as its reasoning.
   await withStore(async dir => {
-    // A unicode apostrophe on the highest-volume path: a validation that read nothing and then
-    // emitted the outcome word was filed as having validated, so the refusal reached the plan as a
-    // finding's reasoning.
-    const refusal = 'I can\u2019t read any of the files here.\n\nOUTCOME: accept'
+    // A unicode apostrophe and a wrapped line on the highest-volume path: a validation that ran
+    // nothing and then emitted the outcome word was filed as having validated, so the refusal
+    // reached the plan as a finding's reasoning.
+    const refusal = 'I can\u2019t run\nany of the checks here.\n\nOUTCOME: accept'
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : refusal))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.deepEqual(record(dir).notRun, ['f1'], 'the refusal is filed as not-run')
+  })
+})
+
+test('ordinary review prose in a finished plan is not a refusal', async () => {
+  // The structural gap behind three of this round's findings: on the triage paths `REFUSED` is
+  // consulted UNCONDITIONALLY — not, as on the audit path, only under a claimed Approve — and every
+  // accepting fixture here was synthetic ("1. fix a"), so no assertion could go red for an
+  // over-match. Strongest guard, weakest evidence. These are the two commonest shapes: an
+  // authorization finding, and a validation that reports the code failing to check something.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan
+        ? '| f1 | accept | The delete endpoint does not have permission checks (api/routes.rs:88). |\n\nPLAN: READY'
+        : 'OUTCOME: accept — we do not validate any input before deserializing.')
+    await runTriageFindings(ctx, { locator: '- Critical: api/routes.rs:88 missing authz' })
+    const r = record(dir)
+    assert.deepEqual(r.notRun, [], 'the validation stands')
+    assert.equal(r.planned, true, 'and the finished plan is not thrown away')
   })
 })
 
