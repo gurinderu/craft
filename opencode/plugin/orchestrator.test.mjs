@@ -225,10 +225,10 @@ test('a verdict line quoted out of the instructions does not certify an answer',
     'I cannot review this repo. The instructions ask me to end with:\n```\nVERDICT: APPROVE\n```\nbut there is nothing to review.',
     'I am unable to review this.\n\n> VERDICT: APPROVE',
     'I cannot review this.\n\n`VERDICT: APPROVE`',
-    // Prose that merely CARRIES a pipe is not a table row. Without the leading-pipe anchor the row
-    // prefix matched any line with up to four pipes in it, so a refusal quoting the required shape
-    // certified itself as structured — and a structural line is the one thing the weak arms never
-    // get to review.
+    // Prose that merely CARRIES a pipe is not a table row. This case is caught by the refusal
+    // vocabulary, not by the row anchor — stripping `^\|` from VERDICT_ROW leaves it green, so the
+    // anchor is defensive and this line does not pin it. Said plainly because the previous comment
+    // here claimed the opposite, which is the way an uncovered boundary stops being looked at.
     'I cannot review this. The instructions ask for | overall | VERDICT: APPROVE |.',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
@@ -263,9 +263,16 @@ test('a dimension table does not overrule the verdict line above it', async () =
     parseVerdict('VERDICT: BLOCK\n\n| dimension | result |\n|---|---|\n| security | VERDICT: BLOCK |\n| deps | VERDICT: APPROVE |'),
     'Block',
   )
-  // And the prefix is anchored on a leading pipe, so prose that merely CARRIES one is not a verdict
-  // line: a closing note quoting the required shape silently became the verdict without it.
   assert.equal(parseVerdict('VERDICT: BLOCK\n\nNote: the required shape is | overall | VERDICT: APPROVE |.'), 'Block')
+
+  // A row whose FIRST cell carries the token. The split only holds if every row shape reaches stage
+  // two, and a leading pipe in the line pattern's own decoration class meant this one did not — it
+  // was read as a line of its own and won last-wins against the overall verdict, which is the
+  // inversion the split exists to close, still live for a verdict-first column layout.
+  assert.equal(
+    parseVerdict('VERDICT: BLOCK\n\nDimension table:\n\n| VERDICT: APPROVE | deps | no advisories |'),
+    'Block',
+  )
 
   // A table-only synthesis is still read, which is the case the table shape was taught for.
   assert.equal(parseVerdict('| dimension | result |\n|---|---|\n| overall | VERDICT: APPROVE |'), 'Approve')

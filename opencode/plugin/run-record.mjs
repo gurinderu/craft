@@ -26,8 +26,11 @@ const VERDICT_TOKEN = {
 // and no other wording, and only that shape is authoritative. A prose closing line in ordinary case
 // — `Verdict: Approve` — is exactly what LABELLED below was written to weigh against the evidence,
 // so matching it here would let it outrank a report of UB instead of losing to it.
-// The mandated line, as a line of its own.
-const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
+// The mandated line, as a line of its own. NO leading pipe in the decoration class: with one, a row
+// whose FIRST cell carried the token was read at stage 1 and re-entered last-wins against the
+// overall line — so `VERDICT: BLOCK` followed by `| VERDICT: APPROVE | deps | … |` still parsed as
+// Approve. The two-stage split only holds if every row shape reaches stage 2.
+const VERDICT_LINE = /^[ \t>*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
 // The same token inside a markdown TABLE ROW — `| overall | VERDICT: APPROVE |`, which is how an
 // audit synthesis usually writes its verdict. Read SECOND, and only when no line of its own carried
@@ -38,6 +41,15 @@ const VERDICT_LINE = /^[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|B
 // Anchored on a leading `|` so it can only be a row: without that the prefix matched any prose
 // carrying pipes. That anchor is defensive rather than load-bearing — the gate rejects such a line
 // anyway, and no falsifier through the public surface can reach it, so it is not claimed as pinned.
+//
+// What reading rows concedes, since every other trade in this file is named: a row now outranks a
+// tail KEYWORD, so `| security | Block — use-after-free … |` followed by `| deps | VERDICT: APPROVE |`
+// heads the report Approve where main said Block, and a table-only synthesis resolves by document
+// order rather than by severity. The store is unaffected — `buildAuditRecord` rolls worst-wins over
+// each dimension's own text, so a genuine Block dimension is still caught — but the text a human
+// reads can be headed by the milder verdict. Kept because the alternative is worse: without the row
+// arm a table-formatted synthesis is not structured at all, and falls to the prose arm where a clean
+// run that named an absent tool is filed not-run.
 const VERDICT_ROW =
   /^\|(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
