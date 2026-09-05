@@ -109,7 +109,10 @@ const REFUSED = new RegExp(
     // conceded ceiling — that names passive voice, another language, or no prose at all. Every
     // `cannot` in the corpus happened to be caught by a different arm, so the one combination that
     // breaks it appeared nowhere.
-    '(?:I|we)[ \\t]+(?:could|did|can|do)(?:n\'t|[ \\t]*not)[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
+    // The verb list may be wide here BECAUSE `any|anything` is required: "I could not check
+    // licenses" is the mandated partial note and has no such object, while "I can't read any of
+    // the files" is a validation that judged nothing.
+    '(?:I|we)[ \\t]+(?:cannot|can\'t|could[ \\t]*not|couldn\'t|did[ \\t]*not|didn\'t|do[ \\t]*not|don\'t)[ \\t]+(?:run|perform|execute|read|check|inspect|open|access|validate)[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*un(?:able)[ \\t]+to[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+reviewed[ \\t]+nothing',
     '(?:could|can)[ \\t]*not[ \\t]+be[ \\t]+(?:run|executed|performed)',
@@ -122,8 +125,16 @@ const REFUSED = new RegExp(
   'i',
 )
 
+// A model writes `can’t` as often as `can't`. Spelling every clause twice is how the last two
+// rounds' defects were built — `cannot` was missed because the alternation produced `cann't`, and a
+// unicode apostrophe defeated every contraction arm at once. So the text is normalised before the
+// refusal test rather than the vocabulary being widened again.
+function plain(text) {
+  return String(text ?? '').replace(/[\u2018\u2019\u02bc]/g, "'")
+}
+
 export function hasVerdictLine(text) {
-  const t = String(text ?? '')
+  const t = plain(text)
   const e = verdictEvidence(t)
   if (e === null) return false
   // Reported Block stands whatever else the text says: reading a finding as a refusal files a
@@ -226,7 +237,7 @@ function markerLine(text, marker) {
 // discarded up to forty child sessions already paid for. An unterminated fence loses nothing here,
 // because the marker is looked for on every line the fence never closed over.
 export function hasPlanMarkerLine(text) {
-  return markerLine(text, PLAN_MARKER) && !REFUSED.test(String(text ?? ''))
+  return markerLine(text, PLAN_MARKER) && !REFUSED.test(plain(text))
 }
 
 
@@ -248,7 +259,7 @@ export function hasPlanMarkerLine(text) {
 const OUTCOME_LINE = /^[ \t*_#-]*OUTCOME:[ \t]*[*_]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/i
 
 export function hasOutcomeLine(text) {
-  return markerLine(text, OUTCOME_LINE) && !REFUSED.test(String(text ?? ''))
+  return markerLine(text, OUTCOME_LINE) && !REFUSED.test(plain(text))
 }
 
 // How much of the report the fallback scan is allowed to see.

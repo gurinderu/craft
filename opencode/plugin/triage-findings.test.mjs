@@ -375,8 +375,10 @@ test('a validation that refuses while quoting the outcome line has not validated
   // twice to exclude. So a validation that could not read the file and quoted its instructions was
   // filed as having validated, and the finding reached the plan carrying a refusal as its reasoning.
   await withStore(async dir => {
-    const refusal =
-      'I could not read src/a.rs, so I have nothing to validate.\n\nThe form asked for:\n\n| OUTCOME: accept | reason |\n\nbut there is nothing to judge.'
+    // A unicode apostrophe on the highest-volume path: a validation that read nothing and then
+    // emitted the outcome word was filed as having validated, so the refusal reached the plan as a
+    // finding's reasoning.
+    const refusal = 'I can\u2019t read any of the files here.\n\nOUTCOME: accept'
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : refusal))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.deepEqual(record(dir).notRun, ['f1'], 'the refusal is filed as not-run')
