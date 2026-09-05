@@ -247,8 +247,9 @@ export function hasVerdictLine(text) {
 // are not symmetric and the rule is set where the cheaper one falls. What that concedes, said
 // plainly: a reply that emits the marker and then retracts it in the next paragraph is accepted.
 // The reader still sees the retraction — it is the text they are handed.
-// No blockquote and no backtick in the decoration class, and fenced blocks are skipped: those are
-// exactly the three ways a refusal puts the marker on a line of its own while quoting it. Bold,
+// No blockquote and no backtick in the decoration class, and fenced blocks and indented blocks
+// are skipped: those are the four ways a refusal puts the marker on a line of its own while
+// quoting it. Bold,
 // emphasis and a list bullet stay, because those are how a model DECORATES its own final line.
 const PLAN_MARKER = /^[ \t*_#-]*PLAN:[ \t]*[*_]*[ \t]*READY[ \t]*[*_.]*[ \t]*$/i
 const FENCE = /^[ \t]*(`{3,}|~{3,})/
@@ -292,6 +293,14 @@ function markerLine(text, marker) {
       }
       continue
     }
+    // Four spaces or more is CommonMark's OTHER code form, which this walk does not track as a
+    // block. Restored after being deleted as "dead defence": it is not dead, and `refused()` does
+    // not carry the property in its place — a refusal outside the frozen vocabulary ("the tool call
+    // was rejected by the sandbox, so I have no view of the file") quoting its instructions in an
+    // indented block was accepted as an answer on both marker paths. The deletion was reasoned from
+    // the fixtures that appeared to cover it, which `refused()` happened to catch for another
+    // reason; that is the same mistake as trusting a falsifier that did not go red.
+    if (/^[ \t]{4,}/.test(lines[i])) continue
     if (openedWith === null && ownLine(lines[i], marker)) return true
   }
   // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
@@ -302,7 +311,7 @@ function markerLine(text, marker) {
   // work already paid for; accepting one quoted inside a block nobody closed costs a re-read.
   if (openedWith !== null) {
     const tail = lines.slice(openedAt + 1)
-    return tail.some((l) => !FENCE.test(l) && ownLine(l, marker))
+    return tail.some((l) => !FENCE.test(l) && !/^[ \t]{4,}/.test(l) && ownLine(l, marker))
   }
   return false
 }
@@ -510,6 +519,12 @@ export function buildTriageRecord({ results, planned = true, untriaged = 0, skip
     planned,
     untriaged,
     skipped,
+    // Stays empty, by a decision recorded in this file's tests: a triage has no verdict, and
+    // widening a field other readers interpret is how two writers come to disagree about what a
+    // column means. The cost is real and belongs in the PR body rather than in a silent reversal —
+    // `indexProjection` omits planned/untriaged/skipped, so in `index.jsonl` a triage whose plan
+    // never came looks like one that succeeded. The detail file carries the fields; only the scan
+    // cannot see them.
     verdict: '',
     findings: null,
     nested: false,

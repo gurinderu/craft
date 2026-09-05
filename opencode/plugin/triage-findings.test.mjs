@@ -395,6 +395,24 @@ test('a per-finding validation carries a line-sized deadline, not a build-sized 
   assert.match(src, /timeoutMs: VALIDATION_MS/, 'and the jobs actually carry it')
 })
 
+test('an indented quotation of the marker is not an answer', async () => {
+  // CommonMark's other code form. The skip was deleted as "dead defence" on the strength of
+  // fixtures that `refused()` happened to catch for a different reason — the same mistake as
+  // trusting a falsifier that did not go red. This refusal is OUTSIDE the frozen vocabulary, so
+  // nothing but the shape rule stands between it and the plan.
+  await withStore(async dir => {
+    const refusal =
+      'The tool call was rejected by the sandbox, so I have no view of the file.\nThe instructions ask me to end with:\n\n    OUTCOME: accept\n\nbut I have nothing to base that on.'
+    const plan =
+      'The sandbox rejected the call.\nThe instructions want:\n\n    PLAN: READY\n\nbut there is no basis.'
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? plan : refusal))
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    const r = record(dir)
+    assert.deepEqual(r.notRun, ['f1'], 'the validation did not validate')
+    assert.equal(r.planned, false, 'and the refusal is not the fix plan')
+  })
+})
+
 test('a marker in a table row is the session\'s own line', async () => {
   // `ownLine`'s table branch had no test on the marker paths: `hasVerdictLine` does not route
   // through `markerLine`, so the audit's table fixtures never reached it, and there was no PLAN or
