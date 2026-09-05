@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.18.2](https://github.com/gurinderu/craft/compare/v0.18.1...v0.18.2) (2026-09-05)
+
+
+### Bug Fixes
+
+* a dimension table does not overrule the verdict line above it ([2ca67ed](https://github.com/gurinderu/craft/commit/2ca67edc67337ce2c73a6c88099750d76c9ea69c))
+* a marker the prompt spells out is a marker the refusal can echo ([90474ae](https://github.com/gurinderu/craft/commit/90474aeb7cc754adbdedaa7a9aa4beb6a44e7ab8))
+* a pronoun is not what separates a refusal from a finding ([79a03b6](https://github.com/gurinderu/craft/commit/79a03b6cb4d824b8584d2646fea46c590bed0469))
+* a refusal is a refusal however it signs off ([87cfa1a](https://github.com/gurinderu/craft/commit/87cfa1a9901a906539adb1ed27b65225d98a455e))
+* a tab is four columns, and the tail arm needed its own falsifier ([1daf3d5](https://github.com/gurinderu/craft/commit/1daf3d5272b92bcfbaff958be5e6fa92fcfa24e8))
+* a table can plausibly be an instruction quotation ([9ddd137](https://github.com/gurinderu/craft/commit/9ddd137b49b4ca0d90dedf09cef9a2f5dabd9202))
+* a table is not a quotation, and a finding is not a refusal ([8d39042](https://github.com/gurinderu/craft/commit/8d390429e926dbab3054084af69d1577c049d02a))
+* an Approve must stay reachable ([fa1f3fb](https://github.com/gurinderu/craft/commit/fa1f3fb74db35e1ab9cfa7ee1dde84ae53258639))
+* an opencode session that did not answer is never an approval ([c66b4a8](https://github.com/gurinderu/craft/commit/c66b4a8f90c422df627908d030c050744604c992))
+* an unconsolidated audit is partial at every severity, not only when clean ([162fec0](https://github.com/gurinderu/craft/commit/162fec0b2eead4d46a9e432c8356c4d0fd9279c3))
+* anchor the one anchored arm to a line, and freeze the vocabulary ([3ce8e26](https://github.com/gurinderu/craft/commit/3ce8e26d72af6d811cb5b9020805bd0780458ee3))
+* ask the parser, not one of its arms — and let no marker be echoed ([a0d1a4b](https://github.com/gurinderu/craft/commit/a0d1a4b944e4ec44bea33ca1a9d89ff0c2499e55))
+* both wholesale answers to the keyword arm were wrong ([c1b5555](https://github.com/gurinderu/craft/commit/c1b5555b59849ed6c20a168831c99150030185da))
+* cannot is one word ([7d9cbbc](https://github.com/gurinderu/craft/commit/7d9cbbcf5223a81d16985cc257e24a41cd42a1a8))
+* every row shape must reach stage two ([f2fdb16](https://github.com/gurinderu/craft/commit/f2fdb16e850f4e855a3e9c548f5b5144056fc909))
+* name the limit that actually bound the attempt, and why it failed ([c56d0e7](https://github.com/gurinderu/craft/commit/c56d0e70ae5c3c61997de3cf3f877334d729cee9))
+* normalise the apostrophe instead of spelling every contraction twice ([64ef662](https://github.com/gurinderu/craft/commit/64ef662ac3ec41abc0ec4587dea4d5de3333027e))
+* normalise the text, anchor the permission arms, narrow the verbs ([22859c4](https://github.com/gurinderu/craft/commit/22859c4c20cbb5c5c81462f9e5ae3929810bb5fe))
+* **opencode:** a fence needs a partner, a predicate needs a marker the prompt does not supply ([4386722](https://github.com/gurinderu/craft/commit/43867226755b451a3100b89aedb4f40e954f3fbf))
+* **opencode:** one source for what an answer looks like, and a bounded retry ([03c34e1](https://github.com/gurinderu/craft/commit/03c34e1e7137e070a23475a7acd0d861fae27294))
+* **opencode:** silence was reading as approval, and the deadline fired on every real repo ([2230296](https://github.com/gurinderu/craft/commit/2230296b38f0dbe25f302a6626007a23a9cb2a9c))
+* **opencode:** the synthesis was the one path exempt from the rule, and prose still saturated the cap ([ae26571](https://github.com/gurinderu/craft/commit/ae26571295eb48e78a4dee5d58a75459365a8d59))
+* raw text for the evidence, flattened text only for the refusal ([9cacd35](https://github.com/gurinderu/craft/commit/9cacd35bc4ecc85679906a57ba6935b2cfb901c5))
+* restore the indent skip — it was not dead defence ([7c5d1d0](https://github.com/gurinderu/craft/commit/7c5d1d0bbf2b87dc2f995cba55e92665d19658af))
+* stop asking which markdown shape is a quotation ([8bafd0d](https://github.com/gurinderu/craft/commit/8bafd0d2682fd6d8f393222be0677e5ad70fbc04))
+* the boundaries the last round's gates introduced ([85f9868](https://github.com/gurinderu/craft/commit/85f9868515abeb71166c11b06fc735a45c1672e9))
+* the cell's end anchor needed the newline its start anchor already had ([d684a0e](https://github.com/gurinderu/craft/commit/d684a0eb27fd372941d780e22b7115120f027aa2))
+* the permission arm was anchored by a delimiter that could not occur ([d9bf2c6](https://github.com/gurinderu/craft/commit/d9bf2c62f4fc3d2596ae62843f4b8166983b064d))
+* the refusal test was rejecting what the prompts mandate ([82e1989](https://github.com/gurinderu/craft/commit/82e1989695df4aba9d9dab6beee76525cbc3f359))
+* the verdict marker joins the rule the other two already carry ([5fb2d76](https://github.com/gurinderu/craft/commit/5fb2d76875163a01c47db3e125f9d75485e08bbf))
+* two false not-runs on the plan path ([c346cdf](https://github.com/gurinderu/craft/commit/c346cdf43c9b40fa7cd3a8a129614b91af787249))
+* up to three spaces then a tab is an indented block too ([637b496](https://github.com/gurinderu/craft/commit/637b496423078a20e6ea96284fbd63665f92a23b))
+* wire the one surface that had no falsifier behind it ([e852d76](https://github.com/gurinderu/craft/commit/e852d7673bb34e900a4aa54c695ca7d845794642))
+
 ## [0.18.1](https://github.com/gurinderu/craft/compare/v0.18.0...v0.18.1) (2026-09-04)
 
 
