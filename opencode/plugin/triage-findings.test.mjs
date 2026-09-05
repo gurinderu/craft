@@ -411,6 +411,29 @@ test('an indented quotation of the marker is not an answer', async () => {
     assert.deepEqual(r.notRun, ['f1'], 'the validation did not validate')
     assert.equal(r.planned, false, 'and the refusal is not the fix plan')
   })
+
+  // A TAB is four columns, and the guard counted characters — the same refusal one keystroke apart.
+  await withStore(async dir => {
+    const ctx = fakeCtx(({ isPlan }) =>
+      isPlan
+        ? 'The sandbox rejected the call.\nThe instructions want:\n\n\tPLAN: READY\n\nbut there is no basis.'
+        : 'The tool call was rejected by the sandbox.\nThe form asks for:\n\n\tOUTCOME: accept\n\nbut I have no view of the file.')
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    const r = record(dir)
+    assert.deepEqual(r.notRun, ['f1'], 'a tab-indented quotation is a quotation too')
+    assert.equal(r.planned, false)
+  })
+
+  // The unterminated-fence TAIL arm carries the same guard and had no falsifier of its own: the
+  // fixtures above contain no fence, so they never reach it, and it is the copy a future reader
+  // deletes as dead defence — which is exactly what happened to the main arm one commit ago.
+  await withStore(async dir => {
+    const quoted =
+      'The sandbox rejected the call. The form asks for:\n\n```text\nan example\n\n    OUTCOME: accept\n\nbut I have no view of the file.'
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : quoted))
+    await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
+    assert.deepEqual(record(dir).notRun, ['f1'], 'the tail an unclosed fence hands back is indented code too')
+  })
 })
 
 test('a marker in a table row is the session\'s own line', async () => {
