@@ -64,6 +64,11 @@ test('a refusing synthesis is not a report, and is not filed as a verdict', asyn
     assert.match(report, /INCOMPLETE \(not run\) — the audit was not consolidated/, 'the reader is told')
     assert.ok(!/^I am not able/.test(report), 'and is not handed the refusal as the report')
     assert.match(record(dir).verdict, /INCOMPLETE/, 'and the store agrees with what the reader saw')
+    // Emitted as a FIELD, not merely used to pick the verdict. The comment justifying the removal
+    // of the echo guard offered "the record already carries `synthesized`" as a reason it was safe,
+    // and it did not — a reader of the store could not tell a consolidated audit from an
+    // unconsolidated one.
+    assert.equal(record(dir).synthesized, false, 'the store says the consolidation never landed')
   })
 })
 
@@ -167,6 +172,7 @@ test('a real synthesis is used, and the store matches it', async () => {
     assert.match(report, /all dimensions clean/)
     assert.ok(!/was not consolidated/.test(report))
     assert.equal(record(dir).verdict, 'Approve')
+    assert.equal(record(dir).synthesized, true, 'and says so when it did')
   })
 })
 
