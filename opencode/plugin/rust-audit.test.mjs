@@ -69,6 +69,7 @@ test('a refusing synthesis is not a report, and is not filed as a verdict', asyn
     // and it did not — a reader of the store could not tell a consolidated audit from an
     // unconsolidated one.
     assert.equal(record(dir).synthesized, false, 'the store says the consolidation never landed')
+    assert.match(record(dir).verdict, /INCOMPLETE/, 'and the verdict every reader reads says so too')
   })
 })
 

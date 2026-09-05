@@ -313,6 +313,12 @@ test('prose about the CODE does not read as the session declining', async () => 
     // retried all ten dimensions on the shared budget and filed ten successful runs as not-run.
     'cargo-audit ran clean over 214 crates. cargo-deny is not installed, so I could not check licenses.\n\nVERDICT: APPROVE',
     'cargo llvm-cov is absent so I did not run coverage, but doctests all pass.\n\nVERDICT: APPROVE',
+    // The same mandated note in a second wording — the first fix caught only "is not installed / I
+    // could not check", and its test pinned that one string.
+    'cargo-audit ran clean over 214 crates.\ncargo-deny could not be found on PATH, so licenses were not checked.\n\nVERDICT: APPROVE',
+    // What a clean review says at the end, and what a docs-only diff honestly reports.
+    'No issues found in the diff. Nothing to report.\n\nVERDICT: APPROVE',
+    'The diff touches only docs, so no scans were run.\n\nVERDICT: APPROVE',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
