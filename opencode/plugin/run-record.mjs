@@ -38,7 +38,8 @@ const VERDICT_LINE = /^[ \t>*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BL
 // last-wins across both made the last table ROW override the overall line. Executed on a real
 // shape, `VERDICT: BLOCK` followed by a dimension table ending `| deps | VERDICT: APPROVE |` parsed
 // as Approve — a Block filed as clean, which is worse than any not-run this branch exists to fix.
-// Anchored on a leading `|` so it can only be a row: without that the prefix matched any prose
+// Anchored on a leading `|` (after indentation — an indented table is still a table, and requiring
+// column zero made the reader and the gate disagree about one) so it can only be a row: without that the prefix matched any prose
 // carrying pipes. That anchor is defensive rather than load-bearing — the gate rejects such a line
 // anyway, and no falsifier through the public surface can reach it, so it is not claimed as pinned.
 //
@@ -51,7 +52,7 @@ const VERDICT_LINE = /^[ \t>*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BL
 // arm a table-formatted synthesis is not structured at all, and falls to the prose arm where a clean
 // run that named an absent tool is filed not-run.
 const VERDICT_ROW =
-  /^\|(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
+  /^[ \t]*\|(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
 // The same line as the GATE reads it: no blockquote, no backtick, and `markerLine` skips fenced
 // blocks. The reader keeps the permissive form above — a report that ran may well bold or quote its
@@ -135,6 +136,13 @@ export function hasVerdictLine(text) {
   // Trying to tell the two apart by grammar is what produced the pronoun rule, and grammar is not
   // something a regex can be trusted with.
   if (e.verdict === 'Block') return true
+  // A bare keyword in the tail is a word, not a judgement, and below Block nothing rides on it: the
+  // reader still weighs it, the gate does not. This is what the labelled/keyword split was written
+  // for and never wired to — `warning:` is what cargo prints, so a session that died after echoing
+  // a build log was filed ran:true, verdict:Warning and never retried. What it costs is the trade
+  // already taken one line down: a genuine Warning stated only by a keyword is filed not-run, one
+  // rank below where it belongs and loudly, rather than a dead session passing as a judgement.
+  if (e.by === 'keyword') return false
   // Everything weaker loses to refusal vocabulary anywhere in the text. What that costs, plainly: a
   // genuine Warning whose prose happens to say "unable to" is filed not-run — one rank down, and
   // loudly, under an INCOMPLETE banner. What it buys is that a sandboxed dimension which checked

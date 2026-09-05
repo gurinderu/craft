@@ -128,10 +128,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
 
   // Synthesize through a fresh child session (no agent → the session's default model/persona).
   // One machine-readable label for "this dimension checked nothing" — a dispatcher-detected death
-  // and a dimension's own self-report are the same fact to a reader. The blob is also the fallback
-  // report if synthesis fails; its own last VERDICT: line is then whatever the last dimension
-  // wrote, which is harmless because buildAuditRecord() rolls the record verdict up worst-wins over
-  // every dimension rather than trusting a single text scan.
+  // and a dimension's own self-report are the same fact to a reader.
   const blob = results.map((r) => `### ${r.label} (${r.ok ? "ran" : "INCOMPLETE (not run)"})\n\n${r.text}`).join("\n\n")
   // The blob ends with whatever VERDICT: line the LAST dimension wrote — commonly APPROVE. Handing
   // it over as the report when synthesis dies therefore hands the reader an approval nobody made.
