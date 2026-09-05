@@ -183,16 +183,21 @@ const FENCE = /^[ \t]*(`{3,}|~{3,})/
 // answering "I could not read src/a.rs ... the instructions ask for: ```OUTCOME: accept```" was
 // filed as having validated, and a Critical finding reached the plan carrying a refusal as its
 // reasoning.
-// A table row's CELLS are lines of their own, in table terms. Without this, `| overall | VERDICT:
-// APPROVE |` — the single most likely shape for an audit synthesis's final verdict — failed the
-// strict gate and fell through to the refusal arm, so a clean run was retried on the shared budget
-// and then rolled up INCOMPLETE for the whole audit. A table cannot plausibly be an instruction
-// quotation, which is what the strict gate is for; a blockquote and an inline tick can, and stay
-// out. That concedes a genuine report that blockquotes its verdict, and the direction is chosen:
-// admitting a quoted refusal as an Approve is the worse of the two.
-function ownLine(line, marker) {
+// A table row's CELLS are lines of their own, in table terms — but only when the row is actually
+// PART OF A TABLE. "A table cannot plausibly be an instruction quotation" was written here and is
+// false: the audit prompt asks for a table, so quoting one back is exactly what a refusal does, and
+// a lone `| overall | VERDICT: APPROVE |` on its own line certified a session that ran nothing as
+// having answered — in the report AND in the run record. That is the property this branch exists to
+// hold, refuted through the one door the fence, blockquote and backtick rules left open.
+//
+// A real table has neighbours: another row, or the `|---|` rule under its header. A quotation
+// stands alone between blank lines. That is the whole discriminator, and it costs nothing a
+// genuine synthesis does.
+const ROW = /^[ \t]{0,3}\|/
+function ownLine(line, marker, prev, next) {
   if (marker.test(line)) return true
-  if (!/^[ \t]*\|/.test(line)) return false
+  if (!ROW.test(line)) return false
+  if (!ROW.test(prev ?? '') && !ROW.test(next ?? '')) return false
   return line.split('|').some((cell) => marker.test(cell.trim()))
 }
 
@@ -214,7 +219,10 @@ function markerLine(text, marker) {
       }
       continue
     }
-    if (openedWith === null && ownLine(lines[i], marker)) return true
+    // Four spaces or more is CommonMark's other code form, which this walk does not track as a block
+    // — so an indented quotation of the marker is not the session's own line either.
+    if (/^[ \t]{4,}/.test(lines[i])) continue
+    if (openedWith === null && ownLine(lines[i], marker, lines[i - 1], lines[i + 1])) return true
   }
   // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
   // only that tail. Re-reading every line instead re-admitted the contents of every properly closed
@@ -222,7 +230,10 @@ function markerLine(text, marker) {
   // earlier block count as an answer. Which error this chooses, said plainly: a marker quoted inside
   // the UNCLOSED trailing fence is still accepted. Losing a real answer to a truncated paste costs
   // work already paid for; accepting one quoted inside a block nobody closed costs a re-read.
-  if (openedWith !== null) return lines.slice(openedAt + 1).some((l) => !FENCE.test(l) && ownLine(l, marker))
+  if (openedWith !== null) {
+    const tail = lines.slice(openedAt + 1)
+    return tail.some((l, k) => !FENCE.test(l) && !/^[ \t]{4,}/.test(l) && ownLine(l, marker, tail[k - 1], tail[k + 1]))
+  }
   return false
 }
 
