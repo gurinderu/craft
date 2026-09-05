@@ -211,6 +211,16 @@ test('a session that says it could not do the work is not answering, however it 
     "I'm unable to run any commands.\n\nVERDICT: APPROVE",
     "we're unable to run any tools.\n\nVERDICT: APPROVE",
     "I don't have permission to run the tools.\n\nVERDICT: APPROVE",
+    // The delimiter set was `when|while|.|,|;|:|$`, and `$` was DEAD on every path that reaches the
+    // refusal test — it is consulted only after a marker was found, so the refusal is never last,
+    // and the text has already been flattened, so no line anchor survives. A permission refusal
+    // followed by a space was a silent Approve, in the likeliest shape a refused tool invocation
+    // produces. Every test of the arm used `when` or `.` — the two reachable alternatives — so the
+    // dead one read as coverage.
+    'Permission denied\n\nVERDICT: APPROVE',
+    'Permission denied\nI stopped there.\n\nVERDICT: APPROVE',
+    'permission denied reading the workspace\n\nVERDICT: APPROVE',
+    'The tool exited (permission denied) so nothing ran.\n\nVERDICT: APPROVE',
     'Access to the workspace was denied by the sandbox policy.\n\nVerdict: Approve',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
@@ -355,6 +365,10 @@ test('prose about the CODE does not read as the session declining', async () => 
     'We could not access any dependency metadata, so licenses were unchecked.\n\nVERDICT: APPROVE',
     'The delete endpoint does not have permission checks (api/routes.rs:88).\n\nVERDICT: APPROVE',
     'we do not validate any input before deserializing.\n\nVERDICT: APPROVE',
+    // Mid-sentence, which is what a FINDING about authorization looks like. Widening the arm to any
+    // whitespace would have read these as refusals and discarded a validated plan.
+    'The endpoint returns permission denied for anonymous users (api/routes.rs:88).\n\nVERDICT: APPROVE',
+    'We saw a permission denied error in the logs, which is expected here.\n\nVERDICT: APPROVE',
     // The answer `opencode/agents/rust-miri.md` mandates for a crate with no unsafe code. Catching
     // it retried the dimension off the shared budget and then filed it INCOMPLETE, which worstOf
     // ranks below Block.

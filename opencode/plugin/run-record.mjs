@@ -126,7 +126,15 @@ const REFUSED = new RegExp(
     // down; these two arms simply never got it.
     '(?:I|we) (?:do|did|does) not have permission',
     '(?:I|we) (?:was |were |am |are )?denied permission',
-    'permission denied(?: when| while|[.,;:]|$)',
+    // Anchored at a SENTENCE START, not by a trailing delimiter. The delimiter set was written for
+    // one text shape and evaluated against another — the sixth seam of that class — and its `$`
+    // alternative was dead on every path that reaches here: `REFUSED` is only consulted after a
+    // marker was found, so the refusal is never last, and `plain()` has already flattened the text,
+    // so no line anchor survives. "Permission denied" followed by a space was therefore a silent
+    // Approve, in the single most likely shape a refused tool invocation produces. Widening to `\\s`
+    // is not the fix: "the endpoint returns permission denied for anonymous users" is a FINDING, and
+    // reading it as a refusal discards a validated plan on the triage path.
+    '(?:^|[.;:!?] |\\) )permission denied',
     'access[ \\w]{0,40}?denied by\\b',
   ].join('|'),
   'i',
