@@ -54,12 +54,6 @@ const VERDICT_LINE = /^[ \t>*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BL
 const VERDICT_ROW =
   /^[ \t]*\|(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
-// The same line as the GATE reads it: no blockquote, no backtick, and `markerLine` skips fenced
-// blocks. The reader keeps the permissive form above — a report that ran may well bold or quote its
-// verdict — while what certifies "this session answered" must be a line the session wrote as its
-// own, not one it copied out of its instructions.
-const VERDICT_GATE_LINE = /^[ \t*_#-]*VERDICT:[ \t]*[*_]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/
-
 // Whether a dimension ANSWERED, asked of the parser itself rather than of one of its arms.
 //
 // Spelling the structural arm twice was the first mistake and it was fixed by exporting the regex —
@@ -73,83 +67,62 @@ const VERDICT_GATE_LINE = /^[ \t*_#-]*VERDICT:[ \t]*[*_]*[ \t]*(APPROVE|WARNING|
 // Approve is the fallthrough on purpose (a clean prose report carries no keyword at all), and that
 // is exactly the case a silent or refusing session also lands in — which is why the fallthrough,
 // and only the fallthrough, is what "did not answer" means.
-// Refusal vocabulary — broad, and deliberately not anchored on a pronoun. Narrowing it to a
-// literal `I` split five identical refusals by whether they used one: "I am unable to run cargo /
-// Verdict: Approve" was caught while "Unable to run cargo", "We were unable to", "Permission
-// denied when invoking cargo" and "Cargo is not available in this environment" all sailed through
-// and were filed ran:true, verdict:Approve. Only the pronoun separated them.
 // A total non-execution, stated as such. Deliberately tiny and unambiguous: this is the only thing
-// allowed to override a mandated `VERDICT: APPROVE` line, so anything that could also describe the
-// CODE, or a partial gap, must stay out of it.
+// besides an inability to do the work that is allowed to override an agent's own mandated verdict,
+// so anything that could describe the CODE — "no tests were run for the new module in CI" — must
+// stay out of it.
 const NOTHING_RAN = new RegExp(
   [
-    // Unambiguous statements about the run itself. `tests` is deliberately NOT in the noun set:
-    // "no tests were run for the new module in CI" is a FINDING about the code, and this vocabulary
-    // is the only thing allowed to override an agent's own mandated verdict.
     'no[ \\t]+(?:checks|tools|analysis|scans|commands)[ \\t]+(?:were|was|could[ \\t]+be)[ \\t]+(?:run|performed|executed)',
     'none[ \\t]+of[ \\t]+the[ \\t]+(?:tools|checks|commands)[ \\t]+(?:is|are|was|were)[ \\t]+(?:installed|available|run)',
     'nothing[ \\t]+(?:was|could[ \\t]+be)[ \\t]+(?:checked|verified|analysed|analyzed|run|executed)',
     'nothing[ \\t]+ran\\b',
-    // Self-reports. Anchored on the pronoun BECAUSE the subject is what distinguishes them: "the
-    // fallback path did not execute anything when the queue drained" is a finding, and an unanchored
-    // clause read it as a refusal and filed a dimension that approved as not-run.
     '(?:I|we)[ \\t]+(?:could|did|can|do)(?:n\'t|[ \\t]+not)[ \\t]+(?:run|perform|execute)[ \\t]+(?:any|anything)',
-    '(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*un(?:able)[ \\t]+to[ \\t]+run[ \\t]+(?:any|anything)',
     '(?:I|we)[ \\t]+reviewed[ \\t]+nothing',
   ].join('|'),
   'i',
 )
 
-const DECLINED =
-  /\b(?:un(?:able|available)|not[ \t]+able[ \t]+to|cannot|can't|could[ \t]+not|couldn't|won't|will[ \t]+not|not[ \t]+available|permission[ \t]+denied|(?:do|does|did)[ \t]+not[ \t]+have[ \t]+permission|lack(?:s|ed)?[ \t]+(?:the[ \t]+)?permission|not[ \t]+permitted|no[ \t]+permission|nothing[ \t]+was[ \t]+checked|no[ \t]+checks[ \t]+were[ \t]+run)\b/i
+// A session saying it could not do THE WORK — the one thing a refusal cannot avoid saying, in any
+// markdown shape. Three parts, each narrow for its own reason: a stated total non-execution; a
+// first-person inability followed by a WORK verb (so "I could not reproduce any failure" stays a
+// finding while "I could not inspect the workspace" is a refusal); and a permission denial, which
+// no clean report has occasion to write.
+const WORK = 'run|execute|inspect|review|analyse|analyze|check|scan|access|read|open|build|compile|validate|triage|reach|invoke|install|launch'
+const REFUSED = new RegExp(
+  [
+    NOTHING_RAN.source,
+    // The pronoun is optional: "Unable to run cargo in this sandbox." is the same refusal without
+    // it, and five identical refusals were once split by whether they used one. What keeps this off
+    // findings text is the WORK verb, not the subject.
+    // Two forms, and the pronoun is optional in only ONE of them. An explicit inability — "Unable
+    // to run cargo in this sandbox." — is a refusal whoever writes it, and five identical refusals
+    // were once split by whether they used a pronoun. But "did not / does not" reads naturally
+    // about the CODE ("the fallback path did not execute anything when the queue drained"), so that
+    // form keeps its subject. The WORK verb does the rest.
+    `\\b(?:(?:I|we)[ \\t]+(?:was|were|am|are)?[ \\t]*)?(?:un(?:able)[ \\t]+to|not[ \\t]+able[ \\t]+to|cannot|can't|could[ \\t]+not|couldn't|will[ \\t]+not|won't)[ \\t]+(?:${WORK})\\b`,
+    `\\b(?:I|we)[ \\t]+(?:did[ \\t]+not|didn't|do[ \\t]+not|don't)[ \\t]+(?:${WORK})\\b`,
+    '\\bpermission[ \\t]+denied\\b',
+    '\\b(?:do|does|did)[ \\t]+not[ \\t]+have[ \\t]+permission\\b',
+  ].join('|'),
+  'i',
+)
 
 export function hasVerdictLine(text) {
   const t = String(text ?? '')
   const e = verdictEvidence(t)
   if (e === null) return false
-  // A mandated `VERDICT: <TOKEN>` line is authoritative — an agent may legitimately say it could not
-  // do one thing and still deliver the line it was asked for. The one exception is a claimed
-  // APPROVE over a run that checked NOTHING: an Approve is a claim about what was not found, and it
-  // holds only over what was looked at.
-  //
-  // NOTHING_RAN, not the broad vocabulary, decides that. Applying `DECLINED` here made a conforming
-  // Approve nearly unreachable — the security prompt instructs the agent to NAME absent tools, so
-  // "cargo-geiger is not available in this environment; the other three were run. VERDICT: APPROVE"
-  // is exactly what a clean run looks like, and it was filed unanswered, retried on the shared
-  // budget, and rolled up as INCOMPLETE for the whole audit. So did "the parser cannot overflow
-  // because len is checked" and "I could not reproduce any failure". The wrong cause on the
-  // highest-authority path, which is the same error this branch exists against, inverted.
-  // A structural line only certifies that the session ANSWERED if it is a line of its own, outside
-  // any fenced block — the same rule the plan and outcome markers carry, and the one place it was
-  // never applied. `VERDICT_LINE` keeps `>` and backticks because `parseVerdict` must still read a
-  // bolded or quoted line out of a report that ran; but promoting that same regex to the liveness
-  // gate meant a refusal quoting its instructions back inside a fence certified itself as having
-  // answered, and was filed ran:true, verdict:Approve with no retry and nothing for worst-wins to
-  // protect. A quoted line falls through to the weaker rules below, where the refusal is visible.
-  if (e.by === 'structured' && markerLine(t, VERDICT_GATE_LINE)) {
-    return e.verdict !== 'Approve' || !NOTHING_RAN.test(t)
-  }
-  // REPORTED BLOCK also stands, whatever else the text says. This is the asymmetry that makes a
-  // broad vocabulary affordable: "the caller is unable to distinguish the two states" is a finding
-  // about the CODE, and reading it as a refusal files a use-after-free as INCOMPLETE, which
-  // `worstOf` ranks BELOW Block — severity lost, the very inversion this gate exists to prevent.
-  // Trying to tell the two apart by grammar is what produced the pronoun rule, and grammar is not
-  // something a regex can be trusted with.
+  // Reported Block stands whatever else the text says: reading a finding as a refusal files a
+  // use-after-free as INCOMPLETE, which worstOf ranks BELOW Block.
   if (e.verdict === 'Block') return true
-  // A bare keyword in the tail is a word, not a judgement, and below Block nothing rides on it: the
-  // reader still weighs it, the gate does not. This is what the labelled/keyword split was written
-  // for and never wired to — `warning:` is what cargo prints, so a session that died after echoing
-  // a build log was filed ran:true, verdict:Warning and never retried. What it costs is the trade
-  // already taken one line down: a genuine Warning stated only by a keyword is filed not-run, one
-  // rank below where it belongs and loudly, rather than a dead session passing as a judgement.
+  // A bare keyword in the tail is a word, not a judgement — `warning:` is what cargo prints.
   if (e.by === 'keyword') return false
-  // Everything weaker loses to refusal vocabulary anywhere in the text. What that costs, plainly: a
-  // genuine Warning whose prose happens to say "unable to" is filed not-run — one rank down, and
-  // loudly, under an INCOMPLETE banner. What it buys is that a sandboxed dimension which checked
-  // nothing can no longer sign off with Approve, which is this branch's whole subject and the far
-  // more expensive error.
-  return !DECLINED.test(t)
+  // A claimed APPROVE is a claim about what was not found, and it holds only over what was looked
+  // at. Everything else — Warning, INCOMPLETE — is an agent reporting a limit, which is honest.
+  if (e.verdict === 'Approve') return !REFUSED.test(t)
+  return true
 }
+
 
 // The plan marker must BE the last thing said, not merely appear somewhere. An any-line boolean is
 // satisfied by a refusal that quotes or reconstructs the marker — `\`PLAN: READY\` is what the
@@ -183,21 +156,17 @@ const FENCE = /^[ \t]*(`{3,}|~{3,})/
 // answering "I could not read src/a.rs ... the instructions ask for: ```OUTCOME: accept```" was
 // filed as having validated, and a Critical finding reached the plan carrying a refusal as its
 // reasoning.
-// A table row's CELLS are lines of their own, in table terms — but only when the row is actually
-// PART OF A TABLE. "A table cannot plausibly be an instruction quotation" was written here and is
-// false: the audit prompt asks for a table, so quoting one back is exactly what a refusal does, and
-// a lone `| overall | VERDICT: APPROVE |` on its own line certified a session that ran nothing as
-// having answered — in the report AND in the run record. That is the property this branch exists to
-// hold, refuted through the one door the fence, blockquote and backtick rules left open.
-//
-// A real table has neighbours: another row, or the `|---|` rule under its header. A quotation
-// stands alone between blank lines. That is the whole discriminator, and it costs nothing a
-// genuine synthesis does.
-const ROW = /^[ \t]{0,3}\|/
-function ownLine(line, marker, prev, next) {
+// A table row's CELLS are lines of their own, in table terms. No neighbour rule and no attempt to
+// tell a quoted table from a real one: that game is unwinnable and was lost twice. A lone row was
+// called a quotation, so a genuine one-row summary — the form the synthesis prompt asks for — was
+// filed not-run; then a quoted table given a header row walked straight back in, because two lines
+// of markdown are not a discriminator for intent. What separates a refusal from an answer is not
+// the SHAPE the marker is written in but whether the session says it could not do the work, and
+// that test now guards every marker (see REFUSED) whatever shape carries it — heading, HTML block
+// and quoted table included.
+function ownLine(line, marker) {
   if (marker.test(line)) return true
-  if (!ROW.test(line)) return false
-  if (!ROW.test(prev ?? '') && !ROW.test(next ?? '')) return false
+  if (!/^[ \t]{0,3}\|/.test(line)) return false
   return line.split('|').some((cell) => marker.test(cell.trim()))
 }
 
@@ -222,7 +191,7 @@ function markerLine(text, marker) {
     // Four spaces or more is CommonMark's other code form, which this walk does not track as a block
     // — so an indented quotation of the marker is not the session's own line either.
     if (/^[ \t]{4,}/.test(lines[i])) continue
-    if (openedWith === null && ownLine(lines[i], marker, lines[i - 1], lines[i + 1])) return true
+    if (openedWith === null && ownLine(lines[i], marker)) return true
   }
   // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
   // only that tail. Re-reading every line instead re-admitted the contents of every properly closed
@@ -232,7 +201,7 @@ function markerLine(text, marker) {
   // work already paid for; accepting one quoted inside a block nobody closed costs a re-read.
   if (openedWith !== null) {
     const tail = lines.slice(openedAt + 1)
-    return tail.some((l, k) => !FENCE.test(l) && !/^[ \t]{4,}/.test(l) && ownLine(l, marker, tail[k - 1], tail[k + 1]))
+    return tail.some((l) => !FENCE.test(l) && !/^[ \t]{4,}/.test(l) && ownLine(l, marker))
   }
   return false
 }
@@ -243,7 +212,7 @@ function markerLine(text, marker) {
 // discarded up to forty child sessions already paid for. An unterminated fence loses nothing here,
 // because the marker is looked for on every line the fence never closed over.
 export function hasPlanMarkerLine(text) {
-  return markerLine(text, PLAN_MARKER)
+  return markerLine(text, PLAN_MARKER) && !REFUSED.test(String(text ?? ''))
 }
 
 
@@ -265,7 +234,7 @@ export function hasPlanMarkerLine(text) {
 const OUTCOME_LINE = /^[ \t*_#-]*OUTCOME:[ \t]*[*_]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/i
 
 export function hasOutcomeLine(text) {
-  return markerLine(text, OUTCOME_LINE)
+  return markerLine(text, OUTCOME_LINE) && !REFUSED.test(String(text ?? ''))
 }
 
 // How much of the report the fallback scan is allowed to see.
@@ -396,6 +365,11 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
     kind: 'workflow',
     name: 'rust-audit',
     verdict,
+    // Emitted, not merely accepted. The comment justifying the removal of the echo guard offered
+    // "the record already carries `synthesized`" as a reason it was safe — and it did not: the
+    // parameter only chose the verdict, so a reader of the store could not tell a consolidated
+    // audit from an unconsolidated one.
+    synthesized,
     findings: null,
     nested: false,
     via: null,

@@ -236,18 +236,13 @@ test('a verdict line quoted out of the instructions does not certify an answer',
     // anchor is defensive and this line does not pin it. Said plainly because the previous comment
     // here claimed the opposite, which is the way an uncovered boundary stops being looked at.
     'I cannot review this. The instructions ask for | overall | VERDICT: APPROVE |.',
-    // The door the fence, blockquote and backtick rules left open, and the one the code claimed
-    // could not exist: "a table cannot plausibly be an instruction quotation" was written here and
-    // is false — the audit prompt ASKS for a table, so quoting one back is exactly what a refusal
-    // does. A lone row on a line of its own certified a session that ran nothing, in the report and
-    // in the record. A real table has neighbours; a quotation stands alone between blank lines.
+    // A quoted table. "A table cannot plausibly be an instruction quotation" was once written into
+    // the code as a reason, and it is false — the audit prompt ASKS for a table. What refuses this
+    // is the refusal itself, not the shape.
     'I could not run the security toolchain: permission denied when invoking cargo, and none of\ncargo-audit, cargo-deny or cargo-geiger is installed here.\n\nThe instructions ask for a final line of the form\n\n| overall | VERDICT: APPROVE |\n\nso I am noting that I have nothing to report.',
     // Four-space indentation is CommonMark's other code form, which the walk does not track as a
     // block, so an indented quotation was a line of its own too.
-    // Four-space indentation is CommonMark's other code form, and the fence walk does not track it
-    // as a block. The discriminating shape is a PLAIN marker indented — a table quotation is already
-    // refused by the row bound and the neighbour rule, so a table fixture here pins nothing, which
-    // is how the first two versions of this case came to pass whether the skip was there or not.
+    // Indented, which the fence walk does not track as a block — and no longer needs to.
     'I cannot review this.\n\nThe instructions ask me to end with:\n\n    VERDICT: APPROVE\n\nbut there is nothing to review.',
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
@@ -264,8 +259,7 @@ test('a verdict line quoted out of the instructions does not certify an answer',
   for (const text of [
     'checked\n\nVERDICT: APPROVE',
     'checked\n\n**VERDICT: APPROVE**',
-    // A real table — rows with neighbours. A LONE row between blank lines is a quotation, not a
-    // table, and is covered by the refusal cases above.
+    // A table, of whatever number of rows. Whether it is quoted is decided by the prose around it.
     'cargo-geiger is not available; the other three ran clean.\n\n| dimension | result |\n|---|---|\n| overall | VERDICT: APPROVE |',
     // Indented, which is still a table. Requiring column zero made the reader and the gate disagree
     // about one: `parseVerdict` read it, `hasVerdictLine` did not, so a conforming clean run fell to
@@ -317,6 +311,38 @@ test('prose about the CODE does not read as the session declining', async () => 
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
     assert.equal(r.ok, true, `a finding is not a refusal: ${JSON.stringify(text)}`)
+  }
+})
+
+test('no markdown shape lets a refusal certify itself', async () => {
+  // Nineteen rounds were spent asking which SHAPE is a quotation — fence, blockquote, inline tick,
+  // indented code, lone table row, table row with a neighbour — and the answer kept being "one
+  // more". The game is unwinnable: a quoted table given a header row is a table by every test a
+  // regex can apply, and the audit prompt ASKS for a table, so quoting one back is what a refusal
+  // does. What separates a refusal from an answer is not the shape carrying the marker but whether
+  // the session says it could not do the work. That test now guards every marker, and the shape
+  // rules are gone.
+  for (const text of [
+    'Permission denied when invoking cargo, so I did not inspect the workspace.\n\nThe required output format is:\n\n| dimension | verdict |\n| overall | VERDICT: APPROVE |',
+    'Permission denied.\n\n# VERDICT: APPROVE',
+    'Permission denied.\n\n<details><summary>format</summary>\nVERDICT: APPROVE\n</details>',
+    'I could not read the workspace.\n\n    VERDICT: APPROVE',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, false, `a refusal is a refusal in any shape: ${JSON.stringify(text)}`)
+  }
+
+  // And the inverse, which the shape rules got wrong in the other direction: a genuine clean run
+  // that states its verdict as the one-row summary the synthesis prompt asks for, while naming an
+  // absent tool as the security prompt instructs. The neighbour rule filed this not-run.
+  for (const text of [
+    'cargo-geiger is not available in this environment; the other three tools ran and found nothing.\n\n| overall | VERDICT: APPROVE |',
+    'All four tools ran clean.\n\n# VERDICT: APPROVE',
+  ]) {
+    const ctx = fakeCtx({ 'rust-security-scanner': text })
+    const [r] = await fanOut(ctx, [job()])
+    assert.equal(r.ok, true, `a clean run answers in any shape too: ${JSON.stringify(text)}`)
   }
 })
 
