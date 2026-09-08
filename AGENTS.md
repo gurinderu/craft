@@ -110,7 +110,7 @@ Every carrier below was observed by running it on 2026-08-31; none is inferred. 
 | "the manifests are valid" | the manifests as the official validator reads them | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` | agent |
 | "this skill/agent is well-formed and its `craft:` refs resolve" | the checker's verdict over `skills/`, `agents/`, `workflows/` | `node lib/check-skills.mjs` | agent |
 | "this workflow script still parses in the sandbox" | the script compiled inside the sandbox wrapper | `node lib/check-workflows.mjs` | agent |
-| "the two deliveries of a review agent name the same outcome words in their bodies" | the set of outcomes each side's body can reach, per the checker's `OUTCOMES` table | `node lib/check-delivery-parity.mjs` | agent |
+| "the two deliveries of a review agent can name the same set of outcomes in their bodies" | the set of outcomes each side's body can reach, per the checker's `OUTCOMES` table | `node lib/check-delivery-parity.mjs` | agent |
 | "the helper logic is correct" | the test run | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` | agent |
 | "the code is lint-clean" | ESLint over the linted scope | `npm run lint` — and read the raw exit code, not a wrapper's summary | agent |
 | "the eval corpus is well-formed" | the checker's verdict | `node lib/check-evals.mjs` | agent |
