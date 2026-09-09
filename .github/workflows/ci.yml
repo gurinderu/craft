@@ -42,6 +42,11 @@ jobs:
       # Validate skill/agent frontmatter and that every internal craft:<slug> reference resolves.
       - name: Check skills & agents
         run: node lib/check-skills.mjs
+      # Compares the SET OF OUTCOMES each review agent's two deliveries (agents/ vs opencode/agents/)
+      # can report, mapped from the rubric's words — not the two bodies in full, which can still
+      # diverge in guidance and detail with this gate green.
+      - name: Check delivery parity
+        run: node lib/check-delivery-parity.mjs
       # The opencode delivery's agents/commands answer to a different frontmatter contract than the
       # Claude Code ones above (no `name`, no pinned `model`, `mode: subagent`, `hidden: true`,
       # `tools` a map with write/edit false), so it gets its own checker rather than a widened one.
