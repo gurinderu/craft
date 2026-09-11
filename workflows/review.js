@@ -675,7 +675,7 @@ const LEDGER_ITEM = {
 const PRIOR_ROUND_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['found', 'round', 'head', 'ledger', 'ledgerCount', 'priorFindings', 'reason'],
+  required: ['found', 'round', 'head', 'ledger', 'ledgerCount', 'priorFindings', 'journalSourced', 'reason'],
   properties: {
     found: { type: 'boolean' },
     round: { type: 'integer', description: 'the prior round number; 0 when found=false' },
@@ -684,6 +684,7 @@ const PRIOR_ROUND_SCHEMA = {
     ledgerCount: { type: 'integer', description: 'the ledger length the script computed — copy it as printed; the workflow checks it against the array it received and treats a mismatch as a truncated transport' },
     reason: { type: 'string', description: 'why there is no prior round (no-store, no-index, no-candidate-rows, unattributable-rows-only, ancestry-rejected, detail-unreadable, partial-only, git-unavailable); empty when found=true' },
     priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
+    journalSourced: { type: 'boolean', description: 'true when this ledger was reconstructed from a stalled run\'s journal.jsonl rather than a normal completed round; false when found=false. Its `head` may equal the OPERATOR\'S current HEAD (a re-run on the same stalled commit before any fix), so the workflow must not diff head...HEAD off it — see shouldFullRescan.' },
   },
 }
 
@@ -1767,9 +1768,16 @@ function ledgerDegraded(priorRound) {
   const ledgerLen = Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0
   return findings > 0 && ledgerLen === 0
 }
-function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded }) {
+function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalSourced }) {
   if (!priorRound) return true            // a first review is already a full base...HEAD scan
   if (degraded) return true               // nothing to carry — a delta-only scan would review almost nothing
+  // Kept as its own condition rather than folded into `degraded`: the two are genuinely different
+  // failures. `degraded` means the carried ledger is untrustworthy or missing; a journal-sourced
+  // round's ledger is fine — the problem is its `head`, which is the commit the DEAD run stalled on.
+  // The operator's natural move after a stall is to re-run on that SAME commit before making any
+  // fix, so `priorRound.head` can equal the caller's current HEAD; a delta scan of head...HEAD would
+  // then be empty rather than incremental, silently trading a full review for a blind one.
+  if (journalSourced) return true
   const n = Number(fullEvery)
   if (!Number.isFinite(n) || n < 1) return false
   return Number(thisRound) % n === 0
@@ -1830,7 +1838,7 @@ Run exactly this:
 ${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
 \`\`\`
 
-It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, reason:"loader-did-not-run"}.`,
+It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
@@ -1876,15 +1884,23 @@ const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
   log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
 }
-const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded })
+// Distinct from `priorLedgerDegraded`: the ledger itself is fine here, but a journal-reconstructed
+// round's `head` is the commit the DEAD run stalled on, which the operator typically re-runs against
+// BEFORE making any fix — so it can equal the current HEAD and a delta scan would review nothing.
+const priorRoundJournalSourced = Boolean(priorRound?.journalSourced)
+if (priorRoundJournalSourced) {
+  log(`⚠️ Re-review round sourced from a stalled run's journal: prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stalled, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+}
+const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
 // regressions the fixes introduced. But every `fullEvery`-th round (and whenever the prior ledger is
-// degraded) we widen back to the FULL base...HEAD diff so a defect an earlier round missed in code it
-// never touched is re-discovered. `fresh` (priorRound=null) always keeps the full base...HEAD scan.
+// degraded, or the prior round came from a stalled run's journal) we widen back to the FULL
+// base...HEAD diff so a defect an earlier round missed in code it never touched is re-discovered.
+// `fresh` (priorRound=null) always keeps the full base...HEAD scan.
 const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
 if (priorRound) {
   log(`Re-review round ${thisRound} lens scope: ${fullRescan
-    ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}) — earlier misses in untouched code are re-checked`
+    ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}${priorRoundJournalSourced ? ', prior round journal-sourced' : ''}) — earlier misses in untouched code are re-checked`
     : `incremental delta ${flattenField(priorRound.head)}...HEAD (fix commits only)`}`)
 }
 
