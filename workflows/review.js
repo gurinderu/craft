@@ -1513,7 +1513,12 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
   const version = String(record?.craftVersion ?? '')
-  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
+  // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
+  // runs, never composed by the model — the whole point (see the header note on the payload-copy
+  // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
+  // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
+  // logger receiving the literal string "" and treating it as a real (empty) session id.
+  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -1588,7 +1593,9 @@ function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir 
   // before the fix, with finalize and prior-round succeeding beside them. A checkpoint describes the
   // same run as the record, so the version belongs on the payload anyway.
   const version = String(payload?.craftVersion ?? '')
-  const flags = `--phase ${shq(phase)} ${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}`
+  // See the matching note in logRunPrompt above: shell-expanded, never model-composed, and `:+`
+  // degrades an unset/empty session id to no flag rather than to the literal string "".
+  const flags = `--phase ${shq(phase)} ${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
 Run exactly this, then return the runDir the script prints:
