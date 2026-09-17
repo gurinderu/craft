@@ -107,6 +107,20 @@ function normalizeArgs(args, warn = () => {}) {
 }
 // <<< craft-inline
 const A = normalizeArgs(args, log)
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+if (A.repo) {
+  return [
+    `## Verdict`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    ``,
+    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`adversarial-review\` there.`,
+  ].join('\n')
+}
 
 const diffBase = A.diffBase ? String(A.diffBase) : ''
 const intentArg = A.intent ? String(A.intent) : ''
