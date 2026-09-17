@@ -125,8 +125,9 @@ if (A.repo) {
 const diffBase = A.diffBase ? String(A.diffBase) : ''
 const intentArg = A.intent ? String(A.intent) : ''
 const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow
-// The repo under review, when it is NOT the directory the session runs in, and where craft itself
-// lives so the logger can find lib/craft-log-run.mjs. As an installed plugin CLAUDE_PLUGIN_ROOT is
+// Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
+// this engine has no `repo` argument (see the refusal above) and always reviews the checkout the
+// session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the reviewed repo — where the script is not. Pass craftRoot then.
 const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
@@ -412,7 +413,7 @@ CRAFT_RECORD_EOF
 cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
-The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit, and — reading the working copy with git — branch and head, whose values in the record below are only a fallback for what git cannot resolve), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 

@@ -127,16 +127,56 @@ let repoArg = A.repo ? String(A.repo) : ''
 // `~` counts as absolute here because the agent's shell expands it before git ever sees the pathspec.
 const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
 let ambiguousPath = ''
+// A scope the caller asked for and did NOT get. It rides into `notRun` and therefore into the
+// verdict line, not only into `log()`: dropping a narrowing widens the review to the WHOLE repo, so
+// what was ordered and what was done diverge — and the person who reads the verdict is not the
+// person who reads the log. An INCOMPLETE marker is the honest rendering of "we reviewed something
+// else than you asked for", however green the findings are.
+let scopeNotRun = []
+// Containment decided on NORMALIZED SEGMENTS rather than on a raw string prefix. `repo=/r/` with
+// `path=/r/./crates/../crates/core` is the same request as `repo=/r` with `path=crates/core`, and a
+// prefix comparison reads it as "outside" — which silently WIDENS the review to the whole repository.
+// Segments also settle the sibling case (`/r-evil` is not inside `/r`) that a bare `startsWith`
+// accepts unless the separator is appended by hand.
+// WHAT STAYS OUTSIDE THIS GUARD, because the sandbox has no disk and no Node API: a SYMLINK cannot be
+// resolved (a path reaching the repo through a symlinked directory reads as outside), the comparison
+// is case-SENSITIVE while macOS and Windows filesystems are not (`/R/crates` under `repo=/r` reads as
+// outside), and a `..` that would climb above the first segment is kept as a literal segment, so such
+// a path matches nothing. All three misread in the SAME direction — the scope is dropped, and a
+// dropped scope is now reported in the verdict and in `notRun` — never in the direction of a
+// narrowing that looks honoured and is not.
+// The dropped scope, rendered into whichever report is returned — every early exit included, since
+// the drop happened before all of them. Appended to the synthesized report too rather than asked of
+// the synthesis model: what the review DID NOT cover is not something a prompt may forget.
+const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeNotRun.join('\n⚠️ ')}\n` : '')
+function pathSegments(p) {
+  const segs = []
+  for (const s of String(p).split(/[\\/]+/)) {
+    if (!s || s === '.') continue
+    if (s === '..' && segs.length && segs[segs.length - 1] !== '..') { segs.pop(); continue }
+    segs.push(s)
+  }
+  return segs
+}
+// The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
+function relativeToRepo(abs, repo) {
+  const r = pathSegments(repo)
+  const p = pathSegments(abs)
+  if (!r.length || p.length < r.length) return null
+  for (let i = 0; i < r.length; i++) if (p[i] !== r[i]) return null
+  return p.slice(r.length).join('/')
+}
 if (ABSOLUTE_PATH.test(pathArg)) {
-  const repoPrefix = repoArg.replace(/\/+$/, '')
-  if (repoPrefix && (pathArg === repoPrefix || pathArg.startsWith(`${repoPrefix}/`))) {
+  const rel = repoArg ? relativeToRepo(pathArg, repoArg) : null
+  if (rel != null) {
     // It names a directory inside the repo under review: that is a SCOPE, spelled absolutely. Keep
     // the narrowing the caller asked for — dropping it here would silently widen the review.
-    const rel = pathArg.slice(repoPrefix.length).replace(/^\/+/, '')
     log(`⚠️ path=${pathArg} is absolute but sits inside repo=${repoArg} — read as the repo-relative scope ${shq(rel)}.`)
     pathArg = rel
-  } else if (repoPrefix) {
-    log(`⚠️ path=${pathArg} is ABSOLUTE and outside repo=${repoArg} — an absolute pathspec matches nothing, so the review would see an EMPTY diff. Dropping the scope; pass a repo-relative path to narrow it.`)
+  } else if (repoArg) {
+    const msg = `the requested scope path=${pathArg} was DROPPED: it is ABSOLUTE and does not resolve inside repo=${repoArg}, and an absolute pathspec matches nothing (the review would have seen an EMPTY diff). The review below therefore covers the WHOLE repository, not the requested scope — re-run with a repo-relative path to narrow it.`
+    log(`⚠️ ${msg}`)
+    scopeNotRun = [msg]
     pathArg = ''
   } else {
     // No `repo` to decide against. Refusing costs nothing and says exactly what to do; either guess
@@ -1561,7 +1601,7 @@ CRAFT_RECORD_EOF
 cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
-The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit, and — reading the working copy with git — branch and head, whose values in the record below are only a fallback for what git cannot resolve), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 
@@ -1845,13 +1885,13 @@ if (ambiguousPath) {
   return out([`## Verdict`, `⚠️ INCOMPLETE — ${msg}`].join('\n'))
 }
 const detected = await ragent(
-  `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under \`${pathArg}\`; pass \`-- ${shq(pathArg)}\` to the git commands below.` : ''}
+  `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under ${shq(pathArg)}; pass \`-- ${shq(pathArg)}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
 2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${shq(pathArg)}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
 3. Capture the VERBATIM change description as \`spec\` — the authors' own written claims/invariants, checked against code later. If the current branch has an OPEN PR, run \`gh pr view --json body,title\` and use its title + body. Otherwise use the commit messages on the diff range: \`git log <base>..HEAD --format=%B\`. Do not summarize or paraphrase — copy the text as-is. Truncate to ~4000 chars. Empty string if there is no PR and no commit body (e.g. only uncommitted changes). If \`gh\` is missing/unauthenticated, fall through to the commit messages.
-4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo).
+4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). These two are a FALLBACK only: the logger reads both off the working copy with git at the moment a record is written, and its values win. Do not work to fill them — an empty string is a fine answer.
 Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, and head.`,
   { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
 )
@@ -1860,9 +1900,9 @@ Return baseRef (the ref you resolved, empty string if none), files (the changed 
 if (!detected) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
-    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection'], outputTokens: budget.spent(),
+    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun], outputTokens: budget.spent(),
   })
-  return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n'))
+  return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
 }
 const baseRef = detected?.baseRef ?? baseArg
 const changedFiles = Array.isArray(detected?.files) ? detected.files : []
@@ -1969,9 +2009,9 @@ if (unknownLangs.length) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    notRun: [`nothing ran — ${msg}`], outputTokens: budget.spent(),
+    notRun: [`nothing ran — ${msg}`, ...scopeNotRun], outputTokens: budget.spent(),
   })
-  return out([`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n'))
+  return out([`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n') + scopeSection())
 }
 const detectedActive = Object.values(PROFILES).filter(p => (!pinnedLangs || pinnedLangs.includes(p.id)) && p.detect(changedFiles))
 // ORDER IS LOAD-BEARING, and it lives in resolveCoverage: the guards are decided from
@@ -1987,12 +2027,12 @@ if (coverage.outcome === 'empty') {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: [], notRun: [emptyMsg], outputTokens: budget.spent(),
+    uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
     ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 if (coverage.outcome === 'nothing-to-review') {
   // Nothing was reviewed AND nothing needed reviewing — an honest green, not a coverage hole. A
@@ -2001,26 +2041,26 @@ if (coverage.outcome === 'nothing-to-review') {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: changedFiles, notRun: [], outputTokens: budget.spent(),
+    uncoveredFiles: changedFiles, notRun: [...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
     ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 if (coverage.outcome === 'no-profile') {
   const msg = noLanguageMessage(PROFILES, changedFiles.length, coverage.material.length)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: changedFiles, notRun: [msg], outputTokens: budget.spent(),
+    uncoveredFiles: changedFiles, notRun: [msg, ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${msg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
     ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map(f => `- ${f}`)] : []),
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 
@@ -2470,6 +2510,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const groups = []
   for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
 
+  // Filled by the `.catch` below, read after the window settles: a batch verifier that never
+  // returned is a piece of verification that did not run, and `notRun` is what makes the verdict say
+  // INCOMPLETE. A `log()` line alone is not that — the person who reads the verdict is not the person
+  // who reads the log.
+  const deadBatches = []
+
   // Batched and individual verification look at DISJOINT findings — routing put each one in exactly
   // one bucket — so awaiting the batch wave before starting the individual one bought nothing but
   // latency. Measured on one run: batches ran +81..89min and individuals +89..102min, strictly
@@ -2485,7 +2531,22 @@ async function verifyPool(items, plan, profile, gateProvenance) {
         // A missing index is a verifier that lost a finding, not a refutation: fall back to Suspected.
         return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
       }))
-      .catch(() => group.map(f => ({ ...f, tier: 'suspected' }))))
+      // A batch verifier that THREW — both `ragent` attempts failed — judged nothing, so its group
+      // belongs in `unverified`, exactly where the skipped Low/Info go, and by the same reasoning:
+      // `suspected` is a claim that a verifier LOOKED and could not confirm, and the report now says
+      // so in those words. Marking a dead verifier's findings suspected made the report assert an
+      // inspection that never happened, and left up to BATCH_SIZE findings inside the `totalVerified`
+      // denominator that is defined as what verification actually judged. One tier, one way in.
+      .catch(err => {
+        const why = `the batch verifier for ${group[0].file || '?'} died before returning any verdict (${String((err && err.message) || err).slice(0, 120)}) — its ${group.length} finding(s) were NOT checked against the code`
+        log(`⚠️ [${profile.id}] ${why}; reported as unverified and excluded from the verification counters`)
+        deadBatches.push(`${profile.id} batch verification of ${group[0].file || '?'} — ${why}`)
+        return group.map(f => ({
+          ...f,
+          tier: 'unverified',
+          why: `${f.why} (NOT VERIFIED: ${why})`,
+        }))
+      }))
 
   if (route.skip.length || groups.length) {
     log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} NOT VERIFIED (Low/Info cannot move the verdict; reported as unverified, excluded from the verification counters)`)
@@ -2533,14 +2594,19 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const settledVerdicts = await weightedWindow(entries, VERIFY_WINDOW_AGENTS, run => parallel([run]).then(rs => rs[0]))
   const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
   const judged = settledVerdicts.slice(batchThunks.length)
-  const vp = judged.filter(Boolean).concat(batched)
+  const settled = judged.filter(Boolean).concat(batched)
+  // A dead batch's findings arrive through the same list as judged ones and must leave it again:
+  // `vp` is the JUDGED population and every count derived from it (candidates, refuteRate) means
+  // "what verification actually examined".
+  const vp = settled.filter(f => f.tier !== 'unverified')
   const refuted = vp.filter(f => f.tier === 'refuted')
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
     suspected: vp.filter(f => f.tier === 'suspected'),
-    // Kept OUT of `vp` on purpose: `vp` is the judged population, and every count derived from it
-    // (candidates, refuteRate) must mean "what verification actually examined".
-    unverified,
+    // Kept OUT of `vp` on purpose, from both of its sources: the Low/Info nothing was spent on, and
+    // the groups whose batch verifier died.
+    unverified: unverified.concat(settled.filter(f => f.tier === 'unverified')),
+    notRun: deadBatches,
     dropped: refuted.length,
     refuted,
   }
@@ -2702,8 +2768,14 @@ async function reviewProfile(profile) {
   ].filter(Boolean).join(' · ')
   // First checkpoint: from here on, a run that dies still says what was planned and whether the tree
   // was green. Everything before this point is cheap to redo; everything after it is not.
+  // `head` is the RUN'S HEAD, the same value the final record carries, and the diff base rides under
+  // its own `baseRef` key. Both once shared the `head` key — the checkpoints got the base (a ref NAME
+  // like `origin/main`) while the final record got the sha — so the two sides of every
+  // checkpoint↔record comparison spelled the field differently: `finalizeRun` folded 0 phases and
+  // left the `.partial` directory behind, and `recover` then read a ref name as a commit and promoted
+  // the leftover as a separate partial run. Two keys, each meaning one thing.
   await checkpoint(`${profile.id}-plan`, {
-    language: profile.id, branch, head: baseRef,
+    language: profile.id, branch, head, baseRef,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
@@ -2808,7 +2880,7 @@ async function reviewProfile(profile) {
   // carrying identity. The rejoin search therefore saw `{project, '', ''}` on exactly the paths where
   // it fires, and matched on the repository alone: any concurrent review of the same repo qualified.
   await checkpoint(`${profile.id}-lenses`, {
-    language: profile.id, branch, head: baseRef, ranLenses, droppedLenses, lensRounds,
+    language: profile.id, branch, head, baseRef, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
     notRun,
@@ -2820,10 +2892,13 @@ async function reviewProfile(profile) {
   // ---- Verify ----
   phase('Verify')
   const deduped = await dedupPool(rollupPool(pool, profile), profile)
-  let { confirmed, suspected, unverified, dropped, refuted } = await verifyPool(deduped, plan, profile, toolProvenance)
+  let { confirmed, suspected, unverified, dropped, refuted, notRun: verifyNotRun } = await verifyPool(deduped, plan, profile, toolProvenance)
+  // Verification that never ran joins the lens-level list: a dead batch verifier is a hole in
+  // coverage exactly like a lens that never returned, and both must reach the verdict as INCOMPLETE.
+  notRun.push(...verifyNotRun)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
-    language: profile.id, branch, head: baseRef,
+    language: profile.id, branch, head, baseRef,
     verdict: finalVerdict(confirmed),
     findings: summarizeFindings(confirmed),
     // `candidates` counts what verification EXAMINED, so the unverified tier is reported beside it
@@ -2855,6 +2930,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
       const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
       if (fresh.length) {
         const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
+        notRun.push(...(v.notRun || []))
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
         unverified = unverified.concat(v.unverified)
@@ -2922,7 +2998,7 @@ function reviewRecord(extra) {
 }
 
 if (gateFailed.length) {
-  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
+  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
   return out([
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
@@ -2931,6 +3007,7 @@ if (gateFailed.length) {
     mergedProvenance,
     `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map(c => `- [${r.profile.id}] ${c}`)).join('\n')}`,
     carriedSection(),
+    scopeSection(),
     ``,
     `Fix the gate before a semantic review is worthwhile.`,
   ].join('\n'))
@@ -3107,7 +3184,9 @@ if (priorRound) {
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
-const notRun = results.flatMap(r => r.notRun)
+// `scopeNotRun` leads: a scope the caller asked for and did not get is the first thing a reader of
+// the verdict needs, ahead of anything the run itself failed to finish.
+const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
 // Files no profile covered are a coverage hole, not a footnote — but they are NOT a `notRun` entry.
 // `notRun` means "this ran badly; re-run it": every other entry is a failure a re-run can fix, and
 // lib/analyze-runs.mjs ranks the list by EXACT STRING to surface repeated fragility. A note
@@ -3136,6 +3215,12 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
 }
 
 // ================= Synthesize one merged report =================
+// ONE sentence, three readers: the first-pass template, the re-review template and the mechanical
+// fallback report. It was written twice before and the two copies already meant different things.
+// It names BOTH ways into the tier — a Low/Info nobody paid a verifier for, and a finding whose
+// verifier died — because a reader who is told only the first reason will read a dead verifier's
+// findings as cheap ones.
+const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
@@ -3166,6 +3251,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
 6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
+6b. \`## Unverified (not checked)\` — the UNVERIFIED JSON below, same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into New, Still open or Carried, never call them confirmed, and do not re-rank or upgrade their severity. They change nothing about the verdict. Omit the section if empty.
 7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
@@ -3173,7 +3259,7 @@ RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in 
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
 4. \`## Suspected (needs confirmation)\` — findings a verifier DID examine and could not confirm; same format; omit the section if empty.
-5. \`## Unverified (not checked)\` — same format, and OPEN the section with exactly this sentence: "These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict. Nothing below has been checked against the code — treat each as a lead, not a finding." Never merge these into Confirmed or Suspected, never call them confirmed, and do not re-rank or upgrade their severity. Omit the section if empty.
+5. \`## Unverified (not checked)\` — same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into Confirmed or Suspected, never call them confirmed, and do not re-rank or upgrade their severity. Omit the section if empty.
 6. \`## Fix first\` — the few highest-leverage Confirmed items.
 ${uncoveredFiles.length ? `7. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
 ${criticNotes ? `8. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}`}
@@ -3286,9 +3372,9 @@ function fallbackReport() {
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
     ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
-    ...(unverified.length ? [``, `## Unverified (not checked)`, `These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict. Nothing below has been checked against the code — treat each as a lead, not a finding.`, ...bySev(unverified).map(fmt)] : []),
+    ...(unverified.length ? [``, `## Unverified (not checked)`, UNVERIFIED_PREAMBLE, ...bySev(unverified).map(fmt)] : []),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
   ].join('\n')
 }
 
-return out(report || fallbackReport())
+return out((report || fallbackReport()) + scopeSection())
