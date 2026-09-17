@@ -1876,8 +1876,15 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // Round detection: find the newest prior `review` run for this branch, and accept it as the prior
 // round ONLY if its head is an ANCESTOR of the current HEAD (a rebase/force-push makes a stale run
 // non-ancestor → treat as a fresh first review). `fresh` skips the whole mechanism.
+//
+// The gate is `!freshArg` ALONE — it used to also require `branch && head`, both of which come from
+// the `detect` agent's answer above. That made the whole re-review memory conditional on a model
+// filling two fields: a `detect` agent that died or answered without them skipped the read entirely
+// and the run reported as a first review, indistinguishable from a genuine one. The script reads the
+// branch off git itself now (`prior-round` prefers git over `--branch`), so the flag below is the
+// fallback, not the key.
 let priorRound = null
-if (!freshArg && branch && head) {
+if (!freshArg) {
   priorRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
