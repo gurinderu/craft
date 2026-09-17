@@ -111,11 +111,25 @@ const A = normalizeArgs(args, log)
 
 const baseArg = A.base ? String(A.base) : ''
 const runMutants = !!A.mutants
-// The repo under audit, when it is NOT the directory the session runs in, and where craft itself
-// lives so the logger can find lib/craft-log-run.mjs. As an installed plugin CLAUDE_PLUGIN_ROOT is
+// Where craft itself lives, so the logger can find lib/craft-log-run.mjs. This engine has NO
+// `repo` argument — see the refusal below; it audits the checkout the session runs in, always. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+if (A.repo) {
+  return [
+    `## Verdict`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    ``,
+    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`rust-audit\` there.`,
+  ].join('\n')
+}
 
 const CRATE_ITEM = {
   type: 'object',
