@@ -1,6 +1,6 @@
 export const meta = {
   name: 'review',
-  description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected report with a verdict. Rust and Nix profiles built in.',
+  description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
   whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
@@ -670,7 +670,7 @@ const FINDING_ITEM = {
     ruleId: { type: 'string', description: 'catalog rule ID from the active profile\'s rules.md (e.g. "CON-003" for rust, "PUR-001" for nix) if the finding maps to one; empty string otherwise' },
     fp: { type: 'string', description: 'line-tolerant fingerprint; empty if not from a ledger' },
     symbol: { type: 'string', description: 'enclosing fn/type name; empty if unknown' },
-    tier: { type: 'string', description: 'confirmed|suspected|refuted; empty if n/a' },
+    tier: { type: 'string', description: 'confirmed|suspected|unverified|refuted; empty if n/a' },
     disposition: { type: 'string', description: 'open|closed|rejected|justified|deferred; empty if n/a' },
   },
 }
@@ -2345,10 +2345,11 @@ async function weightedWindow(entries, maxWeight, runOne) {
 // INDIVIDUAL — Critical/High, plus any severity carrying a rule from a family that blocks on sight.
 // These decide the verdict and get the full adversarial panel, never batched, never skipped.
 // BATCHED — Medium. Can only reach Warning, so one agent judges a group of them instead of one each.
-// SKIPPED — Low/Info. No combination of verdicts on these can move Approve/Warning/Block, and craft
-// already has the right tier for an unjudged finding: Suspected is defined as "borderline or
-// UNVERIFIED; surfaced for the author, never changes the verdict". Spending an adversarial skeptic to
-// move a finding from Suspected to Suspected buys nothing. The residual risk is a lens UNDER-calling
+// SKIPPED — Low/Info. No combination of verdicts on these can move Approve/Warning/Block, so no
+// verifier is spent on them. They then carry the `unverified` tier and say so in the report: an
+// unexamined finding is neither confirmed nor suspected, and it is excluded from the verification
+// counters, because a denominator that includes what was never checked makes the refutation rate of
+// one run incomparable with another's. The residual risk is a lens UNDER-calling
 // severity, which the blocking-family escape hatch below covers for the families where it would hurt.
 // The escape hatch belongs ONLY on the skipped tier. Batching is still verification — a Medium the
 // lens under-called gets a real adversarial judgement either way — so the only place an under-call
@@ -2450,12 +2451,14 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const route = { individual: [], batch: [], skip: [] }
   for (const f of items) route[verifyTier(f)].push(f)
 
-  // Skipped tier: straight to Suspected, and SAY so on the finding — an unverified item that reads
-  // like a verified one is exactly the silent cap this codebase refuses elsewhere.
-  const skipped = route.skip.map(f => ({
+  // Skipped tier: its OWN tier, `unverified` — not Suspected. Suspected means "a verifier looked and
+  // the claim did not stand up confidently"; these were never looked at. Folding them into Suspected
+  // made the two indistinguishable in the report AND put them in the refuteRate denominator, so a run
+  // whose findings were mostly Low/Info reported a refutation rate diluted by items nothing refuted.
+  const unverified = route.skip.map(f => ({
     ...f,
-    tier: 'suspected',
-    why: `${f.why} (not adversarially verified: ${f.severity} cannot change the verdict, so it is surfaced as Suspected rather than spending a verifier on it)`,
+    tier: 'unverified',
+    why: `${f.why} (NOT VERIFIED: no verifier was spent on it — ${f.severity} cannot change the verdict either way, so nothing here has been checked against the code)`,
   }))
 
   // Batched tier: group by file so one agent reads one file's context once.
@@ -2485,7 +2488,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       .catch(() => group.map(f => ({ ...f, tier: 'suspected' }))))
 
   if (route.skip.length || groups.length) {
-    log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} surfaced unverified (Low/Info cannot move the verdict)`)
+    log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} NOT VERIFIED (Low/Info cannot move the verdict; reported as unverified, excluded from the verification counters)`)
   }
 
   const individualThunks = route.individual.map(f => () => {
@@ -2530,11 +2533,14 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const settledVerdicts = await weightedWindow(entries, VERIFY_WINDOW_AGENTS, run => parallel([run]).then(rs => rs[0]))
   const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
   const judged = settledVerdicts.slice(batchThunks.length)
-  const vp = judged.filter(Boolean).concat(batched, skipped)
+  const vp = judged.filter(Boolean).concat(batched)
   const refuted = vp.filter(f => f.tier === 'refuted')
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
     suspected: vp.filter(f => f.tier === 'suspected'),
+    // Kept OUT of `vp` on purpose: `vp` is the judged population, and every count derived from it
+    // (candidates, refuteRate) must mean "what verification actually examined".
+    unverified,
     dropped: refuted.length,
     refuted,
   }
@@ -2707,7 +2713,7 @@ async function reviewProfile(profile) {
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -2808,19 +2814,21 @@ async function reviewProfile(profile) {
     notRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '' }
   }
 
   // ---- Verify ----
   phase('Verify')
   const deduped = await dedupPool(rollupPool(pool, profile), profile)
-  let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, toolProvenance)
-  log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
+  let { confirmed, suspected, unverified, dropped, refuted } = await verifyPool(deduped, plan, profile, toolProvenance)
+  log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
     language: profile.id, branch, head: baseRef,
     verdict: finalVerdict(confirmed),
     findings: summarizeFindings(confirmed),
-    verification: { candidates: deduped.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped },
+    // `candidates` counts what verification EXAMINED, so the unverified tier is reported beside it
+    // rather than inside it.
+    verification: { candidates: deduped.length - unverified.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped, unverified: unverified.length },
   }, 'Verify')
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
@@ -2849,9 +2857,10 @@ Also note in one line anything else likely missed (a changed file no finding tou
         const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
+        unverified = unverified.concat(v.unverified)
         dropped += v.dropped
         refuted = refuted.concat(v.refuted)
-        log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
+        log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted · +${v.unverified.length} not verified`)
       }
     } else if (followups.length) {
       notRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
@@ -2862,7 +2871,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes }
 }
 
 // ================= Run each active profile, then merge =================
@@ -2929,6 +2938,8 @@ if (gateFailed.length) {
 
 let confirmed = results.flatMap(r => r.confirmed)
 let suspected = results.flatMap(r => r.suspected)
+// Low/Info nothing looked at. A third track, not a corner of Suspected — see verifyPool.
+let unverified = results.flatMap(r => r.unverified || [])
 
 // ---- Adjudicate track (re-review only) ----
 // For each prior-round finding, decide its fate this round. rejected/justified are carried (not
@@ -3085,10 +3096,11 @@ if (priorRound) {
     // independent partitions would each compute their clause from the same un-absorbed `host.why`,
     // so applying them afterwards would drop one report entirely — into no track, no host and no
     // ledger. absorbAcross returns the cumulative `updates`; it is applied once.
-    const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
+    const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected, unverified], livePriors, retired, matchesPrior)
     for (const [host, why] of updates) host.why = why
     confirmed = runs[0].kept
     suspected = runs[1].kept
+    unverified = runs[2].kept
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
@@ -3111,7 +3123,9 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 // through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
 // here would wrongly erase still-open/regressed priors.
 const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length || adjudicated.retired.length)
-if (!confirmed.length && !suspected.length && !hasAdjudicated) {
+// `unverified` counts here too: they are real reported findings, and falling into the "nothing
+// survived" branch would delete them from the report entirely.
+if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated) {
   await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = incompleteNotes.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
@@ -3139,7 +3153,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
 - ⚠️ Warning if Confirmed Medium only.
 - ✅ Approve if no Confirmed Critical/High/Medium.
-Suspected findings NEVER change the verdict — they are surfaced for the author.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
+Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all (no verifier was spent: Low/Info cannot move the verdict) — they change nothing and must never be presented as confirmed or as checked.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
 
@@ -3158,14 +3172,17 @@ RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in 
 1. \`## Verdict\` — one line (emoji + reason).${incompleteNotes.length ? ` Append " · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
-4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
-5. \`## Fix first\` — the few highest-leverage Confirmed items.
-${uncoveredFiles.length ? `6. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
-${criticNotes ? `7. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}`}
+4. \`## Suspected (needs confirmation)\` — findings a verifier DID examine and could not confirm; same format; omit the section if empty.
+5. \`## Unverified (not checked)\` — same format, and OPEN the section with exactly this sentence: "These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict. Nothing below has been checked against the code — treat each as a lead, not a finding." Never merge these into Confirmed or Suspected, never call them confirmed, and do not re-rank or upgrade their severity. Omit the section if empty.
+6. \`## Fix first\` — the few highest-leverage Confirmed items.
+${uncoveredFiles.length ? `7. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
+${criticNotes ? `8. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}`}
 
 CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
 
-SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
+SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}
+
+UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, null, 2)}`,
   { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
 )
 
@@ -3187,7 +3204,10 @@ Return {posted: <how many comments you actually created>, reason: <one line: the
   else log(`⚠️ PR comments: nothing was posted (${confirmed.length} Confirmed finding(s) requested) — ${posted.reason || 'no reason given'}`)
 }
 
-const allReviewFindings = confirmed.concat(suspected)
+const allReviewFindings = confirmed.concat(suspected, unverified)
+// The verification denominator: what verification ACTUALLY judged. `unverified` is deliberately
+// absent — including it once made refuteRate incomparable across runs (on one measured run 118 of
+// 215 findings were Low/Info, so the denominator was more than double the 89 verdicts really cast).
 const totalVerified = confirmed.length + suspected.length + dropped
 let recordVerdict = isRereview
   ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
@@ -3220,13 +3240,14 @@ const reviewLedger = isRereview
   ? [
     ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
     ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
+    ...unverified.map(f => toLedgerEntry(f, 'open', 'unverified')),
     ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
     ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
     // `adjudicated.retired` is deliberately absent, like `resolved`: a dismissed prior whose
     // carry-check confirmed the code around it is unchanged has been answered and leaves the ledger.
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
-  : allReviewFindings.map(f => toLedgerEntry(f, 'open', confirmed.includes(f) ? 'confirmed' : 'suspected'))
+  : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
 await logRun(reviewRecord({
   verdict: recordVerdict + (incompleteNotes.length ? ' (INCOMPLETE)' : ''),
   round: thisRound,
@@ -3236,14 +3257,15 @@ await logRun(reviewRecord({
     const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
     const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
     const suspectedCount = r.suspected.filter(f => (f.source || '') === l).length
+    const unverifiedCount = (r.unverified || []).filter(f => (f.source || '') === l).length
     const refutedCount = (r.refuted || []).filter(f => (f.source || '') === l).length
     // `ran` distinguishes "executed and found nothing" from "never returned". Both otherwise render
     // as a 0-finding row, and the yield analysis would read a broken lens as a redundant one.
     // Absent `ranLenses` (a record written before this landed) → assume it ran, the old behaviour.
     const ran = r.ranLenses ? r.ranLenses.includes(l) : true
-    return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount }
+    return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount, unverifiedCount }
   })),
-  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
+  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0, unverified: unverified.length },
   notRun,
 }))
 
@@ -3264,6 +3286,7 @@ function fallbackReport() {
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
     ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
+    ...(unverified.length ? [``, `## Unverified (not checked)`, `These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict. Nothing below has been checked against the code — treat each as a lead, not a finding.`, ...bySev(unverified).map(fmt)] : []),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
   ].join('\n')
 }
