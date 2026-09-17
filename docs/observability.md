@@ -18,6 +18,19 @@ can be studied later.
 Common: `ts`, `runtime` (`"claude-code"` | `"opencode"`), `kind` (`workflow`|`agent`), `name`, `project`, `commit`, `dirty`, `verdict`,
 `findings: {total, bySeverity:{Critical,High,Medium,Low,Info}}`, `nested`, `via`.
 
+**`branch` and `head` are computed, not carried.** `lib/craft-log-run.mjs` reads them itself
+(`git rev-parse --abbrev-ref HEAD` / `git rev-parse HEAD`) off the working copy named by
+`--project`, and they overwrite whatever the payload carried — a workflow's own `branch`/`head`
+survive only for the fields git could not resolve. They used to arrive exclusively from a model's
+structured answer, and of 115 `kind:"workflow"` rows measured on 2026-09-17 only 47 carried a
+branch: `findPriorRound` selects on an exact `branch` match, so a row without one did not exist for
+the next round and the re-review memory could not start. Two consequences worth knowing: a detached
+HEAD yields an **empty** `branch` (git prints the literal `HEAD`, which would pool every detached
+run under one key) and the model's value is then the only fallback; and the path read is the working
+copy, not the `project` key — `project` deliberately collapses a linked worktree onto its main
+checkout so the two share one round chain, and reading the branch from the collapsed key would file
+a worktree's run under the main checkout's branch.
+
 **Engine identity** — `craftVersion` (the plugin release, stamped from a `CRAFT_VERSION` const that
 `lib/check-workflows.mjs` keeps in sync with `.claude-plugin/plugin.json`) and `craftCommit`
 (craft's own git HEAD, best-effort via `$CLAUDE_PLUGIN_ROOT`). Distinct from `commit`, which is the
@@ -50,7 +63,7 @@ excluded from `--engine latest` by construction. The shared write path is `lib/r
 inlined into each engine by the `craft-inline` gate.
 Records written before these fields carry `null` and are outside any filter.
 
-Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, refuted, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero),
+Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
 `notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool). The `scout`
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
 rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
@@ -77,6 +90,16 @@ to a lens row, so the per-dimension counts may sum to less than `findings.total`
 For adversarial-review the opposite skew applies: a deduped finding corroborated by several lenses
 counts in each corroborating lens's row, so per-dimension counts may sum to more than
 `findings.total`.
+
+A lens row carries `{dimension, ran, findingCount, bySeverity, confirmedCount, suspectedCount,
+refutedCount, unverifiedCount}`. `unverifiedCount` is the per-lens share of the `unverified` tier and
+is **excluded** from the per-dimension refute denominator that `lib/analyze-runs.mjs` computes
+(`refuted / (confirmed + suspected + refuted)`) — the same stance the run-level `candidates` takes.
+That stance is newer than `schemaVersion: 1`, though: before the tier existed the same unjudged items
+were filed under `suspectedCount` and so sat *inside* that denominator. The records cannot say which
+they are, so the report does: each dimension row states a `refuteBasis` of `strict` (every
+contributing row carries `unverifiedCount`), `legacy` (none do) or `mixed` (both — the rate is not a
+like-for-like comparison), and the rendered line prints a warning for anything but `strict`.
 
 `index.jsonl` carries the summary projection (drops `dimensions`/`scout`/`verification` detail,
 adds `findingsTotal`).
