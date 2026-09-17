@@ -115,20 +115,33 @@ let pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-
 // it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
 // its own checkout — reviewing a PR in another repo silently reviewed craft instead.
 let repoArg = A.repo ? String(A.repo) : ''
-// `path` is a git PATHSPEC, resolved against the reviewed repo — so an absolute path is almost always
-// someone reaching for `repo`, and it fails in the worst possible way: a pathspec that matches nothing
-// makes every `git diff` come back empty, which reads exactly like "no changes here" rather than like a
-// mis-aimed run. Measured 2026-09-17: dispatched as `path=<another repo>` it spent 57 agents and 2.04M
-// tokens having all 14 lenses independently rediscover that there was nothing to read. Say it loudly and
-// treat it as the repo it obviously means when `repo` was not given (realm @nick/craft, node #65).
-if (pathArg.startsWith('/')) {
-  if (!repoArg) {
-    log(`⚠️ path=${pathArg} is ABSOLUTE — \`path\` is a repo-relative pathspec, not a repo selector. Reading it as repo=${pathArg}; pass \`repo\` explicitly to silence this.`)
-    repoArg = pathArg
+// `path` is a git PATHSPEC resolved against the reviewed repo; `repo` selects the repo. An ABSOLUTE
+// `path` is therefore ambiguous in the one way the sandbox cannot resolve: it is either a repo the
+// caller meant to select, or a directory INSIDE the repo they meant to narrow to — and with no disk
+// and no Node API here, nothing can tell those apart. Both wrong guesses are expensive and neither
+// is loud. Guessing "repo" turns a narrowing request into a confident WHOLE-repo review wearing the
+// narrow label; leaving it as a pathspec matches nothing, and the run comes back as an empty diff
+// that reads like "no changes" — measured 2026-09-17 at 57 agents and 2.04M tokens, every one of
+// the 14 lenses independently rediscovering that there was nothing to read.
+// So: resolve it when the prefix DECIDES it, and refuse to guess otherwise (realm @nick/craft, #65).
+// `~` counts as absolute here because the agent's shell expands it before git ever sees the pathspec.
+const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
+let ambiguousPath = ''
+if (ABSOLUTE_PATH.test(pathArg)) {
+  const repoPrefix = repoArg.replace(/\/+$/, '')
+  if (repoPrefix && (pathArg === repoPrefix || pathArg.startsWith(`${repoPrefix}/`))) {
+    // It names a directory inside the repo under review: that is a SCOPE, spelled absolutely. Keep
+    // the narrowing the caller asked for — dropping it here would silently widen the review.
+    const rel = pathArg.slice(repoPrefix.length).replace(/^\/+/, '')
+    log(`⚠️ path=${pathArg} is absolute but sits inside repo=${repoArg} — read as the repo-relative scope ${shq(rel)}.`)
+    pathArg = rel
+  } else if (repoPrefix) {
+    log(`⚠️ path=${pathArg} is ABSOLUTE and outside repo=${repoArg} — an absolute pathspec matches nothing, so the review would see an EMPTY diff. Dropping the scope; pass a repo-relative path to narrow it.`)
     pathArg = ''
   } else {
-    log(`⚠️ path=${pathArg} is ABSOLUTE while repo=${repoArg} is set — an absolute pathspec matches nothing, so the review would see an EMPTY diff. Dropping the scope; pass a repo-relative path to narrow it.`)
-    pathArg = ''
+    // No `repo` to decide against. Refusing costs nothing and says exactly what to do; either guess
+    // costs a full run and reports a scope nobody asked for.
+    ambiguousPath = pathArg
   }
 }
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. As an installed plugin
@@ -1818,6 +1831,18 @@ function isToolSource(profile, source) {
 
 // ================= Detect base + languages =================
 phase('Scout')
+// An absolute `path` with no `repo` to decide it against: refuse BEFORE the first agent is
+// dispatched. Zero cost, and the caller is told the two spellings that are unambiguous — against a
+// run that guesses, which costs a full fan-out and then reports a scope nobody asked for.
+if (ambiguousPath) {
+  const msg = `path=${ambiguousPath} is an absolute path and no \`repo\` was given, so it is ambiguous: it could name the REPOSITORY to review (pass it as \`repo\`) or a directory INSIDE the repository to narrow to (pass it relative to the repo root). Nothing ran — re-dispatch with one of those two spellings.`
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'INCOMPLETE (ambiguous path)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    uncoveredFiles: [], notRun: [msg], outputTokens: budget.spent(),
+  })
+  return out([`## Verdict`, `⚠️ INCOMPLETE — ${msg}`].join('\n'))
+}
 const detected = await ragent(
   `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under \`${pathArg}\`; pass \`-- ${pathArg}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
