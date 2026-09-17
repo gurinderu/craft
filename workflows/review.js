@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -110,11 +110,27 @@ const A = normalizeArgs(args, log)
 const baseArg = A.base ? String(A.base) : ''
 const intentArg = A.intent ? String(A.intent) : ''
 const postComments = !!A.comment
-const pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
+let pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
 // Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
 // it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
 // its own checkout — reviewing a PR in another repo silently reviewed craft instead.
-const repoArg = A.repo ? String(A.repo) : ''
+let repoArg = A.repo ? String(A.repo) : ''
+// `path` is a git PATHSPEC, resolved against the reviewed repo — so an absolute path is almost always
+// someone reaching for `repo`, and it fails in the worst possible way: a pathspec that matches nothing
+// makes every `git diff` come back empty, which reads exactly like "no changes here" rather than like a
+// mis-aimed run. Measured 2026-09-17: dispatched as `path=<another repo>` it spent 57 agents and 2.04M
+// tokens having all 14 lenses independently rediscover that there was nothing to read. Say it loudly and
+// treat it as the repo it obviously means when `repo` was not given (realm @nick/craft, node #65).
+if (pathArg.startsWith('/')) {
+  if (!repoArg) {
+    log(`⚠️ path=${pathArg} is ABSOLUTE — \`path\` is a repo-relative pathspec, not a repo selector. Reading it as repo=${pathArg}; pass \`repo\` explicitly to silence this.`)
+    repoArg = pathArg
+    pathArg = ''
+  } else {
+    log(`⚠️ path=${pathArg} is ABSOLUTE while repo=${repoArg} is set — an absolute pathspec matches nothing, so the review would see an EMPTY diff. Dropping the scope; pass a repo-relative path to narrow it.`)
+    pathArg = ''
+  }
+}
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. As an installed plugin
 // CLAUDE_PLUGIN_ROOT is set for us; when the engine is launched by scriptPath from a checkout it is
 // NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
