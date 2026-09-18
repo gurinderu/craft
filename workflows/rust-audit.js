@@ -1,7 +1,7 @@
 export const meta = {
   name: 'rust-audit',
   description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {mutants:true} to include the slow mutation pass.',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository).',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
@@ -116,20 +116,6 @@ const runMutants = !!A.mutants
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
-// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
-// session sits. Accepting it silently is the failure this family exists to end — the caller names
-// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
-// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
-// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
-// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
-if (A.repo) {
-  return [
-    `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
-    ``,
-    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`rust-audit\` there.`,
-  ].join('\n')
-}
 
 const CRATE_ITEM = {
   type: 'object',
@@ -716,6 +702,34 @@ async function safeAgent(prompt, opts = {}) {
   }
 }
 
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
+// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
+// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
+// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
+if (A.repo) {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'rust-audit',
+    nested: false, via: null,
+    verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
+    // make every repetition of this same misuse its own count-1 row.
+    notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
+    outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    ``,
+    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`rust-audit\` there.`,
+  ].join('\n')
+}
+
 phase('Scout')
 const scout = await agent(
   `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
@@ -759,7 +773,17 @@ function pathSegments(p) {
 function crateScope(p) {
   const raw = String(p ?? '').trim()
   if (!raw) return null
-  if (!ABSOLUTE_PATH.test(raw)) return pathSegments(raw).join('/') || '.'
+  if (!ABSOLUTE_PATH.test(raw)) {
+    // A relative path must stay INSIDE the repository, and `pathSegments` keeps a leading `..` as a
+    // literal segment when there is nothing left to pop — so `../../elsewhere` normalized to itself
+    // and was handed to the nested `review` as a pathspec climbing out of the repo under audit. The
+    // absolute branch below already refuses exactly this (a path that does not resolve inside the
+    // root); the relative branch let it through the door next to it. Same answer: null, which the
+    // caller reports as NOT RUN rather than reviewing something else under this crate's label.
+    const segs = pathSegments(raw)
+    if (segs[0] === '..') return null
+    return segs.join('/') || '.'
+  }
   const r = pathSegments(repoRoot)
   const abs = pathSegments(raw)
   if (!repoRoot || !r.length || abs.length < r.length) return null
