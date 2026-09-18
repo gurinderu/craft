@@ -547,7 +547,15 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
   // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
   // logger receiving the literal string "" and treating it as a real (empty) session id.
-  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
+  // silent contract break. review.js finalizes with `{ dir: runDir, rejoin: checkpointFailed }`, so
+  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
+  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
+  // checkpoint. Two things depend on the flag arriving: `finalizeRun` falls back to the rejoin search
+  // when `--dir` is REFUSED (out of store), which is precisely when the run still has a real
+  // directory nobody can name; and the flag is the engine's own statement that one of its checkpoints
+  // failed. Neither can be reconstructed downstream from the directory alone.
+  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
