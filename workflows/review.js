@@ -1744,7 +1744,7 @@ ${JSON.stringify(payload, null, 2)}`
 
 // The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
 // shard cutter is fenced in from lib/ledger-shards.mjs, where it is linted and unit-tested.
-// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS shardLedger
+// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS payloadBytes shardLedger
 // At most this many bytes of JSON per shard. Two ceilings bound it from above and one need from
 // below. Above: `logRunDispatch` treats 24KB as the point where a payload stops being safe for the
 // cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
@@ -1767,6 +1767,28 @@ const LEDGER_SHARD_PHASE = 'ledger'
 // ledger ever measured) while still existing: unbounded, a pathological round would spend its whole
 // budget on bookkeeping.
 const LEDGER_SHARD_MAX_SHARDS = 20
+
+// Cut a ledger into checkpoint payload fragments. Returns [] for an empty ledger — there is nothing
+// to persist and an empty shard would claim a round had no findings.
+//
+// An entry larger than `max` on its own gets a shard to itself rather than being split or dropped:
+// splitting an entry produces two half-findings that normalize into two plausible-looking wrong
+// ones, and dropping it loses a finding to save bytes.
+// MEASURE WHAT IS ACTUALLY COPIED, not the compact form. The checkpoint payload reaches the agent
+// as `JSON.stringify(payload, null, 2)` (lib/run-logging.mjs), so an entry sitting in `ledgerItems`
+// is pretty-printed at depth two: every one of its own lines gains four spaces. Compact bytes
+// therefore understate the real payload by 1.2x on long `why` fields and up to 1.7x on short
+// entries carrying a `sources` array — a nested array under pretty-print spreads one line per
+// element. Measured on a sweep of 4000 entries: short entries with three sources went 14371B
+// compact to 24859B in the prompt, i.e. OVER the 24KB at which the write path stops trusting the
+// cheap model, while the compact number still read as comfortably under it. The bound itself does
+// not move; it never had to. The measure was simply not measuring the thing that is paid for.
+function payloadBytes(item) {
+  const pretty = JSON.stringify(item, null, 2)
+  if (typeof pretty !== 'string') return 2
+  // +4 per line for the two levels of nesting, +2 for the separating comma and newline.
+  return pretty.length + pretty.split('\n').length * 4 + 2
+}
 
 function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_SHARD_MAX_SHARDS } = {}) {
   const items = Array.isArray(ledger) ? ledger : []
