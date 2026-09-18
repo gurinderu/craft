@@ -1929,6 +1929,87 @@ ${JSON.stringify(payload, null, 2)}`
 }
 // <<< craft-inline
 
+// The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
+// shard cutter is fenced in from lib/ledger-shards.mjs, where it is linted and unit-tested.
+// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS payloadBytes shardLedger
+// At most this many bytes of JSON per shard. Two ceilings bound it from above and one need from
+// below. Above: `logRunDispatch` treats 24KB as the point where a payload stops being safe for the
+// cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
+// multiple below the first number, not a fraction of the second. Below: a single entry can reach
+// ~1KB (`why` alone is capped at 500 characters), and a shard that fits only two or three entries
+// turns a 170-entry ledger into 60 agent calls. 14KB sits between: ~15-20 entries per shard once
+// the measure counts the prompt form (fewer than the compact measure suggested), ~6-12
+// calls for the largest ledger measured, and every call an order of magnitude under the size at
+// which the copy has ever been observed to go wrong.
+const LEDGER_SHARD_MAX_BYTES = 14336
+
+// The phase-name prefix; each shard's phase is `ledger-01`, `ledger-02`, … so `writeCheckpoint`'s
+// own sequence numbering and `readCheckpoints`'s lexical sort both keep them in order.
+const LEDGER_SHARD_PHASE = 'ledger'
+
+// A hard cap on the number of agent calls this device is allowed to cost. A ledger past this bound
+// is carried up to the bound and the overflow is DROPPED — but `total` still declares the full
+// count, so the drop arrives at the next round as a truncated ledger (loud), never as a short one
+// (silent). Chosen so the bound cannot bite in practice (20 × 14KB ≈ 280KB, well past the largest
+// ledger ever measured) while still existing: unbounded, a pathological round would spend its whole
+// budget on bookkeeping.
+const LEDGER_SHARD_MAX_SHARDS = 20
+
+// Cut a ledger into checkpoint payload fragments. Returns [] for an empty ledger — there is nothing
+// to persist and an empty shard would claim a round had no findings.
+//
+// An entry larger than `max` on its own gets a shard to itself rather than being split or dropped:
+// splitting an entry produces two half-findings that normalize into two plausible-looking wrong
+// ones, and dropping it loses a finding to save bytes.
+// MEASURE WHAT IS ACTUALLY COPIED, not the compact form. The checkpoint payload reaches the agent
+// as `JSON.stringify(payload, null, 2)` (lib/run-logging.mjs), so an entry sitting in `ledgerItems`
+// is pretty-printed at depth two: every one of its own lines gains four spaces. Compact bytes
+// therefore understate the real payload by 1.2x on long `why` fields and up to 1.7x on short
+// entries carrying a `sources` array — a nested array under pretty-print spreads one line per
+// element. Three independent measurements agree on the understatement and DISAGREE on whether any
+// shape crosses the 24KB line at which the write path stops trusting the cheap model: sweeps put
+// short entries with three sources at 24859B (over it) and at 22426B (under it, ratio 1.57), and a
+// cold read reported 14265B compact becoming 17314B. So the ratio is established and the crossing
+// is fixture-dependent — no run has been observed crossing it. The bound itself does not move; it
+// never had to. The measure was simply not measuring the thing that is paid for.
+function payloadBytes(item) {
+  const pretty = JSON.stringify(item, null, 2)
+  if (typeof pretty !== 'string') return 2
+  // +4 per line for the two levels of nesting, +2 for the separating comma and newline.
+  return pretty.length + pretty.split('\n').length * 4 + 2
+}
+
+function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_SHARD_MAX_SHARDS } = {}) {
+  const items = Array.isArray(ledger) ? ledger : []
+  if (!items.length) return []
+  const groups = []
+  let bytes = 0
+  for (const item of items) {
+    const size = payloadBytes(item)
+    if (!groups.length || (groups[groups.length - 1].length && bytes + size > max)) {
+      if (groups.length >= maxShards) break          // the overflow is declared below, not hidden
+      groups.push([])
+      bytes = 0
+    }
+    groups[groups.length - 1].push(item)
+    bytes += size
+  }
+  return groups.map((group, i) => ({
+    // One key, one object: a checkpoint payload is merged into the record by `finalizeRun`, so a
+    // bare `ledger` key here would collide with the record's own field.
+    ledgerShard: {
+      index: i + 1,
+      of: groups.length,
+      // The ROUND's entry count, not this shard's and not the count actually shipped. It is the
+      // authoritative number the reader compares against, and the only reason a dropped overflow or
+      // a missing shard is detectable at all.
+      total: items.length,
+    },
+    ledgerItems: group,
+  }))
+}
+// <<< craft-inline
+
 const CHECKPOINT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -2199,7 +2280,7 @@ if (!freshArg && !viaArg) {
 Run exactly this:
 
 \`\`\`
-${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
+${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} \${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} --project "$PWD"
 \`\`\`
 
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, reason:"loader-did-not-run"}.`,
@@ -2253,7 +2334,7 @@ if (priorLedgerDegraded) {
 // BEFORE making any fix — so it can equal the current HEAD and a delta scan would review nothing.
 const priorRoundJournalSourced = Boolean(priorRound?.journalSourced)
 if (priorRoundJournalSourced) {
-  log(`⚠️ Re-review round sourced from a stalled run's journal: prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stalled, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
 }
 const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
@@ -3170,8 +3251,13 @@ async function reviewProfile(profile) {
   // checkpoint↔record comparison spelled the field differently: `finalizeRun` folded 0 phases and
   // left the `.partial` directory behind, and `recover` then read a ref name as a commit and promoted
   // the leftover as a separate partial run. Two keys, each meaning one thing.
+  //
+  // `round` rides on every checkpoint for one reason: `recover` promotes an unfinalized directory
+  // into a real record and DELETES the directory, and a record with no round is indexed as round 0 —
+  // so one repair permanently reset the chain to a first review. The round number is knowable only
+  // here, by the run itself; nothing downstream can reconstruct it.
   await checkpoint(`${profile.id}-plan`, {
-    language: profile.id, branch, head, baseRef,
+    language: profile.id, branch, head, baseRef, round: thisRound,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
@@ -3276,7 +3362,7 @@ async function reviewProfile(profile) {
   // carrying identity. The rejoin search therefore saw `{project, '', ''}` on exactly the paths where
   // it fires, and matched on the repository alone: any concurrent review of the same repo qualified.
   await checkpoint(`${profile.id}-lenses`, {
-    language: profile.id, branch, head, baseRef, ranLenses, droppedLenses, lensRounds,
+    language: profile.id, branch, head, baseRef, round: thisRound, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
     notRun,
@@ -3294,7 +3380,7 @@ async function reviewProfile(profile) {
   notRun.push(...verifyNotRun)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
-    language: profile.id, branch, head, baseRef,
+    language: profile.id, branch, head, baseRef, round: thisRound,
     verdict: finalVerdict(confirmed),
     findings: summarizeFindings(confirmed),
     // `candidates` counts what verification EXAMINED, so the unverified tier is reported beside it
@@ -3791,6 +3877,19 @@ const reviewLedger = isRereview
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
+// THE LEDGER IS PERSISTED BEFORE THE RECORD IS ATTEMPTED, in bounded shards, one small checkpoint
+// per shard (lib/ledger-shards.mjs carries the measurement and the reasoning). The final record is
+// written once, at the end, through a model copying the whole thing in one tool call — the step that
+// lost three consecutive runs, the last of them a logger that REFUSED a ~170-entry ledger outright
+// rather than risk truncating it. Checkpoints are the step that survived all three. So the ledger
+// goes down that path first: if `logRun` below is lost, the next round still reads this round's
+// findings out of `.partial` instead of starting over.
+//
+// Written HERE and not earlier because this is the first moment the ledger exists — it is the
+// carry-forward, so it needs the adjudication of the prior round that only just finished.
+for (const shard of shardLedger(reviewLedger)) {
+  await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
+}
 await logRun(reviewRecord({
   verdict: recordVerdict + (incompleteNotes.length ? ' (INCOMPLETE)' : ''),
   round: thisRound,
