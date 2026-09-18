@@ -1749,19 +1749,53 @@ function makeDeathBreaker(opts = {}) {
 // is deliberately not given one: there a suppressed re-dispatch costs a whole dimension of the
 // review, and the window is not the scarce thing.
 
+// ---- one budget, shared by the attempts ----
+// Pure helper, tested as a real module in lib/agent-deadline.mjs and pasted back here by the
+// craft-inline gate. The rationale for a shared budget — and why the thresholds themselves must NOT
+// move — lives there.
+// >>> craft-inline lib/agent-deadline.mjs makeDeadlineBudget
+// One wall-clock budget, consumed by however many attempts are made against it. `now` is injected so
+// a test can drive elapsed time without sleeping; the engine passes nothing and gets `Date.now`.
+function makeDeadlineBudget(totalMs, now = Date.now) {
+  const total = Number(totalMs)
+  const started = now()
+  const capped = Number.isFinite(total) && total > 0 ? total : 0
+  // Clamped at zero from below: a clock that jumps backwards must not hand out MORE budget than the
+  // total, and one that jumps forward must not hand out a negative timeout (setTimeout reads a
+  // negative delay as zero, which would fire the deadline instantly and look like a hang).
+  const remaining = () => Math.min(capped, Math.max(0, capped - (now() - started)))
+  return {
+    remaining,
+    // Whether another attempt has any wall clock left to wait in. Zero is the refusal: an attempt
+    // dispatched against an empty budget would time out before the agent could answer, so it would
+    // cost a harness slot and produce nothing.
+    exhausted: () => remaining() <= 0,
+    total: () => capped,
+  }
+}
+// <<< craft-inline
+
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
+// A caller-supplied ceiling, applied to every phase that does not name its own. It only ever
+// REPLACES the per-phase table, never the explicit `deadlineMs` an individual dispatch passes —
+// preflight's 5min is a property of preflight, not a default to be overridden from the outside.
+const deadlineArg = Number(A.deadlineMs) > 0 ? Number(A.deadlineMs) : 0
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
   if (Number.isFinite(explicit) && explicit > 0) return explicit
-  return PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS
+  return deadlineArg || (PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS)
 }
 async function ragent(prompt, opts = {}) {
   // deadlineMs and breaker are ours, not agent()'s — strip them so neither reaches the harness as an
   // unknown option.
   const { deadlineMs: _deadlineMs, breaker, ...agentOpts } = opts
   const ms = deadlineMsFor(opts)
+  // ONE budget for the whole call, not one per attempt. The worst case of a hanging dispatch is
+  // therefore `ms` of waiting in total rather than `ms` per attempt — which, in the Verify window,
+  // is the difference between one slot held for 30 minutes and one held for an hour.
+  const budget = makeDeadlineBudget(ms)
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
     let timer = null
@@ -1769,21 +1803,30 @@ async function ragent(prompt, opts = {}) {
     // and leave the timer pending. That was invisible while a throw killed the run outright; now that
     // ragentQuietly swallows it, a leaked timer would hold the run open for the whole deadline.
     let res
+    // What is LEFT of the budget, not the whole of it. An attempt that follows a fast death still
+    // gets essentially all of it; one that follows a deadline fire gets none, which is what makes a
+    // hang cost one deadline in total instead of one per attempt.
+    const left = budget.remaining()
     try {
       res = await Promise.race([
         agent(`${REPO_DIRECTIVE}${prompt}`, o),
-        new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), ms) }),
+        new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), left) }),
       ])
     } finally {
       clearTimeout(timer)
     }
+    // A budget spent is a giving-up condition in its own right, alongside the attempt count: a
+    // re-dispatch with nothing left to wait in would fire its deadline before the agent could answer,
+    // so it would cost a harness slot and return null anyway.
+    const spentOut = budget.exhausted()
     if (res === DEADLINE_HIT) {
       // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
       // told apart from a live agent taking too long, and feeding that into the window would let slow
       // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
       const mins = Math.round(ms / 60000)
-      log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${attempt < AGENT_TRIES ? ' and re-dispatching once' : ' (giving up; treated as a dead agent)'}`)
-      if (attempt >= AGENT_TRIES) return null
+      const again = attempt < AGENT_TRIES && !spentOut
+      log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${again ? ' and re-dispatching with what is left of the budget' : ' (the deadline is one budget shared by the attempts and it is now spent; treated as a dead agent)'}`)
+      if (!again) return null
       continue
     }
     if (res !== null && res !== undefined) {
@@ -1793,6 +1836,11 @@ async function ragent(prompt, opts = {}) {
       return res
     }
     if (attempt >= AGENT_TRIES) return null
+    // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
+    if (spentOut) {
+      log(`⏱️ agent '${opts.label || '?'}' returned no result with its deadline budget already spent — NOT re-dispatching (there is no wall clock left to wait in); treated as a dead agent`)
+      return null
+    }
     // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
     // its own retry ladder on an unreachable API, and the re-dispatch below spends a second ladder
     // inside the same verification window slot. On a one-off failure that is worth the clock; once
