@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -534,6 +534,86 @@ Set provenance to a one-line summary like "nix flake check pass; statix/deadnix 
 // declared rather than becoming a fourth blanket exception.
 const CONDITIONAL_LENSES = ['failure-windows']
 
+// ================= The optional pass =================
+// Three lenses that do not earn a place on every run. The basis is NOT equal across them: only
+// `ownership` (retired, not here) has three independent counts. The two earlier store-wide counts
+// named api-idioms and performance among the bottom four; `api-boundary` was not in them at all, so
+// for the composition of THIS trio the basis is ONE run — one diff, one repository, one domain
+// (realm @nick/craft, node #20, which requires that limit to be stated rather than dropped).
+// Measured over runs of the
+// budget-deterministic engine against a large Rust diff (14 lenses × 3 rounds, 215 findings):
+// `performance` (15 findings, 12 of them Low/Info), `api-idioms` (14/10) and `api-boundary` (11/7)
+// returned hundreds of CONFIRMED Medium-and-below findings and NOT ONE High in any of the three.
+// Deleting them would make the review worse — the findings are real. Paying three full agents for
+// them on every run is the part the numbers do not support. So they leave every automatic path and
+// stay reachable by an explicit request.
+//
+// The failure mode this must not become is the one this repo keeps hitting: a run that never looked
+// at performance reading as a run that found nothing wrong with it. So the skipped set is stated
+// MECHANICALLY — `optionalSection()`, appended by `out()` to every report the engine can return,
+// never asked of the synthesis model, which can die or simply not obey — and filed on the run
+// record as `optionalPass`.
+//
+// STRICT MODE AND THE SECURITY FLOOR TOUCH THIS IN NEITHER DIRECTION, and that is a decision, not
+// an omission.
+//   · `strict` is the harsh MAINTAINABILITY bar: it forces the maintainability lens and turns its
+//     confirmed findings into presumptive blockers. Letting it also buy three unrelated lenses
+//     would make one flag mean two things, and would deliver the optional pass to a caller who
+//     asked for something else.
+//   · The security-sensitive floor expands `blanket()`, and `blanket()` excludes the optional set
+//     exactly as it excludes CONDITIONAL_LENSES. A floor is a statement of IGNORANCE about the
+//     diff, and ignorance is not a reason to buy the three lenses that measured worst.
+//   · Neither may silently DISABLE it either: an explicit `optional=` request is honoured on every
+//     path, including a security-floored run and a strict one. The request is the only switch.
+const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
+
+// `optional=true` / `--optional` / `optional=all` buys the whole set; `optional=performance,api-boundary`
+// (or a JSON array) buys those. Absent buys none.
+// An unrecognised name is REFUSED LOUDLY rather than dropped: `optional=perf` that quietly buys
+// nothing, on a run whose whole point was to buy something, is the exact silence this section exists
+// to prevent — and the run would then report the lens as skipped while the caller believed otherwise.
+function parseOptionalRequest(raw) {
+  if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
+  if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
+  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean)
+  return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
+}
+const optionalRequest = parseOptionalRequest(A.optional)
+if (optionalRequest.unknown.length) {
+  log(`⚠️ optional=${JSON.stringify(A.optional)} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
+}
+const optionalRequested = optionalRequest.lenses
+// The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
+// plan the moment it was built — but the plan is not final there: the completeness critic composes
+// lenses much later, on the synthesis phase. Any such later road made the snapshot a LIE in the one
+// direction that matters, printing "not looked at" over a lens whose findings were in the report.
+// So the two sets below record only what cannot be second-guessed: which optional lenses this run
+// could have bought at all (filled by each profile's planner), and which ones were actually
+// DISPATCHED (recorded by `runLens`, the single dispatch point for every lens on every path —
+// planned, resurrected, or critic-composed). `optionalTally()` subtracts. Sets, because two active
+// profiles may both carry the same optional lens and the reader wants the lens named once.
+const optionalInScope = new Set()
+const optionalDispatched = new Set()
+// An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
+// critic is the same model whose spend this pass deliberately took out of model hands), but the
+// signal is real and must reach the reader rather than die in the filter.
+const optionalNamedByCritic = new Set()
+const optionalTally = () => {
+  const inScope = [...optionalInScope]
+  return { ran: inScope.filter(l => optionalDispatched.has(l)), skipped: inScope.filter(l => !optionalDispatched.has(l)) }
+}
+// Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
+// one and the mechanical fallback. The earliest exits (no diff, red gate) run before any lens is
+// planned, so the list is empty there and no section is emitted; those reports already say plainly
+// that nothing was reviewed. It says "absence of a result", never "no problems found".
+const optionalSection = () => {
+  const skipped = optionalTally().skipped
+  if (!skipped.length) return ''
+  const named = skipped.filter(l => optionalNamedByCritic.has(l))
+  return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
+    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
+}
+
 const PROFILES = {}
 PROFILES.rust = {
   id: 'rust',
@@ -551,14 +631,13 @@ PROFILES.rust = {
   usesLibrary: true,
   alwaysLenses: ['intent'],
   safetyLens: 'safety',
-  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, or a migration renaming/retyping a column the code (de)serializes → compat (pick it whenever the diff changes an at-rest or on-the-wire representation of data that other versions of the code read). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
+  scoutRules: `Decide what is "in play" from the diff: unsafe → safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, or a migration renaming/retyping a column the code (de)serializes → compat (pick it whenever the diff changes an at-rest or on-the-wire representation of data that other versions of the code read). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.) \`performance\`, \`api-idioms\` and \`api-boundary\` are the OPTIONAL pass: pick them on the same signals as ever, but the engine admits them only on a run that explicitly asked for the optional pass and drops them otherwise — so do not treat their absence from a run as a judgement about the code they cover.`,
   gate: rustGate,
   depContext: rustDepContext,
-  lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
+  lenses: ['safety', 'errors', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
   lensBrief: {
     safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization. Also BUILD-PROFILE DIVERGENCE (SAF-007/SAF-008), where the code you review is not the code that ships: (a) arithmetic on an untrusted-input path whose outcome differs between the dev/test profile (`overflow-checks` ON) and the shipping release profile (OFF by default — read `[profile.release]` in the crate AND workspace root before assuming, it may be re-enabled). The profile-gated panic is the FLOOR of the impact, not the ceiling: do NOT close it as "does not reproduce in release" — say what the release build does INSTEAD (a silent wrap that truncates a length, misresolves an index, or corrupts state is worse than the panic, because nothing reports it), and report both facets. (b) a `debug_assert!` carrying a load-bearing invariant — an unsafe precondition, a bounds/length check, a trust-boundary validation — which compiles out in `--release`, leaving the shipped binary unguarded.',
     errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
-    ownership: 'ownership & lifetimes: needless clone to satisfy the borrow checker, String where &str/impl AsRef suffices, Vec<T> where &[T] works, explicit lifetimes where elision applies.',
     concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
     performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
     'api-idioms': 'API shape & public-surface idioms — spend the budget on impactful breaks, not per-item completeness nits. HIGH-VALUE (surface individually): public-API guideline breaks (API-006) — an unsealed trait meant to be closed, a private/unstable type or dependency leaked through a `pub` signature, an owned String/Vec/PathBuf parameter where &str/&[T]/&Path fits, a public enum/error without #[non_exhaustive], missing common-trait impls (Debug/Clone); a wildcard `_ =>` on a business enum that silently swallows new variants (API-002); a library leaking Box<dyn Error>/anyhow at its boundary (ERR-003). LOW-VALUE (do NOT file one finding per occurrence): missing `///` on a pub item (API-003), #[allow] without a justifying comment (API-004), crate-root #![deny(warnings)] (API-005), oversized fn / deep nesting (API-001) — roll repeated instances of each into ONE finding that names the pattern with a representative file:line, and raise an individual one only when it sits on a genuinely public library API, the doc is wrong or misleading (not merely absent), or the #[allow] hides a real defect.',
@@ -1577,7 +1656,7 @@ const ragentQuietly = quietly(ragent)
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reportText}`
+  return `${telemetryLostSection(telemetryLost)}${reportText}${optionalSection()}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -2920,10 +2999,18 @@ async function reviewProfile(profile) {
   // bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
   // A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
   // signal. The scout may still pick it deliberately; only the floors may not.
-  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l))
+  // `admitted` is the ONE gate the optional set passes through, and it must sit under EVERY path
+  // into the plan — the scout's own picks, the blanket fills, and therefore the security floor and
+  // the empty-lens fallback that call `blanket()`. There is a fourth path, far later and easy to
+  // miss: the completeness critic on the synthesis phase, which composes from the lenses NOT
+  // selected — by construction the whole optional set. It went ungated once and bought two of the
+  // three on an ordinary large diff. It calls `admitted` too now; putting the gate anywhere but
+  // under each of these leaves a door, because every one of them names lenses on its own signals.
+  const admitted = l => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
+  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l) && admitted(l))
   const plan = {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : blanket()),
+    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l) && admitted(l)) : blanket()),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -2961,6 +3048,16 @@ async function reviewProfile(profile) {
   // readers (rolling deploy, already-stored rows) invisibly to the code-intrinsic lenses. Security-sensitive
   // diffs already get it via the all-lenses floor above (compat ∈ profile.lenses).
   if (plan.sizeBucket === 'large' && profile.lenses.includes('compat') && !plan.lenses.includes('compat')) plan.lenses.push('compat')
+  // An explicit request ADDS the lens; it does not merely permit it. A caller who writes
+  // `optional=performance` is asking for the performance pass to RUN, not for the scout to be
+  // allowed to pick it — and on a small diff with no security floor nothing else would ever put it
+  // in the plan, so "permit" would have meant "nothing happens". Enforced in code, for the same
+  // measured reason as the alwaysLenses loop above.
+  for (const l of optionalRequested) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
+  // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. What
+  // ran is recorded at dispatch (`runLens`) and subtracted by `optionalTally()`, because the plan is
+  // not final at this point — see the tally's definition.
+  for (const l of profile.lenses) if (OPTIONAL_LENSES.includes(l)) optionalInScope.add(l)
   log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
@@ -2973,6 +3070,9 @@ async function reviewProfile(profile) {
   const lensFailures = new Map()
   let reviewerAgentMissing = false
   async function runLens(lens, prompt, phaseName, labelSuffix) {
+    // The single dispatch point for every lens on every path. Recording here — not at plan time — is
+    // what makes the report and the run record physically unable to disagree with what happened.
+    if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
     const runGeneric = async () => {
       try {
@@ -3216,7 +3316,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
       { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
     )
     criticNotes = critic?.notes ?? ''
-    const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    // `admitted()` gates HERE too, and this is the fourth road into the plan, not a redundant check:
+    // `candidates` is by construction the lenses NOT selected, so the whole optional set is in it.
+    // The critic is the same model whose hands this project deliberately took the spend out of
+    // ("the scout classifies, the code budgets"); letting it re-order lenses on the synthesis phase
+    // would return that spend through a side door and undo the boundary. The signal is not thrown
+    // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
+    const named = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
+    const refusedOptional = named.filter(l => !admitted(l))
+    if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
+    const followups = named.filter(l => admitted(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
@@ -3299,6 +3409,9 @@ function reviewRecord(extra) {
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
     gate: { status: mergedGateStatus, provenance: mergedProvenance, carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)) },
+    // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
+    // later — in analyze-runs, in a comparison between two runs — as a full one.
+    optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
