@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -246,15 +246,120 @@ continues on the remaining signals with status=unknown — an incomplete gate be
 // compile without a database, and reported neither signal. Worse, every agent that later runs a tool
 // (the gate, a lens re-running clippy, a verifier doing its MECHANICAL CHECK) rediscovered the same
 // facts independently. Resolve them once, cheaply, and hand the answer to everyone downstream.
+// The probe budget and its audit live in a linted module with real unit tests, and are pasted back
+// in here by the craft-inline gate, because this script cannot be imported (top-level export +
+// await + return). The module's header carries why the audit is a DECLARATION audit and what that
+// does and does not close.
+// >>> craft-inline lib/preflight-probes.mjs PROBE_BUDGETS probeDeclarationBlock auditPreflightProbes
+// The per-source budget. A source is named by the QUESTION it answers, not by the command that
+// answers it: two spellings of "which checks are green for this SHA" are one source, which is the
+// whole point — the old failure mode was three routes to one answer, each looking like a fresh
+// question. `max: 0` means the route is forbidden outright: it exists, it resolves the same
+// question, and the prompt bans it because it resolves by BRANCH (empty on a review worktree) or
+// hands back a PR whose head has moved.
+const PROBE_BUDGETS = {
+  'ci-check-runs': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/check-runs' },
+  'ci-commit-status': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/status' },
+  'ci-pr-checks': { max: 0, what: 'gh pr checks — resolves by branch; forbidden, the SHA-scoped calls answer it' },
+  'ci-pr-by-commit': { max: 0, what: 'gh api …/commits/$SHA/pulls — forbidden in preflight; the gate owns PR lookup' },
+  'workflow-file': { max: 2, what: 'reading a .github/workflows/*.yml behind a green check' },
+  'tool-inventory': { max: 2, what: 'the one-shot command -v loop (once bare, once under the runner prefix)' },
+  'runner-verify': { max: 2, what: 'an instant <prefix>true / <prefix>rustc --version' },
+  'blocker-probe': { max: 4, what: 'the grep/ls/test questions behind a compile blocker, and for Nix the flake-metadata and `system`-match checks' },
+  'repo-identity': { max: 2, what: 'git rev-parse HEAD / git remote get-url origin' },
+  'runner-discover': { max: 2, what: 'the ls/test sweep for the dev-shell markers (.envrc, flake.nix, shell.nix, .direnv/)' },
+}
+
+// The block appended to the preflight prompt. It is generated from PROBE_BUDGETS rather than written
+// out beside it: a budget the prompt does not name is a budget the agent is judged against without
+// being told, which turns the audit into a trap instead of a contract.
+function probeDeclarationBlock() {
+  const rows = Object.entries(PROBE_BUDGETS).map(([id, b]) => b.max === 0
+    ? `   - \`${id}\`: FORBIDDEN (${b.what}) — declaring calls > 0 here is a violation, not a note`
+    : `   - \`${id}\`: at most ${b.max} (${b.what})`)
+  return `5. DECLARE YOUR PROBES. Return \`probes\`: one entry per source you consulted, \`{ "source": "<id>", "calls": <how many shell/API invocations you spent on it> }\`. Count every invocation, including ones that returned nothing. The ids and their budgets:
+${rows.join('\n')}
+   Use these ids EXACTLY; an id not on this list is itself reported as a violation, so a repeat cannot be relabelled into a fresh question. A source you did not consult is simply absent (do not declare it with \`calls: 0\`), and \`calls\` is a whole number ≥ 0 on every entry — a missing, non-integer or negative count is itself a violation. \`probes\` can NEVER be empty and is never emptied by a partial result: it reports what you ALREADY did, so running out of time shortens the list, it does not erase it — an empty list is reported as a violation, not read as a disciplined run. THE ENGINE AUDITS THIS: an over-budget or forbidden or unrecognized source is named in the run's log and carried into its record. Declaring fewer calls than you made is a false report, which is worse than an over-budget honest one.`
+}
+
+// Violations of the declared budget, as human-readable lines. Empty array = clean.
+//
+// CONTRACT, stated so nobody upgrades it: this audits the DECLARATION, not the shell. A preflight
+// that asks one source three times and declares one call passes here. What the audit buys is that
+// the honest path and the disciplined path are now the same path, and that a breach has to be
+// either declared or actively misreported — where before it was neither visible nor recorded.
+function auditPreflightProbes(pf) {
+  if (!pf) return []
+  const out = []
+  const probes = Array.isArray(pf.probes) ? pf.probes : null
+  if (!probes) {
+    // Absent is a violation of its own: `probes` is required by the schema, so a missing list means
+    // the answer did not come through the contract at all — and silence must not read as clean,
+    // which is the exact shape of every observability defect this engine has shipped.
+    out.push('preflight declared no `probes` list — the per-source budget could not be audited')
+    return out
+  }
+  if (probes.length === 0) {
+    // The same defect one layer in, and it was the CHEAPEST answer available: an empty array is a
+    // present list, so every check below ran over nothing and found nothing. A preflight that spent
+    // 48 invocations and declared `[]` then filed exactly what a disciplined one files. It is a
+    // violation unconditionally — including under `partial: true`, because `probes` reports what was
+    // ALREADY done, so running out of time shortens the list and never empties it.
+    out.push('preflight declared an EMPTY `probes` list — a preflight consults something by definition, and an empty declaration is not a clean one (a partial run still reports what it did)')
+    return out
+  }
+  const seen = new Map()
+  for (const p of probes) {
+    const id = String((p && p.source) || '').trim()
+    if (!id) { out.push('a `probes` entry has no `source`'); continue }
+    if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
+      out.push(`unrecognized probe source \`${id}\` — not one of the declared ids, so its budget is unknown`)
+      continue
+    }
+    // Every way a count can fail to be a count is named, because each one used to coerce to zero and
+    // land the entry inside its budget: an omitted `calls` via `?? 0`, a non-numeric one via `NaN`
+    // and the `Number.isFinite` guard below, and a negative one by SUBTRACTING from the total — so
+    // `[{blocker-probe:9},{blocker-probe:-8}]` read as 1 call against a budget of 4. A bad count is
+    // now a violation of its own AND is excluded from the sum, so it can neither hide nor offset.
+    const raw = p ? p.calls : undefined
+    if (raw == null) {
+      out.push(`probe source \`${id}\` declared no \`calls\` — an entry without a count cannot be audited, and a missing count is not zero`)
+      continue
+    }
+    const calls = Number(raw)
+    if (!Number.isInteger(calls)) {
+      out.push(`probe source \`${id}\` declared a non-integer call count \`${String(raw)}\` — invocations are counted in whole numbers`)
+      continue
+    }
+    if (calls < 0) {
+      out.push(`probe source \`${id}\` declared a negative call count ${calls} — a call cannot be un-made, and a negative must not offset a real one`)
+      continue
+    }
+    // Two entries for one id are the repeat this exists to catch, split across rows. Summed, never
+    // taken as the larger: splitting 3 calls into 2+1 would otherwise read as within a budget of 2.
+    seen.set(id, (seen.get(id) ?? 0) + calls)
+  }
+  for (const [id, total] of seen) {
+    const { max, what } = PROBE_BUDGETS[id]
+    if (max === 0 && total > 0) out.push(`forbidden probe source \`${id}\` used ${total}×: ${what}`)
+    else if (total > max) out.push(`probe source \`${id}\` used ${total}×, budget ${max}: ${what}`)
+  }
+  return out
+}
+// <<< craft-inline
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'partial', 'notes'],
+  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'probes', 'partial', 'notes'],
   properties: {
     runner: { type: 'string', description: 'prefix every build/lint command needs, e.g. "direnv exec . " or "nix develop -c " — empty string if commands run bare' },
     blockers: { type: 'array', items: { type: 'string' }, description: 'reasons this tree CANNOT compile here, one per line, e.g. "sqlx query macros need a live Postgres; no offline .sqlx cache and no DATABASE_URL"' },
     missingTools: { type: 'array', items: { type: 'string' }, description: 'gate tools not on PATH (cargo-audit, cargo-deny, semgrep, …)' },
     ciCovers: { type: 'array', items: { type: 'string' }, description: 'signals a GREEN CI check already establishes for this exact HEAD, as "<signal> via <check name>" — e.g. "test via cargo nextest", "deny-bans via cargo-deny"' },
+    // `minItems`/`minimum` are load-bearing, not decoration: without them `probes: []` and a negative
+    // count were both VALID answers that the audit then read as clean — the cheapest possible path to
+    // a green audit. The schema now refuses the shape and `auditPreflightProbes` refuses it again.
+    probes: { type: 'array', minItems: 1, description: 'one entry per source consulted, with how many shell/API invocations it cost — audited against PROBE_BUDGETS; never empty, not even in a partial result, since it reports what was already done', items: { type: 'object', additionalProperties: false, required: ['source', 'calls'], properties: { source: { type: 'string', description: 'the probe-source id from the prompt\'s list, exactly' }, calls: { type: 'integer', minimum: 0, description: 'invocations spent on that source, including ones that returned nothing' } } } },
     partial: { type: 'boolean', description: 'true if ANY of the four fields was left unfinished (ran out of time, a command failed, gh unavailable) — the matching field is then empty and notes says which and why' },
     notes: { type: 'string' },
   },
@@ -302,11 +407,14 @@ ${profile.id === 'rust'
    Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. HARD CAP — this is where the pass runs away with the clock: read AT MOST 2 workflow files, only for green checks that map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale. Past the cap, the remaining green checks go in \`notes\` BY NAME ONLY and NEVER in \`ciCovers\` — \`ciCovers\` means "do not re-run this locally", and a check whose workflow you did not open cannot support that: its name is a guess at what it ran, which is exactly what the \`cargo-deny\`/\`check bans\` example above shows going wrong. Only a signal you read the workflow for goes in \`ciCovers\`.
    List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
 
+${probeDeclarationBlock()}
+
 BUDGET (hard): reconnaissance, target ~90 seconds, three minutes is the ceiling. Past the dispatch deadline nothing cuts you off — the caller simply STOPS WAITING for you and dispatches a second preflight, so everything you do after that point is discarded and paid for twice, and if the second pass is as slow the gate loses even the runner prefix. So at three minutes STOP and RETURN. A thorough preflight costing more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint here.
 
-PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
+PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four FINDINGS fields above (runner, blockers, missingTools, ciCovers) you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
+\`probes\` (step 5) IS EXPLICITLY EXCLUDED FROM THAT INSTRUCTION: it is not a finding but a report of what you ALREADY DID, so it can never be returned empty — a run cut short declares the calls it had already spent, and an empty \`probes\` is read as a violation, never as a disciplined pass.
 
-Return runner, blockers, missingTools, ciCovers, partial, notes.`
+Return runner, blockers, missingTools, ciCovers, probes, partial, notes.`
 }
 // An unfinished preflight must not be recorded as a clean one. The schema carries an explicit
 // `partial` boolean precisely so this does not hang on the shape of prose: the earlier test was
@@ -426,6 +534,86 @@ Set provenance to a one-line summary like "nix flake check pass; statix/deadnix 
 // declared rather than becoming a fourth blanket exception.
 const CONDITIONAL_LENSES = ['failure-windows']
 
+// ================= The optional pass =================
+// Three lenses that do not earn a place on every run. The basis is NOT equal across them: only
+// `ownership` (retired, not here) has three independent counts. The two earlier store-wide counts
+// named api-idioms and performance among the bottom four; `api-boundary` was not in them at all, so
+// for the composition of THIS trio the basis is ONE run — one diff, one repository, one domain
+// (realm @nick/craft, node #20, which requires that limit to be stated rather than dropped).
+// Measured over runs of the
+// budget-deterministic engine against a large Rust diff (14 lenses × 3 rounds, 215 findings):
+// `performance` (15 findings, 12 of them Low/Info), `api-idioms` (14/10) and `api-boundary` (11/7)
+// returned hundreds of CONFIRMED Medium-and-below findings and NOT ONE High in any of the three.
+// Deleting them would make the review worse — the findings are real. Paying three full agents for
+// them on every run is the part the numbers do not support. So they leave every automatic path and
+// stay reachable by an explicit request.
+//
+// The failure mode this must not become is the one this repo keeps hitting: a run that never looked
+// at performance reading as a run that found nothing wrong with it. So the skipped set is stated
+// MECHANICALLY — `optionalSection()`, appended by `out()` to every report the engine can return,
+// never asked of the synthesis model, which can die or simply not obey — and filed on the run
+// record as `optionalPass`.
+//
+// STRICT MODE AND THE SECURITY FLOOR TOUCH THIS IN NEITHER DIRECTION, and that is a decision, not
+// an omission.
+//   · `strict` is the harsh MAINTAINABILITY bar: it forces the maintainability lens and turns its
+//     confirmed findings into presumptive blockers. Letting it also buy three unrelated lenses
+//     would make one flag mean two things, and would deliver the optional pass to a caller who
+//     asked for something else.
+//   · The security-sensitive floor expands `blanket()`, and `blanket()` excludes the optional set
+//     exactly as it excludes CONDITIONAL_LENSES. A floor is a statement of IGNORANCE about the
+//     diff, and ignorance is not a reason to buy the three lenses that measured worst.
+//   · Neither may silently DISABLE it either: an explicit `optional=` request is honoured on every
+//     path, including a security-floored run and a strict one. The request is the only switch.
+const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
+
+// `optional=true` / `--optional` / `optional=all` buys the whole set; `optional=performance,api-boundary`
+// (or a JSON array) buys those. Absent buys none.
+// An unrecognised name is REFUSED LOUDLY rather than dropped: `optional=perf` that quietly buys
+// nothing, on a run whose whole point was to buy something, is the exact silence this section exists
+// to prevent — and the run would then report the lens as skipped while the caller believed otherwise.
+function parseOptionalRequest(raw) {
+  if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
+  if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
+  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean)
+  return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
+}
+const optionalRequest = parseOptionalRequest(A.optional)
+if (optionalRequest.unknown.length) {
+  log(`⚠️ optional=${JSON.stringify(A.optional)} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
+}
+const optionalRequested = optionalRequest.lenses
+// The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
+// plan the moment it was built — but the plan is not final there: the completeness critic composes
+// lenses much later, on the synthesis phase. Any such later road made the snapshot a LIE in the one
+// direction that matters, printing "not looked at" over a lens whose findings were in the report.
+// So the two sets below record only what cannot be second-guessed: which optional lenses this run
+// could have bought at all (filled by each profile's planner), and which ones were actually
+// DISPATCHED (recorded by `runLens`, the single dispatch point for every lens on every path —
+// planned, resurrected, or critic-composed). `optionalTally()` subtracts. Sets, because two active
+// profiles may both carry the same optional lens and the reader wants the lens named once.
+const optionalInScope = new Set()
+const optionalDispatched = new Set()
+// An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
+// critic is the same model whose spend this pass deliberately took out of model hands), but the
+// signal is real and must reach the reader rather than die in the filter.
+const optionalNamedByCritic = new Set()
+const optionalTally = () => {
+  const inScope = [...optionalInScope]
+  return { ran: inScope.filter(l => optionalDispatched.has(l)), skipped: inScope.filter(l => !optionalDispatched.has(l)) }
+}
+// Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
+// one and the mechanical fallback. The earliest exits (no diff, red gate) run before any lens is
+// planned, so the list is empty there and no section is emitted; those reports already say plainly
+// that nothing was reviewed. It says "absence of a result", never "no problems found".
+const optionalSection = () => {
+  const skipped = optionalTally().skipped
+  if (!skipped.length) return ''
+  const named = skipped.filter(l => optionalNamedByCritic.has(l))
+  return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
+    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
+}
+
 const PROFILES = {}
 PROFILES.rust = {
   id: 'rust',
@@ -443,14 +631,13 @@ PROFILES.rust = {
   usesLibrary: true,
   alwaysLenses: ['intent'],
   safetyLens: 'safety',
-  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, or a migration renaming/retyping a column the code (de)serializes → compat (pick it whenever the diff changes an at-rest or on-the-wire representation of data that other versions of the code read). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
+  scoutRules: `Decide what is "in play" from the diff: unsafe → safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, or a migration renaming/retyping a column the code (de)serializes → compat (pick it whenever the diff changes an at-rest or on-the-wire representation of data that other versions of the code read). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.) \`performance\`, \`api-idioms\` and \`api-boundary\` are the OPTIONAL pass: pick them on the same signals as ever, but the engine admits them only on a run that explicitly asked for the optional pass and drops them otherwise — so do not treat their absence from a run as a judgement about the code they cover.`,
   gate: rustGate,
   depContext: rustDepContext,
-  lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
+  lenses: ['safety', 'errors', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
   lensBrief: {
     safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization. Also BUILD-PROFILE DIVERGENCE (SAF-007/SAF-008), where the code you review is not the code that ships: (a) arithmetic on an untrusted-input path whose outcome differs between the dev/test profile (`overflow-checks` ON) and the shipping release profile (OFF by default — read `[profile.release]` in the crate AND workspace root before assuming, it may be re-enabled). The profile-gated panic is the FLOOR of the impact, not the ceiling: do NOT close it as "does not reproduce in release" — say what the release build does INSTEAD (a silent wrap that truncates a length, misresolves an index, or corrupts state is worse than the panic, because nothing reports it), and report both facets. (b) a `debug_assert!` carrying a load-bearing invariant — an unsafe precondition, a bounds/length check, a trust-boundary validation — which compiles out in `--release`, leaving the shipped binary unguarded.',
     errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
-    ownership: 'ownership & lifetimes: needless clone to satisfy the borrow checker, String where &str/impl AsRef suffices, Vec<T> where &[T] works, explicit lifetimes where elision applies.',
     concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
     performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
     'api-idioms': 'API shape & public-surface idioms — spend the budget on impactful breaks, not per-item completeness nits. HIGH-VALUE (surface individually): public-API guideline breaks (API-006) — an unsealed trait meant to be closed, a private/unstable type or dependency leaked through a `pub` signature, an owned String/Vec/PathBuf parameter where &str/&[T]/&Path fits, a public enum/error without #[non_exhaustive], missing common-trait impls (Debug/Clone); a wildcard `_ =>` on a business enum that silently swallows new variants (API-002); a library leaking Box<dyn Error>/anyhow at its boundary (ERR-003). LOW-VALUE (do NOT file one finding per occurrence): missing `///` on a pub item (API-003), #[allow] without a justifying comment (API-004), crate-root #![deny(warnings)] (API-005), oversized fn / deep nesting (API-001) — roll repeated instances of each into ONE finding that names the pattern with a representative file:line, and raise an individual one only when it sits on a genuinely public library API, the doc is wrong or misleading (not merely absent), or the #[allow] hides a real defect.',
@@ -1504,7 +1691,7 @@ const ragentQuietly = quietly(ragent)
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reportText}`
+  return `${telemetryLostSection(telemetryLost)}${reportText}${optionalSection()}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -2901,10 +3088,18 @@ async function reviewProfile(profile) {
   // bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
   // A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
   // signal. The scout may still pick it deliberately; only the floors may not.
-  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l))
+  // `admitted` is the ONE gate the optional set passes through, and it must sit under EVERY path
+  // into the plan — the scout's own picks, the blanket fills, and therefore the security floor and
+  // the empty-lens fallback that call `blanket()`. There is a fourth path, far later and easy to
+  // miss: the completeness critic on the synthesis phase, which composes from the lenses NOT
+  // selected — by construction the whole optional set. It went ungated once and bought two of the
+  // three on an ordinary large diff. It calls `admitted` too now; putting the gate anywhere but
+  // under each of these leaves a door, because every one of them names lenses on its own signals.
+  const admitted = l => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
+  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l) && admitted(l))
   const plan = {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : blanket()),
+    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l) && admitted(l)) : blanket()),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -2942,6 +3137,16 @@ async function reviewProfile(profile) {
   // readers (rolling deploy, already-stored rows) invisibly to the code-intrinsic lenses. Security-sensitive
   // diffs already get it via the all-lenses floor above (compat ∈ profile.lenses).
   if (plan.sizeBucket === 'large' && profile.lenses.includes('compat') && !plan.lenses.includes('compat')) plan.lenses.push('compat')
+  // An explicit request ADDS the lens; it does not merely permit it. A caller who writes
+  // `optional=performance` is asking for the performance pass to RUN, not for the scout to be
+  // allowed to pick it — and on a small diff with no security floor nothing else would ever put it
+  // in the plan, so "permit" would have meant "nothing happens". Enforced in code, for the same
+  // measured reason as the alwaysLenses loop above.
+  for (const l of optionalRequested) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
+  // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. What
+  // ran is recorded at dispatch (`runLens`) and subtracted by `optionalTally()`, because the plan is
+  // not final at this point — see the tally's definition.
+  for (const l of profile.lenses) if (OPTIONAL_LENSES.includes(l)) optionalInScope.add(l)
   log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
@@ -2954,6 +3159,9 @@ async function reviewProfile(profile) {
   const lensFailures = new Map()
   let reviewerAgentMissing = false
   async function runLens(lens, prompt, phaseName, labelSuffix) {
+    // The single dispatch point for every lens on every path. Recording here — not at plan time — is
+    // what makes the report and the run record physically unable to disagree with what happened.
+    if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
     const runGeneric = async () => {
       try {
@@ -3000,6 +3208,12 @@ async function reviewProfile(profile) {
     // to 10min of wall clock (two dispatches) rather than 7. Bounded, and cheaper than the gate
     // rediscovering its own environment on every run.
     { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
+  // The declared-probe audit. Named in the log and carried into the record so a breach of the
+  // "ask each source once" rule is a fact of the run rather than a matter of the prompt's manners.
+  const probeViolations = auditPreflightProbes(preflight)
+  if (probeViolations.length) {
+    log(`⚠️ [${profile.id}] PREFLIGHT PROBE BUDGET BREACHED (${probeViolations.length}): ${probeViolations.join(' · ')}`)
+  }
   if (preflight) {
     log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
       + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
@@ -3052,11 +3266,11 @@ async function reviewProfile(profile) {
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
     // that never answered — a bare `null` collapsed both into the same, more permissive, reading.
     preflight: preflight
-      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes }
+      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes, probeViolations }
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -3157,7 +3371,7 @@ async function reviewProfile(profile) {
     notRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '', probeViolations }
   }
 
   // ---- Verify ----
@@ -3191,7 +3405,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
       { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
     )
     criticNotes = critic?.notes ?? ''
-    const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    // `admitted()` gates HERE too, and this is the fourth road into the plan, not a redundant check:
+    // `candidates` is by construction the lenses NOT selected, so the whole optional set is in it.
+    // The critic is the same model whose hands this project deliberately took the spend out of
+    // ("the scout classifies, the code budgets"); letting it re-order lenses on the synthesis phase
+    // would return that spend through a side door and undo the boundary. The signal is not thrown
+    // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
+    const named = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
+    const refusedOptional = named.filter(l => !admitted(l))
+    if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
+    const followups = named.filter(l => admitted(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
@@ -3229,7 +3453,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes, probeViolations }
 }
 
 // ================= Run each active profile, then merge =================
@@ -3274,6 +3498,13 @@ function reviewRecord(extra) {
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
     gate: { status: mergedGateStatus, provenance: mergedProvenance, carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)) },
+    // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
+    // later — in analyze-runs, in a comparison between two runs — as a full one.
+    optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
+    // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
+    // not: the point of the audit is that the next drift back into CI archaeology shows up in the
+    // record of the run that did it, not in a re-measurement months later.
+    preflightProbeViolations: results.flatMap(r => (r.probeViolations || []).map(v => `[${r.profile.id}] ${v}`)),
     outputTokens: budget.spent(),
     ...extra,
   }
