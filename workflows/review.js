@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
-  description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically.',
+  description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -110,11 +110,89 @@ const A = normalizeArgs(args, log)
 const baseArg = A.base ? String(A.base) : ''
 const intentArg = A.intent ? String(A.intent) : ''
 const postComments = !!A.comment
-const pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
+let pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
 // Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
 // it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
 // its own checkout — reviewing a PR in another repo silently reviewed craft instead.
-const repoArg = A.repo ? String(A.repo) : ''
+let repoArg = A.repo ? String(A.repo) : ''
+// `path` is a git PATHSPEC resolved against the reviewed repo; `repo` selects the repo. An ABSOLUTE
+// `path` is therefore ambiguous in the one way the sandbox cannot resolve: it is either a repo the
+// caller meant to select, or a directory INSIDE the repo they meant to narrow to — and with no disk
+// and no Node API here, nothing can tell those apart. Both wrong guesses are expensive and neither
+// is loud. Guessing "repo" turns a narrowing request into a confident WHOLE-repo review wearing the
+// narrow label; leaving it as a pathspec matches nothing, and the run comes back as an empty diff
+// that reads like "no changes" — measured 2026-09-17 at 57 agents and 2.04M tokens, every one of
+// the 14 lenses independently rediscovering that there was nothing to read.
+// So: resolve it when the prefix DECIDES it, and refuse to guess otherwise (realm @nick/craft, #65).
+// `~` counts as absolute here because the agent's shell expands it before git ever sees the pathspec.
+const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
+let ambiguousPath = ''
+// A scope the caller asked for and did NOT get. It rides into `notRun` and therefore into the
+// verdict line, not only into `log()`: dropping a narrowing widens the review to the WHOLE repo, so
+// what was ordered and what was done diverge — and the person who reads the verdict is not the
+// person who reads the log. An INCOMPLETE marker is the honest rendering of "we reviewed something
+// else than you asked for", however green the findings are.
+let scopeNotRun = []
+// The reader-facing twin of `scopeNotRun`: the same refusal spelled with this run's own paths, for
+// the report. Kept apart because `notRun` is ranked by exact string (see the assignment below).
+let scopeDetail = ''
+// Containment decided on NORMALIZED SEGMENTS rather than on a raw string prefix. `repo=/r/` with
+// `path=/r/./crates/../crates/core` is the same request as `repo=/r` with `path=crates/core`, and a
+// prefix comparison reads it as "outside" — which silently WIDENS the review to the whole repository.
+// Segments also settle the sibling case (`/r-evil` is not inside `/r`) that a bare `startsWith`
+// accepts unless the separator is appended by hand.
+// WHAT STAYS OUTSIDE THIS GUARD, because the sandbox has no disk and no Node API: a SYMLINK cannot be
+// resolved (a path reaching the repo through a symlinked directory reads as outside), the comparison
+// is case-SENSITIVE while macOS and Windows filesystems are not (`/R/crates` under `repo=/r` reads as
+// outside), and a `..` that would climb above the first segment is kept as a literal segment, so such
+// a path matches nothing. All three misread in the SAME direction — the scope is dropped, and a
+// dropped scope is now reported in the verdict and in `notRun` — never in the direction of a
+// narrowing that looks honoured and is not.
+// The dropped scope, rendered into whichever report is returned — every early exit included, since
+// the drop happened before all of them. Appended to the synthesized report too rather than asked of
+// the synthesis model: what the review DID NOT cover is not something a prompt may forget.
+const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
+function pathSegments(p) {
+  const segs = []
+  for (const s of String(p).split(/[\\/]+/)) {
+    if (!s || s === '.') continue
+    if (s === '..' && segs.length && segs[segs.length - 1] !== '..') { segs.pop(); continue }
+    segs.push(s)
+  }
+  return segs
+}
+// The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
+function relativeToRepo(abs, repo) {
+  const r = pathSegments(repo)
+  const p = pathSegments(abs)
+  if (!r.length || p.length < r.length) return null
+  for (let i = 0; i < r.length; i++) if (p[i] !== r[i]) return null
+  return p.slice(r.length).join('/')
+}
+if (ABSOLUTE_PATH.test(pathArg)) {
+  const rel = repoArg ? relativeToRepo(pathArg, repoArg) : null
+  if (rel != null) {
+    // It names a directory inside the repo under review: that is a SCOPE, spelled absolutely. Keep
+    // the narrowing the caller asked for — dropping it here would silently widen the review.
+    log(`⚠️ path=${pathArg} is absolute but sits inside repo=${repoArg} — read as the repo-relative scope ${shq(rel)}.`)
+    pathArg = rel
+  } else if (repoArg) {
+    const msg = `the requested scope path=${pathArg} was DROPPED: it is ABSOLUTE and does not resolve inside repo=${repoArg}, and an absolute pathspec matches nothing (the review would have seen an EMPTY diff). The review below therefore covers the WHOLE repository, not the requested scope — re-run with a repo-relative path to narrow it.`
+    log(`⚠️ ${msg}`)
+    // TWO STRINGS ON PURPOSE. `msg` is for a reader — it names this run's path and repo, and it
+    // reaches the report's Scope section. `scopeNotRun` feeds the run record's `notRun`, which
+    // lib/analyze-runs.mjs ranks BY EXACT STRING to surface repeated fragility: a path in there
+    // makes every dispatch of the same shape its own count-1 row and sinks the real repeats. Same
+    // argument that moved the uncovered-files note out of `notRun` entirely.
+    scopeNotRun = ['the requested scope was DROPPED — an absolute `path` that does not resolve inside `repo`, so the review covered the whole repository instead']
+    scopeDetail = msg
+    pathArg = ''
+  } else {
+    // No `repo` to decide against. Refusing costs nothing and says exactly what to do; either guess
+    // costs a full run and reports a scope nobody asked for.
+    ambiguousPath = pathArg
+  }
+}
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. As an installed plugin
 // CLAUDE_PLUGIN_ROOT is set for us; when the engine is launched by scriptPath from a checkout it is
 // NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
@@ -341,6 +419,13 @@ EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote th
 Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits.`
 }
 
+// Admitted by a code signal, never by a floor. See `blanket()` in planFor: a blanket roster fill
+// says "nothing is known about this diff", which is not a reason to pay for the roster's most
+// expensive lens. `failure-windows` is gated on the scout having CHOSEN `reconciler` (controller
+// code); nothing else here yet, and the list exists so the next such lens has somewhere to be
+// declared rather than becoming a fourth blanket exception.
+const CONDITIONAL_LENSES = ['failure-windows']
+
 const PROFILES = {}
 PROFILES.rust = {
   id: 'rust',
@@ -361,7 +446,7 @@ PROFILES.rust = {
   scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, or a migration renaming/retyping a column the code (de)serializes → compat (pick it whenever the diff changes an at-rest or on-the-wire representation of data that other versions of the code read). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
   gate: rustGate,
   depContext: rustDepContext,
-  lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
+  lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
   lensBrief: {
     safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization. Also BUILD-PROFILE DIVERGENCE (SAF-007/SAF-008), where the code you review is not the code that ships: (a) arithmetic on an untrusted-input path whose outcome differs between the dev/test profile (`overflow-checks` ON) and the shipping release profile (OFF by default — read `[profile.release]` in the crate AND workspace root before assuming, it may be re-enabled). The profile-gated panic is the FLOOR of the impact, not the ceiling: do NOT close it as "does not reproduce in release" — say what the release build does INSTEAD (a silent wrap that truncates a length, misresolves an index, or corrupts state is worse than the panic, because nothing reports it), and report both facets. (b) a `debug_assert!` carrying a load-bearing invariant — an unsafe precondition, a bounds/length check, a trust-boundary validation — which compiles out in `--release`, leaving the shipped binary unguarded.',
     errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
@@ -371,6 +456,7 @@ PROFILES.rust = {
     'api-idioms': 'API shape & public-surface idioms — spend the budget on impactful breaks, not per-item completeness nits. HIGH-VALUE (surface individually): public-API guideline breaks (API-006) — an unsealed trait meant to be closed, a private/unstable type or dependency leaked through a `pub` signature, an owned String/Vec/PathBuf parameter where &str/&[T]/&Path fits, a public enum/error without #[non_exhaustive], missing common-trait impls (Debug/Clone); a wildcard `_ =>` on a business enum that silently swallows new variants (API-002); a library leaking Box<dyn Error>/anyhow at its boundary (ERR-003). LOW-VALUE (do NOT file one finding per occurrence): missing `///` on a pub item (API-003), #[allow] without a justifying comment (API-004), crate-root #![deny(warnings)] (API-005), oversized fn / deep nesting (API-001) — roll repeated instances of each into ONE finding that names the pattern with a representative file:line, and raise an individual one only when it sits on a genuinely public library API, the doc is wrong or misleading (not merely absent), or the #[allow] hides a real defect.',
     'api-boundary': 'API boundary correctness for web services: trace every error the changed service/repository can produce to the HTTP status the handler actually returns. A domain Conflict / AlreadyExists / unique-violation / not-found (an empty fetch_one / zero-row / RowNotFound) that collapses into a generic 500 — because a broad `#[from]` on the error enum folds it into a catch-all variant, or a blanket DbError→500 in IntoResponse swallows it — instead of surfacing 409/400/404 is a finding. Method: walk the error enum `#[from]`/`From` chains and the IntoResponse/handler match arms; where the service intends a distinct typed status (a Conflict variant meaning 409, a validation error meaning 400, a not-found meaning 404) confirm a matching arm actually maps it, and flag any typed 4xx that has no variant to land in or that a `#[from]` merges into a generic error before the boundary sees it. Also OpenAPI/utoipa completeness: does the handler annotation (e.g. #[utoipa::path] responses(...)) list EVERY status the handler can actually return — cross-check the statuses the code produces (especially 404/409/400) against the documented response set, and flag any the code returns but the responses(...) omits.',
     reconciler: 'reconciler / eventual-consistency correctness for controllers and retry loops (load the rust-cloud-native skill for the idioms): a reconcile must be idempotent and safe to re-run after a partial failure. Trace the changed reconcile/requeue path and the child/secondary resources it manages. Flag where (a) a create-path and an update/patch-path for the SAME object express DIFFERENT desired state (a patch omits fields the create sets, or a new spec field never reaches the patch arm) instead of building one typed desired object (or server-side apply) that drives both arms; (b) a secondary/child step whose error is propagated AFTER the primary object was mutated but BEFORE progress is recorded (observed-generation / Ready / status) — so a transient error permanently strands state and every requeue re-mutates the primary; (c) a resource created during reconcile has NO cleanup on the delete/disable path — no owner-reference, or one that cannot work across a scope boundary (a cluster-scoped owner with a namespaced child) and no finalizer or explicit delete — leaking it; (d) a status or condition is only ever upserted and never cleared when its subject disappears (stale forever), or is written unconditionally every pass (churning transition-time / observed-generation) instead of guarding on desired != current; (e) a feature-gated path still issues API calls when the feature is disabled, or its error aborts the unrelated primary reconcile; (f) create/patch is chosen off a stale read (read-then-write TOCTOU) with no tolerance for the self-healing race — a 409 / AlreadyExists on create or a 404 on patch/delete becomes a persistent error-requeue loop; (g) a transient error on a secondary/best-effort step is SWALLOWED (mapped to None / Ok / an early return) to protect the primary reconcile, but the pass then returns a no-change / await-event outcome with NO timed requeue — and in exactly that failure mode no watch event fires either (a failed create leaves no object to watch; a failed update/delete emits no event), so an object with no further spec churn never converges the secondary state and the drift is silent. Any swallowed reconcile error must schedule a bounded timed requeue (or surface an explicit needs-requeue outcome), not rely on a watch that will not fire; (h) a cluster-wide or SHARED-CRD typed watch/list uses a strict deserialize (a validating Deserialize, required-without-#[serde(default)] fields, a newtype that rejects apiserver-admissible values) with NO decode-tolerant guard on the stream — one non-conforming object in the store (a hand-made resource, or a foreign object on a CRD this controller co-owns with another operator or with admin-created resources) fails client-side decode on the STREAM and a single decode error on the shared stream can stall reconciliation for EVERY object of that kind, not just the bad one. Any annotation/label filter that runs AFTER deserialization does not help — the decode already broke the stream. Flag it; the fix is a decode-tolerant watch (skip or dead-letter a single undecodable object instead of failing the whole stream) or #[serde(default)]/Option on fields the shared CRD does not require. (Controllers with an admission/validating webhook: cross-check the webhook handler error→decision mapping against the chart ValidatingWebhookConfiguration failurePolicy — a handler that turns Internal/apiserver-error into allowed=false while a code comment or the shipped chart claims failurePolicy: Ignore / "fails open" is a fail-open-vs-fail-closed contradiction: every CREATE/UPDATE then hard-depends on that call and fails CLOSED on a transient hiccup. Read the chart YAML, do not trust the comment.)',
+    'failure-windows': 'durability & failure windows BETWEEN the writes of one pass, and interleavings BETWEEN two controllers. Not in-process concurrency (locks, Send/Sync, blocking in async) — that is the concurrency lens; here every window is opened by a process that stopped or an API call that failed between two committed writes. Work it as a procedure, in order. (1) ENUMERATE every mutating API request the changed path issues, IN EXECUTION ORDER — CREATE, status PATCH, finalizer PATCH, DELETE, annotation write — as a numbered list; if you cannot write the list, say so instead of judging the path. (2) For EACH ADJACENT PAIR in that list, assume the first committed and the second returned 500 or the process died between them, and answer one question: what does the NEXT pass read, and does it recover? A value captured in THIS pass in memory (a mode, an origin, a derived name) and written only by a LATER request is LOST when that later request never lands; and a recovery path that re-derives it by name reads whichever object CURRENTLY carries that name — possibly a different object. Name the pair and the state it strands. (3) For each object this controller SHARES with another controller, play the interleaving out: A reads the object, B begins deletion and scans for dependents, A commits its create AFTER that scan. A one-shot dependency scan is not a guard — say what the scan would have to be (a re-check after the write, a finalizer, a conflict-detecting write) for the window to close. (4) For each guard that REFUSES an operation while its source is terminating, ask whether the counterparty WAITING on that operation counts the refused object as in-progress. Refusal plus waiting is a mutual block, and it is fixed by handling the never-started case, not by raising a timeout. REPORT SHAPE: a finding must name the REQUEST ORDER that produces the state (pair i→i+1, or the two-controller interleaving), and must say explicitly what that order does NOT establish — the behaviour of the live external system, or actual data loss — so the claim is exactly the size of its evidence.',
     maintainability: 'maintainability & structural simplification (load the refactoring skill): missed code judo — a behavior-preserving reframing using the existing architecture that would make this change dramatically simpler or delete a whole category of complexity; file pushed across ~700 lines (decomposition smell); ad-hoc conditional / one-off branch / scattered special-case spliced into an unrelated or shared flow instead of a dedicated abstraction; needless optionality (Option that always holds), as-casts where From/TryFrom belongs, Box<dyn Any>/downcasting where a typed model fits. Flag only concrete, behavior-preserving restructurings the author could have taken — not hypothetical rewrites.',
     tests: 'tests as a COVERAGE ADVERSARY (not a presence check): enumerate what a regression could SILENTLY break, then check each has a test that would FAIL on that regression. The litmus test: if you deleted the production line/branch that carries a contract, would the suite still pass green? If yes, that contract is UNTESTED → finding (cite the missing test). Cover, at minimum: (a) every NEW branch and every distinct ERROR CONTRACT the code / handler / OpenAPI (or other documented interface) promises — not-found→404, forbidden / wrong-owner, bad-request→400, conflict→409, a typed 4xx that must not collapse into a 500 — each needs a test asserting THAT status/error, not just the happy path; (b) every SECURITY / AUTHORIZATION boundary — tenant or owner isolation: is there a test exercising a DIFFERENT user/tenant/scope and ASSERTING denial? A single-user happy path does NOT prove isolation; on a NEW authz-guarded endpoint a missing cross-tenant/cross-owner denial test is a HIGH-severity gap; (c) every behavioral CLAIM in the stated spec — identity preserved / "in place", a state that must stay put or transition exactly once, a field that must be scrubbed, an idempotent no-op — each needs a test that pins it and would fail if the claim were violated; (d) self-exclusion / dedup / unlink / bookkeeping guards — a uniqueness check that must exclude the row itself, a back-reference that must be cleared. Vacuous tests (assert!(true), no assertions) count as absent coverage.',
     intent: 'intent / spec conformance: does the change actually do what it is supposed to do? Work from the STATED SPEC / AUTHOR CLAIMS block (the verbatim PR/commit description), not just the one-line inferred intent. ENUMERATE every explicit claim or invariant the author wrote — patterns like "never fails on X", "the only way to Y", "idempotent" / "no-op", "in place" / "preserves Z", "always" / "never", and any documented trade-off — and for EACH claim trace the concrete code path that would carry it out. A claim the code contradicts is a finding (cite the exact file:line that violates it): e.g. an "idempotent no-op" that actually wipes a field, "the only way to change X" that silently no-ops for some inputs, "never fails on X" that returns Err on a transient/non-NotFound error. Also flag correct-looking code with wrong behavior, missed requirements, off-by-one against the spec.\n\nSECOND HALF, AND IT IS THE ONE THAT GETS SKIPPED: the author also makes claims INSIDE the diff, and those are checkable the same way. Enumerate every assertion carried by a doc comment, an inline comment stating an invariant or an ordering ("only after X", "never reached when Y", "callers guarantee Z"), a `# Safety`/`# Panics` section, a test name, or a test docstring — and for EACH one find the line that would have to be true for it, and check it. Three specific shapes, all observed in real reviews: (a) a comment that describes behaviour the code around it no longer has, because the code changed in this very diff and the paragraph above it did not — a stale comment is not a style nit, it is a false statement the next reader will act on; (b) a contract doc that contradicts the call site the diff creates (the doc says "called only where P holds" and the new caller does not establish P); (c) a test whose name or docstring claims an invariant the body does not pin — most often because BOTH sides of the assertion are hardcoded to the same constant, or because every case in the table varies nothing that the code under test reads, so the assertion is true whatever the production code does. For (c) apply the deletion litmus: name the production line the test claims to protect, and say whether the test would still pass with that line deleted. Report each as: the claim verbatim, where it is written, and the file:line that falsifies it — an unestablished premise IS the finding, you do not need a crash to report it.',
@@ -640,7 +726,7 @@ const FINDING_ITEM = {
     ruleId: { type: 'string', description: 'catalog rule ID from the active profile\'s rules.md (e.g. "CON-003" for rust, "PUR-001" for nix) if the finding maps to one; empty string otherwise' },
     fp: { type: 'string', description: 'line-tolerant fingerprint; empty if not from a ledger' },
     symbol: { type: 'string', description: 'enclosing fn/type name; empty if unknown' },
-    tier: { type: 'string', description: 'confirmed|suspected|refuted; empty if n/a' },
+    tier: { type: 'string', description: 'confirmed|suspected|unverified|refuted; empty if n/a' },
     disposition: { type: 'string', description: 'open|closed|rejected|justified|deferred; empty if n/a' },
   },
 }
@@ -822,7 +908,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross TRACKED_MARK markTrackedUnverified
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -1129,6 +1215,37 @@ function absorbAcross(lists, livePriors, retired, fallbackMatch) {
     absorbed: runs.reduce((n, r) => n + r.absorbed, 0),
     keptAtRetired: runs.reduce((n, r) => n + r.keptAtRetired, 0),
   }
+}
+
+// ---- the unverified tier at the absorption door -------------------------------------------------
+//
+// ABSORPTION IS FOR JUDGED FINDINGS ONLY. Absorbing a finding writes it onto the host prior's `why`,
+// and absorbedPromptBlock then tells the next round's adjudicator, in so many words, that "resolved"
+// requires every absorbed report to be gone too. For a CONFIRMED or SUSPECTED report that is right:
+// a verifier looked at it. For an UNVERIFIED one it is exactly the substitution the tier was
+// introduced to end — nothing checked that report against the code, and it would nevertheless hold
+// a prior open and feed the re-review verdict. A dead verifier's Critical and High travel this road,
+// not only the Low/Info nobody paid for.
+//
+// So an unverified finding is NOT absorbed. It stays in its own list, where the report shows it under
+// the tier that says nothing checked it, and it gates nothing. The double-listing this avoided is
+// answered by a NOTE on the finding itself instead of a clause on the host: the reader learns the
+// site is already tracked without the host inheriting an unchecked obligation.
+const TRACKED_MARK = ' — (this site is already tracked by a still-live prior finding; NOT absorbed into it: nothing checked this report against the code, so it may not hold that prior open)'
+
+// Pure: returns new finding objects; neither the findings nor the hosts are mutated.
+function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
+  const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
+  let marked = 0
+  const kept = (findings || []).map(f => {
+    const host = findCarrier(f, livePriors, fallbackMatch)
+    if (!host || isRetired(host)) return f
+    const why = String(f.why ?? '')
+    if (why.includes(TRACKED_MARK)) return f
+    marked++
+    return { ...f, why: why + TRACKED_MARK }
+  })
+  return { kept, marked }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -1518,7 +1635,16 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
   // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
   // logger receiving the literal string "" and treating it as a real (empty) session id.
-  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
+  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
+  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
+  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
+  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
+  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
+  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
+  // rejoin search outright in that case (see its `target` comment), because the single candidate a
+  // garbled sibling finds is its neighbour's LIVE directory.
+  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -1531,7 +1657,7 @@ CRAFT_RECORD_EOF
 cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
-The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit, and — reading the working copy with git — branch and head, whose values in the record below are only a fallback for what git cannot resolve), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 
@@ -1595,7 +1721,8 @@ function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir 
   const version = String(payload?.craftVersion ?? '')
   // See the matching note in logRunPrompt above: shell-expanded, never model-composed, and `:+`
   // degrades an unset/empty session id to no flag rather than to the literal string "".
-  const flags = `--phase ${shq(phase)} ${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+  // Independent of `--dir`, for the reason spelled out in `logRunPrompt` above.
+  const flags = `--phase ${shq(phase)} ${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
 Run exactly this, then return the runDir the script prints:
@@ -1626,6 +1753,14 @@ const CHECKPOINT_SCHEMA = {
 }
 let runDir = ''
 let checkpointFailed = false
+let rejoinArmed = false
+// ARMED, not merely "something failed". `checkpointFailed` says a checkpoint died; this says the run
+// went on to ASK the logger to rejoin — `!runDir && checkpointFailed`, the only state in which a
+// directory can be adopted. Finalize used the coarser flag, so a run whose first checkpoint minted
+// its directory and whose third died declared an adoption that never happened: the CLI then dropped
+// the `ownDir` shortcut, read a mid-review branch move as "not this run's directory", and left the
+// run's own phases unfolded. Sticky, because an adoption is not undone by later checkpoints
+// succeeding — once a directory MIGHT be someone else's, it stays might-be for the finalize proof.
 async function checkpoint(phase, payloadIn, group) {
   // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
   // that name to rebuild a dead run's identity. A payload without them produced a real
@@ -1639,8 +1774,10 @@ async function checkpoint(phase, payloadIn, group) {
   // place as every other failed write: the report. Letting it propagate would abort the whole review
   // over a bookkeeping write, which is exactly what this whole path exists to prevent.
   const asked = runDir
+  const armRejoin = !runDir && checkpointFailed
+  if (armRejoin) rejoinArmed = true
   const res = await ragentQuietly(
-    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: !runDir && checkpointFailed }),
+    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: armRejoin }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   if (res?.runDir) {
@@ -1677,7 +1814,7 @@ async function logRun(record) {
   const res = await ragentQuietly(
     logRunPrompt({
       record, craftRoot: craftRootArg, repo: repoArg,
-      command: 'finalize', dir: runDir, rejoin: checkpointFailed,
+      command: 'finalize', dir: runDir, rejoin: rejoinArmed,
     }),
     logRunDispatch(record, { phase: 'Synthesize' }),
   )
@@ -1802,14 +1939,28 @@ function isToolSource(profile, source) {
 
 // ================= Detect base + languages =================
 phase('Scout')
+// An absolute `path` with no `repo` to decide it against: refuse BEFORE the first agent is
+// dispatched. Zero cost, and the caller is told the two spellings that are unambiguous — against a
+// run that guesses, which costs a full fan-out and then reports a scope nobody asked for.
+if (ambiguousPath) {
+  const msg = `path=${ambiguousPath} is an absolute path and no \`repo\` was given, so it is ambiguous: it could name the REPOSITORY to review (pass it as \`repo\`) or a directory INSIDE the repository to narrow to (pass it relative to the repo root). Nothing ran — re-dispatch with one of those two spellings.`
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'INCOMPLETE (ambiguous path)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    // The CLASS, not this run's path — `notRun` is ranked by exact string (see `scopeNotRun`).
+    // The path itself is in the verdict prose below, where nothing ranks it.
+    uncoveredFiles: [], notRun: ['an absolute `path` with no `repo` — ambiguous scope, nothing ran'], outputTokens: budget.spent(),
+  })
+  return out([`## Verdict`, `⚠️ INCOMPLETE — ${msg}`].join('\n'))
+}
 const detected = await ragent(
-  `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under \`${pathArg}\`; pass \`-- ${pathArg}\` to the git commands below.` : ''}
+  `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under ${shq(pathArg)}; pass \`-- ${shq(pathArg)}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
-2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${pathArg}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
+2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${shq(pathArg)}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
 3. Capture the VERBATIM change description as \`spec\` — the authors' own written claims/invariants, checked against code later. If the current branch has an OPEN PR, run \`gh pr view --json body,title\` and use its title + body. Otherwise use the commit messages on the diff range: \`git log <base>..HEAD --format=%B\`. Do not summarize or paraphrase — copy the text as-is. Truncate to ~4000 chars. Empty string if there is no PR and no commit body (e.g. only uncommitted changes). If \`gh\` is missing/unauthenticated, fall through to the commit messages.
-4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo).
+4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). These two are a FALLBACK only: the logger reads both off the working copy with git at the moment a record is written, and its values win. Do not work to fill them — an empty string is a fine answer.
 Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, and head.`,
   { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
 )
@@ -1818,9 +1969,9 @@ Return baseRef (the ref you resolved, empty string if none), files (the changed 
 if (!detected) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
-    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection'], outputTokens: budget.spent(),
+    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun], outputTokens: budget.spent(),
   })
-  return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n'))
+  return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
 }
 const baseRef = detected?.baseRef ?? baseArg
 const changedFiles = Array.isArray(detected?.files) ? detected.files : []
@@ -1834,8 +1985,27 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // Round detection: find the newest prior `review` run for this branch, and accept it as the prior
 // round ONLY if its head is an ANCESTOR of the current HEAD (a rebase/force-push makes a stale run
 // non-ancestor → treat as a fresh first review). `fresh` skips the whole mechanism.
+//
+// The gate is `!freshArg` ALONE — it used to also require `branch && head`, both of which come from
+// the `detect` agent's answer above. That made the whole re-review memory conditional on a model
+// filling two fields: a `detect` agent that died or answered without them skipped the read entirely
+// and the run reported as a first review, indistinguishable from a genuine one. The script reads the
+// branch off git itself now (`prior-round` prefers git over `--branch`), so the flag below is the
+// fallback, not the key.
+//
+// It is NOT `!freshArg` alone, and the second clause is a decision rather than a guard restored.
+// The chain is keyed on (project, branch), and `rust-audit` fans out one nested `review` per crate
+// through `parallel`: concurrent siblings share both keys. Unconditional entry put them all on one
+// chain — each reading whichever sibling filed last as its own previous round and inheriting another
+// crate's ledger. A per-crate child is one slice of its parent's single pass, not a round of its
+// own, so it does not enter the chain: not as a reader (here) and not as a candidate
+// (`selectPriorRounds` skips `nested` rows). The run that has a history is the top-level one.
+// Unlike the condition this replaces, the skip is announced — a silent skip was that defect.
 let priorRound = null
-if (!freshArg && branch && head) {
+if (!freshArg && viaArg) {
+  log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
+}
+if (!freshArg && !viaArg) {
   priorRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
@@ -1920,9 +2090,9 @@ if (unknownLangs.length) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    notRun: [`nothing ran — ${msg}`], outputTokens: budget.spent(),
+    notRun: [`nothing ran — ${msg}`, ...scopeNotRun], outputTokens: budget.spent(),
   })
-  return out([`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n'))
+  return out([`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n') + scopeSection())
 }
 const detectedActive = Object.values(PROFILES).filter(p => (!pinnedLangs || pinnedLangs.includes(p.id)) && p.detect(changedFiles))
 // ORDER IS LOAD-BEARING, and it lives in resolveCoverage: the guards are decided from
@@ -1938,12 +2108,12 @@ if (coverage.outcome === 'empty') {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: [], notRun: [emptyMsg], outputTokens: budget.spent(),
+    uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
     ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 if (coverage.outcome === 'nothing-to-review') {
   // Nothing was reviewed AND nothing needed reviewing — an honest green, not a coverage hole. A
@@ -1952,26 +2122,26 @@ if (coverage.outcome === 'nothing-to-review') {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: changedFiles, notRun: [], outputTokens: budget.spent(),
+    uncoveredFiles: changedFiles, notRun: [...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
     ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 if (coverage.outcome === 'no-profile') {
   const msg = noLanguageMessage(PROFILES, changedFiles.length, coverage.material.length)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: changedFiles, notRun: [msg], outputTokens: budget.spent(),
+    uncoveredFiles: changedFiles, notRun: [msg, ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${msg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
     ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map(f => `- ${f}`)] : []),
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 
@@ -1985,7 +2155,7 @@ if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${un
 
 // ================= Prompt builders (profile-parameterized) =================
 function scoutPrompt(profile) {
-  return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${pathArg}\`. Pass \`-- ${pathArg}\` to every \`git diff\` command below.` : ''}
+  return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${flattenField(pathArg)}\`. Pass \`-- ${shq(pathArg)}\` to every \`git diff\` command below.` : ''}
 
 Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}. Consider only this profile's files (${profile.diffGlobs.join(' ')}).
 1. Inspect \`git diff --stat ${lensBase ? `${shq(lensBase)}...HEAD` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`. Set sizeBucket:
@@ -1993,7 +2163,9 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
 2. lenses: choose from ${JSON.stringify(profile.lenses)}.
    - small: only the touched categories (minimum 2; always include the dominant category, and include '${profile.safetyLens}' unless the diff clearly touches nothing related to ${profile.securityHints}).
    - medium: the categories plausibly in play.
-   - large: all of them.
+   - large: all of them, EXCEPT ${JSON.stringify(profile.lenses.filter(l => CONDITIONAL_LENSES.includes(l)))} — the
+     engine adds those itself off a code signal in the diff, so picking one here only pays for an
+     agent the signal did not ask for. Do not count them toward your choices.
    ${profile.scoutRules}${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
 3. isLibrary: ${profile.usesLibrary ? 'true if this is a published library (has `[lib]`/looks publishable) — best effort.' : 'always false (not applicable to this language).'}
 4. securitySensitive: true if the diff touches ${profile.securityHints}.
@@ -2296,10 +2468,11 @@ async function weightedWindow(entries, maxWeight, runOne) {
 // INDIVIDUAL — Critical/High, plus any severity carrying a rule from a family that blocks on sight.
 // These decide the verdict and get the full adversarial panel, never batched, never skipped.
 // BATCHED — Medium. Can only reach Warning, so one agent judges a group of them instead of one each.
-// SKIPPED — Low/Info. No combination of verdicts on these can move Approve/Warning/Block, and craft
-// already has the right tier for an unjudged finding: Suspected is defined as "borderline or
-// UNVERIFIED; surfaced for the author, never changes the verdict". Spending an adversarial skeptic to
-// move a finding from Suspected to Suspected buys nothing. The residual risk is a lens UNDER-calling
+// SKIPPED — Low/Info. No combination of verdicts on these can move Approve/Warning/Block, so no
+// verifier is spent on them. They then carry the `unverified` tier and say so in the report: an
+// unexamined finding is neither confirmed nor suspected, and it is excluded from the verification
+// counters, because a denominator that includes what was never checked makes the refutation rate of
+// one run incomparable with another's. The residual risk is a lens UNDER-calling
 // severity, which the blocking-family escape hatch below covers for the families where it would hurt.
 // The escape hatch belongs ONLY on the skipped tier. Batching is still verification — a Medium the
 // lens under-called gets a real adversarial judgement either way — so the only place an under-call
@@ -2317,17 +2490,76 @@ function verifyTier(f) {
   // more likely a mislabel than a judgement, and it is worth one verifier to find out.
   return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
 }
+// ---- the ONE route every death on the verification path takes -------------------------------
+// The invariant, stated once: NO death on the verification path may give a finding a tier that
+// asserts an inspection, may leave it inside the refutation denominator, or may leave it out of
+// `notRun`. The deaths are enumerated rather than discovered one at a time, because the previous
+// round of this fix closed the `.catch` branch alone and the dominant death is not a throw:
+//   1. the verifier THREW            (both `ragent` attempts rejected, or the budget throw)
+//   2. `ragent` returned `null`      (API error / skip, after its one re-dispatch)
+//   3. `ragent` returned `null`      (per-agent deadline hit — DEADLINE_HIT, same shape)
+//   4. a live answer with NO verdicts (`{verdicts: []}` — nothing was judged)
+//   5. a live answer that is not a verdict list at all (schema drift)
+//   6. `null` lost by the sliding window (`weightedWindow` writes null for a rejected entry)
+//   7. every vote of an individual panel dead (tierFromVotes with an empty vote list)
+//   8. a LIVE individual vote that is not a verdict at all (schema drift on the individual path —
+//      the ninth door: it does not merely mislabel the finding, it DELETES it, because every absent
+//      boolean reads as `false` and `citedLineMatches:false` alone means `refuted`)
+// The distinction that MUST survive: "the agent never answered" (any of the above → not verified)
+// versus "the agent answered but said nothing about THIS finding" (a lost finding → it was part of
+// an inspection, so it keeps `suspected`). The discriminator is exactly this: a null/empty/malformed
+// answer is a dead agent; a non-empty verdict list missing one index is a lost finding.
+const NOT_VERIFIED = (f, why) => ({ ...f, tier: 'unverified', why: `${f.why} (NOT VERIFIED: ${why})` })
+// THE DEATH CLASS of a batch answer, or null when the verifier really did judge something. The
+// three classes are kept APART rather than collapsed into one boolean: they are three distinct ways
+// the answer can fail to arrive, and a single message for all of them makes a test that scripts one
+// of them pass while the other two are unreached — the "neighbouring door" failure the death table
+// below exists to prevent. Each class names itself in the finding's `why`, so a row of that table
+// proves which branch it reached.
+function batchDeath(res) {
+  if (!res) return 'returned nothing at all — a dead agent, an exhausted retry, or an expired deadline'
+  if (!Array.isArray(res.verdicts)) return 'answered OFF-SCHEMA — its answer carried no verdict list at all'
+  if (!res.verdicts.length) return 'answered with an EMPTY verdict list — it judged nothing'
+  return null
+}
+// A vote is a JUDGEMENT only if it carries the four booleans tierFromVotes decides on. THE NINTH
+// DOOR: the agent wrapper returns ANY non-null value verbatim, so an off-schema object reaches the
+// vote arithmetic, where every missing boolean reads as `false` — `citedLineMatches` false alone
+// makes the tier `refuted`, and a refuted finding is FILTERED OUT of the run. That is strictly worse
+// than every other death on this path: the others keep the finding, this one deletes it — out of
+// confirmed, out of suspected, out of unverified, still inside the refutation denominator, and
+// absent from `notRun`. The batch path had this guard (batchDeath, ex-verifierAnswered); the
+// individual path had none, so schema drift on a Critical silently became a refutation.
+const VOTE_AXES = ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported']
+function isVerdictShaped(v) {
+  return !!v && typeof v === 'object' && VOTE_AXES.every(k => typeof v[k] === 'boolean')
+}
 // Do two verdicts say the same thing on every axis tierFromVotes reads? Only then can the opening
 // pair stand in for the full panel — a disagreement on ANY axis (not just `refuted`) can move the
 // tier, because citedLineMatches gates refutation outright and reachable/premiseSupported demote.
 function votesAgree(a, b) {
-  if (!a || !b) return false
-  return ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported'].every(k => Boolean(a[k]) === Boolean(b[k]))
+  // An off-schema vote is not agreement either: two of them would `Boolean(undefined)`-match on every
+  // axis and short-circuit the panel on garbage.
+  if (!isVerdictShaped(a) || !isVerdictShaped(b)) return false
+  return VOTE_AXES.every(k => a[k] === b[k])
 }
 // Shared vote→tier decision, so the batched path cannot drift from the individual one.
 function tierFromVotes(f, votes) {
-  const v = votes.filter(Boolean)
-  if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
+  const live = votes.filter(Boolean)
+  // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
+  const v = live.filter(isVerdictShaped)
+  // EVERY vote died. This is not a judgement and must never be rendered as one: `suspected` is
+  // defined in the report as "a verifier looked and the claim did not stand up", so handing it to a
+  // finding nothing looked at asserts an inspection that never happened — and, worse, keeps the
+  // finding inside the refute denominator and OUT of `notRun`, so a dead panel silently demotes a
+  // Critical to a non-gating finding and the verdict does not read as incomplete.
+  // One route for every death (see NOT_VERIFIED / verifyDeath): unverified tier, out of the
+  // denominator, into notRun.
+  if (!v.length) {
+    return NOT_VERIFIED(f, live.length
+      ? 'the verifier ANSWERED OFF-SCHEMA — its verdict carried none of the judgements this tier is decided on, so nothing was checked against the code'
+      : 'every verifier vote for this finding died before returning a verdict — nothing was checked against the code')
+  }
   const half = v.length / 2
   const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
   const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
@@ -2401,12 +2633,14 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const route = { individual: [], batch: [], skip: [] }
   for (const f of items) route[verifyTier(f)].push(f)
 
-  // Skipped tier: straight to Suspected, and SAY so on the finding — an unverified item that reads
-  // like a verified one is exactly the silent cap this codebase refuses elsewhere.
-  const skipped = route.skip.map(f => ({
+  // Skipped tier: its OWN tier, `unverified` — not Suspected. Suspected means "a verifier looked and
+  // the claim did not stand up confidently"; these were never looked at. Folding them into Suspected
+  // made the two indistinguishable in the report AND put them in the refuteRate denominator, so a run
+  // whose findings were mostly Low/Info reported a refutation rate diluted by items nothing refuted.
+  const unverified = route.skip.map(f => ({
     ...f,
-    tier: 'suspected',
-    why: `${f.why} (not adversarially verified: ${f.severity} cannot change the verdict, so it is surfaced as Suspected rather than spending a verifier on it)`,
+    tier: 'unverified',
+    why: `${f.why} (NOT VERIFIED: no verifier was spent on it — ${f.severity} cannot change the verdict either way, so nothing here has been checked against the code)`,
   }))
 
   // Batched tier: group by file so one agent reads one file's context once.
@@ -2418,6 +2652,21 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const groups = []
   for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
 
+  // `notRun` is computed AFTER the window settles, from the findings that carry the unverified tier
+  // — not pushed from inside one death branch. That placement is the fix: a list filled by whichever
+  // branch remembered to push is exactly how the dominant death (a `null` answer) stayed out of the
+  // verdict while the `.catch` branch was covered. Deriving it from the tier makes it impossible for
+  // a new death path to reach the report as an inspection.
+  // A whole group nothing judged, whatever killed it. The reason is a CLASS of death, not the
+  // verbatim error text: the run record's `notRun` is ranked by exact string to surface repeated
+  // fragility, and an error message (or a run-specific path) makes every entry unique and sinks the
+  // real repeats — the same reason `uncoveredFiles` is ranked separately.
+  const deadGroup = (group, why) => {
+    const what = `the batch verifier for ${group[0].file || '?'} ${why}`
+    log(`⚠️ [${profile.id}] ${what} — its ${group.length} finding(s) were NOT checked against the code; reported as unverified and excluded from the verification counters`)
+    return group.map(f => NOT_VERIFIED(f, `${what}, so nothing checked this finding against the code`))
+  }
+
   // Batched and individual verification look at DISJOINT findings — routing put each one in exactly
   // one bucket — so awaiting the batch wave before starting the individual one bought nothing but
   // latency. Measured on one run: batches ran +81..89min and individuals +89..102min, strictly
@@ -2428,15 +2677,36 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
   const batchThunks = groups.map(group => () =>
     ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
-      .then(res => group.map((f, i) => {
-        const v = (res?.verdicts ?? []).find(x => x && x.index === i)
-        // A missing index is a verifier that lost a finding, not a refutation: fall back to Suspected.
-        return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
+      .then(res => {
+        // THE DISCRIMINATOR. `ragent` answers `null` for a dead agent (API error, skip, or the
+        // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
+        // throw the `.catch` below handles. An answer carrying no verdicts at all is the same
+        // outcome by a different route: nothing was judged. Either way the group is unverified.
+        const death = batchDeath(res)
+        if (death) return deadGroup(group, death)
+        return group.map((f, i) => {
+          const v = res.verdicts.find(x => x && x.index === i)
+          // A missing index in a NON-EMPTY verdict list is a verifier that ran and lost one finding —
+          // an inspection happened, so this keeps `suspected`. This is the one case that must NOT be
+          // folded into the unverified tier, and the only thing that separates it from a death.
+          return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
+        })
+      })
+      // A batch verifier that THREW — both `ragent` attempts failed — judged nothing, so its group
+      // belongs in `unverified`, exactly where the skipped Low/Info go, and by the same reasoning:
+      // `suspected` is a claim that a verifier LOOKED and could not confirm, and the report now says
+      // so in those words. Marking a dead verifier's findings suspected made the report assert an
+      // inspection that never happened, and left up to BATCH_SIZE findings inside the `totalVerified`
+      // denominator that is defined as what verification actually judged. One tier, one way in.
+      // The verbatim error text is deliberately NOT carried into the finding or into `notRun`: see
+      // the note on `deadGroup`. It is logged instead, where a unique string costs nothing.
+      .catch(err => {
+        log(`⚠️ [${profile.id}] batch verifier threw: ${String((err && err.message) || err).slice(0, 160)}`)
+        return deadGroup(group, 'died before returning any verdict')
       }))
-      .catch(() => group.map(f => ({ ...f, tier: 'suspected' }))))
 
   if (route.skip.length || groups.length) {
-    log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} surfaced unverified (Low/Info cannot move the verdict)`)
+    log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} NOT VERIFIED (Low/Info cannot move the verdict; reported as unverified, excluded from the verification counters)`)
   }
 
   const individualThunks = route.individual.map(f => () => {
@@ -2479,13 +2749,31 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // parallel([run]) per entry, not one parallel() over all of them: it is the sandbox primitive that
   // turns a throwing thunk into null, and a single-thunk barrier is no barrier at all.
   const settledVerdicts = await weightedWindow(entries, VERIFY_WINDOW_AGENTS, run => parallel([run]).then(rs => rs[0]))
-  const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
+  // Death #6: `weightedWindow` writes `null` at an entry's own index when its promise rejected, and
+  // `.filter(Boolean)` used to DELETE those findings outright — out of every tier, out of the
+  // denominator AND out of `notRun`, so the report simply never mentioned them. A null is recovered
+  // back into its own findings by index (the batch side knows its group, the individual side its
+  // finding) and routed exactly like every other death.
+  const batched = settledVerdicts.slice(0, batchThunks.length)
+    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
   const judged = settledVerdicts.slice(batchThunks.length)
-  const vp = judged.filter(Boolean).concat(batched, skipped)
+    .map((r, i) => (r || NOT_VERIFIED(route.individual[i], 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
+  const settled = judged.concat(batched)
+  // A dead batch's findings arrive through the same list as judged ones and must leave it again:
+  // `vp` is the JUDGED population and every count derived from it (candidates, refuteRate) means
+  // "what verification actually examined".
+  const vp = settled.filter(f => f.tier !== 'unverified')
+  const deaths = settled.filter(f => f.tier === 'unverified')
   const refuted = vp.filter(f => f.tier === 'refuted')
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
     suspected: vp.filter(f => f.tier === 'suspected'),
+    // Kept OUT of `vp` on purpose, from both of its sources: the Low/Info nothing was spent on, and
+    // the groups whose batch verifier died.
+    unverified: unverified.concat(deaths),
+    // DERIVED from the tier, not pushed by whichever branch remembered to. Grouped by file and
+    // ranked-friendly: one stable string per (profile, file), no error text, no run-specific path.
+    notRun: [...new Set(deaths.map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`))],
     dropped: refuted.length,
     refuted,
   }
@@ -2515,9 +2803,19 @@ async function reviewProfile(profile) {
     : []
   // hasOwn, not truthiness: a bucket of "constructor" would index Object.prototype and pass.
   const size = Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout.sizeBucket : 'medium'
+  // Lenses a BLANKET expansion of the roster must not include. A lens is a full agent — the
+  // dominant per-run cost — and `failure-windows` is the heaviest in the Rust roster: it enumerates
+  // every mutating request on the changed path and plays out each adjacent pair. Its premise is a
+  // code shape (a controller / reconcile loop), and its gate is the `reconciler` lens below. But it
+  // also sits in `profile.lenses`, so every blanket fill of that list — the security-sensitive
+  // rigor floor, the empty-lens fallback, and the conservative plan used when the scout DIED —
+  // bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
+  // A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
+  // signal. The scout may still pick it deliberately; only the floors may not.
+  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l))
   const plan = {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : profile.lenses.slice()),
+    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : blanket()),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -2527,15 +2825,25 @@ async function reviewProfile(profile) {
     spec,
     churn: scout?.churn ?? [],
   }
-  if (!plan.lenses.length) plan.lenses = profile.lenses.slice()
+  if (!plan.lenses.length) plan.lenses = blanket()
   // "Always" lenses are enforced HERE, not left to the scout: smoke runs showed prompt-side
   // "always include X" gets dropped. 'intent' is the lens that catches correct-looking code
   // with wrong behavior — it runs at every size.
   for (const l of (profile.alwaysLenses || [])) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
+  // `reconciler` in the plan IS the signal that this is controller code, and controller code is
+  // where the windows between two committed writes live. Enforced here rather than in the scout
+  // prompt for the same measured reason as the alwaysLenses loop above: a prompt-side "also include"
+  // gets dropped, and a lens that silently did not run renders as a clean pass.
+  // The signal is the SCOUT having chosen `reconciler` after reading the diff — not `reconciler`
+  // merely being present in the plan. A blanket fill puts it there on every Rust diff, so reading
+  // the plan let the floors back in through the gate's own door: the check passed, and the
+  // conditional lens was conditional on nothing.
+  const scoutedReconciler = Array.isArray(scout?.lenses) && scout.lenses.includes('reconciler')
+  if (scoutedReconciler && profile.lenses.includes('failure-windows') && !plan.lenses.includes('failure-windows')) plan.lenses.push('failure-windows')
   if (strict && profile.lenses.includes('maintainability') && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
   // Security-sensitive rigor floor: don't let the size heuristic gate rigor on a security-touching change.
   if (plan.securitySensitive) {
-    for (const l of profile.lenses) if (!plan.lenses.includes(l)) plan.lenses.push(l)
+    for (const l of blanket()) if (!plan.lenses.includes(l)) plan.lenses.push(l)
     plan.verifyVotes = Math.max(plan.verifyVotes, 3)
     plan.maxRounds = Math.max(plan.maxRounds, 2)
   }
@@ -2642,8 +2950,14 @@ async function reviewProfile(profile) {
   ].filter(Boolean).join(' · ')
   // First checkpoint: from here on, a run that dies still says what was planned and whether the tree
   // was green. Everything before this point is cheap to redo; everything after it is not.
+  // `head` is the RUN'S HEAD, the same value the final record carries, and the diff base rides under
+  // its own `baseRef` key. Both once shared the `head` key — the checkpoints got the base (a ref NAME
+  // like `origin/main`) while the final record got the sha — so the two sides of every
+  // checkpoint↔record comparison spelled the field differently: `finalizeRun` folded 0 phases and
+  // left the `.partial` directory behind, and `recover` then read a ref name as a commit and promoted
+  // the leftover as a separate partial run. Two keys, each meaning one thing.
   await checkpoint(`${profile.id}-plan`, {
-    language: profile.id, branch, head: baseRef,
+    language: profile.id, branch, head, baseRef,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
@@ -2653,7 +2967,7 @@ async function reviewProfile(profile) {
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -2748,25 +3062,30 @@ async function reviewProfile(profile) {
   // carrying identity. The rejoin search therefore saw `{project, '', ''}` on exactly the paths where
   // it fires, and matched on the repository alone: any concurrent review of the same repo qualified.
   await checkpoint(`${profile.id}-lenses`, {
-    language: profile.id, branch, head: baseRef, ranLenses, droppedLenses, lensRounds,
+    language: profile.id, branch, head, baseRef, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
     notRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '' }
   }
 
   // ---- Verify ----
   phase('Verify')
   const deduped = await dedupPool(rollupPool(pool, profile), profile)
-  let { confirmed, suspected, dropped, refuted } = await verifyPool(deduped, plan, profile, toolProvenance)
-  log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted`)
+  let { confirmed, suspected, unverified, dropped, refuted, notRun: verifyNotRun } = await verifyPool(deduped, plan, profile, toolProvenance)
+  // Verification that never ran joins the lens-level list: a dead batch verifier is a hole in
+  // coverage exactly like a lens that never returned, and both must reach the verdict as INCOMPLETE.
+  notRun.push(...verifyNotRun)
+  log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
-    language: profile.id, branch, head: baseRef,
+    language: profile.id, branch, head, baseRef,
     verdict: finalVerdict(confirmed),
     findings: summarizeFindings(confirmed),
-    verification: { candidates: deduped.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped },
+    // `candidates` counts what verification EXAMINED, so the unverified tier is reported beside it
+    // rather than inside it.
+    verification: { candidates: deduped.length - unverified.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped, unverified: unverified.length },
   }, 'Verify')
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
@@ -2787,17 +3106,30 @@ Also note in one line anything else likely missed (a changed file no finding tou
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
-      const extra = (await parallel(followups.map(lens => () =>
+      // A SILENT REFUSAL NEXT TO A LOUD ONE. `.filter(Boolean)` used to swallow a follow-up lens that
+      // DIED — no notRun entry, no INCOMPLETE — while the branch two lines below, where the same lens
+      // is skipped for lack of budget, records both. "The critic said run it and it died" is not a
+      // cleaner outcome than "the critic said run it and there was no budget"; it is the same hole in
+      // coverage, and the one a re-run can actually fix.
+      const settledExtra = await parallel(followups.map(lens => () =>
         runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Synthesize', ' (critic)'),
-      ))).filter(Boolean).flatMap(r => r.findings || [])
+      ))
+      const deadFollowups = followups.filter((_l, i) => !settledExtra[i])
+      if (deadFollowups.length) {
+        notRun.push(...deadFollowups.map(l => `${profile.id} critic follow-up lens ${l} — dispatched and died before returning findings`))
+        log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
+      }
+      const extra = settledExtra.filter(Boolean).flatMap(r => r.findings || [])
       const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
       if (fresh.length) {
         const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
+        notRun.push(...(v.notRun || []))
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
+        unverified = unverified.concat(v.unverified)
         dropped += v.dropped
         refuted = refuted.concat(v.refuted)
-        log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted`)
+        log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted · +${v.unverified.length} not verified`)
       }
     } else if (followups.length) {
       notRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
@@ -2808,7 +3140,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes }
 }
 
 // ================= Run each active profile, then merge =================
@@ -2859,7 +3191,7 @@ function reviewRecord(extra) {
 }
 
 if (gateFailed.length) {
-  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
+  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
   return out([
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
@@ -2868,6 +3200,7 @@ if (gateFailed.length) {
     mergedProvenance,
     `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map(c => `- [${r.profile.id}] ${c}`)).join('\n')}`,
     carriedSection(),
+    scopeSection(),
     ``,
     `Fix the gate before a semantic review is worthwhile.`,
   ].join('\n'))
@@ -2875,6 +3208,8 @@ if (gateFailed.length) {
 
 let confirmed = results.flatMap(r => r.confirmed)
 let suspected = results.flatMap(r => r.suspected)
+// Low/Info nothing looked at. A third track, not a corner of Suspected — see verifyPool.
+let unverified = results.flatMap(r => r.unverified || [])
 
 // ---- Adjudicate track (re-review only) ----
 // For each prior-round finding, decide its fate this round. rejected/justified are carried (not
@@ -2894,7 +3229,27 @@ if (priorRound?.ledger?.length) {
   // still-broken Critical fix. Mapping through canonicalSeverity here means adjudicateOne's
   // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
   // escalation) and the re-persisted ledger all see canonical severity for priors.
-  const priorLedger = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  const priorLedgerAll = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  // THE UNVERIFIED TIER SURVIVES THE ROUND BOUNDARY. A prior carrying `tier: 'unverified'` was never
+  // checked against the code — so there is nothing to adjudicate: "is the defect still present?"
+  // presumes someone established it was present. Adjudicating it anyway routed it into `stillOpen`,
+  // where it renders as a live prior finding AND feeds the verdict (`rereviewVerdict` counts
+  // stillOpen) — so a finding no verifier ever looked at became a gating one after one hop, and the
+  // tier that exists to say "nothing checked this" lived only inside the round that minted it.
+  // It re-enters THIS round's own unverified track instead: label kept, out of the verdict, out of
+  // the refutation denominator, re-persisted as `unverified` for the next round.
+  const priorUnverified = priorLedgerAll.filter(f => String(f.tier || '') === 'unverified')
+  if (priorUnverified.length) {
+    log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
+    unverified = unverified.concat(priorUnverified.map(f => ({
+      ...f,
+      fix: f.fix || 'verify it first — nothing has checked this claim against the code',
+      blastRadius: f.blastRadius || '',
+      tier: 'unverified',
+      why: `${baseWhy(f.why)} (STILL NOT VERIFIED: carried from round ${priorRound.round}, where no verifier judged it; nothing has checked it against the code since)`,
+    })))
+  }
+  const priorLedger = priorLedgerAll.filter(f => String(f.tier || '') !== 'unverified')
   const settled = priorLedger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
   const toCheck = priorLedger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
 
@@ -3031,17 +3386,28 @@ if (priorRound) {
     // independent partitions would each compute their clause from the same un-absorbed `host.why`,
     // so applying them afterwards would drop one report entirely — into no track, no host and no
     // ledger. absorbAcross returns the cumulative `updates`; it is applied once.
+    // ONLY the JUDGED tracks are absorbed. An unverified finding may not be written onto a prior's
+    // `why`: that clause tells the next adjudicator that "resolved" requires the absorbed report to
+    // be gone, which lets something nothing ever checked hold a prior open and gate the re-review
+    // verdict — the exact substitution the unverified tier exists to end, and it carries a dead
+    // verifier's Critical/High, not just an unpaid-for Low. It is marked in place instead
+    // (markTrackedUnverified), so it neither disappears into the prior nor gates anything.
     const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
     for (const [host, why] of updates) host.why = why
     confirmed = runs[0].kept
     suspected = runs[1].kept
+    const tracked = markTrackedUnverified(unverified, livePriors, retired, matchesPrior)
+    unverified = tracked.kept
+    if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
-const notRun = results.flatMap(r => r.notRun)
+// `scopeNotRun` leads: a scope the caller asked for and did not get is the first thing a reader of
+// the verdict needs, ahead of anything the run itself failed to finish.
+const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
 // Files no profile covered are a coverage hole, not a footnote — but they are NOT a `notRun` entry.
 // `notRun` means "this ran badly; re-run it": every other entry is a failure a re-run can fix, and
 // lib/analyze-runs.mjs ranks the list by EXACT STRING to surface repeated fragility. A note
@@ -3057,17 +3423,30 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 // through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
 // here would wrongly erase still-open/regressed priors.
 const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length || adjudicated.retired.length)
-if (!confirmed.length && !suspected.length && !hasAdjudicated) {
+// `unverified` counts here too: they are real reported findings, and falling into the "nothing
+// survived" branch would delete them from the report entirely.
+if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated) {
   await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = incompleteNotes.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
+  // `scopeSection()` here too. The comment on its declaration promises it reaches "whichever report
+  // is returned — every early exit included", and this exit was the one that did not: a run whose
+  // requested scope was dropped and which then found nothing returned a report that never named the
+  // path the caller asked for. The verdict line carries the CLASS (through `notRun`); only this
+  // section carries the path, and a dropped scope matters most precisely when the answer is Approve.
   return out([`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 
 // ================= Synthesize one merged report =================
+// ONE sentence, three readers: the first-pass template, the re-review template and the mechanical
+// fallback report. It was written twice before and the two copies already meant different things.
+// It names BOTH ways into the tier — a Low/Info nobody paid a verifier for, and a finding whose
+// verifier died — because a reader who is told only the first reason will read a dead verifier's
+// findings as cheap ones.
+const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
@@ -3085,7 +3464,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
 - ⚠️ Warning if Confirmed Medium only.
 - ✅ Approve if no Confirmed Critical/High/Medium.
-Suspected findings NEVER change the verdict — they are surfaced for the author.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
+Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all — EITHER no verifier was spent (a Low/Info cannot move the verdict) OR the verifier that should have judged them died before returning one, so a Critical or High can carry this tier. They change nothing and must never be presented as confirmed, as checked, or as cheap.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
 
@@ -3098,20 +3477,24 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
 6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
+6b. \`## Unverified (not checked)\` — the UNVERIFIED JSON below, same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into New, Still open or Carried, never call them confirmed, and do not re-rank or upgrade their severity. They change nothing about the verdict. Omit the section if empty.
 7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${incompleteNotes.length ? ` Append " · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
-4. \`## Suspected (needs confirmation)\` — same format; omit the section if empty.
-5. \`## Fix first\` — the few highest-leverage Confirmed items.
-${uncoveredFiles.length ? `6. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
-${criticNotes ? `7. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}`}
+4. \`## Suspected (needs confirmation)\` — findings a verifier DID examine and could not confirm; same format; omit the section if empty.
+5. \`## Unverified (not checked)\` — same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into Confirmed or Suspected, never call them confirmed, and do not re-rank or upgrade their severity. Omit the section if empty.
+6. \`## Fix first\` — the few highest-leverage Confirmed items.
+${uncoveredFiles.length ? `7. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
+${criticNotes ? `8. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}`}
 
 CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
 
-SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}`,
+SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}
+
+UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, null, 2)}`,
   { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
 )
 
@@ -3133,7 +3516,10 @@ Return {posted: <how many comments you actually created>, reason: <one line: the
   else log(`⚠️ PR comments: nothing was posted (${confirmed.length} Confirmed finding(s) requested) — ${posted.reason || 'no reason given'}`)
 }
 
-const allReviewFindings = confirmed.concat(suspected)
+const allReviewFindings = confirmed.concat(suspected, unverified)
+// The verification denominator: what verification ACTUALLY judged. `unverified` is deliberately
+// absent — including it once made refuteRate incomparable across runs (on one measured run 118 of
+// 215 findings were Low/Info, so the denominator was more than double the 89 verdicts really cast).
 const totalVerified = confirmed.length + suspected.length + dropped
 let recordVerdict = isRereview
   ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
@@ -3166,13 +3552,14 @@ const reviewLedger = isRereview
   ? [
     ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
     ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
+    ...unverified.map(f => toLedgerEntry(f, 'open', 'unverified')),
     ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
     ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
     // `adjudicated.retired` is deliberately absent, like `resolved`: a dismissed prior whose
     // carry-check confirmed the code around it is unchanged has been answered and leaves the ledger.
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
-  : allReviewFindings.map(f => toLedgerEntry(f, 'open', confirmed.includes(f) ? 'confirmed' : 'suspected'))
+  : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
 await logRun(reviewRecord({
   verdict: recordVerdict + (incompleteNotes.length ? ' (INCOMPLETE)' : ''),
   round: thisRound,
@@ -3182,14 +3569,15 @@ await logRun(reviewRecord({
     const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
     const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
     const suspectedCount = r.suspected.filter(f => (f.source || '') === l).length
+    const unverifiedCount = (r.unverified || []).filter(f => (f.source || '') === l).length
     const refutedCount = (r.refuted || []).filter(f => (f.source || '') === l).length
     // `ran` distinguishes "executed and found nothing" from "never returned". Both otherwise render
     // as a 0-finding row, and the yield analysis would read a broken lens as a redundant one.
     // Absent `ranLenses` (a record written before this landed) → assume it ran, the old behaviour.
     const ran = r.ranLenses ? r.ranLenses.includes(l) : true
-    return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount }
+    return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount, unverifiedCount }
   })),
-  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0 },
+  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0, unverified: unverified.length },
   notRun,
 }))
 
@@ -3210,8 +3598,9 @@ function fallbackReport() {
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
     ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
+    ...(unverified.length ? [``, `## Unverified (not checked)`, UNVERIFIED_PREAMBLE, ...bySev(unverified).map(fmt)] : []),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
   ].join('\n')
 }
 
-return out(report || fallbackReport())
+return out((report || fallbackReport()) + scopeSection())

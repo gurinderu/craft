@@ -1,7 +1,7 @@
 export const meta = {
   name: 'nix-review',
   description: 'Nix-pinned entry to the generic review engine — reviews only the Nix files in a diff. Prefer `review` (auto-detects language); use this to force a Nix-only pass.',
-  whenToUse: 'Explicit Nix-only diff review; the generic default is `review`. Same args as `review` (base, intent, comment, path, strict).',
+  whenToUse: 'Explicit Nix-only diff review; the generic default is `review`. Same args as `review`: repo=<absolute path> to review ANOTHER repository (without it every git command runs in the checkout the session itself sits in), base, intent, comment, strict, and path=<repo-relative pathspec> to narrow the scope INSIDE that repo.',
   phases: [{ title: 'Review', detail: 'delegates to the review engine pinned to the nix profile' }],
 }
 
