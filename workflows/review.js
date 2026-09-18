@@ -1966,10 +1966,12 @@ const LEDGER_SHARD_MAX_SHARDS = 20
 // is pretty-printed at depth two: every one of its own lines gains four spaces. Compact bytes
 // therefore understate the real payload by 1.2x on long `why` fields and up to 1.7x on short
 // entries carrying a `sources` array — a nested array under pretty-print spreads one line per
-// element. Measured on a sweep of 4000 entries: short entries with three sources went 14371B
-// compact to 24859B in the prompt, i.e. OVER the 24KB at which the write path stops trusting the
-// cheap model, while the compact number still read as comfortably under it. The bound itself does
-// not move; it never had to. The measure was simply not measuring the thing that is paid for.
+// element. Three independent measurements agree on the understatement and DISAGREE on whether any
+// shape crosses the 24KB line at which the write path stops trusting the cheap model: sweeps put
+// short entries with three sources at 24859B (over it) and at 22426B (under it, ratio 1.57), and a
+// cold read reported 14265B compact becoming 17314B. So the ratio is established and the crossing
+// is fixture-dependent — no run has been observed crossing it. The bound itself does not move; it
+// never had to. The measure was simply not measuring the thing that is paid for.
 function payloadBytes(item) {
   const pretty = JSON.stringify(item, null, 2)
   if (typeof pretty !== 'string') return 2
