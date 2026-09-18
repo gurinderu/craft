@@ -470,16 +470,36 @@ if (optionalRequest.unknown.length) {
   log(`⚠️ optional=${JSON.stringify(A.optional)} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
 }
 const optionalRequested = optionalRequest.lenses
-// Filled by every profile's planner, read by `optionalSection()` and `reviewRecord()`. Sets, because
-// two active profiles may both carry the same optional lens and the reader wants the lens named once.
-const optionalRan = new Set()
-const optionalSkipped = new Set()
-// Appended by `out()`, so it reaches EVERY report — the synthesized one, the mechanical fallback,
-// and each early exit — for the same reason `scopeSection()` is: what the review did NOT cover is
-// not something a prompt may forget. It says "absence of a result", never "no problems found".
-const optionalSection = () => (optionalSkipped.size
-  ? `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${[...optionalSkipped].join(', ')}. That is an absence of a result, not a clean one. They are off by default because they measured no High findings across three runs; to buy them, re-run with \`optional=true\` (or \`optional=${[...optionalSkipped].join(',')}\`).\n`
-  : '')
+// The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
+// plan the moment it was built — but the plan is not final there: the completeness critic composes
+// lenses much later, on the synthesis phase. Any such later road made the snapshot a LIE in the one
+// direction that matters, printing "not looked at" over a lens whose findings were in the report.
+// So the two sets below record only what cannot be second-guessed: which optional lenses this run
+// could have bought at all (filled by each profile's planner), and which ones were actually
+// DISPATCHED (recorded by `runLens`, the single dispatch point for every lens on every path —
+// planned, resurrected, or critic-composed). `optionalTally()` subtracts. Sets, because two active
+// profiles may both carry the same optional lens and the reader wants the lens named once.
+const optionalInScope = new Set()
+const optionalDispatched = new Set()
+// An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
+// critic is the same model whose spend this pass deliberately took out of model hands), but the
+// signal is real and must reach the reader rather than die in the filter.
+const optionalNamedByCritic = new Set()
+const optionalTally = () => {
+  const inScope = [...optionalInScope]
+  return { ran: inScope.filter(l => optionalDispatched.has(l)), skipped: inScope.filter(l => !optionalDispatched.has(l)) }
+}
+// Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
+// one and the mechanical fallback. The earliest exits (no diff, red gate) run before any lens is
+// planned, so the list is empty there and no section is emitted; those reports already say plainly
+// that nothing was reviewed. It says "absence of a result", never "no problems found".
+const optionalSection = () => {
+  const skipped = optionalTally().skipped
+  if (!skipped.length) return ''
+  const named = skipped.filter(l => optionalNamedByCritic.has(l))
+  return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they measured no High findings across three runs; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
+    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
+}
 
 const PROFILES = {}
 PROFILES.rust = {
@@ -2866,10 +2886,13 @@ async function reviewProfile(profile) {
   // bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
   // A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
   // signal. The scout may still pick it deliberately; only the floors may not.
-  // `admitted` is the ONE gate the optional set passes through, and it sits under every path into
-  // the plan — the scout's own picks, the blanket fills, and therefore the security floor and the
-  // empty-lens fallback that call `blanket()`. Putting it anywhere else would leave a door: the
-  // scout picks these lenses on their own signals and would otherwise buy them for free.
+  // `admitted` is the ONE gate the optional set passes through, and it must sit under EVERY path
+  // into the plan — the scout's own picks, the blanket fills, and therefore the security floor and
+  // the empty-lens fallback that call `blanket()`. There is a fourth path, far later and easy to
+  // miss: the completeness critic on the synthesis phase, which composes from the lenses NOT
+  // selected — by construction the whole optional set. It went ungated once and bought two of the
+  // three on an ordinary large diff. It calls `admitted` too now; putting the gate anywhere but
+  // under each of these leaves a door, because every one of them names lenses on its own signals.
   const admitted = l => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
   const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l) && admitted(l))
   const plan = {
@@ -2918,14 +2941,10 @@ async function reviewProfile(profile) {
   // in the plan, so "permit" would have meant "nothing happens". Enforced in code, for the same
   // measured reason as the alwaysLenses loop above.
   for (const l of optionalRequested) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
-  // Read off the FINAL plan rather than off the request: whatever put a lens in or kept it out — the
-  // request, the floors, a profile that does not carry it — what the reader and the record are owed
-  // is what this run actually dispatched.
-  for (const l of profile.lenses) {
-    if (!OPTIONAL_LENSES.includes(l)) continue
-    if (plan.lenses.includes(l)) optionalRan.add(l)
-    else optionalSkipped.add(l)
-  }
+  // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. What
+  // ran is recorded at dispatch (`runLens`) and subtracted by `optionalTally()`, because the plan is
+  // not final at this point — see the tally's definition.
+  for (const l of profile.lenses) if (OPTIONAL_LENSES.includes(l)) optionalInScope.add(l)
   log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
@@ -2938,6 +2957,9 @@ async function reviewProfile(profile) {
   const lensFailures = new Map()
   let reviewerAgentMissing = false
   async function runLens(lens, prompt, phaseName, labelSuffix) {
+    // The single dispatch point for every lens on every path. Recording here — not at plan time — is
+    // what makes the report and the run record physically unable to disagree with what happened.
+    if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
     const runGeneric = async () => {
       try {
@@ -3175,7 +3197,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
       { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
     )
     criticNotes = critic?.notes ?? ''
-    const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    // `admitted()` gates HERE too, and this is the fourth road into the plan, not a redundant check:
+    // `candidates` is by construction the lenses NOT selected, so the whole optional set is in it.
+    // The critic is the same model whose hands this project deliberately took the spend out of
+    // ("the scout classifies, the code budgets"); letting it re-order lenses on the synthesis phase
+    // would return that spend through a side door and undo the boundary. The signal is not thrown
+    // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
+    const named = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
+    const refusedOptional = named.filter(l => !admitted(l))
+    if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
+    const followups = named.filter(l => admitted(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
@@ -3260,7 +3292,7 @@ function reviewRecord(extra) {
     gate: { status: mergedGateStatus, provenance: mergedProvenance, carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)) },
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
     // later — in analyze-runs, in a comparison between two runs — as a full one.
-    optionalPass: { requested: optionalRequested, ran: [...optionalRan], skipped: [...optionalSkipped] },
+    optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
     outputTokens: budget.spent(),
     ...extra,
   }
