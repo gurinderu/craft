@@ -2074,7 +2074,7 @@ if (!freshArg && !viaArg) {
 Run exactly this:
 
 \`\`\`
-${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
+${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} \${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} --project "$PWD"
 \`\`\`
 
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, reason:"loader-did-not-run"}.`,
@@ -2128,7 +2128,7 @@ if (priorLedgerDegraded) {
 // BEFORE making any fix — so it can equal the current HEAD and a delta scan would review nothing.
 const priorRoundJournalSourced = Boolean(priorRound?.journalSourced)
 if (priorRoundJournalSourced) {
-  log(`⚠️ Re-review round sourced from a stalled run's journal: prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stalled, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
 }
 const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
@@ -3018,8 +3018,13 @@ async function reviewProfile(profile) {
   // checkpoint↔record comparison spelled the field differently: `finalizeRun` folded 0 phases and
   // left the `.partial` directory behind, and `recover` then read a ref name as a commit and promoted
   // the leftover as a separate partial run. Two keys, each meaning one thing.
+  //
+  // `round` rides on every checkpoint for one reason: `recover` promotes an unfinalized directory
+  // into a real record and DELETES the directory, and a record with no round is indexed as round 0 —
+  // so one repair permanently reset the chain to a first review. The round number is knowable only
+  // here, by the run itself; nothing downstream can reconstruct it.
   await checkpoint(`${profile.id}-plan`, {
-    language: profile.id, branch, head, baseRef,
+    language: profile.id, branch, head, baseRef, round: thisRound,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
@@ -3124,7 +3129,7 @@ async function reviewProfile(profile) {
   // carrying identity. The rejoin search therefore saw `{project, '', ''}` on exactly the paths where
   // it fires, and matched on the repository alone: any concurrent review of the same repo qualified.
   await checkpoint(`${profile.id}-lenses`, {
-    language: profile.id, branch, head, baseRef, ranLenses, droppedLenses, lensRounds,
+    language: profile.id, branch, head, baseRef, round: thisRound, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
     notRun,
@@ -3142,7 +3147,7 @@ async function reviewProfile(profile) {
   notRun.push(...verifyNotRun)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
-    language: profile.id, branch, head, baseRef,
+    language: profile.id, branch, head, baseRef, round: thisRound,
     verdict: finalVerdict(confirmed),
     findings: summarizeFindings(confirmed),
     // `candidates` counts what verification EXAMINED, so the unverified tier is reported beside it
