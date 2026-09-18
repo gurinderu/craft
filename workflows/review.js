@@ -2847,7 +2847,17 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     unverified: unverified.concat(deaths),
     // DERIVED from the tier, not pushed by whichever branch remembered to. Grouped by file and
     // ranked-friendly: one stable string per (profile, file), no error text, no run-specific path.
-    notRun: [...new Set(deaths.map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`))],
+    // THE ONE THINNING THAT LEAVES NO TRACE. A refuted finding is deleted from the run — out of
+    // every tier and out of the report — so when its panel was thinned, the partial evidence it was
+    // deleted on is visible nowhere: no finding to carry the clause, no mark, and a verdict that
+    // reads clean. `notRun` is the existing mechanism for "this ran badly; re-run it", and it drives
+    // the INCOMPLETE marker. DERIVED from the tier plus the flag tierFromVotes sets, like the
+    // deaths above, and grouped by (profile, file) so the exact-string ranking in
+    // lib/analyze-runs.mjs sees a repeat rather than a run-unique row.
+    notRun: [...new Set([
+      ...deaths.map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
+      ...refuted.filter(f => (f.votesDiscarded || 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence`),
+    ])],
     dropped: refuted.length,
     refuted,
   }
@@ -3490,6 +3500,11 @@ if (priorRound) {
   if (trackingHosts.length) {
     const tracked = markTrackedUnverified(unverified.filter(f => !f.carriedUnverified), trackingHosts, retired, matchesPrior)
     unverified = tracked.kept.concat(carriedUnverified)
+    // A COLLAPSED ROW IS NOT A DISCARDED FINDING. The carrier key is file+ruleId, coarser than a
+    // site, so the row dropped from the ledger can be a genuinely distinct defect on another line.
+    // Its site is written onto the host through the same bounded clause absorption uses; the reason
+    // this is not the obligation absorption was refused for is in lib/review-adjudicate.mjs.
+    for (const [host, why] of tracked.updates) host.why = why
     if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
   }
@@ -3543,10 +3558,11 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
 // ================= Synthesize one merged report =================
 // ONE sentence, three readers: the first-pass template, the re-review template and the mechanical
 // fallback report. It was written twice before and the two copies already meant different things.
-// It names BOTH ways into the tier — a Low/Info nobody paid a verifier for, and a finding whose
-// verifier died — because a reader who is told only the first reason will read a dead verifier's
-// findings as cheap ones.
-const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
+// It names ALL THREE ways into the tier — a Low/Info nobody paid a verifier for, a finding whose
+// verifier died, and a panel whose every returned vote was off-schema — because a reader who is told
+// only the first reason will read a dead verifier's findings as cheap ones, and a panel that ANSWERED
+// unreadably did not die: calling it a death misdescribes the largest discard there is.
+const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
@@ -3564,7 +3580,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
 - ⚠️ Warning if Confirmed Medium only.
 - ✅ Approve if no Confirmed Critical/High/Medium.
-Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all — EITHER no verifier was spent (a Low/Info cannot move the verdict) OR the verifier that should have judged them died before returning one, so a Critical or High can carry this tier. They change nothing and must never be presented as confirmed, as checked, or as cheap.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
+Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all — EITHER no verifier was spent (a Low/Info cannot move the verdict) OR the verifier that should have judged them died before returning one OR every vote it did return was off-schema and unreadable, so a Critical or High can carry this tier. They change nothing and must never be presented as confirmed, as checked, or as cheap.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
 
@@ -3653,7 +3669,7 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
 const toLedgerEntry = (f, disposition, tier) => ({
   fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
   severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
-  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join(''),
+  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
   ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
 })
 const reviewLedger = isRereview
