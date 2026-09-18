@@ -427,7 +427,12 @@ Set provenance to a one-line summary like "nix flake check pass; statix/deadnix 
 const CONDITIONAL_LENSES = ['failure-windows']
 
 // ================= The optional pass =================
-// Three lenses that do not earn a place on every run. Measured over three independent runs of the
+// Three lenses that do not earn a place on every run. The basis is NOT equal across them: only
+// `ownership` (retired, not here) has three independent counts. The two earlier store-wide counts
+// named api-idioms and performance among the bottom four; `api-boundary` was not in them at all, so
+// for the composition of THIS trio the basis is ONE run — one diff, one repository, one domain
+// (realm @nick/craft, node #20, which requires that limit to be stated rather than dropped).
+// Measured over runs of the
 // budget-deterministic engine against a large Rust diff (14 lenses × 3 rounds, 215 findings):
 // `performance` (15 findings, 12 of them Low/Info), `api-idioms` (14/10) and `api-boundary` (11/7)
 // returned hundreds of CONFIRMED Medium-and-below findings and NOT ONE High in any of the three.
@@ -497,7 +502,7 @@ const optionalSection = () => {
   const skipped = optionalTally().skipped
   if (!skipped.length) return ''
   const named = skipped.filter(l => optionalNamedByCritic.has(l))
-  return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they measured no High findings across three runs; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
+  return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
 }
 

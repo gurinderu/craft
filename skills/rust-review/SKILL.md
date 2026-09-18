@@ -205,7 +205,7 @@ idempotency) and `negative-space` (breakage the diff enables in unchanged code);
 is the authoritative lens set.
 
 **The optional pass — off by default.** Three lenses are not part of the standard fan-out, because
-measured across three runs they returned no High findings at all while producing the bulk of the
+on the measured run they returned no High findings at all while producing the bulk of the
 Low/Info volume: `performance` (hot-loop allocation, N+1, needless owning — `rust-performance`),
 `api-idioms` (typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` —
 `rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI completeness — `rust-web`).
