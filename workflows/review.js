@@ -1923,8 +1923,20 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // and the run reported as a first review, indistinguishable from a genuine one. The script reads the
 // branch off git itself now (`prior-round` prefers git over `--branch`), so the flag below is the
 // fallback, not the key.
+//
+// It is NOT `!freshArg` alone, and the second clause is a decision rather than a guard restored.
+// The chain is keyed on (project, branch), and `rust-audit` fans out one nested `review` per crate
+// through `parallel`: concurrent siblings share both keys. Unconditional entry put them all on one
+// chain — each reading whichever sibling filed last as its own previous round and inheriting another
+// crate's ledger. A per-crate child is one slice of its parent's single pass, not a round of its
+// own, so it does not enter the chain: not as a reader (here) and not as a candidate
+// (`selectPriorRounds` skips `nested` rows). The run that has a history is the top-level one.
+// Unlike the condition this replaces, the skip is announced — a silent skip was that defect.
 let priorRound = null
-if (!freshArg) {
+if (!freshArg && viaArg) {
+  log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
+}
+if (!freshArg && !viaArg) {
   priorRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
