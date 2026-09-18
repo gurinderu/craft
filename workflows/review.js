@@ -2407,6 +2407,28 @@ function verifyTier(f) {
   // more likely a mislabel than a judgement, and it is worth one verifier to find out.
   return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
 }
+// ---- the ONE route every death on the verification path takes -------------------------------
+// The invariant, stated once: NO death on the verification path may give a finding a tier that
+// asserts an inspection, may leave it inside the refutation denominator, or may leave it out of
+// `notRun`. The deaths are enumerated rather than discovered one at a time, because the previous
+// round of this fix closed the `.catch` branch alone and the dominant death is not a throw:
+//   1. the verifier THREW            (both `ragent` attempts rejected, or the budget throw)
+//   2. `ragent` returned `null`      (API error / skip, after its one re-dispatch)
+//   3. `ragent` returned `null`      (per-agent deadline hit — DEADLINE_HIT, same shape)
+//   4. a live answer with NO verdicts (`{verdicts: []}` — nothing was judged)
+//   5. a live answer that is not a verdict list at all (schema drift)
+//   6. `null` lost by the sliding window (`weightedWindow` writes null for a rejected entry)
+//   7. every vote of an individual panel dead (tierFromVotes with an empty vote list)
+// The distinction that MUST survive: "the agent never answered" (any of the above → not verified)
+// versus "the agent answered but said nothing about THIS finding" (a lost finding → it was part of
+// an inspection, so it keeps `suspected`). The discriminator is exactly this: a null/empty/malformed
+// answer is a dead agent; a non-empty verdict list missing one index is a lost finding.
+const NOT_VERIFIED = (f, why) => ({ ...f, tier: 'unverified', why: `${f.why} (NOT VERIFIED: ${why})` })
+// True when the verifier's answer proves nothing was judged — as opposed to an answer that judged
+// some findings and dropped one.
+function verifierAnswered(res) {
+  return !!res && Array.isArray(res.verdicts) && res.verdicts.length > 0
+}
 // Do two verdicts say the same thing on every axis tierFromVotes reads? Only then can the opening
 // pair stand in for the full panel — a disagreement on ANY axis (not just `refuted`) can move the
 // tier, because citedLineMatches gates refutation outright and reachable/premiseSupported demote.
@@ -2417,7 +2439,14 @@ function votesAgree(a, b) {
 // Shared vote→tier decision, so the batched path cannot drift from the individual one.
 function tierFromVotes(f, votes) {
   const v = votes.filter(Boolean)
-  if (!v.length) return { ...f, tier: 'suspected' } // verification died → don't drop, demote
+  // EVERY vote died. This is not a judgement and must never be rendered as one: `suspected` is
+  // defined in the report as "a verifier looked and the claim did not stand up", so handing it to a
+  // finding nothing looked at asserts an inspection that never happened — and, worse, keeps the
+  // finding inside the refute denominator and OUT of `notRun`, so a dead panel silently demotes a
+  // Critical to a non-gating finding and the verdict does not read as incomplete.
+  // One route for every death (see NOT_VERIFIED / verifyDeath): unverified tier, out of the
+  // denominator, into notRun.
+  if (!v.length) return NOT_VERIFIED(f, 'every verifier vote for this finding died before returning a verdict — nothing was checked against the code')
   const half = v.length / 2
   const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
   const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
@@ -2510,11 +2539,20 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const groups = []
   for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
 
-  // Filled by the `.catch` below, read after the window settles: a batch verifier that never
-  // returned is a piece of verification that did not run, and `notRun` is what makes the verdict say
-  // INCOMPLETE. A `log()` line alone is not that — the person who reads the verdict is not the person
-  // who reads the log.
-  const deadBatches = []
+  // `notRun` is computed AFTER the window settles, from the findings that carry the unverified tier
+  // — not pushed from inside one death branch. That placement is the fix: a list filled by whichever
+  // branch remembered to push is exactly how the dominant death (a `null` answer) stayed out of the
+  // verdict while the `.catch` branch was covered. Deriving it from the tier makes it impossible for
+  // a new death path to reach the report as an inspection.
+  // A whole group nothing judged, whatever killed it. The reason is a CLASS of death, not the
+  // verbatim error text: the run record's `notRun` is ranked by exact string to surface repeated
+  // fragility, and an error message (or a run-specific path) makes every entry unique and sinks the
+  // real repeats — the same reason `uncoveredFiles` is ranked separately.
+  const deadGroup = (group, why) => {
+    const what = `the batch verifier for ${group[0].file || '?'} ${why}`
+    log(`⚠️ [${profile.id}] ${what} — its ${group.length} finding(s) were NOT checked against the code; reported as unverified and excluded from the verification counters`)
+    return group.map(f => NOT_VERIFIED(f, `${what}, so nothing checked this finding against the code`))
+  }
 
   // Batched and individual verification look at DISJOINT findings — routing put each one in exactly
   // one bucket — so awaiting the batch wave before starting the individual one bought nothing but
@@ -2526,26 +2564,31 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
   const batchThunks = groups.map(group => () =>
     ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
-      .then(res => group.map((f, i) => {
-        const v = (res?.verdicts ?? []).find(x => x && x.index === i)
-        // A missing index is a verifier that lost a finding, not a refutation: fall back to Suspected.
-        return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
-      }))
+      .then(res => {
+        // THE DISCRIMINATOR. `ragent` answers `null` for a dead agent (API error, skip, or the
+        // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
+        // throw the `.catch` below handles. An answer carrying no verdicts at all is the same
+        // outcome by a different route: nothing was judged. Either way the group is unverified.
+        if (!verifierAnswered(res)) return deadGroup(group, 'returned no verdict at all — a dead agent, an exhausted retry, or an expired deadline')
+        return group.map((f, i) => {
+          const v = res.verdicts.find(x => x && x.index === i)
+          // A missing index in a NON-EMPTY verdict list is a verifier that ran and lost one finding —
+          // an inspection happened, so this keeps `suspected`. This is the one case that must NOT be
+          // folded into the unverified tier, and the only thing that separates it from a death.
+          return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
+        })
+      })
       // A batch verifier that THREW — both `ragent` attempts failed — judged nothing, so its group
       // belongs in `unverified`, exactly where the skipped Low/Info go, and by the same reasoning:
       // `suspected` is a claim that a verifier LOOKED and could not confirm, and the report now says
       // so in those words. Marking a dead verifier's findings suspected made the report assert an
       // inspection that never happened, and left up to BATCH_SIZE findings inside the `totalVerified`
       // denominator that is defined as what verification actually judged. One tier, one way in.
+      // The verbatim error text is deliberately NOT carried into the finding or into `notRun`: see
+      // the note on `deadGroup`. It is logged instead, where a unique string costs nothing.
       .catch(err => {
-        const why = `the batch verifier for ${group[0].file || '?'} died before returning any verdict (${String((err && err.message) || err).slice(0, 120)}) — its ${group.length} finding(s) were NOT checked against the code`
-        log(`⚠️ [${profile.id}] ${why}; reported as unverified and excluded from the verification counters`)
-        deadBatches.push(`${profile.id} batch verification of ${group[0].file || '?'} — ${why}`)
-        return group.map(f => ({
-          ...f,
-          tier: 'unverified',
-          why: `${f.why} (NOT VERIFIED: ${why})`,
-        }))
+        log(`⚠️ [${profile.id}] batch verifier threw: ${String((err && err.message) || err).slice(0, 160)}`)
+        return deadGroup(group, 'died before returning any verdict')
       }))
 
   if (route.skip.length || groups.length) {
@@ -2592,21 +2635,31 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // parallel([run]) per entry, not one parallel() over all of them: it is the sandbox primitive that
   // turns a throwing thunk into null, and a single-thunk barrier is no barrier at all.
   const settledVerdicts = await weightedWindow(entries, VERIFY_WINDOW_AGENTS, run => parallel([run]).then(rs => rs[0]))
-  const batched = settledVerdicts.slice(0, batchThunks.length).filter(Boolean).flat()
+  // Death #6: `weightedWindow` writes `null` at an entry's own index when its promise rejected, and
+  // `.filter(Boolean)` used to DELETE those findings outright — out of every tier, out of the
+  // denominator AND out of `notRun`, so the report simply never mentioned them. A null is recovered
+  // back into its own findings by index (the batch side knows its group, the individual side its
+  // finding) and routed exactly like every other death.
+  const batched = settledVerdicts.slice(0, batchThunks.length)
+    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
   const judged = settledVerdicts.slice(batchThunks.length)
-  const settled = judged.filter(Boolean).concat(batched)
+    .map((r, i) => (r || NOT_VERIFIED(route.individual[i], 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
+  const settled = judged.concat(batched)
   // A dead batch's findings arrive through the same list as judged ones and must leave it again:
   // `vp` is the JUDGED population and every count derived from it (candidates, refuteRate) means
   // "what verification actually examined".
   const vp = settled.filter(f => f.tier !== 'unverified')
+  const deaths = settled.filter(f => f.tier === 'unverified')
   const refuted = vp.filter(f => f.tier === 'refuted')
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
     suspected: vp.filter(f => f.tier === 'suspected'),
     // Kept OUT of `vp` on purpose, from both of its sources: the Low/Info nothing was spent on, and
     // the groups whose batch verifier died.
-    unverified: unverified.concat(settled.filter(f => f.tier === 'unverified')),
-    notRun: deadBatches,
+    unverified: unverified.concat(deaths),
+    // DERIVED from the tier, not pushed by whichever branch remembered to. Grouped by file and
+    // ranked-friendly: one stable string per (profile, file), no error text, no run-specific path.
+    notRun: [...new Set(deaths.map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`))],
     dropped: refuted.length,
     refuted,
   }
@@ -3036,7 +3089,27 @@ if (priorRound?.ledger?.length) {
   // still-broken Critical fix. Mapping through canonicalSeverity here means adjudicateOne's
   // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
   // escalation) and the re-persisted ledger all see canonical severity for priors.
-  const priorLedger = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  const priorLedgerAll = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  // THE UNVERIFIED TIER SURVIVES THE ROUND BOUNDARY. A prior carrying `tier: 'unverified'` was never
+  // checked against the code — so there is nothing to adjudicate: "is the defect still present?"
+  // presumes someone established it was present. Adjudicating it anyway routed it into `stillOpen`,
+  // where it renders as a live prior finding AND feeds the verdict (`rereviewVerdict` counts
+  // stillOpen) — so a finding no verifier ever looked at became a gating one after one hop, and the
+  // tier that exists to say "nothing checked this" lived only inside the round that minted it.
+  // It re-enters THIS round's own unverified track instead: label kept, out of the verdict, out of
+  // the refutation denominator, re-persisted as `unverified` for the next round.
+  const priorUnverified = priorLedgerAll.filter(f => String(f.tier || '') === 'unverified')
+  if (priorUnverified.length) {
+    log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
+    unverified = unverified.concat(priorUnverified.map(f => ({
+      ...f,
+      fix: f.fix || 'verify it first — nothing has checked this claim against the code',
+      blastRadius: f.blastRadius || '',
+      tier: 'unverified',
+      why: `${baseWhy(f.why)} (STILL NOT VERIFIED: carried from round ${priorRound.round}, where no verifier judged it; nothing has checked it against the code since)`,
+    })))
+  }
+  const priorLedger = priorLedgerAll.filter(f => String(f.tier || '') !== 'unverified')
   const settled = priorLedger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
   const toCheck = priorLedger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
 
