@@ -908,7 +908,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross TRACKED_MARK markTrackedUnverified
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -1215,6 +1215,37 @@ function absorbAcross(lists, livePriors, retired, fallbackMatch) {
     absorbed: runs.reduce((n, r) => n + r.absorbed, 0),
     keptAtRetired: runs.reduce((n, r) => n + r.keptAtRetired, 0),
   }
+}
+
+// ---- the unverified tier at the absorption door -------------------------------------------------
+//
+// ABSORPTION IS FOR JUDGED FINDINGS ONLY. Absorbing a finding writes it onto the host prior's `why`,
+// and absorbedPromptBlock then tells the next round's adjudicator, in so many words, that "resolved"
+// requires every absorbed report to be gone too. For a CONFIRMED or SUSPECTED report that is right:
+// a verifier looked at it. For an UNVERIFIED one it is exactly the substitution the tier was
+// introduced to end — nothing checked that report against the code, and it would nevertheless hold
+// a prior open and feed the re-review verdict. A dead verifier's Critical and High travel this road,
+// not only the Low/Info nobody paid for.
+//
+// So an unverified finding is NOT absorbed. It stays in its own list, where the report shows it under
+// the tier that says nothing checked it, and it gates nothing. The double-listing this avoided is
+// answered by a NOTE on the finding itself instead of a clause on the host: the reader learns the
+// site is already tracked without the host inheriting an unchecked obligation.
+const TRACKED_MARK = ' — (this site is already tracked by a still-live prior finding; NOT absorbed into it: nothing checked this report against the code, so it may not hold that prior open)'
+
+// Pure: returns new finding objects; neither the findings nor the hosts are mutated.
+function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
+  const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
+  let marked = 0
+  const kept = (findings || []).map(f => {
+    const host = findCarrier(f, livePriors, fallbackMatch)
+    if (!host || isRetired(host)) return f
+    const why = String(f.why ?? '')
+    if (why.includes(TRACKED_MARK)) return f
+    marked++
+    return { ...f, why: why + TRACKED_MARK }
+  })
+  return { kept, marked }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -2460,26 +2491,52 @@ function verifyTier(f) {
 //   5. a live answer that is not a verdict list at all (schema drift)
 //   6. `null` lost by the sliding window (`weightedWindow` writes null for a rejected entry)
 //   7. every vote of an individual panel dead (tierFromVotes with an empty vote list)
+//   8. a LIVE individual vote that is not a verdict at all (schema drift on the individual path —
+//      the ninth door: it does not merely mislabel the finding, it DELETES it, because every absent
+//      boolean reads as `false` and `citedLineMatches:false` alone means `refuted`)
 // The distinction that MUST survive: "the agent never answered" (any of the above → not verified)
 // versus "the agent answered but said nothing about THIS finding" (a lost finding → it was part of
 // an inspection, so it keeps `suspected`). The discriminator is exactly this: a null/empty/malformed
 // answer is a dead agent; a non-empty verdict list missing one index is a lost finding.
 const NOT_VERIFIED = (f, why) => ({ ...f, tier: 'unverified', why: `${f.why} (NOT VERIFIED: ${why})` })
-// True when the verifier's answer proves nothing was judged — as opposed to an answer that judged
-// some findings and dropped one.
-function verifierAnswered(res) {
-  return !!res && Array.isArray(res.verdicts) && res.verdicts.length > 0
+// THE DEATH CLASS of a batch answer, or null when the verifier really did judge something. The
+// three classes are kept APART rather than collapsed into one boolean: they are three distinct ways
+// the answer can fail to arrive, and a single message for all of them makes a test that scripts one
+// of them pass while the other two are unreached — the "neighbouring door" failure the death table
+// below exists to prevent. Each class names itself in the finding's `why`, so a row of that table
+// proves which branch it reached.
+function batchDeath(res) {
+  if (!res) return 'returned nothing at all — a dead agent, an exhausted retry, or an expired deadline'
+  if (!Array.isArray(res.verdicts)) return 'answered OFF-SCHEMA — its answer carried no verdict list at all'
+  if (!res.verdicts.length) return 'answered with an EMPTY verdict list — it judged nothing'
+  return null
+}
+// A vote is a JUDGEMENT only if it carries the four booleans tierFromVotes decides on. THE NINTH
+// DOOR: the agent wrapper returns ANY non-null value verbatim, so an off-schema object reaches the
+// vote arithmetic, where every missing boolean reads as `false` — `citedLineMatches` false alone
+// makes the tier `refuted`, and a refuted finding is FILTERED OUT of the run. That is strictly worse
+// than every other death on this path: the others keep the finding, this one deletes it — out of
+// confirmed, out of suspected, out of unverified, still inside the refutation denominator, and
+// absent from `notRun`. The batch path had this guard (batchDeath, ex-verifierAnswered); the
+// individual path had none, so schema drift on a Critical silently became a refutation.
+const VOTE_AXES = ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported']
+function isVerdictShaped(v) {
+  return !!v && typeof v === 'object' && VOTE_AXES.every(k => typeof v[k] === 'boolean')
 }
 // Do two verdicts say the same thing on every axis tierFromVotes reads? Only then can the opening
 // pair stand in for the full panel — a disagreement on ANY axis (not just `refuted`) can move the
 // tier, because citedLineMatches gates refutation outright and reachable/premiseSupported demote.
 function votesAgree(a, b) {
-  if (!a || !b) return false
-  return ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported'].every(k => Boolean(a[k]) === Boolean(b[k]))
+  // An off-schema vote is not agreement either: two of them would `Boolean(undefined)`-match on every
+  // axis and short-circuit the panel on garbage.
+  if (!isVerdictShaped(a) || !isVerdictShaped(b)) return false
+  return VOTE_AXES.every(k => a[k] === b[k])
 }
 // Shared vote→tier decision, so the batched path cannot drift from the individual one.
 function tierFromVotes(f, votes) {
-  const v = votes.filter(Boolean)
+  const live = votes.filter(Boolean)
+  // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
+  const v = live.filter(isVerdictShaped)
   // EVERY vote died. This is not a judgement and must never be rendered as one: `suspected` is
   // defined in the report as "a verifier looked and the claim did not stand up", so handing it to a
   // finding nothing looked at asserts an inspection that never happened — and, worse, keeps the
@@ -2487,7 +2544,11 @@ function tierFromVotes(f, votes) {
   // Critical to a non-gating finding and the verdict does not read as incomplete.
   // One route for every death (see NOT_VERIFIED / verifyDeath): unverified tier, out of the
   // denominator, into notRun.
-  if (!v.length) return NOT_VERIFIED(f, 'every verifier vote for this finding died before returning a verdict — nothing was checked against the code')
+  if (!v.length) {
+    return NOT_VERIFIED(f, live.length
+      ? 'the verifier ANSWERED OFF-SCHEMA — its verdict carried none of the judgements this tier is decided on, so nothing was checked against the code'
+      : 'every verifier vote for this finding died before returning a verdict — nothing was checked against the code')
+  }
   const half = v.length / 2
   const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
   const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
@@ -2610,7 +2671,8 @@ async function verifyPool(items, plan, profile, gateProvenance) {
         // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
         // throw the `.catch` below handles. An answer carrying no verdicts at all is the same
         // outcome by a different route: nothing was judged. Either way the group is unverified.
-        if (!verifierAnswered(res)) return deadGroup(group, 'returned no verdict at all — a dead agent, an exhausted retry, or an expired deadline')
+        const death = batchDeath(res)
+        if (death) return deadGroup(group, death)
         return group.map((f, i) => {
           const v = res.verdicts.find(x => x && x.index === i)
           // A missing index in a NON-EMPTY verdict list is a verifier that ran and lost one finding —
@@ -3033,9 +3095,20 @@ Also note in one line anything else likely missed (a changed file no finding tou
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
-      const extra = (await parallel(followups.map(lens => () =>
+      // A SILENT REFUSAL NEXT TO A LOUD ONE. `.filter(Boolean)` used to swallow a follow-up lens that
+      // DIED — no notRun entry, no INCOMPLETE — while the branch two lines below, where the same lens
+      // is skipped for lack of budget, records both. "The critic said run it and it died" is not a
+      // cleaner outcome than "the critic said run it and there was no budget"; it is the same hole in
+      // coverage, and the one a re-run can actually fix.
+      const settledExtra = await parallel(followups.map(lens => () =>
         runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Synthesize', ' (critic)'),
-      ))).filter(Boolean).flatMap(r => r.findings || [])
+      ))
+      const deadFollowups = followups.filter((_l, i) => !settledExtra[i])
+      if (deadFollowups.length) {
+        notRun.push(...deadFollowups.map(l => `${profile.id} critic follow-up lens ${l} — dispatched and died before returning findings`))
+        log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
+      }
+      const extra = settledExtra.filter(Boolean).flatMap(r => r.findings || [])
       const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
       if (fresh.length) {
         const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
@@ -3302,11 +3375,19 @@ if (priorRound) {
     // independent partitions would each compute their clause from the same un-absorbed `host.why`,
     // so applying them afterwards would drop one report entirely — into no track, no host and no
     // ledger. absorbAcross returns the cumulative `updates`; it is applied once.
-    const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected, unverified], livePriors, retired, matchesPrior)
+    // ONLY the JUDGED tracks are absorbed. An unverified finding may not be written onto a prior's
+    // `why`: that clause tells the next adjudicator that "resolved" requires the absorbed report to
+    // be gone, which lets something nothing ever checked hold a prior open and gate the re-review
+    // verdict — the exact substitution the unverified tier exists to end, and it carries a dead
+    // verifier's Critical/High, not just an unpaid-for Low. It is marked in place instead
+    // (markTrackedUnverified), so it neither disappears into the prior nor gates anything.
+    const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
     for (const [host, why] of updates) host.why = why
     confirmed = runs[0].kept
     suspected = runs[1].kept
-    unverified = runs[2].kept
+    const tracked = markTrackedUnverified(unverified, livePriors, retired, matchesPrior)
+    unverified = tracked.kept
+    if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
@@ -3372,7 +3453,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
 - ⚠️ Warning if Confirmed Medium only.
 - ✅ Approve if no Confirmed Critical/High/Medium.
-Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all (no verifier was spent: Low/Info cannot move the verdict) — they change nothing and must never be presented as confirmed or as checked.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
+Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all — EITHER no verifier was spent (a Low/Info cannot move the verdict) OR the verifier that should have judged them died before returning one, so a Critical or High can carry this tier. They change nothing and must never be presented as confirmed, as checked, or as cheap.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
 
