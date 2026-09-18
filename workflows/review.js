@@ -3037,6 +3037,65 @@ function verifyTier(f) {
   // more likely a mislabel than a judgement, and it is worth one verifier to find out.
   return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
 }
+// ---- the same reasoning, carried to the tier where the money is ----
+// `verifyTier` skips Low/Info because no judgement on them can move the verdict. That is a statement
+// about `reviewVerdict`, not about severity — and once a Critical or High is CONFIRMED the verdict is
+// Block, at which point every Medium is verdict-neutral too. Medium is the whole batched population.
+// Pure helpers, tested as a real module in lib/verify-economy.mjs and pasted back here by the
+// craft-inline gate; the order discipline that makes this legitimate lives there.
+// >>> craft-inline lib/verify-economy.mjs BLOCKING_SEVERITIES securesBlock makeVerdictFloor verdictNeutralNow floorSkipReason
+// The severities whose confirmation alone forces Block, per `reviewVerdict` in lib/run-record.mjs.
+// Kept as data next to the rule it mirrors: if that rule ever gains a severity, the skip below is
+// wrong in the direction of skipping too much, and this is the one line to change.
+const BLOCKING_SEVERITIES = ['Critical', 'High']
+
+// Does this JUDGED finding, by itself, already fix the verdict at Block?
+function securesBlock(f) {
+  return !!f && f.tier === 'confirmed' && BLOCKING_SEVERITIES.includes(f.severity)
+}
+
+// A monotonic record of "the verdict is already Block, on evidence". Shared across concurrently
+// dispatched verification entries on purpose — the same reason the death breaker is shared: the
+// individual panel and the batch groups are in flight together, so a per-entry view would never see
+// the confirmation another entry brought back.
+function makeVerdictFloor() {
+  let by = null
+  return {
+    // Feed every settled verdict through here, judged or not. Returns whether THIS one raised the
+    // floor, which is what a caller logs.
+    record(f) {
+      if (by !== null || !securesBlock(f)) return false
+      by = f
+      return true
+    },
+    // Answers about what has ALREADY come back. Never predicts.
+    secured() {
+      return by !== null
+    },
+    // The finding that raised it, so a skip can name its own justification instead of asserting one.
+    securedBy() {
+      return by
+    },
+  }
+}
+
+// Can a verifier for this finding still move the verdict, given what is already confirmed?
+// Medium and nothing else: Critical/High decide the verdict themselves and are never skipped, and
+// Low/Info never reach here — `verifyTier` has already routed them to the skip tier for a reason
+// that does not depend on the floor.
+function verdictNeutralNow(f, floor) {
+  return !!f && f.severity === 'Medium' && !!floor && floor.secured()
+}
+
+// Why a Medium went unverified, in the finding's own `why`. It names the evidence — the confirmed
+// finding that fixed the verdict — because "we did not check this" is only legitimate when the
+// reader can see what made the check pointless.
+function floorSkipReason(floor) {
+  const by = floor && floor.securedBy()
+  const where = by ? `${by.severity} "${by.title || '?'}" at ${by.file || '?'}:${by.line || 0}` : 'a confirmed blocking finding'
+  return `no verifier was spent on it — the verdict was already fixed at Block by the confirmed ${where}, and no judgement on a Medium can move Block either way, so nothing here has been checked against the code`
+}
+// <<< craft-inline
 // ---- the ONE route every death on the verification path takes -------------------------------
 // The invariant, stated once: NO death on the verification path may give a finding a tier that
 // asserts an inspection, may leave it inside the refutation denominator, or may leave it out of
@@ -3223,6 +3282,11 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const route = { individual: [], batch: [], skip: [] }
   for (const f of items) route[verifyTier(f)].push(f)
 
+  // What is ALREADY confirmed at a blocking severity, raised as the individual panel settles. A
+  // batch thunk asks it at the moment it is about to dispatch, so the skip below can only ever rest
+  // on evidence that has already come back — never on an expectation that a Critical will confirm.
+  const floor = makeVerdictFloor()
+
   // Skipped tier: its OWN tier, `unverified` — not Suspected. Suspected means "a verifier looked and
   // the claim did not stand up confidently"; these were never looked at. Folding them into Suspected
   // made the two indistinguishable in the report AND put them in the refuteRate denominator, so a run
@@ -3265,8 +3329,24 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // SLIDING WINDOW rather than all at once, because the per-agent deadline is measured from DISPATCH
   // and an unbounded fan-out makes it fire on queue wait instead of on hanging. A window, not waves:
   // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
+  // A group whose verifier was never bought because the verdict was already fixed at Block. It takes
+  // the SAME route as every death — the unverified tier, out of the refutation denominator, into
+  // `notRun` — and for the same reason: nothing here was checked against the code. What it does NOT
+  // do is disappear. `verifySkipped` marks it only so `notRun` can say why it did not run, since a
+  // skipped group and a dead one need a re-run for opposite reasons.
+  const floorSkippedGroup = group => {
+    log(`💰 [${profile.id}] the batch verifier for ${group[0].file || '?'} was NOT dispatched — ${floorSkipReason(floor)}; its ${group.length} finding(s) are reported as unverified and excluded from the verification counters`)
+    return group.map(f => ({ ...NOT_VERIFIED(f, floorSkipReason(floor)), verifySkipped: true }))
+  }
+
   const batchThunks = groups.map(group => () =>
-    ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
+    // Asked HERE, inside the thunk, not when the thunk list is built: the window dispatches lazily
+    // and the individual panel goes first, so by the time a batch's turn comes the floor may have
+    // been raised by a Critical that has actually come back confirmed. Asked at build time it would
+    // always answer no, and the whole population would be bought.
+    (verdictNeutralNow(group[0], floor)
+      ? Promise.resolve(floorSkippedGroup(group))
+      : ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => {
         // THE DISCRIMINATOR. `ragent` answers `null` for a dead agent (API error, skip, or the
         // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
@@ -3293,7 +3373,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       .catch(err => {
         log(`⚠️ [${profile.id}] batch verifier threw: ${String((err && err.message) || err).slice(0, 160)}`)
         return deadGroup(group, 'died before returning any verdict')
-      }))
+      })))
 
   if (route.skip.length || groups.length) {
     log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} NOT VERIFIED (Low/Info cannot move the verdict; reported as unverified, excluded from the verification counters)`)
@@ -3330,8 +3410,21 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // individual thunk to a single one — flatten the batch side back out before merging. The window
   // settles out of order but writes each result at ITS OWN index, so the positional split below
   // stays exactly as valid as it was under one parallel().
-  const entries = batchThunks.map(run => ({ run, weight: 1 }))
-    .concat(route.individual.map((f, i) => ({ run: individualThunks[i], weight: verifyWeight(f, plan) })))
+  //
+  // INDIVIDUALS LEAD, and that ordering is the load-bearing part of the Medium economy above. The
+  // window still has no barrier — the two tiers overlap freely — but it dispatches in list order, so
+  // the Critical/High panel that can raise the verdict floor goes out first and a batch's turn comes
+  // after some of it has come back. Batches first would ask the floor before anything could have
+  // raised it, and the answer would always be "not yet".
+  // Every settled individual verdict is offered to the floor. Wrapped here rather than inside the
+  // thunk because the thunk has two return points, and a floor raised on one path but not the other
+  // is the kind of half-wiring that leaves the saving silently unrealized.
+  const withFloor = run => () => Promise.resolve(run()).then(r => {
+    if (floor.record(r)) log(`💰 [${profile.id}] the verdict is now fixed at Block by a confirmed ${r.severity} (${r.file || '?'}:${r.line || 0}) — Medium batches not yet dispatched can no longer move it and will not be bought`)
+    return r
+  })
+  const entries = route.individual.map((f, i) => ({ run: withFloor(individualThunks[i]), weight: verifyWeight(f, plan) }))
+    .concat(batchThunks.map(run => ({ run, weight: 1 })))
   const totalWeight = entries.reduce((n, e) => n + e.weight, 0)
   if (totalWeight > VERIFY_WINDOW_AGENTS) {
     log(`[${profile.id}] Verify dispatched through a sliding window of ≤${VERIFY_WINDOW_AGENTS} agents (${totalWeight} worst-case agents queued) — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging; the window refills as each verifier settles, so nothing waits on a batch's slowest member`)
@@ -3344,10 +3437,10 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // denominator AND out of `notRun`, so the report simply never mentioned them. A null is recovered
   // back into its own findings by index (the batch side knows its group, the individual side its
   // finding) and routed exactly like every other death.
-  const batched = settledVerdicts.slice(0, batchThunks.length)
-    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
-  const judged = settledVerdicts.slice(batchThunks.length)
+  const judged = settledVerdicts.slice(0, route.individual.length)
     .map((r, i) => (r || NOT_VERIFIED(route.individual[i], 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
+  const batched = settledVerdicts.slice(route.individual.length)
+    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
   const settled = judged.concat(batched)
   // A dead batch's findings arrive through the same list as judged ones and must leave it again:
   // `vp` is the JUDGED population and every count derived from it (candidates, refuteRate) means
@@ -3371,12 +3464,17 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     // deaths above, and grouped by (profile, file) so the exact-string ranking in
     // lib/analyze-runs.mjs sees a repeat rather than a run-unique row.
     notRun: [...new Set([
-      // A DEATH AND AN OFF-SCHEMA ANSWER ARE DIFFERENT FAILURES, and this list is ranked by exact
-      // string across runs — so one sentence for both makes "the panel returns garbage" rank as "the
-      // verifier dies", and the repair is then looked for in the wrong place. Split on the flag
-      // tierFromVotes sets, not on the wording of any `why`.
-      ...deaths.filter(f => !(f.votesDiscarded > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
-      ...deaths.filter(f => f.votesDiscarded > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
+      // FOUR failures, kept apart by the same discipline that keeps error text out of the strings.
+      // This list is ranked by exact string across runs, so collapsing any two makes one repeat
+      // masquerade as another and sends the repair to the wrong place. A death is fragility a re-run
+      // can fix; an off-schema panel ANSWERED and must not be called a death; a thinned refutation
+      // deleted a finding on partial evidence; and a group skipped because the verdict was already
+      // Block is a deliberate saving a re-run will make again — that last one means the OPPOSITE of
+      // the other three, and sinking the real repeats under it would be the worst collapse of all.
+      // Split on the flags tierFromVotes and floorSkippedGroup set, not on the wording of any `why`.
+      ...deaths.filter(f => !f.verifySkipped && !(f.votesDiscarded > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
+      ...deaths.filter(f => !f.verifySkipped && f.votesDiscarded > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
+      ...deaths.filter(f => f.verifySkipped).map(f => `${profile.id} verification of ${f.file || '?'} — deliberately not dispatched: the verdict was already fixed at Block, and no judgement on a Medium can move it, so those finding(s) were never checked against the code`),
       ...refuted.filter(f => (f.votesDiscarded || 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence`),
     ])],
     dropped: refuted.length,
@@ -4160,11 +4258,12 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
 // ================= Synthesize one merged report =================
 // ONE sentence, three readers: the first-pass template, the re-review template and the mechanical
 // fallback report. It was written twice before and the two copies already meant different things.
-// It names ALL THREE ways into the tier — a Low/Info nobody paid a verifier for, a finding whose
-// verifier died, and a panel whose every returned vote was off-schema — because a reader who is told
-// only the first reason will read a dead verifier's findings as cheap ones, and a panel that ANSWERED
-// unreadably did not die: calling it a death misdescribes the largest discard there is.
-const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
+// It names ALL FOUR ways into the tier — a Low/Info nobody paid a verifier for, a Medium nobody
+// paid for because the verdict was already fixed at Block, a finding whose verifier died, and a
+// panel whose every returned vote was off-schema — because a reader who is told only the cheap
+// reasons will read a dead verifier's findings as cheap ones, and a panel that ANSWERED unreadably
+// did not die: calling it a death misdescribes the largest discard there is.
+const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or because the verdict was already fixed at Block by a confirmed Critical/High and a Medium cannot move it, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
