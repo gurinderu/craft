@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -246,15 +246,120 @@ continues on the remaining signals with status=unknown — an incomplete gate be
 // compile without a database, and reported neither signal. Worse, every agent that later runs a tool
 // (the gate, a lens re-running clippy, a verifier doing its MECHANICAL CHECK) rediscovered the same
 // facts independently. Resolve them once, cheaply, and hand the answer to everyone downstream.
+// The probe budget and its audit live in a linted module with real unit tests, and are pasted back
+// in here by the craft-inline gate, because this script cannot be imported (top-level export +
+// await + return). The module's header carries why the audit is a DECLARATION audit and what that
+// does and does not close.
+// >>> craft-inline lib/preflight-probes.mjs PROBE_BUDGETS probeDeclarationBlock auditPreflightProbes
+// The per-source budget. A source is named by the QUESTION it answers, not by the command that
+// answers it: two spellings of "which checks are green for this SHA" are one source, which is the
+// whole point — the old failure mode was three routes to one answer, each looking like a fresh
+// question. `max: 0` means the route is forbidden outright: it exists, it resolves the same
+// question, and the prompt bans it because it resolves by BRANCH (empty on a review worktree) or
+// hands back a PR whose head has moved.
+const PROBE_BUDGETS = {
+  'ci-check-runs': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/check-runs' },
+  'ci-commit-status': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/status' },
+  'ci-pr-checks': { max: 0, what: 'gh pr checks — resolves by branch; forbidden, the SHA-scoped calls answer it' },
+  'ci-pr-by-commit': { max: 0, what: 'gh api …/commits/$SHA/pulls — forbidden in preflight; the gate owns PR lookup' },
+  'workflow-file': { max: 2, what: 'reading a .github/workflows/*.yml behind a green check' },
+  'tool-inventory': { max: 2, what: 'the one-shot command -v loop (once bare, once under the runner prefix)' },
+  'runner-verify': { max: 2, what: 'an instant <prefix>true / <prefix>rustc --version' },
+  'blocker-probe': { max: 4, what: 'the grep/ls/test questions behind a compile blocker, and for Nix the flake-metadata and `system`-match checks' },
+  'repo-identity': { max: 2, what: 'git rev-parse HEAD / git remote get-url origin' },
+  'runner-discover': { max: 2, what: 'the ls/test sweep for the dev-shell markers (.envrc, flake.nix, shell.nix, .direnv/)' },
+}
+
+// The block appended to the preflight prompt. It is generated from PROBE_BUDGETS rather than written
+// out beside it: a budget the prompt does not name is a budget the agent is judged against without
+// being told, which turns the audit into a trap instead of a contract.
+function probeDeclarationBlock() {
+  const rows = Object.entries(PROBE_BUDGETS).map(([id, b]) => b.max === 0
+    ? `   - \`${id}\`: FORBIDDEN (${b.what}) — declaring calls > 0 here is a violation, not a note`
+    : `   - \`${id}\`: at most ${b.max} (${b.what})`)
+  return `5. DECLARE YOUR PROBES. Return \`probes\`: one entry per source you consulted, \`{ "source": "<id>", "calls": <how many shell/API invocations you spent on it> }\`. Count every invocation, including ones that returned nothing. The ids and their budgets:
+${rows.join('\n')}
+   Use these ids EXACTLY; an id not on this list is itself reported as a violation, so a repeat cannot be relabelled into a fresh question. A source you did not consult is simply absent (do not declare it with \`calls: 0\`), and \`calls\` is a whole number ≥ 0 on every entry — a missing, non-integer or negative count is itself a violation. \`probes\` can NEVER be empty and is never emptied by a partial result: it reports what you ALREADY did, so running out of time shortens the list, it does not erase it — an empty list is reported as a violation, not read as a disciplined run. THE ENGINE AUDITS THIS: an over-budget or forbidden or unrecognized source is named in the run's log and carried into its record. Declaring fewer calls than you made is a false report, which is worse than an over-budget honest one.`
+}
+
+// Violations of the declared budget, as human-readable lines. Empty array = clean.
+//
+// CONTRACT, stated so nobody upgrades it: this audits the DECLARATION, not the shell. A preflight
+// that asks one source three times and declares one call passes here. What the audit buys is that
+// the honest path and the disciplined path are now the same path, and that a breach has to be
+// either declared or actively misreported — where before it was neither visible nor recorded.
+function auditPreflightProbes(pf) {
+  if (!pf) return []
+  const out = []
+  const probes = Array.isArray(pf.probes) ? pf.probes : null
+  if (!probes) {
+    // Absent is a violation of its own: `probes` is required by the schema, so a missing list means
+    // the answer did not come through the contract at all — and silence must not read as clean,
+    // which is the exact shape of every observability defect this engine has shipped.
+    out.push('preflight declared no `probes` list — the per-source budget could not be audited')
+    return out
+  }
+  if (probes.length === 0) {
+    // The same defect one layer in, and it was the CHEAPEST answer available: an empty array is a
+    // present list, so every check below ran over nothing and found nothing. A preflight that spent
+    // 48 invocations and declared `[]` then filed exactly what a disciplined one files. It is a
+    // violation unconditionally — including under `partial: true`, because `probes` reports what was
+    // ALREADY done, so running out of time shortens the list and never empties it.
+    out.push('preflight declared an EMPTY `probes` list — a preflight consults something by definition, and an empty declaration is not a clean one (a partial run still reports what it did)')
+    return out
+  }
+  const seen = new Map()
+  for (const p of probes) {
+    const id = String((p && p.source) || '').trim()
+    if (!id) { out.push('a `probes` entry has no `source`'); continue }
+    if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
+      out.push(`unrecognized probe source \`${id}\` — not one of the declared ids, so its budget is unknown`)
+      continue
+    }
+    // Every way a count can fail to be a count is named, because each one used to coerce to zero and
+    // land the entry inside its budget: an omitted `calls` via `?? 0`, a non-numeric one via `NaN`
+    // and the `Number.isFinite` guard below, and a negative one by SUBTRACTING from the total — so
+    // `[{blocker-probe:9},{blocker-probe:-8}]` read as 1 call against a budget of 4. A bad count is
+    // now a violation of its own AND is excluded from the sum, so it can neither hide nor offset.
+    const raw = p ? p.calls : undefined
+    if (raw == null) {
+      out.push(`probe source \`${id}\` declared no \`calls\` — an entry without a count cannot be audited, and a missing count is not zero`)
+      continue
+    }
+    const calls = Number(raw)
+    if (!Number.isInteger(calls)) {
+      out.push(`probe source \`${id}\` declared a non-integer call count \`${String(raw)}\` — invocations are counted in whole numbers`)
+      continue
+    }
+    if (calls < 0) {
+      out.push(`probe source \`${id}\` declared a negative call count ${calls} — a call cannot be un-made, and a negative must not offset a real one`)
+      continue
+    }
+    // Two entries for one id are the repeat this exists to catch, split across rows. Summed, never
+    // taken as the larger: splitting 3 calls into 2+1 would otherwise read as within a budget of 2.
+    seen.set(id, (seen.get(id) ?? 0) + calls)
+  }
+  for (const [id, total] of seen) {
+    const { max, what } = PROBE_BUDGETS[id]
+    if (max === 0 && total > 0) out.push(`forbidden probe source \`${id}\` used ${total}×: ${what}`)
+    else if (total > max) out.push(`probe source \`${id}\` used ${total}×, budget ${max}: ${what}`)
+  }
+  return out
+}
+// <<< craft-inline
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'partial', 'notes'],
+  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'probes', 'partial', 'notes'],
   properties: {
     runner: { type: 'string', description: 'prefix every build/lint command needs, e.g. "direnv exec . " or "nix develop -c " — empty string if commands run bare' },
     blockers: { type: 'array', items: { type: 'string' }, description: 'reasons this tree CANNOT compile here, one per line, e.g. "sqlx query macros need a live Postgres; no offline .sqlx cache and no DATABASE_URL"' },
     missingTools: { type: 'array', items: { type: 'string' }, description: 'gate tools not on PATH (cargo-audit, cargo-deny, semgrep, …)' },
     ciCovers: { type: 'array', items: { type: 'string' }, description: 'signals a GREEN CI check already establishes for this exact HEAD, as "<signal> via <check name>" — e.g. "test via cargo nextest", "deny-bans via cargo-deny"' },
+    // `minItems`/`minimum` are load-bearing, not decoration: without them `probes: []` and a negative
+    // count were both VALID answers that the audit then read as clean — the cheapest possible path to
+    // a green audit. The schema now refuses the shape and `auditPreflightProbes` refuses it again.
+    probes: { type: 'array', minItems: 1, description: 'one entry per source consulted, with how many shell/API invocations it cost — audited against PROBE_BUDGETS; never empty, not even in a partial result, since it reports what was already done', items: { type: 'object', additionalProperties: false, required: ['source', 'calls'], properties: { source: { type: 'string', description: 'the probe-source id from the prompt\'s list, exactly' }, calls: { type: 'integer', minimum: 0, description: 'invocations spent on that source, including ones that returned nothing' } } } },
     partial: { type: 'boolean', description: 'true if ANY of the four fields was left unfinished (ran out of time, a command failed, gh unavailable) — the matching field is then empty and notes says which and why' },
     notes: { type: 'string' },
   },
@@ -302,11 +407,14 @@ ${profile.id === 'rust'
    Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. HARD CAP — this is where the pass runs away with the clock: read AT MOST 2 workflow files, only for green checks that map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale. Past the cap, the remaining green checks go in \`notes\` BY NAME ONLY and NEVER in \`ciCovers\` — \`ciCovers\` means "do not re-run this locally", and a check whose workflow you did not open cannot support that: its name is a guess at what it ran, which is exactly what the \`cargo-deny\`/\`check bans\` example above shows going wrong. Only a signal you read the workflow for goes in \`ciCovers\`.
    List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
 
+${probeDeclarationBlock()}
+
 BUDGET (hard): reconnaissance, target ~90 seconds, three minutes is the ceiling. Past the dispatch deadline nothing cuts you off — the caller simply STOPS WAITING for you and dispatches a second preflight, so everything you do after that point is discarded and paid for twice, and if the second pass is as slow the gate loses even the runner prefix. So at three minutes STOP and RETURN. A thorough preflight costing more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint here.
 
-PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
+PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four FINDINGS fields above (runner, blockers, missingTools, ciCovers) you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
+\`probes\` (step 5) IS EXPLICITLY EXCLUDED FROM THAT INSTRUCTION: it is not a finding but a report of what you ALREADY DID, so it can never be returned empty — a run cut short declares the calls it had already spent, and an empty \`probes\` is read as a violation, never as a disciplined pass.
 
-Return runner, blockers, missingTools, ciCovers, partial, notes.`
+Return runner, blockers, missingTools, ciCovers, probes, partial, notes.`
 }
 // An unfinished preflight must not be recorded as a clean one. The schema carries an explicit
 // `partial` boolean precisely so this does not hang on the shape of prose: the earlier test was
@@ -426,6 +534,86 @@ Set provenance to a one-line summary like "nix flake check pass; statix/deadnix 
 // declared rather than becoming a fourth blanket exception.
 const CONDITIONAL_LENSES = ['failure-windows']
 
+// ================= The optional pass =================
+// Three lenses that do not earn a place on every run. The basis is NOT equal across them: only
+// `ownership` (retired, not here) has three independent counts. The two earlier store-wide counts
+// named api-idioms and performance among the bottom four; `api-boundary` was not in them at all, so
+// for the composition of THIS trio the basis is ONE run — one diff, one repository, one domain
+// (realm @nick/craft, node #20, which requires that limit to be stated rather than dropped).
+// Measured over runs of the
+// budget-deterministic engine against a large Rust diff (14 lenses × 3 rounds, 215 findings):
+// `performance` (15 findings, 12 of them Low/Info), `api-idioms` (14/10) and `api-boundary` (11/7)
+// returned hundreds of CONFIRMED Medium-and-below findings and NOT ONE High in any of the three.
+// Deleting them would make the review worse — the findings are real. Paying three full agents for
+// them on every run is the part the numbers do not support. So they leave every automatic path and
+// stay reachable by an explicit request.
+//
+// The failure mode this must not become is the one this repo keeps hitting: a run that never looked
+// at performance reading as a run that found nothing wrong with it. So the skipped set is stated
+// MECHANICALLY — `optionalSection()`, appended by `out()` to every report the engine can return,
+// never asked of the synthesis model, which can die or simply not obey — and filed on the run
+// record as `optionalPass`.
+//
+// STRICT MODE AND THE SECURITY FLOOR TOUCH THIS IN NEITHER DIRECTION, and that is a decision, not
+// an omission.
+//   · `strict` is the harsh MAINTAINABILITY bar: it forces the maintainability lens and turns its
+//     confirmed findings into presumptive blockers. Letting it also buy three unrelated lenses
+//     would make one flag mean two things, and would deliver the optional pass to a caller who
+//     asked for something else.
+//   · The security-sensitive floor expands `blanket()`, and `blanket()` excludes the optional set
+//     exactly as it excludes CONDITIONAL_LENSES. A floor is a statement of IGNORANCE about the
+//     diff, and ignorance is not a reason to buy the three lenses that measured worst.
+//   · Neither may silently DISABLE it either: an explicit `optional=` request is honoured on every
+//     path, including a security-floored run and a strict one. The request is the only switch.
+const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
+
+// `optional=true` / `--optional` / `optional=all` buys the whole set; `optional=performance,api-boundary`
+// (or a JSON array) buys those. Absent buys none.
+// An unrecognised name is REFUSED LOUDLY rather than dropped: `optional=perf` that quietly buys
+// nothing, on a run whose whole point was to buy something, is the exact silence this section exists
+// to prevent — and the run would then report the lens as skipped while the caller believed otherwise.
+function parseOptionalRequest(raw) {
+  if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
+  if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
+  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean)
+  return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
+}
+const optionalRequest = parseOptionalRequest(A.optional)
+if (optionalRequest.unknown.length) {
+  log(`⚠️ optional=${JSON.stringify(A.optional)} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
+}
+const optionalRequested = optionalRequest.lenses
+// The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
+// plan the moment it was built — but the plan is not final there: the completeness critic composes
+// lenses much later, on the synthesis phase. Any such later road made the snapshot a LIE in the one
+// direction that matters, printing "not looked at" over a lens whose findings were in the report.
+// So the two sets below record only what cannot be second-guessed: which optional lenses this run
+// could have bought at all (filled by each profile's planner), and which ones were actually
+// DISPATCHED (recorded by `runLens`, the single dispatch point for every lens on every path —
+// planned, resurrected, or critic-composed). `optionalTally()` subtracts. Sets, because two active
+// profiles may both carry the same optional lens and the reader wants the lens named once.
+const optionalInScope = new Set()
+const optionalDispatched = new Set()
+// An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
+// critic is the same model whose spend this pass deliberately took out of model hands), but the
+// signal is real and must reach the reader rather than die in the filter.
+const optionalNamedByCritic = new Set()
+const optionalTally = () => {
+  const inScope = [...optionalInScope]
+  return { ran: inScope.filter(l => optionalDispatched.has(l)), skipped: inScope.filter(l => !optionalDispatched.has(l)) }
+}
+// Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
+// one and the mechanical fallback. The earliest exits (no diff, red gate) run before any lens is
+// planned, so the list is empty there and no section is emitted; those reports already say plainly
+// that nothing was reviewed. It says "absence of a result", never "no problems found".
+const optionalSection = () => {
+  const skipped = optionalTally().skipped
+  if (!skipped.length) return ''
+  const named = skipped.filter(l => optionalNamedByCritic.has(l))
+  return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
+    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
+}
+
 const PROFILES = {}
 PROFILES.rust = {
   id: 'rust',
@@ -443,14 +631,13 @@ PROFILES.rust = {
   usesLibrary: true,
   alwaysLenses: ['intent'],
   safetyLens: 'safety',
-  scoutRules: `Decide what is "in play" from the diff: unsafe → ownership+safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, or a migration renaming/retyping a column the code (de)serializes → compat (pick it whenever the diff changes an at-rest or on-the-wire representation of data that other versions of the code read). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.)`,
+  scoutRules: `Decide what is "in play" from the diff: unsafe → safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, or a migration renaming/retyping a column the code (de)serializes → compat (pick it whenever the diff changes an at-rest or on-the-wire representation of data that other versions of the code read). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.) \`performance\`, \`api-idioms\` and \`api-boundary\` are the OPTIONAL pass: pick them on the same signals as ever, but the engine admits them only on a run that explicitly asked for the optional pass and drops them otherwise — so do not treat their absence from a run as a judgement about the code they cover.`,
   gate: rustGate,
   depContext: rustDepContext,
-  lenses: ['safety', 'errors', 'ownership', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
+  lenses: ['safety', 'errors', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
   lensBrief: {
     safety: 'safety / injection / secrets: unwrap/expect/panic on reachable paths, unsafe without SAFETY, SQL/command injection, path traversal, hardcoded secrets, unbounded deserialization. Also BUILD-PROFILE DIVERGENCE (SAF-007/SAF-008), where the code you review is not the code that ships: (a) arithmetic on an untrusted-input path whose outcome differs between the dev/test profile (`overflow-checks` ON) and the shipping release profile (OFF by default — read `[profile.release]` in the crate AND workspace root before assuming, it may be re-enabled). The profile-gated panic is the FLOOR of the impact, not the ceiling: do NOT close it as "does not reproduce in release" — say what the release build does INSTEAD (a silent wrap that truncates a length, misresolves an index, or corrupts state is worse than the panic, because nothing reports it), and report both facets. (b) a `debug_assert!` carrying a load-bearing invariant — an unsafe precondition, a bounds/length check, a trust-boundary validation — which compiles out in `--release`, leaving the shipped binary unguarded.',
     errors: 'error handling: recoverable failures handled with panic/unwrap, dropped #[must_use]/error values, Result-vs-panic, typed-error-vs-anyhow at API boundaries.',
-    ownership: 'ownership & lifetimes: needless clone to satisfy the borrow checker, String where &str/impl AsRef suffices, Vec<T> where &[T] works, explicit lifetimes where elision applies.',
     concurrency: 'concurrency / async: blocking calls inside async, lock held across .await, unbounded channels, inconsistent lock order (deadlock), missing Send/Sync.',
     performance: 'performance: allocation in hot loops, to_string/to_owned where a borrow works, Vec::new+push where size is known, N+1 / repeated work in loops.',
     'api-idioms': 'API shape & public-surface idioms — spend the budget on impactful breaks, not per-item completeness nits. HIGH-VALUE (surface individually): public-API guideline breaks (API-006) — an unsealed trait meant to be closed, a private/unstable type or dependency leaked through a `pub` signature, an owned String/Vec/PathBuf parameter where &str/&[T]/&Path fits, a public enum/error without #[non_exhaustive], missing common-trait impls (Debug/Clone); a wildcard `_ =>` on a business enum that silently swallows new variants (API-002); a library leaking Box<dyn Error>/anyhow at its boundary (ERR-003). LOW-VALUE (do NOT file one finding per occurrence): missing `///` on a pub item (API-003), #[allow] without a justifying comment (API-004), crate-root #![deny(warnings)] (API-005), oversized fn / deep nesting (API-001) — roll repeated instances of each into ONE finding that names the pattern with a representative file:line, and raise an individual one only when it sits on a genuinely public library API, the doc is wrong or misleading (not merely absent), or the #[allow] hides a real defect.',
@@ -1233,19 +1420,83 @@ function absorbAcross(lists, livePriors, retired, fallbackMatch) {
 // site is already tracked without the host inheriting an unchecked obligation.
 const TRACKED_MARK = ' — (this site is already tracked by a still-live prior finding; NOT absorbed into it: nothing checked this report against the code, so it may not hold that prior open)'
 
-// Pure: returns new finding objects; neither the findings nor the hosts are mutated.
+// THE MARK IS FOR THE REPORT, NOT FOR THE LEDGER. It is recomputed from this round's live priors
+// every round, so a persisted copy can only be a stale duplicate — and a false one once the prior it
+// names resolves. The caller strips it at the ledger door (`toLedgerEntry`).
+//
+// THE SECOND ROW. Leading the unverified out of absorption made each one its OWN ledger row BESIDE
+// the prior it matches, so a site that stays unverified round after round gains a row per round —
+// and the previous round's unverified row becomes the "still-live prior" the next mark points at.
+// `ledgerDupOfUnverifiedPrior` marks the findings whose row the caller may drop, and the host's tier
+// is what decides: an UNVERIFIED host is equally unchecked, gates nothing, and stays in the ledger
+// as long as the site does. A JUDGED host is not eligible — it can RESOLVE next round and leave the
+// ledger, and a dropped row against it would lose the site silently.
+//
+// AND THE DROPPED ROW IS NOT A DROPPED FINDING. The carrier key is file+ruleId, which is coarser
+// than a SITE: a genuinely distinct defect on another line of the same file under the same rule
+// matches the same host, and dropping its row with nothing written anywhere would lose it outright —
+// neither the line, nor the title, nor the rationale would reach the next ledger. That is the exact
+// loss class partitionAbsorbed's comment describes for a retired host. So a collapse writes the site
+// onto the host, as absorption does, through the SAME bounded clause (`absorbInto`) — returned as
+// `updates` for the caller to apply, never mutated here.
+//
+// AND THE BOUND IS GLOBAL, WHICH IS THE HONEST LIMIT OF THAT SENTENCE. `noteAbsorbed` names at most
+// ABSORBED_MAX (3) sites on a host, for all rounds together, and trades every later one for the
+// overflow counter. So the fourth and further collapsed sites at one file+rule reach the next ledger
+// as a COUNT, not as a line and a title — the loss class above is closed for the first three and
+// softened, not closed, past them. It is softened rather than open because the site is still in the
+// round's report, the counter still says a further N defects landed here, and the lenses re-raise
+// the site next round. Raising the cap is not free: this clause is re-interpolated into every
+// subsequent prompt (see ABSORBED_MAX).
+//
+// WHY THAT IS NOT THE OBLIGATION ABSORPTION WAS REFUSED. Absorption's clause is dangerous because
+// the host is JUDGED: absorbedPromptBlock hands it to the next adjudicator as "resolved requires
+// every absorbed report to be gone too", so an unchecked report would hold a judged prior open. An
+// UNVERIFIED host is never adjudicated at all — the caller routes a prior carrying the tier straight
+// into the next round's unverified track instead of the adjudicate track — so no prompt block is
+// ever built from it and there is no verdict for the clause to lean on. The clause is a RECORD on a
+// row that is being carried anyway, which is the middle the asymmetry leaves open.
+//
+// THE CARRIER IS CHOSEN BY TIER HERE, NOT BY LIST ORDER. findCarrier is a `.find` over a key
+// (file+ruleId) that is deliberately coarser than a site, so one site can hold BOTH a judged live
+// prior and a carried unverified one. Taking whichever the caller happened to list first made the
+// collapse above depend on that order: with the judged prior first, no row was collapsed and the
+// site gained a second unchecked ledger row every round — the accretion this tier exists to end.
+// So the unverified hosts are tried FIRST, as their own carrier set, and the full list is only the
+// fallback. That is not the same as reordering the caller's array: reordering would also make
+// ABSORPTION prefer an unverified host, and a collapse onto a JUDGED host stays forbidden either
+// way (see `ledgerDupOfUnverifiedPrior` above) — a judged host can resolve and leave the ledger,
+// taking the collapsed site with it. Retired unverified priors are excluded from the preferred set
+// for the same reason they are no host at all: they do not reach the next ledger, and letting one
+// win the preference would leave the finding neither collapsed nor even marked.
+//
+// Pure: returns new finding objects and an `updates` map; neither the findings nor the hosts are mutated.
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
+  // A retired prior is no host here, so it is removed from the search rather than tested after it:
+  // left in, it SHADOWS a live host at the same file+ruleId (`.find` takes the earliest) and the
+  // finding ends up neither collapsed nor even marked, which is order-dependence of the same kind.
+  // This is unlike partitionAbsorbed, where landing on a retired host is a reported outcome
+  // (keptAtRetired); here there is nothing to report — the finding is kept either way.
+  const hosts = (livePriors || []).filter(h => !isRetired(h))
+  const unverifiedHosts = hosts.filter(h => String(h?.tier ?? '') === 'unverified')
   let marked = 0
+  let collapsed = 0
+  const updates = new Map()
   const kept = (findings || []).map(f => {
-    const host = findCarrier(f, livePriors, fallbackMatch)
-    if (!host || isRetired(host)) return f
+    const host = findCarrier(f, unverifiedHosts, fallbackMatch) || findCarrier(f, hosts, fallbackMatch)
+    if (!host) return f
+    const dup = String(host.tier ?? '') === 'unverified' ? { ledgerDupOfUnverifiedPrior: true } : {}
+    if (dup.ledgerDupOfUnverifiedPrior) {
+      collapsed++
+      updates.set(host, absorbInto(updates.has(host) ? updates.get(host) : host.why, f))
+    }
     const why = String(f.why ?? '')
-    if (why.includes(TRACKED_MARK)) return f
+    if (why.includes(TRACKED_MARK)) return { ...f, ...dup }
     marked++
-    return { ...f, why: why + TRACKED_MARK }
+    return { ...f, ...dup, why: why + TRACKED_MARK }
   })
-  return { kept, marked }
+  return { kept, marked, collapsed, updates }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -1299,7 +1550,7 @@ function isCommitish(s) {
   return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(v)
 }
 
-// >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity
+// >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity PRIOR_SUMMARY_MAX_CHARS PRIOR_SUMMARY_TITLE_MAX priorFoundSummary
 // Canonicalize a ledger severity ONCE at the prior-round load boundary. LEDGER_ITEM.severity has no
 // enum, so a drifted `critical`/`CRITICAL` reaches the load: the case-insensitive gates (isHighSeverity)
 // still fire on it, but every VERDICT/COUNT function (countBySeverity, reviewVerdict/finalVerdict/
@@ -1310,6 +1561,79 @@ function isCommitish(s) {
 const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
 
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
+
+// ---- The ALREADY-FOUND block of a lens prompt ----
+//
+// WHY THIS IS BOUNDED. The lens prompt was one line per pooled finding, unbounded. Measured with
+// `runEngine` over a scripted large Rust run (132 pooled findings, 14 lenses — the roster AS IT
+// WAS MEASURED, before `ownership` retired and three lenses moved behind the optional pass; the
+// test's fixture names today's, and the assertions are RATIOS, not these constants): round 1 lens prompts
+// averaged 3672 chars — the documented size — while ROUND 2 averaged 17069, and the whole 4.6x was
+// this block. The cost is not the one-time prompt: a lens agent in a long loop re-reads its entire
+// context on every tick, so a 13K-char block bought once is paid for on every tick of every lens of
+// every later round. On the measured 179-agent run the lens agents read 128.7M cached tokens against
+// 0.47M of output; the engine is not generating, it is re-reading.
+//
+// WHAT THIS CANNOT LOSE, and why. The block is not evidence — it is a de-duplication HINT ("do not
+// repeat these; look for what they MISSED"). Nothing downstream depends on a lens having seen it:
+// the pool's own `seen` set drops exact repeats, a dedup agent groups same-defect findings before
+// verification, and prior findings are adjudicated on their own track. So an entry that falls off
+// this list can cost a lens some wasted effort on a duplicate; it cannot delete a finding.
+// The ordering is what makes that cheap: severity first, so the list LEADS with the worst tiers and
+// whatever falls off is the cheapest thing still on it. What it does NOT do is keep the whole high
+// tier, and an earlier version of this comment claimed it did — false on the very run it cited.
+// EXECUTED against this function on the measured run's shape (215 findings: 10 Critical, 40 High,
+// 47 Medium, 118 Low/Info, real title and path lengths): 28 rows survive and 187 are withheld —
+// 10 Critical and 18 High listed, 22 High and all 47 Medium withheld, output 3197 chars. At ~105
+// chars a row a 3000-char cap holds roughly 28 rows, so the cap sits BELOW the high tier on any pool
+// where Critical and High together pass about thirty; a pool of 60 Criticals is cut to 28 the same
+// way. So the honest statement is: severity decides the ORDER, the character cap decides HOW MANY,
+// and beyond ~28 rows entries are withheld regardless of tier. That is acceptable only because of
+// the paragraph above — nothing downstream depends on a lens having seen an entry; it is not
+// acceptable as "the high tier is safe", and it must not be written that way again.
+// A per-tier budget (Critical/High uncapped, Low/Info under a cap) was considered and REJECTED: a
+// full non-Low tier on that run is ~97 rows ≈ 10K chars, which is the unboundedness this replaces,
+// so it would need a high-tier cap anyway and would only move the number at which the same cut
+// happens. Keeping the cap and narrowing the claim is the smaller lie-free change.
+// KEEP THE SIZE IN PROPORTION. ~225K chars saved ≈ 56K tokens, re-read over ~40 ticks ≈ 2.3M tokens
+// against the 128.7M the lens agents actually read — about 1.8%. Real, and no larger than that;
+// nothing here should be read as a fix for the re-reading cost.
+//
+// AND IT SAYS SO. A silent cut would read to the model as "there were only N already-found" — the
+// same failure the rollup cap avoids by stating its count. The overflow line names how many are
+// withheld, so a partial list is visible as partial.
+const PRIOR_SUMMARY_MAX_CHARS = 3000
+
+const PRIOR_SUMMARY_TITLE_MAX = 120
+
+function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax = PRIOR_SUMMARY_TITLE_MAX } = {}) {
+  const items = Array.isArray(pool) ? pool : []
+  if (!items.length) return 'none yet'
+  // Local, not a module const: this function is pasted into workflows/review.js by the craft-inline
+  // gate, which copies only the symbols its fence header names — a helper const outside the body
+  // would arrive there undefined.
+  const rank = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
+  // Model-authored titles land in a prompt here: a newline in one would forge extra ALREADY-FOUND
+  // rows, so flatten before clamping (same reason flattenField exists on the verify track).
+  const line = f => `${String(f?.file ?? '').replace(/[\r\n]+/g, ' ').trim() || '?'}:${f?.line || 0} ${String(f?.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, titleMax)}`.trimEnd()
+  const ordered = items
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => ((rank[canonicalSeverity(a.f?.severity)] ?? 9) - (rank[canonicalSeverity(b.f?.severity)] ?? 9)) || (a.i - b.i))
+    .map(({ f }) => line(f))
+  const kept = []
+  let used = 0
+  for (const l of ordered) {
+    // Always keep the first line: a cap smaller than one entry must still say something concrete.
+    if (kept.length && used + l.length + 1 > maxChars) break
+    kept.push(l)
+    used += l.length + 1
+  }
+  const omitted = ordered.length - kept.length
+  if (omitted > 0) {
+    kept.push(`… and ${omitted} more already-found finding(s), lowest severity first, withheld to keep this prompt small. This list is PARTIAL: anything you re-surface is de-duplicated downstream, so do not spend effort guessing what is missing from it.`)
+  }
+  return kept.join('\n')
+}
 // <<< craft-inline
 
 
@@ -1563,7 +1887,7 @@ const ragentQuietly = quietly(ragent)
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reportText}`
+  return `${telemetryLostSection(telemetryLost)}${reportText}${optionalSection()}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -1833,6 +2157,87 @@ The script owns naming, sequencing and every computed field. Copy PAYLOAD verbat
 
 PAYLOAD:
 ${JSON.stringify(payload, null, 2)}`
+}
+// <<< craft-inline
+
+// The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
+// shard cutter is fenced in from lib/ledger-shards.mjs, where it is linted and unit-tested.
+// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS payloadBytes shardLedger
+// At most this many bytes of JSON per shard. Two ceilings bound it from above and one need from
+// below. Above: `logRunDispatch` treats 24KB as the point where a payload stops being safe for the
+// cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
+// multiple below the first number, not a fraction of the second. Below: a single entry can reach
+// ~1KB (`why` alone is capped at 500 characters), and a shard that fits only two or three entries
+// turns a 170-entry ledger into 60 agent calls. 14KB sits between: ~15-20 entries per shard once
+// the measure counts the prompt form (fewer than the compact measure suggested), ~6-12
+// calls for the largest ledger measured, and every call an order of magnitude under the size at
+// which the copy has ever been observed to go wrong.
+const LEDGER_SHARD_MAX_BYTES = 14336
+
+// The phase-name prefix; each shard's phase is `ledger-01`, `ledger-02`, … so `writeCheckpoint`'s
+// own sequence numbering and `readCheckpoints`'s lexical sort both keep them in order.
+const LEDGER_SHARD_PHASE = 'ledger'
+
+// A hard cap on the number of agent calls this device is allowed to cost. A ledger past this bound
+// is carried up to the bound and the overflow is DROPPED — but `total` still declares the full
+// count, so the drop arrives at the next round as a truncated ledger (loud), never as a short one
+// (silent). Chosen so the bound cannot bite in practice (20 × 14KB ≈ 280KB, well past the largest
+// ledger ever measured) while still existing: unbounded, a pathological round would spend its whole
+// budget on bookkeeping.
+const LEDGER_SHARD_MAX_SHARDS = 20
+
+// Cut a ledger into checkpoint payload fragments. Returns [] for an empty ledger — there is nothing
+// to persist and an empty shard would claim a round had no findings.
+//
+// An entry larger than `max` on its own gets a shard to itself rather than being split or dropped:
+// splitting an entry produces two half-findings that normalize into two plausible-looking wrong
+// ones, and dropping it loses a finding to save bytes.
+// MEASURE WHAT IS ACTUALLY COPIED, not the compact form. The checkpoint payload reaches the agent
+// as `JSON.stringify(payload, null, 2)` (lib/run-logging.mjs), so an entry sitting in `ledgerItems`
+// is pretty-printed at depth two: every one of its own lines gains four spaces. Compact bytes
+// therefore understate the real payload by 1.2x on long `why` fields and up to 1.7x on short
+// entries carrying a `sources` array — a nested array under pretty-print spreads one line per
+// element. Three independent measurements agree on the understatement and DISAGREE on whether any
+// shape crosses the 24KB line at which the write path stops trusting the cheap model: sweeps put
+// short entries with three sources at 24859B (over it) and at 22426B (under it, ratio 1.57), and a
+// cold read reported 14265B compact becoming 17314B. So the ratio is established and the crossing
+// is fixture-dependent — no run has been observed crossing it. The bound itself does not move; it
+// never had to. The measure was simply not measuring the thing that is paid for.
+function payloadBytes(item) {
+  const pretty = JSON.stringify(item, null, 2)
+  if (typeof pretty !== 'string') return 2
+  // +4 per line for the two levels of nesting, +2 for the separating comma and newline.
+  return pretty.length + pretty.split('\n').length * 4 + 2
+}
+
+function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_SHARD_MAX_SHARDS } = {}) {
+  const items = Array.isArray(ledger) ? ledger : []
+  if (!items.length) return []
+  const groups = []
+  let bytes = 0
+  for (const item of items) {
+    const size = payloadBytes(item)
+    if (!groups.length || (groups[groups.length - 1].length && bytes + size > max)) {
+      if (groups.length >= maxShards) break          // the overflow is declared below, not hidden
+      groups.push([])
+      bytes = 0
+    }
+    groups[groups.length - 1].push(item)
+    bytes += size
+  }
+  return groups.map((group, i) => ({
+    // One key, one object: a checkpoint payload is merged into the record by `finalizeRun`, so a
+    // bare `ledger` key here would collide with the record's own field.
+    ledgerShard: {
+      index: i + 1,
+      of: groups.length,
+      // The ROUND's entry count, not this shard's and not the count actually shipped. It is the
+      // authoritative number the reader compares against, and the only reason a dropped overflow or
+      // a missing shard is detectable at all.
+      total: items.length,
+    },
+    ledgerItems: group,
+  }))
 }
 // <<< craft-inline
 
@@ -2106,7 +2511,7 @@ if (!freshArg && !viaArg) {
 Run exactly this:
 
 \`\`\`
-${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} --project "$PWD"
+${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} \${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} --project "$PWD"
 \`\`\`
 
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, reason:"loader-did-not-run"}.`,
@@ -2160,7 +2565,7 @@ if (priorLedgerDegraded) {
 // BEFORE making any fix — so it can equal the current HEAD and a delta scan would review nothing.
 const priorRoundJournalSourced = Boolean(priorRound?.journalSourced)
 if (priorRoundJournalSourced) {
-  log(`⚠️ Re-review round sourced from a stalled run's journal: prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stalled, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
 }
 const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
@@ -2637,11 +3042,9 @@ function votesAgree(a, b) {
   if (!isVerdictShaped(a) || !isVerdictShaped(b)) return false
   return VOTE_AXES.every(k => a[k] === b[k])
 }
-// Shared vote→tier decision, so the batched path cannot drift from the individual one.
-function tierFromVotes(f, votes) {
-  const live = votes.filter(Boolean)
-  // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
-  const v = live.filter(isVerdictShaped)
+// The majority arithmetic itself, over the SHAPED votes `v` (`live` is only needed to tell an
+// all-dead panel from an all-off-schema one). `tierFromVotes` below is the entry point.
+function decideTier(f, live, v) {
   // EVERY vote died. This is not a judgement and must never be rendered as one: `suspected` is
   // defined in the report as "a verifier looked and the claim did not stand up", so handing it to a
   // finding nothing looked at asserts an inspection that never happened — and, worse, keeps the
@@ -2673,6 +3076,47 @@ function tierFromVotes(f, votes) {
   }
   return { ...f, tier }
 }
+// Shared vote→tier decision, so the batched path cannot drift from the individual one.
+//
+// DISCARDING A VOTE IS ITSELF A DEGRADATION, AND IT MUST BE VISIBLE. Dropping an off-schema vote
+// before the arithmetic is strictly better than reading its absent booleans as `false` (that deleted
+// the finding outright — see the NINTH DOOR above), but as long as ONE shaped vote survived the
+// discard was recorded nowhere: not on the finding, not in the counters, not in `notRun`. The shape
+// that makes it matter is the opening pair: a Critical opens with one cheap cull plus the
+// authoritative vote, `votesAgree` refuses an off-schema partner, and the escalation then buys
+// `n1 - 1` further culls — which is ZERO at `verifyVotes: 1`. So the authoritative voice answering
+// off-schema leaves the Critical decided by a single cheap vote, rendered exactly like a unanimous
+// panel. The thinning is annotated on the finding (what a reader of the verdict sees) and counted in
+// the run record as `verification.thinned` (what ranks across runs — a panel that keeps half-dying
+// is fragility, and fragility is only legible as a repeat).
+function tierFromVotes(f, votes) {
+  const live = votes.filter(Boolean)
+  // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
+  const v = live.filter(isVerdictShaped)
+  const judged = decideTier(f, live, v)
+  const discarded = live.length - v.length
+  if (!discarded) return judged
+  // THE MAXIMUM THINNING IS THE ONE THE COUNTER MUST NOT MISS. A panel whose EVERY returned vote was
+  // off-schema is already routed to `unverified` by decideTier, whose `why` says exactly that — so
+  // the clause below would be false twice over (no tier "stands on" anything, and the surviving
+  // count is zero). But the discard is still the largest one there is, and dropping the flag here
+  // made the counter read 0 for it: the flag is set, the sentence is not.
+  if (judged.tier === 'unverified') return { ...judged, votesDiscarded: discarded }
+  // ARITHMETIC, NOT A WORD FOR IT. The earlier phrasing said "a minority of the panel that answered"
+  // unconditionally, which is false whenever the survivors are the larger half — at `verifyVotes: 3`
+  // with one discard the verdict stands on 2 of 3. Only the share is named, and it is computed.
+  const share = v.length * 2 < live.length ? 'a minority of' : v.length * 2 === live.length ? 'exactly half of' : 'most of'
+  return {
+    ...judged,
+    votesDiscarded: discarded,
+    why: `${judged.why} (PANEL THINNED: ${discarded} of ${live.length} returned votes answered off-schema and were discarded before the arithmetic — this ${judged.tier} stands on ${v.length} of ${live.length} returned votes, ${share} the panel that answered)`,
+  }
+}
+// The round-local half of the clause above, for the ledger door. Like TRACKED_MARK, "this verdict
+// stands on N of M votes" is a statement about the panel THIS round convened; carried into round N+1
+// verbatim it describes a panel that never sat. Deliberately paren-free in its body so this stays a
+// one-shot match.
+const THINNED_CLAUSE = / \(PANEL THINNED: [^)]*\)/g
 const BATCH_VERDICT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -2871,7 +3315,22 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     unverified: unverified.concat(deaths),
     // DERIVED from the tier, not pushed by whichever branch remembered to. Grouped by file and
     // ranked-friendly: one stable string per (profile, file), no error text, no run-specific path.
-    notRun: [...new Set(deaths.map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`))],
+    // THE ONE THINNING THAT LEAVES NO TRACE. A refuted finding is deleted from the run — out of
+    // every tier and out of the report — so when its panel was thinned, the partial evidence it was
+    // deleted on is visible nowhere: no finding to carry the clause, no mark, and a verdict that
+    // reads clean. `notRun` is the existing mechanism for "this ran badly; re-run it", and it drives
+    // the INCOMPLETE marker. DERIVED from the tier plus the flag tierFromVotes sets, like the
+    // deaths above, and grouped by (profile, file) so the exact-string ranking in
+    // lib/analyze-runs.mjs sees a repeat rather than a run-unique row.
+    notRun: [...new Set([
+      // A DEATH AND AN OFF-SCHEMA ANSWER ARE DIFFERENT FAILURES, and this list is ranked by exact
+      // string across runs — so one sentence for both makes "the panel returns garbage" rank as "the
+      // verifier dies", and the repair is then looked for in the wrong place. Split on the flag
+      // tierFromVotes sets, not on the wording of any `why`.
+      ...deaths.filter(f => !(f.votesDiscarded > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
+      ...deaths.filter(f => f.votesDiscarded > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
+      ...refuted.filter(f => (f.votesDiscarded || 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence`),
+    ])],
     dropped: refuted.length,
     refuted,
   }
@@ -2910,10 +3369,18 @@ async function reviewProfile(profile) {
   // bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
   // A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
   // signal. The scout may still pick it deliberately; only the floors may not.
-  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l))
+  // `admitted` is the ONE gate the optional set passes through, and it must sit under EVERY path
+  // into the plan — the scout's own picks, the blanket fills, and therefore the security floor and
+  // the empty-lens fallback that call `blanket()`. There is a fourth path, far later and easy to
+  // miss: the completeness critic on the synthesis phase, which composes from the lenses NOT
+  // selected — by construction the whole optional set. It went ungated once and bought two of the
+  // three on an ordinary large diff. It calls `admitted` too now; putting the gate anywhere but
+  // under each of these leaves a door, because every one of them names lenses on its own signals.
+  const admitted = l => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
+  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l) && admitted(l))
   const plan = {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : blanket()),
+    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l) && admitted(l)) : blanket()),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -2951,6 +3418,16 @@ async function reviewProfile(profile) {
   // readers (rolling deploy, already-stored rows) invisibly to the code-intrinsic lenses. Security-sensitive
   // diffs already get it via the all-lenses floor above (compat ∈ profile.lenses).
   if (plan.sizeBucket === 'large' && profile.lenses.includes('compat') && !plan.lenses.includes('compat')) plan.lenses.push('compat')
+  // An explicit request ADDS the lens; it does not merely permit it. A caller who writes
+  // `optional=performance` is asking for the performance pass to RUN, not for the scout to be
+  // allowed to pick it — and on a small diff with no security floor nothing else would ever put it
+  // in the plan, so "permit" would have meant "nothing happens". Enforced in code, for the same
+  // measured reason as the alwaysLenses loop above.
+  for (const l of optionalRequested) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
+  // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. What
+  // ran is recorded at dispatch (`runLens`) and subtracted by `optionalTally()`, because the plan is
+  // not final at this point — see the tally's definition.
+  for (const l of profile.lenses) if (OPTIONAL_LENSES.includes(l)) optionalInScope.add(l)
   log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
@@ -2963,6 +3440,9 @@ async function reviewProfile(profile) {
   const lensFailures = new Map()
   let reviewerAgentMissing = false
   async function runLens(lens, prompt, phaseName, labelSuffix) {
+    // The single dispatch point for every lens on every path. Recording here — not at plan time — is
+    // what makes the report and the run record physically unable to disagree with what happened.
+    if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
     const runGeneric = async () => {
       try {
@@ -3009,6 +3489,12 @@ async function reviewProfile(profile) {
     // to 10min of wall clock (two dispatches) rather than 7. Bounded, and cheaper than the gate
     // rediscovering its own environment on every run.
     { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
+  // The declared-probe audit. Named in the log and carried into the record so a breach of the
+  // "ask each source once" rule is a fact of the run rather than a matter of the prompt's manners.
+  const probeViolations = auditPreflightProbes(preflight)
+  if (probeViolations.length) {
+    log(`⚠️ [${profile.id}] PREFLIGHT PROBE BUDGET BREACHED (${probeViolations.length}): ${probeViolations.join(' · ')}`)
+  }
   if (preflight) {
     log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
       + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
@@ -3054,18 +3540,23 @@ async function reviewProfile(profile) {
   // checkpoint↔record comparison spelled the field differently: `finalizeRun` folded 0 phases and
   // left the `.partial` directory behind, and `recover` then read a ref name as a commit and promoted
   // the leftover as a separate partial run. Two keys, each meaning one thing.
+  //
+  // `round` rides on every checkpoint for one reason: `recover` promotes an unfinalized directory
+  // into a real record and DELETES the directory, and a record with no round is indexed as round 0 —
+  // so one repair permanently reset the chain to a first review. The round number is knowable only
+  // here, by the run itself; nothing downstream can reconstruct it.
   await checkpoint(`${profile.id}-plan`, {
-    language: profile.id, branch, head, baseRef,
+    language: profile.id, branch, head, baseRef, round: thisRound,
     scout: { size: plan.sizeBucket, lenses: plan.lenses, maxRounds: plan.maxRounds, verifyVotes: plan.verifyVotes, securitySensitive: plan.securitySensitive },
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
     // that never answered — a bare `null` collapsed both into the same, more permissive, reading.
     preflight: preflight
-      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes }
+      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes, probeViolations }
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -3095,7 +3586,7 @@ async function reviewProfile(profile) {
   const lensRounds = []
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
-    const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
+    const priorSummary = priorFoundSummary(pool)
     const results = (await parallel(plan.lenses.map(lens => () =>
       runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` r${round}`),
     ))).filter(Boolean)
@@ -3114,6 +3605,18 @@ async function reviewProfile(profile) {
     // diff, but whether round 2 earns that is unknowable after the fact: the gate's seed findings
     // make the pool non-empty from round 1, so a transcript cannot be split by round. Record it
     // rather than guess — a later `maxRounds` cut should be argued from these numbers.
+    // ONE LINK THE "a finding cannot be lost" CHAIN DID NOT HAVE, recorded here because this is where
+    // a reader looks for it. `if (!fresh.length) dry = true` below ends the search, and the
+    // ALREADY-FOUND cap (priorFoundSummary) makes a withheld entry MORE likely to be re-surfaced:
+    // `seen` drops it as a duplicate, `fresh` comes back empty, the round reads as dry and the loop
+    // stops. No finding is lost — the pool keeps every entry and priors are adjudicated on their own
+    // track — but the SEARCH can end a round early, and `newFindings` here (the very number a later
+    // `maxRounds` cut would be argued from) is biased downward by the same mechanism.
+    // Deliberately NOT fixed: a re-surfaced duplicate is indistinguishable from a genuinely dry round
+    // at this point, so "dry unless something new that is not a known duplicate" would mean splitting
+    // the `seen` key set by provenance and paying an extra full round of lens cost — against a prompt
+    // saving that is about 1.8% of what the lens agents read. So do not read a dry round as proof the
+    // diff is exhausted, and do not argue a round cut from `newFindings` alone.
     lensRounds.push({ round, agents: plan.lenses.length, returned: results.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     if (!fresh.length) dry = true
@@ -3127,7 +3630,7 @@ async function reviewProfile(profile) {
   let missing = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
   for (let sweep = 1; sweep <= 2 && missing.length; sweep++) {
     log(`[${profile.id}] Resurrection sweep ${sweep}: retrying ${missing.length} lens(es) that never returned (${missing.join(', ')})`)
-    const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
+    const priorSummary = priorFoundSummary(pool)
     const results = (await parallel(missing.map(lens => () =>
       runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`),
     ))).filter(Boolean)
@@ -3160,13 +3663,13 @@ async function reviewProfile(profile) {
   // carrying identity. The rejoin search therefore saw `{project, '', ''}` on exactly the paths where
   // it fires, and matched on the repository alone: any concurrent review of the same repo qualified.
   await checkpoint(`${profile.id}-lenses`, {
-    language: profile.id, branch, head, baseRef, ranLenses, droppedLenses, lensRounds,
+    language: profile.id, branch, head, baseRef, round: thisRound, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
     notRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '', probeViolations }
   }
 
   // ---- Verify ----
@@ -3178,7 +3681,7 @@ async function reviewProfile(profile) {
   notRun.push(...verifyNotRun)
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
-    language: profile.id, branch, head, baseRef,
+    language: profile.id, branch, head, baseRef, round: thisRound,
     verdict: finalVerdict(confirmed),
     findings: summarizeFindings(confirmed),
     // `candidates` counts what verification EXAMINED, so the unverified tier is reported beside it
@@ -3200,7 +3703,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
       { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
     )
     criticNotes = critic?.notes ?? ''
-    const followups = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    // `admitted()` gates HERE too, and this is the fourth road into the plan, not a redundant check:
+    // `candidates` is by construction the lenses NOT selected, so the whole optional set is in it.
+    // The critic is the same model whose hands this project deliberately took the spend out of
+    // ("the scout classifies, the code budgets"); letting it re-order lenses on the synthesis phase
+    // would return that spend through a side door and undo the boundary. The signal is not thrown
+    // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
+    const named = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
+    const refusedOptional = named.filter(l => !admitted(l))
+    if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
+    const followups = named.filter(l => admitted(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
@@ -3238,7 +3751,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes, probeViolations }
 }
 
 // ================= Run each active profile, then merge =================
@@ -3283,6 +3796,13 @@ function reviewRecord(extra) {
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
     gate: { status: mergedGateStatus, provenance: mergedProvenance, carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)) },
+    // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
+    // later — in analyze-runs, in a comparison between two runs — as a full one.
+    optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
+    // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
+    // not: the point of the audit is that the next drift back into CI archaeology shows up in the
+    // record of the run that did it, not in a re-measurement months later.
+    preflightProbeViolations: results.flatMap(r => (r.probeViolations || []).map(v => `[${r.profile.id}] ${v}`)),
     outputTokens: budget.spent(),
     ...extra,
   }
@@ -3344,6 +3864,10 @@ if (priorRound?.ledger?.length) {
       fix: f.fix || 'verify it first — nothing has checked this claim against the code',
       blastRadius: f.blastRadius || '',
       tier: 'unverified',
+      // Flagged so the tracking pass below can use these as HOSTS. They are not in `livePriors` —
+      // they were never adjudicated — so without the flag a fresh unverified re-discovery of the
+      // same site is neither marked nor collapsed, and the site gains a ledger row every round.
+      carriedUnverified: true,
       why: `${baseWhy(f.why)} (STILL NOT VERIFIED: carried from round ${priorRound.round}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
@@ -3473,12 +3997,18 @@ Return {status, currentLine, note, invariant, attack}.`,
 // and must survive.
 if (priorRound) {
   const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried, ...adjudicated.retired]
+  // A RETIRED host absorbs NOTHING and tracks nothing — hoisted because BOTH passes below need it.
+  const retired = new Set(adjudicated.retired)
+  // Priors carrying the unverified tier were never adjudicated, so they are absent from `livePriors`
+  // — they were carried straight into THIS round's `unverified` list instead. They are nonetheless
+  // still-live rows of the next ledger, and they are precisely the hosts that matter for a site that
+  // stays unchecked round after round, which is why the tracking pass takes them too.
+  const carriedUnverified = unverified.filter(f => f.carriedUnverified)
   if (livePriors.length) {
     // A RETIRED host absorbs NOTHING — it is not persisted, so a clause on it would leave the
     // absorbed report in no report and no ledger. partitionAbsorbed keeps those findings instead;
     // the reasoning (and why the granularity mismatch makes this the loss class the design set out
     // to close) is in lib/review-adjudicate.mjs.
-    const retired = new Set(adjudicated.retired)
     // ONE threaded accumulation across both tracks, not two independent ones: the tracks share
     // hosts (the carrier key is file+ruleId, orthogonal to the confirmed/suspected split), and two
     // independent partitions would each compute their clause from the same un-absorbed `host.why`,
@@ -3494,15 +4024,56 @@ if (priorRound) {
     for (const [host, why] of updates) host.why = why
     confirmed = runs[0].kept
     suspected = runs[1].kept
-    const tracked = markTrackedUnverified(unverified, livePriors, retired, matchesPrior)
-    unverified = tracked.kept
-    if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
+  }
+  // The tracking pass runs on its OWN guard, not inside the absorption one: a round whose only live
+  // prior carries the unverified tier has an EMPTY `livePriors` (nothing was adjudicated) and is
+  // exactly the round where a site accretes a second unchecked row. And that is only the EMPTY case:
+  // a site can hold a live judged prior AND a carried unverified one at the same file+rule, and the
+  // judged one comes first in this array. The collapse must not depend on that — markTrackedUnverified
+  // picks its host BY TIER, not by this order (see lib/review-adjudicate.mjs); the order here is only
+  // the fallback for a finding no unverified host tracks.
+  const trackingHosts = [...livePriors, ...carriedUnverified]
+  if (trackingHosts.length) {
+    const tracked = markTrackedUnverified(unverified.filter(f => !f.carriedUnverified), trackingHosts, retired, matchesPrior)
+    unverified = tracked.kept.concat(carriedUnverified)
+    // A COLLAPSED ROW IS NOT A DISCARDED FINDING. The carrier key is file+ruleId, coarser than a
+    // site, so the row dropped from the ledger can be a genuinely distinct defect on another line.
+    // Its site is written onto the host through the same bounded clause absorption uses; the reason
+    // this is not the obligation absorption was refused for is in lib/review-adjudicate.mjs.
+    // WHAT "BOUNDED" MEANS HERE, EXACTLY: the bound is ABSORBED_MAX and it is GLOBAL, not per round.
+    // At most three sites are ever NAMED on one host's `why`; a fourth and every later one — in this
+    // round or any later one — is traded for the overflow counter, so its line, title and rationale
+    // do not reach the next ledger. That is not a lost finding: it is in THIS round's report, the
+    // counter keeps "more than one defect sits here" true, and the lenses re-raise the site next
+    // round. It is a loss of detail, and the cap is deliberate (absorbInto's clause is re-interpolated
+    // into every later prompt) — but it is a cap, so do not read the clause as a per-site record.
+    // OPEN, AND DELIBERATELY NOT CLOSED HERE: an unverified row has no exit from the ledger, so its
+    // `why` still accretes across rounds through the per-round NOT_VERIFIED suffixes, which have no
+    // cap of their own. The growth is of one persistent field, and bounding it is its own work.
+    for (const [host, why] of tracked.updates) host.why = why
+    if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
+    if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
   }
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
+// Findings whose verdict was reached after at least one returned vote was DISCARDED as off-schema.
+// DERIVED from the flag tierFromVotes sets, not pushed from a branch — the same discipline `notRun`
+// is built with, and for the same reason. Read over `results` (what verification produced) rather
+// than the post-absorption lists, because this counts the panels, not what survived the report; the
+// REFUTED side is included deliberately — a finding deleted from the run on a thinned panel is the
+// worst case this counter exists to make visible.
+// The UNVERIFIED side is in the population for the same reason, and it is the largest class: a panel
+// whose EVERY returned vote answered off-schema is routed to the unverified tier, which is the
+// MAXIMUM discard there is. Reading only the judged tiers made the counter report 0 for exactly that
+// case, so the field was short by its biggest class and the cross-run ranking could not see the class
+// at all. The skipped Low/Info share that tier and carry no flag, so the filter excludes them by
+// construction.
+const thinned = results
+  .flatMap(r => [...r.confirmed, ...r.suspected, ...(r.refuted || []), ...(r.unverified || [])])
+  .filter(f => (f.votesDiscarded || 0) > 0).length
 // `scopeNotRun` leads: a scope the caller asked for and did not get is the first thing a reader of
 // the verdict needs, ahead of anything the run itself failed to finish.
 const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
@@ -3541,10 +4112,11 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
 // ================= Synthesize one merged report =================
 // ONE sentence, three readers: the first-pass template, the re-review template and the mechanical
 // fallback report. It was written twice before and the two copies already meant different things.
-// It names BOTH ways into the tier — a Low/Info nobody paid a verifier for, and a finding whose
-// verifier died — because a reader who is told only the first reason will read a dead verifier's
-// findings as cheap ones.
-const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
+// It names ALL THREE ways into the tier — a Low/Info nobody paid a verifier for, a finding whose
+// verifier died, and a panel whose every returned vote was off-schema — because a reader who is told
+// only the first reason will read a dead verifier's findings as cheap ones, and a panel that ANSWERED
+// unreadably did not die: calling it a death misdescribes the largest discard there is.
+const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
@@ -3562,7 +4134,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
 - ⚠️ Warning if Confirmed Medium only.
 - ✅ Approve if no Confirmed Critical/High/Medium.
-Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all — EITHER no verifier was spent (a Low/Info cannot move the verdict) OR the verifier that should have judged them died before returning one, so a Critical or High can carry this tier. They change nothing and must never be presented as confirmed, as checked, or as cheap.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
+Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all — EITHER no verifier was spent (a Low/Info cannot move the verdict) OR the verifier that should have judged them died before returning one OR every vote it did return was off-schema and unreadable, so a Critical or High can carry this tier. They change nothing and must never be presented as confirmed, as checked, or as cheap.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
 CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
 
@@ -3640,17 +4212,27 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
 // `resolved` and `retired` priors are intentionally dropped. Without this carry-forward the ledger
 // would hold only this round's delta, and a finding open across 3+ rounds — or a dismissed finding —
 // would silently vanish after one hop.
+// TRACKED_MARK IS STRIPPED HERE, AND ONLY HERE. "this site is already tracked by a still-live prior
+// finding" is a statement about THIS round, computed from this round's live priors. `why` is a
+// persisted ledger field, so appending it made the sentence travel into round N+1 verbatim — where
+// it became false the moment that prior resolved or retired, and nothing re-evaluated it. Stripping
+// at the ledger door keeps the mark in the report, where it is true, and out of the record, where
+// nothing can keep it true. Re-evaluating it instead was rejected: the mark is recomputed from
+// scratch every round anyway (markTrackedUnverified), so a carried copy can only ever be a stale
+// duplicate of a fresh computation.
 const toLedgerEntry = (f, disposition, tier) => ({
   fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
   severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
-  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: f.why || '',
+  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
   ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
 })
 const reviewLedger = isRereview
   ? [
     ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
     ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
-    ...unverified.map(f => toLedgerEntry(f, 'open', 'unverified')),
+    // An unverified finding whose carrier is ITSELF an unverified prior writes no second row: see
+    // `ledgerDupOfUnverifiedPrior` in lib/review-adjudicate.mjs for why that host and no other.
+    ...unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).map(f => toLedgerEntry(f, 'open', 'unverified')),
     ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
     ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
     // `adjudicated.retired` is deliberately absent, like `resolved`: a dismissed prior whose
@@ -3658,6 +4240,19 @@ const reviewLedger = isRereview
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
+// THE LEDGER IS PERSISTED BEFORE THE RECORD IS ATTEMPTED, in bounded shards, one small checkpoint
+// per shard (lib/ledger-shards.mjs carries the measurement and the reasoning). The final record is
+// written once, at the end, through a model copying the whole thing in one tool call — the step that
+// lost three consecutive runs, the last of them a logger that REFUSED a ~170-entry ledger outright
+// rather than risk truncating it. Checkpoints are the step that survived all three. So the ledger
+// goes down that path first: if `logRun` below is lost, the next round still reads this round's
+// findings out of `.partial` instead of starting over.
+//
+// Written HERE and not earlier because this is the first moment the ledger exists — it is the
+// carry-forward, so it needs the adjudication of the prior round that only just finished.
+for (const shard of shardLedger(reviewLedger)) {
+  await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
+}
 await logRun(reviewRecord({
   verdict: recordVerdict + (incompleteNotes.length ? ' (INCOMPLETE)' : ''),
   round: thisRound,
@@ -3675,7 +4270,7 @@ await logRun(reviewRecord({
     const ran = r.ranLenses ? r.ranLenses.includes(l) : true
     return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount, unverifiedCount }
   })),
-  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0, unverified: unverified.length },
+  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0, unverified: unverified.length, thinned },
   notRun,
 }))
 
