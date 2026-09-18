@@ -1565,7 +1565,9 @@ function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim()
 // ---- The ALREADY-FOUND block of a lens prompt ----
 //
 // WHY THIS IS BOUNDED. The lens prompt was one line per pooled finding, unbounded. Measured with
-// `runEngine` over a scripted large Rust run (132 pooled findings, 14 lenses): round 1 lens prompts
+// `runEngine` over a scripted large Rust run (132 pooled findings, 14 lenses — the roster AS IT
+// WAS MEASURED, before `ownership` retired and three lenses moved behind the optional pass; the
+// test's fixture names today's, and the assertions are RATIOS, not these constants): round 1 lens prompts
 // averaged 3672 chars — the documented size — while ROUND 2 averaged 17069, and the whole 4.6x was
 // this block. The cost is not the one-time prompt: a lens agent in a long loop re-reads its entire
 // context on every tick, so a 13K-char block bought once is paid for on every tick of every lens of
