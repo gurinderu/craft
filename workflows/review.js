@@ -1358,45 +1358,72 @@ const REPO_DIRECTIVE = repoArg
 // an agent stuck for hours, nothing finer.
 
 // ---- re-dispatch breaker (verification only) ----
-// >>> craft-inline lib/agent-retry.mjs DEATH_STREAK_TO_OPEN makeDeathBreaker
-// How many consecutive deaths make the next re-dispatch not worth its wall clock. Chosen to err
-// toward KEEPING the retry: two independent one-off failures in a row are plausible on a healthy
-// day, three are not — and the first two deaths of any outage still pay the double price, so the
-// breaker can never suppress a retry that a single stray null would have wanted. Nothing recorded
-// separates 2 from 3; 3 is the conservative side of that ignorance.
-const DEATH_STREAK_TO_OPEN = 3
+// >>> craft-inline lib/agent-retry.mjs DEATH_WINDOW_DISPATCHES DEATHS_IN_WINDOW_TO_OPEN positiveInt makeDeathBreaker
+// The window is six observed outcomes and the breaker opens at three deaths inside it. Chosen to err
+// toward KEEPING the retry: one or two deaths out of six are plausible on a healthy day (and the
+// first two deaths of any outage still pay the double price, so the breaker can never suppress a
+// retry that a single stray null would have wanted), while half of the recent dispatches returning
+// nothing is not a day on which a second ladder is worth its wall clock. Nothing recorded separates
+// 2 from 3; 3 is the conservative side of that ignorance.
+const DEATH_WINDOW_DISPATCHES = 6
 
-// A counter, shared across concurrently dispatched agents ON PURPOSE. The verification window keeps
-// ~24 agents in flight, so the deaths of an outage arrive interleaved — a per-agent view would see
-// one death each and never see the outage at all.
-function makeDeathBreaker(streakToOpen = DEATH_STREAK_TO_OPEN) {
-  const k = Math.max(1, Number(streakToOpen) || DEATH_STREAK_TO_OPEN)
-  let streak = 0
+const DEATHS_IN_WINDOW_TO_OPEN = 3
+
+function positiveInt(value, fallback) {
+  const n = Math.floor(Number(value))
+  return Number.isFinite(n) && n >= 1 ? n : fallback
+}
+
+// A counter, shared across the concurrently dispatched agents OF ONE verification pass on purpose.
+// The verification window keeps ~24 agents in flight, so the deaths of an outage arrive interleaved
+// — a per-agent view would see one death each and never see the outage at all. It is an INSTANCE,
+// not a module-level variable: a pass gets its own, so a window left half-full by one profile's
+// verification cannot decide anything for the next profile's, whose reachability it never observed.
+function makeDeathBreaker(opts = {}) {
+  const windowLen = positiveInt(opts.window, DEATH_WINDOW_DISPATCHES)
+  const toOpen = Math.min(windowLen, positiveInt(opts.toOpen, Math.min(windowLen, DEATHS_IN_WINDOW_TO_OPEN)))
+  // The last `windowLen` observed outcomes, oldest first; true = the dispatch returned nothing.
+  const recent = []
+  const observe = isDeath => {
+    recent.push(isDeath)
+    while (recent.length > windowLen) recent.shift()
+  }
+  const deaths = () => recent.reduce((n, isDeath) => n + (isDeath ? 1 : 0), 0)
   return {
     // Record a dead first attempt and answer whether re-dispatching it is still worth the clock.
-    // One call, not two, because the order matters: THIS death counts toward the streak, so the
-    // k-th consecutive death is the first one that does not buy a second ladder.
+    // One call, not two, because the order matters: THIS death counts toward the window, so the
+    // death that fills it is the first one that does not buy a second ladder.
     deathAllowsRedispatch() {
-      streak += 1
-      return streak < k
+      observe(true)
+      return deaths() < toOpen
     },
-    // Any live answer ends the outage as far as this counter is concerned.
+    // A live answer is evidence the API is reachable, and it enters the window as one observation —
+    // it does not erase the outage behind it. Recovery is what slides the deaths out.
     recordLive() {
-      streak = 0
+      observe(false)
     },
-    streak() {
-      return streak
+    // What the log needs to say WHICH dispatch this is, honestly: deaths out of outcomes observed.
+    deaths,
+    observed() {
+      return recent.length
     },
-    streakToOpen: k,
+    windowLen,
+    toOpen,
   }
 }
 // <<< craft-inline
-// Armed for the VERIFY phase and nothing else, which is a scoping decision, not an oversight.
-// Verification is the one phase dispatched through a bounded window (VERIFY_WINDOW_AGENTS), so it
-// is the one place where a slot held by a dead agent is a slot DENIED to a live one. A lens is one
-// of six to ten agents carrying a whole dimension of the review: there a suppressed re-dispatch
-// costs a dimension, and the window is not the scarce thing.
-const verifyBreaker = makeDeathBreaker()
+// ARMED BY THE CALLER, NOT BY A PHASE LABEL, and that distinction is the whole scope of this thing.
+// What makes a dead dispatch worth suppressing is that it is dispatched THROUGH THE BOUNDED
+// VERIFICATION WINDOW (VERIFY_WINDOW_AGENTS): there a slot held by a dead agent is a slot DENIED to
+// a live one. `opts.phase` cannot say that — it is the key into PHASE_DEADLINE_MS, a deadline
+// bucket, and three dispatches wear `phase: 'Verify'` while running nowhere near the window: the
+// single haiku dedup agent (before the pool), the `<profile>-verify` checkpoint (after it), and
+// anything later that reuses the bucket. Keying on the label leaked both ways — a dead one of those
+// ate a window slot's worth of evidence, and a live one wrote reachability the pool never observed.
+// So `verifyPool` creates a breaker and hands it to exactly the dispatches it windows; every other
+// dispatch, in any phase, passes none and is neither counted nor allowed to reset anything. A lens
+// is deliberately not given one: there a suppressed re-dispatch costs a whole dimension of the
+// review, and the window is not the scarce thing.
 
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
@@ -1407,8 +1434,9 @@ function deadlineMsFor(opts) {
   return PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS
 }
 async function ragent(prompt, opts = {}) {
-  // deadlineMs is ours, not agent()'s — strip it so it never reaches the harness as an unknown option.
-  const { deadlineMs: _deadlineMs, ...agentOpts } = opts
+  // deadlineMs and breaker are ours, not agent()'s — strip them so neither reaches the harness as an
+  // unknown option.
+  const { deadlineMs: _deadlineMs, breaker, ...agentOpts } = opts
   const ms = deadlineMsFor(opts)
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
@@ -1427,7 +1455,7 @@ async function ragent(prompt, opts = {}) {
     }
     if (res === DEADLINE_HIT) {
       // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
-      // told apart from a live agent taking too long, and feeding that into a streak would let slow
+      // told apart from a live agent taking too long, and feeding that into the window would let slow
       // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
       const mins = Math.round(ms / 60000)
       log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${attempt < AGENT_TRIES ? ' and re-dispatching once' : ' (giving up; treated as a dead agent)'}`)
@@ -1435,18 +1463,26 @@ async function ragent(prompt, opts = {}) {
       continue
     }
     if (res !== null && res !== undefined) {
-      // A live answer closes the breaker: an outage that ended must not keep suppressing the
-      // re-dispatch for the next isolated failure.
-      if (opts.phase === 'Verify') verifyBreaker.recordLive()
+      // A live answer enters the window as one observation of a reachable API: an outage that ended
+      // slides out of the window and the re-dispatch comes back for the next isolated failure.
+      if (breaker) breaker.recordLive()
       return res
     }
     if (attempt >= AGENT_TRIES) return null
     // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
     // its own retry ladder on an unreachable API, and the re-dispatch below spends a second ladder
-    // inside the same verification window slot. On a one-off failure that is worth the clock; from
-    // the third consecutive death onward it is not, and the streak is what says which this is.
-    if (opts.phase === 'Verify' && !verifyBreaker.deathAllowsRedispatch()) {
-      log(`⛔ agent '${opts.label || '?'}' returned no result and is the ${verifyBreaker.streak()}th verification death in a row — NOT re-dispatching (the re-dispatch is for a one-off failure, and this is not one); treated as a dead agent, reported as unverified exactly like every other death`)
+    // inside the same verification window slot. On a one-off failure that is worth the clock; once
+    // half of the recent windowed dispatches are coming back empty it is not, and the breaker's
+    // window is what says which this is.
+    //
+    // The log says exactly what the breaker counted and nothing more. Only a FIRST attempt reaches
+    // this line (the line above returns on the last one), so the window holds one observation per
+    // dispatched unit of work — never per harness call. A message phrased as "the Nth death in a
+    // row" claimed both a consecutive run the window does not track and a count of dispatches it
+    // does not hold: with one re-dispatch per death, an outage of N observed deaths has already
+    // cost up to 2N−(suppressed) harness dispatches.
+    if (breaker && !breaker.deathAllowsRedispatch()) {
+      log(`⛔ agent '${opts.label || '?'}' returned no result — ${breaker.deaths()} of the last ${breaker.observed()} windowed verification dispatches returned nothing, so this one is NOT re-dispatched (the re-dispatch is for a one-off failure, and at this rate it is not one); treated as a dead agent, reported as unverified exactly like every other death`)
       return null
     }
     log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
@@ -2688,6 +2724,10 @@ ${pfs}
 Return {verdicts: [...]} with ONE entry per finding, each carrying its \`index\` (0..${group.length - 1}). Every index must appear — omitting one silently deletes a finding from the review.`
 }
 async function verifyPool(items, plan, profile, gateProvenance) {
+  // One breaker per verification pass, handed only to the dispatches this function windows. Its
+  // lifetime is the pass: a profile's pass never inherits a window filled by another profile's,
+  // whose API reachability it did not observe and whose deaths it cannot re-spend.
+  const breaker = makeDeathBreaker()
   const route = { individual: [], batch: [], skip: [] }
   for (const f of items) route[verifyTier(f)].push(f)
 
@@ -2734,7 +2774,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // and an unbounded fan-out makes it fire on queue wait instead of on hanging. A window, not waves:
   // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
   const batchThunks = groups.map(group => () =>
-    ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
+    ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => {
         // THE DISCRIMINATOR. `ragent` answers `null` for a dead agent (API error, skip, or the
         // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
@@ -2774,11 +2814,11 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     const n1 = isHigh ? Math.max(1, plan.verifyVotes) : 1
     // Cull votes on the cheap model.
     const cull = i => () =>
-      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', schema: VERDICT_SCHEMA, model: CULL_MODEL })
+      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: CULL_MODEL })
     if (!isHigh) return parallel([cull(0)]).then(vs => tierFromVotes(f, vs))
     // A High/Critical always gets exactly one authoritative opus vote combined with the cull votes.
     const auth = () =>
-      ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', schema: VERDICT_SCHEMA, model: plan.lensModel })
+      ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: plan.lensModel })
     // Open with the DECIDING pair — one cheap cull plus the authoritative vote — and buy the remaining
     // cull votes only when those two disagree. tierFromVotes is a majority rule, so a unanimous pair
     // lands on exactly the tier a unanimous four would: the extra votes only ever change the outcome
