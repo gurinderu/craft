@@ -193,19 +193,31 @@ others (higher recall than one broad pass):
 |---|---|---|
 | safety | injection / secrets / unsafe / untrusted-input limits / build-profile-divergent arithmetic and guards | `rust-security`, `rust-unsafe` |
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
-| ownership | needless clone, `&str`/`&[T]`, lifetimes | `rust-ownership` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
-| performance | hot-loop allocation, N+1, needless owning | `rust-performance` |
-| api-idioms | typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` | `rust-idioms` |
 | invariants | domain lifecycle/scope rules, derived/effective quantities, eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate dropping a fail-closed dimension), and the **mirror walk** on two-sided contracts (below) | `rust-architecture`, `rust-fintech` |
 | compat | serialization / persistence / rolling-deploy compatibility — a changed serde/JSONB/wire representation vs data written by other code versions (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration) | `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
 | intent | does the change do what the brief/spec says? | `specs` |
 
-The workflow runs additional context-dependent lenses the scout selects — `api-boundary` (error→HTTP-status
-mapping, OpenAPI completeness), `reconciler` (controller idempotency), and `negative-space` (breakage the diff
-enables in unchanged code); `workflows/review.js` is the authoritative lens set.
+The workflow runs additional context-dependent lenses the scout selects — `reconciler` (controller
+idempotency) and `negative-space` (breakage the diff enables in unchanged code); `workflows/review.js`
+is the authoritative lens set.
+
+**The optional pass — off by default.** Three lenses are not part of the standard fan-out, because
+on the measured run they returned no High findings at all while producing the bulk of the
+Low/Info volume: `performance` (hot-loop allocation, N+1, needless owning — `rust-performance`),
+`api-idioms` (typed errors, giant fns, wildcard match, missing docs, `#![deny(warnings)]` —
+`rust-idioms`) and `api-boundary` (error→HTTP-status mapping, OpenAPI completeness — `rust-web`).
+Their findings are real and worth having, so they are not deleted; they are bought deliberately with
+`optional=true` (or a subset: `optional=performance,api-boundary`). Neither `strict` nor the
+security-sensitive floor turns the pass on or off — the request is the only switch. A run that
+skipped it says so in its report and on its run record: that is an absence of a result, never a
+clean one.
+
+The `ownership` lens was retired: across three independent runs it produced no High finding at all,
+against hundreds of suspicions verification would not confirm. The `OWN-*` rules stay in the rubric
+below — a standalone whole-diff reviewer still applies them, and other lenses still raise them.
 
 Each lens expands context (callers/impls/error paths via `rust-navigation`) and emits blast-radius
 for changed public symbols.
