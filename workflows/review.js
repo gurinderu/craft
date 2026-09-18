@@ -2855,7 +2855,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     // deaths above, and grouped by (profile, file) so the exact-string ranking in
     // lib/analyze-runs.mjs sees a repeat rather than a run-unique row.
     notRun: [...new Set([
-      ...deaths.map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
+      // A DEATH AND AN OFF-SCHEMA ANSWER ARE DIFFERENT FAILURES, and this list is ranked by exact
+      // string across runs — so one sentence for both makes "the panel returns garbage" rank as "the
+      // verifier dies", and the repair is then looked for in the wrong place. Split on the flag
+      // tierFromVotes sets, not on the wording of any `why`.
+      ...deaths.filter(f => !(f.votesDiscarded > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
+      ...deaths.filter(f => f.votesDiscarded > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
       ...refuted.filter(f => (f.votesDiscarded || 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence`),
     ])],
     dropped: refuted.length,
@@ -3504,6 +3509,10 @@ if (priorRound) {
     // site, so the row dropped from the ledger can be a genuinely distinct defect on another line.
     // Its site is written onto the host through the same bounded clause absorption uses; the reason
     // this is not the obligation absorption was refused for is in lib/review-adjudicate.mjs.
+    // OPEN, AND DELIBERATELY NOT CLOSED HERE: an unverified row has no exit from the ledger, so its
+    // `why` accretes across rounds — the collapse clause per collapsed site (bounded per round, by
+    // absorbInto) on top of the per-round NOT_VERIFIED suffixes (unbounded). No finding is lost; the
+    // growth is of one persistent field, and bounding it is its own work.
     for (const [host, why] of tracked.updates) host.why = why
     if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
@@ -3517,8 +3526,14 @@ const dropped = results.reduce((n, r) => n + r.dropped, 0)
 // than the post-absorption lists, because this counts the panels, not what survived the report; the
 // REFUTED side is included deliberately — a finding deleted from the run on a thinned panel is the
 // worst case this counter exists to make visible.
+// The UNVERIFIED side is in the population for the same reason, and it is the largest class: a panel
+// whose EVERY returned vote answered off-schema is routed to the unverified tier, which is the
+// MAXIMUM discard there is. Reading only the judged tiers made the counter report 0 for exactly that
+// case, so the field was short by its biggest class and the cross-run ranking could not see the class
+// at all. The skipped Low/Info share that tier and carry no flag, so the filter excludes them by
+// construction.
 const thinned = results
-  .flatMap(r => [...r.confirmed, ...r.suspected, ...(r.refuted || [])])
+  .flatMap(r => [...r.confirmed, ...r.suspected, ...(r.refuted || []), ...(r.unverified || [])])
   .filter(f => (f.votesDiscarded || 0) > 0).length
 // `scopeNotRun` leads: a scope the caller asked for and did not get is the first thing a reader of
 // the verdict needs, ahead of anything the run itself failed to finish.
