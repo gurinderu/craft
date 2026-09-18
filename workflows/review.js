@@ -1242,27 +1242,45 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
 // and the previous round's unverified row becomes the "still-live prior" the next mark points at.
 // `ledgerDupOfUnverifiedPrior` marks the findings whose row the caller may drop, and the host's tier
 // is what decides: an UNVERIFIED host is equally unchecked, gates nothing, and stays in the ledger
-// as long as the site does, so collapsing onto it loses nothing. A JUDGED host is not eligible — it
-// can RESOLVE next round and leave the ledger, and a dropped row against it would lose the site
-// silently. That is the same asymmetry absorption answers by writing onto the host's `why`, which is
-// exactly what an unverified finding may not do (it would then hold the host open).
+// as long as the site does. A JUDGED host is not eligible — it can RESOLVE next round and leave the
+// ledger, and a dropped row against it would lose the site silently.
 //
-// Pure: returns new finding objects; neither the findings nor the hosts are mutated.
+// AND THE DROPPED ROW IS NOT A DROPPED FINDING. The carrier key is file+ruleId, which is coarser
+// than a SITE: a genuinely distinct defect on another line of the same file under the same rule
+// matches the same host, and dropping its row with nothing written anywhere would lose it outright —
+// neither the line, nor the title, nor the rationale would reach the next ledger. That is the exact
+// loss class partitionAbsorbed's comment describes for a retired host. So a collapse writes the site
+// onto the host, as absorption does, through the SAME bounded clause (`absorbInto`) — returned as
+// `updates` for the caller to apply, never mutated here.
+//
+// WHY THAT IS NOT THE OBLIGATION ABSORPTION WAS REFUSED. Absorption's clause is dangerous because
+// the host is JUDGED: absorbedPromptBlock hands it to the next adjudicator as "resolved requires
+// every absorbed report to be gone too", so an unchecked report would hold a judged prior open. An
+// UNVERIFIED host is never adjudicated at all — the caller routes a prior carrying the tier straight
+// into the next round's unverified track instead of the adjudicate track — so no prompt block is
+// ever built from it and there is no verdict for the clause to lean on. The clause is a RECORD on a
+// row that is being carried anyway, which is the middle the asymmetry leaves open.
+//
+// Pure: returns new finding objects and an `updates` map; neither the findings nor the hosts are mutated.
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
   let marked = 0
   let collapsed = 0
+  const updates = new Map()
   const kept = (findings || []).map(f => {
     const host = findCarrier(f, livePriors, fallbackMatch)
     if (!host || isRetired(host)) return f
     const dup = String(host.tier ?? '') === 'unverified' ? { ledgerDupOfUnverifiedPrior: true } : {}
-    if (dup.ledgerDupOfUnverifiedPrior) collapsed++
+    if (dup.ledgerDupOfUnverifiedPrior) {
+      collapsed++
+      updates.set(host, absorbInto(updates.has(host) ? updates.get(host) : host.why, f))
+    }
     const why = String(f.why ?? '')
     if (why.includes(TRACKED_MARK)) return { ...f, ...dup }
     marked++
     return { ...f, ...dup, why: why + TRACKED_MARK }
   })
-  return { kept, marked, collapsed }
+  return { kept, marked, collapsed, updates }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -2613,15 +2631,28 @@ function tierFromVotes(f, votes) {
   const v = live.filter(isVerdictShaped)
   const judged = decideTier(f, live, v)
   const discarded = live.length - v.length
-  // An all-dead panel is already reported as unverified by its own route; annotating it as "thinned"
-  // on top would say a decision was made on a minority when no decision was made at all.
-  if (!discarded || judged.tier === 'unverified') return judged
+  if (!discarded) return judged
+  // THE MAXIMUM THINNING IS THE ONE THE COUNTER MUST NOT MISS. A panel whose EVERY returned vote was
+  // off-schema is already routed to `unverified` by decideTier, whose `why` says exactly that — so
+  // the clause below would be false twice over (no tier "stands on" anything, and the surviving
+  // count is zero). But the discard is still the largest one there is, and dropping the flag here
+  // made the counter read 0 for it: the flag is set, the sentence is not.
+  if (judged.tier === 'unverified') return { ...judged, votesDiscarded: discarded }
+  // ARITHMETIC, NOT A WORD FOR IT. The earlier phrasing said "a minority of the panel that answered"
+  // unconditionally, which is false whenever the survivors are the larger half — at `verifyVotes: 3`
+  // with one discard the verdict stands on 2 of 3. Only the share is named, and it is computed.
+  const share = v.length * 2 < live.length ? 'a minority of' : v.length * 2 === live.length ? 'exactly half of' : 'most of'
   return {
     ...judged,
     votesDiscarded: discarded,
-    why: `${judged.why} (PANEL THINNED: ${discarded} of ${live.length} returned vote(s) answered off-schema and were discarded before the arithmetic — this ${judged.tier} stands on ${v.length} surviving vote(s), a minority of the panel that answered)`,
+    why: `${judged.why} (PANEL THINNED: ${discarded} of ${live.length} returned votes answered off-schema and were discarded before the arithmetic — this ${judged.tier} stands on ${v.length} of ${live.length} returned votes, ${share} the panel that answered)`,
   }
 }
+// The round-local half of the clause above, for the ledger door. Like TRACKED_MARK, "this verdict
+// stands on N of M votes" is a statement about the panel THIS round convened; carried into round N+1
+// verbatim it describes a panel that never sat. Deliberately paren-free in its body so this stays a
+// one-shot match.
+const THINNED_CLAUSE = / \(PANEL THINNED: [^)]*\)/g
 const BATCH_VERDICT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
