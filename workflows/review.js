@@ -1636,13 +1636,14 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
   // logger receiving the literal string "" and treating it as a real (empty) session id.
   // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
-  // silent contract break. review.js finalizes with `{ dir: runDir, rejoin: checkpointFailed }`, so
+  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
   // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
   // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
-  // checkpoint. Two things depend on the flag arriving: `finalizeRun` falls back to the rejoin search
-  // when `--dir` is REFUSED (out of store), which is precisely when the run still has a real
-  // directory nobody can name; and the flag is the engine's own statement that one of its checkpoints
-  // failed. Neither can be reconstructed downstream from the directory alone.
+  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
+  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
+  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
+  // rejoin search outright in that case (see its `target` comment), because the single candidate a
+  // garbled sibling finds is its neighbour's LIVE directory.
   const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
@@ -1752,6 +1753,14 @@ const CHECKPOINT_SCHEMA = {
 }
 let runDir = ''
 let checkpointFailed = false
+let rejoinArmed = false
+// ARMED, not merely "something failed". `checkpointFailed` says a checkpoint died; this says the run
+// went on to ASK the logger to rejoin — `!runDir && checkpointFailed`, the only state in which a
+// directory can be adopted. Finalize used the coarser flag, so a run whose first checkpoint minted
+// its directory and whose third died declared an adoption that never happened: the CLI then dropped
+// the `ownDir` shortcut, read a mid-review branch move as "not this run's directory", and left the
+// run's own phases unfolded. Sticky, because an adoption is not undone by later checkpoints
+// succeeding — once a directory MIGHT be someone else's, it stays might-be for the finalize proof.
 async function checkpoint(phase, payloadIn, group) {
   // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
   // that name to rebuild a dead run's identity. A payload without them produced a real
@@ -1765,8 +1774,10 @@ async function checkpoint(phase, payloadIn, group) {
   // place as every other failed write: the report. Letting it propagate would abort the whole review
   // over a bookkeeping write, which is exactly what this whole path exists to prevent.
   const asked = runDir
+  const armRejoin = !runDir && checkpointFailed
+  if (armRejoin) rejoinArmed = true
   const res = await ragentQuietly(
-    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: !runDir && checkpointFailed }),
+    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: armRejoin }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   if (res?.runDir) {
@@ -1803,7 +1814,7 @@ async function logRun(record) {
   const res = await ragentQuietly(
     logRunPrompt({
       record, craftRoot: craftRootArg, repo: repoArg,
-      command: 'finalize', dir: runDir, rejoin: checkpointFailed,
+      command: 'finalize', dir: runDir, rejoin: rejoinArmed,
     }),
     logRunDispatch(record, { phase: 'Synthesize' }),
   )
