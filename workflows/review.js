@@ -133,6 +133,9 @@ let ambiguousPath = ''
 // person who reads the log. An INCOMPLETE marker is the honest rendering of "we reviewed something
 // else than you asked for", however green the findings are.
 let scopeNotRun = []
+// The reader-facing twin of `scopeNotRun`: the same refusal spelled with this run's own paths, for
+// the report. Kept apart because `notRun` is ranked by exact string (see the assignment below).
+let scopeDetail = ''
 // Containment decided on NORMALIZED SEGMENTS rather than on a raw string prefix. `repo=/r/` with
 // `path=/r/./crates/../crates/core` is the same request as `repo=/r` with `path=crates/core`, and a
 // prefix comparison reads it as "outside" — which silently WIDENS the review to the whole repository.
@@ -148,7 +151,7 @@ let scopeNotRun = []
 // The dropped scope, rendered into whichever report is returned — every early exit included, since
 // the drop happened before all of them. Appended to the synthesized report too rather than asked of
 // the synthesis model: what the review DID NOT cover is not something a prompt may forget.
-const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeNotRun.join('\n⚠️ ')}\n` : '')
+const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
 function pathSegments(p) {
   const segs = []
   for (const s of String(p).split(/[\\/]+/)) {
@@ -176,7 +179,13 @@ if (ABSOLUTE_PATH.test(pathArg)) {
   } else if (repoArg) {
     const msg = `the requested scope path=${pathArg} was DROPPED: it is ABSOLUTE and does not resolve inside repo=${repoArg}, and an absolute pathspec matches nothing (the review would have seen an EMPTY diff). The review below therefore covers the WHOLE repository, not the requested scope — re-run with a repo-relative path to narrow it.`
     log(`⚠️ ${msg}`)
-    scopeNotRun = [msg]
+    // TWO STRINGS ON PURPOSE. `msg` is for a reader — it names this run's path and repo, and it
+    // reaches the report's Scope section. `scopeNotRun` feeds the run record's `notRun`, which
+    // lib/analyze-runs.mjs ranks BY EXACT STRING to surface repeated fragility: a path in there
+    // makes every dispatch of the same shape its own count-1 row and sinks the real repeats. Same
+    // argument that moved the uncovered-files note out of `notRun` entirely.
+    scopeNotRun = ['the requested scope was DROPPED — an absolute `path` that does not resolve inside `repo`, so the review covered the whole repository instead']
+    scopeDetail = msg
     pathArg = ''
   } else {
     // No `repo` to decide against. Refusing costs nothing and says exactly what to do; either guess
@@ -409,6 +418,13 @@ EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote th
 
 Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits.`
 }
+
+// Admitted by a code signal, never by a floor. See `blanket()` in planFor: a blanket roster fill
+// says "nothing is known about this diff", which is not a reason to pay for the roster's most
+// expensive lens. `failure-windows` is gated on the scout having CHOSEN `reconciler` (controller
+// code); nothing else here yet, and the list exists so the next such lens has somewhere to be
+// declared rather than becoming a fourth blanket exception.
+const CONDITIONAL_LENSES = ['failure-windows']
 
 const PROFILES = {}
 PROFILES.rust = {
@@ -1880,7 +1896,9 @@ if (ambiguousPath) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
     languages: [], verdict: 'INCOMPLETE (ambiguous path)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: [], notRun: [msg], outputTokens: budget.spent(),
+    // The CLASS, not this run's path — `notRun` is ranked by exact string (see `scopeNotRun`).
+    // The path itself is in the verdict prose below, where nothing ranks it.
+    uncoveredFiles: [], notRun: ['an absolute `path` with no `repo` — ambiguous scope, nothing ran'], outputTokens: budget.spent(),
   })
   return out([`## Verdict`, `⚠️ INCOMPLETE — ${msg}`].join('\n'))
 }
@@ -2086,7 +2104,7 @@ if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${un
 
 // ================= Prompt builders (profile-parameterized) =================
 function scoutPrompt(profile) {
-  return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${pathArg}\`. Pass \`-- ${shq(pathArg)}\` to every \`git diff\` command below.` : ''}
+  return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${flattenField(pathArg)}\`. Pass \`-- ${shq(pathArg)}\` to every \`git diff\` command below.` : ''}
 
 Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}. Consider only this profile's files (${profile.diffGlobs.join(' ')}).
 1. Inspect \`git diff --stat ${lensBase ? `${shq(lensBase)}...HEAD` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`. Set sizeBucket:
@@ -2094,7 +2112,9 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
 2. lenses: choose from ${JSON.stringify(profile.lenses)}.
    - small: only the touched categories (minimum 2; always include the dominant category, and include '${profile.safetyLens}' unless the diff clearly touches nothing related to ${profile.securityHints}).
    - medium: the categories plausibly in play.
-   - large: all of them.
+   - large: all of them, EXCEPT ${JSON.stringify(profile.lenses.filter(l => CONDITIONAL_LENSES.includes(l)))} — the
+     engine adds those itself off a code signal in the diff, so picking one here only pays for an
+     agent the signal did not ask for. Do not count them toward your choices.
    ${profile.scoutRules}${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
 3. isLibrary: ${profile.usesLibrary ? 'true if this is a published library (has `[lib]`/looks publishable) — best effort.' : 'always false (not applicable to this language).'}
 4. securitySensitive: true if the diff touches ${profile.securityHints}.
@@ -2701,9 +2721,19 @@ async function reviewProfile(profile) {
     : []
   // hasOwn, not truthiness: a bucket of "constructor" would index Object.prototype and pass.
   const size = Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout.sizeBucket : 'medium'
+  // Lenses a BLANKET expansion of the roster must not include. A lens is a full agent — the
+  // dominant per-run cost — and `failure-windows` is the heaviest in the Rust roster: it enumerates
+  // every mutating request on the changed path and plays out each adjacent pair. Its premise is a
+  // code shape (a controller / reconcile loop), and its gate is the `reconciler` lens below. But it
+  // also sits in `profile.lenses`, so every blanket fill of that list — the security-sensitive
+  // rigor floor, the empty-lens fallback, and the conservative plan used when the scout DIED —
+  // bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
+  // A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
+  // signal. The scout may still pick it deliberately; only the floors may not.
+  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l))
   const plan = {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : profile.lenses.slice()),
+    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l)) : blanket()),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -2713,7 +2743,7 @@ async function reviewProfile(profile) {
     spec,
     churn: scout?.churn ?? [],
   }
-  if (!plan.lenses.length) plan.lenses = profile.lenses.slice()
+  if (!plan.lenses.length) plan.lenses = blanket()
   // "Always" lenses are enforced HERE, not left to the scout: smoke runs showed prompt-side
   // "always include X" gets dropped. 'intent' is the lens that catches correct-looking code
   // with wrong behavior — it runs at every size.
@@ -2722,11 +2752,16 @@ async function reviewProfile(profile) {
   // where the windows between two committed writes live. Enforced here rather than in the scout
   // prompt for the same measured reason as the alwaysLenses loop above: a prompt-side "also include"
   // gets dropped, and a lens that silently did not run renders as a clean pass.
-  if (plan.lenses.includes('reconciler') && profile.lenses.includes('failure-windows') && !plan.lenses.includes('failure-windows')) plan.lenses.push('failure-windows')
+  // The signal is the SCOUT having chosen `reconciler` after reading the diff — not `reconciler`
+  // merely being present in the plan. A blanket fill puts it there on every Rust diff, so reading
+  // the plan let the floors back in through the gate's own door: the check passed, and the
+  // conditional lens was conditional on nothing.
+  const scoutedReconciler = Array.isArray(scout?.lenses) && scout.lenses.includes('reconciler')
+  if (scoutedReconciler && profile.lenses.includes('failure-windows') && !plan.lenses.includes('failure-windows')) plan.lenses.push('failure-windows')
   if (strict && profile.lenses.includes('maintainability') && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
   // Security-sensitive rigor floor: don't let the size heuristic gate rigor on a security-touching change.
   if (plan.securitySensitive) {
-    for (const l of profile.lenses) if (!plan.lenses.includes(l)) plan.lenses.push(l)
+    for (const l of blanket()) if (!plan.lenses.includes(l)) plan.lenses.push(l)
     plan.verifyVotes = Math.max(plan.verifyVotes, 3)
     plan.maxRounds = Math.max(plan.maxRounds, 2)
   }
@@ -3294,9 +3329,14 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
   const verdictLine = incompleteNotes.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
+  // `scopeSection()` here too. The comment on its declaration promises it reaches "whichever report
+  // is returned — every early exit included", and this exit was the one that did not: a run whose
+  // requested scope was dropped and which then found nothing returned a report that never named the
+  // path the caller asked for. The verdict line carries the CLASS (through `notRun`); only this
+  // section carries the path, and a dropped scope matters most precisely when the answer is Approve.
   return out([`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
-  ].join('\n'))
+  ].join('\n') + scopeSection())
 }
 
 // ================= Synthesize one merged report =================
