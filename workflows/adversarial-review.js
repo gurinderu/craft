@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine.',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead).',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -107,20 +107,6 @@ function normalizeArgs(args, warn = () => {}) {
 }
 // <<< craft-inline
 const A = normalizeArgs(args, log)
-// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
-// session sits. Accepting it silently is the failure this family exists to end — the caller names
-// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
-// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
-// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
-// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
-if (A.repo) {
-  return [
-    `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
-    ``,
-    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`adversarial-review\` there.`,
-  ].join('\n')
-}
 
 const diffBase = A.diffBase ? String(A.diffBase) : ''
 const intentArg = A.intent ? String(A.intent) : ''
@@ -679,6 +665,34 @@ function nothingToReviewMessage(fileCount) {
 // <<< craft-inline
 
 // ================= Prep: scout + index warm-up (2 agents, parallel) =================
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
+// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
+// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
+// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
+if (A.repo) {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
+    nested: !!viaArg, via: viaArg || null,
+    verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
+    // make every repetition of this same misuse its own count-1 row.
+    notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
+    outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    ``,
+    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`adversarial-review\` there.`,
+  ].join('\n')
+}
+
 phase('Prep')
 const [scout, warmup] = await parallel([
   () => agent(

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'After a review or rust-audit produces many findings, or a PR has many inline comments, and you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan.',
+  whenToUse: 'After a review or rust-audit produces many findings, or a PR has many inline comments, and you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository).',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (rust-audit report, reviewer verdict, GitHub PR threads)' },
     { title: 'Validate', detail: 'judge each finding against the code at a pinned ref: accept / reject / defer / needs-decision' },
@@ -109,20 +109,6 @@ function normalizeArgs(args, warn = () => {}) {
 }
 // <<< craft-inline
 const A = normalizeArgs(args, log)
-// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
-// session sits. Accepting it silently is the failure this family exists to end — the caller names
-// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
-// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
-// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
-// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
-if (A.repo) {
-  return [
-    `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
-    ``,
-    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`triage-findings\` there.`,
-  ].join('\n')
-}
 
 // One arg path, not two. The second one used to re-parse the raw string after normalizeArgs had
 // already refused it, so a value reported as "ALL options ignored" was quietly reinstated a line
@@ -531,6 +517,34 @@ async function logRun(record) {
 }
 
 // ---- Gather --------------------------------------------------------------
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
+// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
+// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
+// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
+if (A.repo) {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'triage-findings',
+    nested: false, via: null,
+    verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
+    // make every repetition of this same misuse its own count-1 row.
+    notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
+    outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    ``,
+    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`triage-findings\` there.`,
+  ].join('\n')
+}
+
 phase('Gather')
 if (!pr && !report) {
   throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a rust-audit report).')
