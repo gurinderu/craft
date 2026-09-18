@@ -1440,6 +1440,15 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
 // onto the host, as absorption does, through the SAME bounded clause (`absorbInto`) — returned as
 // `updates` for the caller to apply, never mutated here.
 //
+// AND THE BOUND IS GLOBAL, WHICH IS THE HONEST LIMIT OF THAT SENTENCE. `noteAbsorbed` names at most
+// ABSORBED_MAX (3) sites on a host, for all rounds together, and trades every later one for the
+// overflow counter. So the fourth and further collapsed sites at one file+rule reach the next ledger
+// as a COUNT, not as a line and a title — the loss class above is closed for the first three and
+// softened, not closed, past them. It is softened rather than open because the site is still in the
+// round's report, the counter still says a further N defects landed here, and the lenses re-raise
+// the site next round. Raising the cap is not free: this clause is re-interpolated into every
+// subsequent prompt (see ABSORBED_MAX).
+//
 // WHY THAT IS NOT THE OBLIGATION ABSORPTION WAS REFUSED. Absorption's clause is dangerous because
 // the host is JUDGED: absorbedPromptBlock hands it to the next adjudicator as "resolved requires
 // every absorbed report to be gone too", so an unchecked report would hold a judged prior open. An
@@ -1448,15 +1457,35 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
 // ever built from it and there is no verdict for the clause to lean on. The clause is a RECORD on a
 // row that is being carried anyway, which is the middle the asymmetry leaves open.
 //
+// THE CARRIER IS CHOSEN BY TIER HERE, NOT BY LIST ORDER. findCarrier is a `.find` over a key
+// (file+ruleId) that is deliberately coarser than a site, so one site can hold BOTH a judged live
+// prior and a carried unverified one. Taking whichever the caller happened to list first made the
+// collapse above depend on that order: with the judged prior first, no row was collapsed and the
+// site gained a second unchecked ledger row every round — the accretion this tier exists to end.
+// So the unverified hosts are tried FIRST, as their own carrier set, and the full list is only the
+// fallback. That is not the same as reordering the caller's array: reordering would also make
+// ABSORPTION prefer an unverified host, and a collapse onto a JUDGED host stays forbidden either
+// way (see `ledgerDupOfUnverifiedPrior` above) — a judged host can resolve and leave the ledger,
+// taking the collapsed site with it. Retired unverified priors are excluded from the preferred set
+// for the same reason they are no host at all: they do not reach the next ledger, and letting one
+// win the preference would leave the finding neither collapsed nor even marked.
+//
 // Pure: returns new finding objects and an `updates` map; neither the findings nor the hosts are mutated.
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
+  // A retired prior is no host here, so it is removed from the search rather than tested after it:
+  // left in, it SHADOWS a live host at the same file+ruleId (`.find` takes the earliest) and the
+  // finding ends up neither collapsed nor even marked, which is order-dependence of the same kind.
+  // This is unlike partitionAbsorbed, where landing on a retired host is a reported outcome
+  // (keptAtRetired); here there is nothing to report — the finding is kept either way.
+  const hosts = (livePriors || []).filter(h => !isRetired(h))
+  const unverifiedHosts = hosts.filter(h => String(h?.tier ?? '') === 'unverified')
   let marked = 0
   let collapsed = 0
   const updates = new Map()
   const kept = (findings || []).map(f => {
-    const host = findCarrier(f, livePriors, fallbackMatch)
-    if (!host || isRetired(host)) return f
+    const host = findCarrier(f, unverifiedHosts, fallbackMatch) || findCarrier(f, hosts, fallbackMatch)
+    if (!host) return f
     const dup = String(host.tier ?? '') === 'unverified' ? { ledgerDupOfUnverifiedPrior: true } : {}
     if (dup.ledgerDupOfUnverifiedPrior) {
       collapsed++
@@ -3731,7 +3760,11 @@ if (priorRound) {
   }
   // The tracking pass runs on its OWN guard, not inside the absorption one: a round whose only live
   // prior carries the unverified tier has an EMPTY `livePriors` (nothing was adjudicated) and is
-  // exactly the round where a site accretes a second unchecked row.
+  // exactly the round where a site accretes a second unchecked row. And that is only the EMPTY case:
+  // a site can hold a live judged prior AND a carried unverified one at the same file+rule, and the
+  // judged one comes first in this array. The collapse must not depend on that — markTrackedUnverified
+  // picks its host BY TIER, not by this order (see lib/review-adjudicate.mjs); the order here is only
+  // the fallback for a finding no unverified host tracks.
   const trackingHosts = [...livePriors, ...carriedUnverified]
   if (trackingHosts.length) {
     const tracked = markTrackedUnverified(unverified.filter(f => !f.carriedUnverified), trackingHosts, retired, matchesPrior)
@@ -3740,10 +3773,16 @@ if (priorRound) {
     // site, so the row dropped from the ledger can be a genuinely distinct defect on another line.
     // Its site is written onto the host through the same bounded clause absorption uses; the reason
     // this is not the obligation absorption was refused for is in lib/review-adjudicate.mjs.
+    // WHAT "BOUNDED" MEANS HERE, EXACTLY: the bound is ABSORBED_MAX and it is GLOBAL, not per round.
+    // At most three sites are ever NAMED on one host's `why`; a fourth and every later one — in this
+    // round or any later one — is traded for the overflow counter, so its line, title and rationale
+    // do not reach the next ledger. That is not a lost finding: it is in THIS round's report, the
+    // counter keeps "more than one defect sits here" true, and the lenses re-raise the site next
+    // round. It is a loss of detail, and the cap is deliberate (absorbInto's clause is re-interpolated
+    // into every later prompt) — but it is a cap, so do not read the clause as a per-site record.
     // OPEN, AND DELIBERATELY NOT CLOSED HERE: an unverified row has no exit from the ledger, so its
-    // `why` accretes across rounds — the collapse clause per collapsed site (bounded per round, by
-    // absorbInto) on top of the per-round NOT_VERIFIED suffixes (unbounded). No finding is lost; the
-    // growth is of one persistent field, and bounding it is its own work.
+    // `why` still accretes across rounds through the per-round NOT_VERIFIED suffixes, which have no
+    // cap of their own. The growth is of one persistent field, and bounding it is its own work.
     for (const [host, why] of tracked.updates) host.why = why
     if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
