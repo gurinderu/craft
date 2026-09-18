@@ -1299,7 +1299,7 @@ function isCommitish(s) {
   return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(v)
 }
 
-// >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity
+// >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity PRIOR_SUMMARY_MAX_CHARS PRIOR_SUMMARY_TITLE_MAX priorFoundSummary
 // Canonicalize a ledger severity ONCE at the prior-round load boundary. LEDGER_ITEM.severity has no
 // enum, so a drifted `critical`/`CRITICAL` reaches the load: the case-insensitive gates (isHighSeverity)
 // still fire on it, but every VERDICT/COUNT function (countBySeverity, reviewVerdict/finalVerdict/
@@ -1310,6 +1310,62 @@ function isCommitish(s) {
 const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
 
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
+
+// ---- The ALREADY-FOUND block of a lens prompt ----
+//
+// WHY THIS IS BOUNDED. The lens prompt was one line per pooled finding, unbounded. Measured with
+// `runEngine` over a scripted large Rust run (132 pooled findings, 14 lenses): round 1 lens prompts
+// averaged 3672 chars — the documented size — while ROUND 2 averaged 17069, and the whole 4.6x was
+// this block. The cost is not the one-time prompt: a lens agent in a long loop re-reads its entire
+// context on every tick, so a 13K-char block bought once is paid for on every tick of every lens of
+// every later round. On the measured 179-agent run the lens agents read 128.7M cached tokens against
+// 0.47M of output; the engine is not generating, it is re-reading.
+//
+// WHAT THIS CANNOT LOSE, and why. The block is not evidence — it is a de-duplication HINT ("do not
+// repeat these; look for what they MISSED"). Nothing downstream depends on a lens having seen it:
+// the pool's own `seen` set drops exact repeats, a dedup agent groups same-defect findings before
+// verification, and prior findings are adjudicated on their own track. So an entry that falls off
+// this list can cost a lens some wasted effort on a duplicate; it cannot delete a finding.
+// The ordering is what makes that cheap: severity first, so the entries dropped are the lowest tier.
+// On the measured run 118 of 215 findings were Low/Info — a tier that by construction cannot move
+// the Approve/Warning/Block verdict and that the engine already rolls up mechanically. Every
+// Critical/High/Medium stays listed on any realistic pool.
+//
+// AND IT SAYS SO. A silent cut would read to the model as "there were only N already-found" — the
+// same failure the rollup cap avoids by stating its count. The overflow line names how many are
+// withheld, so a partial list is visible as partial.
+const PRIOR_SUMMARY_MAX_CHARS = 3000
+
+const PRIOR_SUMMARY_TITLE_MAX = 120
+
+function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax = PRIOR_SUMMARY_TITLE_MAX } = {}) {
+  const items = Array.isArray(pool) ? pool : []
+  if (!items.length) return 'none yet'
+  // Local, not a module const: this function is pasted into workflows/review.js by the craft-inline
+  // gate, which copies only the symbols its fence header names — a helper const outside the body
+  // would arrive there undefined.
+  const rank = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
+  // Model-authored titles land in a prompt here: a newline in one would forge extra ALREADY-FOUND
+  // rows, so flatten before clamping (same reason flattenField exists on the verify track).
+  const line = f => `${String(f?.file ?? '').replace(/[\r\n]+/g, ' ').trim() || '?'}:${f?.line || 0} ${String(f?.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, titleMax)}`.trimEnd()
+  const ordered = items
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => ((rank[canonicalSeverity(a.f?.severity)] ?? 9) - (rank[canonicalSeverity(b.f?.severity)] ?? 9)) || (a.i - b.i))
+    .map(({ f }) => line(f))
+  const kept = []
+  let used = 0
+  for (const l of ordered) {
+    // Always keep the first line: a cap smaller than one entry must still say something concrete.
+    if (kept.length && used + l.length + 1 > maxChars) break
+    kept.push(l)
+    used += l.length + 1
+  }
+  const omitted = ordered.length - kept.length
+  if (omitted > 0) {
+    kept.push(`… and ${omitted} more already-found finding(s), lowest severity first, withheld to keep this prompt small. This list is PARTIAL: anything you re-surface is de-duplicated downstream, so do not spend effort guessing what is missing from it.`)
+  }
+  return kept.join('\n')
+}
 // <<< craft-inline
 
 
@@ -2997,7 +3053,7 @@ async function reviewProfile(profile) {
   const lensRounds = []
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
-    const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
+    const priorSummary = priorFoundSummary(pool)
     const results = (await parallel(plan.lenses.map(lens => () =>
       runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` r${round}`),
     ))).filter(Boolean)
@@ -3029,7 +3085,7 @@ async function reviewProfile(profile) {
   let missing = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
   for (let sweep = 1; sweep <= 2 && missing.length; sweep++) {
     log(`[${profile.id}] Resurrection sweep ${sweep}: retrying ${missing.length} lens(es) that never returned (${missing.join(', ')})`)
-    const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
+    const priorSummary = priorFoundSummary(pool)
     const results = (await parallel(missing.map(lens => () =>
       runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`),
     ))).filter(Boolean)
