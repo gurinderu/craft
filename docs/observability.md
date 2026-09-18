@@ -161,3 +161,17 @@ removed along with the rest of `docs/superpowers/`; recover it from git history 
 ## Out of scope (v1)
 
 Per-agent timing/token cost (only in raw `agent-*.jsonl` transcripts) and any analysis UI.
+
+## Three edits that deliberately did not refactor their host
+
+`lib/analyze-runs.mjs`'s aggregation loop, `lib/craft-log-run.mjs`'s
+`finalizeRun`, and `workflows/review.js`'s `verifyPool` are each long and each
+mix concerns. Fixes landed inside all three anyway, without extraction, and
+that was a decision rather than an oversight: refactoring the hot review engine
+was ruled out of the branch that carried these fixes, because a restructuring of
+`verifyPool` and a correctness change to the same lines cannot be reviewed apart
+once they are in one diff — and the correctness change is the one that had to
+ship. The cost is real and named here so the next editor is not surprised by it:
+each of the three functions grew, and none of the three is easier to change than
+it was. The extraction is a separate piece of work on its own branch, where a
+behaviour-preserving move can be checked as one.
