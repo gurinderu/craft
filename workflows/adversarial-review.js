@@ -387,13 +387,14 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
   // logger receiving the literal string "" and treating it as a real (empty) session id.
   // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
-  // silent contract break. review.js finalizes with `{ dir: runDir, rejoin: checkpointFailed }`, so
+  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
   // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
   // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
-  // checkpoint. Two things depend on the flag arriving: `finalizeRun` falls back to the rejoin search
-  // when `--dir` is REFUSED (out of store), which is precisely when the run still has a real
-  // directory nobody can name; and the flag is the engine's own statement that one of its checkpoints
-  // failed. Neither can be reconstructed downstream from the directory alone.
+  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
+  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
+  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
+  // rejoin search outright in that case (see its `target` comment), because the single candidate a
+  // garbled sibling finds is its neighbour's LIVE directory.
   const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
