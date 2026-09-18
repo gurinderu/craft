@@ -1356,6 +1356,48 @@ const REPO_DIRECTIVE = repoArg
 // cannot rebuild the storm. Lenses get 90min for a blunter reason: a single lens legitimately ran
 // 46 minutes, so no threshold there can separate "hung" from "thorough" — it is a backstop against
 // an agent stuck for hours, nothing finer.
+
+// ---- re-dispatch breaker (verification only) ----
+// >>> craft-inline lib/agent-retry.mjs DEATH_STREAK_TO_OPEN makeDeathBreaker
+// How many consecutive deaths make the next re-dispatch not worth its wall clock. Chosen to err
+// toward KEEPING the retry: two independent one-off failures in a row are plausible on a healthy
+// day, three are not — and the first two deaths of any outage still pay the double price, so the
+// breaker can never suppress a retry that a single stray null would have wanted. Nothing recorded
+// separates 2 from 3; 3 is the conservative side of that ignorance.
+const DEATH_STREAK_TO_OPEN = 3
+
+// A counter, shared across concurrently dispatched agents ON PURPOSE. The verification window keeps
+// ~24 agents in flight, so the deaths of an outage arrive interleaved — a per-agent view would see
+// one death each and never see the outage at all.
+function makeDeathBreaker(streakToOpen = DEATH_STREAK_TO_OPEN) {
+  const k = Math.max(1, Number(streakToOpen) || DEATH_STREAK_TO_OPEN)
+  let streak = 0
+  return {
+    // Record a dead first attempt and answer whether re-dispatching it is still worth the clock.
+    // One call, not two, because the order matters: THIS death counts toward the streak, so the
+    // k-th consecutive death is the first one that does not buy a second ladder.
+    deathAllowsRedispatch() {
+      streak += 1
+      return streak < k
+    },
+    // Any live answer ends the outage as far as this counter is concerned.
+    recordLive() {
+      streak = 0
+    },
+    streak() {
+      return streak
+    },
+    streakToOpen: k,
+  }
+}
+// <<< craft-inline
+// Armed for the VERIFY phase and nothing else, which is a scoping decision, not an oversight.
+// Verification is the one phase dispatched through a bounded window (VERIFY_WINDOW_AGENTS), so it
+// is the one place where a slot held by a dead agent is a slot DENIED to a live one. A lens is one
+// of six to ten agents carrying a whole dimension of the review: there a suppressed re-dispatch
+// costs a dimension, and the window is not the scarce thing.
+const verifyBreaker = makeDeathBreaker()
+
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
@@ -1384,13 +1426,29 @@ async function ragent(prompt, opts = {}) {
       clearTimeout(timer)
     }
     if (res === DEADLINE_HIT) {
+      // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
+      // told apart from a live agent taking too long, and feeding that into a streak would let slow
+      // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
       const mins = Math.round(ms / 60000)
       log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${attempt < AGENT_TRIES ? ' and re-dispatching once' : ' (giving up; treated as a dead agent)'}`)
       if (attempt >= AGENT_TRIES) return null
       continue
     }
-    if (res !== null && res !== undefined) return res
+    if (res !== null && res !== undefined) {
+      // A live answer closes the breaker: an outage that ended must not keep suppressing the
+      // re-dispatch for the next isolated failure.
+      if (opts.phase === 'Verify') verifyBreaker.recordLive()
+      return res
+    }
     if (attempt >= AGENT_TRIES) return null
+    // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
+    // its own retry ladder on an unreachable API, and the re-dispatch below spends a second ladder
+    // inside the same verification window slot. On a one-off failure that is worth the clock; from
+    // the third consecutive death onward it is not, and the streak is what says which this is.
+    if (opts.phase === 'Verify' && !verifyBreaker.deathAllowsRedispatch()) {
+      log(`⛔ agent '${opts.label || '?'}' returned no result and is the ${verifyBreaker.streak()}th verification death in a row — NOT re-dispatching (the re-dispatch is for a one-off failure, and this is not one); treated as a dead agent, reported as unverified exactly like every other death`)
+      return null
+    }
     log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
   }
 }
