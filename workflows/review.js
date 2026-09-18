@@ -1550,7 +1550,7 @@ function isCommitish(s) {
   return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(v)
 }
 
-// >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity
+// >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity PRIOR_SUMMARY_MAX_CHARS PRIOR_SUMMARY_TITLE_MAX priorFoundSummary
 // Canonicalize a ledger severity ONCE at the prior-round load boundary. LEDGER_ITEM.severity has no
 // enum, so a drifted `critical`/`CRITICAL` reaches the load: the case-insensitive gates (isHighSeverity)
 // still fire on it, but every VERDICT/COUNT function (countBySeverity, reviewVerdict/finalVerdict/
@@ -1561,6 +1561,79 @@ function isCommitish(s) {
 const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
 
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
+
+// ---- The ALREADY-FOUND block of a lens prompt ----
+//
+// WHY THIS IS BOUNDED. The lens prompt was one line per pooled finding, unbounded. Measured with
+// `runEngine` over a scripted large Rust run (132 pooled findings, 14 lenses — the roster AS IT
+// WAS MEASURED, before `ownership` retired and three lenses moved behind the optional pass; the
+// test's fixture names today's, and the assertions are RATIOS, not these constants): round 1 lens prompts
+// averaged 3672 chars — the documented size — while ROUND 2 averaged 17069, and the whole 4.6x was
+// this block. The cost is not the one-time prompt: a lens agent in a long loop re-reads its entire
+// context on every tick, so a 13K-char block bought once is paid for on every tick of every lens of
+// every later round. On the measured 179-agent run the lens agents read 128.7M cached tokens against
+// 0.47M of output; the engine is not generating, it is re-reading.
+//
+// WHAT THIS CANNOT LOSE, and why. The block is not evidence — it is a de-duplication HINT ("do not
+// repeat these; look for what they MISSED"). Nothing downstream depends on a lens having seen it:
+// the pool's own `seen` set drops exact repeats, a dedup agent groups same-defect findings before
+// verification, and prior findings are adjudicated on their own track. So an entry that falls off
+// this list can cost a lens some wasted effort on a duplicate; it cannot delete a finding.
+// The ordering is what makes that cheap: severity first, so the list LEADS with the worst tiers and
+// whatever falls off is the cheapest thing still on it. What it does NOT do is keep the whole high
+// tier, and an earlier version of this comment claimed it did — false on the very run it cited.
+// EXECUTED against this function on the measured run's shape (215 findings: 10 Critical, 40 High,
+// 47 Medium, 118 Low/Info, real title and path lengths): 28 rows survive and 187 are withheld —
+// 10 Critical and 18 High listed, 22 High and all 47 Medium withheld, output 3197 chars. At ~105
+// chars a row a 3000-char cap holds roughly 28 rows, so the cap sits BELOW the high tier on any pool
+// where Critical and High together pass about thirty; a pool of 60 Criticals is cut to 28 the same
+// way. So the honest statement is: severity decides the ORDER, the character cap decides HOW MANY,
+// and beyond ~28 rows entries are withheld regardless of tier. That is acceptable only because of
+// the paragraph above — nothing downstream depends on a lens having seen an entry; it is not
+// acceptable as "the high tier is safe", and it must not be written that way again.
+// A per-tier budget (Critical/High uncapped, Low/Info under a cap) was considered and REJECTED: a
+// full non-Low tier on that run is ~97 rows ≈ 10K chars, which is the unboundedness this replaces,
+// so it would need a high-tier cap anyway and would only move the number at which the same cut
+// happens. Keeping the cap and narrowing the claim is the smaller lie-free change.
+// KEEP THE SIZE IN PROPORTION. ~225K chars saved ≈ 56K tokens, re-read over ~40 ticks ≈ 2.3M tokens
+// against the 128.7M the lens agents actually read — about 1.8%. Real, and no larger than that;
+// nothing here should be read as a fix for the re-reading cost.
+//
+// AND IT SAYS SO. A silent cut would read to the model as "there were only N already-found" — the
+// same failure the rollup cap avoids by stating its count. The overflow line names how many are
+// withheld, so a partial list is visible as partial.
+const PRIOR_SUMMARY_MAX_CHARS = 3000
+
+const PRIOR_SUMMARY_TITLE_MAX = 120
+
+function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax = PRIOR_SUMMARY_TITLE_MAX } = {}) {
+  const items = Array.isArray(pool) ? pool : []
+  if (!items.length) return 'none yet'
+  // Local, not a module const: this function is pasted into workflows/review.js by the craft-inline
+  // gate, which copies only the symbols its fence header names — a helper const outside the body
+  // would arrive there undefined.
+  const rank = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
+  // Model-authored titles land in a prompt here: a newline in one would forge extra ALREADY-FOUND
+  // rows, so flatten before clamping (same reason flattenField exists on the verify track).
+  const line = f => `${String(f?.file ?? '').replace(/[\r\n]+/g, ' ').trim() || '?'}:${f?.line || 0} ${String(f?.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, titleMax)}`.trimEnd()
+  const ordered = items
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => ((rank[canonicalSeverity(a.f?.severity)] ?? 9) - (rank[canonicalSeverity(b.f?.severity)] ?? 9)) || (a.i - b.i))
+    .map(({ f }) => line(f))
+  const kept = []
+  let used = 0
+  for (const l of ordered) {
+    // Always keep the first line: a cap smaller than one entry must still say something concrete.
+    if (kept.length && used + l.length + 1 > maxChars) break
+    kept.push(l)
+    used += l.length + 1
+  }
+  const omitted = ordered.length - kept.length
+  if (omitted > 0) {
+    kept.push(`… and ${omitted} more already-found finding(s), lowest severity first, withheld to keep this prompt small. This list is PARTIAL: anything you re-surface is de-duplicated downstream, so do not spend effort guessing what is missing from it.`)
+  }
+  return kept.join('\n')
+}
 // <<< craft-inline
 
 
@@ -3415,7 +3488,7 @@ async function reviewProfile(profile) {
   const lensRounds = []
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
-    const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
+    const priorSummary = priorFoundSummary(pool)
     const results = (await parallel(plan.lenses.map(lens => () =>
       runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` r${round}`),
     ))).filter(Boolean)
@@ -3434,6 +3507,18 @@ async function reviewProfile(profile) {
     // diff, but whether round 2 earns that is unknowable after the fact: the gate's seed findings
     // make the pool non-empty from round 1, so a transcript cannot be split by round. Record it
     // rather than guess — a later `maxRounds` cut should be argued from these numbers.
+    // ONE LINK THE "a finding cannot be lost" CHAIN DID NOT HAVE, recorded here because this is where
+    // a reader looks for it. `if (!fresh.length) dry = true` below ends the search, and the
+    // ALREADY-FOUND cap (priorFoundSummary) makes a withheld entry MORE likely to be re-surfaced:
+    // `seen` drops it as a duplicate, `fresh` comes back empty, the round reads as dry and the loop
+    // stops. No finding is lost — the pool keeps every entry and priors are adjudicated on their own
+    // track — but the SEARCH can end a round early, and `newFindings` here (the very number a later
+    // `maxRounds` cut would be argued from) is biased downward by the same mechanism.
+    // Deliberately NOT fixed: a re-surfaced duplicate is indistinguishable from a genuinely dry round
+    // at this point, so "dry unless something new that is not a known duplicate" would mean splitting
+    // the `seen` key set by provenance and paying an extra full round of lens cost — against a prompt
+    // saving that is about 1.8% of what the lens agents read. So do not read a dry round as proof the
+    // diff is exhausted, and do not argue a round cut from `newFindings` alone.
     lensRounds.push({ round, agents: plan.lenses.length, returned: results.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     if (!fresh.length) dry = true
@@ -3447,7 +3532,7 @@ async function reviewProfile(profile) {
   let missing = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
   for (let sweep = 1; sweep <= 2 && missing.length; sweep++) {
     log(`[${profile.id}] Resurrection sweep ${sweep}: retrying ${missing.length} lens(es) that never returned (${missing.join(', ')})`)
-    const priorSummary = pool.length ? pool.map(f => `${f.file || '?'}:${f.line || 0} ${f.title}`).join('\n') : 'none yet'
+    const priorSummary = priorFoundSummary(pool)
     const results = (await parallel(missing.map(lens => () =>
       runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`),
     ))).filter(Boolean)
