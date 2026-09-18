@@ -246,15 +246,120 @@ continues on the remaining signals with status=unknown — an incomplete gate be
 // compile without a database, and reported neither signal. Worse, every agent that later runs a tool
 // (the gate, a lens re-running clippy, a verifier doing its MECHANICAL CHECK) rediscovered the same
 // facts independently. Resolve them once, cheaply, and hand the answer to everyone downstream.
+// The probe budget and its audit live in a linted module with real unit tests, and are pasted back
+// in here by the craft-inline gate, because this script cannot be imported (top-level export +
+// await + return). The module's header carries why the audit is a DECLARATION audit and what that
+// does and does not close.
+// >>> craft-inline lib/preflight-probes.mjs PROBE_BUDGETS probeDeclarationBlock auditPreflightProbes
+// The per-source budget. A source is named by the QUESTION it answers, not by the command that
+// answers it: two spellings of "which checks are green for this SHA" are one source, which is the
+// whole point — the old failure mode was three routes to one answer, each looking like a fresh
+// question. `max: 0` means the route is forbidden outright: it exists, it resolves the same
+// question, and the prompt bans it because it resolves by BRANCH (empty on a review worktree) or
+// hands back a PR whose head has moved.
+const PROBE_BUDGETS = {
+  'ci-check-runs': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/check-runs' },
+  'ci-commit-status': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/status' },
+  'ci-pr-checks': { max: 0, what: 'gh pr checks — resolves by branch; forbidden, the SHA-scoped calls answer it' },
+  'ci-pr-by-commit': { max: 0, what: 'gh api …/commits/$SHA/pulls — forbidden in preflight; the gate owns PR lookup' },
+  'workflow-file': { max: 2, what: 'reading a .github/workflows/*.yml behind a green check' },
+  'tool-inventory': { max: 2, what: 'the one-shot command -v loop (once bare, once under the runner prefix)' },
+  'runner-verify': { max: 2, what: 'an instant <prefix>true / <prefix>rustc --version' },
+  'blocker-probe': { max: 4, what: 'the grep/ls/test questions behind a compile blocker, and for Nix the flake-metadata and `system`-match checks' },
+  'repo-identity': { max: 2, what: 'git rev-parse HEAD / git remote get-url origin' },
+  'runner-discover': { max: 2, what: 'the ls/test sweep for the dev-shell markers (.envrc, flake.nix, shell.nix, .direnv/)' },
+}
+
+// The block appended to the preflight prompt. It is generated from PROBE_BUDGETS rather than written
+// out beside it: a budget the prompt does not name is a budget the agent is judged against without
+// being told, which turns the audit into a trap instead of a contract.
+function probeDeclarationBlock() {
+  const rows = Object.entries(PROBE_BUDGETS).map(([id, b]) => b.max === 0
+    ? `   - \`${id}\`: FORBIDDEN (${b.what}) — declaring calls > 0 here is a violation, not a note`
+    : `   - \`${id}\`: at most ${b.max} (${b.what})`)
+  return `5. DECLARE YOUR PROBES. Return \`probes\`: one entry per source you consulted, \`{ "source": "<id>", "calls": <how many shell/API invocations you spent on it> }\`. Count every invocation, including ones that returned nothing. The ids and their budgets:
+${rows.join('\n')}
+   Use these ids EXACTLY; an id not on this list is itself reported as a violation, so a repeat cannot be relabelled into a fresh question. A source you did not consult is simply absent (do not declare it with \`calls: 0\`), and \`calls\` is a whole number ≥ 0 on every entry — a missing, non-integer or negative count is itself a violation. \`probes\` can NEVER be empty and is never emptied by a partial result: it reports what you ALREADY did, so running out of time shortens the list, it does not erase it — an empty list is reported as a violation, not read as a disciplined run. THE ENGINE AUDITS THIS: an over-budget or forbidden or unrecognized source is named in the run's log and carried into its record. Declaring fewer calls than you made is a false report, which is worse than an over-budget honest one.`
+}
+
+// Violations of the declared budget, as human-readable lines. Empty array = clean.
+//
+// CONTRACT, stated so nobody upgrades it: this audits the DECLARATION, not the shell. A preflight
+// that asks one source three times and declares one call passes here. What the audit buys is that
+// the honest path and the disciplined path are now the same path, and that a breach has to be
+// either declared or actively misreported — where before it was neither visible nor recorded.
+function auditPreflightProbes(pf) {
+  if (!pf) return []
+  const out = []
+  const probes = Array.isArray(pf.probes) ? pf.probes : null
+  if (!probes) {
+    // Absent is a violation of its own: `probes` is required by the schema, so a missing list means
+    // the answer did not come through the contract at all — and silence must not read as clean,
+    // which is the exact shape of every observability defect this engine has shipped.
+    out.push('preflight declared no `probes` list — the per-source budget could not be audited')
+    return out
+  }
+  if (probes.length === 0) {
+    // The same defect one layer in, and it was the CHEAPEST answer available: an empty array is a
+    // present list, so every check below ran over nothing and found nothing. A preflight that spent
+    // 48 invocations and declared `[]` then filed exactly what a disciplined one files. It is a
+    // violation unconditionally — including under `partial: true`, because `probes` reports what was
+    // ALREADY done, so running out of time shortens the list and never empties it.
+    out.push('preflight declared an EMPTY `probes` list — a preflight consults something by definition, and an empty declaration is not a clean one (a partial run still reports what it did)')
+    return out
+  }
+  const seen = new Map()
+  for (const p of probes) {
+    const id = String((p && p.source) || '').trim()
+    if (!id) { out.push('a `probes` entry has no `source`'); continue }
+    if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
+      out.push(`unrecognized probe source \`${id}\` — not one of the declared ids, so its budget is unknown`)
+      continue
+    }
+    // Every way a count can fail to be a count is named, because each one used to coerce to zero and
+    // land the entry inside its budget: an omitted `calls` via `?? 0`, a non-numeric one via `NaN`
+    // and the `Number.isFinite` guard below, and a negative one by SUBTRACTING from the total — so
+    // `[{blocker-probe:9},{blocker-probe:-8}]` read as 1 call against a budget of 4. A bad count is
+    // now a violation of its own AND is excluded from the sum, so it can neither hide nor offset.
+    const raw = p ? p.calls : undefined
+    if (raw == null) {
+      out.push(`probe source \`${id}\` declared no \`calls\` — an entry without a count cannot be audited, and a missing count is not zero`)
+      continue
+    }
+    const calls = Number(raw)
+    if (!Number.isInteger(calls)) {
+      out.push(`probe source \`${id}\` declared a non-integer call count \`${String(raw)}\` — invocations are counted in whole numbers`)
+      continue
+    }
+    if (calls < 0) {
+      out.push(`probe source \`${id}\` declared a negative call count ${calls} — a call cannot be un-made, and a negative must not offset a real one`)
+      continue
+    }
+    // Two entries for one id are the repeat this exists to catch, split across rows. Summed, never
+    // taken as the larger: splitting 3 calls into 2+1 would otherwise read as within a budget of 2.
+    seen.set(id, (seen.get(id) ?? 0) + calls)
+  }
+  for (const [id, total] of seen) {
+    const { max, what } = PROBE_BUDGETS[id]
+    if (max === 0 && total > 0) out.push(`forbidden probe source \`${id}\` used ${total}×: ${what}`)
+    else if (total > max) out.push(`probe source \`${id}\` used ${total}×, budget ${max}: ${what}`)
+  }
+  return out
+}
+// <<< craft-inline
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'partial', 'notes'],
+  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'probes', 'partial', 'notes'],
   properties: {
     runner: { type: 'string', description: 'prefix every build/lint command needs, e.g. "direnv exec . " or "nix develop -c " — empty string if commands run bare' },
     blockers: { type: 'array', items: { type: 'string' }, description: 'reasons this tree CANNOT compile here, one per line, e.g. "sqlx query macros need a live Postgres; no offline .sqlx cache and no DATABASE_URL"' },
     missingTools: { type: 'array', items: { type: 'string' }, description: 'gate tools not on PATH (cargo-audit, cargo-deny, semgrep, …)' },
     ciCovers: { type: 'array', items: { type: 'string' }, description: 'signals a GREEN CI check already establishes for this exact HEAD, as "<signal> via <check name>" — e.g. "test via cargo nextest", "deny-bans via cargo-deny"' },
+    // `minItems`/`minimum` are load-bearing, not decoration: without them `probes: []` and a negative
+    // count were both VALID answers that the audit then read as clean — the cheapest possible path to
+    // a green audit. The schema now refuses the shape and `auditPreflightProbes` refuses it again.
+    probes: { type: 'array', minItems: 1, description: 'one entry per source consulted, with how many shell/API invocations it cost — audited against PROBE_BUDGETS; never empty, not even in a partial result, since it reports what was already done', items: { type: 'object', additionalProperties: false, required: ['source', 'calls'], properties: { source: { type: 'string', description: 'the probe-source id from the prompt\'s list, exactly' }, calls: { type: 'integer', minimum: 0, description: 'invocations spent on that source, including ones that returned nothing' } } } },
     partial: { type: 'boolean', description: 'true if ANY of the four fields was left unfinished (ran out of time, a command failed, gh unavailable) — the matching field is then empty and notes says which and why' },
     notes: { type: 'string' },
   },
@@ -302,11 +407,14 @@ ${profile.id === 'rust'
    Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. HARD CAP — this is where the pass runs away with the clock: read AT MOST 2 workflow files, only for green checks that map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale. Past the cap, the remaining green checks go in \`notes\` BY NAME ONLY and NEVER in \`ciCovers\` — \`ciCovers\` means "do not re-run this locally", and a check whose workflow you did not open cannot support that: its name is a guess at what it ran, which is exactly what the \`cargo-deny\`/\`check bans\` example above shows going wrong. Only a signal you read the workflow for goes in \`ciCovers\`.
    List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
 
+${probeDeclarationBlock()}
+
 BUDGET (hard): reconnaissance, target ~90 seconds, three minutes is the ceiling. Past the dispatch deadline nothing cuts you off — the caller simply STOPS WAITING for you and dispatches a second preflight, so everything you do after that point is discarded and paid for twice, and if the second pass is as slow the gate loses even the runner prefix. So at three minutes STOP and RETURN. A thorough preflight costing more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint here.
 
-PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
+PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four FINDINGS fields above (runner, blockers, missingTools, ciCovers) you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
+\`probes\` (step 5) IS EXPLICITLY EXCLUDED FROM THAT INSTRUCTION: it is not a finding but a report of what you ALREADY DID, so it can never be returned empty — a run cut short declares the calls it had already spent, and an empty \`probes\` is read as a violation, never as a disciplined pass.
 
-Return runner, blockers, missingTools, ciCovers, partial, notes.`
+Return runner, blockers, missingTools, ciCovers, probes, partial, notes.`
 }
 // An unfinished preflight must not be recorded as a clean one. The schema carries an explicit
 // `partial` boolean precisely so this does not hang on the shape of prose: the earlier test was
@@ -2911,6 +3019,12 @@ async function reviewProfile(profile) {
     // to 10min of wall clock (two dispatches) rather than 7. Bounded, and cheaper than the gate
     // rediscovering its own environment on every run.
     { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
+  // The declared-probe audit. Named in the log and carried into the record so a breach of the
+  // "ask each source once" rule is a fact of the run rather than a matter of the prompt's manners.
+  const probeViolations = auditPreflightProbes(preflight)
+  if (probeViolations.length) {
+    log(`⚠️ [${profile.id}] PREFLIGHT PROBE BUDGET BREACHED (${probeViolations.length}): ${probeViolations.join(' · ')}`)
+  }
   if (preflight) {
     log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
       + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
@@ -2963,11 +3077,11 @@ async function reviewProfile(profile) {
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
     // that never answered — a bare `null` collapsed both into the same, more permissive, reading.
     preflight: preflight
-      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes }
+      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes, probeViolations }
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '' }
+    return { profile, plan, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -3068,7 +3182,7 @@ async function reviewProfile(profile) {
     notRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '' }
+    return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '', probeViolations }
   }
 
   // ---- Verify ----
@@ -3140,7 +3254,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes, probeViolations }
 }
 
 // ================= Run each active profile, then merge =================
@@ -3185,6 +3299,10 @@ function reviewRecord(extra) {
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
     gate: { status: mergedGateStatus, provenance: mergedProvenance, carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)) },
+    // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
+    // not: the point of the audit is that the next drift back into CI archaeology shows up in the
+    // record of the run that did it, not in a re-measurement months later.
+    preflightProbeViolations: results.flatMap(r => (r.probeViolations || []).map(v => `[${r.profile.id}] ${v}`)),
     outputTokens: budget.spent(),
     ...extra,
   }
