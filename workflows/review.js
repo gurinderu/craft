@@ -1233,19 +1233,36 @@ function absorbAcross(lists, livePriors, retired, fallbackMatch) {
 // site is already tracked without the host inheriting an unchecked obligation.
 const TRACKED_MARK = ' — (this site is already tracked by a still-live prior finding; NOT absorbed into it: nothing checked this report against the code, so it may not hold that prior open)'
 
+// THE MARK IS FOR THE REPORT, NOT FOR THE LEDGER. It is recomputed from this round's live priors
+// every round, so a persisted copy can only be a stale duplicate — and a false one once the prior it
+// names resolves. The caller strips it at the ledger door (`toLedgerEntry`).
+//
+// THE SECOND ROW. Leading the unverified out of absorption made each one its OWN ledger row BESIDE
+// the prior it matches, so a site that stays unverified round after round gains a row per round —
+// and the previous round's unverified row becomes the "still-live prior" the next mark points at.
+// `ledgerDupOfUnverifiedPrior` marks the findings whose row the caller may drop, and the host's tier
+// is what decides: an UNVERIFIED host is equally unchecked, gates nothing, and stays in the ledger
+// as long as the site does, so collapsing onto it loses nothing. A JUDGED host is not eligible — it
+// can RESOLVE next round and leave the ledger, and a dropped row against it would lose the site
+// silently. That is the same asymmetry absorption answers by writing onto the host's `why`, which is
+// exactly what an unverified finding may not do (it would then hold the host open).
+//
 // Pure: returns new finding objects; neither the findings nor the hosts are mutated.
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
   let marked = 0
+  let collapsed = 0
   const kept = (findings || []).map(f => {
     const host = findCarrier(f, livePriors, fallbackMatch)
     if (!host || isRetired(host)) return f
+    const dup = String(host.tier ?? '') === 'unverified' ? { ledgerDupOfUnverifiedPrior: true } : {}
+    if (dup.ledgerDupOfUnverifiedPrior) collapsed++
     const why = String(f.why ?? '')
-    if (why.includes(TRACKED_MARK)) return f
+    if (why.includes(TRACKED_MARK)) return { ...f, ...dup }
     marked++
-    return { ...f, why: why + TRACKED_MARK }
+    return { ...f, ...dup, why: why + TRACKED_MARK }
   })
-  return { kept, marked }
+  return { kept, marked, collapsed }
 }
 // <<< craft-inline
 // Model-authored finding fields reach agent PROMPTS as context. The injection vector in a
@@ -2543,11 +2560,9 @@ function votesAgree(a, b) {
   if (!isVerdictShaped(a) || !isVerdictShaped(b)) return false
   return VOTE_AXES.every(k => a[k] === b[k])
 }
-// Shared vote→tier decision, so the batched path cannot drift from the individual one.
-function tierFromVotes(f, votes) {
-  const live = votes.filter(Boolean)
-  // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
-  const v = live.filter(isVerdictShaped)
+// The majority arithmetic itself, over the SHAPED votes `v` (`live` is only needed to tell an
+// all-dead panel from an all-off-schema one). `tierFromVotes` below is the entry point.
+function decideTier(f, live, v) {
   // EVERY vote died. This is not a judgement and must never be rendered as one: `suspected` is
   // defined in the report as "a verifier looked and the claim did not stand up", so handing it to a
   // finding nothing looked at asserts an inspection that never happened — and, worse, keeps the
@@ -2578,6 +2593,34 @@ function tierFromVotes(f, votes) {
     return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
   }
   return { ...f, tier }
+}
+// Shared vote→tier decision, so the batched path cannot drift from the individual one.
+//
+// DISCARDING A VOTE IS ITSELF A DEGRADATION, AND IT MUST BE VISIBLE. Dropping an off-schema vote
+// before the arithmetic is strictly better than reading its absent booleans as `false` (that deleted
+// the finding outright — see the NINTH DOOR above), but as long as ONE shaped vote survived the
+// discard was recorded nowhere: not on the finding, not in the counters, not in `notRun`. The shape
+// that makes it matter is the opening pair: a Critical opens with one cheap cull plus the
+// authoritative vote, `votesAgree` refuses an off-schema partner, and the escalation then buys
+// `n1 - 1` further culls — which is ZERO at `verifyVotes: 1`. So the authoritative voice answering
+// off-schema leaves the Critical decided by a single cheap vote, rendered exactly like a unanimous
+// panel. The thinning is annotated on the finding (what a reader of the verdict sees) and counted in
+// the run record as `verification.thinned` (what ranks across runs — a panel that keeps half-dying
+// is fragility, and fragility is only legible as a repeat).
+function tierFromVotes(f, votes) {
+  const live = votes.filter(Boolean)
+  // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
+  const v = live.filter(isVerdictShaped)
+  const judged = decideTier(f, live, v)
+  const discarded = live.length - v.length
+  // An all-dead panel is already reported as unverified by its own route; annotating it as "thinned"
+  // on top would say a decision was made on a minority when no decision was made at all.
+  if (!discarded || judged.tier === 'unverified') return judged
+  return {
+    ...judged,
+    votesDiscarded: discarded,
+    why: `${judged.why} (PANEL THINNED: ${discarded} of ${live.length} returned vote(s) answered off-schema and were discarded before the arithmetic — this ${judged.tier} stands on ${v.length} surviving vote(s), a minority of the panel that answered)`,
+  }
 }
 const BATCH_VERDICT_SCHEMA = {
   type: 'object',
@@ -3246,6 +3289,10 @@ if (priorRound?.ledger?.length) {
       fix: f.fix || 'verify it first — nothing has checked this claim against the code',
       blastRadius: f.blastRadius || '',
       tier: 'unverified',
+      // Flagged so the tracking pass below can use these as HOSTS. They are not in `livePriors` —
+      // they were never adjudicated — so without the flag a fresh unverified re-discovery of the
+      // same site is neither marked nor collapsed, and the site gains a ledger row every round.
+      carriedUnverified: true,
       why: `${baseWhy(f.why)} (STILL NOT VERIFIED: carried from round ${priorRound.round}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
@@ -3375,12 +3422,18 @@ Return {status, currentLine, note, invariant, attack}.`,
 // and must survive.
 if (priorRound) {
   const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried, ...adjudicated.retired]
+  // A RETIRED host absorbs NOTHING and tracks nothing — hoisted because BOTH passes below need it.
+  const retired = new Set(adjudicated.retired)
+  // Priors carrying the unverified tier were never adjudicated, so they are absent from `livePriors`
+  // — they were carried straight into THIS round's `unverified` list instead. They are nonetheless
+  // still-live rows of the next ledger, and they are precisely the hosts that matter for a site that
+  // stays unchecked round after round, which is why the tracking pass takes them too.
+  const carriedUnverified = unverified.filter(f => f.carriedUnverified)
   if (livePriors.length) {
     // A RETIRED host absorbs NOTHING — it is not persisted, so a clause on it would leave the
     // absorbed report in no report and no ledger. partitionAbsorbed keeps those findings instead;
     // the reasoning (and why the granularity mismatch makes this the loss class the design set out
     // to close) is in lib/review-adjudicate.mjs.
-    const retired = new Set(adjudicated.retired)
     // ONE threaded accumulation across both tracks, not two independent ones: the tracks share
     // hosts (the carrier key is file+ruleId, orthogonal to the confirmed/suspected split), and two
     // independent partitions would each compute their clause from the same un-absorbed `host.why`,
@@ -3396,15 +3449,31 @@ if (priorRound) {
     for (const [host, why] of updates) host.why = why
     confirmed = runs[0].kept
     suspected = runs[1].kept
-    const tracked = markTrackedUnverified(unverified, livePriors, retired, matchesPrior)
-    unverified = tracked.kept
-    if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
+  }
+  // The tracking pass runs on its OWN guard, not inside the absorption one: a round whose only live
+  // prior carries the unverified tier has an EMPTY `livePriors` (nothing was adjudicated) and is
+  // exactly the round where a site accretes a second unchecked row.
+  const trackingHosts = [...livePriors, ...carriedUnverified]
+  if (trackingHosts.length) {
+    const tracked = markTrackedUnverified(unverified.filter(f => !f.carriedUnverified), trackingHosts, retired, matchesPrior)
+    unverified = tracked.kept.concat(carriedUnverified)
+    if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
+    if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
   }
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
+// Findings whose verdict was reached after at least one returned vote was DISCARDED as off-schema.
+// DERIVED from the flag tierFromVotes sets, not pushed from a branch — the same discipline `notRun`
+// is built with, and for the same reason. Read over `results` (what verification produced) rather
+// than the post-absorption lists, because this counts the panels, not what survived the report; the
+// REFUTED side is included deliberately — a finding deleted from the run on a thinned panel is the
+// worst case this counter exists to make visible.
+const thinned = results
+  .flatMap(r => [...r.confirmed, ...r.suspected, ...(r.refuted || [])])
+  .filter(f => (f.votesDiscarded || 0) > 0).length
 // `scopeNotRun` leads: a scope the caller asked for and did not get is the first thing a reader of
 // the verdict needs, ahead of anything the run itself failed to finish.
 const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
@@ -3542,17 +3611,27 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
 // `resolved` and `retired` priors are intentionally dropped. Without this carry-forward the ledger
 // would hold only this round's delta, and a finding open across 3+ rounds — or a dismissed finding —
 // would silently vanish after one hop.
+// TRACKED_MARK IS STRIPPED HERE, AND ONLY HERE. "this site is already tracked by a still-live prior
+// finding" is a statement about THIS round, computed from this round's live priors. `why` is a
+// persisted ledger field, so appending it made the sentence travel into round N+1 verbatim — where
+// it became false the moment that prior resolved or retired, and nothing re-evaluated it. Stripping
+// at the ledger door keeps the mark in the report, where it is true, and out of the record, where
+// nothing can keep it true. Re-evaluating it instead was rejected: the mark is recomputed from
+// scratch every round anyway (markTrackedUnverified), so a carried copy can only ever be a stale
+// duplicate of a fresh computation.
 const toLedgerEntry = (f, disposition, tier) => ({
   fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
   severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
-  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: f.why || '',
+  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join(''),
   ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
 })
 const reviewLedger = isRereview
   ? [
     ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
     ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
-    ...unverified.map(f => toLedgerEntry(f, 'open', 'unverified')),
+    // An unverified finding whose carrier is ITSELF an unverified prior writes no second row: see
+    // `ledgerDupOfUnverifiedPrior` in lib/review-adjudicate.mjs for why that host and no other.
+    ...unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).map(f => toLedgerEntry(f, 'open', 'unverified')),
     ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
     ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
     // `adjudicated.retired` is deliberately absent, like `resolved`: a dismissed prior whose
@@ -3577,7 +3656,7 @@ await logRun(reviewRecord({
     const ran = r.ranLenses ? r.ranLenses.includes(l) : true
     return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount, unverifiedCount }
   })),
-  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0, unverified: unverified.length },
+  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0, unverified: unverified.length, thinned },
   notRun,
 }))
 
