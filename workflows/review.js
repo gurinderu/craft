@@ -1750,7 +1750,8 @@ ${JSON.stringify(payload, null, 2)}`
 // cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
 // multiple below the first number, not a fraction of the second. Below: a single entry can reach
 // ~1KB (`why` alone is capped at 500 characters), and a shard that fits only two or three entries
-// turns a 170-entry ledger into 60 agent calls. 14KB sits between: ~15-30 entries per shard, ~6-12
+// turns a 170-entry ledger into 60 agent calls. 14KB sits between: ~15-20 entries per shard once
+// the measure counts the prompt form (fewer than the compact measure suggested), ~6-12
 // calls for the largest ledger measured, and every call an order of magnitude under the size at
 // which the copy has ever been observed to go wrong.
 const LEDGER_SHARD_MAX_BYTES = 14336
@@ -1767,19 +1768,13 @@ const LEDGER_SHARD_PHASE = 'ledger'
 // budget on bookkeeping.
 const LEDGER_SHARD_MAX_SHARDS = 20
 
-// Cut a ledger into checkpoint payload fragments. Returns [] for an empty ledger — there is nothing
-// to persist and an empty shard would claim a round had no findings.
-//
-// An entry larger than `max` on its own gets a shard to itself rather than being split or dropped:
-// splitting an entry produces two half-findings that normalize into two plausible-looking wrong
-// ones, and dropping it loses a finding to save bytes.
 function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_SHARD_MAX_SHARDS } = {}) {
   const items = Array.isArray(ledger) ? ledger : []
   if (!items.length) return []
   const groups = []
   let bytes = 0
   for (const item of items) {
-    const size = JSON.stringify(item).length + 1
+    const size = payloadBytes(item)
     if (!groups.length || (groups[groups.length - 1].length && bytes + size > max)) {
       if (groups.length >= maxShards) break          // the overflow is declared below, not hidden
       groups.push([])
