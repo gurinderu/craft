@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine.',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead).',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -111,8 +111,9 @@ const A = normalizeArgs(args, log)
 const diffBase = A.diffBase ? String(A.diffBase) : ''
 const intentArg = A.intent ? String(A.intent) : ''
 const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow
-// The repo under review, when it is NOT the directory the session runs in, and where craft itself
-// lives so the logger can find lib/craft-log-run.mjs. As an installed plugin CLAUDE_PLUGIN_ROOT is
+// Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
+// this engine has no `repo` argument (see the refusal above) and always reviews the checkout the
+// session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the reviewed repo — where the script is not. Pass craftRoot then.
 const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
@@ -385,7 +386,16 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
   // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
   // logger receiving the literal string "" and treating it as a real (empty) session id.
-  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
+  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
+  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
+  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
+  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
+  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
+  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
+  // rejoin search outright in that case (see its `target` comment), because the single candidate a
+  // garbled sibling finds is its neighbour's LIVE directory.
+  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -398,7 +408,7 @@ CRAFT_RECORD_EOF
 cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
-The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit, and — reading the working copy with git — branch and head, whose values in the record below are only a fallback for what git cannot resolve), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 
@@ -664,6 +674,34 @@ function nothingToReviewMessage(fileCount) {
 // <<< craft-inline
 
 // ================= Prep: scout + index warm-up (2 agents, parallel) =================
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
+// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
+// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
+// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
+if (A.repo) {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
+    nested: !!viaArg, via: viaArg || null,
+    verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
+    // make every repetition of this same misuse its own count-1 row.
+    notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
+    outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    ``,
+    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`adversarial-review\` there.`,
+  ].join('\n')
+}
+
 phase('Prep')
 const [scout, warmup] = await parallel([
   () => agent(

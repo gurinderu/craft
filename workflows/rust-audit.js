@@ -1,7 +1,7 @@
 export const meta = {
   name: 'rust-audit',
   description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {mutants:true} to include the slow mutation pass.',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository).',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
@@ -111,8 +111,8 @@ const A = normalizeArgs(args, log)
 
 const baseArg = A.base ? String(A.base) : ''
 const runMutants = !!A.mutants
-// The repo under audit, when it is NOT the directory the session runs in, and where craft itself
-// lives so the logger can find lib/craft-log-run.mjs. As an installed plugin CLAUDE_PLUGIN_ROOT is
+// Where craft itself lives, so the logger can find lib/craft-log-run.mjs. This engine has NO
+// `repo` argument — see the refusal below; it audits the checkout the session runs in, always. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
@@ -123,7 +123,7 @@ const CRATE_ITEM = {
   required: ['name', 'path'],
   properties: {
     name: { type: 'string', description: 'crate (package) name' },
-    path: { type: 'string', description: "crate directory (its manifest dir), relative to the repo root" },
+    path: { type: 'string', description: "crate directory (its manifest dir), RELATIVE to the repo root — never the absolute `manifest_path` cargo prints, and never a leading `/`" },
   },
 }
 
@@ -140,11 +140,12 @@ const EDGE_ITEM = {
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['hasDiff', 'hasUnsafe', 'baseRef', 'crates', 'changedCrates', 'edges', 'notes'],
+  required: ['hasDiff', 'hasUnsafe', 'baseRef', 'repoRoot', 'crates', 'changedCrates', 'edges', 'notes'],
   properties: {
     hasDiff: { type: 'boolean', description: 'true if any .rs files differ vs the base ref (committed or uncommitted)' },
     hasUnsafe: { type: 'boolean', description: 'true if the workspace contains any `unsafe` block or impl' },
     baseRef: { type: 'string', description: 'the git ref the diff was computed against, or empty if none resolved' },
+    repoRoot: { type: 'string', description: 'absolute path of the repository root (`git rev-parse --show-toplevel`), empty if it cannot be resolved — used ONLY to relativize a crate path that came back absolute' },
     crates: { type: 'array', items: CRATE_ITEM, description: 'workspace members; empty if cargo metadata is unavailable' },
     changedCrates: { type: 'array', items: CRATE_ITEM, description: 'subset of crates with a changed .rs file vs the base; empty if no base / no changes' },
     edges: { type: 'array', items: EDGE_ITEM, description: 'intra-workspace dependency edges; empty if cargo metadata is unavailable' },
@@ -546,7 +547,16 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
   // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
   // logger receiving the literal string "" and treating it as a real (empty) session id.
-  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${!dir && rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
+  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
+  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
+  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
+  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
+  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
+  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
+  // rejoin search outright in that case (see its `target` comment), because the single candidate a
+  // garbled sibling finds is its neighbour's LIVE directory.
+  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -559,7 +569,7 @@ CRAFT_RECORD_EOF
 cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
-The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit, and — reading the working copy with git — branch and head, whose values in the record below are only a fallback for what git cannot resolve), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 
@@ -701,6 +711,34 @@ async function safeAgent(prompt, opts = {}) {
   }
 }
 
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
+// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
+// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
+// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
+if (A.repo) {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'rust-audit',
+    nested: false, via: null,
+    verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
+    // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
+    // make every repetition of this same misuse its own count-1 row.
+    notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
+    outputTokens: budget.spent(),
+  })
+  return [
+    `## Verdict`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    ``,
+    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`rust-audit\` there.`,
+  ].join('\n')
+}
+
 phase('Scout')
 const scout = await agent(
   `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
@@ -711,7 +749,8 @@ const scout = await agent(
 2. hasDiff = true if \`git diff --name-only <base>...HEAD\` lists any \`.rs\` file, OR \`git status --porcelain\` shows uncommitted \`.rs\` changes.
 3. hasUnsafe = true if \`grep -rnE "\\bunsafe\\b" --include=*.rs .\` finds any match (a rough check is fine; ignore obvious comment-only hits if cheap to do).
 4. baseRef = the ref you actually used (empty string if none resolved).
-5. crates = workspace members from \`cargo metadata --no-deps --format-version 1\` — each as {name, path} where path is the crate's manifest directory relative to the repo root. Empty array if \`cargo metadata\` is unavailable.
+5. crates = workspace members from \`cargo metadata --no-deps --format-version 1\` — each as {name, path} where path is the crate's manifest directory RELATIVE to the repo root. \`cargo metadata\` prints \`manifest_path\` as an ABSOLUTE file path: strip the repo root and the trailing \`/Cargo.toml\` yourself (the workspace root crate is \`.\`). An absolute path here cannot be used as a git pathspec and the per-crate review it feeds will refuse to run. Empty array if \`cargo metadata\` is unavailable.
+5b. repoRoot = \`git rev-parse --show-toplevel\` (empty string if it fails). It is the fallback that lets the script repair an absolute crate path; it is not a substitute for step 5.
 6. changedCrates = the subset of \`crates\` whose directory contains a \`.rs\` file listed by \`git diff --name-only <base>...HEAD\` (or \`git status --porcelain\` for uncommitted work). Empty if no base or no changed \`.rs\`.
 7. edges = intra-workspace dependency edges from \`cargo metadata --format-version 1\`: {from, to} where BOTH \`from\` and \`to\` are workspace members and \`from\` depends on \`to\`. Empty array if \`cargo metadata\` is unavailable.`,
   // Scout is pure mechanics (git refs + grep) — run it cheap: Haiku at low effort.
@@ -720,6 +759,46 @@ const scout = await agent(
 // scout is null if the agent was skipped or died — fall back to safe defaults rather than crash.
 const baseRef = scout?.baseRef ?? ''
 const hasUnsafe = scout?.hasUnsafe ?? true // fail-safe: run Miri when detection didn't resolve
+const repoRoot = typeof scout?.repoRoot === 'string' ? scout.repoRoot.trim() : ''
+// A crate directory must reach the nested `review` as a REPO-RELATIVE pathspec. Asking the scout for
+// one is not enough: `cargo metadata` prints `manifest_path` absolute, so a scout that copies it out
+// hands back absolute crate directories — and `review` now REFUSES an absolute `path` (it cannot
+// tell a repository from a scope) instead of running a whole-repo review under a crate's label. The
+// refusal is right and it is also the whole per-crate measurement, so the repair belongs here, at the
+// boundary the bad value crosses. Segments, not a string prefix: `/r/` + `/r/./crates/core` is the
+// same request as `crates/core`. No disk and no Node API here, so a symlinked or differently-cased
+// spelling stays unrepairable — such a crate is reported NOT RUN rather than reviewed unscoped.
+const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
+function pathSegments(p) {
+  const segs = []
+  for (const s of String(p).split(/[\\/]+/)) {
+    if (!s || s === '.') continue
+    if (s === '..' && segs.length && segs[segs.length - 1] !== '..') { segs.pop(); continue }
+    segs.push(s)
+  }
+  return segs
+}
+// The repo-relative crate directory, or null when it cannot be derived.
+function crateScope(p) {
+  const raw = String(p ?? '').trim()
+  if (!raw) return null
+  if (!ABSOLUTE_PATH.test(raw)) {
+    // A relative path must stay INSIDE the repository, and `pathSegments` keeps a leading `..` as a
+    // literal segment when there is nothing left to pop — so `../../elsewhere` normalized to itself
+    // and was handed to the nested `review` as a pathspec climbing out of the repo under audit. The
+    // absolute branch below already refuses exactly this (a path that does not resolve inside the
+    // root); the relative branch let it through the door next to it. Same answer: null, which the
+    // caller reports as NOT RUN rather than reviewing something else under this crate's label.
+    const segs = pathSegments(raw)
+    if (segs[0] === '..') return null
+    return segs.join('/') || '.'
+  }
+  const r = pathSegments(repoRoot)
+  const abs = pathSegments(raw)
+  if (!repoRoot || !r.length || abs.length < r.length) return null
+  for (let i = 0; i < r.length; i++) if (abs[i] !== r[i]) return null
+  return abs.slice(r.length).join('/') || '.'
+}
 const crates = Array.isArray(scout?.crates) ? scout.crates : []
 const changedCrates = Array.isArray(scout?.changedCrates) ? scout.changedCrates : []
 const edges = Array.isArray(scout?.edges) ? scout.edges : []
@@ -792,7 +871,17 @@ const dispatched = []
 const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
 if (reviewCrates.length > 1) {
   for (const c of reviewCrates) {
-    tasks.push(() => workflow('review', { base: baseRef, path: c.path, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) })
+    const scope = crateScope(c.path)
+    if (scope == null) {
+      // Dispatching it unscoped would review the WHOLE workspace under this crate's label — the
+      // failure this family exists to end. A null thunk lands in the NOT-RUN bookkeeping, which is
+      // what an unmeasured crate actually is.
+      log(`⚠️ crate ${c.name}: path=${String(c.path)} could not be made repo-relative (repoRoot=${repoRoot || 'unresolved'}) — its per-crate review is NOT RUN rather than silently widened to the whole workspace`)
+      tasks.push(() => null)
+      dispatched.push(`review:${c.name}`)
+      continue
+    }
+    tasks.push(() => workflow('review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) })
       .then(report => reviewResult(`review:${c.name}`, report))
       .catch(() => null))
     dispatched.push(`review:${c.name}`)
