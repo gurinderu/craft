@@ -1847,9 +1847,14 @@ async function ragent(prompt, opts = {}) {
       // second attempt after a slow death those differ by most of the deadline. The transcript is the
       // only carrier the run's clock was ever measured from, so a wrong number here is a wrong
       // measurement later, not a cosmetic slip.
-      const mins = Math.max(1, Math.round(left / 60000))
+      // Sub-minute waits are printed as seconds rather than rounded up to "1min". Rounding up is
+      // how the previous wrong number read as plausible, and the case is not hypothetical: the whole
+      // reason RETRY_FLOOR_MS exists is that a remainder of a few hundred milliseconds gets
+      // dispatched into. A log that calls 200ms "1min" hides exactly the event the floor was added
+      // to make visible.
+      const waited = left >= 60000 ? `${Math.round(left / 60000)}min` : `${Math.max(1, Math.round(left / 1000))}s`
       const again = attempt < AGENT_TRIES && !spentOut
-      log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${again ? ' and re-dispatching with what is left of the budget' : ' (the deadline is one budget shared by the attempts and it is now spent; treated as a dead agent)'}`)
+      log(`⏱️ agent '${o.label || '?'}' passed its ${waited} deadline with no response — abandoning the wait${again ? ' and re-dispatching with what is left of the budget' : ' (the deadline is one budget shared by the attempts and it is now spent; treated as a dead agent)'}`)
       if (!again) return null
       continue
     }
@@ -3511,6 +3516,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     // ranking, sinking the genuine repeats the ranking exists to surface. The findings themselves
     // are not hidden by this: they stay in the `unverified` tier, out of the refutation
     // denominator, and each carries its own `why` into the report's Unverified section.
+    // Read across runs by lib/analyze-runs.mjs, which ranks it separately from the failures.
     savedByFloor: [...new Set(deaths.filter(f => f.verifySkipped).map(f => `${profile.id} verification of ${f.file || '?'} — deliberately not dispatched: the verdict was already fixed at Block, and no judgement on a Medium can move it, so those finding(s) were never checked against the code`))],
     dropped: refuted.length,
     refuted,
@@ -4268,7 +4274,7 @@ const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
 // reporting below draws the INCOMPLETE marker from `coverageNotes`, alongside `notRun`.
 // Same reasoning as `uncoveredFiles` directly above, from the other direction: a deliberate saving
 // is not a coverage hole either, so it joins neither `notRun` nor `coverageNotes` and never reaches
-// `incompleteNotes`. It is recorded so the saving can be counted across runs.
+// `incompleteNotes`. It is counted across runs by lib/analyze-runs.mjs, under its own heading.
 const savedByFloor = results.flatMap(r => r.savedByFloor || [])
 const coverageNotes = uncoveredGap.length ? [uncoveredNotRunNote(uncoveredGap)] : []
 const incompleteNotes = [...notRun, ...coverageNotes]
@@ -4387,6 +4393,22 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
   .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
   recordVerdict = 'Block'
 }
+// THE PREMISE OF THE SAVING, CHECKED AGAINST THE VERDICT THAT ACTUALLY CAME OUT. Skipping a Medium
+// is legitimate only while "the verdict is already Block" stays true, and that is a claim about a
+// moment, not an invariant: the floor is raised during Verify, and a confirmed finding can still
+// leave the verdict afterwards — on a re-review `absorbAcross` folds it into a carried (dismissed)
+// prior, and carried priors are deliberately excluded from `rereviewVerdict`. The Critical the
+// saving rested on then vanishes from the verdict while the unverified Mediums remain unverified,
+// and one of them could have been the difference between Approve and Warning.
+// So the premise is RE-READ here rather than trusted: if the run did not end at Block, the skip was
+// a genuine coverage hole after all, and it converts into exactly what a coverage hole is — a
+// `notRun` entry, which a re-run can and should fix. This is the one case where the saving and the
+// failure are the same event, told apart only by an outcome that is not known when the skip is made.
+const floorPremiseHeld = !savedByFloor.length || recordVerdict === 'Block'
+if (!floorPremiseHeld) {
+  notRun.push(...savedByFloor.map(n => `${n} — AND THE PREMISE DID NOT HOLD: the run ended at ${recordVerdict}, not Block, so the saving rested on a confirmed finding that did not reach the verdict; re-run to check them`))
+  log(`⚠️ ${savedByFloor.length} verification(s) were skipped because the verdict was already Block, but the run ended at ${recordVerdict} — the skipped findings are reported as a coverage hole, not as a saving`)
+}
 // Persist the ledger so round N+1 can find round N. On a re-review it grows by FOUR paths, not the
 // three that are obvious: (1) the new delta findings; (2) still-open/regressed priors, as 'open';
 // (3) dismissed priors still carried, with their disposition; and (4) — easy to miss because it
@@ -4441,8 +4463,12 @@ for (const shard of shardLedger(reviewLedger)) {
   await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
 }
 await logRun(reviewRecord({
-  verdict: recordVerdict + (incompleteNotes.length ? ' (INCOMPLETE)' : ''),
+  verdict: recordVerdict + (incompleteNotes.length || !floorPremiseHeld ? ' (INCOMPLETE)' : ''),
   savedByFloor,
+  // Recorded as its own field, not inferred from the two lists: "the saving was legitimate" and
+  // "the saving turned into a hole" are the question any later count of this economy has to ask
+  // first, and deriving it from string shapes would break the moment a string is reworded.
+  savedByFloorPremiseHeld: floorPremiseHeld,
   round: thisRound,
   findings: summarizeFindings(allReviewFindings),
   ledger: reviewLedger,
@@ -4484,4 +4510,14 @@ function fallbackReport() {
   ].join('\n')
 }
 
-return out((report || fallbackReport()) + scopeSection())
+// APPENDED AFTER SYNTHESIS, because the synthesis prompt is composed before the verdict exists and
+// therefore cannot carry this. The model wrote its report believing the run was a Block; if it was
+// not, the reader is told here, in the report itself, rather than only on the run record.
+function floorPremiseSection() {
+  if (floorPremiseHeld) return ''
+  return `\n\n## ⚠️ INCOMPLETE — a verification saving whose premise did not hold\n`
+    + `${savedByFloor.length} batch verification(s) were deliberately not dispatched because the verdict stood at Block when their turn came, and no judgement on a Medium can move a Block. The run ended at ${recordVerdict}. The saving therefore rested on a confirmed finding that did not reach the final verdict, and those findings are UNVERIFIED for no good reason — treat this section as a coverage hole and re-run. They are listed under Unverified above.\n`
+    + savedByFloor.map(n => `- ${n}`).join('\n')
+}
+
+return out((report || fallbackReport()) + floorPremiseSection() + scopeSection())
