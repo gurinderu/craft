@@ -1787,10 +1787,16 @@ const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verif
 // REPLACES the per-phase table, never the explicit `deadlineMs` an individual dispatch passes —
 // preflight's 5min is a property of preflight, not a default to be overridden from the outside.
 const deadlineArg = Number(A.deadlineMs) > 0 ? Number(A.deadlineMs) : 0
-// The smallest remainder a re-dispatch is allowed to be launched into. A POLICY DECISION, not a
-// measurement — nothing recorded derives it. It is set against the measured live distribution from
-// the other side: live verifiers answer in tens of seconds, so a remainder under a minute cannot
-// plausibly hold an answer and would buy a harness slot to time out in.
+// The CEILING on the smallest remainder a re-dispatch is allowed to be launched into — not the
+// floor itself, which is derived from the budget by `retryFloorFor` below. A POLICY DECISION, not a
+// measurement: nothing recorded derives it. It is set against the measured live distribution from
+// the other side — live verifiers answer in tens of seconds, so against an ordinary phase budget a
+// remainder under a minute is a poor bet and mostly buys a harness slot to time out in.
+// That reasoning is scale-bound, and the scaling below is the admission of it: under a budget of
+// 100s the floor is 50s, and a re-dispatch does then go out into a remainder this paragraph would
+// have called implausible. The trade is deliberate. A floor that cannot adapt is worse, because
+// against a budget shorter than itself it is true before anything has run and removes the retry
+// ladder entirely, which is a silent behaviour change rather than a judged bet.
 const RETRY_FLOOR_MS = 60000
 // The floor is RELATIVE to the budget it guards, never a flat minute. A flat minute against a
 // budget SHORTER than a minute is true before the first attempt even runs, so every agent in such a
@@ -1811,14 +1817,23 @@ if (deadlineArg) {
   // a phase given four times its budget changes what the run does just as surely — it is simply
   // slower to notice. Naming only the cuts left the other half of the override unrecorded in the one
   // place this run's clock is ever read from.
-  const m = v => `${Math.round(v / 60000)}min`
+  // Sub-minute values print as seconds. Rounding a 30s override to "0min" is the same defect the
+  // deadline log was fixed for, inverted — and worse here, because 30000 is exactly the documented
+  // diagnostic value this warning exists to explain, so the one reader it was written for is the one
+  // it would mislead.
+  const m = v => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
   const moved = dir => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
   const shortened = moved(-1)
   const lengthened = moved(1)
   log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
     + `${shortened.length ? ` — SHORTENING ${shortened.join(', ')}. A phase cut below the live distribution will fire its deadline on healthy agents, and a transcript full of deadline fires reads like an API outage.` : ''}`
     + `${lengthened.length ? ` — LENGTHENING ${lengthened.join(', ')}.` : ''}`
-    + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: at this size the re-dispatch floor drops to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual.` : ''}`)
+    // Scoped honestly: the floor is derived per dispatch, and a dispatch that names its own deadline
+    // (preflight's 5 minutes) is not overridden by this argument at all, so its floor stays the full
+    // minute. Stating the drop globally would hand the transcript's reader a calibration that holds
+    // for most agents and not all — and a wrong calibration is read with the same confidence as a
+    // right one.
+    + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: for the phases this argument governs, the re-dispatch floor drops with it to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual; a dispatch carrying its own deadline keeps its own floor.` : ''}`)
 }
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
@@ -3390,10 +3405,14 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // and an unbounded fan-out makes it fire on queue wait instead of on hanging. A window, not waves:
   // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
   // A group whose verifier was never bought because the verdict was already fixed at Block. It takes
-  // the SAME route as every death — the unverified tier, out of the refutation denominator, into
-  // `notRun` — and for the same reason: nothing here was checked against the code. What it does NOT
-  // do is disappear. `verifySkipped` marks it only so `notRun` can say why it did not run, since a
-  // skipped group and a dead one need a re-run for opposite reasons.
+  // the same route as a death AS FAR AS THE TIERS GO — the unverified tier, out of the refutation
+  // denominator — and for the same reason: nothing here was checked against the code. What it does
+  // NOT do is disappear, and what it does NOT do either is enter `notRun`: that list means "this ran
+  // badly; re-run it" and drives the INCOMPLETE marker, while this is a deliberate saving a re-run
+  // would simply make again. It travels in `savedByFloor` instead (see the return of verifyPool),
+  // and converts into `notRun` only if the Block it was justified by fails to arrive.
+  // `verifySkipped` is the flag that keeps the two apart, since they need a re-run for opposite
+  // reasons.
   const floorSkippedGroup = group => {
     log(`💰 [${profile.id}] the batch verifier for ${group[0].file || '?'} was NOT dispatched — ${floorSkipReason(floor)}; its ${group.length} finding(s) are reported as unverified and excluded from the verification counters`)
     return group.map(f => ({ ...NOT_VERIFIED(f, floorSkipReason(floor)), verifySkipped: true }))
