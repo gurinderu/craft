@@ -1853,10 +1853,15 @@ async function ragent(prompt, opts = {}) {
       // dispatched into. A log that calls 200ms "1min" hides exactly the event the floor was added
       // to make visible.
       const waited = left >= 60000 ? `${Math.round(left / 60000)}min` : `${Math.max(1, Math.round(left / 1000))}s`
-      const again = attempt < AGENT_TRIES && !spentOut
-      log(`⏱️ agent '${o.label || '?'}' passed its ${waited} deadline with no response — abandoning the wait${again ? ' and re-dispatching with what is left of the budget' : ' (the deadline is one budget shared by the attempts and it is now spent; treated as a dead agent)'}`)
-      if (!again) return null
-      continue
+      // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
+      // was armed for exactly `left`, so when it fires the budget is spent, and one budget shared by
+      // the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
+      // is unreachable under that arithmetic, so it is gone rather than left as reassuring dead text.
+      // The re-dispatch survives for the case it was always really for: the FAST death, which spends
+      // almost none of the budget. A hang is evidence about the request; a fast death is evidence
+      // about reachability, and only the second is worth asking twice.
+      log(`⏱️ agent '${o.label || '?'}' passed its ${waited} deadline with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
+      return null
     }
     if (res !== null && res !== undefined) {
       // A live answer enters the window as one observation of a reachable API: an outage that ended
@@ -2981,10 +2986,14 @@ const CULL_MODEL = 'sonnet'
 // deadline stays small: ~24 agents over an execution p90 of ~360s is well under 15min of waiting,
 // which is what makes a 30min dispatch-clock deadline mean "stuck" rather than "popular".
 //
-// It bounds DISPATCH, not occupancy: ragent re-dispatches once after a deadline, and the abandoned
-// agent keeps its harness concurrency slot until it is reaped, so a window can transiently sit at up
-// to twice this number. That doubling costs a 30min deadline first, so it cannot recreate the
-// unbounded storm — but it is a real ceiling of ~48, not ~24.
+// It bounds DISPATCH, not occupancy, and the size of the gap has changed. It used to be a factor of
+// two: `ragent` re-dispatched after a deadline fire, and the abandoned agent kept its harness
+// concurrency slot until it was reaped, so a window could transiently sit at ~48. The deadline is
+// now ONE budget shared by the attempts, and a fire spends it by definition — so a deadline fire no
+// longer re-dispatches at all, and that doubling is gone.
+// What remains is the FAST death, which spends almost none of the budget and does re-dispatch: an
+// abandoned slot there is still held, so occupancy can exceed this number, but by the deaths in
+// flight rather than by a clean doubling. The number stays a dispatch bound, not an occupancy one.
 const VERIFY_WINDOW_AGENTS = 24
 
 // Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
@@ -3668,13 +3677,15 @@ async function reviewProfile(profile) {
     //  · the measured cost of an earlier version of this pass was 207s, ALREADY past three minutes.
     //  · the clock starts at DISPATCH, not at execution, so it covers queue wait PLUS the run.
     // A deadline between those last two (210000 did exactly this) times out work that would have
-    // landed — and `ragent` does not cancel on a deadline: it abandons the wait and re-dispatches,
-    // so a miss costs TWO dispatches and, if the second is as slow, still yields nothing. Losing
-    // preflight is survivable (the gate re-establishes everything itself, the slow way); losing it
-    // twice while paying for both is the performance regression this step exists to prevent.
-    // The cost of the higher bound: preflight is serial before the gate, so a hung pass now burns up
-    // to 10min of wall clock (two dispatches) rather than 7. Bounded, and cheaper than the gate
-    // rediscovering its own environment on every run.
+    // landed. Losing preflight is survivable — the gate re-establishes everything itself, the slow
+    // way — so the bound is set above the measured cost rather than tight against it.
+    // THE COST ARGUMENT THAT USED TO STAND HERE IS NO LONGER TRUE, and the constant survives it.
+    // It read: a miss costs TWO dispatches, because `ragent` abandoned the wait and re-dispatched
+    // with a fresh deadline, so a hung pass burned up to 10min. The deadline is now ONE budget
+    // shared by the attempts, and a deadline fire spends it by definition — so a miss costs one
+    // dispatch and at most these 5 minutes, and the second attempt exists only for the fast death
+    // that leaves budget behind. 300000 is therefore now a straightforwardly bounded 5min ceiling,
+    // not a 10min one accepted as a trade.
     { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
   // The declared-probe audit. Named in the log and carried into the record so a breach of the
   // "ask each source once" rule is a fact of the run rather than a matter of the prompt's manners.
@@ -4499,7 +4510,10 @@ function fallbackReport() {
   const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
   return [
     `## Verdict`,
-    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${incompleteNotes.length ? ` · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}.` : ''}`,
+    // `notRun` LIVE, not the `incompleteNotes` snapshot taken before the verdict existed: the
+    // revoked-premise path pushes into `notRun` afterwards, and a fallback rendered from the stale
+    // snapshot would print a clean verdict over findings the same run has just declared unchecked.
+    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ INCOMPLETE — coverage was partial: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
@@ -4513,6 +4527,24 @@ function fallbackReport() {
 // APPENDED AFTER SYNTHESIS, because the synthesis prompt is composed before the verdict exists and
 // therefore cannot carry this. The model wrote its report believing the run was a Block; if it was
 // not, the reader is told here, in the report itself, rather than only on the run record.
+// THE VERDICT LINE ITSELF, not only a section under it. The synthesis prompt was composed before
+// the verdict existed, so the model wrote its `## Verdict` line believing the run was a Block — and
+// a reader who has read a green verdict line has been misled, whatever a section at the bottom of
+// the document says afterwards. The run record already says INCOMPLETE here, so without this the
+// record and the report disagree, and rust-audit's dimension roll-up reads the verdict STRING: a
+// clean line there carries the wrong-green up into the audit.
+// Amends the first non-empty line under `## Verdict`, and only if it does not already say so.
+function markVerdictIncomplete(text) {
+  if (floorPremiseHeld) return text
+  const lines = String(text).split('\n')
+  const head = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
+  if (head < 0) return text
+  const at = lines.findIndex((l, i) => i > head && l.trim())
+  if (at < 0 || /INCOMPLETE/.test(lines[at])) return text
+  lines[at] = `${lines[at]} · ⚠️ INCOMPLETE — ${savedByFloor.length} verification(s) were skipped because the verdict stood at Block, and the run did not end at Block; those findings are unverified for a reason that did not apply.`
+  return lines.join('\n')
+}
+
 function floorPremiseSection() {
   if (floorPremiseHeld) return ''
   return `\n\n## ⚠️ INCOMPLETE — a verification saving whose premise did not hold\n`
@@ -4520,4 +4552,4 @@ function floorPremiseSection() {
     + savedByFloor.map(n => `- ${n}`).join('\n')
 }
 
-return out((report || fallbackReport()) + floorPremiseSection() + scopeSection())
+return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + scopeSection())
