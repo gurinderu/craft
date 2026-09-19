@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -1749,19 +1749,106 @@ function makeDeathBreaker(opts = {}) {
 // is deliberately not given one: there a suppressed re-dispatch costs a whole dimension of the
 // review, and the window is not the scarce thing.
 
+// ---- one budget, shared by the attempts ----
+// Pure helper, tested as a real module in lib/agent-deadline.mjs and pasted back here by the
+// craft-inline gate. The rationale for a shared budget — and why the thresholds themselves must NOT
+// move — lives there.
+// >>> craft-inline lib/agent-deadline.mjs makeDeadlineBudget
+// One wall-clock budget, consumed by however many attempts are made against it. `now` is injected so
+// a test can drive elapsed time without sleeping; the engine passes nothing and gets `Date.now`.
+function makeDeadlineBudget(totalMs, now = Date.now) {
+  const total = Number(totalMs)
+  const started = now()
+  const capped = Number.isFinite(total) && total > 0 ? total : 0
+  // Clamped at zero from below: a clock that jumps backwards must not hand out MORE budget than the
+  // total, and one that jumps forward must not hand out a negative timeout (setTimeout reads a
+  // negative delay as zero, which would fire the deadline instantly and look like a hang).
+  const remaining = () => Math.min(capped, Math.max(0, capped - (now() - started)))
+  return {
+    remaining,
+    // Whether another attempt has any USABLE wall clock left to wait in. The refusal is a FLOOR,
+    // not zero, and the difference is the whole point: an attempt dispatched against 200ms fires its
+    // deadline before the agent can answer, so it costs a harness slot and produces nothing — which
+    // is precisely the outcome the guard exists to prevent, arriving through a remainder that a
+    // `<= 0` test reads as plenty. A slow death (the measured 500–660s form) lands exactly there.
+    // The floor is the caller's to choose and is a POLICY DECISION, not a measurement: nothing
+    // recorded derives a particular value. It defaults to zero so the bare call keeps its old
+    // meaning for any caller that wants literally-nothing-left.
+    exhausted: (floorMs = 0) => remaining() <= Math.max(0, Number(floorMs) || 0),
+    total: () => capped,
+  }
+}
+// <<< craft-inline
+
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
+// A caller-supplied ceiling, applied to every phase that does not name its own. It only ever
+// REPLACES the per-phase table, never the explicit `deadlineMs` an individual dispatch passes —
+// preflight's 5min is a property of preflight, not a default to be overridden from the outside.
+const deadlineArg = Number(A.deadlineMs) > 0 ? Number(A.deadlineMs) : 0
+// The CEILING on the smallest remainder a re-dispatch is allowed to be launched into — not the
+// floor itself, which is derived from the budget by `retryFloorFor` below. A POLICY DECISION, not a
+// measurement: nothing recorded derives it. It is set against the measured live distribution from
+// the other side — live verifiers answer in tens of seconds, so against an ordinary phase budget a
+// remainder under a minute is a poor bet and mostly buys a harness slot to time out in.
+// That reasoning is scale-bound, and the scaling below is the admission of it: under a budget of
+// 100s the floor is 50s, and a re-dispatch does then go out into a remainder this paragraph would
+// have called implausible. The trade is deliberate. A floor that cannot adapt is worse, because
+// against a budget shorter than itself it is true before anything has run and removes the retry
+// ladder entirely, which is a silent behaviour change rather than a judged bet.
+const RETRY_FLOOR_MS = 60000
+// The floor is RELATIVE to the budget it guards, never a flat minute. A flat minute against a
+// budget SHORTER than a minute is true before the first attempt even runs, so every agent in such a
+// run loses its re-dispatch — the whole retry ladder the death breaker is calibrated against
+// vanishes, and the transcript says "no wall clock left to wait in" over a budget that has barely
+// been touched. `deadlineMs=30000` is a documented diagnostic setting, so this is reachable, not
+// theoretical. Half the budget is the cap: it keeps the guard meaningful at every scale, since a
+// remainder under half of what the first attempt had is a poor bet whatever the absolute numbers.
+const retryFloorFor = budget => Math.min(RETRY_FLOOR_MS, Math.floor(budget.total() / 2))
+// SAID OUT LOUD, once, at the top of the run. This one argument replaces the WHOLE phase table,
+// including the 90 minutes a lens is legitimately allowed (one measured lens ran 46). Set too low it
+// kills live work by deadline, and a run full of deadline fires is indistinguishable, in the
+// transcript, from the API outage this code was written for — so the mistake would be diagnosed as
+// the very thing it imitates. Naming the override where a reader meets it first is the cheapest
+// defence there is; the transcript is the only carrier the run's clock is ever measured from.
+if (deadlineArg) {
+  // BOTH DIRECTIONS. The argument replaces the table, so it lengthens as readily as it shortens, and
+  // a phase given four times its budget changes what the run does just as surely — it is simply
+  // slower to notice. Naming only the cuts left the other half of the override unrecorded in the one
+  // place this run's clock is ever read from.
+  // Sub-minute values print as seconds. Rounding a 30s override to "0min" is the same defect the
+  // deadline log was fixed for, inverted — and worse here, because 30000 is exactly the documented
+  // diagnostic value this warning exists to explain, so the one reader it was written for is the one
+  // it would mislead.
+  const m = v => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
+  const moved = dir => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
+  const shortened = moved(-1)
+  const lengthened = moved(1)
+  log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
+    + `${shortened.length ? ` — SHORTENING ${shortened.join(', ')}. A phase cut below the live distribution will fire its deadline on healthy agents, and a transcript full of deadline fires reads like an API outage.` : ''}`
+    + `${lengthened.length ? ` — LENGTHENING ${lengthened.join(', ')}.` : ''}`
+    // Scoped honestly: the floor is derived per dispatch, and a dispatch that names its own deadline
+    // (preflight's 5 minutes) is not overridden by this argument at all, so its floor stays the full
+    // minute. Stating the drop globally would hand the transcript's reader a calibration that holds
+    // for most agents and not all — and a wrong calibration is read with the same confidence as a
+    // right one.
+    + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: for the phases this argument governs, the re-dispatch floor drops with it to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual; a dispatch carrying its own deadline keeps its own floor.` : ''}`)
+}
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
   if (Number.isFinite(explicit) && explicit > 0) return explicit
-  return PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS
+  return deadlineArg || (PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS)
 }
 async function ragent(prompt, opts = {}) {
   // deadlineMs and breaker are ours, not agent()'s — strip them so neither reaches the harness as an
   // unknown option.
   const { deadlineMs: _deadlineMs, breaker, ...agentOpts } = opts
   const ms = deadlineMsFor(opts)
+  // ONE budget for the whole call, not one per attempt. The worst case of a hanging dispatch is
+  // therefore `ms` of waiting in total rather than `ms` per attempt — which, in the Verify window,
+  // is the difference between one slot held for 30 minutes and one held for an hour.
+  const budget = makeDeadlineBudget(ms)
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
     let timer = null
@@ -1769,22 +1856,45 @@ async function ragent(prompt, opts = {}) {
     // and leave the timer pending. That was invisible while a throw killed the run outright; now that
     // ragentQuietly swallows it, a leaked timer would hold the run open for the whole deadline.
     let res
+    // What is LEFT of the budget, not the whole of it. An attempt that follows a fast death still
+    // gets essentially all of it; one that follows a deadline fire gets none, which is what makes a
+    // hang cost one deadline in total instead of one per attempt.
+    const left = budget.remaining()
     try {
       res = await Promise.race([
         agent(`${REPO_DIRECTIVE}${prompt}`, o),
-        new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), ms) }),
+        new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), left) }),
       ])
     } finally {
       clearTimeout(timer)
     }
+    // A budget spent is a giving-up condition in its own right, alongside the attempt count: a
+    // re-dispatch with nothing left to wait in would fire its deadline before the agent could answer,
+    // so it would cost a harness slot and return null anyway.
+    const spentOut = budget.exhausted(retryFloorFor(budget))
     if (res === DEADLINE_HIT) {
       // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
       // told apart from a live agent taking too long, and feeding that into the window would let slow
       // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
-      const mins = Math.round(ms / 60000)
-      log(`⏱️ agent '${o.label || '?'}' passed its ${mins}min deadline with no response — abandoning the wait${attempt < AGENT_TRIES ? ' and re-dispatching once' : ' (giving up; treated as a dead agent)'}`)
-      if (attempt >= AGENT_TRIES) return null
-      continue
+      // `left`, never `ms`. What was waited is what remained of the budget at this attempt, and on a
+      // second attempt after a slow death those differ by most of the deadline. The transcript is the
+      // only carrier the run's clock was ever measured from, so a wrong number here is a wrong
+      // measurement later, not a cosmetic slip.
+      // Sub-minute waits are printed as seconds rather than rounded up to "1min". Rounding up is
+      // how the previous wrong number read as plausible, and the case is not hypothetical: the whole
+      // reason RETRY_FLOOR_MS exists is that a remainder of a few hundred milliseconds gets
+      // dispatched into. A log that calls 200ms "1min" hides exactly the event the floor was added
+      // to make visible.
+      const waited = left >= 60000 ? `${Math.round(left / 60000)}min` : `${Math.max(1, Math.round(left / 1000))}s`
+      // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
+      // was armed for exactly `left`, so when it fires the budget is spent, and one budget shared by
+      // the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
+      // is unreachable under that arithmetic, so it is gone rather than left as reassuring dead text.
+      // The re-dispatch survives for the case it was always really for: the FAST death, which spends
+      // almost none of the budget. A hang is evidence about the request; a fast death is evidence
+      // about reachability, and only the second is worth asking twice.
+      log(`⏱️ agent '${o.label || '?'}' passed its ${waited} deadline with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
+      return null
     }
     if (res !== null && res !== undefined) {
       // A live answer enters the window as one observation of a reachable API: an outage that ended
@@ -1793,6 +1903,15 @@ async function ragent(prompt, opts = {}) {
       return res
     }
     if (attempt >= AGENT_TRIES) return null
+    // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
+    if (spentOut) {
+      // Says how much was left and what it was measured against, rather than the flat "nothing left"
+      // that used to be printed over a remainder that was merely below the floor. The transcript is
+      // the only carrier this run's clock is ever measured from, and "spent" and "below the floor"
+      // are different events that a future reader has to be able to tell apart.
+      log(`⏱️ agent '${opts.label || '?'}' returned no result with ~${Math.round(budget.remaining() / 1000)}s of its deadline budget left, below the ${Math.round(retryFloorFor(budget) / 1000)}s floor a re-dispatch needs — NOT re-dispatching; treated as a dead agent`)
+      return null
+    }
     // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
     // its own retry ladder on an unreachable API, and the re-dispatch below spends a second ladder
     // inside the same verification window slot. On a one-off failure that is worth the clock; once
@@ -2904,10 +3023,14 @@ const CULL_MODEL = 'sonnet'
 // deadline stays small: ~24 agents over an execution p90 of ~360s is well under 15min of waiting,
 // which is what makes a 30min dispatch-clock deadline mean "stuck" rather than "popular".
 //
-// It bounds DISPATCH, not occupancy: ragent re-dispatches once after a deadline, and the abandoned
-// agent keeps its harness concurrency slot until it is reaped, so a window can transiently sit at up
-// to twice this number. That doubling costs a 30min deadline first, so it cannot recreate the
-// unbounded storm — but it is a real ceiling of ~48, not ~24.
+// It bounds DISPATCH, not occupancy, and the size of the gap has changed. It used to be a factor of
+// two: `ragent` re-dispatched after a deadline fire, and the abandoned agent kept its harness
+// concurrency slot until it was reaped, so a window could transiently sit at ~48. The deadline is
+// now ONE budget shared by the attempts, and a fire spends it by definition — so a deadline fire no
+// longer re-dispatches at all, and that doubling is gone.
+// What remains is the FAST death, which spends almost none of the budget and does re-dispatch: an
+// abandoned slot there is still held, so occupancy can exceed this number, but by the deaths in
+// flight rather than by a clean doubling. The number stays a dispatch bound, not an occupancy one.
 const VERIFY_WINDOW_AGENTS = 24
 
 // Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
@@ -2989,6 +3112,65 @@ function verifyTier(f) {
   // more likely a mislabel than a judgement, and it is worth one verifier to find out.
   return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
 }
+// ---- the same reasoning, carried to the tier where the money is ----
+// `verifyTier` skips Low/Info because no judgement on them can move the verdict. That is a statement
+// about `reviewVerdict`, not about severity — and once a Critical or High is CONFIRMED the verdict is
+// Block, at which point every Medium is verdict-neutral too. Medium is the whole batched population.
+// Pure helpers, tested as a real module in lib/verify-economy.mjs and pasted back here by the
+// craft-inline gate; the order discipline that makes this legitimate lives there.
+// >>> craft-inline lib/verify-economy.mjs BLOCKING_SEVERITIES securesBlock makeVerdictFloor verdictNeutralNow floorSkipReason
+// The severities whose confirmation alone forces Block, per `reviewVerdict` in lib/run-record.mjs.
+// Kept as data next to the rule it mirrors: if that rule ever gains a severity, the skip below is
+// wrong in the direction of skipping too much, and this is the one line to change.
+const BLOCKING_SEVERITIES = ['Critical', 'High']
+
+// Does this JUDGED finding, by itself, already fix the verdict at Block?
+function securesBlock(f) {
+  return !!f && f.tier === 'confirmed' && BLOCKING_SEVERITIES.includes(f.severity)
+}
+
+// A monotonic record of "the verdict is already Block, on evidence". Shared across concurrently
+// dispatched verification entries on purpose — the same reason the death breaker is shared: the
+// individual panel and the batch groups are in flight together, so a per-entry view would never see
+// the confirmation another entry brought back.
+function makeVerdictFloor() {
+  let by = null
+  return {
+    // Feed every settled verdict through here, judged or not. Returns whether THIS one raised the
+    // floor, which is what a caller logs.
+    record(f) {
+      if (by !== null || !securesBlock(f)) return false
+      by = f
+      return true
+    },
+    // Answers about what has ALREADY come back. Never predicts.
+    secured() {
+      return by !== null
+    },
+    // The finding that raised it, so a skip can name its own justification instead of asserting one.
+    securedBy() {
+      return by
+    },
+  }
+}
+
+// Can a verifier for this finding still move the verdict, given what is already confirmed?
+// Medium and nothing else: Critical/High decide the verdict themselves and are never skipped, and
+// Low/Info never reach here — `verifyTier` has already routed them to the skip tier for a reason
+// that does not depend on the floor.
+function verdictNeutralNow(f, floor) {
+  return !!f && f.severity === 'Medium' && !!floor && floor.secured()
+}
+
+// Why a Medium went unverified, in the finding's own `why`. It names the evidence — the confirmed
+// finding that fixed the verdict — because "we did not check this" is only legitimate when the
+// reader can see what made the check pointless.
+function floorSkipReason(floor) {
+  const by = floor && floor.securedBy()
+  const where = by ? `${by.severity} "${by.title || '?'}" at ${by.file || '?'}:${by.line || 0}` : 'a confirmed blocking finding'
+  return `no verifier was spent on it — the verdict was already fixed at Block by the confirmed ${where}, and no judgement on a Medium can move Block either way, so nothing here has been checked against the code`
+}
+// <<< craft-inline
 // ---- the ONE route every death on the verification path takes -------------------------------
 // The invariant, stated once: NO death on the verification path may give a finding a tier that
 // asserts an inspection, may leave it inside the refutation denominator, or may leave it out of
@@ -3175,6 +3357,11 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const route = { individual: [], batch: [], skip: [] }
   for (const f of items) route[verifyTier(f)].push(f)
 
+  // What is ALREADY confirmed at a blocking severity, raised as the individual panel settles. A
+  // batch thunk asks it at the moment it is about to dispatch, so the skip below can only ever rest
+  // on evidence that has already come back — never on an expectation that a Critical will confirm.
+  const floor = makeVerdictFloor()
+
   // Skipped tier: its OWN tier, `unverified` — not Suspected. Suspected means "a verifier looked and
   // the claim did not stand up confidently"; these were never looked at. Folding them into Suspected
   // made the two indistinguishable in the report AND put them in the refuteRate denominator, so a run
@@ -3217,8 +3404,28 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // SLIDING WINDOW rather than all at once, because the per-agent deadline is measured from DISPATCH
   // and an unbounded fan-out makes it fire on queue wait instead of on hanging. A window, not waves:
   // waves gave the same cap but re-introduced a barrier per wave (see VERIFY_WINDOW_AGENTS).
+  // A group whose verifier was never bought because the verdict was already fixed at Block. It takes
+  // the same route as a death AS FAR AS THE TIERS GO — the unverified tier, out of the refutation
+  // denominator — and for the same reason: nothing here was checked against the code. What it does
+  // NOT do is disappear, and what it does NOT do either is enter `notRun`: that list means "this ran
+  // badly; re-run it" and drives the INCOMPLETE marker, while this is a deliberate saving a re-run
+  // would simply make again. It travels in `savedByFloor` instead (see the return of verifyPool),
+  // and converts into `notRun` only if the Block it was justified by fails to arrive.
+  // `verifySkipped` is the flag that keeps the two apart, since they need a re-run for opposite
+  // reasons.
+  const floorSkippedGroup = group => {
+    log(`💰 [${profile.id}] the batch verifier for ${group[0].file || '?'} was NOT dispatched — ${floorSkipReason(floor)}; its ${group.length} finding(s) are reported as unverified and excluded from the verification counters`)
+    return group.map(f => ({ ...NOT_VERIFIED(f, floorSkipReason(floor)), verifySkipped: true }))
+  }
+
   const batchThunks = groups.map(group => () =>
-    ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
+    // Asked HERE, inside the thunk, not when the thunk list is built: the window dispatches lazily
+    // and the individual panel goes first, so by the time a batch's turn comes the floor may have
+    // been raised by a Critical that has actually come back confirmed. Asked at build time it would
+    // always answer no, and the whole population would be bought.
+    (verdictNeutralNow(group[0], floor)
+      ? Promise.resolve(floorSkippedGroup(group))
+      : ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => {
         // THE DISCRIMINATOR. `ragent` answers `null` for a dead agent (API error, skip, or the
         // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
@@ -3245,7 +3452,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       .catch(err => {
         log(`⚠️ [${profile.id}] batch verifier threw: ${String((err && err.message) || err).slice(0, 160)}`)
         return deadGroup(group, 'died before returning any verdict')
-      }))
+      })))
 
   if (route.skip.length || groups.length) {
     log(`[${profile.id}] Verify routing: ${route.individual.length} individual · ${route.batch.length} batched into ${groups.length} agent(s) · ${route.skip.length} NOT VERIFIED (Low/Info cannot move the verdict; reported as unverified, excluded from the verification counters)`)
@@ -3282,8 +3489,21 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // individual thunk to a single one — flatten the batch side back out before merging. The window
   // settles out of order but writes each result at ITS OWN index, so the positional split below
   // stays exactly as valid as it was under one parallel().
-  const entries = batchThunks.map(run => ({ run, weight: 1 }))
-    .concat(route.individual.map((f, i) => ({ run: individualThunks[i], weight: verifyWeight(f, plan) })))
+  //
+  // INDIVIDUALS LEAD, and that ordering is the load-bearing part of the Medium economy above. The
+  // window still has no barrier — the two tiers overlap freely — but it dispatches in list order, so
+  // the Critical/High panel that can raise the verdict floor goes out first and a batch's turn comes
+  // after some of it has come back. Batches first would ask the floor before anything could have
+  // raised it, and the answer would always be "not yet".
+  // Every settled individual verdict is offered to the floor. Wrapped here rather than inside the
+  // thunk because the thunk has two return points, and a floor raised on one path but not the other
+  // is the kind of half-wiring that leaves the saving silently unrealized.
+  const withFloor = run => () => Promise.resolve(run()).then(r => {
+    if (floor.record(r)) log(`💰 [${profile.id}] the verdict is now fixed at Block by a confirmed ${r.severity} (${r.file || '?'}:${r.line || 0}) — Medium batches not yet dispatched can no longer move it and will not be bought`)
+    return r
+  })
+  const entries = route.individual.map((f, i) => ({ run: withFloor(individualThunks[i]), weight: verifyWeight(f, plan) }))
+    .concat(batchThunks.map(run => ({ run, weight: 1 })))
   const totalWeight = entries.reduce((n, e) => n + e.weight, 0)
   if (totalWeight > VERIFY_WINDOW_AGENTS) {
     log(`[${profile.id}] Verify dispatched through a sliding window of ≤${VERIFY_WINDOW_AGENTS} agents (${totalWeight} worst-case agents queued) — a deeper queue makes the per-agent deadline fire on waiting rather than on hanging; the window refills as each verifier settles, so nothing waits on a batch's slowest member`)
@@ -3296,10 +3516,10 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // denominator AND out of `notRun`, so the report simply never mentioned them. A null is recovered
   // back into its own findings by index (the batch side knows its group, the individual side its
   // finding) and routed exactly like every other death.
-  const batched = settledVerdicts.slice(0, batchThunks.length)
-    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
-  const judged = settledVerdicts.slice(batchThunks.length)
+  const judged = settledVerdicts.slice(0, route.individual.length)
     .map((r, i) => (r || NOT_VERIFIED(route.individual[i], 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
+  const batched = settledVerdicts.slice(route.individual.length)
+    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
   const settled = judged.concat(batched)
   // A dead batch's findings arrive through the same list as judged ones and must leave it again:
   // `vp` is the JUDGED population and every count derived from it (candidates, refuteRate) means
@@ -3323,14 +3543,31 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     // deaths above, and grouped by (profile, file) so the exact-string ranking in
     // lib/analyze-runs.mjs sees a repeat rather than a run-unique row.
     notRun: [...new Set([
-      // A DEATH AND AN OFF-SCHEMA ANSWER ARE DIFFERENT FAILURES, and this list is ranked by exact
-      // string across runs — so one sentence for both makes "the panel returns garbage" rank as "the
-      // verifier dies", and the repair is then looked for in the wrong place. Split on the flag
-      // tierFromVotes sets, not on the wording of any `why`.
-      ...deaths.filter(f => !(f.votesDiscarded > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
-      ...deaths.filter(f => f.votesDiscarded > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
+      // THREE failures, kept apart by the same discipline that keeps error text out of the strings.
+      // This list is ranked by exact string across runs, so collapsing any two makes one repeat
+      // masquerade as another and sends the repair to the wrong place. A death is fragility a re-run
+      // can fix; an off-schema panel ANSWERED and must not be called a death; a thinned refutation
+      // deleted a finding on partial evidence. The deliberate floor skip is NOT here — see
+      // `savedByFloor` below for why it cannot be.
+      // Split on the flags tierFromVotes and floorSkippedGroup set, not on the wording of any `why`.
+      ...deaths.filter(f => !f.verifySkipped && !(f.votesDiscarded > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
+      ...deaths.filter(f => !f.verifySkipped && f.votesDiscarded > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
       ...refuted.filter(f => (f.votesDiscarded || 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence`),
     ])],
+    // OUT of `notRun` on purpose, and this is the same call that was already made once for
+    // `uncoveredFiles`. `notRun` means "this ran badly; re-run it": it drives the INCOMPLETE marker
+    // on the verdict line, and lib/analyze-runs.mjs ranks it by exact string to surface repeated
+    // FRAGILITY. A floor skip is the opposite of fragility — it is a deliberate, reproducible
+    // saving that a re-run will simply make again. Left inside, it would do two kinds of damage,
+    // both of them silent: every Block run carrying a batched Medium (the ordinary case) would
+    // render as "⚠️ INCOMPLETE — coverage was partial … findings may be undercounted", which is a
+    // false statement about coverage and, through rust-audit's leading-⚠️ rule, can pull a whole
+    // audit down to Warning; and this string would become the most frequent row in the fragility
+    // ranking, sinking the genuine repeats the ranking exists to surface. The findings themselves
+    // are not hidden by this: they stay in the `unverified` tier, out of the refutation
+    // denominator, and each carries its own `why` into the report's Unverified section.
+    // Read across runs by lib/analyze-runs.mjs, which ranks it separately from the failures.
+    savedByFloor: [...new Set(deaths.filter(f => f.verifySkipped).map(f => `${profile.id} verification of ${f.file || '?'} — deliberately not dispatched: the verdict was already fixed at Block, and no judgement on a Medium can move it, so those finding(s) were never checked against the code`))],
     dropped: refuted.length,
     refuted,
   }
@@ -3481,13 +3718,15 @@ async function reviewProfile(profile) {
     //  · the measured cost of an earlier version of this pass was 207s, ALREADY past three minutes.
     //  · the clock starts at DISPATCH, not at execution, so it covers queue wait PLUS the run.
     // A deadline between those last two (210000 did exactly this) times out work that would have
-    // landed — and `ragent` does not cancel on a deadline: it abandons the wait and re-dispatches,
-    // so a miss costs TWO dispatches and, if the second is as slow, still yields nothing. Losing
-    // preflight is survivable (the gate re-establishes everything itself, the slow way); losing it
-    // twice while paying for both is the performance regression this step exists to prevent.
-    // The cost of the higher bound: preflight is serial before the gate, so a hung pass now burns up
-    // to 10min of wall clock (two dispatches) rather than 7. Bounded, and cheaper than the gate
-    // rediscovering its own environment on every run.
+    // landed. Losing preflight is survivable — the gate re-establishes everything itself, the slow
+    // way — so the bound is set above the measured cost rather than tight against it.
+    // THE COST ARGUMENT THAT USED TO STAND HERE IS NO LONGER TRUE, and the constant survives it.
+    // It read: a miss costs TWO dispatches, because `ragent` abandoned the wait and re-dispatched
+    // with a fresh deadline, so a hung pass burned up to 10min. The deadline is now ONE budget
+    // shared by the attempts, and a deadline fire spends it by definition — so a miss costs one
+    // dispatch and at most these 5 minutes, and the second attempt exists only for the fast death
+    // that leaves budget behind. 300000 is therefore now a straightforwardly bounded 5min ceiling,
+    // not a 10min one accepted as a trade.
     { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
   // The declared-probe audit. Named in the log and carried into the record so a breach of the
   // "ask each source once" rule is a fact of the run rather than a matter of the prompt's manners.
@@ -3675,7 +3914,7 @@ async function reviewProfile(profile) {
   // ---- Verify ----
   phase('Verify')
   const deduped = await dedupPool(rollupPool(pool, profile), profile)
-  let { confirmed, suspected, unverified, dropped, refuted, notRun: verifyNotRun } = await verifyPool(deduped, plan, profile, toolProvenance)
+  let { confirmed, suspected, unverified, dropped, refuted, notRun: verifyNotRun, savedByFloor } = await verifyPool(deduped, plan, profile, toolProvenance)
   // Verification that never ran joins the lens-level list: a dead batch verifier is a hole in
   // coverage exactly like a lens that never returned, and both must reach the verdict as INCOMPLETE.
   notRun.push(...verifyNotRun)
@@ -3735,6 +3974,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
       if (fresh.length) {
         const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
         notRun.push(...(v.notRun || []))
+        savedByFloor = savedByFloor.concat(v.savedByFloor || [])
         confirmed = confirmed.concat(v.confirmed)
         suspected = suspected.concat(v.suspected)
         unverified = unverified.concat(v.unverified)
@@ -3751,7 +3991,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, criticNotes, probeViolations }
+  return { profile, plan, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
 }
 
 // ================= Run each active profile, then merge =================
@@ -4084,6 +4324,10 @@ const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
 // and sank the genuinely repeated failures — while saying the opposite of what it means, since
 // re-running will never review these files. The record carries them as `uncoveredFiles`; the
 // reporting below draws the INCOMPLETE marker from `coverageNotes`, alongside `notRun`.
+// Same reasoning as `uncoveredFiles` directly above, from the other direction: a deliberate saving
+// is not a coverage hole either, so it joins neither `notRun` nor `coverageNotes` and never reaches
+// `incompleteNotes`. It is counted across runs by lib/analyze-runs.mjs, under its own heading.
+const savedByFloor = results.flatMap(r => r.savedByFloor || [])
 const coverageNotes = uncoveredGap.length ? [uncoveredNotRunNote(uncoveredGap)] : []
 const incompleteNotes = [...notRun, ...coverageNotes]
 const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
@@ -4112,11 +4356,12 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
 // ================= Synthesize one merged report =================
 // ONE sentence, three readers: the first-pass template, the re-review template and the mechanical
 // fallback report. It was written twice before and the two copies already meant different things.
-// It names ALL THREE ways into the tier — a Low/Info nobody paid a verifier for, a finding whose
-// verifier died, and a panel whose every returned vote was off-schema — because a reader who is told
-// only the first reason will read a dead verifier's findings as cheap ones, and a panel that ANSWERED
-// unreadably did not die: calling it a death misdescribes the largest discard there is.
-const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
+// It names ALL FOUR ways into the tier — a Low/Info nobody paid a verifier for, a Medium nobody
+// paid for because the verdict was already fixed at Block, a finding whose verifier died, and a
+// panel whose every returned vote was off-schema — because a reader who is told only the cheap
+// reasons will read a dead verifier's findings as cheap ones, and a panel that ANSWERED unreadably
+// did not die: calling it a death misdescribes the largest discard there is.
+const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or because the verdict was already fixed at Block by a confirmed Critical/High and a Medium cannot move it, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
 const rereviewData = isRereview ? {
@@ -4200,6 +4445,22 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
   .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
   recordVerdict = 'Block'
 }
+// THE PREMISE OF THE SAVING, CHECKED AGAINST THE VERDICT THAT ACTUALLY CAME OUT. Skipping a Medium
+// is legitimate only while "the verdict is already Block" stays true, and that is a claim about a
+// moment, not an invariant: the floor is raised during Verify, and a confirmed finding can still
+// leave the verdict afterwards — on a re-review `absorbAcross` folds it into a carried (dismissed)
+// prior, and carried priors are deliberately excluded from `rereviewVerdict`. The Critical the
+// saving rested on then vanishes from the verdict while the unverified Mediums remain unverified,
+// and one of them could have been the difference between Approve and Warning.
+// So the premise is RE-READ here rather than trusted: if the run did not end at Block, the skip was
+// a genuine coverage hole after all, and it converts into exactly what a coverage hole is — a
+// `notRun` entry, which a re-run can and should fix. This is the one case where the saving and the
+// failure are the same event, told apart only by an outcome that is not known when the skip is made.
+const floorPremiseHeld = !savedByFloor.length || recordVerdict === 'Block'
+if (!floorPremiseHeld) {
+  notRun.push(...savedByFloor.map(n => `${n} — AND THE PREMISE DID NOT HOLD: the run ended at ${recordVerdict}, not Block, so the saving rested on a confirmed finding that did not reach the verdict; re-run to check them`))
+  log(`⚠️ ${savedByFloor.length} verification(s) were skipped because the verdict was already Block, but the run ended at ${recordVerdict} — the skipped findings are reported as a coverage hole, not as a saving`)
+}
 // Persist the ledger so round N+1 can find round N. On a re-review it grows by FOUR paths, not the
 // three that are obvious: (1) the new delta findings; (2) still-open/regressed priors, as 'open';
 // (3) dismissed priors still carried, with their disposition; and (4) — easy to miss because it
@@ -4254,7 +4515,12 @@ for (const shard of shardLedger(reviewLedger)) {
   await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
 }
 await logRun(reviewRecord({
-  verdict: recordVerdict + (incompleteNotes.length ? ' (INCOMPLETE)' : ''),
+  verdict: recordVerdict + (incompleteNotes.length || !floorPremiseHeld ? ' (INCOMPLETE)' : ''),
+  savedByFloor,
+  // Recorded as its own field, not inferred from the two lists: "the saving was legitimate" and
+  // "the saving turned into a hole" are the question any later count of this economy has to ask
+  // first, and deriving it from string shapes would break the moment a string is reworded.
+  savedByFloorPremiseHeld: floorPremiseHeld,
   round: thisRound,
   findings: summarizeFindings(allReviewFindings),
   ledger: reviewLedger,
@@ -4285,7 +4551,10 @@ function fallbackReport() {
   const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
   return [
     `## Verdict`,
-    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${incompleteNotes.length ? ` · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}.` : ''}`,
+    // `notRun` LIVE, not the `incompleteNotes` snapshot taken before the verdict existed: the
+    // revoked-premise path pushes into `notRun` afterwards, and a fallback rendered from the stale
+    // snapshot would print a clean verdict over findings the same run has just declared unchecked.
+    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ INCOMPLETE — coverage was partial: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
@@ -4296,4 +4565,32 @@ function fallbackReport() {
   ].join('\n')
 }
 
-return out((report || fallbackReport()) + scopeSection())
+// APPENDED AFTER SYNTHESIS, because the synthesis prompt is composed before the verdict exists and
+// therefore cannot carry this. The model wrote its report believing the run was a Block; if it was
+// not, the reader is told here, in the report itself, rather than only on the run record.
+// THE VERDICT LINE ITSELF, not only a section under it. The synthesis prompt was composed before
+// the verdict existed, so the model wrote its `## Verdict` line believing the run was a Block — and
+// a reader who has read a green verdict line has been misled, whatever a section at the bottom of
+// the document says afterwards. The run record already says INCOMPLETE here, so without this the
+// record and the report disagree, and rust-audit's dimension roll-up reads the verdict STRING: a
+// clean line there carries the wrong-green up into the audit.
+// Amends the first non-empty line under `## Verdict`, and only if it does not already say so.
+function markVerdictIncomplete(text) {
+  if (floorPremiseHeld) return text
+  const lines = String(text).split('\n')
+  const head = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
+  if (head < 0) return text
+  const at = lines.findIndex((l, i) => i > head && l.trim())
+  if (at < 0 || /INCOMPLETE/.test(lines[at])) return text
+  lines[at] = `${lines[at]} · ⚠️ INCOMPLETE — ${savedByFloor.length} verification(s) were skipped because the verdict stood at Block, and the run did not end at Block; those findings are unverified for a reason that did not apply.`
+  return lines.join('\n')
+}
+
+function floorPremiseSection() {
+  if (floorPremiseHeld) return ''
+  return `\n\n## ⚠️ INCOMPLETE — a verification saving whose premise did not hold\n`
+    + `${savedByFloor.length} batch verification(s) were deliberately not dispatched because the verdict stood at Block when their turn came, and no judgement on a Medium can move a Block. The run ended at ${recordVerdict}. The saving therefore rested on a confirmed finding that did not reach the final verdict, and those findings are UNVERIFIED for no good reason — treat this section as a coverage hole and re-run. They are listed under Unverified above.\n`
+    + savedByFloor.map(n => `- ${n}`).join('\n')
+}
+
+return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + scopeSection())
