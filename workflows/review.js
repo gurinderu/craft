@@ -1792,6 +1792,14 @@ const deadlineArg = Number(A.deadlineMs) > 0 ? Number(A.deadlineMs) : 0
 // the other side: live verifiers answer in tens of seconds, so a remainder under a minute cannot
 // plausibly hold an answer and would buy a harness slot to time out in.
 const RETRY_FLOOR_MS = 60000
+// The floor is RELATIVE to the budget it guards, never a flat minute. A flat minute against a
+// budget SHORTER than a minute is true before the first attempt even runs, so every agent in such a
+// run loses its re-dispatch — the whole retry ladder the death breaker is calibrated against
+// vanishes, and the transcript says "no wall clock left to wait in" over a budget that has barely
+// been touched. `deadlineMs=30000` is a documented diagnostic setting, so this is reachable, not
+// theoretical. Half the budget is the cap: it keeps the guard meaningful at every scale, since a
+// remainder under half of what the first attempt had is a poor bet whatever the absolute numbers.
+const retryFloorFor = budget => Math.min(RETRY_FLOOR_MS, Math.floor(budget.total() / 2))
 // SAID OUT LOUD, once, at the top of the run. This one argument replaces the WHOLE phase table,
 // including the 90 minutes a lens is legitimately allowed (one measured lens ran 46). Set too low it
 // kills live work by deadline, and a run full of deadline fires is indistinguishable, in the
@@ -1799,8 +1807,18 @@ const RETRY_FLOOR_MS = 60000
 // the very thing it imitates. Naming the override where a reader meets it first is the cheapest
 // defence there is; the transcript is the only carrier the run's clock is ever measured from.
 if (deadlineArg) {
-  const shortened = Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => v > deadlineArg).map(([k, v]) => `${k} ${Math.round(v / 60000)}min→${Math.round(deadlineArg / 60000)}min`)
-  log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own${shortened.length ? ` — SHORTENING ${shortened.join(', ')}. A phase cut below the live distribution will fire its deadline on healthy agents, and a transcript full of deadline fires reads like an API outage.` : ''}`)
+  // BOTH DIRECTIONS. The argument replaces the table, so it lengthens as readily as it shortens, and
+  // a phase given four times its budget changes what the run does just as surely — it is simply
+  // slower to notice. Naming only the cuts left the other half of the override unrecorded in the one
+  // place this run's clock is ever read from.
+  const m = v => `${Math.round(v / 60000)}min`
+  const moved = dir => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
+  const shortened = moved(-1)
+  const lengthened = moved(1)
+  log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
+    + `${shortened.length ? ` — SHORTENING ${shortened.join(', ')}. A phase cut below the live distribution will fire its deadline on healthy agents, and a transcript full of deadline fires reads like an API outage.` : ''}`
+    + `${lengthened.length ? ` — LENGTHENING ${lengthened.join(', ')}.` : ''}`
+    + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: at this size the re-dispatch floor drops to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual.` : ''}`)
 }
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
@@ -1838,7 +1856,7 @@ async function ragent(prompt, opts = {}) {
     // A budget spent is a giving-up condition in its own right, alongside the attempt count: a
     // re-dispatch with nothing left to wait in would fire its deadline before the agent could answer,
     // so it would cost a harness slot and return null anyway.
-    const spentOut = budget.exhausted(RETRY_FLOOR_MS)
+    const spentOut = budget.exhausted(retryFloorFor(budget))
     if (res === DEADLINE_HIT) {
       // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
       // told apart from a live agent taking too long, and feeding that into the window would let slow
@@ -1872,7 +1890,11 @@ async function ragent(prompt, opts = {}) {
     if (attempt >= AGENT_TRIES) return null
     // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
     if (spentOut) {
-      log(`⏱️ agent '${opts.label || '?'}' returned no result with its deadline budget already spent — NOT re-dispatching (there is no wall clock left to wait in); treated as a dead agent`)
+      // Says how much was left and what it was measured against, rather than the flat "nothing left"
+      // that used to be printed over a remainder that was merely below the floor. The transcript is
+      // the only carrier this run's clock is ever measured from, and "spent" and "below the floor"
+      // are different events that a future reader has to be able to tell apart.
+      log(`⏱️ agent '${opts.label || '?'}' returned no result with ~${Math.round(budget.remaining() / 1000)}s of its deadline budget left, below the ${Math.round(retryFloorFor(budget) / 1000)}s floor a re-dispatch needs — NOT re-dispatching; treated as a dead agent`)
       return null
     }
     // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
