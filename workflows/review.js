@@ -1754,28 +1754,52 @@ function makeDeathBreaker(opts = {}) {
 // craft-inline gate. The rationale for a shared budget — and why the thresholds themselves must NOT
 // move — lives there.
 // >>> craft-inline lib/agent-deadline.mjs makeDeadlineBudget
-// One wall-clock budget, consumed by however many attempts are made against it. `now` is injected so
-// a test can drive elapsed time without sleeping; the engine passes nothing and gets `Date.now`.
-function makeDeadlineBudget(totalMs, now = Date.now) {
+// One wall-clock budget, armed once and shared by however many attempts race against it.
+//
+// `totalMs` is the whole budget; `floorMs` is how much of its tail is too little for another attempt
+// to be launched into — a re-dispatch there would fire the deadline before the agent could answer,
+// costing a harness slot to produce nothing. `schedule` is injected so a test can fire the timers
+// deterministically instead of sleeping; the engine passes nothing and gets `setTimeout`.
+//
+// Returns `expired` and `belowFloor` as QUESTIONS rather than numbers on purpose: with no clock
+// there is no honest "remaining", and a function that invented one would be read as a measurement.
+function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cancel = clearTimeout } = {}) {
   const total = Number(totalMs)
-  const started = now()
   const capped = Number.isFinite(total) && total > 0 ? total : 0
-  // Clamped at zero from below: a clock that jumps backwards must not hand out MORE budget than the
-  // total, and one that jumps forward must not hand out a negative timeout (setTimeout reads a
-  // negative delay as zero, which would fire the deadline instantly and look like a hang).
-  const remaining = () => Math.min(capped, Math.max(0, capped - (now() - started)))
+  const floor = Math.max(0, Math.min(capped, Number(floorMs) || 0))
+
+  let expired = capped === 0
+  let belowFloor = capped === 0 || floor >= capped
+  let resolveHit = null
+  const timers = []
+
+  // The single promise every attempt races. It is created once, so a second attempt inherits
+  // whatever is left of the first one's wait rather than starting a fresh one — no subtraction, no
+  // clock, and nothing to get wrong when the host's timers drift.
+  const hit = capped === 0
+    ? Promise.resolve(DEADLINE_HIT)
+    : new Promise(resolve => { resolveHit = resolve })
+
+  if (capped > 0) {
+    timers.push(schedule(() => { expired = true; belowFloor = true; if (resolveHit) resolveHit(DEADLINE_HIT) }, capped))
+    // Armed at the point where the REMAINING budget drops to the floor, so "below the floor" is a
+    // moment the host tells us about rather than a subtraction we perform.
+    if (floor > 0 && floor < capped) timers.push(schedule(() => { belowFloor = true }, capped - floor))
+  }
+
   return {
-    remaining,
-    // Whether another attempt has any USABLE wall clock left to wait in. The refusal is a FLOOR,
-    // not zero, and the difference is the whole point: an attempt dispatched against 200ms fires its
-    // deadline before the agent can answer, so it costs a harness slot and produces nothing — which
-    // is precisely the outcome the guard exists to prevent, arriving through a remainder that a
-    // `<= 0` test reads as plenty. A slow death (the measured 500–660s form) lands exactly there.
-    // The floor is the caller's to choose and is a POLICY DECISION, not a measurement: nothing
-    // recorded derives a particular value. It defaults to zero so the bare call keeps its old
-    // meaning for any caller that wants literally-nothing-left.
-    exhausted: (floorMs = 0) => remaining() <= Math.max(0, Number(floorMs) || 0),
+    hit,
+    // Whether the shared deadline has already fired. An attempt started now would race a promise
+    // that is already resolved and return immediately.
+    expired: () => expired,
+    // Whether what is left is too short for another attempt to be worth dispatching. Always true
+    // once the budget has fired, so a caller that asks only this one question is still correct.
+    belowFloor: () => belowFloor,
     total: () => capped,
+    // Clears the armed timers. Without it a pending timer holds the run open for the whole deadline
+    // after the agent has already answered — invisible while a throw killed the run outright, and a
+    // real leak once the caller swallows that throw.
+    dispose: () => { for (const t of timers) cancel(t) },
   }
 }
 // <<< craft-inline
@@ -1805,7 +1829,7 @@ const RETRY_FLOOR_MS = 60000
 // been touched. `deadlineMs=30000` is a documented diagnostic setting, so this is reachable, not
 // theoretical. Half the budget is the cap: it keeps the guard meaningful at every scale, since a
 // remainder under half of what the first attempt had is a poor bet whatever the absolute numbers.
-const retryFloorFor = budget => Math.min(RETRY_FLOOR_MS, Math.floor(budget.total() / 2))
+const retryFloorMs = totalMs => Math.min(RETRY_FLOOR_MS, Math.floor((Number(totalMs) > 0 ? Number(totalMs) : 0) / 2))
 // SAID OUT LOUD, once, at the top of the run. This one argument replaces the WHOLE phase table,
 // including the 90 minutes a lens is legitimately allowed (one measured lens ran 46). Set too low it
 // kills live work by deadline, and a run full of deadline fires is indistinguishable, in the
@@ -1848,52 +1872,49 @@ async function ragent(prompt, opts = {}) {
   // ONE budget for the whole call, not one per attempt. The worst case of a hanging dispatch is
   // therefore `ms` of waiting in total rather than `ms` per attempt — which, in the Verify window,
   // is the difference between one slot held for 30 minutes and one held for an hour.
-  const budget = makeDeadlineBudget(ms)
+  // ARMED, not measured: the sandbox has no clock at all (see the module), so every attempt races
+  // the SAME timer rather than a fresh one computed from elapsed time.
+  const budget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
+  try {
+    return await withBudget(prompt, agentOpts, budget, breaker, opts)
+  } finally {
+    // The armed timers outlive the answer otherwise, holding the run open for the whole deadline.
+    budget.dispose()
+  }
+}
+
+async function withBudget(prompt, agentOpts, budget, breaker, opts) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
-    let timer = null
-    // try/finally, not a bare clearTimeout after the await: a rejection from agent() used to skip it
-    // and leave the timer pending. That was invisible while a throw killed the run outright; now that
-    // ragentQuietly swallows it, a leaked timer would hold the run open for the whole deadline.
-    let res
-    // What is LEFT of the budget, not the whole of it. An attempt that follows a fast death still
-    // gets essentially all of it; one that follows a deadline fire gets none, which is what makes a
-    // hang cost one deadline in total instead of one per attempt.
-    const left = budget.remaining()
-    try {
-      res = await Promise.race([
-        agent(`${REPO_DIRECTIVE}${prompt}`, o),
-        new Promise(resolve => { timer = setTimeout(() => resolve(DEADLINE_HIT), left) }),
-      ])
-    } finally {
-      clearTimeout(timer)
-    }
-    // A budget spent is a giving-up condition in its own right, alongside the attempt count: a
-    // re-dispatch with nothing left to wait in would fire its deadline before the agent could answer,
-    // so it would cost a harness slot and return null anyway.
-    const spentOut = budget.exhausted(retryFloorFor(budget))
+    // The SHARED deadline promise, not a per-attempt timer. A second attempt inherits what is left
+    // of the first one's wait by construction — there is nothing to subtract and no clock to read.
+    const res = await Promise.race([agent(`${REPO_DIRECTIVE}${prompt}`, o), budget.hit])
+    // Asked AFTER the race, so it reflects the state the attempt actually ended in. A re-dispatch
+    // launched below the floor would fire the deadline before the agent could answer, costing a
+    // harness slot to produce nothing.
+    const spentOut = budget.belowFloor()
     if (res === DEADLINE_HIT) {
       // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
       // told apart from a live agent taking too long, and feeding that into the window would let slow
       // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
-      // `left`, never `ms`. What was waited is what remained of the budget at this attempt, and on a
-      // second attempt after a slow death those differ by most of the deadline. The transcript is the
-      // only carrier the run's clock was ever measured from, so a wrong number here is a wrong
-      // measurement later, not a cosmetic slip.
-      // Sub-minute waits are printed as seconds rather than rounded up to "1min". Rounding up is
-      // how the previous wrong number read as plausible, and the case is not hypothetical: the whole
-      // reason RETRY_FLOOR_MS exists is that a remainder of a few hundred milliseconds gets
-      // dispatched into. A log that calls 200ms "1min" hides exactly the event the floor was added
-      // to make visible.
-      const waited = left >= 60000 ? `${Math.round(left / 60000)}min` : `${Math.max(1, Math.round(left / 1000))}s`
+      // THE BUDGET, NOT WHAT THIS ATTEMPT WAITED, and the log says which. With no clock there is no
+      // honest per-attempt figure — an earlier version printed one and it was wrong by most of the
+      // deadline on a second attempt. A number nobody computed is worse than a coarser number that
+      // is true, because the transcript is the only carrier this run's clock is ever measured from
+      // and a reader calibrates deadlines against what it says.
+      // Sub-minute budgets print as seconds rather than rounding up to "1min": `deadlineMs=30000` is
+      // a documented diagnostic value, and a log calling it "0min" or "1min" hides the very setting
+      // whose effects the reader is trying to see.
+      const ms = budget.total()
+      const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min budget` : `${Math.max(1, Math.round(ms / 1000))}s budget`
       // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
-      // was armed for exactly `left`, so when it fires the budget is spent, and one budget shared by
-      // the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
+      // is armed ONCE, for the whole budget, when the budget is created — so its firing IS the budget
+      // running out, and one budget shared by the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
       // is unreachable under that arithmetic, so it is gone rather than left as reassuring dead text.
       // The re-dispatch survives for the case it was always really for: the FAST death, which spends
       // almost none of the budget. A hang is evidence about the request; a fast death is evidence
       // about reachability, and only the second is worth asking twice.
-      log(`⏱️ agent '${o.label || '?'}' passed its ${waited} deadline with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
+      log(`⏱️ agent '${o.label || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
       return null
     }
     if (res !== null && res !== undefined) {
@@ -1909,7 +1930,7 @@ async function ragent(prompt, opts = {}) {
       // that used to be printed over a remainder that was merely below the floor. The transcript is
       // the only carrier this run's clock is ever measured from, and "spent" and "below the floor"
       // are different events that a future reader has to be able to tell apart.
-      log(`⏱️ agent '${opts.label || '?'}' returned no result with ~${Math.round(budget.remaining() / 1000)}s of its deadline budget left, below the ${Math.round(retryFloorFor(budget) / 1000)}s floor a re-dispatch needs — NOT re-dispatching; treated as a dead agent`)
+      log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(budget.total()) / 1000)}s floor left of its ${Math.round(budget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
       return null
     }
     // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
