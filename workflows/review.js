@@ -1753,7 +1753,7 @@ function makeDeathBreaker(opts = {}) {
 // Pure helper, tested as a real module in lib/lens-scope.mjs and pasted back here by the
 // craft-inline gate. The measurement that motivates it — lenses at 73.6% of a run, the whole diff
 // pulled by every lens on every round — lives there, with the risk it does not solve.
-// >>> craft-inline lib/lens-scope.mjs SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES
+// >>> craft-inline lib/lens-scope.mjs SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
 // Files whose relation to everything else is the point — a manifest, a lockfile, a schema — are
 // pulled into EVERY slice rather than assigned to one. They are small and they are what the rest of
 // the diff is checked against; a slice that cannot see the manifest cannot tell that a shipped CRD
@@ -1834,9 +1834,16 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   // it is wrong: the rust profile matches `*.rs`, so the manifest and the lockfile would be gone
   // before this function saw them, and no slice could be given the file its code must agree with.
   // The baseline run's shipped-CRD finding is exactly the one that dies that way.
+  // SHARED WINS OVER OWNED, and getting this backwards made the header comment above a lie for
+  // every real caller. The rust profile's `detect` matches `Cargo.toml`, the nix profile's matches
+  // `flake.lock` — so asking "is it shared AND not owned" put each profile's own manifest into ONE
+  // slice, exactly the file every other slice has to check its code against. It also produced a
+  // degenerate code-free slice holding nothing but manifests, costing one agent per lens per round
+  // to review no code at all. A manifest is shared BECAUSE of what it is, not because the profile
+  // happens not to claim it.
   const isOwned = typeof owns === 'function' ? owns : f => !isShared(f)
-  const shared = all.filter(f => isShared(f) && !isOwned(f))
-  const owned = all.filter(isOwned)
+  const shared = all.filter(isShared)
+  const owned = all.filter(f => isOwned(f) && !isShared(f))
   if (owned.length < minFiles) return []
 
   const byKey = new Map()
@@ -1897,7 +1904,31 @@ function sliceableLens(lens) {
   return !WHOLE_DIFF_LENSES.includes(String(lens))
 }
 
-const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat']
+const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat', 'invariants', 'failure-windows']
+
+// How many lens agents may be in flight at once. Slicing multiplies the round-1 wave by the slice
+// count — a dozen lenses over six slices is ~70 dispatches into what used to be a wave of a dozen —
+// and an unwindowed wave of that size is the exact shape verification was windowed for: agents
+// queue, the deadline clocks from DISPATCH rather than from execution, and it fires on healthy
+// agents that simply waited. Larger than the verification window because a lens is one agent where
+// a verification entry can be three, and because a lens legitimately runs for tens of minutes.
+const LENS_WINDOW_AGENTS = 16
+
+// A path as a LITERAL git pathspec. Shell-quoting alone is not enough and the gap is silent: git
+// reads a pathspec as wildmatch, so a real file named `f[1].rs` does not match itself; a leading `:`
+// is read as pathspec magic; and `git diff --name-only` C-quotes paths holding spaces or non-ASCII,
+// so the name that comes back is `"dir/a b.rs"`, quotes included, which then matches nothing.
+// Every one of those hands the lens a SMALLER diff than it believes it has, with no error — the
+// file is simply never reviewed. That risk arrives with slicing, because the file list stops being
+// advisory (the glob covered everything) and becomes the authoritative scope.
+function pathspecLiteral(file) {
+  let f = String(file ?? '')
+  // Undo git's own C-quoting before handing the name back to git.
+  if (f.length > 1 && f.startsWith('"') && f.endsWith('"')) {
+    f = f.slice(1, -1).replace(/\\([\\"])/g, '$1')
+  }
+  return `:(literal)${f}`
+}
 // <<< craft-inline
 
 // ---- one budget, shared by the attempts ----
@@ -2989,7 +3020,7 @@ function lensPrompt(lens, priorSummary, profile, plan, slice = null) {
   // The pathspec the lens reviews. A slice replaces the profile's globs with its own files — that
   // is the entire mechanism: the agent pulls what it is responsible for instead of the whole diff,
   // and the per-turn re-read it pays for the rest of its life shrinks by the same factor.
-  const pathspec = slice ? slice.files.map(f => shq(f)).join(' ') : profile.diffGlobs.join(' ')
+  const pathspec = slice ? slice.files.map(f => shq(pathspecLiteral(f))).join(' ') : profile.diffGlobs.join(' ')
   return `You are the **${lens}** review lens for a ${profile.lang} diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the ${profile.rubricSkill} skill for the rubric${profile.navSkill ? ` and the ${profile.navSkill} skill for context expansion` : ''}.
 
 SLICE: ${profile.lensBrief[lens] || lens}
@@ -3855,7 +3886,11 @@ async function reviewProfile(profile) {
   // reason so INCOMPLETE reporting doesn't have to guess (budget vs registry vs death).
   const lensFailures = new Map()
   let reviewerAgentMissing = false
-  async function runLens(lens, prompt, phaseName, labelSuffix) {
+  // Keyed by DISPATCH, not by lens name. Once a lens fans out over slices there are several live
+  // dispatches under one name, and a name-keyed map keeps only the last failure — so the reported
+  // reason would name one slice's error as if it were the lens's.
+  const dispatchKey = (lens, slice) => (slice ? `${lens} :: ${slice.key}` : lens)
+  async function runLens(lens, prompt, phaseName, labelSuffix, slice = null) {
     // The single dispatch point for every lens on every path. Recording here — not at plan time — is
     // what makes the report and the run record physically unable to disagree with what happened.
     if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
@@ -3864,7 +3899,7 @@ async function reviewProfile(profile) {
       try {
         return await ragent(prompt, opts)
       } catch (e) {
-        lensFailures.set(lens, String((e && e.message) || e).slice(0, 160))
+        lensFailures.set(dispatchKey(lens, slice), String((e && e.message) || e).slice(0, 160))
         return null
       }
     }
@@ -4001,6 +4036,11 @@ async function reviewProfile(profile) {
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
   const notRun = [...scoutNotRun]
   const ranAtLeastOnce = new Set()
+  // Coverage is counted over DISPATCHES, and `ranAtLeastOnce` survives only for the resurrection
+  // sweep, which re-runs a whole lens. A dispatch that was expected and never came back is a hole
+  // whatever its siblings did.
+  const expectedDispatches = new Set()
+  const returnedDispatches = new Set()
   const lensRounds = []
   // Computed ONCE for the whole profile, not per round: the changed-file set does not move between
   // rounds, and re-slicing per round would let a lens's slice key drift between round 1 and round 2
@@ -4016,10 +4056,27 @@ async function reviewProfile(profile) {
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
     const priorSummary = priorFoundSummary(pool)
-    const results = (await parallel(plan.lenses.flatMap(lens => lensSlicesFor(lens).map(slice => () =>
-      runLens(lens, lensPrompt(lens, priorSummary, profile, plan, slice), 'Lenses', ` r${round}${slice ? ` ${slice.key}` : ''}`),
-    )))).filter(Boolean)
-    for (const r of results) ranAtLeastOnce.add(r.lens)
+    // EXPECTED is built from the same expression that dispatches, so the two cannot drift. What a
+    // lens fanned out into is now the unit of coverage: before slicing, a lens either ran or did
+    // not, and a death forced INCOMPLETE. With six slices per lens, five could die while one
+    // returned — and a name-keyed "did this lens run" answers yes, `droppedLenses` comes back
+    // empty, and the run reports an ordinary verdict over five sixths of a diff that no lens of
+    // that kind ever read. Slicing multiplies the chances of losing coverage by the slice count, so
+    // the accounting has to be per slice or the whole partition is a way of hiding holes.
+    const dispatches = plan.lenses.flatMap(lens => lensSlicesFor(lens).map(slice => ({ lens, slice })))
+    for (const d of dispatches) expectedDispatches.add(dispatchKey(d.lens, d.slice))
+    // WINDOWED, for the same measured reason verification is. Slicing turns a wave of a dozen lenses
+    // into one of ~70, and an unwindowed wave that size makes agents queue — while the Lenses
+    // deadline clocks from DISPATCH, so the wait is inside it and it fires on healthy agents that
+    // did nothing but stand in line. Applying the mitigation this file already documents for this
+    // exact shape, rather than discovering it again.
+    const settled = await weightedWindow(
+      dispatches.map(d => ({ weight: 1, run: () => runLens(d.lens, lensPrompt(d.lens, priorSummary, profile, plan, d.slice), 'Lenses', ` r${round}${d.slice ? ` ${d.slice.key}` : ''}`, d.slice) })),
+      LENS_WINDOW_AGENTS,
+      (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(dispatches[i].lens, dispatches[i].slice) } : null)),
+    )
+    const results = settled.filter(Boolean)
+    for (const r of results) { ranAtLeastOnce.add(r.lens); returnedDispatches.add(r.__key) }
     const fresh = []
     for (const r of results) {
       for (const f0 of (r.findings || [])) {
@@ -4046,7 +4103,11 @@ async function reviewProfile(profile) {
     // the `seen` key set by provenance and paying an extra full round of lens cost — against a prompt
     // saving that is about 1.8% of what the lens agents read. So do not read a dry round as proof the
     // diff is exhausted, and do not argue a round cut from `newFindings` alone.
-    lensRounds.push({ round, agents: plan.lenses.length, returned: results.length, newFindings: fresh.length })
+    // `agents` is what was DISPATCHED this round, which with slicing is lenses × slices and no
+    // longer the lens count. Left as `plan.lenses.length` it undercounted, so `returned` could
+    // exceed it and any death accounting downstream read inverted — and this is the field that
+    // makes a lost slice visible in the record at all.
+    lensRounds.push({ round, agents: dispatches.length, returned: results.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     if (!fresh.length) dry = true
   }
@@ -4056,7 +4117,11 @@ async function reviewProfile(profile) {
   // enters `ranAtLeastOnce`, which alone marks the whole review INCOMPLETE — even when the surviving
   // lenses found plenty. Since the failure is transient, a targeted retry of ONLY the missing lenses
   // recovers most of them. Bounded to 2 extra attempts; re-uses the same runLens/lensPrompt path.
-  let missing = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
+  // MISSING IS NOW A DISPATCH QUESTION. A lens that lost one slice of six is not recovered by the
+  // fact that its other five returned, so the sweep must see it — and the retry it sends is
+  // deliberately UNSLICED, which is why recovering it restores the lens's whole coverage below.
+  const lensesWithHoles = () => plan.lenses.filter(l => [...expectedDispatches].some(k => (k === l || k.startsWith(`${l} :: `)) && !returnedDispatches.has(k)))
+  let missing = lensesWithHoles()
   for (let sweep = 1; sweep <= 2 && missing.length; sweep++) {
     log(`[${profile.id}] Resurrection sweep ${sweep}: retrying ${missing.length} lens(es) that never returned (${missing.join(', ')})`)
     const priorSummary = priorFoundSummary(pool)
@@ -4065,20 +4130,29 @@ async function reviewProfile(profile) {
     ))).filter(Boolean)
     for (const r of results) {
       ranAtLeastOnce.add(r.lens)
+      // A resurrection dispatch carries NO slice, so it reviewed the whole diff — which is exactly
+      // what closes every hole this lens had. Marking only the lens name would leave the per-slice
+      // ledger still reporting holes that were just filled, and the run would claim INCOMPLETE over
+      // coverage it actually has.
+      for (const k of expectedDispatches) if (k === r.lens || k.startsWith(`${r.lens} :: `)) returnedDispatches.add(k)
       for (const f0 of (r.findings || [])) {
         const f = { ...f0, source: r.lens }
         const k = key(f)
         if (!seen.has(k)) { seen.add(k); pool.push(f) }
       }
     }
-    missing = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
+    missing = lensesWithHoles()
   }
 
-  const droppedLenses = plan.lenses.filter(l => !ranAtLeastOnce.has(l))
+  // DERIVED by subtraction from what was dispatched, never from a list built beside it. A lens whose
+  // every slice returned contributes nothing here; a lens that lost one slice of six is reported as
+  // losing that slice, by name, because "safety ran" is true and useless when five sixths of the
+  // diff got no safety review.
+  const droppedLenses = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
   if (droppedLenses.length) {
-    const reasons = droppedLenses.map(l => `${l}: ${lensFailures.get(l) || 'returned no result (skipped or died without an error)'}`).join(' · ')
+    const reasons = droppedLenses.map(k => `${k}: ${lensFailures.get(k) || 'returned no result (skipped or died without an error)'}`).join(' · ')
     notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
-    log(`⚠️ [${profile.id}] ${droppedLenses.length} lens(es) never returned (${reasons}). Review marked INCOMPLETE.`)
+    log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
   }
   // `ranLenses` rides along to the record: the dimension rows are built from plan.lenses, so a lens
   // that never returned still gets a row reading 0 findings — indistinguishable from a lens that ran
