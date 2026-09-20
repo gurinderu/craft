@@ -1897,28 +1897,24 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
       // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
       // told apart from a live agent taking too long, and feeding that into the window would let slow
       // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
-      // `left`, never `ms`. What was waited is what remained of the budget at this attempt, and on a
-      // second attempt after a slow death those differ by most of the deadline. The transcript is the
-      // only carrier the run's clock was ever measured from, so a wrong number here is a wrong
-      // measurement later, not a cosmetic slip.
-      // Sub-minute waits are printed as seconds rather than rounded up to "1min". Rounding up is
-      // how the previous wrong number read as plausible, and the case is not hypothetical: the whole
-      // reason RETRY_FLOOR_MS exists is that a remainder of a few hundred milliseconds gets
-      // dispatched into. A log that calls 200ms "1min" hides exactly the event the floor was added
-      // to make visible.
-      // The BUDGET, not what this attempt happened to wait: with no clock there is no honest
-      // per-attempt figure, and inventing one would be read as a measurement. Said as the budget it
-      // is, so a transcript reader is not handed a number nobody computed.
+      // THE BUDGET, NOT WHAT THIS ATTEMPT WAITED, and the log says which. With no clock there is no
+      // honest per-attempt figure — an earlier version printed one and it was wrong by most of the
+      // deadline on a second attempt. A number nobody computed is worse than a coarser number that
+      // is true, because the transcript is the only carrier this run's clock is ever measured from
+      // and a reader calibrates deadlines against what it says.
+      // Sub-minute budgets print as seconds rather than rounding up to "1min": `deadlineMs=30000` is
+      // a documented diagnostic value, and a log calling it "0min" or "1min" hides the very setting
+      // whose effects the reader is trying to see.
       const ms = budget.total()
-      const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min` : `${Math.max(1, Math.round(ms / 1000))}s`
+      const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min budget` : `${Math.max(1, Math.round(ms / 1000))}s budget`
       // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
-      // was armed for exactly `left`, so when it fires the budget is spent, and one budget shared by
-      // the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
+      // is armed ONCE, for the whole budget, when the budget is created — so its firing IS the budget
+      // running out, and one budget shared by the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
       // is unreachable under that arithmetic, so it is gone rather than left as reassuring dead text.
       // The re-dispatch survives for the case it was always really for: the FAST death, which spends
       // almost none of the budget. A hang is evidence about the request; a fast death is evidence
       // about reachability, and only the second is worth asking twice.
-      log(`⏱️ agent '${o.label || '?'}' passed its ${waited} deadline with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
+      log(`⏱️ agent '${o.label || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
       return null
     }
     if (res !== null && res !== undefined) {
