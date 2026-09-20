@@ -1749,6 +1749,157 @@ function makeDeathBreaker(opts = {}) {
 // is deliberately not given one: there a suppressed re-dispatch costs a whole dimension of the
 // review, and the window is not the scarce thing.
 
+// ---- slicing the diff a lens reviews ----
+// Pure helper, tested as a real module in lib/lens-scope.mjs and pasted back here by the
+// craft-inline gate. The measurement that motivates it — lenses at 73.6% of a run, the whole diff
+// pulled by every lens on every round — lives there, with the risk it does not solve.
+// >>> craft-inline lib/lens-scope.mjs SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES
+// Files whose relation to everything else is the point — a manifest, a lockfile, a schema — are
+// pulled into EVERY slice rather than assigned to one. They are small and they are what the rest of
+// the diff is checked against; a slice that cannot see the manifest cannot tell that a shipped CRD
+// is missing the field the code writes, which is one of the findings the baseline run reported.
+const SHARED_SUFFIXES = ['.lock', '.yml', '.yaml', '.toml', '.json']
+
+// The directory depth a group is keyed on. Two is the working compromise measured against the
+// baseline tree: depth 1 collapses everything under `bin/` or `crates/` into one slice and buys
+// nothing, while depth 3+ splits a module from its own tests.
+const GROUP_DEPTH = 2
+
+function isShared(file) {
+  return SHARED_SUFFIXES.some(s => file.endsWith(s))
+}
+
+function groupKey(file, depth = GROUP_DEPTH) {
+  const parts = String(file).split('/')
+  return parts.length <= depth ? (parts.slice(0, -1).join('/') || '.') : parts.slice(0, depth).join('/')
+}
+
+// Split one oversized group by descending into deeper directories until it fits, or until going
+// deeper stops separating anything. Without this the top-level grouping is decorative on the shape
+// real diffs actually have: on the measured tree, depth 2 put 36 of 53 files in one slice, leaving
+// the multiplicand almost untouched — the work looks partitioned and is not.
+function splitDeep(group, cap, depth) {
+  if (group.files.length <= cap || depth > 8) return [group]
+  const byKey = new Map()
+  for (const f of group.files) {
+    const k = groupKey(f, depth)
+    if (!byKey.has(k)) byKey.set(k, [])
+    byKey.get(k).push(f)
+  }
+  // A level that separates NOTHING is not a reason to stop — it is a shared prefix to walk through.
+  // Every file of the measured 36-file module sits under `.../src`, so stopping at the first
+  // undivided level returned the group untouched and the partition was decorative. Descend instead;
+  // the depth bound and the "no path is that deep" check below are what terminate this.
+  if (byKey.size <= 1) {
+    const deeper = splitDeep(group, cap, depth + 1)
+    return deeper.length > 1 ? deeper : [group]
+  }
+  return [...byKey.entries()].flatMap(([key, files]) => splitDeep({ key, files }, cap, depth + 1))
+}
+
+// How many leading path segments two group keys share. The unit is the SEGMENT, not the character:
+// `bin/service-a` and `bin/service-admin` share one directory, while a character measure would
+// score them as nearly identical and merge them ahead of true siblings.
+function commonPrefixLength(a, b) {
+  const x = String(a).split('/')
+  const y = String(b).split('/')
+  let n = 0
+  while (n < x.length && n < y.length && x[n] === y[n]) n++
+  return n
+}
+
+// A merged key names the shared ancestor when there is one, and lists both otherwise. The key is
+// what the lens prompt shows the agent and what the log line carries, so a key that says
+// the module's own directory tells a reader what the slice IS, where a concatenation of four
+// unrelated paths tells them only that a merge happened.
+function mergedKey(a, b) {
+  const n = commonPrefixLength(a, b)
+  return n > 0 ? String(a).split('/').slice(0, n).join('/') : `${a} + ${b}`
+}
+
+// Two merges can land on the same ancestor and produce two slices with one name. The key is what a
+// lens prompt shows and what the log line carries, so identical names make two different slices
+// indistinguishable in the transcript — and the transcript is where a run is diagnosed.
+function uniqueKey(key, groups) {
+  if (!groups.some(g => g.key === key)) return key
+  let n = 2
+  while (groups.some(g => g.key === `${key} (${n})`)) n++
+  return `${key} (${n})`
+}
+
+function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, owns = null } = {}) {
+  const all = (Array.isArray(files) ? files : []).map(String).filter(Boolean)
+  // `owns` is the PROFILE's question — which of the changed files this language reviews — and it is
+  // asked here rather than by the caller filtering first. Filtering first was the obvious wiring and
+  // it is wrong: the rust profile matches `*.rs`, so the manifest and the lockfile would be gone
+  // before this function saw them, and no slice could be given the file its code must agree with.
+  // The baseline run's shipped-CRD finding is exactly the one that dies that way.
+  const isOwned = typeof owns === 'function' ? owns : f => !isShared(f)
+  const shared = all.filter(f => isShared(f) && !isOwned(f))
+  const owned = all.filter(isOwned)
+  if (owned.length < minFiles) return []
+
+  const byKey = new Map()
+  for (const f of owned) {
+    const k = groupKey(f)
+    if (!byKey.has(k)) byKey.set(k, [])
+    byKey.get(k).push(f)
+  }
+  if (byKey.size <= 1) return []
+
+  // The cap defaults to an EVEN SHARE across the allowed slices, so the ceiling follows the diff
+  // instead of being a constant that is either meaningless on a small change or useless on a large
+  // one. Ceil, so a diff that divides evenly is not split one slice further than asked.
+  const cap = maxFilesPerSlice > 0 ? maxFilesPerSlice : Math.max(1, Math.ceil(owned.length / maxSlices))
+  let groups = [...byKey.entries()]
+    .flatMap(([key, fs]) => splitDeep({ key, files: fs }, cap, GROUP_DEPTH + 1))
+    .sort((a, b) => b.files.length - a.files.length || a.key.localeCompare(b.key))
+
+  // Merging is AGGLOMERATIVE BY NEAREST SIBLING, not by taking whatever fell off the end of a sorted
+  // list. Sweeping the tail into one bag was the obvious version and it destroyed the very property
+  // the partition exists for: on the measured tree it tore a module's own submodule away from it and
+  // dropped that submodule in a 21-file drawer with four unrelated crates — so the slice that had to
+  // judge a change was the one slice that could not see what the change must agree with.
+  // Cohesion is the whole mechanism, so when two groups must become one they are the two that are
+  // already closest in the tree, and size breaks the tie so the merge lands on the small ones.
+  while (groups.length > maxSlices) {
+    // THE CAP OUTRANKS KINSHIP, and this ordering is the whole correctness of the merge. Nearest-
+    // sibling alone re-merged exactly what the deep split had just separated — the four children of
+    // one module are each other's closest relatives, so they collapsed straight back into the
+    // 36-file slice, and the partition ended where it started. So a merge that would exceed the cap
+    // is not considered at all while any merge under it exists; only when nothing fits does the
+    // smallest available merge win, because at that point some slice must grow and the least bad
+    // choice is the smallest one.
+    let best = null
+    let fallback = null
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = i + 1; j < groups.length; j++) {
+        const shared = commonPrefixLength(groups[i].key, groups[j].key)
+        const size = groups[i].files.length + groups[j].files.length
+        const cand = { i, j, shared, size }
+        if (!fallback || size < fallback.size) fallback = cand
+        if (size > cap) continue
+        if (!best || shared > best.shared || (shared === best.shared && size < best.size)) best = cand
+      }
+    }
+    best = best || fallback
+    const a = groups[best.i]
+    const b = groups[best.j]
+    groups = groups.filter((_unused, idx) => idx !== best.i && idx !== best.j)
+    groups.push({ key: uniqueKey(mergedKey(a.key, b.key), groups), files: [...a.files, ...b.files] })
+  }
+  groups.sort((a, b) => b.files.length - a.files.length || a.key.localeCompare(b.key))
+
+  return groups.map(g => ({ key: g.key, files: [...g.files, ...shared] }))
+}
+
+function sliceableLens(lens) {
+  return !WHOLE_DIFF_LENSES.includes(String(lens))
+}
+
+const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat']
+// <<< craft-inline
+
 // ---- one budget, shared by the attempts ----
 // Pure helper, tested as a real module in lib/agent-deadline.mjs and pasted back here by the
 // craft-inline gate. The rationale for a shared budget — and why the thresholds themselves must NOT
@@ -2833,13 +2984,20 @@ ${priorSummary}
 Return {lens: "negative-space", findings: [...]} using the shared finding schema. Set \`ruleId\` to the matching ${profile.rubricSkill} rules.md ID or "" if none fits. Observability: the workflow records this run — do NOT write your own record.`
 }
 
-function lensPrompt(lens, priorSummary, profile, plan) {
+function lensPrompt(lens, priorSummary, profile, plan, slice = null) {
   if (lens === 'negative-space') return negativeSpacePrompt(priorSummary, profile, plan)
+  // The pathspec the lens reviews. A slice replaces the profile's globs with its own files — that
+  // is the entire mechanism: the agent pulls what it is responsible for instead of the whole diff,
+  // and the per-turn re-read it pays for the rest of its life shrinks by the same factor.
+  const pathspec = slice ? slice.files.map(f => shq(f)).join(' ') : profile.diffGlobs.join(' ')
   return `You are the **${lens}** review lens for a ${profile.lang} diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the ${profile.rubricSkill} skill for the rubric${profile.navSkill ? ` and the ${profile.navSkill} skill for context expansion` : ''}.
 
 SLICE: ${profile.lensBrief[lens] || lens}
 ${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
-Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${lensBase ? `--merge-base ${shq(lensBase)}` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`.
+Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${lensBase ? `--merge-base ${shq(lensBase)}` : 'HEAD'} -- ${pathspec}\`.
+${slice ? `YOUR SLICE: \`${slice.key}\` — ${slice.files.length} changed file(s) of a larger diff. Sibling lenses hold the rest, and overlapping findings are de-duplicated downstream.
+This bounds WHAT YOU JUDGE, never what you may READ: trace definitions, uses and consumers anywhere in the repository, and pin every off-site premise in \`whereChecked\` exactly as usual. A defect whose evidence sits outside your slice is still yours to report if it is CAUSED by a line in your slice — say so in \`why\`. A defect located in another slice is not yours; do not report it.
+EFFICIENCY: pull your slice's diff ONCE, in one command. Do not re-run broad searches over the whole tree — every turn re-reads everything already in your context, so a wide grep is paid for again on each turn that follows it.` : ''}
 ${priorRound ? (fullRescan
   ? `RE-REVIEW (full re-scan): review the WHOLE diff (base ${flattenField(lensBase)}...HEAD), not just the latest fixes — an earlier round may have missed a defect in code it did not touch. Prior findings are adjudicated separately and any you re-surface are de-duplicated downstream, so spend your effort on defects that are NOT already obviously known.`
   : `RE-REVIEW: you are reviewing ONLY the fix commits since the prior round (base ${flattenField(lensBase)}). Prior findings are adjudicated separately — do not re-report them; surface only NEW defects the fixes introduced.`) : ''}
@@ -3844,12 +4002,23 @@ async function reviewProfile(profile) {
   const notRun = [...scoutNotRun]
   const ranAtLeastOnce = new Set()
   const lensRounds = []
+  // Computed ONCE for the whole profile, not per round: the changed-file set does not move between
+  // rounds, and re-slicing per round would let a lens's slice key drift between round 1 and round 2
+  // for no reason a reader could follow in the transcript.
+  // ALL changed files go in, with the profile asked INSIDE. Filtering to the profile first would
+  // drop the manifest and the lockfile before slicing, and a slice that cannot see the manifest
+  // cannot tell that a shipped CRD lacks the field the code writes.
+  const diffSlices = sliceDiff(changedFiles, { owns: f => profile.detect([f]) })
+  if (diffSlices.length) log(`[${profile.id}] diff sliced into ${diffSlices.length} scope(s) for the code-intrinsic lenses: ${diffSlices.map(g => `${g.key} (${g.files.length})`).join(' · ')}. Whole-diff lenses (${WHOLE_DIFF_LENSES.join(', ')}) still see everything.`)
+  // `[null]` means "one dispatch, unsliced" — the shape the caller had before slicing existed, so
+  // the unsliced path stays the same code rather than a branch that can drift from it.
+  const lensSlicesFor = lens => (diffSlices.length && sliceableLens(lens) ? diffSlices : [null])
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
     const priorSummary = priorFoundSummary(pool)
-    const results = (await parallel(plan.lenses.map(lens => () =>
-      runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` r${round}`),
-    ))).filter(Boolean)
+    const results = (await parallel(plan.lenses.flatMap(lens => lensSlicesFor(lens).map(slice => () =>
+      runLens(lens, lensPrompt(lens, priorSummary, profile, plan, slice), 'Lenses', ` r${round}${slice ? ` ${slice.key}` : ''}`),
+    )))).filter(Boolean)
     for (const r of results) ranAtLeastOnce.add(r.lens)
     const fresh = []
     for (const r of results) {
