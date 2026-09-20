@@ -1753,7 +1753,14 @@ function makeDeathBreaker(opts = {}) {
 // Pure helper, tested as a real module in lib/lens-scope.mjs and pasted back here by the
 // craft-inline gate. The measurement that motivates it — lenses at 73.6% of a run, the whole diff
 // pulled by every lens on every round — lives there, with the risk it does not solve.
-// >>> craft-inline lib/lens-scope.mjs SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
+// >>> craft-inline lib/lens-scope.mjs MAX_SHARED_PER_SLICE SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
+// How many shared files may ride along in EVERY slice. Unbounded, this works against the very cost
+// the partition exists to cut: a tree with a chart directory or a fixture tree can carry more
+// changed manifests than source files, and each slice would pull all of them, paid ×slices ×rounds.
+// Shallowest-first, so the repository-root manifest — the one a slice most often has to check its
+// code against — is the one that survives the cap.
+const MAX_SHARED_PER_SLICE = 8
+
 // Files whose relation to everything else is the point — a manifest, a lockfile, a schema — are
 // pulled into EVERY slice rather than assigned to one. They are small and they are what the rest of
 // the diff is checked against; a slice that cannot see the manifest cannot tell that a shipped CRD
@@ -1843,6 +1850,8 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   // happens not to claim it.
   const isOwned = typeof owns === 'function' ? owns : f => !isShared(f)
   const shared = all.filter(isShared)
+    .sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))
+    .slice(0, MAX_SHARED_PER_SLICE)
   const owned = all.filter(f => isOwned(f) && !isShared(f))
   if (owned.length < minFiles) return []
 
@@ -1923,9 +1932,31 @@ const LENS_WINDOW_AGENTS = 16
 // advisory (the glob covered everything) and becomes the authoritative scope.
 function pathspecLiteral(file) {
   let f = String(file ?? '')
-  // Undo git's own C-quoting before handing the name back to git.
+  // Undo git's own C-quoting before handing the name back to git. The escapes are git's, not
+  // JavaScript's: with `core.quotePath` at its default a non-ASCII name comes back as
+  // `"caf\303\251.rs"` — OCTAL BYTES, one escape per byte of UTF-8. Handling only `\\` and `\"`
+  // stripped the quotes and left the literal twelve characters `caf\303\251.rs`, which matches no
+  // file — so the name was silently absent from its slice and reviewed by no code-intrinsic lens.
+  // That is the exact failure this function exists to prevent, inside the function that prevents it.
   if (f.length > 1 && f.startsWith('"') && f.endsWith('"')) {
-    f = f.slice(1, -1).replace(/\\([\\"])/g, '$1')
+    const body = f.slice(1, -1)
+    const bytes = []
+    for (let i = 0; i < body.length; i++) {
+      if (body[i] !== '\\') { bytes.push(body.charCodeAt(i)); continue }
+      const c = body[++i]
+      const simple = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+      if (Object.prototype.hasOwnProperty.call(simple, c)) { bytes.push(simple[c]); continue }
+      // Octal, always three digits as git emits them. Anything else is not an escape git wrote, so
+      // it is kept verbatim rather than guessed at.
+      if (/[0-7]/.test(c) && /^[0-7]{2}/.test(body.slice(i + 1, i + 3))) {
+        bytes.push(parseInt(body.slice(i, i + 3), 8))
+        i += 2
+        continue
+      }
+      bytes.push(body.charCodeAt(i))
+    }
+    // The bytes are UTF-8; decoding them is what turns `\303\251` back into `é`.
+    f = new TextDecoder().decode(Uint8Array.from(bytes))
   }
   return `:(literal)${f}`
 }
@@ -3914,7 +3945,10 @@ async function reviewProfile(profile) {
       return await runGeneric()
     } catch (e) {
       const msg = String((e && e.message) || e)
-      if (!/not found/i.test(msg)) { lensFailures.set(lens, msg.slice(0, 160)); return null }
+      // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
+      // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
+      // as "died without an error" — and any sibling slice could overwrite it.
+      if (!/not found/i.test(msg)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
       reviewerAgentMissing = true
       log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
       return await runGeneric()
@@ -4125,18 +4159,27 @@ async function reviewProfile(profile) {
   for (let sweep = 1; sweep <= 2 && missing.length; sweep++) {
     log(`[${profile.id}] Resurrection sweep ${sweep}: retrying ${missing.length} lens(es) that never returned (${missing.join(', ')})`)
     const priorSummary = priorFoundSummary(pool)
-    const results = (await parallel(missing.map(lens => () =>
-      runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`),
-    ))).filter(Boolean)
+    // Carries the lens it DISPATCHED alongside the answer. Everywhere else this accounting refuses
+    // to trust the model-returned `lens` field, and here it was still being trusted: a resurrection
+    // that succeeded but answered with a missing or mangled `lens` closed no holes, so the sweep
+    // kept seeing them, both attempts were spent, and the run reported INCOMPLETE over coverage it
+    // actually had. A false hole that cannot be cleared is as much a lie as a hidden one.
+    const attempts = missing.map(lens => ({ lens }))
+    const settled = await parallel(attempts.map(a => () =>
+      runLens(a.lens, lensPrompt(a.lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`)
+        .then(r => (r ? { ...r, __lens: a.lens } : null)),
+    ))
+    const results = settled.filter(Boolean)
     for (const r of results) {
-      ranAtLeastOnce.add(r.lens)
+      const lens = r.__lens
+      ranAtLeastOnce.add(lens)
       // A resurrection dispatch carries NO slice, so it reviewed the whole diff — which is exactly
       // what closes every hole this lens had. Marking only the lens name would leave the per-slice
       // ledger still reporting holes that were just filled, and the run would claim INCOMPLETE over
       // coverage it actually has.
-      for (const k of expectedDispatches) if (k === r.lens || k.startsWith(`${r.lens} :: `)) returnedDispatches.add(k)
+      for (const k of expectedDispatches) if (k === lens || k.startsWith(`${lens} :: `)) returnedDispatches.add(k)
       for (const f0 of (r.findings || [])) {
-        const f = { ...f0, source: r.lens }
+        const f = { ...f0, source: lens }
         const k = key(f)
         if (!seen.has(k)) { seen.add(k); pool.push(f) }
       }
@@ -4158,7 +4201,11 @@ async function reviewProfile(profile) {
   // that never returned still gets a row reading 0 findings — indistinguishable from a lens that ran
   // and found nothing. That is the difference between "redundant, consider dropping it" and "broken,
   // fix it", and the yield analysis inverts on it.
-  const ranLenses = plan.lenses.filter(l => ranAtLeastOnce.has(l))
+  // FULLY ran, not "ran at all". A lens that returned one slice of six covered a sixth of the diff,
+  // and a dimension row built from the looser test presents its partial findings as whole-diff
+  // coverage — "safety ran" is true and useless, which is exactly the phrasing the accounting above
+  // rejects. The verdict is already saved by `droppedLenses`; this is the reader's fidelity.
+  const ranLenses = plan.lenses.filter(l => [...expectedDispatches].every(k => (k !== l && !k.startsWith(`${l} :: `)) || returnedDispatches.has(k)))
   // The lens phase is the expensive half of a review and the half most often lost: on the run that
   // prompted this, verification died to a usage limit and took every lens's yield with it.
   // `branch`/`head` on every checkpoint, not only the first. `--rejoin` can be armed ONLY after a
