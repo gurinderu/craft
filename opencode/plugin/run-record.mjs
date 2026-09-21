@@ -472,11 +472,20 @@ export function worstOf(verdicts) {
 // cannot import the Claude Code lib tree. What it proves is only that SOME work was named, not that it
 // happened (the ceiling in the design, realm @nick/craft, node #53).
 export const EVIDENCE_MARKER = 'Evidence:'
+// Line-anchored, mirroring the rubric "emit one line beginning `Evidence:`": whether some LINE of the
+// report begins with the marker (after optional whitespace) and carries content after it. A bare
+// indexOf over the whole report matched the marker buried in a finding's prose ("no `Evidence:` of
+// bounds") or a quoted instruction, waving a no-work green through — the costly false-green in an
+// engine that runs inside a consumer's repo. Held byte-identical to lib/audit-evidence.mjs's copy
+// (the Claude engine); both are pinned to EVIDENCE_MARKER by a test on each side (node #53).
 export function hasEvidence(text) {
-  const t = String(text ?? '')
-  const i = t.indexOf(EVIDENCE_MARKER)
-  if (i < 0) return false
-  return t.slice(i + EVIDENCE_MARKER.length).trim().length > 0
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.replace(/\r$/, '')
+    const i = line.search(/\S/)
+    if (i < 0 || !line.startsWith(EVIDENCE_MARKER, i)) continue
+    if (line.slice(i + EVIDENCE_MARKER.length).trim().length > 0) return true
+  }
+  return false
 }
 
 // `synthesized: false` says the consolidation step never delivered. Without it the record read the

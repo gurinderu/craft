@@ -5,7 +5,7 @@
 // rust-reviewer (no per-crate / inter-crate-contract fan-out); see opencode/README.md parity caveats.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
-import { buildAuditRecord, hasVerdictLine, writeRecord } from "./run-record.mjs"
+import { buildAuditRecord, hasVerdictLine, writeRecord, EVIDENCE_MARKER } from "./run-record.mjs"
 
 // Every dimension — and the synthesis — ends with ONE machine-readable line from a closed
 // vocabulary. run-record.mjs's parseVerdict() reads the LAST such line, which is what keeps a
@@ -24,11 +24,14 @@ const VERDICT_RULE =
 // default session model), so the prompt itself must ask for the positive proof of work that
 // buildAuditRecord's evidence gate reads. Emitted BEFORE the final VERDICT line (VERDICT_RULE says
 // write nothing after that). The four AGENT dimensions carry the same requirement through their
-// opencode/agents/*.md rubrics instead, so they do not repeat it here. (realm @nick/craft, node #53)
+// opencode/agents/*.md rubrics instead, so they do not repeat it here. The marker is built from
+// EVIDENCE_MARKER — the SAME constant buildAuditRecord's gate reads — so the marker the prompt tells
+// the tool dimensions to write and the marker the gate looks for cannot drift (a test in
+// run-record.test.mjs pins this). (realm @nick/craft, node #53)
 const EVIDENCE_RULE =
-  " Before the final verdict line, emit ONE line beginning `Evidence:` naming the exact commands you " +
-  "ran and files you read this pass (never invented) — a passing verdict with an empty `Evidence:` " +
-  "line is treated as INCOMPLETE, not trusted."
+  ` Before the final verdict line, emit ONE line beginning \`${EVIDENCE_MARKER}\` naming the exact commands you ` +
+  `ran and files you read this pass (never invented) — a passing verdict with an empty \`${EVIDENCE_MARKER}\` ` +
+  `line is treated as INCOMPLETE, not trusted.`
 
 async function sh(ctx: PluginCtx, cmd: string): Promise<string> {
   try {

@@ -251,6 +251,44 @@ test('the runtime marker is the one the opencode rubrics emit', () => {
   assert.ok(rubric.includes(EVIDENCE_MARKER), 'rust-reviewer.md must carry the marker the gate reads')
 })
 
+test('hasEvidence rejects a marker buried in a line of prose (line-anchored, not a substring)', () => {
+  // The gate scanned the WHOLE report with indexOf, so a finding that quotes the marker in prose
+  // ("no `Evidence:` of bounds") satisfied it — a no-work green waved through, the costly false-green
+  // in an engine running inside someone else's repo. It must read a LINE that BEGINS with the marker.
+  // RED before the line-anchoring fix.
+  assert.equal(hasEvidence('cargo-audit found no `Evidence:` of bounds checking'), false)
+  assert.equal(hasEvidence('a finding: the log has no Evidence: field populated'), false)
+  // ...and a real line beginning with the marker still counts, decoration-free and after whitespace.
+  assert.equal(hasEvidence('all clean\nEvidence: ran cargo-audit over 214 crates'), true)
+  assert.equal(hasEvidence('  Evidence: ran the tools'), true)
+})
+
+test('a green whose only "Evidence:" is buried in a finding is demoted, not trusted', () => {
+  // The finding-3 exploit end to end: a dimension self-reports APPROVE, does no work, but its prose
+  // happens to contain the marker. Before the line-anchoring fix buildAuditRecord trusted it.
+  const rec = buildAuditRecord({
+    results: [{ label: 'security', ok: true, text: 'Reviewed for the `Evidence:` marker pattern; none found.\n\nVERDICT: APPROVE' }],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'Consolidated.\n\nVERDICT: APPROVE',
+  })
+  assert.match(rec.verdict, /INCOMPLETE/, 'a buried marker no longer waves the green through')
+  assert.deepEqual(rec.noEvidence, ['security'])
+})
+
+test('the opencode tool-dimension marker (EVIDENCE_RULE) is built from the gate constant, not a hardcoded copy', () => {
+  // The six tool dimensions get their evidence requirement from EVIDENCE_RULE in rust-audit.ts; the
+  // gate reads EVIDENCE_MARKER here. Nothing pinned the two, so a reworded EVIDENCE_RULE marker would
+  // demote every honest tool-dimension green with the suite green. EVIDENCE_RULE must DERIVE its
+  // marker from EVIDENCE_MARKER. RED before rust-audit.ts imports and interpolates it.
+  const here = dirname(fileURLToPath(import.meta.url))
+  const src = readFile(joinPath(here, 'rust-audit.ts'), 'utf8')
+  assert.match(src, /import\s*\{[^}]*\bEVIDENCE_MARKER\b[^}]*\}\s*from\s*["']\.\/run-record\.mjs["']/,
+    'rust-audit.ts must import EVIDENCE_MARKER from run-record.mjs')
+  const decl = src.slice(src.indexOf('const EVIDENCE_RULE'))
+  assert.ok(decl.startsWith('const EVIDENCE_RULE'), 'EVIDENCE_RULE is declared')
+  assert.match(decl.slice(0, 500), /EVIDENCE_MARKER/,
+    'EVIDENCE_RULE must build its marker from EVIDENCE_MARKER, not a hardcoded string')
+})
+
 test('buildAuditRecord demotes a self-reported green with no Evidence line to INCOMPLETE', () => {
   // The headline of the port: on opencode a dimension that self-reported APPROVE with nothing shown
   // was trusted exactly as before, so invariant #53 was unenforced here. It must now demote.

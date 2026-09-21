@@ -248,7 +248,9 @@ function worstVerdict(verdicts) {
   if (!vs.length) return 'INCOMPLETE (no verdicts)'
   if (vs.some(v => /Block|At-risk|UB-found/i.test(v))) return 'Block'
   if (vs.some(v => /Warning|Concerns/i.test(v))) return 'Warning'
-  if (vs.some(v => /INCOMPLETE/i.test(v) || !/Approve|Healthy|Clean|Pass/i.test(v))) return 'Warning'
+  // Greenness is the ONE authority (GREEN_VERDICT), not a private substring: a verdict that is not a
+  // whole-string green — INCOMPLETE, or a canonical word with a trailing clause — aggregates to Warning.
+  if (vs.some(v => /INCOMPLETE/i.test(v) || !GREEN_VERDICT.test(v))) return 'Warning'
   return 'Approve'
 }
 // <<< craft-inline
@@ -376,26 +378,37 @@ function unusedEvidence(t) {
 // the marker IS.
 const EVIDENCE_MARKER = 'Evidence:'
 
-// The ONE definition of "is this verdict a green claim" — the single source of green, shared by the
-// two readers that must never disagree: normalizeDimensionVerdict() (workflows/rust-audit.js, which
-// maps any match to Approve) and demoteUnsupportedGreen() below (which gates a match for evidence).
+// The ONE definition of "is this verdict a green claim" — the single source of green, used by every
+// reader that must never disagree: normalizeDimensionVerdict() (workflows/rust-audit.js, which maps
+// any match to Approve), demoteUnsupportedGreen() below (which gates a match for evidence), AND
+// worstVerdict() (lib/run-record.mjs, the roll-up). The roll-up lives in a DIFFERENT closure-free
+// inline module and so cannot import this regex (no craft-inline source has an import); it carries a
+// byte-identical copy instead, pinned to this one by a tripwire in lib/run-record.test.mjs — the same
+// discipline as EVIDENCE_MARKER's stitch. In the assembled workflows/rust-audit.js there is exactly
+// ONE GREEN_VERDICT (this one, via the audit-evidence fence) and all three readers resolve to it.
 // It spans the three rubric vocabularies — Approve (review/security), Healthy (architecture), Clean
 // (miri) — AND the off-vocabulary greens agents still emit despite the schema enum ("Pass", "OK",
 // "no issues found", "all clear", "none found", …). Anchored whole-string, so "OK, but 2 blocking
-// findings" is NOT green. Only a green is gated: a green verdict is the overclaim the evidence
-// requirement exists to stop; Warning/Block/At-risk/Concerns/UB-found and any INCOMPLETE already read
-// as non-green downstream, so demoting them would say nothing. (realm @nick/craft, node #53)
+// findings" and "Approve — all clean" are NOT green (a trailing clause is not a bare green word).
+// Only a green is gated: a green verdict is the overclaim the evidence requirement exists to stop;
+// Warning/Block/At-risk/Concerns/UB-found and any INCOMPLETE already read as non-green downstream, so
+// demoting them would say nothing. (realm @nick/craft, node #53)
 const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|good|green|no ub( (detected|found))?|no (issues|findings|problems|defects)( (detected|found))?|none( found)?|nothing (found|to report)|all (clear|good))[\s.!—–-]*$/i
 
-// Whether `text` carries the marker AND something after it. Both empty readings the requirement
-// names — marker absent, and marker present but nothing (only whitespace) after it — collapse into
-// one indexOf + slice().trim() check. A non-empty sentence naming SOME work is all this proves; it
-// does not prove the work happened (see the ceiling in the design, realm @nick/craft, node #53).
+// Whether some LINE of `text` begins with the marker and carries content after it. Line-anchored on
+// purpose (mirrors the rubric "emit one line beginning `Evidence:`"): a bare `indexOf` matched the
+// marker buried in a finding's prose ("no `Evidence:` of bounds") or in a quoted instruction, waving
+// a no-work green through. Both empty readings the requirement names — marker absent, and marker
+// beginning a line but nothing after it — still return false. A non-empty sentence naming SOME work
+// is all this proves; it does not prove the work happened (the ceiling, realm @nick/craft, node #53).
 function hasEvidence(text) {
-  const t = String(text ?? '')
-  const i = t.indexOf(EVIDENCE_MARKER)
-  if (i < 0) return false                                         // marker absent
-  return t.slice(i + EVIDENCE_MARKER.length).trim().length > 0    // marker present, nothing after it
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.replace(/\r$/, '')
+    const i = line.search(/\S/)                                   // first non-whitespace column
+    if (i < 0 || !line.startsWith(EVIDENCE_MARKER, i)) continue   // line does not begin with the marker
+    if (line.slice(i + EVIDENCE_MARKER.length).trim().length > 0) return true  // content follows it
+  }
+  return false
 }
 
 // Demote a self-reported green with no evidence to INCOMPLETE, preserving the claimed word so the
@@ -408,7 +421,12 @@ function hasEvidence(text) {
 // them: an unsupported green becomes an INCOMPLETE dimension and, through the rollup, an INCOMPLETE audit.
 function demoteUnsupportedGreen(r) {
   if (!r || !GREEN_VERDICT.test(String(r.verdict ?? ''))) return r
-  if (hasEvidence(r.evidence ?? r.summary)) return r
+  // `||`, not `??`: FINDINGS_SCHEMA makes `evidence` required, so an agent that put its Evidence line
+  // in the report BODY (as the rust-security-scanner / rust-miri rubrics instruct — a line, not "fill
+  // the field") leaves the STRUCTURED field present-but-empty (''). `??` would keep that '' and never
+  // consult the summary where the line may live, demoting honest work; '' is exactly the value the
+  // fallback exists to skip past. hasEvidence is line-anchored, so the line is found in either.
+  if (hasEvidence(r.evidence || r.summary)) return r
   return { ...r, verdict: `INCOMPLETE (no evidence — claimed ${r.verdict})` }
 }
 // <<< craft-inline
@@ -1216,7 +1234,14 @@ const notRun = dispatched.filter(d => !ran.has(d))
 // Both still mark the audit INCOMPLETE (incompleteDimensions), but they are logged and framed apart.
 const couldNotRun = results.filter(r => /^\s*INCOMPLETE \(not run\)/i.test(String(r.verdict || ''))).map(r => r.dimension)
 const noEvidence = results.filter(r => /^\s*INCOMPLETE \(no evidence/i.test(String(r.verdict || ''))).map(r => r.dimension)
-const incompleteDimensions = [...notRun, ...couldNotRun, ...noEvidence]
+// incompleteDimensions is a SOFT catch-all — every dimension whose verdict LEADS with INCOMPLETE
+// checked nothing, whatever the parenthetical. couldNotRun and noEvidence stay NARROW display buckets
+// (tooling-absent vs green-with-no-evidence), but an off-canonical form — "INCOMPLETE (tooling
+// absent)", "INCOMPLETE (not run: cargo-hack)", a bare "INCOMPLETE" — must not escape the ACCOUNTING
+// the way those two narrow regexes let it: it would drop out of incompleteDimensions and auditVerdict
+// would lose the `(INCOMPLETE)` suffix, filing a partially-covered audit as clean. This is the one
+// soft reading worstVerdict (/INCOMPLETE/) and auditVerdict already use. (realm @nick/craft, node #53)
+const incompleteDimensions = [...notRun, ...results.filter(r => /^\s*INCOMPLETE/i.test(String(r.verdict || ''))).map(r => r.dimension)]
 if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
 if (couldNotRun.length) log(`Tooling absent, nothing checked: ${couldNotRun.join(', ')} — flagged COULD NOT RUN in the report.`)
 if (noEvidence.length) log(`Reported a green but showed no Evidence: ${noEvidence.join(', ')} — flagged NO EVIDENCE (verdict not trusted) in the report.`)
