@@ -156,7 +156,7 @@ const SCOUT_SCHEMA = {
 const FINDINGS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['dimension', 'verdict', 'summary', 'findings'],
+  required: ['dimension', 'verdict', 'summary', 'findings', 'evidence'],
   properties: {
     dimension: { type: 'string', description: 'dimension label, e.g. review:<crate> | contract:<from>→<to> | architecture | security | miri | crate-decomposition | semver | build-matrix | deps | unused-crates | tests-cov' },
     // ENUM, not a description. The aggregate below is deliberately non-permissive — anything it
@@ -190,6 +190,11 @@ const FINDINGS_SCHEMA = {
         },
       },
     },
+    // Positive proof of work (invariant #53): the concrete commands run, tools used, and files read
+    // this pass, on one line beginning `Evidence:` — never invented. A claimed-green verdict with an
+    // empty evidence field is demoted to INCOMPLETE by demoteUnsupportedGreen (below), so an honest
+    // zero-finding pass can only stay green by saying what it did.
+    evidence: { type: 'string', description: 'Evidence: <the concrete commands run / tools used / files read this pass — never invented>. A passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.' },
   },
 }
 
@@ -252,7 +257,7 @@ function worstVerdict(verdicts) {
 // cases are the DEATH paths — a verifier that resolves null, one that throws, most of a fan-out
 // dying — and nothing in this sandbox can exercise them; lib/audit-verification.test.mjs does, and
 // the craft-inline gate pastes the tested source back in here.
-// >>> craft-inline lib/audit-verification.mjs wrapVerdict VERIFY_MIN_JUDGED tallyVerification verificationIncomplete unusedCratesResult
+// >>> craft-inline lib/audit-verification.mjs wrapVerdict VERIFY_MIN_JUDGED tallyVerification verificationIncomplete unusedCratesResult unusedEvidence
 // A verifier that DIED and a verifier that REFUTED both leave a candidate unconfirmed, and folding
 // them together is the failure this module exists to prevent: a refutation is a judgement somebody
 // made, a death is a hole where no judgement happened.
@@ -334,6 +339,7 @@ function unusedCratesResult(candidates, verdicts) {
         ? `${t.candidates} candidate(s) flagged; ${t.judged} judged (${t.confirmed} verified unused, ${t.refuted} refuted), ${t.died} verifier(s) died. ${t.candidates - t.judged} candidate(s) are UNVERIFIED — neither confirmed nor cleared.`
         : `${t.candidates} candidate(s) flagged, but every verifier failed to return — none was confirmed OR refuted. The unused-crate surface is UNVERIFIED, not clean.`,
       findings: confirmed.concat(unjudged),
+      evidence: unusedEvidence(t),
       _verification,
     }
   }
@@ -342,8 +348,60 @@ function unusedCratesResult(candidates, verdicts) {
     verdict: confirmed.length ? 'Warning' : 'Approve',
     summary: `${t.candidates} candidate(s) flagged; ${t.confirmed} verified unused after trying to refute each; ${t.refuted} refuted (kept).${diedNote}`,
     findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${t.candidates} candidate(s) flagged, ${t.refuted} refuted by verification.${diedNote}` }],
+    // This dimension's verdict is COMPUTED from the verification tally, not self-reported by an
+    // agent — the same shape as the nested `review` dimension, whose green the audit engine excludes
+    // from the evidence gate. Here the tally IS the work, so it is emitted as the dimension's own
+    // `Evidence:` line, and a genuinely-verified all-refuted Approve stays green instead of being
+    // demoted for a missing field it always had reason to carry (realm @nick/craft, node #53).
+    evidence: unusedEvidence(t),
     _verification,
   }
+}
+
+// The verification work as an `Evidence:` line (invariant #53), read by demoteUnsupportedGreen.
+function unusedEvidence(t) {
+  return `Evidence: ran the orphan/unused-dep detectors and verified each candidate — ${t.candidates} flagged, ${t.judged} judged (${t.confirmed} confirmed unused, ${t.refuted} refuted), ${t.died} verifier(s) died.`
+}
+// <<< craft-inline
+
+// The positive work-evidence gate (invariant #53): a self-reported GREEN dimension whose evidence
+// field carries no `Evidence:` line is demoted to INCOMPLETE by construction, so an honest
+// zero-finding pass can only stay green by saying what it did. Extracted to lib/ and tested there
+// (the sandbox can't import); the craft-inline gate pastes the tested source back in here, and
+// lib/audit-evidence.test.mjs pins EVIDENCE_MARKER to the parity gate's EVIDENCE.field[0].
+// >>> craft-inline lib/audit-evidence.mjs EVIDENCE_MARKER GREEN_DIMENSION_VERDICTS hasEvidence demoteUnsupportedGreen
+// The marker a review agent must emit before a passing verdict. Held IDENTICAL to the parity gate's
+// EVIDENCE.field[0] (lib/check-delivery-parity.mjs) by a tripwire in the test — the static half that
+// makes the rubrics carry the line and this runtime half that reads it must never disagree on what
+// the marker IS.
+const EVIDENCE_MARKER = 'Evidence:'
+
+// The green verdicts across the three rubric vocabularies — Approve (review/security), Healthy
+// (architecture), Clean (miri). ONLY these are gated: a green verdict is the overclaim the evidence
+// requirement exists to stop. Warning/Block/At-risk/Concerns/UB-found and any INCOMPLETE already
+// read as non-green downstream, so demoting them would say nothing and could double-count.
+const GREEN_DIMENSION_VERDICTS = ['Approve', 'Healthy', 'Clean']
+
+// Whether `text` carries the marker AND something after it. Both empty readings the requirement
+// names — marker absent, and marker present but nothing (only whitespace) after it — collapse into
+// one indexOf + slice().trim() check. A non-empty sentence naming SOME work is all this proves; it
+// does not prove the work happened (see the ceiling in the design, realm @nick/craft, node #53).
+function hasEvidence(text) {
+  const t = String(text ?? '')
+  const i = t.indexOf(EVIDENCE_MARKER)
+  if (i < 0) return false                                         // marker absent
+  return t.slice(i + EVIDENCE_MARKER.length).trim().length > 0    // marker present, nothing after it
+}
+
+// Demote a self-reported green with no evidence to INCOMPLETE, preserving the claimed word so the
+// report says what was overclaimed. Only green verdicts are touched — a Warning/Block/INCOMPLETE is
+// returned unchanged. The demoted string LEADS with `INCOMPLETE`, so it falls into the existing
+// rollup (couldNotRun → worstVerdict → auditVerdict) with no change to any of them: an unsupported
+// green becomes an INCOMPLETE dimension and, through the rollup, an INCOMPLETE audit.
+function demoteUnsupportedGreen(r) {
+  if (!r || !GREEN_DIMENSION_VERDICTS.includes(r.verdict)) return r
+  if (hasEvidence(r.evidence ?? r.summary)) return r
+  return { ...r, verdict: `INCOMPLETE (no evidence — claimed ${r.verdict})` }
 }
 // <<< craft-inline
 
@@ -926,17 +984,26 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
 // cannot confirm. Likewise the throw line: `opts.threw` lets a review keep its own "review failed:"
 // wording (which stays legible as refusal-vs-death). The defaults carry the agent-dimension wording,
 // so the ten agent sites call `dispatchDim(dim, promise)` unchanged.
-function dimResult(dimension, r, deadReason) {
-  if (r) return { ...r, dimension }
-  log(`${dimension}: ${deadReason}`)
-  return null
+// `evidenceGate` (default ON) runs a self-reported GREEN result through demoteUnsupportedGreen: a
+// claimed pass with no `Evidence:` line becomes INCOMPLETE by construction (invariant #53), and —
+// because the demoted string leads with INCOMPLETE — falls into couldNotRun/worstVerdict with no
+// change to the rollup. The `review`/`review:<crate>` sites pass it false: their verdict is grounded
+// by review.js's confirmed-finding count and their synthetic summary carries no marker, so gating
+// them would demote every honest zero-finding review (the one false-positive the design excludes).
+function dimResult(dimension, r, deadReason, evidenceGate = true) {
+  if (!r) { log(`${dimension}: ${deadReason}`); return null }
+  const tagged = { ...r, dimension }
+  if (!evidenceGate) return tagged
+  const demoted = demoteUnsupportedGreen(tagged)
+  if (demoted !== tagged) log(`${dimension}: reported ${r.verdict} with no Evidence — demoted to ${demoted.verdict}`)
+  return demoted
 }
 
 function dispatchDim(dimension, promise, opts = {}) {
   const deadReason = opts.deadReason || 'agent returned no result (died or skipped) — dimension NOT RUN'
   const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
   return promise
-    .then(r => dimResult(dimension, r, deadReason))
+    .then(r => dimResult(dimension, r, deadReason, opts.evidenceGate ?? true))
     .catch(e => { log(threw((e && e.message) || e)); return null })
 }
 
@@ -966,8 +1033,11 @@ if (reviewCrates.length > 1) {
         .then(report => report == null ? null : reviewResult(`review:${c.name}`, report)),
       // A swallowed throw is a name that would not resolve OR a run that died; keep the
       // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
+      // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
+      // reviewResult's synthetic summary carries no `Evidence:` marker; gating it would demote every
+      // honest zero-finding review.
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
-        threw: msg => `review:${c.name} failed: ${msg}` }))
+        threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
     dispatched.push(`review:${c.name}`)
   }
 } else {
@@ -979,8 +1049,10 @@ if (reviewCrates.length > 1) {
       // As at the per-crate site: report==null is a dead nested engine — resolve to null before
       // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
       .then(report => report == null ? null : reviewResult('review', report)),
+    // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
+    // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
     { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
-      threw: msg => `review failed: ${msg}` }))
+      threw: msg => `review failed: ${msg}`, evidenceGate: false }))
   dispatched.push('review')
 }
 
@@ -1005,7 +1077,7 @@ if (touchedEdges.length) {
 
 // Crate-decomposition dimension (feature C) — whole-project; runs even on a single crate.
 tasks.push(() => dispatchDim('crate-decomposition', agent(
-  `Judge this Rust workspace's crate boundaries and recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back. Load the rust-ecosystem skill and its crate-extraction.md rubric, and build on the workspace dependency graph (\`cargo metadata\`). For EACH recommendation give: the DRIVER (reuse / compile parallelism / dependency inversion / trust boundary / independent semver / test isolation / god-crate split — or, for a merge, "single consumer, no boundary reason"), the BOUNDARY (which module or code), and the HOW. Recommend only — do NOT move code. Return a verdict (Healthy / Concerns / At-risk) and findings.`,
+  `Judge this Rust workspace's crate boundaries and recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back. Load the rust-ecosystem skill and its crate-extraction.md rubric, and build on the workspace dependency graph (\`cargo metadata\`). For EACH recommendation give: the DRIVER (reuse / compile parallelism / dependency inversion / trust boundary / independent semver / test isolation / god-crate split — or, for a merge, "single consumer, no boundary reason"), the BOUNDARY (which module or code), and the HOW. Recommend only — do NOT move code. Return a verdict (Healthy / Concerns / At-risk) and findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo metadata\`) and manifests you read this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'crate-decomposition', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'medium' },
 )))
 dispatched.push('crate-decomposition')
@@ -1038,19 +1110,19 @@ if (hasUnsafe) {
 // nothing"; a reader of the dimension table must be able to tell those two apart. ----
 
 tasks.push(() => dispatchDim('semver', agent(
-  `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings.`,
+  `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran and crates you checked this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 )))
 dispatched.push('semver')
 
 tasks.push(() => dispatchDim('build-matrix', agent(
-  `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings.`,
+  `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (feature sets, MSRV checks) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 )))
 dispatched.push('build-matrix')
 
 tasks.push(() => dispatchDim('deps', agent(
-  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings.`,
+  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo tree -d\`, \`cargo outdated\`) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 )))
 dispatched.push('deps')
@@ -1095,7 +1167,7 @@ Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; defa
 dispatched.push('unused-crates')
 
 tasks.push(() => dispatchDim('tests-cov', agent(
-  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings.`,
+  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 )))
 dispatched.push('tests-cov')
