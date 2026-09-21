@@ -874,7 +874,9 @@ function reviewResult(dimension, report) {
 // name` — never on the nested run itself failing: relaunching a failed review under the second
 // spelling would run the whole review twice. A `null` return is a nested engine that died, not a
 // missing name — no fallback there either. And when NEITHER spelling resolves, the throw names
-// both attempts, so the caller fails loud instead of skipping the review.
+// both attempts AND carries the last refusal verbatim — its `Available:` listing is the diagnosis
+// that located the live failure at a consumer — so the caller fails loud instead of skipping the
+// review, and the record distinguishes a name that would not resolve from a run that died.
 async function nestedWorkflow(workflow, name, args, warn = () => {}) {
   const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
   try {
@@ -886,7 +888,7 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
       return await workflow(name, args)
     } catch (e2) {
       if (unresolved(e2)) {
-        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen`)
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${(e2 && e2.message) || e2})`)
       }
       throw e2
     }
@@ -916,7 +918,9 @@ if (reviewCrates.length > 1) {
     }
     tasks.push(() => nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
       .then(report => reviewResult(`review:${c.name}`, report))
-      .catch(() => null))
+      // Nulling keeps one dead dimension from killing the rest, but a silent null renders a name
+      // that would not resolve and a run that died as the same NOT RUN. Log the reason first.
+      .catch(e => { log(`review:${c.name} failed: ${(e && e.message) || e}`); return null }))
     dispatched.push(`review:${c.name}`)
   }
 } else {
@@ -925,7 +929,8 @@ if (reviewCrates.length > 1) {
   tasks.push(() => nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
                                                               : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
     .then(report => reviewResult('review', report))
-    .catch(() => null))
+    // Same as the per-crate site: the swallowed reason reaches the run log before the null.
+    .catch(e => { log(`review failed: ${(e && e.message) || e}`); return null }))
   dispatched.push('review')
 }
 
