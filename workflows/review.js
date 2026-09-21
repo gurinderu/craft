@@ -1951,7 +1951,11 @@ function pathspecLiteral(file) {
   // pushing `charCodeAt` into a byte array truncated `中` (U+4E2D) to 0x2D, which is `-`. That did
   // not produce a missing file, it produced a DIFFERENT and possibly existing one — worse than the
   // failure this function was written to prevent, because the diff then silently describes other code.
-  const body = raw.slice(1, -1)
+  // BY CODE POINT, not by UTF-16 code unit. Indexing a string hands back a lone surrogate for
+  // anything outside the BMP, and encoding half a pair yields U+FFFD twice — so an emoji or a CJK
+  // extension-B character became `\uFFFD\uFFFD` and the name matched nothing. Same silent narrowing
+  // as the round before, one plane up: the BMP cases were fixed and the astral ones still broke.
+  const body = [...raw.slice(1, -1)]
   const enc = new TextEncoder()
   const SIMPLE = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
   const bytes = []
@@ -1964,8 +1968,8 @@ function pathspecLiteral(file) {
     if (Object.prototype.hasOwnProperty.call(SIMPLE, c)) { bytes.push(SIMPLE[c]); i++; continue }
     // Octal, always three digits as git emits them. A two-digit tail is NOT one, and swallowing the
     // backslash there turned `a\30.rs` into `a30.rs` — again a valid name for other code.
-    if (/^[0-7]{3}$/.test(body.slice(i + 1, i + 4))) {
-      bytes.push(parseInt(body.slice(i + 1, i + 4), 8))
+    if (/^[0-7]{3}$/.test(body.slice(i + 1, i + 4).join(''))) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4).join(''), 8))
       i += 3
       continue
     }
@@ -4086,10 +4090,11 @@ async function reviewProfile(profile) {
   const pool = []
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
   const notRun = [...scoutNotRun]
-  const ranAtLeastOnce = new Set()
-  // Coverage is counted over DISPATCHES, and `ranAtLeastOnce` survives only for the resurrection
-  // sweep, which re-runs a whole lens. A dispatch that was expected and never came back is a hole
-  // whatever its siblings did.
+  // ONE coverage ledger, counted over DISPATCHES. There used to be a second, `ranAtLeastOnce`, and
+  // after the dispatch accounting landed it was written twice and read nowhere — dead state whose
+  // comment still claimed a role, which is how a reader comes to believe there are two ledgers that
+  // might disagree. A dispatch that was expected and never came back is a hole whatever its
+  // siblings did, and that is the whole of it.
   const expectedDispatches = new Set()
   const returnedDispatches = new Set()
   const lensRounds = []
@@ -4131,7 +4136,7 @@ async function reviewProfile(profile) {
     // `source` and the ran-set did not, and a dispatch answering with a mangled name sent its
     // findings to `source: 'unknown'` while its dimension row read `ran: true` with zero findings —
     // the yield inversion `ranLenses` exists to prevent, arriving one field over.
-    for (const r of results) { ranAtLeastOnce.add(r.__lens); returnedDispatches.add(r.__key) }
+    for (const r of results) returnedDispatches.add(r.__key)
     const fresh = []
     for (const r of results) {
       for (const f0 of (r.findings || [])) {
@@ -4169,7 +4174,7 @@ async function reviewProfile(profile) {
 
   // ---- Resurrection sweep ----
   // A lens agent occasionally returns null on a transient API death / connection drop and never
-  // enters `ranAtLeastOnce`, which alone marks the whole review INCOMPLETE — even when the surviving
+  // is counted as a hole in the dispatch ledger, which alone marks the whole review INCOMPLETE — even when the surviving
   // lenses found plenty. Since the failure is transient, a targeted retry of ONLY the missing lenses
   // recovers most of them. Bounded to 2 extra attempts; re-uses the same runLens/lensPrompt path.
   // MISSING IS NOW A DISPATCH QUESTION. A lens that lost one slice of six is not recovered by the
@@ -4193,7 +4198,6 @@ async function reviewProfile(profile) {
     const results = settled.filter(Boolean)
     for (const r of results) {
       const lens = r.__lens
-      ranAtLeastOnce.add(lens)
       // A resurrection dispatch carries NO slice, so it reviewed the whole diff — which is exactly
       // what closes every hole this lens had. Marking only the lens name would leave the per-slice
       // ledger still reporting holes that were just filled, and the run would claim INCOMPLETE over
@@ -4214,7 +4218,12 @@ async function reviewProfile(profile) {
   // diff got no safety review.
   const droppedLenses = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
   if (droppedLenses.length) {
-    const reasons = droppedLenses.map(k => `${k}: ${lensFailures.get(k) || 'returned no result (skipped or died without an error)'}`).join(' · ')
+    // Falls back to the BARE lens name, because the resurrection sweep dispatches unsliced and can
+    // only key its failure that way. Without the fallback every sliced hole read "died without an
+    // error" even when the retry died with a captured message — losing the diagnosis for exactly
+    // the sliced case, which is what keying by dispatch was introduced to fix.
+    const reasonFor = k => lensFailures.get(k) || lensFailures.get(String(k).split(' :: ')[0]) || 'returned no result (skipped or died without an error)'
+    const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
     notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
     log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
   }
