@@ -20,6 +20,16 @@ const VERDICT_RULE =
   "domain-specific rating you used above onto these four (Healthy/Clean → APPROVE, Concerns → " +
   "WARNING, At-risk/UB-found → BLOCK). Write nothing after that line — it is machine-read."
 
+// Invariant #53 for the six TOOL dimensions: they have no agent rubric to carry it (they run on the
+// default session model), so the prompt itself must ask for the positive proof of work that
+// buildAuditRecord's evidence gate reads. Emitted BEFORE the final VERDICT line (VERDICT_RULE says
+// write nothing after that). The four AGENT dimensions carry the same requirement through their
+// opencode/agents/*.md rubrics instead, so they do not repeat it here. (realm @nick/craft, node #53)
+const EVIDENCE_RULE =
+  " Before the final verdict line, emit ONE line beginning `Evidence:` naming the exact commands you " +
+  "ran and files you read this pass (never invented) — a passing verdict with an empty `Evidence:` " +
+  "line is treated as INCOMPLETE, not trusted."
+
 async function sh(ctx: PluginCtx, cmd: string): Promise<string> {
   try {
     const r = await ctx.$`bash -lc ${cmd}`.quiet()
@@ -90,32 +100,32 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     {
       label: "crate-decomposition",
       agent: "",
-      prompt: `Judge this Rust workspace's crate boundaries: recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back (build on \`cargo metadata\`). For each recommendation give the DRIVER, the BOUNDARY, and the HOW. Recommend only — do not move code. Load the rust-ecosystem skill (crate-extraction). Return a Healthy/Concerns/At-risk verdict and findings.${VERDICT_RULE}`,
+      prompt: `Judge this Rust workspace's crate boundaries: recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back (build on \`cargo metadata\`). For each recommendation give the DRIVER, the BOUNDARY, and the HOW. Recommend only — do not move code. Load the rust-ecosystem skill (crate-extraction). Return a Healthy/Concerns/At-risk verdict and findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
       label: "semver",
       agent: "",
-      prompt: `Check public-API semver compatibility across PUBLISHED crates: run \`cargo semver-checks check-release\` if installed. If cargo-semver-checks is absent, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill. Report breaking changes vs the published baseline as findings.${VERDICT_RULE}`,
+      prompt: `Check public-API semver compatibility across PUBLISHED crates: run \`cargo semver-checks check-release\` if installed. If cargo-semver-checks is absent, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill. Report breaking changes vs the published baseline as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
       label: "build-matrix",
       agent: "",
-      prompt: `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\`. Skip any absent tool/toolchain with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Report failing feature combinations or MSRV breakage as findings.${VERDICT_RULE}`,
+      prompt: `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\`. Skip any absent tool/toolchain with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Report failing feature combinations or MSRV breakage as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
       label: "deps",
       agent: "",
-      prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.${VERDICT_RULE}`,
+      prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
       label: "unused-crates",
       agent: "",
-      prompt: `Find UNUSED crates in two classes, then VERIFY each before reporting: (a) ORPHAN workspace members — members that NO other workspace member depends on, excluding binaries and published libraries (from \`cargo metadata\`); (b) UNUSED dependencies — \`cargo machete\` (or \`cargo +nightly udeps\` if absent). For EACH candidate, try HARD to prove it IS used (cfg/feature-gated, macro-only, re-exported, build.rs, dev/bench/example usage, bin/published status) before accepting it; default to "used" when uncertain (recommending deletion of live code is the costly error). Skip any absent tool with a note — do NOT fail. \`cargo metadata\` alone answers class (a), so it is enough to run: if the graph loads and there are no orphan members, that is a real "Approve". But if \`cargo metadata\` itself does not run, so NOTHING was inspected, return verdict "INCOMPLETE (not run)" naming what was missing — not "Approve". Report ONLY verified-unused crates/deps as findings (severity Medium).${VERDICT_RULE}`,
+      prompt: `Find UNUSED crates in two classes, then VERIFY each before reporting: (a) ORPHAN workspace members — members that NO other workspace member depends on, excluding binaries and published libraries (from \`cargo metadata\`); (b) UNUSED dependencies — \`cargo machete\` (or \`cargo +nightly udeps\` if absent). For EACH candidate, try HARD to prove it IS used (cfg/feature-gated, macro-only, re-exported, build.rs, dev/bench/example usage, bin/published status) before accepting it; default to "used" when uncertain (recommending deletion of live code is the costly error). Skip any absent tool with a note — do NOT fail. \`cargo metadata\` alone answers class (a), so it is enough to run: if the graph loads and there are no orphan members, that is a real "Approve". But if \`cargo metadata\` itself does not run, so NOTHING was inspected, return verdict "INCOMPLETE (not run)" naming what was missing — not "Approve". Report ONLY verified-unused crates/deps as findings (severity Medium).${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
       label: "tests-cov",
       agent: "",
-      prompt: `Assess test effectiveness and docs: \`cargo llvm-cov --summary-only\` if cargo-llvm-cov is installed; build docs cleanly (\`cargo doc --no-deps\`, flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any absent tool with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill. Report low-coverage hotspots, broken doc links, and failing doctests as findings.${VERDICT_RULE}`,
+      prompt: `Assess test effectiveness and docs: \`cargo llvm-cov --summary-only\` if cargo-llvm-cov is installed; build docs cleanly (\`cargo doc --no-deps\`, flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any absent tool with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill. Report low-coverage hotspots, broken doc links, and failing doctests as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
   )
 

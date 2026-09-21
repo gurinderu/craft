@@ -369,18 +369,23 @@ function unusedEvidence(t) {
 // zero-finding pass can only stay green by saying what it did. Extracted to lib/ and tested there
 // (the sandbox can't import); the craft-inline gate pastes the tested source back in here, and
 // lib/audit-evidence.test.mjs pins EVIDENCE_MARKER to the parity gate's EVIDENCE.field[0].
-// >>> craft-inline lib/audit-evidence.mjs EVIDENCE_MARKER GREEN_DIMENSION_VERDICTS hasEvidence demoteUnsupportedGreen
+// >>> craft-inline lib/audit-evidence.mjs EVIDENCE_MARKER GREEN_VERDICT hasEvidence demoteUnsupportedGreen
 // The marker a review agent must emit before a passing verdict. Held IDENTICAL to the parity gate's
 // EVIDENCE.field[0] (lib/check-delivery-parity.mjs) by a tripwire in the test — the static half that
 // makes the rubrics carry the line and this runtime half that reads it must never disagree on what
 // the marker IS.
 const EVIDENCE_MARKER = 'Evidence:'
 
-// The green verdicts across the three rubric vocabularies — Approve (review/security), Healthy
-// (architecture), Clean (miri). ONLY these are gated: a green verdict is the overclaim the evidence
-// requirement exists to stop. Warning/Block/At-risk/Concerns/UB-found and any INCOMPLETE already
-// read as non-green downstream, so demoting them would say nothing and could double-count.
-const GREEN_DIMENSION_VERDICTS = ['Approve', 'Healthy', 'Clean']
+// The ONE definition of "is this verdict a green claim" — the single source of green, shared by the
+// two readers that must never disagree: normalizeDimensionVerdict() (workflows/rust-audit.js, which
+// maps any match to Approve) and demoteUnsupportedGreen() below (which gates a match for evidence).
+// It spans the three rubric vocabularies — Approve (review/security), Healthy (architecture), Clean
+// (miri) — AND the off-vocabulary greens agents still emit despite the schema enum ("Pass", "OK",
+// "no issues found", "all clear", "none found", …). Anchored whole-string, so "OK, but 2 blocking
+// findings" is NOT green. Only a green is gated: a green verdict is the overclaim the evidence
+// requirement exists to stop; Warning/Block/At-risk/Concerns/UB-found and any INCOMPLETE already read
+// as non-green downstream, so demoting them would say nothing. (realm @nick/craft, node #53)
+const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|good|green|no ub( (detected|found))?|no (issues|findings|problems|defects)( (detected|found))?|none( found)?|nothing (found|to report)|all (clear|good))[\s.!—–-]*$/i
 
 // Whether `text` carries the marker AND something after it. Both empty readings the requirement
 // names — marker absent, and marker present but nothing (only whitespace) after it — collapse into
@@ -394,25 +399,25 @@ function hasEvidence(text) {
 }
 
 // Demote a self-reported green with no evidence to INCOMPLETE, preserving the claimed word so the
-// report says what was overclaimed. Only green verdicts are touched — a Warning/Block/INCOMPLETE is
-// returned unchanged. The demoted string LEADS with `INCOMPLETE`, so it falls into the existing
-// rollup (couldNotRun → worstVerdict → auditVerdict) with no change to any of them: an unsupported
-// green becomes an INCOMPLETE dimension and, through the rollup, an INCOMPLETE audit.
+// report says what was overclaimed. Greenness is decided by GREEN_VERDICT — the SAME test
+// normalizeDimensionVerdict() uses — so an off-vocabulary green ("Pass", "no issues found") is gated
+// exactly like the canonical "Approve", not waved through here to be normalized into a clean green a
+// step later (realm @nick/craft, node #53). Only a green is touched — a Warning/Block/INCOMPLETE is
+// returned unchanged, and the demoted string itself leads with `INCOMPLETE`, so it is idempotent and
+// falls into the existing rollup (couldNotRun → worstVerdict → auditVerdict) with no change to any of
+// them: an unsupported green becomes an INCOMPLETE dimension and, through the rollup, an INCOMPLETE audit.
 function demoteUnsupportedGreen(r) {
-  if (!r || !GREEN_DIMENSION_VERDICTS.includes(r.verdict)) return r
+  if (!r || !GREEN_VERDICT.test(String(r.verdict ?? ''))) return r
   if (hasEvidence(r.evidence ?? r.summary)) return r
   return { ...r, verdict: `INCOMPLETE (no evidence — claimed ${r.verdict})` }
 }
 // <<< craft-inline
 
-// Free text in, vocabulary out. worstVerdict() treats anything it cannot read as green as a Warning
-// — the right default over a CONSTRAINED vocabulary, and a false alarm over free text: "No UB
-// detected", "OK" and "No issues" are green answers to the miri prompt's "Clean / UB-found" and used
-// to flip a whole green audit to Warning. The schema now pins the vocabulary; this maps the answers
-// that still arrive off-vocabulary onto it. Anything genuinely unrecognisable is returned UNCHANGED,
-// so it still lands in the non-permissive branch of worstVerdict — this widens the green vocabulary,
-// it never weakens the default.
-const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|good|green|no ub( (detected|found))?|no (issues|findings|problems|defects)( (detected|found))?|none( found)?|nothing (found|to report)|all (clear|good))[\s.!—–-]*$/i
+// Free text in, vocabulary out: map an agent's verdict onto the aggregate's language. Greenness is
+// GREEN_VERDICT (inlined above from lib/audit-evidence.mjs — the one green authority the evidence gate
+// shares); a match becomes Approve. INCOMPLETE passes through untouched; anything genuinely
+// unrecognisable is returned UNCHANGED, so it still lands in the non-permissive branch of
+// worstVerdict — this widens the green vocabulary, it never weakens the default.
 function normalizeDimensionVerdict(v) {
   const t = String(v == null ? '' : v).trim()
   if (!t) return t
@@ -1151,7 +1156,18 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
   if (!found) return null
   const candidates = (Array.isArray(found.findings) ? found.findings : [])
     .filter(f => /^(orphan-member|unused-dep):/.test(f.title || ''))
-  if (!candidates.length) return { ...found, dimension: 'unused-crates', _verification: { candidates: 0, confirmed: 0, refuted: 0, died: 0, judged: 0, refuteRate: null } }
+  // No candidates: the find step IS the whole verification, and its verdict distinguishes a computed
+  // clean (cargo metadata loaded, no orphans → a green) from a non-run (metadata absent → INCOMPLETE).
+  // Like its sibling branches (unusedCratesResult, lines below), a computed-clean green is gated and so
+  // must carry COMPUTED evidence — the find prompt has no `Evidence:` clause, so a self-reported empty
+  // evidence field would falsely demote an honest clean pass. Inject the zero-candidate tally as the
+  // evidence for a green; leave a non-run's own words intact (it is not gated, and claiming the
+  // detectors ran would be false). (realm @nick/craft, node #53)
+  if (!candidates.length) {
+    const t = tallyVerification(candidates, [])
+    const evidence = GREEN_VERDICT.test(String(found.verdict ?? '')) ? unusedEvidence(t) : (found.evidence ?? '')
+    return { ...found, dimension: 'unused-crates', evidence, _verification: { candidates: 0, confirmed: 0, refuted: 0, died: 0, judged: 0, refuteRate: null } }
+  }
   // Verify each candidate: prove it is USED. Default to "used" (drop it) when uncertain —
   // recommending deletion of live code is the costly error here.
   const verdicts = await parallel(candidates.map((c, i) => () =>
@@ -1191,11 +1207,19 @@ const ran = new Set(results.map(r => r.dimension))
 const notRun = dispatched.filter(d => !ran.has(d))
 // ANCHORED: only a verdict that is NOTHING BUT incomplete means "checked nothing". A severity-
 // suffixed one (`Block (INCOMPLETE)` from a partially-covered nested review) is a real finding
-// with partial coverage — worstVerdict() keeps it red; it does not belong in this list.
-const couldNotRun = results.filter(r => /^\s*INCOMPLETE/i.test(String(r.verdict || ''))).map(r => r.dimension)
-const incompleteDimensions = [...notRun, ...couldNotRun]
+// with partial coverage — worstVerdict() keeps it red; it does not belong in either list.
+// TWO reasons a dimension leads with INCOMPLETE, and they are NOT the same fact to a reader:
+//   COULD NOT RUN — `INCOMPLETE (not run)`: the tooling was absent, so nothing was checked.
+//   NO EVIDENCE   — `INCOMPLETE (no evidence …)`: demoteUnsupportedGreen demoted a claimed green that
+//                   showed no `Evidence:` line. The tool may well have run — the agent just did not
+//                   show its work — so asserting "tooling absent" of these would be inaccurate.
+// Both still mark the audit INCOMPLETE (incompleteDimensions), but they are logged and framed apart.
+const couldNotRun = results.filter(r => /^\s*INCOMPLETE \(not run\)/i.test(String(r.verdict || ''))).map(r => r.dimension)
+const noEvidence = results.filter(r => /^\s*INCOMPLETE \(no evidence/i.test(String(r.verdict || ''))).map(r => r.dimension)
+const incompleteDimensions = [...notRun, ...couldNotRun, ...noEvidence]
 if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
 if (couldNotRun.length) log(`Tooling absent, nothing checked: ${couldNotRun.join(', ')} — flagged COULD NOT RUN in the report.`)
+if (noEvidence.length) log(`Reported a green but showed no Evidence: ${noEvidence.join(', ')} — flagged NO EVIDENCE (verdict not trusted) in the report.`)
 
 const stripped = results.map(stripInternal)
 
@@ -1204,7 +1228,7 @@ const report = await agent(
   `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, or could not run, mark the audit INCOMPLETE.
-2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass. Any dimension whose verdict is \`INCOMPLETE (not run)\` — listed under COULD NOT RUN below — must be rendered as \`COULD NOT RUN\` with a note naming the missing tool, NEVER as Approve or as a blank/green cell: a reader must be able to tell "ran, found nothing" from "never ran". Directly beneath the table, state in one line how many dimensions actually ran out of the total.
+2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass. Any dimension listed under COULD NOT RUN below (verdict \`INCOMPLETE (not run)\`) must be rendered as \`COULD NOT RUN\` with a note naming the missing tool. Any dimension listed under NO EVIDENCE below (verdict \`INCOMPLETE (no evidence …)\`) must be rendered as \`NO EVIDENCE\` — it claimed a green but showed no work, so its verdict is not trusted; the tool may have run, so do NOT call it tooling-absent. NEVER render either as Approve or as a blank/green cell: a reader must be able to tell "ran, found nothing" from "never ran" from "claimed clean but showed nothing". Directly beneath the table, state in one line how many dimensions actually ran out of the total.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location, plus a one-line fix direction.
 4. A short **"Fix first"** list — the few highest-leverage items across all dimensions.
 5. A **"Crate boundaries"** note: summarise the \`crate-decomposition\` extract/merge recommendations (driver + boundary), if any.
@@ -1212,6 +1236,7 @@ const report = await agent(
 
 NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
 COULD NOT RUN (agent reported back, but its tooling was absent so nothing was checked — treat as uncovered, never as a pass): ${couldNotRun.length ? couldNotRun.join(', ') : 'none'}
+NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not trusted — the tool may have run; treat as uncovered, never as a pass, but do NOT assert its tooling was absent): ${noEvidence.length ? noEvidence.join(', ') : 'none'}
 
 RESULTS:
 ${JSON.stringify(stripped, null, 2)}`,
@@ -1255,6 +1280,7 @@ const auditRecord = {
     : null,
   notRun,
   couldNotRun,
+  noEvidence,
   outputTokens: budget.spent(),
 }
 await logRun(auditRecord)

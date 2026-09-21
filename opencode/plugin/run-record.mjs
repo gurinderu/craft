@@ -462,6 +462,23 @@ export function worstOf(verdicts) {
   return verdicts.reduce((a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a), 'Approve')
 }
 
+// Positive proof of work (invariant #53) — the runtime half on the opencode side, the port of
+// lib/audit-evidence.mjs's demoteUnsupportedGreen. A self-reported green verdict is a claim about what
+// was NOT found, and it only holds if something was actually looked at, so a passing dimension must
+// SHOW its work: a line beginning `Evidence:` naming the commands run and files read. The marker is
+// held identical to the one the four opencode/agents/*.md rubrics and the tool-dimension prompts in
+// rust-audit.ts emit (a test pins it to the rubric text). This is a DISTINCT copy from the Claude
+// Code lib module by the same rule the two run-record.mjs modules are distinct — the opencode delivery
+// cannot import the Claude Code lib tree. What it proves is only that SOME work was named, not that it
+// happened (the ceiling in the design, realm @nick/craft, node #53).
+export const EVIDENCE_MARKER = 'Evidence:'
+export function hasEvidence(text) {
+  const t = String(text ?? '')
+  const i = t.indexOf(EVIDENCE_MARKER)
+  if (i < 0) return false
+  return t.slice(i + EVIDENCE_MARKER.length).trim().length > 0
+}
+
 // `synthesized: false` says the consolidation step never delivered. Without it the record read the
 // verdict out of the RAW dimension blob that stands in for the report — whose last VERDICT line is
 // whatever the final dimension wrote, commonly APPROVE. The human then saw INCOMPLETE while the
@@ -469,18 +486,38 @@ export function worstOf(verdicts) {
 // report disagree, and only the store is machine-read afterwards.
 export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, synthesized = true }) {
   const rs = Array.isArray(results) ? results : []
-  const dimensions = rs.map((r) => ({
-    dimension: r.label, ran: !!r.ok, verdict: r.ok ? parseVerdict(r.text) : '',
-  }))
+  const dimensions = rs.map((r) => {
+    if (!r.ok) return { dimension: r.label, ran: false, verdict: '' }
+    // Evidence gate (invariant #53), ported from the Claude Code engine (workflows/rust-audit.js
+    // dimResult → demoteUnsupportedGreen): a self-reported green that shows no `Evidence:` line looked
+    // at nothing it can point to, so it is demoted to INCOMPLETE by construction. parseVerdict has
+    // already normalised every green (Approve/Healthy/Clean and their off-vocabulary kin) onto
+    // `Approve`, so this reads the NORMALISED verdict. Nothing is exempt here: every dimension is a
+    // self-report whose rubric (the four agent dimensions) or prompt (the six tool dimensions)
+    // mandates the line — unlike the Claude engine, whose `review` axis is grounded by review.js's
+    // finding count (not a self-report) and is the one exemption; on opencode `review` is the
+    // rust-reviewer AGENT, gated like the rest.
+    const raw = parseVerdict(r.text)
+    const verdict = raw === 'Approve' && !hasEvidence(r.text) ? 'INCOMPLETE (no evidence — claimed Approve)' : raw
+    return { dimension: r.label, ran: true, verdict }
+  })
+  // A verdict string leading with INCOMPLETE (either the tooling-absent token or a no-evidence
+  // demotion) ranks as INCOMPLETE in the roll-up; worstOf keys on the exact token, so map it first.
+  const asRank = (v) => (v.startsWith('INCOMPLETE') ? 'INCOMPLETE (not run)' : v)
   // The top-level verdict is the worst of the synthesis's own verdict and every dimension's, so it
   // no longer depends on the synthesising model restating the roll-up correctly — and no longer on
   // the word "Warning" happening to appear somewhere in a dimension table.
   const worst = worstOf([
     synthesized ? parseVerdict(synthesisText) : 'INCOMPLETE (not run)',
-    ...dimensions.map((d) => (d.ran ? d.verdict : 'INCOMPLETE (not run)')),
+    ...dimensions.map((d) => (d.ran ? asRank(d.verdict) : 'INCOMPLETE (not run)')),
   ])
   const notRun = rs.filter((r) => !r.ok).map((r) => r.label)
   const incomplete = dimensions.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
+  // Dimensions demoted for a MISSING Evidence line, kept apart from `incomplete` (tooling absent): the
+  // tool may well have run — the agent just did not show its work — so lumping them together would
+  // tell a reader "nothing was checked" when something may have been. This mirrors the Claude engine's
+  // noEvidence bucket. Both still make the audit partial below.
+  const noEvidence = dimensions.filter((d) => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map((d) => d.dimension)
   // Worst-wins ranks INCOMPLETE below Warning, so partial coverage vanishes from the top-level
   // token whenever anything else is worse. The SUFFIXED form is the shape lib/analyze-runs.mjs
   // already reads (`/INCOMPLETE/i` over the verdict string, severity-first bucketing), so emitting
@@ -491,7 +528,7 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
   // because worst-wins only lifts the all-Approve case to INCOMPLETE by accident. The reader saw the
   // banner, the store said Warning. This also makes the fact reachable — every reader of the store
   // reads `verdict`, and none of them reads `synthesized`.
-  const partial = incomplete.length > 0 || notRun.length > 0 || !synthesized
+  const partial = incomplete.length > 0 || noEvidence.length > 0 || notRun.length > 0 || !synthesized
   const verdict = partial && !/INCOMPLETE/.test(worst) ? `${worst} (INCOMPLETE)` : worst
   return {
     schemaVersion: 1,
@@ -514,6 +551,9 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
     // child session succeeded), and worst-wins precedence hides them at top level whenever any
     // other dimension is Warning or Block — which is most real runs. This keeps the fact reachable.
     incomplete,
+    // Dimensions that RAN and claimed a green but showed no `Evidence:` line — demoted by the gate.
+    // Kept apart from `incomplete`: this is "verdict not trusted", not "tooling absent".
+    noEvidence,
   }
 }
 
