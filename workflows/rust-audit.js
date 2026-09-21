@@ -861,6 +861,39 @@ function reviewResult(dimension, report) {
   }
 }
 
+// The nested review launches below resolve the child under whichever name this registry carries —
+// the fence's own comment states the rule and the fallback's single trigger.
+// >>> craft-inline lib/nested-workflow.mjs nestedWorkflow
+// Launches a nested workflow under the name that resolves where this engine actually runs. In the
+// installed plugin the registry lists engines under the plugin prefix, and a launch by the bare
+// name refuses to resolve — observed live: the review pins ran zero agents, and rust-audit's two
+// nested reviews died inside its fan-out (realm @nick/craft, node #83). In a checkout of this repo
+// the same engines are registered bare. So: the qualified name first, the bare one as fallback.
+// The fallback fires ONLY on the sandbox's name-resolution refusal — `workflow()` THROWS on an
+// unknown name (documented contract), and the refusal observed live reads `no workflow with that
+// name` — never on the nested run itself failing: relaunching a failed review under the second
+// spelling would run the whole review twice. A `null` return is a nested engine that died, not a
+// missing name — no fallback there either. And when NEITHER spelling resolves, the throw names
+// both attempts, so the caller fails loud instead of skipping the review.
+async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+  const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
+  try {
+    return await workflow(`craft:${name}`, args)
+  } catch (e) {
+    if (!unresolved(e)) throw e
+    warn(`nested workflow 'craft:${name}' did not resolve here — retrying as '${name}'`)
+    try {
+      return await workflow(name, args)
+    } catch (e2) {
+      if (unresolved(e2)) {
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen`)
+      }
+      throw e2
+    }
+  }
+}
+// <<< craft-inline
+
 // Dimensions are assembled dynamically; `dispatched` records one label per thunk and drives the
 // NOT-RUN bookkeeping (a thunk that returns null is flagged NOT RUN).
 const tasks = []
@@ -881,7 +914,7 @@ if (reviewCrates.length > 1) {
       dispatched.push(`review:${c.name}`)
       continue
     }
-    tasks.push(() => workflow('review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) })
+    tasks.push(() => nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
       .then(report => reviewResult(`review:${c.name}`, report))
       .catch(() => null))
     dispatched.push(`review:${c.name}`)
@@ -889,8 +922,8 @@ if (reviewCrates.length > 1) {
 } else {
   // Without craftRoot the child resolves its logger from CLAUDE_PLUGIN_ROOT alone and, in a checkout
   // launch, cannot log at all — every nested record lost while the parent's lands.
-  tasks.push(() => workflow('review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
-                                              : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) })
+  tasks.push(() => nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
+                                                              : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
     .then(report => reviewResult('review', report))
     .catch(() => null))
   dispatched.push('review')
