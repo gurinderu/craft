@@ -899,35 +899,45 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
 // Dimensions are assembled dynamically; `dispatched` records one label per thunk and drives the
 // NOT-RUN bookkeeping (a thunk that returns null is flagged NOT RUN).
 
-// An agent-based dimension fails to produce a result in TWO ways, and BOTH have to reach the run log
-// as something a genuine skip is not (#84's invariant) — otherwise a dead dimension and a skipped one
-// land in the report's NOT RUN list identically:
-//   - it RESOLVES to null — the agent()/safeAgent contract (lines 260-262 / 697-712): a terminal API
-//     error or a skip resolves null; tool absence does NOT (that returns a real result carrying an
-//     `INCOMPLETE (not run)` verdict). dimResult names this half.
-//   - it THROWS — agent() throws on budget exhaustion (line 261) and safeAgent RETHROWS any
-//     non-"not found" error (line 707); parallel() (lib/engine-harness.mjs) then swallows the rejected
-//     thunk to a bare null BEFORE the `.then` transform runs, so the null reaches the NOT-RUN
+// A dimension fails to produce a result in TWO ways, and BOTH have to reach the run log as something
+// a genuine skip is not (#84's invariant) — otherwise a dead dimension and a skipped one land in the
+// report's NOT RUN list identically:
+//   - it RESOLVES to null. For an AGENT dimension this is the agent()/safeAgent contract (lines
+//     260-262 / 697-712): a terminal API error OR a skip resolves null (tool absence does NOT — that
+//     returns a real `INCOMPLETE (not run)` result), so the honest reason is the ambiguous
+//     "died or skipped". For a NESTED-REVIEW dimension a null is unambiguous: the nested-workflow
+//     contract (line 875) makes `null` a nested engine that DIED, so its reason names a death.
+//   - it THROWS. agent() throws on budget exhaustion (line 261) and safeAgent RETHROWS any
+//     non-"not found" error (line 707); a nested review throws on a name-resolution refusal or a
+//     mid-run failure of the child. parallel() (lib/engine-harness.mjs) then swallows the rejected
+//     thunk to a bare null BEFORE the `.then` transform runs, so the null would reach the NOT-RUN
 //     bookkeeping with no reason logged at all. dispatchDim's `.catch` names this half.
-// dispatchDim routes EVERY agent dimension through both, in one place, so neither sub-death is silent —
-// the way the review dimension's own `.catch` (line ~955) already logs its throw half.
+// dispatchDim routes EVERY dimension — agent AND nested-review — through both halves in one place, so
+// no sub-death is silent and the invariant is held by the shape of the dispatch, not by a `.catch`
+// remembered at each of a dozen sites. Round 3 proved the review dimension's hand-rolled chain, kept
+// OUT of this dispatch on the ground that it "was already correct", missed its own resolve-null half:
+// a dead nested review (report==null) reached reviewResult, which returns a truthy Warning, so it
+// landed in `results` instead of NOT RUN — indistinguishable from a review that ran but whose verdict
+// was merely unreadable. Folding it in closes that; the review chain resolves to null on report==null
+// BEFORE reviewResult (below), so reviewResult only ever sees a report that actually came back.
 //
-// dimResult does NOT claim a death: a null is death-OR-skip per the contract above, and on this path
-// there is no error object (the agent resolved, it did not throw), so it reports the ambiguity rather
-// than asserting a death it cannot confirm.
-function dimResult(dimension, r) {
+// The two resolve-null reasons differ in meaning — an agent's ambiguous "died or skipped" vs a nested
+// review's definite death — so dimResult takes the reason as an argument rather than asserting one it
+// cannot confirm. Likewise the throw line: `opts.threw` lets a review keep its own "review failed:"
+// wording (which stays legible as refusal-vs-death). The defaults carry the agent-dimension wording,
+// so the ten agent sites call `dispatchDim(dim, promise)` unchanged.
+function dimResult(dimension, r, deadReason) {
   if (r) return { ...r, dimension }
-  log(`${dimension}: agent returned no result (died or skipped) — dimension NOT RUN`)
+  log(`${dimension}: ${deadReason}`)
   return null
 }
 
-// The throw half of the invariant, folded onto the same dispatch so both deaths log in one place
-// rather than nine scattered `.catch`es. A thrown dimension logs its reason, then nulls — landing in
-// the NOT-RUN bookkeeping exactly as a resolved-null one does, but no longer silently.
-function dispatchDim(dimension, promise) {
+function dispatchDim(dimension, promise, opts = {}) {
+  const deadReason = opts.deadReason || 'agent returned no result (died or skipped) — dimension NOT RUN'
+  const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
   return promise
-    .then(r => dimResult(dimension, r))
-    .catch(e => { log(`${dimension}: agent threw — ${(e && e.message) || e} — dimension NOT RUN`); return null })
+    .then(r => dimResult(dimension, r, deadReason))
+    .catch(e => { log(threw((e && e.message) || e)); return null })
 }
 
 const tasks = []
@@ -948,21 +958,29 @@ if (reviewCrates.length > 1) {
       dispatched.push(`review:${c.name}`)
       continue
     }
-    tasks.push(() => nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
-      .then(report => reviewResult(`review:${c.name}`, report))
-      // Nulling keeps one dead dimension from killing the rest, but a silent null renders a name
-      // that would not resolve and a run that died as the same NOT RUN. Log the reason first.
-      .catch(e => { log(`review:${c.name} failed: ${(e && e.message) || e}`); return null }))
+    tasks.push(() => dispatchDim(`review:${c.name}`,
+      nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+        // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
+        // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
+        // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
+        .then(report => report == null ? null : reviewResult(`review:${c.name}`, report)),
+      // A swallowed throw is a name that would not resolve OR a run that died; keep the
+      // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
+      { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
+        threw: msg => `review:${c.name} failed: ${msg}` }))
     dispatched.push(`review:${c.name}`)
   }
 } else {
   // Without craftRoot the child resolves its logger from CLAUDE_PLUGIN_ROOT alone and, in a checkout
   // launch, cannot log at all — every nested record lost while the parent's lands.
-  tasks.push(() => nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
-                                                              : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
-    .then(report => reviewResult('review', report))
-    // Same as the per-crate site: the swallowed reason reaches the run log before the null.
-    .catch(e => { log(`review failed: ${(e && e.message) || e}`); return null }))
+  tasks.push(() => dispatchDim('review',
+    nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
+                                                : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+      // As at the per-crate site: report==null is a dead nested engine — resolve to null before
+      // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
+      .then(report => report == null ? null : reviewResult('review', report)),
+    { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
+      threw: msg => `review failed: ${msg}` }))
   dispatched.push('review')
 }
 
