@@ -1976,13 +1976,20 @@ const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat', 'invariants', '
 // a verification entry can be three, and because a lens legitimately runs for tens of minutes.
 const LENS_WINDOW_AGENTS = 16
 
-// A DECODED path as a literal git pathspec. Decoding happens at the SOURCE now (see
-// `decodeGitPath`), so by the time a name reaches here it is already a real filename; this only
-// stops git reading it as a pattern. Wildmatch is the default, so a real file named `f[1].rs` does
-// not match itself, and a leading `:` is pathspec magic — each hands the lens a smaller diff than
-// it believes it has, with no error.
+// An ALREADY-DECODED path as a literal git pathspec. This does not decode, and that is the whole
+// of its contract: decoding happens at the source (`decodeGitPath`), so by the time a name reaches
+// here it is a real filename. Decoding a second time is not idempotent for the one class of name
+// this machinery exists for — a file literally called `"q"` comes back from git as `"\"q\""`,
+// decodes correctly to `"q"`, and a second pass strips the quotes that are part of the name,
+// handing git `:(literal)q`. Then the file is reviewed by nobody, and if a file `q` exists the
+// pathspec silently points at a DIFFERENT one. The same "smaller diff than the lens believes"
+// failure as before, inverted: the decoder used to not fire when it should, and would now fire
+// when it should not.
+//
+// What it does do is stop git reading the name as a pattern: wildmatch is the default, so a real
+// file named `f[1].rs` does not match itself, and a leading `:` is pathspec magic.
 function pathspecLiteral(file) {
-  const f = decodeGitPath(file)
+  const f = String(file ?? '')
   // An empty name is not a pathspec, it is the absence of one. Emitting `:(literal)` for it would
   // hand git `fatal: empty string is not a valid pathspec` and fail the whole SLICE's diff, not one
   // file — so the caller drops it.
@@ -4187,8 +4194,9 @@ async function reviewProfile(profile) {
   }
 
   // ---- Resurrection sweep ----
-  // A lens agent occasionally returns null on a transient API death / connection drop and never
-  // is counted as a hole in the dispatch ledger, which alone marks the whole review INCOMPLETE — even when the surviving
+  // A lens agent occasionally returns null on a transient API death / connection drop. That
+  // dispatch is then counted as a hole in the ledger, and a hole alone marks the whole review
+  // INCOMPLETE — even when the surviving
   // lenses found plenty. Since the failure is transient, a targeted retry of ONLY the missing lenses
   // recovers most of them. Bounded to 2 extra attempts; re-uses the same runLens/lensPrompt path.
   // MISSING IS NOW A DISPATCH QUESTION. A lens that lost one slice of six is not recovered by the
