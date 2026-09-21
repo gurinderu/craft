@@ -1849,10 +1849,16 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   // to review no code at all. A manifest is shared BECAUSE of what it is, not because the profile
   // happens not to claim it.
   const isOwned = typeof owns === 'function' ? owns : f => !isShared(f)
-  const shared = all.filter(isShared)
+  const sharedAll = all.filter(isShared)
     .sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))
-    .slice(0, MAX_SHARED_PER_SLICE)
-  const owned = all.filter(f => isOwned(f) && !isShared(f))
+  const shared = sharedAll.slice(0, MAX_SHARED_PER_SLICE)
+  // A shared file the cap DROPPED, which this profile also owns, must not vanish from the review
+  // altogether: before slicing the profile's glob pulled it into every lens. The cap decides how
+  // many files ride in EVERY slice, never whether a file is reviewed at all — so an evicted owned
+  // file rejoins the partition and lands in exactly one slice. Dropping it outright would be the
+  // partition itself losing code, which is worse than anything the model's file list can do.
+  const evicted = sharedAll.slice(MAX_SHARED_PER_SLICE).filter(isOwned)
+  const owned = all.filter(f => isOwned(f) && !isShared(f)).concat(evicted)
   if (owned.length < minFiles) return []
 
   const byKey = new Map()
@@ -1931,34 +1937,45 @@ const LENS_WINDOW_AGENTS = 16
 // file is simply never reviewed. That risk arrives with slicing, because the file list stops being
 // advisory (the glob covered everything) and becomes the authoritative scope.
 function pathspecLiteral(file) {
-  let f = String(file ?? '')
-  // Undo git's own C-quoting before handing the name back to git. The escapes are git's, not
-  // JavaScript's: with `core.quotePath` at its default a non-ASCII name comes back as
-  // `"caf\303\251.rs"` — OCTAL BYTES, one escape per byte of UTF-8. Handling only `\\` and `\"`
-  // stripped the quotes and left the literal twelve characters `caf\303\251.rs`, which matches no
-  // file — so the name was silently absent from its slice and reviewed by no code-intrinsic lens.
-  // That is the exact failure this function exists to prevent, inside the function that prevents it.
-  if (f.length > 1 && f.startsWith('"') && f.endsWith('"')) {
-    const body = f.slice(1, -1)
-    const bytes = []
-    for (let i = 0; i < body.length; i++) {
-      if (body[i] !== '\\') { bytes.push(body.charCodeAt(i)); continue }
-      const c = body[++i]
-      const simple = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
-      if (Object.prototype.hasOwnProperty.call(simple, c)) { bytes.push(simple[c]); continue }
-      // Octal, always three digits as git emits them. Anything else is not an escape git wrote, so
-      // it is kept verbatim rather than guessed at.
-      if (/[0-7]/.test(c) && /^[0-7]{2}/.test(body.slice(i + 1, i + 3))) {
-        bytes.push(parseInt(body.slice(i, i + 3), 8))
-        i += 2
-        continue
-      }
-      bytes.push(body.charCodeAt(i))
+  const raw = String(file ?? '')
+  // An empty name is not a pathspec, it is the absence of one. Emitting `:(literal)` for it would
+  // hand git `fatal: empty string is not a valid pathspec` and fail the whole SLICE's diff, not one
+  // file — so the caller drops it instead, which is what `filter(Boolean)` at the call site is for.
+  if (!raw) return ''
+  if (!(raw.length > 1 && raw.startsWith('"') && raw.endsWith('"'))) return `:(literal)${raw}`
+  // Undo git's own C-quoting. The escapes are git's, not JavaScript's: with `core.quotePath` at its
+  // default a non-ASCII name comes back as `"caf\303\251.rs"` — OCTAL BYTES, one escape per byte
+  // of UTF-8. But quoting also happens for a plain SPACE, and with `core.quotePath=false` the
+  // non-ASCII part of such a name arrives as RAW UTF-8 inside the quotes. So the body is a mix of
+  // escapes and literal text, and it has to be re-encoded as bytes rather than read as characters:
+  // pushing `charCodeAt` into a byte array truncated `中` (U+4E2D) to 0x2D, which is `-`. That did
+  // not produce a missing file, it produced a DIFFERENT and possibly existing one — worse than the
+  // failure this function was written to prevent, because the diff then silently describes other code.
+  const body = raw.slice(1, -1)
+  const enc = new TextEncoder()
+  const SIMPLE = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+  const bytes = []
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== '\\') { bytes.push(...enc.encode(body[i])); continue }
+    const c = body[i + 1]
+    // A TRAILING backslash is not an escape at all; keep it, rather than consuming the character
+    // after the end of the string and pushing a NUL into the path.
+    if (c === undefined) { bytes.push(...enc.encode('\\')); continue }
+    if (Object.prototype.hasOwnProperty.call(SIMPLE, c)) { bytes.push(SIMPLE[c]); i++; continue }
+    // Octal, always three digits as git emits them. A two-digit tail is NOT one, and swallowing the
+    // backslash there turned `a\30.rs` into `a30.rs` — again a valid name for other code.
+    if (/^[0-7]{3}$/.test(body.slice(i + 1, i + 4))) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4), 8))
+      i += 3
+      continue
     }
-    // The bytes are UTF-8; decoding them is what turns `\303\251` back into `é`.
-    f = new TextDecoder().decode(Uint8Array.from(bytes))
+    // Anything else git did not write: keep the backslash AND the character, verbatim.
+    bytes.push(...enc.encode('\\'))
   }
-  return `:(literal)${f}`
+  // `fatal: empty string is not a valid pathspec` takes down the whole slice's diff, not one file —
+  // so a body that decodes to nothing falls back to the original text rather than emitting one.
+  const decoded = new TextDecoder().decode(Uint8Array.from(bytes))
+  return `:(literal)${decoded || raw}`
 }
 // <<< craft-inline
 
@@ -3051,7 +3068,7 @@ function lensPrompt(lens, priorSummary, profile, plan, slice = null) {
   // The pathspec the lens reviews. A slice replaces the profile's globs with its own files — that
   // is the entire mechanism: the agent pulls what it is responsible for instead of the whole diff,
   // and the per-turn re-read it pays for the rest of its life shrinks by the same factor.
-  const pathspec = slice ? slice.files.map(f => shq(pathspecLiteral(f))).join(' ') : profile.diffGlobs.join(' ')
+  const pathspec = slice ? slice.files.map(pathspecLiteral).filter(Boolean).map(shq).join(' ') : profile.diffGlobs.join(' ')
   return `You are the **${lens}** review lens for a ${profile.lang} diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the ${profile.rubricSkill} skill for the rubric${profile.navSkill ? ` and the ${profile.navSkill} skill for context expansion` : ''}.
 
 SLICE: ${profile.lensBrief[lens] || lens}
@@ -4107,14 +4124,18 @@ async function reviewProfile(profile) {
     const settled = await weightedWindow(
       dispatches.map(d => ({ weight: 1, run: () => runLens(d.lens, lensPrompt(d.lens, priorSummary, profile, plan, d.slice), 'Lenses', ` r${round}${d.slice ? ` ${d.slice.key}` : ''}`, d.slice) })),
       LENS_WINDOW_AGENTS,
-      (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(dispatches[i].lens, dispatches[i].slice) } : null)),
+      (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(dispatches[i].lens, dispatches[i].slice), __lens: dispatches[i].lens } : null)),
     )
     const results = settled.filter(Boolean)
-    for (const r of results) { ranAtLeastOnce.add(r.lens); returnedDispatches.add(r.__key) }
+    // `__lens`, not the model's `lens` field. Coverage already avoided trusting it; the finding's
+    // `source` and the ran-set did not, and a dispatch answering with a mangled name sent its
+    // findings to `source: 'unknown'` while its dimension row read `ran: true` with zero findings —
+    // the yield inversion `ranLenses` exists to prevent, arriving one field over.
+    for (const r of results) { ranAtLeastOnce.add(r.__lens); returnedDispatches.add(r.__key) }
     const fresh = []
     for (const r of results) {
       for (const f0 of (r.findings || [])) {
-        const f = { ...f0, source: r.lens }
+        const f = { ...f0, source: r.__lens }
         const k = key(f)
         if (!seen.has(k)) { seen.add(k); fresh.push(f) }
       }
