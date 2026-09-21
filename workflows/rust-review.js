@@ -101,7 +101,40 @@ function normalizeArgs(args, warn = () => {}) {
 }
 // <<< craft-inline
 
+// The delegation resolves the child under whichever name this registry carries — the fence's own
+// comment states the rule and the fallback's single trigger.
+// >>> craft-inline lib/nested-workflow.mjs nestedWorkflow
+// Launches a nested workflow under the name that resolves where this engine actually runs. In the
+// installed plugin the registry lists engines under the plugin prefix, and a launch by the bare
+// name refuses to resolve — observed live: the review pins ran zero agents, and rust-audit's two
+// nested reviews died inside its fan-out (realm @nick/craft, node #83). In a checkout of this repo
+// the same engines are registered bare. So: the qualified name first, the bare one as fallback.
+// The fallback fires ONLY on the sandbox's name-resolution refusal — `workflow()` THROWS on an
+// unknown name (documented contract), and the refusal observed live reads `no workflow with that
+// name` — never on the nested run itself failing: relaunching a failed review under the second
+// spelling would run the whole review twice. A `null` return is a nested engine that died, not a
+// missing name — no fallback there either. And when NEITHER spelling resolves, the throw names
+// both attempts, so the caller fails loud instead of skipping the review.
+async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+  const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
+  try {
+    return await workflow(`craft:${name}`, args)
+  } catch (e) {
+    if (!unresolved(e)) throw e
+    warn(`nested workflow 'craft:${name}' did not resolve here — retrying as '${name}'`)
+    try {
+      return await workflow(name, args)
+    } catch (e2) {
+      if (unresolved(e2)) {
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen`)
+      }
+      throw e2
+    }
+  }
+}
+// <<< craft-inline
+
 // Thin pin over the generic engine. review.js holds the engine + PROFILES registry; this just
 // restricts it to the rust profile. Invoked only as a root (humans/agents) — rust-audit calls
-// `review` directly, so this never nests (workflow() nesting is one level only).
-return await workflow('review', { ...normalizeArgs(args, log), languages: ['rust'] })
+// the review engine directly, so this never nests (workflow() nesting is one level only).
+return await nestedWorkflow(workflow, 'review', { ...normalizeArgs(args, log), languages: ['rust'] }, log)
