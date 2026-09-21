@@ -1753,7 +1753,54 @@ function makeDeathBreaker(opts = {}) {
 // Pure helper, tested as a real module in lib/lens-scope.mjs and pasted back here by the
 // craft-inline gate. The measurement that motivates it — lenses at 73.6% of a run, the whole diff
 // pulled by every lens on every round — lives there, with the risk it does not solve.
-// >>> craft-inline lib/lens-scope.mjs MAX_SHARED_PER_SLICE SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
+// >>> craft-inline lib/lens-scope.mjs decodeGitPath MAX_SHARED_PER_SLICE SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
+// A path as a LITERAL git pathspec. Shell-quoting alone is not enough and the gap is silent: git
+// reads a pathspec as wildmatch, so a real file named `f[1].rs` does not match itself; a leading `:`
+// is read as pathspec magic; and `git diff --name-only` C-quotes paths holding spaces or non-ASCII,
+// so the name that comes back is `"dir/a b.rs"`, quotes included, which then matches nothing.
+// Every one of those hands the lens a SMALLER diff than it believes it has, with no error — the
+// file is simply never reviewed. That risk arrives with slicing, because the file list stops being
+// advisory (the glob covered everything) and becomes the authoritative scope.
+function decodeGitPath(file) {
+  const raw = String(file ?? '')
+  if (!(raw.length > 1 && raw.startsWith('"') && raw.endsWith('"'))) return raw
+  // Undo git's own C-quoting. The escapes are git's, not JavaScript's: with `core.quotePath` at its
+  // default a non-ASCII name comes back as `"caf\303\251.rs"` — OCTAL BYTES, one escape per byte
+  // of UTF-8. But quoting also happens for a plain SPACE, and with `core.quotePath=false` the
+  // non-ASCII part of such a name arrives as RAW UTF-8 inside the quotes. So the body is a mix of
+  // escapes and literal text, and it has to be re-encoded as bytes rather than read as characters:
+  // pushing `charCodeAt` into a byte array truncated `中` (U+4E2D) to 0x2D, which is `-`. That did
+  // not produce a missing file, it produced a DIFFERENT and possibly existing one.
+  //
+  // BY CODE POINT, not by UTF-16 code unit. Indexing a string hands back a lone surrogate for
+  // anything outside the BMP, and encoding half a pair yields U+FFFD twice — so an emoji became
+  // `\uFFFD\uFFFD` and the name matched nothing.
+  const body = [...raw.slice(1, -1)]
+  const enc = new TextEncoder()
+  const SIMPLE = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+  const bytes = []
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== '\\') { bytes.push(...enc.encode(body[i])); continue }
+    const c = body[i + 1]
+    // A TRAILING backslash is not an escape at all; keep it, rather than consuming the character
+    // after the end of the string and pushing a NUL into the path.
+    if (c === undefined) { bytes.push(...enc.encode('\\')); continue }
+    if (Object.prototype.hasOwnProperty.call(SIMPLE, c)) { bytes.push(SIMPLE[c]); i++; continue }
+    // Octal, always three digits as git emits them. A two-digit tail is NOT one, and swallowing the
+    // backslash there turned `a\30.rs` into `a30.rs` — again a valid name for other code.
+    if (/^[0-7]{3}$/.test(body.slice(i + 1, i + 4).join(''))) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4).join(''), 8))
+      i += 3
+      continue
+    }
+    // Anything else git did not write: the backslash is emitted here and the character follows on
+    // the next iteration, so both survive.
+    bytes.push(...enc.encode('\\'))
+  }
+  // A body that decodes to nothing falls back to the original text rather than vanishing.
+  return new TextDecoder().decode(Uint8Array.from(bytes)) || raw
+}
+
 // How many shared files may ride along in EVERY slice. Unbounded, this works against the very cost
 // the partition exists to cut: a tree with a chart directory or a fixture tree can carry more
 // changed manifests than source files, and each slice would pull all of them, paid ×slices ×rounds.
@@ -1929,57 +1976,17 @@ const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat', 'invariants', '
 // a verification entry can be three, and because a lens legitimately runs for tens of minutes.
 const LENS_WINDOW_AGENTS = 16
 
-// A path as a LITERAL git pathspec. Shell-quoting alone is not enough and the gap is silent: git
-// reads a pathspec as wildmatch, so a real file named `f[1].rs` does not match itself; a leading `:`
-// is read as pathspec magic; and `git diff --name-only` C-quotes paths holding spaces or non-ASCII,
-// so the name that comes back is `"dir/a b.rs"`, quotes included, which then matches nothing.
-// Every one of those hands the lens a SMALLER diff than it believes it has, with no error — the
-// file is simply never reviewed. That risk arrives with slicing, because the file list stops being
-// advisory (the glob covered everything) and becomes the authoritative scope.
+// A DECODED path as a literal git pathspec. Decoding happens at the SOURCE now (see
+// `decodeGitPath`), so by the time a name reaches here it is already a real filename; this only
+// stops git reading it as a pattern. Wildmatch is the default, so a real file named `f[1].rs` does
+// not match itself, and a leading `:` is pathspec magic — each hands the lens a smaller diff than
+// it believes it has, with no error.
 function pathspecLiteral(file) {
-  const raw = String(file ?? '')
+  const f = decodeGitPath(file)
   // An empty name is not a pathspec, it is the absence of one. Emitting `:(literal)` for it would
   // hand git `fatal: empty string is not a valid pathspec` and fail the whole SLICE's diff, not one
-  // file — so the caller drops it instead, which is what `filter(Boolean)` at the call site is for.
-  if (!raw) return ''
-  if (!(raw.length > 1 && raw.startsWith('"') && raw.endsWith('"'))) return `:(literal)${raw}`
-  // Undo git's own C-quoting. The escapes are git's, not JavaScript's: with `core.quotePath` at its
-  // default a non-ASCII name comes back as `"caf\303\251.rs"` — OCTAL BYTES, one escape per byte
-  // of UTF-8. But quoting also happens for a plain SPACE, and with `core.quotePath=false` the
-  // non-ASCII part of such a name arrives as RAW UTF-8 inside the quotes. So the body is a mix of
-  // escapes and literal text, and it has to be re-encoded as bytes rather than read as characters:
-  // pushing `charCodeAt` into a byte array truncated `中` (U+4E2D) to 0x2D, which is `-`. That did
-  // not produce a missing file, it produced a DIFFERENT and possibly existing one — worse than the
-  // failure this function was written to prevent, because the diff then silently describes other code.
-  // BY CODE POINT, not by UTF-16 code unit. Indexing a string hands back a lone surrogate for
-  // anything outside the BMP, and encoding half a pair yields U+FFFD twice — so an emoji or a CJK
-  // extension-B character became `\uFFFD\uFFFD` and the name matched nothing. Same silent narrowing
-  // as the round before, one plane up: the BMP cases were fixed and the astral ones still broke.
-  const body = [...raw.slice(1, -1)]
-  const enc = new TextEncoder()
-  const SIMPLE = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
-  const bytes = []
-  for (let i = 0; i < body.length; i++) {
-    if (body[i] !== '\\') { bytes.push(...enc.encode(body[i])); continue }
-    const c = body[i + 1]
-    // A TRAILING backslash is not an escape at all; keep it, rather than consuming the character
-    // after the end of the string and pushing a NUL into the path.
-    if (c === undefined) { bytes.push(...enc.encode('\\')); continue }
-    if (Object.prototype.hasOwnProperty.call(SIMPLE, c)) { bytes.push(SIMPLE[c]); i++; continue }
-    // Octal, always three digits as git emits them. A two-digit tail is NOT one, and swallowing the
-    // backslash there turned `a\30.rs` into `a30.rs` — again a valid name for other code.
-    if (/^[0-7]{3}$/.test(body.slice(i + 1, i + 4).join(''))) {
-      bytes.push(parseInt(body.slice(i + 1, i + 4).join(''), 8))
-      i += 3
-      continue
-    }
-    // Anything else git did not write: keep the backslash AND the character, verbatim.
-    bytes.push(...enc.encode('\\'))
-  }
-  // `fatal: empty string is not a valid pathspec` takes down the whole slice's diff, not one file —
-  // so a body that decodes to nothing falls back to the original text rather than emitting one.
-  const decoded = new TextDecoder().decode(Uint8Array.from(bytes))
-  return `:(literal)${decoded || raw}`
+  // file — so the caller drops it.
+  return f ? `:(literal)${f}` : ''
 }
 // <<< craft-inline
 
@@ -2847,7 +2854,14 @@ if (!detected) {
   return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
 }
 const baseRef = detected?.baseRef ?? baseArg
-const changedFiles = Array.isArray(detected?.files) ? detected.files : []
+// DECODED HERE, at the source, before anything asks what a file is. The list comes back as git
+// printed it, and git C-quotes any name holding a space or a non-ASCII character — so the string
+// ends in `"`, `detect` sees no `.rs` suffix, the shared-suffix test sees no `.lock`, and the file
+// belongs to no profile and enters no slice. Decoding it further downstream, at the point the
+// pathspec is rendered, was the first attempt and it could never fire: the name had already been
+// filtered out. Normalising once here also corrects which profiles are considered active and which
+// files are reported as covered by none.
+const changedFiles = (Array.isArray(detected?.files) ? detected.files : []).map(decodeGitPath)
 // The authors' OWN written spec (PR body/title or commit messages) — checked claim-by-claim
 // against the code by the intent lens. The one-line inferred `intent` is not enough: precise
 // claims ("never fails on X", "the only way to Y", "idempotent no-op") live in the full body.
