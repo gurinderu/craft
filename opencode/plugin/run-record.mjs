@@ -473,19 +473,70 @@ export function worstOf(verdicts) {
 // happened (the ceiling in the design, realm @nick/craft, node #53).
 export const EVIDENCE_MARKER = 'Evidence:'
 // Line-anchored, mirroring the rubric "emit one line beginning `Evidence:`": whether some LINE of the
-// report begins with the marker (after optional whitespace) and carries content after it. A bare
-// indexOf over the whole report matched the marker buried in a finding's prose ("no `Evidence:` of
-// bounds") or a quoted instruction, waving a no-work green through — the costly false-green in an
-// engine that runs inside a consumer's repo. Held byte-identical to lib/audit-evidence.mjs's copy
-// (the Claude engine); both are pinned to EVIDENCE_MARKER by a test on each side (node #53).
+// report begins with the marker and carries content after it. A bare indexOf over the whole report
+// matched the marker buried in a finding's prose ("no `Evidence:` of bounds") or a quoted instruction,
+// waving a no-work green through — the costly false-green in an engine that runs inside a consumer's
+// repo. Leading and trailing markdown decoration is cosmetic and tolerated — the SAME class VERDICT_LINE
+// already strips (`[ \t>*_`#-]`) — so `**Evidence:** …`, `- Evidence: …` and `> Evidence: …`, the way
+// models label a markdown line, are read as the marker. This copy reads the agent's FULL markdown
+// report, where emphasis is the norm, so it was the more exposed of the two; anchoring on the first
+// NON-decoration column (not the first non-whitespace one, round 2's overshoot) reads a decorated marker
+// while still rejecting one buried after real prose, and a marker with only decoration after it is still
+// empty. Held identical to lib/audit-evidence.mjs's copy (the Claude engine); both pinned to
+// EVIDENCE_MARKER by a test on each side (node #53).
 export function hasEvidence(text) {
   for (const raw of String(text ?? '').split('\n')) {
     const line = raw.replace(/\r$/, '')
-    const i = line.search(/\S/)
+    const i = line.search(/[^ \t>*_`#-]/)
     if (i < 0 || !line.startsWith(EVIDENCE_MARKER, i)) continue
-    if (line.slice(i + EVIDENCE_MARKER.length).trim().length > 0) return true
+    if (/[^ \t>*_`#-]/.test(line.slice(i + EVIDENCE_MARKER.length))) return true
   }
   return false
+}
+
+// The per-dimension verdict AFTER the evidence gate (invariant #53), ported from the Claude Code
+// engine (workflows/rust-audit.js dimResult → demoteUnsupportedGreen): a self-reported green that
+// shows no `Evidence:` line looked at nothing it can point to, so it is demoted to INCOMPLETE by
+// construction. parseVerdict has already normalised every green (Approve/Healthy/Clean and their
+// off-vocabulary kin) onto `Approve`, so this reads the NORMALISED verdict. Nothing is exempt here:
+// every dimension is a self-report whose rubric (the four agent dimensions) or prompt (the six tool
+// dimensions) mandates the line — unlike the Claude engine, whose `review` axis is grounded by
+// review.js's finding count (not a self-report) and is the one exemption; on opencode `review` is the
+// rust-reviewer AGENT, gated like the rest.
+//
+// This is the ONE computation the stored record (buildAuditRecord) and the returned report
+// (auditSynthesisInput → rust-audit.ts's synthesis) both read, so the two cannot disagree about which
+// dimension was demoted for showing no work — the report-vs-record skew (node #53). Before it, the
+// demotion lived only inside buildAuditRecord (the store), while the synthesis was built from the RAW
+// dimension text still carrying `VERDICT: APPROVE`, so a false green survived in the report a human reads.
+export function auditDimensions(results) {
+  const rs = Array.isArray(results) ? results : []
+  return rs.map((r) => {
+    if (!r.ok) return { dimension: r.label, ran: false, verdict: '' }
+    const raw = parseVerdict(r.text)
+    const verdict = raw === 'Approve' && !hasEvidence(r.text) ? 'INCOMPLETE (no evidence — claimed Approve)' : raw
+    return { dimension: r.label, ran: true, verdict }
+  })
+}
+
+// The synthesis input for the opencode audit, derived from the SAME evidence-gated dimensions the
+// stored record reads (auditDimensions). The blob's per-dimension header carries the GATED verdict,
+// not a bare "ran": a dimension that self-reported APPROVE with no `Evidence:` line is shown as its
+// demoted INCOMPLETE, so the report the human reads (the synthesis consolidates this blob, and the
+// raw-blob fallback embeds it verbatim when synthesis dies) cannot present it as a clean green while
+// buildAuditRecord stores it demoted. The three coverage buckets travel with it so the synthesis
+// prompt can instruct the model to render each apart from a pass — the mirror of how the Claude
+// engine feeds `notRun`/`couldNotRun`/`noEvidence` to its report agent (node #53).
+export function auditSynthesisInput(results) {
+  const rs = Array.isArray(results) ? results : []
+  const dims = auditDimensions(rs)
+  const blob = rs
+    .map((r, i) => `### ${r.label} (${dims[i].ran ? dims[i].verdict : 'INCOMPLETE (not run)'})\n\n${r.text ?? ''}`)
+    .join('\n\n')
+  const notRun = dims.filter((d) => !d.ran).map((d) => d.dimension)
+  const couldNotRun = dims.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
+  const noEvidence = dims.filter((d) => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map((d) => d.dimension)
+  return { blob, notRun, couldNotRun, noEvidence }
 }
 
 // `synthesized: false` says the consolidation step never delivered. Without it the record read the
@@ -495,21 +546,7 @@ export function hasEvidence(text) {
 // report disagree, and only the store is machine-read afterwards.
 export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, synthesized = true }) {
   const rs = Array.isArray(results) ? results : []
-  const dimensions = rs.map((r) => {
-    if (!r.ok) return { dimension: r.label, ran: false, verdict: '' }
-    // Evidence gate (invariant #53), ported from the Claude Code engine (workflows/rust-audit.js
-    // dimResult → demoteUnsupportedGreen): a self-reported green that shows no `Evidence:` line looked
-    // at nothing it can point to, so it is demoted to INCOMPLETE by construction. parseVerdict has
-    // already normalised every green (Approve/Healthy/Clean and their off-vocabulary kin) onto
-    // `Approve`, so this reads the NORMALISED verdict. Nothing is exempt here: every dimension is a
-    // self-report whose rubric (the four agent dimensions) or prompt (the six tool dimensions)
-    // mandates the line — unlike the Claude engine, whose `review` axis is grounded by review.js's
-    // finding count (not a self-report) and is the one exemption; on opencode `review` is the
-    // rust-reviewer AGENT, gated like the rest.
-    const raw = parseVerdict(r.text)
-    const verdict = raw === 'Approve' && !hasEvidence(r.text) ? 'INCOMPLETE (no evidence — claimed Approve)' : raw
-    return { dimension: r.label, ran: true, verdict }
-  })
+  const dimensions = auditDimensions(rs)
   // A verdict string leading with INCOMPLETE (either the tooling-absent token or a no-evidence
   // demotion) ranks as INCOMPLETE in the roll-up; worstOf keys on the exact token, so map it first.
   const asRank = (v) => (v.startsWith('INCOMPLETE') ? 'INCOMPLETE (not run)' : v)

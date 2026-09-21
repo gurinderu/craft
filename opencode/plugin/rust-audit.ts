@@ -5,7 +5,7 @@
 // rust-reviewer (no per-crate / inter-crate-contract fan-out); see opencode/README.md parity caveats.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
-import { buildAuditRecord, hasVerdictLine, writeRecord, EVIDENCE_MARKER } from "./run-record.mjs"
+import { auditSynthesisInput, buildAuditRecord, hasVerdictLine, writeRecord, EVIDENCE_MARKER } from "./run-record.mjs"
 
 // Every dimension — and the synthesis — ends with ONE machine-readable line from a closed
 // vocabulary. run-record.mjs's parseVerdict() reads the LAST such line, which is what keeps a
@@ -140,9 +140,13 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
   const results = await fanOut(ctx, jobs.map((j) => ({ ...j, answered: hasVerdictLine, requires: "VERDICT: line" })))
 
   // Synthesize through a fresh child session (no agent → the session's default model/persona).
-  // One machine-readable label for "this dimension checked nothing" — a dispatcher-detected death
-  // and a dimension's own self-report are the same fact to a reader.
-  const blob = results.map((r) => `### ${r.label} (${r.ok ? "ran" : "INCOMPLETE (not run)"})\n\n${r.text}`).join("\n\n")
+  // The blob and the coverage buckets come from auditSynthesisInput — the SAME evidence gate
+  // buildAuditRecord reads (run-record.mjs), so the report a human sees and the record the store keeps
+  // cannot disagree about which dimension was demoted for showing no work (node #53). Each dimension's
+  // header carries its GATED verdict: a self-reported green with no `Evidence:` line reads as its demoted
+  // INCOMPLETE here, not as a clean green. A dispatcher-detected death and a dimension's own not-run
+  // self-report are the same fact to a reader — both surface as `INCOMPLETE (not run)`.
+  const { blob, notRun, couldNotRun, noEvidence } = auditSynthesisInput(results)
   // The blob ends with whatever VERDICT: line the LAST dimension wrote — commonly APPROVE. Handing
   // it over as the report when synthesis dies therefore hands the reader an approval nobody made.
   // The run record was already safe (worst-wins over dimensions); the text a human reads was not.
@@ -150,10 +154,14 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     `## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\n${why}\n\nThe synthesis step did not return a report, so what follows is the raw per-dimension output. Nothing here is an approval: read each dimension's own verdict below, and note that any \`VERDICT:\` line at the very end belongs to the last dimension, not to the audit.\n\n${blob}`
   const synthPrompt = `You are consolidating a Rust audit. Below are the per-dimension results. Produce ONE markdown report — do not invent findings, only merge what is given:
 
-1. An **overall verdict** line — the worst case across dimensions. If any dimension reported the verdict \`INCOMPLETE (not run)\` — because it never executed, or because its tooling was absent — the overall verdict line MUST contain that exact string \`INCOMPLETE (not run)\`.
-2. A **dimension → verdict** table. Any dimension that did not check anything gets the verdict \`INCOMPLETE (not run)\` — written exactly that way, with a note naming what was missing — NEVER Approve and never a blank or green cell. Use no other wording for it: a reader must be able to tell "ran, found nothing" from "never ran", and this exact string is the one that is machine-read.
+1. An **overall verdict** line — the worst case across dimensions. If any dimension's verdict LEADS with \`INCOMPLETE\` — it never executed or its tooling was absent (\`INCOMPLETE (not run)\`), or it claimed a green while showing no work (\`INCOMPLETE (no evidence …)\`) — the overall verdict line MUST contain the string \`INCOMPLETE\`.
+2. A **dimension → verdict** table, one row per dimension. A dimension listed under COULD NOT RUN below gets the verdict \`INCOMPLETE (not run)\` — written exactly that way, with a note naming what was missing. A dimension listed under NO EVIDENCE below gets \`INCOMPLETE (no evidence)\` — it claimed a green but showed no \`Evidence:\` line, so its verdict is not trusted (the tool may have run, so do NOT call it tooling-absent). NEVER render either as Approve or as a blank or green cell: a reader must be able to tell "ran, found nothing" from "never ran" from "claimed clean but showed nothing", and these exact strings are the ones that are machine-read.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location + a one-line fix direction.
 4. A short **"Fix first"** list of the highest-leverage items.
+
+NOT RUN (no result — the agent failed or was skipped; treat as uncovered, never a pass): ${notRun.length ? notRun.join(", ") : "none"}
+COULD NOT RUN (reported back, but its tooling was absent so nothing was checked; treat as uncovered, never a pass): ${couldNotRun.length ? couldNotRun.join(", ") : "none"}
+NO EVIDENCE (claimed a green but showed no work, so the verdict is not trusted — the tool may have run; treat as uncovered, never a pass, but do NOT assert its tooling was absent): ${noEvidence.length ? noEvidence.join(", ") : "none"}
 
 RESULTS:
 ${blob}${VERDICT_RULE}`

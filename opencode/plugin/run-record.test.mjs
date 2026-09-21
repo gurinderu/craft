@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join as joinPath } from 'node:path'
 import {
   parseVerdict, buildAuditRecord, buildTriageRecord, indexProjection, writeRecord,
-  hasEvidence, EVIDENCE_MARKER,
+  hasEvidence, EVIDENCE_MARKER, auditDimensions, auditSynthesisInput,
 } from './run-record.mjs'
 
 test('parseVerdict picks the worst signal in the text', () => {
@@ -263,6 +263,26 @@ test('hasEvidence rejects a marker buried in a line of prose (line-anchored, not
   assert.equal(hasEvidence('  Evidence: ran the tools'), true)
 })
 
+test('hasEvidence tolerates ordinary markdown decoration on the Evidence line (line-anchored, not strict)', () => {
+  // MAYATNIK correction (node #38): the strict line-anchored scan rejected the markdown emphasis a model
+  // routinely puts on a labelled line — `**Evidence:**`, `- Evidence:`, `> Evidence:`, `` `Evidence:` `` —
+  // demoting an honest green to INCOMPLETE. On the opencode engine hasEvidence reads the agent's FULL
+  // markdown report, where emphasis is the norm, so it was the more exposed of the two copies. The fix
+  // reuses the SAME cosmetic class the VERDICT scanner already strips (`[ \t>*_`#-]`), testing the marker
+  // at the first NON-decoration column. RED before the change. Held identical to the lib copy.
+  assert.equal(hasEvidence('**Evidence:** ran cargo test'), true)
+  assert.equal(hasEvidence('- Evidence: ran cargo-audit'), true)
+  assert.equal(hasEvidence('* Evidence: ran cargo-audit'), true)
+  assert.equal(hasEvidence('> Evidence: read src/db.rs'), true)
+  assert.equal(hasEvidence('`Evidence:` ran the tool'), true)
+  assert.equal(hasEvidence('# Evidence: ran cargo-audit'), true)
+  // A decorated marker with no real content after it is still empty (the gate is not weakened).
+  assert.equal(hasEvidence('**Evidence:**'), false)
+  assert.equal(hasEvidence('- Evidence:   '), false)
+  // The buried-marker protection stands: a marker after real prose is still rejected.
+  assert.equal(hasEvidence('*note* Evidence: buried after a word'), false)
+})
+
 test('a green whose only "Evidence:" is buried in a finding is demoted, not trusted', () => {
   // The finding-3 exploit end to end: a dimension self-reports APPROVE, does no work, but its prose
   // happens to contain the marker. Before the line-anchoring fix buildAuditRecord trusted it.
@@ -322,6 +342,58 @@ test('the gate reads the NORMALISED verdict — an off-vocabulary green with no 
   })
   assert.match(rec.verdict, /INCOMPLETE/)
   assert.deepEqual(rec.noEvidence, ['architecture'])
+})
+
+// ---- auditSynthesisInput: the report the human reads is gated from the SAME source as the record ----
+
+test('auditSynthesisInput demotes a green-no-evidence dimension in the report input, matching the record', () => {
+  // Finding 2: on opencode the demotion lived only in buildAuditRecord (the STORE); the synthesis blob
+  // was built from the RAW text still carrying `VERDICT: APPROVE`, so the returned report a human reads
+  // could show the dimension green while the store said INCOMPLETE. The report input must now demote it.
+  const results = [{ label: 'security', ok: true, text: 'All clean.\n\nVERDICT: APPROVE' }]
+  const { blob, noEvidence, couldNotRun, notRun } = auditSynthesisInput(results)
+  assert.deepEqual(noEvidence, ['security'], 'the no-evidence bucket the synth prompt renders')
+  assert.deepEqual(couldNotRun, [])
+  assert.deepEqual(notRun, [])
+  // The blob header carries the GATED verdict, not a bare "ran" or the raw Approve — so the synthesised
+  // report (and the raw-blob fallback when synthesis dies) shows the dimension demoted.
+  assert.match(blob, /^### security \(INCOMPLETE \(no evidence — claimed Approve\)\)/)
+  assert.doesNotMatch(blob.split('\n')[0], /\(ran\)/)
+  // Report and record cannot disagree: both derive from auditDimensions / the same evidence gate.
+  const rec = buildAuditRecord({ results, baseRef: 'main', hasUnsafe: false, synthesisText: 'x\n\nVERDICT: APPROVE' })
+  assert.deepEqual(rec.noEvidence, noEvidence, 'the store and the report input name the same demoted dimension')
+})
+
+test('auditSynthesisInput keeps a green WITH an Evidence line green, and the header shows the verdict', () => {
+  const results = [{ label: 'security', ok: true, text: 'clean.\nEvidence: ran cargo-audit.\n\nVERDICT: APPROVE' }]
+  const { blob, noEvidence } = auditSynthesisInput(results)
+  assert.deepEqual(noEvidence, [])
+  assert.match(blob, /^### security \(Approve\)/)
+})
+
+test('auditSynthesisInput marks a died dimension not-run and separates it from a no-evidence demotion', () => {
+  const results = [
+    { label: 'security', ok: false, text: '' },
+    { label: 'deps', ok: true, text: 'Duplicate versions found.\n\nVERDICT: WARNING' },
+    { label: 'semver', ok: true, text: 'All good.\n\nVERDICT: APPROVE' },
+  ]
+  const { blob, notRun, couldNotRun, noEvidence } = auditSynthesisInput(results)
+  assert.deepEqual(notRun, ['security'])
+  assert.deepEqual(couldNotRun, [])
+  assert.deepEqual(noEvidence, ['semver'], 'the un-evidenced green is demoted; the Warning is untouched')
+  assert.match(blob, /### security \(INCOMPLETE \(not run\)\)/)
+  assert.match(blob, /### deps \(Warning\)/)
+  assert.match(blob, /### semver \(INCOMPLETE \(no evidence/)
+})
+
+test('auditDimensions is the shared computation buildAuditRecord reads', () => {
+  const results = [
+    { label: 'security', ok: true, text: 'clean.\nEvidence: ran cargo-audit.\n\nVERDICT: APPROVE' },
+    { label: 'deps', ok: true, text: 'nothing shown.\n\nVERDICT: APPROVE' },
+  ]
+  const dims = auditDimensions(results)
+  const rec = buildAuditRecord({ results, baseRef: 'main', hasUnsafe: false, synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE' })
+  assert.deepEqual(rec.dimensions, dims, 'the record projects auditDimensions verbatim')
 })
 
 test('buildTriageRecord uses an empty verdict and per-finding dimensions', () => {
