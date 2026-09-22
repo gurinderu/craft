@@ -115,6 +115,32 @@ like-for-like comparison), and the rendered line prints a warning for anything b
 `index.jsonl` carries the summary projection (drops `dimensions`/`scout`/`verification` detail,
 adds `findingsTotal`).
 
+### Real cost (`cost`) — folded in post-hoc
+
+`outputTokens` is `budget.spent()`, the harness **pool** — and it describes under 1% of real spend.
+The other ~99% is cache reads and writes, and those are recorded **only** in the per-agent
+transcripts (`<run-dir>/agent-*.jsonl`) the runtime writes outside the workflow sandbox. A workflow
+runs sandboxed with no filesystem, so no engine can ever record them from inside a run. They are
+summed **after** the run instead, by the party that holds the runId (the launcher):
+
+```bash
+node lib/craft-log-run.mjs enrich-cost --run-dir <run-dir> --record <detail-record.json>
+```
+
+It sums every `agent-*.jsonl` under the run directory over the `type:"assistant"` records'
+`.message.usage` and folds a `cost` object into the record:
+`cost: {output, input, cacheRead, cacheWrite, total, agents}` — `total` is the four token sums,
+`agents` the transcript count. The write is atomic (temp file + rename) and **idempotent**: `cost`
+is replaced on every run, never appended, so re-running after more transcripts land simply re-sums.
+It exits non-zero if the run directory is missing, holds no `agent-*.jsonl`, or the record is
+missing/unparseable. `cost` is **optional** — absent until a run is enriched — and it does not enter
+the `index.jsonl` projection.
+
+`node lib/analyze-runs.mjs` surfaces it per workflow beside the three-state pool, leading with
+`cacheRead` because that IS the spend. A record with no `cost` was never enriched: it contributes
+nothing to the cost average and is **not** read as a zero-cost run (`costRuns` counts the enriched
+runs apart), the same "not measured is not zero" stance the pool split takes for a missing `round`.
+
 ## How it is produced
 
 Workflow scripts are sandboxed (no filesystem, no clock), so they assemble the record object and
@@ -171,7 +197,10 @@ removed along with the rest of `docs/superpowers/`; recover it from git history 
 
 ## Out of scope (v1)
 
-Per-agent timing/token cost (only in raw `agent-*.jsonl` transcripts) and any analysis UI.
+Per-agent **timing** (wall clock / stalls are read only from the workflow journal, not tallied per
+agent) and any analysis UI. Per-agent **token cost** is no longer out of scope: it is summed from the
+`agent-*.jsonl` transcripts by `enrich-cost` (see "Real cost" above), post-hoc rather than during the
+run, because the transcripts are outside the workflow sandbox's reach.
 
 ## Three edits that deliberately did not refactor their host
 
