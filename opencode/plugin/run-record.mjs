@@ -472,24 +472,34 @@ export function worstOf(verdicts) {
 // cannot import the Claude Code lib tree. What it proves is only that SOME work was named, not that it
 // happened (the ceiling in the design, realm @nick/craft, node #53).
 export const EVIDENCE_MARKER = 'Evidence:'
+// The pattern hasEvidence anchors the marker with. EVIDENCE_MARKER stays the canonical spelling WRITERS
+// emit; the READER tolerates case ('EVIDENCE:', 'evidence:') and a stray space before the colon
+// ('Evidence :') because models vary the label without changing its meaning — the same variance the
+// decoration tolerance answers on one axis, left unaddressed on this one. A test pins
+// EVIDENCE_LINE.test(EVIDENCE_MARKER) so the canon can never fall outside what the reader accepts. Held
+// identical to lib/audit-evidence.mjs's copy (node #53).
+export const EVIDENCE_LINE = /^evidence\s*:/i
 // Line-anchored, mirroring the rubric "emit one line beginning `Evidence:`": whether some LINE of the
 // report begins with the marker and carries content after it. A bare indexOf over the whole report
 // matched the marker buried in a finding's prose ("no `Evidence:` of bounds") or a quoted instruction,
 // waving a no-work green through — the costly false-green in an engine that runs inside a consumer's
 // repo. Leading and trailing markdown decoration is cosmetic and tolerated — the SAME class VERDICT_LINE
 // already strips (`[ \t>*_`#-]`) — so `**Evidence:** …`, `- Evidence: …` and `> Evidence: …`, the way
-// models label a markdown line, are read as the marker. This copy reads the agent's FULL markdown
-// report, where emphasis is the norm, so it was the more exposed of the two; anchoring on the first
-// NON-decoration column (not the first non-whitespace one, round 2's overshoot) reads a decorated marker
-// while still rejecting one buried after real prose, and a marker with only decoration after it is still
-// empty. Held identical to lib/audit-evidence.mjs's copy (the Claude engine); both pinned to
-// EVIDENCE_MARKER by a test on each side (node #53).
+// models label a markdown line, are read as the marker; case and a stray space before the colon are
+// tolerated the same way, via EVIDENCE_LINE. This copy reads the agent's FULL markdown report, where
+// emphasis is the norm, so it was the more exposed of the two; anchoring on the first NON-decoration
+// column (not the first non-whitespace one, round 2's overshoot) reads a decorated marker while still
+// rejecting one buried after real prose, and a marker with only decoration after it is still empty. Held
+// identical to lib/audit-evidence.mjs's copy (the Claude engine); both pinned to EVIDENCE_MARKER by a
+// test on each side (node #53).
 export function hasEvidence(text) {
   for (const raw of String(text ?? '').split('\n')) {
     const line = raw.replace(/\r$/, '')
     const i = line.search(/[^ \t>*_`#-]/)
-    if (i < 0 || !line.startsWith(EVIDENCE_MARKER, i)) continue
-    if (/[^ \t>*_`#-]/.test(line.slice(i + EVIDENCE_MARKER.length))) return true
+    if (i < 0) continue
+    const m = EVIDENCE_LINE.exec(line.slice(i))
+    if (!m) continue
+    if (/[^ \t>*_`#-]/.test(line.slice(i + m[0].length))) return true
   }
   return false
 }

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join as joinPath } from 'node:path'
 import {
   parseVerdict, buildAuditRecord, buildTriageRecord, indexProjection, writeRecord,
-  hasEvidence, EVIDENCE_MARKER, auditDimensions, auditSynthesisInput,
+  hasEvidence, EVIDENCE_MARKER, EVIDENCE_LINE, auditDimensions, auditSynthesisInput,
 } from './run-record.mjs'
 
 test('parseVerdict picks the worst signal in the text', () => {
@@ -281,6 +281,24 @@ test('hasEvidence tolerates ordinary markdown decoration on the Evidence line (l
   assert.equal(hasEvidence('- Evidence:   '), false)
   // The buried-marker protection stands: a marker after real prose is still rejected.
   assert.equal(hasEvidence('*note* Evidence: buried after a word'), false)
+})
+
+test('hasEvidence tolerates case and a stray space before the colon (held identical to the lib copy)', () => {
+  // The mirror of the decoration tolerance on the axis models also vary: case and a stray space before
+  // the colon are the same marker. The fix lands on both engine copies together. RED before the change.
+  assert.equal(hasEvidence('EVIDENCE: ran cargo test'), true)
+  assert.equal(hasEvidence('evidence: ran cargo test'), true)
+  assert.equal(hasEvidence('Evidence : ran cargo test'), true)
+  assert.equal(hasEvidence('**EVIDENCE:** ran cargo test'), true)     // case AND decoration together
+  // Not weakened on the other axis: buried and decorated-but-empty stay false, in any case.
+  assert.equal(hasEvidence('the EVIDENCE: is buried after a word'), false)
+  assert.equal(hasEvidence('**EVIDENCE:**'), false)
+})
+
+test('the reader regex accepts the canonical writer marker (held identical to the lib stitch)', () => {
+  // hasEvidence anchors with EVIDENCE_LINE, not a direct EVIDENCE_MARKER reference, so this pins the
+  // reader to the canon: reword the marker without teaching the regex and it fails first.
+  assert.ok(EVIDENCE_LINE.test(EVIDENCE_MARKER), 'the canonical marker must match the reader regex')
 })
 
 test('a green whose only "Evidence:" is buried in a finding is demoted, not trusted', () => {

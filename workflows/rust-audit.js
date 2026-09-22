@@ -371,12 +371,23 @@ function unusedEvidence(t) {
 // zero-finding pass can only stay green by saying what it did. Extracted to lib/ and tested there
 // (the sandbox can't import); the craft-inline gate pastes the tested source back in here, and
 // lib/audit-evidence.test.mjs pins EVIDENCE_MARKER to the parity gate's EVIDENCE.field[0].
-// >>> craft-inline lib/audit-evidence.mjs EVIDENCE_MARKER GREEN_VERDICT hasEvidence demoteUnsupportedGreen
+// >>> craft-inline lib/audit-evidence.mjs EVIDENCE_MARKER EVIDENCE_LINE GREEN_VERDICT hasEvidence demoteUnsupportedGreen
 // The marker a review agent must emit before a passing verdict. Held IDENTICAL to the parity gate's
 // EVIDENCE.field[0] (lib/check-delivery-parity.mjs) by a tripwire in the test — the static half that
 // makes the rubrics carry the line and this runtime half that reads it must never disagree on what
 // the marker IS.
 const EVIDENCE_MARKER = 'Evidence:'
+
+// The pattern hasEvidence anchors the marker with, at the first non-decoration column. EVIDENCE_MARKER
+// stays the canonical spelling WRITERS emit (the agent rubrics, EVIDENCE_RULE, the parity gate's
+// EVIDENCE.field[0]); the READER is deliberately more forgiving, because models vary the LABEL in ways
+// that do not change its meaning — case ('EVIDENCE:', 'evidence:') and a stray space before the colon
+// ('Evidence :') — the same realistic variance the decoration tolerance (node #38) answers on one axis,
+// left unaddressed on this one. Reader-tolerant-of-writer is safe; the reverse would demote honest work.
+// A test pins EVIDENCE_LINE.test(EVIDENCE_MARKER) so the canonical marker can never fall outside what the
+// reader accepts — the stitch that replaces the old direct `startsWith(EVIDENCE_MARKER)` reference and
+// keeps writer and reader agreeing on the canon. (realm @nick/craft, node #53)
+const EVIDENCE_LINE = /^evidence\s*:/i
 
 // The ONE definition of "is this verdict a green claim" — the single source of green, used by every
 // reader that must never disagree: normalizeDimensionVerdict() (workflows/rust-audit.js, which maps
@@ -401,18 +412,23 @@ const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|g
 // a no-work green through. Leading and trailing markdown decoration is cosmetic and tolerated — the
 // SAME class the sibling verdict scanners already strip (VERDICT_LINE/INCOMPLETE_LINE: `[ \t>*_`#-]`)
 // — so `**Evidence:** …`, `- Evidence: …`, `> Evidence: …` and `` `Evidence:` … ``, the way models
-// actually label a markdown line, are read as the marker. Anchoring only on the first NON-WHITESPACE
-// column (round 2) rejected all of these and demoted honest greens; anchoring on the first
-// NON-decoration column reads them while still rejecting a marker buried after real prose. Both empty
-// readings the requirement names — marker absent, and a marker with only decoration/whitespace after it
-// (`**Evidence:**`) — still return false: cosmetic punctuation is not work named. A non-empty sentence
-// naming SOME work is all this proves; it does not prove the work happened (the ceiling, node #53).
+// actually label a markdown line, are read as the marker. Case and a stray space before the colon are
+// tolerated the SAME way (`EVIDENCE:`, `evidence:`, `Evidence :`), via EVIDENCE_LINE rather than an
+// exact `startsWith` — the same realistic model variance, on the axis decoration does not cover.
+// Anchoring only on the first NON-WHITESPACE column (round 2) rejected all of these and demoted honest
+// greens; anchoring on the first NON-decoration column reads them while still rejecting a marker buried
+// after real prose. Both empty readings the requirement names — marker absent, and a marker with only
+// decoration/whitespace after it (`**Evidence:**`) — still return false: cosmetic punctuation is not
+// work named. A non-empty sentence naming SOME work is all this proves; it does not prove the work
+// happened (the ceiling, node #53).
 function hasEvidence(text) {
   for (const raw of String(text ?? '').split('\n')) {
     const line = raw.replace(/\r$/, '')
     const i = line.search(/[^ \t>*_`#-]/)                         // first non-decoration column (VERDICT_LINE's class)
-    if (i < 0 || !line.startsWith(EVIDENCE_MARKER, i)) continue   // line does not begin with the marker
-    if (/[^ \t>*_`#-]/.test(line.slice(i + EVIDENCE_MARKER.length))) return true  // real content follows it
+    if (i < 0) continue                                           // decoration/whitespace only — no marker
+    const m = EVIDENCE_LINE.exec(line.slice(i))                   // marker at that column, case- and stray-space tolerant
+    if (!m) continue                                              // line does not begin with the marker
+    if (/[^ \t>*_`#-]/.test(line.slice(i + m[0].length))) return true  // real content follows it
   }
   return false
 }
