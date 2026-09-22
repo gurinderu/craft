@@ -64,7 +64,18 @@ inlined into each engine by the `craft-inline` gate.
 Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
-`notRun[]`, `outputTokens` (approximate — `budget.spent()`, shared per-turn pool). The `scout`
+`notRun[]`, `outputTokens` (the whole-run token **pool** — `budget.spent()`: input + output +
+parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-review (`round > 1`)
+runs an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally larger than a
+first-pass's. It is therefore not a clean output-cost figure and must not be compared across run
+types — `lib/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
+first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and a round-less pool for runs that
+carry no `round`. That third pool is keyed on the ABSENCE of the field, not on a cause the analyzer
+cannot know: only `review` stamps `round`, so every `adversarial-review` / `rust-audit` /
+`triage-findings` run is round-less, and even within `review` several current early-exit paths write
+`outputTokens` with no `round`. Each pool renders under a neutral, cause-free label —
+`(first-pass)`, `(re-review)`, `(round not recorded)` — and prints only when it holds runs, so a
+workflow that never stamps `round` shows just the round-less pool). The `scout`
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
 rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
 adversarial-review records `{size, lenses, indexed, batch}`; see each
