@@ -2686,7 +2686,14 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
   }
   const deduped = [...newestByFp.values(), ...noFp]
   if (deduped.length <= max) return deduped
-  return deduped.sort((a, b) => tombstoneRound(b) - tombstoneRound(a)).slice(0, max)
+  // Decorate–sort–undecorate (Schwartzian): tombstoneRound parses a regex on every call, so calling it
+  // inside the comparator re-parses each row O(n log n) times. Compute it once per row, sort on the
+  // cached value (newest round first), drop the wrapper. Order-preserving: same key, and sort is stable.
+  return deduped
+    .map(row => ({ row, r: tombstoneRound(row) }))
+    .sort((a, b) => b.r - a.r)
+    .slice(0, max)
+    .map(d => d.row)
 }
 
 // The tombstone budget for THIS ledger assembly: the combined-ledger ceiling (LEDGER_TOMBSTONE_MAX)
@@ -5045,7 +5052,15 @@ const toLedgerEntry = (f, disposition, tier) => ({
 // (`resolved`) from a dismissed one that was RE-RAISED (`dismissed`), so it carries the origin and
 // the round it closed in, and no prose. The origin lives in `why` (not a new field) so it rides the
 // existing ledger shape and the round-marker regex reads both forms unchanged.
-const toTombstone = (f, origin = 'resolved') => ({ ...toLedgerEntry(f, 'closed', f.tier), why: `${origin} in round ${thisRound}` })
+// `fp` is RECOMPUTED under THIS round's basis, overriding the `f.fp || fingerprint(f)` toLedgerEntry
+// would otherwise carry: a prior LIVE finding loaded from a ledger written under an earlier engine
+// revision still carries its stored old-basis `fp`, and if a tombstone minted from it kept that stale
+// hash, a later same-revision round would key the recidivism check on the old basis (`t.fp`) while
+// looking the returning defect up under the current one (`fingerprint(f)`) — the two never match and
+// the regression is missed in silence, the exact class the revision guard removes, only shifted a round
+// on. Minting every tombstone under the current basis closes it for BOTH paths (resolved and dismissed);
+// an incomparable CARRIED tombstone is dropped at assembly below, never re-minted here.
+const toTombstone = (f, origin = 'resolved') => ({ ...toLedgerEntry(f, 'closed', f.tier), fp: fingerprint(f), why: `${origin} in round ${thisRound}` })
 // The tombstone set is bounded against the border that actually governs the persisted
 // ledger: the single-call copy of the FINAL record refuses on the WHOLE ledger (~170 entries), live
 // rows AND tombstones together — NOT on tombstones alone. So count the live rows this ledger will carry
@@ -5063,7 +5078,8 @@ const tombstones = pruneTombstones([
   ...adjudicated.retired.map(f => toTombstone(f, 'dismissed')),
   // Carried tombstones from an incomparable engine revision are dropped, not carried
   // forward under a stale basis: a clean baseline after a bump. This round's own tombstones are minted
-  // under the current basis and kept regardless.
+  // under the current basis (toTombstone recomputes `fp`, so even a prior loaded under an old revision
+  // gets a current-basis hash) and kept regardless.
   ...(priorFpComparable ? priorTombstones : []),
 ], { max: tombstoneBudget(liveLedgerCount) })
 const reviewLedger = isRereview
