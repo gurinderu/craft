@@ -69,10 +69,13 @@ parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-rev
 runs an extra Adjudicate phase and a whole-diff re-scan, so its pool is structurally larger than a
 first-pass's. It is therefore not a clean output-cost figure and must not be compared across run
 types — `lib/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
-first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and — since only `review` stamps
-`round`, and it gained the field after `outputTokens` — an Unclassified pool for round-less runs,
-which are counted apart from the split, never folded into first-pass. A workflow that never stamps
-`round` therefore reports one plain pool with no run-type label). The `scout`
+first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and a round-less pool for runs that
+carry no `round`. That third pool is keyed on the ABSENCE of the field, not on a cause the analyzer
+cannot know: only `review` stamps `round`, so every `adversarial-review` / `rust-audit` /
+`triage-findings` run is round-less, and even within `review` several current early-exit paths write
+`outputTokens` with no `round`. Each pool renders under a neutral, cause-free label —
+`(first-pass)`, `(re-review)`, `(round not recorded)` — and prints only when it holds runs, so a
+workflow that never stamps `round` shows just the round-less pool). The `scout`
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
 rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
 adversarial-review records `{size, lenses, indexed, batch}`; see each
