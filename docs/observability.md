@@ -130,11 +130,12 @@ node lib/craft-log-run.mjs enrich-cost --run-dir <run-dir> --record <detail-reco
 It sums every `agent-*.jsonl` under the run directory over the `type:"assistant"` records'
 `.message.usage` and folds a `cost` object into the record:
 `cost: {output, input, cacheRead, cacheWrite, total, agents}` — `total` is the four token sums,
-`agents` the transcript count. The write is atomic (temp file + rename) and **idempotent**: `cost`
+`agents` the transcript count — plus an optional `skipped`, present only when some matching transcript
+could not be read (>0). The write is atomic (temp file + rename) and **idempotent**: `cost`
 is replaced on every run, never appended, so re-running after more transcripts land simply re-sums.
-It exits non-zero if the run directory is missing, holds no `agent-*.jsonl`, or the record is
-missing/unparseable. `cost` is **optional** — absent until a run is enriched — and it does not enter
-the `index.jsonl` projection.
+It exits non-zero if the run directory is missing, holds no `agent-*.jsonl`, has every matching
+transcript unreadable, or the record is missing/unparseable. `cost` is **optional** — absent until a
+run is enriched — and it does not enter the `index.jsonl` projection.
 
 `node lib/analyze-runs.mjs` surfaces it per workflow beside the three-state pool, leading with
 `cacheRead` because that IS the spend. A record with no `cost` was never enriched: it contributes
