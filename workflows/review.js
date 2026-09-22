@@ -2716,7 +2716,7 @@ function key(f) {
   return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
-// >>> craft-inline lib/run-record.mjs titleShingle fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict
+// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 function titleShingle(title) {
@@ -2730,11 +2730,35 @@ function titleShingle(title) {
     .join(' ')
 }
 
-// Line-tolerant finding identity: hash of file + enclosing symbol + ruleId + title shingle.
+// The enclosing symbol, folded to one key across the ways two lens agents spell the same one:
+// case (`Foo::Bar` vs `foo::bar`), the `fn `/`impl ` keyword, and generic parameters (`parse<T>`).
+// Kept deliberately small — it absorbs decoration noise, not structure: a rename is still a
+// different symbol, which is the acceptable, rare identity loss the fingerprint is built to take.
+function normalizeSymbol(symbol) {
+  return String(symbol || '')
+    .toLowerCase()
+    .replace(/\b(?:fn|impl)\s+/g, '')
+    .replace(/<[^>]*>/g, '')
+    .trim()
+}
+
+// Line-tolerant finding identity. A finding with a ruleId (a catalog rule) gets an EXACT, title-free
+// identity: file + normalizeSymbol(symbol) + ruleId. The title is deliberately dropped there — it is
+// natural language two agents rarely word the same, so anchoring identity on it left the fingerprint
+// uncomparable across rounds (matchesPrior on the old title basis recognised 2 of 59 re-discoveries),
+// and the ruleId already IS the normalized, lens-scoped claim (source/lens are therefore not in the
+// key — adding lens would only manufacture false negatives when the same defect resurfaces under
+// another lens). A finding with NO ruleId has no such stable identity, so it keeps the title in its
+// basis: without it every ad-hoc finding at one file collapses to a single file-only hash, and a
+// cross-lens/journal dedup keyed on this (dedupJournalFindings) would merge distinct defects. The
+// tombstone/recidivism check only ever keys ruleId findings, so it never sees the title-bearing form.
 // djb2 (not crypto) — the sandbox has no crypto and bans Math.random, and we only need a stable,
 // collision-resistant-enough key, computed identically in the lib and in the workflow mirror.
 function fingerprint(f) {
-  const basis = [f?.file || '', f?.symbol || '', f?.ruleId || '', titleShingle(f?.title)].join('\0')
+  const ruleId = f?.ruleId || ''
+  const basis = ruleId
+    ? [f?.file || '', normalizeSymbol(f?.symbol), ruleId].join('\0')
+    : [f?.file || '', normalizeSymbol(f?.symbol), '', titleShingle(f?.title)].join('\0')
   let h = 5381
   for (let i = 0; i < basis.length; i++) h = ((h << 5) + h + basis.charCodeAt(i)) >>> 0
   return h.toString(16).padStart(8, '0')
@@ -4441,6 +4465,11 @@ let unverified = results.flatMap(r => r.unverified || [])
 // the rest of THIS round — it suppresses a lens re-discovery (below) and renders in the report's
 // carried section — but it is not re-persisted, so it never costs another carry agent.
 const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], retired: [] }
+// Tombstones: resolved/retired priors from EARLIER rounds, kept only as a recidivism check (a fresh
+// finding matching one is a regression, not a novelty). Filled on load below and read again at the
+// absorption pass — declared out here so both see it. It rides the persisted ledger like any row, so
+// a lost tombstone is caught by the same ledgerCount check every other row is.
+const priorTombstones = []
 if (priorRound?.ledger?.length) {
   phase('Adjudicate')
   // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
@@ -4451,6 +4480,13 @@ if (priorRound?.ledger?.length) {
   // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
   // escalation) and the re-persisted ledger all see canonical severity for priors.
   const priorLedgerAll = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  // TOMBSTONES ARE CARVED OUT BEFORE THE SPLIT. A `disposition:'closed'` row is a resolved/retired
+  // prior kept only so a later round can recognise the defect's return — it is already answered.
+  // Left in the pool it would fall into `toCheck` below and be sent to the adjudicator, spending an
+  // agent to ask whether a closed defect is "still present" at a site where nothing remains to judge.
+  // So it is pulled here and never enters the unverified/settled/toCheck partitions.
+  priorTombstones.push(...priorLedgerAll.filter(f => f.disposition === 'closed'))
+  const priorLive = priorLedgerAll.filter(f => f.disposition !== 'closed')
   // THE UNVERIFIED TIER SURVIVES THE ROUND BOUNDARY. A prior carrying `tier: 'unverified'` was never
   // checked against the code — so there is nothing to adjudicate: "is the defect still present?"
   // presumes someone established it was present. Adjudicating it anyway routed it into `stillOpen`,
@@ -4459,7 +4495,7 @@ if (priorRound?.ledger?.length) {
   // tier that exists to say "nothing checked this" lived only inside the round that minted it.
   // It re-enters THIS round's own unverified track instead: label kept, out of the verdict, out of
   // the refutation denominator, re-persisted as `unverified` for the next round.
-  const priorUnverified = priorLedgerAll.filter(f => String(f.tier || '') === 'unverified')
+  const priorUnverified = priorLive.filter(f => String(f.tier || '') === 'unverified')
   if (priorUnverified.length) {
     log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
     unverified = unverified.concat(priorUnverified.map(f => ({
@@ -4474,7 +4510,7 @@ if (priorRound?.ledger?.length) {
       why: `${baseWhy(f.why)} (STILL NOT VERIFIED: carried from round ${priorRound.round}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
-  const priorLedger = priorLedgerAll.filter(f => String(f.tier || '') !== 'unverified')
+  const priorLedger = priorLive.filter(f => String(f.tier || '') !== 'unverified')
   const settled = priorLedger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
   const toCheck = priorLedger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
 
@@ -4659,6 +4695,29 @@ if (priorRound) {
     if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
   }
+  // RECIDIVISM. A freshly discovered finding whose fingerprint matches a prior tombstone (a defect
+  // resolved or retired in an earlier round) has RETURNED — it is a regression, not a novelty, and
+  // the reader and the verdict must see it as one. Exact fingerprint match only, and only for a
+  // finding that carries a ruleId: an ad-hoc finding has no stable identity, so it gets no tombstone
+  // check at all rather than a fuzzy one (fuzzy title matching was measured at 2/59 recall). The
+  // finding stays in its own tier — this only annotates `why`; it does not move or drop it.
+  if (priorTombstones.length) {
+    const tombstoneByFp = new Map()
+    for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
+    let regressions = 0
+    const flagRegression = f => {
+      if (!f.ruleId) return
+      const hit = tombstoneByFp.get(fingerprint(f))
+      if (!hit) return
+      const m = /round (\d+)/.exec(String(hit.why || ''))
+      const r = m ? m[1] : (hit.round || '?')
+      f.why = `${f.why} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
+      regressions++
+    }
+    confirmed.forEach(flagRegression)
+    suspected.forEach(flagRegression)
+    if (regressions) log(`Re-review: ${regressions} fresh finding(s) match a defect resolved in an earlier round — flagged as REGRESSION, not counted as new`)
+  }
 }
 
 const dropped = results.reduce((n, r) => n + r.dropped, 0)
@@ -4701,7 +4760,11 @@ const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() &&
 const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length || adjudicated.retired.length)
 // `unverified` counts here too: they are real reported findings, and falling into the "nothing
 // survived" branch would delete them from the report entirely.
-if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated) {
+// `priorTombstones.length` keeps this exit from silently dropping the recidivism memory: a clean
+// re-review round that found nothing and adjudicated nothing must still fall through to the ledger
+// step so earlier tombstones are carried forward, exactly as carried priors (which make
+// `hasAdjudicated` true) already are — otherwise the memory evaporates on the first quiet round.
+if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated && !priorTombstones.length) {
   await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
   const verdictLine = incompleteNotes.length
     ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
@@ -4833,9 +4896,11 @@ if (!floorPremiseHeld) {
 // stripped of the author's disposition. That is deliberate and its cost is argued at the retirement
 // comment above (losing a label beats losing a defect) — but it is a path, and an enumeration that
 // omits it reads as a guarantee it does not make.
-// `resolved` and `retired` priors are intentionally dropped. Without this carry-forward the ledger
-// would hold only this round's delta, and a finding open across 3+ rounds — or a dismissed finding —
-// would silently vanish after one hop.
+// `resolved` and `retired` priors do not re-enter as LIVE rows — they have been answered and cost no
+// further adjudication — but neither do they vanish: each leaves a `disposition:'closed'` tombstone
+// (below) so a later round can tell its return from a novelty. Without the carry-forward the ledger
+// would otherwise hold only this round's delta, and a finding open across 3+ rounds — or a dismissed
+// one — would silently vanish after one hop.
 // TRACKED_MARK IS STRIPPED HERE, AND ONLY HERE. "this site is already tracked by a still-live prior
 // finding" is a statement about THIS round, computed from this round's live priors. `why` is a
 // persisted ledger field, so appending it made the sentence travel into round N+1 verbatim — where
@@ -4850,6 +4915,10 @@ const toLedgerEntry = (f, disposition, tier) => ({
   source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
   ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
 })
+// A tombstone for a resolved/retired prior: the same ledger shape, `disposition:'closed'`, but its
+// `why` is a fixed round marker rather than the original rationale — a tombstone's only job is an
+// equality test (the recidivism check on load), so it carries the round it closed in and no prose.
+const toTombstone = f => ({ ...toLedgerEntry(f, 'closed', f.tier), why: `resolved in round ${thisRound}` })
 const reviewLedger = isRereview
   ? [
     ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
@@ -4859,8 +4928,15 @@ const reviewLedger = isRereview
     ...unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).map(f => toLedgerEntry(f, 'open', 'unverified')),
     ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
     ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
-    // `adjudicated.retired` is deliberately absent, like `resolved`: a dismissed prior whose
-    // carry-check confirmed the code around it is unchanged has been answered and leaves the ledger.
+    // `adjudicated.resolved`/`adjudicated.retired` no longer leave the ledger silently: each becomes a
+    // lightweight TOMBSTONE (`disposition:'closed'`) so a later round can tell the defect's RETURN
+    // from a genuine novelty. It is not a live finding — the carve-out on load keeps it out of the
+    // adjudicator — and it costs one bare row, not a re-adjudicated one. Earlier tombstones ride
+    // along verbatim (`...priorTombstones`) so the memory persists round to round; they keep their
+    // own original round marker, which is the round the REGRESSION note reports.
+    ...adjudicated.resolved.map(toTombstone),
+    ...adjudicated.retired.map(toTombstone),
+    ...priorTombstones,
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
