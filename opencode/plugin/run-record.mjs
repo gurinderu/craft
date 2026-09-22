@@ -462,6 +462,93 @@ export function worstOf(verdicts) {
   return verdicts.reduce((a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a), 'Approve')
 }
 
+// Positive proof of work (invariant #53) — the runtime half on the opencode side, the port of
+// lib/audit-evidence.mjs's demoteUnsupportedGreen. A self-reported green verdict is a claim about what
+// was NOT found, and it only holds if something was actually looked at, so a passing dimension must
+// SHOW its work: a line beginning `Evidence:` naming the commands run and files read. The marker is
+// held identical to the one the four opencode/agents/*.md rubrics and the tool-dimension prompts in
+// rust-audit.ts emit (a test pins it to the rubric text). This is a DISTINCT copy from the Claude
+// Code lib module by the same rule the two run-record.mjs modules are distinct — the opencode delivery
+// cannot import the Claude Code lib tree. What it proves is only that SOME work was named, not that it
+// happened (the ceiling in the design, realm @nick/craft, node #53).
+export const EVIDENCE_MARKER = 'Evidence:'
+// The pattern hasEvidence anchors the marker with. EVIDENCE_MARKER stays the canonical spelling WRITERS
+// emit; the READER tolerates case ('EVIDENCE:', 'evidence:') and a stray space before the colon
+// ('Evidence :') because models vary the label without changing its meaning — the same variance the
+// decoration tolerance answers on one axis, left unaddressed on this one. A test pins
+// EVIDENCE_LINE.test(EVIDENCE_MARKER) so the canon can never fall outside what the reader accepts. Held
+// identical to lib/audit-evidence.mjs's copy (node #53).
+export const EVIDENCE_LINE = /^evidence\s*:/i
+// Line-anchored, mirroring the rubric "emit one line beginning `Evidence:`": whether some LINE of the
+// report begins with the marker and carries content after it. A bare indexOf over the whole report
+// matched the marker buried in a finding's prose ("no `Evidence:` of bounds") or a quoted instruction,
+// waving a no-work green through — the costly false-green in an engine that runs inside a consumer's
+// repo. Leading and trailing markdown decoration is cosmetic and tolerated — the SAME class VERDICT_LINE
+// already strips (`[ \t>*_`#-]`) — so `**Evidence:** …`, `- Evidence: …` and `> Evidence: …`, the way
+// models label a markdown line, are read as the marker; case and a stray space before the colon are
+// tolerated the same way, via EVIDENCE_LINE. This copy reads the agent's FULL markdown report, where
+// emphasis is the norm, so it was the more exposed of the two; anchoring on the first NON-decoration
+// column (not the first non-whitespace one, round 2's overshoot) reads a decorated marker while still
+// rejecting one buried after real prose, and a marker with only decoration after it is still empty. Held
+// identical to lib/audit-evidence.mjs's copy (the Claude engine); both pinned to EVIDENCE_MARKER by a
+// test on each side (node #53).
+export function hasEvidence(text) {
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.replace(/\r$/, '')
+    const i = line.search(/[^ \t>*_`#-]/)
+    if (i < 0) continue
+    const m = EVIDENCE_LINE.exec(line.slice(i))
+    if (!m) continue
+    if (/[^ \t>*_`#-]/.test(line.slice(i + m[0].length))) return true
+  }
+  return false
+}
+
+// The per-dimension verdict AFTER the evidence gate (invariant #53), ported from the Claude Code
+// engine (workflows/rust-audit.js dimResult → demoteUnsupportedGreen): a self-reported green that
+// shows no `Evidence:` line looked at nothing it can point to, so it is demoted to INCOMPLETE by
+// construction. parseVerdict has already normalised every green (Approve/Healthy/Clean and their
+// off-vocabulary kin) onto `Approve`, so this reads the NORMALISED verdict. Nothing is exempt here:
+// every dimension is a self-report whose rubric (the four agent dimensions) or prompt (the six tool
+// dimensions) mandates the line — unlike the Claude engine, whose `review` axis is grounded by
+// review.js's finding count (not a self-report) and is the one exemption; on opencode `review` is the
+// rust-reviewer AGENT, gated like the rest.
+//
+// This is the ONE computation the stored record (buildAuditRecord) and the returned report
+// (auditSynthesisInput → rust-audit.ts's synthesis) both read, so the two cannot disagree about which
+// dimension was demoted for showing no work — the report-vs-record skew (node #53). Before it, the
+// demotion lived only inside buildAuditRecord (the store), while the synthesis was built from the RAW
+// dimension text still carrying `VERDICT: APPROVE`, so a false green survived in the report a human reads.
+export function auditDimensions(results) {
+  const rs = Array.isArray(results) ? results : []
+  return rs.map((r) => {
+    if (!r.ok) return { dimension: r.label, ran: false, verdict: '' }
+    const raw = parseVerdict(r.text)
+    const verdict = raw === 'Approve' && !hasEvidence(r.text) ? 'INCOMPLETE (no evidence — claimed Approve)' : raw
+    return { dimension: r.label, ran: true, verdict }
+  })
+}
+
+// The synthesis input for the opencode audit, derived from the SAME evidence-gated dimensions the
+// stored record reads (auditDimensions). The blob's per-dimension header carries the GATED verdict,
+// not a bare "ran": a dimension that self-reported APPROVE with no `Evidence:` line is shown as its
+// demoted INCOMPLETE, so the report the human reads (the synthesis consolidates this blob, and the
+// raw-blob fallback embeds it verbatim when synthesis dies) cannot present it as a clean green while
+// buildAuditRecord stores it demoted. The three coverage buckets travel with it so the synthesis
+// prompt can instruct the model to render each apart from a pass — the mirror of how the Claude
+// engine feeds `notRun`/`couldNotRun`/`noEvidence` to its report agent (node #53).
+export function auditSynthesisInput(results) {
+  const rs = Array.isArray(results) ? results : []
+  const dims = auditDimensions(rs)
+  const blob = rs
+    .map((r, i) => `### ${r.label} (${dims[i].ran ? dims[i].verdict : 'INCOMPLETE (not run)'})\n\n${r.text ?? ''}`)
+    .join('\n\n')
+  const notRun = dims.filter((d) => !d.ran).map((d) => d.dimension)
+  const couldNotRun = dims.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
+  const noEvidence = dims.filter((d) => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map((d) => d.dimension)
+  return { blob, notRun, couldNotRun, noEvidence }
+}
+
 // `synthesized: false` says the consolidation step never delivered. Without it the record read the
 // verdict out of the RAW dimension blob that stands in for the report — whose last VERDICT line is
 // whatever the final dimension wrote, commonly APPROVE. The human then saw INCOMPLETE while the
@@ -469,18 +556,24 @@ export function worstOf(verdicts) {
 // report disagree, and only the store is machine-read afterwards.
 export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, synthesized = true }) {
   const rs = Array.isArray(results) ? results : []
-  const dimensions = rs.map((r) => ({
-    dimension: r.label, ran: !!r.ok, verdict: r.ok ? parseVerdict(r.text) : '',
-  }))
+  const dimensions = auditDimensions(rs)
+  // A verdict string leading with INCOMPLETE (either the tooling-absent token or a no-evidence
+  // demotion) ranks as INCOMPLETE in the roll-up; worstOf keys on the exact token, so map it first.
+  const asRank = (v) => (v.startsWith('INCOMPLETE') ? 'INCOMPLETE (not run)' : v)
   // The top-level verdict is the worst of the synthesis's own verdict and every dimension's, so it
   // no longer depends on the synthesising model restating the roll-up correctly — and no longer on
   // the word "Warning" happening to appear somewhere in a dimension table.
   const worst = worstOf([
     synthesized ? parseVerdict(synthesisText) : 'INCOMPLETE (not run)',
-    ...dimensions.map((d) => (d.ran ? d.verdict : 'INCOMPLETE (not run)')),
+    ...dimensions.map((d) => (d.ran ? asRank(d.verdict) : 'INCOMPLETE (not run)')),
   ])
   const notRun = rs.filter((r) => !r.ok).map((r) => r.label)
   const incomplete = dimensions.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
+  // Dimensions demoted for a MISSING Evidence line, kept apart from `incomplete` (tooling absent): the
+  // tool may well have run — the agent just did not show its work — so lumping them together would
+  // tell a reader "nothing was checked" when something may have been. This mirrors the Claude engine's
+  // noEvidence bucket. Both still make the audit partial below.
+  const noEvidence = dimensions.filter((d) => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map((d) => d.dimension)
   // Worst-wins ranks INCOMPLETE below Warning, so partial coverage vanishes from the top-level
   // token whenever anything else is worse. The SUFFIXED form is the shape lib/analyze-runs.mjs
   // already reads (`/INCOMPLETE/i` over the verdict string, severity-first bucketing), so emitting
@@ -491,7 +584,7 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
   // because worst-wins only lifts the all-Approve case to INCOMPLETE by accident. The reader saw the
   // banner, the store said Warning. This also makes the fact reachable — every reader of the store
   // reads `verdict`, and none of them reads `synthesized`.
-  const partial = incomplete.length > 0 || notRun.length > 0 || !synthesized
+  const partial = incomplete.length > 0 || noEvidence.length > 0 || notRun.length > 0 || !synthesized
   const verdict = partial && !/INCOMPLETE/.test(worst) ? `${worst} (INCOMPLETE)` : worst
   return {
     schemaVersion: 1,
@@ -514,6 +607,9 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
     // child session succeeded), and worst-wins precedence hides them at top level whenever any
     // other dimension is Warning or Block — which is most real runs. This keeps the fact reachable.
     incomplete,
+    // Dimensions that RAN and claimed a green but showed no `Evidence:` line — demoted by the gate.
+    // Kept apart from `incomplete`: this is "verdict not trusted", not "tooling absent".
+    noEvidence,
   }
 }
 

@@ -3,8 +3,12 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { readFileSync as readFile } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join as joinPath } from 'node:path'
 import {
   parseVerdict, buildAuditRecord, buildTriageRecord, indexProjection, writeRecord,
+  hasEvidence, EVIDENCE_MARKER, EVIDENCE_LINE, auditDimensions, auditSynthesisInput,
 } from './run-record.mjs'
 
 test('parseVerdict picks the worst signal in the text', () => {
@@ -174,7 +178,9 @@ test('buildAuditRecord suffixes the verdict so partial coverage survives worst-w
   // Full coverage is never suffixed, and an all-incomplete roll-up keeps its own single token
   // rather than growing a second one.
   const clean = buildAuditRecord({
-    results: [{ label: 'review', ok: true, text: 'VERDICT: APPROVE' }],
+    // A trusted green now carries an `Evidence:` line (invariant #53, ported): without it the gate
+    // would demote this to INCOMPLETE, which is a different test. Here we want a real clean dimension.
+    results: [{ label: 'review', ok: true, text: 'Evidence: ran cargo clippy/test.\n\nVERDICT: APPROVE' }],
     baseRef: 'main', hasUnsafe: false, synthesisText: 'VERDICT: APPROVE',
   })
   assert.equal(clean.verdict, 'Approve')
@@ -203,7 +209,7 @@ test('the structured VERDICT line is authoritative only in the mandated uppercas
 test('buildAuditRecord assembles dimensions, notRun, and a null findings field', () => {
   const rec = buildAuditRecord({
     results: [
-      { label: 'security', ok: true, text: 'Approve — clean' },
+      { label: 'security', ok: true, text: 'Approve — clean\nEvidence: ran cargo-audit and cargo-deny.' },
       { label: 'architecture', ok: false, text: '' },
     ],
     baseRef: 'main', hasUnsafe: false, synthesisText: 'overall verdict: Warning',
@@ -223,6 +229,189 @@ test('buildAuditRecord assembles dimensions, notRun, and a null findings field',
     { dimension: 'architecture', ran: false, verdict: '' },
   ])
   assert.deepEqual(rec.notRun, ['architecture'])
+})
+
+// ---- the evidence gate (invariant #53), ported from the Claude Code engine ----
+
+test('hasEvidence reads the marker with content after it, and rejects the empty readings', () => {
+  assert.equal(hasEvidence('Evidence: ran cargo-audit over 214 crates'), true)
+  assert.equal(hasEvidence('all clean\nEvidence: read src/db.rs'), true)
+  assert.equal(hasEvidence('Evidence:'), false)
+  assert.equal(hasEvidence('Evidence:   '), false)
+  assert.equal(hasEvidence('ran the tools, all green'), false)
+  assert.equal(hasEvidence(''), false)
+  assert.equal(hasEvidence(null), false)
+})
+
+test('the runtime marker is the one the opencode rubrics emit', () => {
+  // Pin the marker this engine READS to the marker the rubrics WRITE, so the two halves cannot drift
+  // — the opencode-side counterpart of lib/audit-evidence.test.mjs's EVIDENCE.field[0] tripwire.
+  const here = dirname(fileURLToPath(import.meta.url))
+  const rubric = readFile(joinPath(here, '..', 'agents', 'rust-reviewer.md'), 'utf8')
+  assert.ok(rubric.includes(EVIDENCE_MARKER), 'rust-reviewer.md must carry the marker the gate reads')
+})
+
+test('hasEvidence rejects a marker buried in a line of prose (line-anchored, not a substring)', () => {
+  // The gate scanned the WHOLE report with indexOf, so a finding that quotes the marker in prose
+  // ("no `Evidence:` of bounds") satisfied it — a no-work green waved through, the costly false-green
+  // in an engine running inside someone else's repo. It must read a LINE that BEGINS with the marker.
+  // RED before the line-anchoring fix.
+  assert.equal(hasEvidence('cargo-audit found no `Evidence:` of bounds checking'), false)
+  assert.equal(hasEvidence('a finding: the log has no Evidence: field populated'), false)
+  // ...and a real line beginning with the marker still counts, decoration-free and after whitespace.
+  assert.equal(hasEvidence('all clean\nEvidence: ran cargo-audit over 214 crates'), true)
+  assert.equal(hasEvidence('  Evidence: ran the tools'), true)
+})
+
+test('hasEvidence tolerates ordinary markdown decoration on the Evidence line (line-anchored, not strict)', () => {
+  // MAYATNIK correction (node #38): the strict line-anchored scan rejected the markdown emphasis a model
+  // routinely puts on a labelled line — `**Evidence:**`, `- Evidence:`, `> Evidence:`, `` `Evidence:` `` —
+  // demoting an honest green to INCOMPLETE. On the opencode engine hasEvidence reads the agent's FULL
+  // markdown report, where emphasis is the norm, so it was the more exposed of the two copies. The fix
+  // reuses the SAME cosmetic class the VERDICT scanner already strips (`[ \t>*_`#-]`), testing the marker
+  // at the first NON-decoration column. RED before the change. Held identical to the lib copy.
+  assert.equal(hasEvidence('**Evidence:** ran cargo test'), true)
+  assert.equal(hasEvidence('- Evidence: ran cargo-audit'), true)
+  assert.equal(hasEvidence('* Evidence: ran cargo-audit'), true)
+  assert.equal(hasEvidence('> Evidence: read src/db.rs'), true)
+  assert.equal(hasEvidence('`Evidence:` ran the tool'), true)
+  assert.equal(hasEvidence('# Evidence: ran cargo-audit'), true)
+  // A decorated marker with no real content after it is still empty (the gate is not weakened).
+  assert.equal(hasEvidence('**Evidence:**'), false)
+  assert.equal(hasEvidence('- Evidence:   '), false)
+  // The buried-marker protection stands: a marker after real prose is still rejected.
+  assert.equal(hasEvidence('*note* Evidence: buried after a word'), false)
+})
+
+test('hasEvidence tolerates case and a stray space before the colon (held identical to the lib copy)', () => {
+  // The mirror of the decoration tolerance on the axis models also vary: case and a stray space before
+  // the colon are the same marker. The fix lands on both engine copies together. RED before the change.
+  assert.equal(hasEvidence('EVIDENCE: ran cargo test'), true)
+  assert.equal(hasEvidence('evidence: ran cargo test'), true)
+  assert.equal(hasEvidence('Evidence : ran cargo test'), true)
+  assert.equal(hasEvidence('**EVIDENCE:** ran cargo test'), true)     // case AND decoration together
+  // Not weakened on the other axis: buried and decorated-but-empty stay false, in any case.
+  assert.equal(hasEvidence('the EVIDENCE: is buried after a word'), false)
+  assert.equal(hasEvidence('**EVIDENCE:**'), false)
+})
+
+test('the reader regex accepts the canonical writer marker (held identical to the lib stitch)', () => {
+  // hasEvidence anchors with EVIDENCE_LINE, not a direct EVIDENCE_MARKER reference, so this pins the
+  // reader to the canon: reword the marker without teaching the regex and it fails first.
+  assert.ok(EVIDENCE_LINE.test(EVIDENCE_MARKER), 'the canonical marker must match the reader regex')
+})
+
+test('a green whose only "Evidence:" is buried in a finding is demoted, not trusted', () => {
+  // The finding-3 exploit end to end: a dimension self-reports APPROVE, does no work, but its prose
+  // happens to contain the marker. Before the line-anchoring fix buildAuditRecord trusted it.
+  const rec = buildAuditRecord({
+    results: [{ label: 'security', ok: true, text: 'Reviewed for the `Evidence:` marker pattern; none found.\n\nVERDICT: APPROVE' }],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'Consolidated.\n\nVERDICT: APPROVE',
+  })
+  assert.match(rec.verdict, /INCOMPLETE/, 'a buried marker no longer waves the green through')
+  assert.deepEqual(rec.noEvidence, ['security'])
+})
+
+test('the opencode tool-dimension marker (EVIDENCE_RULE) is built from the gate constant, not a hardcoded copy', () => {
+  // The six tool dimensions get their evidence requirement from EVIDENCE_RULE in rust-audit.ts; the
+  // gate reads EVIDENCE_MARKER here. Nothing pinned the two, so a reworded EVIDENCE_RULE marker would
+  // demote every honest tool-dimension green with the suite green. EVIDENCE_RULE must DERIVE its
+  // marker from EVIDENCE_MARKER. RED before rust-audit.ts imports and interpolates it.
+  const here = dirname(fileURLToPath(import.meta.url))
+  const src = readFile(joinPath(here, 'rust-audit.ts'), 'utf8')
+  assert.match(src, /import\s*\{[^}]*\bEVIDENCE_MARKER\b[^}]*\}\s*from\s*["']\.\/run-record\.mjs["']/,
+    'rust-audit.ts must import EVIDENCE_MARKER from run-record.mjs')
+  const decl = src.slice(src.indexOf('const EVIDENCE_RULE'))
+  assert.ok(decl.startsWith('const EVIDENCE_RULE'), 'EVIDENCE_RULE is declared')
+  assert.match(decl.slice(0, 500), /EVIDENCE_MARKER/,
+    'EVIDENCE_RULE must build its marker from EVIDENCE_MARKER, not a hardcoded string')
+})
+
+test('buildAuditRecord demotes a self-reported green with no Evidence line to INCOMPLETE', () => {
+  // The headline of the port: on opencode a dimension that self-reported APPROVE with nothing shown
+  // was trusted exactly as before, so invariant #53 was unenforced here. It must now demote.
+  const rec = buildAuditRecord({
+    results: [{ label: 'security', ok: true, text: 'All clean.\n\nVERDICT: APPROVE' }],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'Consolidated.\n\nVERDICT: APPROVE',
+  })
+  assert.match(rec.verdict, /INCOMPLETE/, 'a claimed green with nothing shown is not trusted')
+  assert.deepEqual(rec.noEvidence, ['security'], 'it lands in the noEvidence bucket')
+  assert.deepEqual(rec.incomplete, [], 'and NOT in incomplete — the tool may have run, this is not tooling-absent')
+  const security = rec.dimensions.find((d) => d.dimension === 'security')
+  assert.match(security.verdict, /^INCOMPLETE \(no evidence/, 'the demoted dimension keeps the honest verdict')
+})
+
+test('a green WITH an Evidence line survives the gate', () => {
+  const rec = buildAuditRecord({
+    results: [{ label: 'security', ok: true, text: 'cargo-audit clean.\nEvidence: ran cargo-audit over 214 crates.\n\nVERDICT: APPROVE' }],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE',
+  })
+  assert.equal(rec.verdict, 'Approve', 'shown work keeps the green')
+  assert.deepEqual(rec.noEvidence, [])
+  assert.deepEqual(rec.incomplete, [])
+})
+
+test('the gate reads the NORMALISED verdict — an off-vocabulary green with no evidence still demotes', () => {
+  // parseVerdict maps Healthy/Clean and their kin onto Approve before the gate sees them, so a
+  // dimension that ended `VERDICT: APPROVE` after a Healthy body with no Evidence line is demoted.
+  const rec = buildAuditRecord({
+    results: [{ label: 'architecture', ok: true, text: 'Healthy layering.\n\nVERDICT: APPROVE' }],
+    baseRef: 'main', hasUnsafe: false, synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE',
+  })
+  assert.match(rec.verdict, /INCOMPLETE/)
+  assert.deepEqual(rec.noEvidence, ['architecture'])
+})
+
+// ---- auditSynthesisInput: the report the human reads is gated from the SAME source as the record ----
+
+test('auditSynthesisInput demotes a green-no-evidence dimension in the report input, matching the record', () => {
+  // Finding 2: on opencode the demotion lived only in buildAuditRecord (the STORE); the synthesis blob
+  // was built from the RAW text still carrying `VERDICT: APPROVE`, so the returned report a human reads
+  // could show the dimension green while the store said INCOMPLETE. The report input must now demote it.
+  const results = [{ label: 'security', ok: true, text: 'All clean.\n\nVERDICT: APPROVE' }]
+  const { blob, noEvidence, couldNotRun, notRun } = auditSynthesisInput(results)
+  assert.deepEqual(noEvidence, ['security'], 'the no-evidence bucket the synth prompt renders')
+  assert.deepEqual(couldNotRun, [])
+  assert.deepEqual(notRun, [])
+  // The blob header carries the GATED verdict, not a bare "ran" or the raw Approve — so the synthesised
+  // report (and the raw-blob fallback when synthesis dies) shows the dimension demoted.
+  assert.match(blob, /^### security \(INCOMPLETE \(no evidence — claimed Approve\)\)/)
+  assert.doesNotMatch(blob.split('\n')[0], /\(ran\)/)
+  // Report and record cannot disagree: both derive from auditDimensions / the same evidence gate.
+  const rec = buildAuditRecord({ results, baseRef: 'main', hasUnsafe: false, synthesisText: 'x\n\nVERDICT: APPROVE' })
+  assert.deepEqual(rec.noEvidence, noEvidence, 'the store and the report input name the same demoted dimension')
+})
+
+test('auditSynthesisInput keeps a green WITH an Evidence line green, and the header shows the verdict', () => {
+  const results = [{ label: 'security', ok: true, text: 'clean.\nEvidence: ran cargo-audit.\n\nVERDICT: APPROVE' }]
+  const { blob, noEvidence } = auditSynthesisInput(results)
+  assert.deepEqual(noEvidence, [])
+  assert.match(blob, /^### security \(Approve\)/)
+})
+
+test('auditSynthesisInput marks a died dimension not-run and separates it from a no-evidence demotion', () => {
+  const results = [
+    { label: 'security', ok: false, text: '' },
+    { label: 'deps', ok: true, text: 'Duplicate versions found.\n\nVERDICT: WARNING' },
+    { label: 'semver', ok: true, text: 'All good.\n\nVERDICT: APPROVE' },
+  ]
+  const { blob, notRun, couldNotRun, noEvidence } = auditSynthesisInput(results)
+  assert.deepEqual(notRun, ['security'])
+  assert.deepEqual(couldNotRun, [])
+  assert.deepEqual(noEvidence, ['semver'], 'the un-evidenced green is demoted; the Warning is untouched')
+  assert.match(blob, /### security \(INCOMPLETE \(not run\)\)/)
+  assert.match(blob, /### deps \(Warning\)/)
+  assert.match(blob, /### semver \(INCOMPLETE \(no evidence/)
+})
+
+test('auditDimensions is the shared computation buildAuditRecord reads', () => {
+  const results = [
+    { label: 'security', ok: true, text: 'clean.\nEvidence: ran cargo-audit.\n\nVERDICT: APPROVE' },
+    { label: 'deps', ok: true, text: 'nothing shown.\n\nVERDICT: APPROVE' },
+  ]
+  const dims = auditDimensions(results)
+  const rec = buildAuditRecord({ results, baseRef: 'main', hasUnsafe: false, synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE' })
+  assert.deepEqual(rec.dimensions, dims, 'the record projects auditDimensions verbatim')
 })
 
 test('buildTriageRecord uses an empty verdict and per-finding dimensions', () => {
@@ -321,8 +510,8 @@ test('a run that was never consolidated is not filed as Approve', () => {
   // consolidated. The human saw INCOMPLETE and index.jsonl saw Approve for the same run — worse
   // than either alone, since only the store is machine-read afterwards.
   const results = [
-    { label: 'review', ok: true, text: 'nothing found\n\nVERDICT: APPROVE' },
-    { label: 'tests-cov', ok: true, text: 'coverage fine\n\nVERDICT: APPROVE' },
+    { label: 'review', ok: true, text: 'nothing found\nEvidence: ran cargo clippy/test; read the changed files.\n\nVERDICT: APPROVE' },
+    { label: 'tests-cov', ok: true, text: 'coverage fine\nEvidence: ran cargo llvm-cov and cargo test --doc.\n\nVERDICT: APPROVE' },
   ]
   const fallback = '## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\n' +
     results.map(r => `### ${r.label}\n\n${r.text}`).join('\n\n')

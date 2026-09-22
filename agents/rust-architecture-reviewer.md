@@ -51,11 +51,19 @@ You judge the **whole graph**, not a diff. Diff-scoped mergeability review is `r
    the method. INCOMPLETE is for "could not look", never for "looked with lesser
    tools".
 
+   Immediately before the health rating, emit one line beginning `Evidence:` that
+   names the concrete work of this pass — the commands you ran, the tools you used,
+   the files you read to build the graph — never invented. A passing rating (Healthy)
+   with an empty `Evidence:` line is treated as INCOMPLETE, not trusted: show what you
+   did, or the rating does not stand.
+
 ## Output format
 
 ```
 ## Scope
 workspace · 6 crates · graph: cargo-modules ✓
+
+Evidence: ran `cargo metadata` and `cargo modules structure`; read each crate's Cargo.toml and the module tree to build the graph.
 
 ## Health
 Concerns — 1 HIGH, 2 MEDIUM
@@ -74,6 +82,8 @@ When no graph could be built, the whole report is that fact:
 ```
 ## Scope
 graph: NOT BUILT — cargo metadata/tree failed, cargo-modules absent, no Cargo.toml or source readable
+
+Evidence: attempted `cargo metadata`, `cargo tree`, and `cargo modules structure` (all failed); grepped for manifests and mod/use structure and found none readable.
 
 ## Health
 INCOMPLETE (not run) — nothing was analyzed

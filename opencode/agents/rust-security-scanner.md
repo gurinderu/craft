@@ -34,4 +34,7 @@ You run the Rust security toolchain and consolidate its output; you do not chang
 4. **Machine-read line.** As the very last line of your report, with nothing after it, write
    `VERDICT: X` where X is exactly one of the four tokens `APPROVE`, `WARNING`, `BLOCK`,
    `INCOMPLETE` (uppercase, no other wording) — `INCOMPLETE` exactly when no tool ran at all. The
-   prose above is for humans; this line is the one that is parsed.
+   prose above is for humans; this line is the one that is parsed. Immediately before it, emit one
+   line beginning `Evidence:` that names the concrete work of this pass — the tools you actually ran
+   and the files you read, never invented. A passing verdict (Approve) with an empty `Evidence:`
+   line is treated as INCOMPLETE, not trusted: show what you scanned, or the pass does not stand.

@@ -42,6 +42,11 @@ When NOT run as a lens (a manual whole-diff review), also run the mechanical gat
 rust-review skill) and issue the verdict yourself — and the vocabulary there has **four** values:
 Approve / Warning / Block / **INCOMPLETE (not run)**.
 
+Immediately before the verdict, emit one line beginning `Evidence:` that names the concrete work of
+this pass — the commands you ran, the tools you used, the files you read — never invented. A passing
+verdict (Approve) with an empty `Evidence:` line is treated as INCOMPLETE, not trusted: show what
+you did, or the pass does not stand.
+
 If the gate could not be **established at all** — no usable CI signal and the local commands could
 not execute (`cargo` not on PATH, toolchain or component missing, dependencies unfetchable) — then
 nothing was computed. Report your read of the diff, but the verdict is `INCOMPLETE (not run)`: name
@@ -60,6 +65,8 @@ emit:
 ⛔ Critical · src/db.rs:42 · SQL built by string interpolation · injection risk · use sqlx bind params
 ⚠️ Medium   · src/cache.rs:88 · format! in hot loop · per-iteration alloc · reuse a buffer
 
+Evidence: ran `cargo clippy` and `cargo test`; read src/db.rs and src/cache.rs and traced their callers via rust-navigation.
+
 ## Verdict
 Block — 1 Critical must be fixed before merge.   # only when doing a whole-diff review
 ```
@@ -69,6 +76,8 @@ When the gate could not run at all:
 ```
 ## Gate
 NOT ESTABLISHED — no CI checks on this branch; `cargo` not on PATH
+
+Evidence: attempted `cargo clippy` and `cargo test` (cargo not on PATH); read the changed files and their callers.
 
 ## Verdict
 INCOMPLETE (not run) — the mechanical gate never ran; this diff is UNVERIFIED, not clean.
