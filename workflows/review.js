@@ -2550,7 +2550,7 @@ ${JSON.stringify(payload, null, 2)}`
 
 // The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
 // shard cutter is fenced in from lib/ledger-shards.mjs, where it is linted and unit-tested.
-// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS payloadBytes shardLedger
+// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS LEDGER_SHARD_TYPICAL_ENTRIES LEDGER_TOMBSTONE_MAX payloadBytes shardLedger tombstoneRound pruneTombstones
 // At most this many bytes of JSON per shard. Two ceilings bound it from above and one need from
 // below. Above: `logRunDispatch` treats 24KB as the point where a payload stops being safe for the
 // cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
@@ -2573,6 +2573,24 @@ const LEDGER_SHARD_PHASE = 'ledger'
 // ledger ever measured) while still existing: unbounded, a pathological round would spend its whole
 // budget on bookkeeping.
 const LEDGER_SHARD_MAX_SHARDS = 20
+
+// Roughly how many ledger rows fit in one shard's byte budget. NOT the per-entry precision of
+// `shardLedger` (which measures each entry) — a coarse floor used only to reason about ROW COUNTS,
+// taken from the low end of the "~15-20 entries per shard" measurement in the LEDGER_SHARD_MAX_BYTES
+// note above. Deliberately the low end: it bounds a set from ABOVE, so under-counting rows-per-shard
+// over-reserves shard room, which is the safe direction.
+const LEDGER_SHARD_TYPICAL_ENTRIES = 15
+
+// The most tombstones the carry-forward may keep, DERIVED from the shard budget rather than picked.
+// Tombstones grow monotonically — one per resolved or retired prior, every round, carried forward —
+// so left unbounded they eventually fill the shard budget on their own, at which point the ledger
+// overflows LEDGER_SHARD_MAX_SHARDS every round; the loss detector reads the shortfall as truncation
+// and forces a full base...HEAD rescan EACH round, the exact inversion of the cheaper later rounds
+// the memory exists to buy. Bounding tombstones to HALF the shard budget's worth of rows leaves the
+// other half for live findings, so tombstones alone can never cross LEDGER_SHARD_MAX_SHARDS — and
+// half a budget (~150 rows) also sits under the ~170-entry copy the final logger once refused. It is
+// a fraction of the same budget it protects, so it moves when that budget does.
+const LEDGER_TOMBSTONE_MAX = Math.floor(LEDGER_SHARD_MAX_SHARDS / 2) * LEDGER_SHARD_TYPICAL_ENTRIES
 
 // Cut a ledger into checkpoint payload fragments. Returns [] for an empty ledger — there is nothing
 // to persist and an empty shard would claim a round had no findings.
@@ -2626,6 +2644,42 @@ function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_
     },
     ledgerItems: group,
   }))
+}
+
+// The round a tombstone closed in, read from its `why` marker ("resolved in round N" / "dismissed
+// in round N"), with the stored `round` field as a fallback and 0 as the floor. Used only to order
+// tombstones by age for dedup and eviction — the regression message reads the same marker itself.
+function tombstoneRound(t) {
+  const m = /round (\d+)/.exec(String((t && t.why) || ''))
+  if (m) return Number(m[1])
+  const r = Number(t && t.round)
+  return Number.isFinite(r) ? r : 0
+}
+
+// Bound the carried tombstone set. Two bounds, in order:
+//   1. DEDUP by fingerprint, keeping the NEWEST per fp. A recidivist defect (resolved, regresses,
+//      resolved again) otherwise writes a fresh same-fp tombstone every cycle; the read side already
+//      collapses same-fp tombstones on lookup, so a second stored row was only ever dead weight.
+//   2. CAP at `max` rows (LEDGER_TOMBSTONE_MAX by default), evicting the OLDEST rounds first. The cap
+//      is derived from the shard budget, so tombstones alone can never fill LEDGER_SHARD_MAX_SHARDS
+//      and invert the memory into a per-round full rescan. Evicting the oldest is the right
+//      direction: a defect that returns tends to return soon, so the most recent rounds are the ones
+//      a fresh finding is most likely to match.
+// Tombstones without an `fp` are never merged (they have no identity to merge on) and are kept as-is,
+// still subject to the count cap. Insertion order is otherwise preserved below the cap.
+function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
+  const items = Array.isArray(tombstones) ? tombstones : []
+  const newestByFp = new Map()
+  const noFp = []
+  for (const t of items) {
+    if (!t || typeof t !== 'object') continue
+    if (!t.fp) { noFp.push(t); continue }
+    const prev = newestByFp.get(t.fp)
+    if (!prev || tombstoneRound(t) >= tombstoneRound(prev)) newestByFp.set(t.fp, t)
+  }
+  const deduped = [...newestByFp.values(), ...noFp]
+  if (deduped.length <= max) return deduped
+  return deduped.sort((a, b) => tombstoneRound(b) - tombstoneRound(a)).slice(0, max)
 }
 // <<< craft-inline
 
@@ -4695,28 +4749,47 @@ if (priorRound) {
     if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
     if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
   }
-  // RECIDIVISM. A freshly discovered finding whose fingerprint matches a prior tombstone (a defect
-  // resolved or retired in an earlier round) has RETURNED — it is a regression, not a novelty, and
-  // the reader and the verdict must see it as one. Exact fingerprint match only, and only for a
-  // finding that carries a ruleId: an ad-hoc finding has no stable identity, so it gets no tombstone
-  // check at all rather than a fuzzy one (fuzzy title matching was measured at 2/59 recall). The
-  // finding stays in its own tier — this only annotates `why`; it does not move or drop it.
+  // RECIDIVISM. A freshly discovered finding whose fingerprint matches a prior tombstone has RETURNED,
+  // and the two tombstone ORIGINS mean different things. A `resolved` tombstone is a defect that was
+  // actually fixed, so a match is a REGRESSION — the fix came undone. A `dismissed` tombstone is a
+  // prior the AUTHOR rejected/justified and whose carry-check found the code around it UNCHANGED
+  // (retirement): the engine's own separate `reopened` path already handles the code-CHANGED case, so
+  // a match here is not a regression at all — nothing was fixed and nothing broke — it is the same
+  // dismissed defect being re-raised, and it is labelled as exactly that. Exact fingerprint match
+  // only, and only for a finding that carries a ruleId: an ad-hoc finding has no stable identity, so
+  // it gets no tombstone check rather than a fuzzy one (fuzzy title matching was measured at 2/59
+  // recall). This is a HUMAN-FACING annotation on `why` only: it neither moves the finding between
+  // tiers nor changes the verdict, which still counts each returning finding by its own severity
+  // exactly as a novel one (whether a regression should escalate the verdict is a separate decision,
+  // deliberately not taken here). All three live tiers are scanned — confirmed, suspected AND
+  // unverified — because the unverified tier is precisely where a returning defect lands when its
+  // verifier died or was floor-skipped, which is the run where the "it came back" signal matters most;
+  // carried-unverified priors are excluded, as they are not freshly discovered.
   if (priorTombstones.length) {
     const tombstoneByFp = new Map()
     for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
     let regressions = 0
+    let reraised = 0
     const flagRegression = f => {
       if (!f.ruleId) return
       const hit = tombstoneByFp.get(fingerprint(f))
       if (!hit) return
-      const m = /round (\d+)/.exec(String(hit.why || ''))
+      const why = String(hit.why || '')
+      const m = /round (\d+)/.exec(why)
       const r = m ? m[1] : (hit.round || '?')
-      f.why = `${f.why} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
-      regressions++
+      if (/^dismissed /.test(why)) {
+        f.why = `${f.why} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
+        reraised++
+      } else {
+        f.why = `${f.why} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
+        regressions++
+      }
     }
     confirmed.forEach(flagRegression)
     suspected.forEach(flagRegression)
-    if (regressions) log(`Re-review: ${regressions} fresh finding(s) match a defect resolved in an earlier round — flagged as REGRESSION, not counted as new`)
+    unverified.filter(f => !f.carriedUnverified).forEach(flagRegression)
+    if (regressions) log(`Re-review: ${regressions} fresh finding(s) match a defect RESOLVED in an earlier round — annotated as REGRESSION in the report; the verdict still counts each by its severity`)
+    if (reraised) log(`Re-review: ${reraised} fresh finding(s) match a defect the author DISMISSED in an earlier round — annotated as re-raised, not a regression; the verdict still counts each by its severity`)
   }
 }
 
@@ -4916,9 +4989,23 @@ const toLedgerEntry = (f, disposition, tier) => ({
   ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
 })
 // A tombstone for a resolved/retired prior: the same ledger shape, `disposition:'closed'`, but its
-// `why` is a fixed round marker rather than the original rationale — a tombstone's only job is an
-// equality test (the recidivism check on load), so it carries the round it closed in and no prose.
-const toTombstone = f => ({ ...toLedgerEntry(f, 'closed', f.tier), why: `resolved in round ${thisRound}` })
+// `why` is a fixed ORIGIN+round marker rather than the original rationale — a tombstone's only job is
+// an equality test (the recidivism check on load) plus telling a fixed defect that REGRESSED
+// (`resolved`) from a dismissed one that was RE-RAISED (`dismissed`), so it carries the origin and
+// the round it closed in, and no prose. The origin lives in `why` (not a new field) so it rides the
+// existing ledger shape and the round-marker regex reads both forms unchanged.
+const toTombstone = (f, origin = 'resolved') => ({ ...toLedgerEntry(f, 'closed', f.tier), why: `${origin} in round ${thisRound}` })
+// The tombstone set is DEDUPED by fingerprint (newest per fp) and CAPPED at a fraction of the shard
+// budget (see pruneTombstones / LEDGER_TOMBSTONE_MAX in lib/ledger-shards.mjs). Without this it grew
+// monotonically — new tombstones plus every earlier one carried verbatim, a fresh same-fp row per
+// recidivist cycle — until it filled the shard budget by itself and inverted the memory into a
+// per-round full rescan. The cap evicts the oldest rounds; the read side above already tolerates a
+// tombstone it no longer remembers (it simply treats the finding as novel).
+const tombstones = pruneTombstones([
+  ...adjudicated.resolved.map(f => toTombstone(f, 'resolved')),
+  ...adjudicated.retired.map(f => toTombstone(f, 'dismissed')),
+  ...priorTombstones,
+])
 const reviewLedger = isRereview
   ? [
     ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
@@ -4931,12 +5018,10 @@ const reviewLedger = isRereview
     // `adjudicated.resolved`/`adjudicated.retired` no longer leave the ledger silently: each becomes a
     // lightweight TOMBSTONE (`disposition:'closed'`) so a later round can tell the defect's RETURN
     // from a genuine novelty. It is not a live finding — the carve-out on load keeps it out of the
-    // adjudicator — and it costs one bare row, not a re-adjudicated one. Earlier tombstones ride
-    // along verbatim (`...priorTombstones`) so the memory persists round to round; they keep their
-    // own original round marker, which is the round the REGRESSION note reports.
-    ...adjudicated.resolved.map(toTombstone),
-    ...adjudicated.retired.map(toTombstone),
-    ...priorTombstones,
+    // adjudicator — and it costs one bare row, not a re-adjudicated one. The set (this round's plus
+    // the earlier ones carried forward) is deduped and capped above; each row keeps its own origin+
+    // round marker, which is the round the REGRESSION / re-raised note reports.
+    ...tombstones,
     ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
