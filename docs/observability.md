@@ -68,8 +68,11 @@ Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confi
 parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-review (`round > 1`)
 runs an extra Adjudicate phase and a whole-diff re-scan, so its pool is structurally larger than a
 first-pass's. It is therefore not a clean output-cost figure and must not be compared across run
-types — `lib/analyze-runs.mjs` splits it by `round` into a first-pass pool and a re-review pool
-rather than averaging the two). The `scout`
+types — `lib/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
+first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and — since only `review` stamps
+`round`, and it gained the field after `outputTokens` — an Unclassified pool for round-less runs,
+which are counted apart from the split, never folded into first-pass. A workflow that never stamps
+`round` therefore reports one plain pool with no run-type label). The `scout`
 shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
 rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
 adversarial-review records `{size, lenses, indexed, batch}`; see each
