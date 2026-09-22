@@ -46,6 +46,8 @@ status: ran 42 tests · 1 error
 ⛔ use-after-free · src/buffer.rs:88 (unsafe block) · pointer read after the backing Vec was
    dropped · the slice outlives its owner — tie the lifetime to the Vec or hold the Vec longer
 
+Evidence: ran `cargo +nightly miri test` (42 tests executed); read src/buffer.rs and its unsafe block.
+
 ## Verdict
 Block — Miri detected undefined behavior.
 ```
@@ -58,12 +60,19 @@ The verdict vocabulary has **three** values, not two:
   Miri, so nothing was interpreted. Soundness is UNVERIFIED, not verified. Report it exactly as
   that string, and say which piece was missing:
 
+Immediately before the verdict, emit one line beginning `Evidence:` that names the concrete work of
+this pass — the Miri command you ran and the tests it executed, or the files you read — never
+invented. A passing verdict (Clean) with an empty `Evidence:` line is treated as INCOMPLETE, not
+trusted: show what Miri actually executed, or the Clean does not stand.
+
 ```
 ## Miri
 status: NOT RUN — nightly toolchain not installed
 
 ## Findings
 (none — nothing was executed under Miri)
+
+Evidence: attempted `cargo +nightly miri test` — nightly toolchain absent, so nothing ran under Miri.
 
 ## Verdict
 INCOMPLETE (not run) — soundness is unverified; this is not a Clean result.

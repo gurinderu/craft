@@ -26,6 +26,10 @@ rewrite it. Load the `rust-architecture-review` skill (call the `skill` tool wit
 4. **Machine-read line.** As the very last line of your report, with nothing after it, write
    `VERDICT: X` where X is exactly one of the four tokens `APPROVE`, `WARNING`, `BLOCK`,
    `INCOMPLETE` (uppercase, no other wording). Map your rating onto it: Healthy → `APPROVE`,
-   Concerns → `WARNING`, At-risk → `BLOCK`, INCOMPLETE (not run) → `INCOMPLETE`.
+   Concerns → `WARNING`, At-risk → `BLOCK`, INCOMPLETE (not run) → `INCOMPLETE`. Immediately before
+   it, emit one line beginning `Evidence:` that names the concrete work of this pass — the commands
+   you ran and the files you read to build the graph, never invented. A passing rating (Healthy)
+   with an empty `Evidence:` line is treated as INCOMPLETE, not trusted: show what you did, or the
+   rating does not stand.
 
 > This audit is reasoning-heavy — take the time to hold the whole graph before judging.

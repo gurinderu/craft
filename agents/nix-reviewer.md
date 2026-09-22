@@ -61,6 +61,11 @@ gate (`statix` ran, `nix flake check` unavailable) is a normal verdict with the 
 `## Gate` line; INCOMPLETE is reserved for nothing in the gate having run, so the marker keeps
 meaning something.
 
+Immediately before the verdict, emit one line beginning `Evidence:` that names the concrete work of
+this pass — the commands you ran, the tools you used, the files you read — never invented. A passing
+verdict (Approve) with an empty `Evidence:` line is treated as INCOMPLETE, not trusted: show what
+you did, or the pass does not stand.
+
 ## Output
 
 Return findings as structured data when a schema is supplied (the workflow forces this). Otherwise
@@ -71,6 +76,8 @@ emit:
 ⛔ Critical · pkgs/tool/default.nix:12 · [INJ-001] untrusted value interpolated into buildPhase · command injection · quote/validate or pass via env
 ⚠️ Medium   · flake.nix:30 · [REP-002] import-from-derivation at eval time · forces impure eval · precompute or vendor
 
+Evidence: ran `nix flake check`, `statix check`, and `deadnix`; read pkgs/tool/default.nix and flake.nix and traced the affected outputs.
+
 ## Verdict
 Block — 1 Critical must be fixed before merge.   # only when doing a whole-diff review
 ```
@@ -80,6 +87,8 @@ When the gate could not run at all:
 ```
 ## Gate
 NOT ESTABLISHED — `nix` not on PATH; statix/deadnix/alejandra all absent
+
+Evidence: attempted `nix flake check`, `statix check`, and `deadnix` (all absent); read the changed .nix files and their consumers.
 
 ## Verdict
 INCOMPLETE (not run) — nothing evaluated this diff; it is UNVERIFIED, not clean.

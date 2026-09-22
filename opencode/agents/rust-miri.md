@@ -35,3 +35,7 @@ You run the unsafe code under Miri and interpret the result; you do not change c
    `VERDICT: X` where X is exactly one of the four tokens `APPROVE`, `WARNING`, `BLOCK`,
    `INCOMPLETE` (uppercase, no other wording): Clean → `APPROVE`, UB-found → `BLOCK`,
    INCOMPLETE (not run) → `INCOMPLETE`. The prose above is for humans; this line is parsed.
+   Immediately before it, emit one line beginning `Evidence:` that names the concrete work of this
+   pass — the Miri command you ran and the tests it executed, or the files you read, never invented.
+   A passing verdict (Clean) with an empty `Evidence:` line is treated as INCOMPLETE, not trusted:
+   show what Miri actually executed, or the Clean does not stand.

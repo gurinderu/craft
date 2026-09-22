@@ -106,7 +106,7 @@ test('an echoed synthesis cannot lift the record above what the dimensions said'
       if (isSynthesis) return null
       return agent === 'rust-security-scanner'
         ? '- use-after-free in src/x.rs:10\n\nVERDICT: BLOCK'
-        : `- ${agent}: nothing found\n\nVERDICT: APPROVE`
+        : `- ${agent}: nothing found\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE`
     })
     const inner = ctx.client.session.prompt
     ctx.client.session.prompt = async (req) => {
@@ -131,7 +131,7 @@ test('a faithful consolidation that reuses the input lines is used, not thrown a
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis, agent }) => {
       if (!isSynthesis) {
-        return `- ${agent}: src/a.rs:10 unbounded growth in the retry buffer\n- ${agent}: src/b.rs:22 the lock is held across an await point\n\nVERDICT: APPROVE`
+        return `- ${agent}: src/a.rs:10 unbounded growth in the retry buffer\n- ${agent}: src/b.rs:22 the lock is held across an await point\nEvidence: ran the checks; read src/a.rs and src/b.rs.\n\nVERDICT: APPROVE`
       }
       return null
     })
@@ -168,7 +168,7 @@ test('a faithful consolidation that reuses the input lines is used, not thrown a
 test('a real synthesis is used, and the store matches it', async () => {
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis }) =>
-      isSynthesis ? '# Audit\n\nall dimensions clean\n\nVERDICT: APPROVE' : 'checked\n\nVERDICT: APPROVE')
+      isSynthesis ? '# Audit\n\nall dimensions clean\n\nVERDICT: APPROVE' : 'checked\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE')
     const report = await runRustAudit(ctx, {})
     assert.match(report, /all dimensions clean/)
     assert.ok(!/was not consolidated/.test(report))
@@ -183,7 +183,7 @@ test('a dimension that answers without a verdict is not counted as having run', 
   await withStore(async dir => {
     const ctx = fakeCtx(({ agent, isSynthesis }) => {
       if (isSynthesis) return 'consolidated\n\nVERDICT: APPROVE'
-      return agent === 'rust-security-scanner' ? 'I cannot run those tools here.' : 'checked\n\nVERDICT: APPROVE'
+      return agent === 'rust-security-scanner' ? 'I cannot run those tools here.' : 'checked\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE'
     })
     await runRustAudit(ctx, {})
     const r = record(dir)

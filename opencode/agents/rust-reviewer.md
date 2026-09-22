@@ -52,6 +52,10 @@ full severity checklist and verdict criteria.
    with a tool missing (that is a normal verdict with the gap named). The prose above is for
    humans; this line is the one that is parsed.
 
+   Before the `VERDICT: X` line, emit one line beginning `Evidence:` that names the concrete work
+   of this pass — the commands you ran, the tools you used, the files you read — never invented. A
+   passing verdict (Approve) with an empty `Evidence:` line is treated as INCOMPLETE, not trusted.
+
 ## Output format
 
 ```
@@ -64,6 +68,8 @@ fmt ✓ · clippy ✓ · test ✓ · audit ✓
 
 ## Verdict
 Block — 1 CRITICAL must be fixed before merge.
+
+Evidence: ran cargo fmt/clippy/test; read src/db.rs and src/cache.rs and traced their callers.
 
 VERDICT: X
 ```
@@ -80,6 +86,8 @@ NOT ESTABLISHED — no CI checks on this branch; `cargo` not on PATH
 
 ## Verdict
 INCOMPLETE (not run) — the mechanical gate never ran; this diff is UNVERIFIED, not clean.
+
+Evidence: attempted cargo fmt/clippy/test (cargo not on PATH); read the changed files and their callers.
 
 VERDICT: X
 ```
