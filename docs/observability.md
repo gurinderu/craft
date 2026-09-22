@@ -66,7 +66,7 @@ Records written before these fields carry `null` and are outside any filter.
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
 `notRun[]`, `outputTokens` (the whole-run token **pool** — `budget.spent()`: input + output +
 parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-review (`round > 1`)
-runs an extra Adjudicate phase and a whole-diff re-scan, so its pool is structurally larger than a
+runs an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally larger than a
 first-pass's. It is therefore not a clean output-cost figure and must not be compared across run
 types — `lib/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
 first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and a round-less pool for runs that
