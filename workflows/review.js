@@ -958,6 +958,7 @@ const PRIOR_ROUND_SCHEMA = {
     reason: { type: 'string', description: 'why there is no prior round (no-store, no-index, no-candidate-rows, unattributable-rows-only, ancestry-rejected, detail-unreadable, partial-only, git-unavailable); empty when found=true' },
     priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
     journalSourced: { type: 'boolean', description: 'true when this ledger was reconstructed from a stalled run\'s journal.jsonl rather than a normal completed round; false when found=false. Its `head` may equal the OPERATOR\'S current HEAD (a re-run on the same stalled commit before any fix), so the workflow must not diff head...HEAD off it — see shouldFullRescan.' },
+    sameEngineRevision: { type: 'boolean', description: 'true when the prior round was produced under the SAME engine revision that stamps this round; false when it differs or is unknown, and when found=false. The finding fingerprint basis is revision-scoped, so the recidivism/tombstone check compares fp only when this is true. Optional: a degraded/legacy prior may omit it, and the workflow then treats the memory as comparable (its pre-guard behaviour).' },
   },
 }
 
@@ -2550,7 +2551,7 @@ ${JSON.stringify(payload, null, 2)}`
 
 // The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
 // shard cutter is fenced in from lib/ledger-shards.mjs, where it is linted and unit-tested.
-// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS LEDGER_SHARD_TYPICAL_ENTRIES LEDGER_TOMBSTONE_MAX payloadBytes shardLedger tombstoneRound pruneTombstones
+// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS LEDGER_COPY_REFUSAL_ENTRIES LEDGER_COPY_SAFETY_ROWS LEDGER_TOMBSTONE_MAX payloadBytes shardLedger tombstoneRound pruneTombstones tombstoneBudget
 // At most this many bytes of JSON per shard. Two ceilings bound it from above and one need from
 // below. Above: `logRunDispatch` treats 24KB as the point where a payload stops being safe for the
 // cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
@@ -2574,23 +2575,28 @@ const LEDGER_SHARD_PHASE = 'ledger'
 // budget on bookkeeping.
 const LEDGER_SHARD_MAX_SHARDS = 20
 
-// Roughly how many ledger rows fit in one shard's byte budget. NOT the per-entry precision of
-// `shardLedger` (which measures each entry) — a coarse floor used only to reason about ROW COUNTS,
-// taken from the low end of the "~15-20 entries per shard" measurement in the LEDGER_SHARD_MAX_BYTES
-// note above. Deliberately the low end: it bounds a set from ABOVE, so under-counting rows-per-shard
-// over-reserves shard room, which is the safe direction.
-const LEDGER_SHARD_TYPICAL_ENTRIES = 15
+// The single-call copy the FINAL record rides through has an OBSERVED ceiling: a logger once REFUSED
+// a ~170-entry ledger outright rather than risk truncating it in one tool call (the same measurement
+// the LEDGER_SHARD_MAX_BYTES note records; workflows/review.js documents the same refusal at its
+// finalize step). That refusal is on the WHOLE persisted ledger — every live row PLUS every tombstone,
+// copied together — so it, not the far looser shard budget, is the border that actually bounds the
+// carried tombstone set. (The shard budget is ~300 rows: LEDGER_SHARD_MAX_SHARDS × ~15 rows/shard. It
+// never bites first, so a cap derived from it left the memory free to cross the copy-refusal border on
+// tombstones-plus-live and invert into a per-round full rescan — the very failure the cap must prevent.)
+const LEDGER_COPY_REFUSAL_ENTRIES = 170
 
-// The most tombstones the carry-forward may keep, DERIVED from the shard budget rather than picked.
-// Tombstones grow monotonically — one per resolved or retired prior, every round, carried forward —
-// so left unbounded they eventually fill the shard budget on their own, at which point the ledger
-// overflows LEDGER_SHARD_MAX_SHARDS every round; the loss detector reads the shortfall as truncation
-// and forces a full base...HEAD rescan EACH round, the exact inversion of the cheaper later rounds
-// the memory exists to buy. Bounding tombstones to HALF the shard budget's worth of rows leaves the
-// other half for live findings, so tombstones alone can never cross LEDGER_SHARD_MAX_SHARDS — and
-// half a budget (~150 rows) also sits under the ~170-entry copy the final logger once refused. It is
-// a fraction of the same budget it protects, so it moves when that budget does.
-const LEDGER_TOMBSTONE_MAX = Math.floor(LEDGER_SHARD_MAX_SHARDS / 2) * LEDGER_SHARD_TYPICAL_ENTRIES
+// Hold the combined ledger this far under the refusal point, so a live-finding count the assembler
+// could not foresee — or that drifts up between assembly and the final copy — cannot tip it over.
+const LEDGER_COPY_SAFETY_ROWS = 20
+
+// The most tombstones the carry-forward keeps when a round has NO live findings — equivalently, the
+// ceiling the WHOLE combined ledger (tombstones + live) is held under. DERIVED from the copy-refusal
+// border, not the shard budget: the single-call copy refuses on the combined ledger, so that is the
+// quantity to bound. At assembly time the caller passes `tombstoneBudget(liveCount)`, which spends this
+// ceiling on the live rows first and gives tombstones only the remainder, so tombstones + live stay
+// under the border with the safety margin intact. This static value is only the no-live-rows limit that
+// budget is clamped to (and the default for direct pruneTombstones callers, which pass no live count).
+const LEDGER_TOMBSTONE_MAX = LEDGER_COPY_REFUSAL_ENTRIES - LEDGER_COPY_SAFETY_ROWS
 
 // Cut a ledger into checkpoint payload fragments. Returns [] for an empty ledger — there is nothing
 // to persist and an empty shard would claim a round had no findings.
@@ -2660,9 +2666,10 @@ function tombstoneRound(t) {
 //   1. DEDUP by fingerprint, keeping the NEWEST per fp. A recidivist defect (resolved, regresses,
 //      resolved again) otherwise writes a fresh same-fp tombstone every cycle; the read side already
 //      collapses same-fp tombstones on lookup, so a second stored row was only ever dead weight.
-//   2. CAP at `max` rows (LEDGER_TOMBSTONE_MAX by default), evicting the OLDEST rounds first. The cap
-//      is derived from the shard budget, so tombstones alone can never fill LEDGER_SHARD_MAX_SHARDS
-//      and invert the memory into a per-round full rescan. Evicting the oldest is the right
+//   2. CAP at `max` rows, evicting the OLDEST rounds first. `max` defaults to LEDGER_TOMBSTONE_MAX,
+//      but the ledger assembler passes `tombstoneBudget(liveCount)` so the bound is on the COMBINED
+//      ledger (tombstones + live) against the copy-refusal border — the quantity the single-call copy
+//      actually refuses on — not on tombstones in isolation. Evicting the oldest is the right
 //      direction: a defect that returns tends to return soon, so the most recent rounds are the ones
 //      a fresh finding is most likely to match.
 // Tombstones without an `fp` are never merged (they have no identity to merge on) and are kept as-is,
@@ -2680,6 +2687,17 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
   const deduped = [...newestByFp.values(), ...noFp]
   if (deduped.length <= max) return deduped
   return deduped.sort((a, b) => tombstoneRound(b) - tombstoneRound(a)).slice(0, max)
+}
+
+// The tombstone budget for THIS ledger assembly: the combined-ledger ceiling (LEDGER_TOMBSTONE_MAX)
+// minus the live rows already claiming it, floored at 0. Passed to pruneTombstones as `max`, it makes
+// the COMBINED ledger — not tombstones in isolation — the bounded quantity, which is what the single-
+// call copy of the final record refuses on. When live findings alone already fill the ceiling the
+// budget is 0: tombstones cannot rescue a ledger the live rows have pushed over, and adding them would
+// only deepen the overflow that inverts the memory into a per-round full rescan.
+function tombstoneBudget(liveCount, { ceiling = LEDGER_TOMBSTONE_MAX } = {}) {
+  const live = Math.max(0, Number(liveCount) || 0)
+  return Math.max(0, ceiling - live)
 }
 // <<< craft-inline
 
@@ -2789,11 +2807,14 @@ function titleShingle(title) {
 // Kept deliberately small — it absorbs decoration noise, not structure: a rename is still a
 // different symbol, which is the acceptable, rare identity loss the fingerprint is built to take.
 function normalizeSymbol(symbol) {
-  return String(symbol || '')
-    .toLowerCase()
-    .replace(/\b(?:fn|impl)\s+/g, '')
-    .replace(/<[^>]*>/g, '')
-    .trim()
+  let s = String(symbol || '').toLowerCase().replace(/\b(?:fn|impl)\s+/g, '')
+  // Strip generics INNERMOST-first, looping until stable. A single /<[^>]*>/g pass stops its class at
+  // the first `>`, so a NESTED generic like `Vec<Map<K,V>>` would keep the inner and trailing `>`
+  // (`vec>`) and defeat the fold. `<[^<>]*>` matches only a bracket pair with no bracket inside — an
+  // innermost generic — and repeating it collapses arbitrary nesting away, leaving no stray symbol.
+  let prev
+  do { prev = s; s = s.replace(/<[^<>]*>/g, '') } while (s !== prev)
+  return s.trim()
 }
 
 // Line-tolerant finding identity. A finding with a ruleId (a catalog rule) gets an EXACT, title-free
@@ -3028,7 +3049,29 @@ else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First revi
 
 // Re-review coverage guards (see ledgerDegraded / shouldFullRescan). thisRound is the round number we
 // are about to record; reused for the record below.
+//
+// CONCURRENCY ASSUMPTION, STATED RATHER THAN LOCKED. Deriving the round is a read-modify-append on the
+// shared per-(project,branch) store with no lock: this run read the latest prior round above and will
+// append round `thisRound`. It assumes no OTHER non-nested review of this same (project,branch) is
+// advancing the chain at the same time. The engine's own only source of same-branch concurrency —
+// `rust-audit`'s per-crate fan-out — is already excluded from the chain on both ends (`nested` rows are
+// skipped as candidates in selectPriorRounds and as readers above), so what remains is an EXTERNAL act:
+// two top-level reviews of one branch dispatched at once. That is outside the engine's serialization
+// contract, and deliberately not guarded here — a per-branch lock is disproportionate to the cost. If
+// it does happen, both compute the same `thisRound` and both append; selection then takes the later ts
+// and the loser's ledger is orphaned. Live findings recover on the next full rescan; the one casualty
+// with no recovery path is the loser's monotonic tombstone set. This is an accepted, bounded loss, not
+// corruption — recorded here so the next reader meets the assumption before the store, not after.
 const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
+// The prior round's finding fingerprints are comparable to this round's
+// only when both were produced under the same engine revision: the fp basis is revision-scoped (a bump
+// changes what a recorded `fp` MEANS — see ENGINE_REVISION in lib/run-record.mjs). The loader reports
+// this as `sameEngineRevision`; a degraded/legacy prior may omit it, and an omission is treated as
+// comparable (the pre-guard behaviour). When it is explicitly false — the first re-review after an
+// engine upgrade — the tombstone recidivism check is skipped for that one transition rather than
+// comparing hashes across incompatible bases and missing a regression silently (see the recidivism
+// block and the tombstone assembly; the memory rebuilds under the new basis from this round on).
+const priorFpComparable = priorRound ? priorRound.sameEngineRevision !== false : false
 const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
   log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
@@ -4765,7 +4808,15 @@ if (priorRound) {
   // unverified — because the unverified tier is precisely where a returning defect lands when its
   // verifier died or was floor-skipped, which is the run where the "it came back" signal matters most;
   // carried-unverified priors are excluded, as they are not freshly discovered.
-  if (priorTombstones.length) {
+  if (priorTombstones.length && !priorFpComparable) {
+    // The prior round used a different engine revision, so its stored fingerprints were computed under
+    // a different basis and are not comparable to this round's freshly computed ones. Skip the check
+    // for this one transition rather than comparing incompatible hashes and missing a regression in
+    // silence — the exact silent miss this guard exists to remove. Expected once, right after an
+    // upgrade; the tombstones minted from THIS round on are all under the current basis (the
+    // incomparable carried ones are dropped at assembly), so the memory rebuilds from here.
+    log('Re-review: the prior round was produced under a different engine revision — its resolved/dismissed fingerprints are not comparable to this round\'s, so the recidivism check is skipped for this transition (expected once, right after an engine upgrade); the memory rebuilds from this round on')
+  } else if (priorTombstones.length) {
     const tombstoneByFp = new Map()
     for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
     let regressions = 0
@@ -4995,17 +5046,26 @@ const toLedgerEntry = (f, disposition, tier) => ({
 // the round it closed in, and no prose. The origin lives in `why` (not a new field) so it rides the
 // existing ledger shape and the round-marker regex reads both forms unchanged.
 const toTombstone = (f, origin = 'resolved') => ({ ...toLedgerEntry(f, 'closed', f.tier), why: `${origin} in round ${thisRound}` })
-// The tombstone set is DEDUPED by fingerprint (newest per fp) and CAPPED at a fraction of the shard
-// budget (see pruneTombstones / LEDGER_TOMBSTONE_MAX in lib/ledger-shards.mjs). Without this it grew
-// monotonically — new tombstones plus every earlier one carried verbatim, a fresh same-fp row per
-// recidivist cycle — until it filled the shard budget by itself and inverted the memory into a
-// per-round full rescan. The cap evicts the oldest rounds; the read side above already tolerates a
-// tombstone it no longer remembers (it simply treats the finding as novel).
+// The tombstone set is bounded against the border that actually governs the persisted
+// ledger: the single-call copy of the FINAL record refuses on the WHOLE ledger (~170 entries), live
+// rows AND tombstones together — NOT on tombstones alone. So count the live rows this ledger will carry
+// and hand pruneTombstones a `tombstoneBudget` that leaves room for them under that border. Without it
+// the set grew monotonically — new tombstones plus every earlier one carried verbatim, a fresh same-fp
+// row per recidivist cycle — and, sized against the far looser shard budget, could cross the copy-
+// refusal border on tombstones-plus-live and invert the memory into a per-round full rescan. It is
+// also DEDUPED by fingerprint (newest per fp); the read side above already tolerates a tombstone it no
+// longer remembers (it treats the finding as novel), so the cap evicting the oldest rounds is safe.
+const liveLedgerCount = confirmed.length + suspected.length +
+  unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).length +
+  adjudicated.stillOpen.length + adjudicated.regressed.length + adjudicated.carried.length
 const tombstones = pruneTombstones([
   ...adjudicated.resolved.map(f => toTombstone(f, 'resolved')),
   ...adjudicated.retired.map(f => toTombstone(f, 'dismissed')),
-  ...priorTombstones,
-])
+  // Carried tombstones from an incomparable engine revision are dropped, not carried
+  // forward under a stale basis: a clean baseline after a bump. This round's own tombstones are minted
+  // under the current basis and kept regardless.
+  ...(priorFpComparable ? priorTombstones : []),
+], { max: tombstoneBudget(liveLedgerCount) })
 const reviewLedger = isRereview
   ? [
     ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
