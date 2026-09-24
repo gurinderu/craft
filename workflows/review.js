@@ -534,6 +534,21 @@ Set provenance to a one-line summary like "nix flake check pass; statix/deadnix 
 // declared rather than becoming a fourth blanket exception.
 const CONDITIONAL_LENSES = ['failure-windows']
 
+// realm @nick/craft #102: each expensive whole-repo lens fires only if the diff touches the surface its defect class needs; fail-open.
+// The map is lens → the `scout.surfaces` boolean that must not be affirmatively `false` for the lens
+// to run. A missing surfaces object, a missing key, or `true` all KEEP the lens (see the gate in
+// reviewProfile): a lens is dropped only where the scout said, in so many words, the surface is absent.
+const SURFACE_GATED_LENSES = { 'negative-space': 'crossBoundarySymbol', 'compat': 'wireForm', 'invariants': 'invariantType' }
+
+// A changed file on one of these paths is a CERTAIN cross-boundary signal the scout can miss: a
+// `*-contracts` crate is a published cross-crate contract, and a `/crds/` schema (a Helm chart's CRD
+// dir included) is a wire form other versions of the code read. The gate reads this to FORCE the two
+// surfaces those paths imply ON — it never turns a surface off, so it can only ever ADD a lens back.
+function isContractOrSchemaPath(f) {
+  const p = String(f || '')
+  return /(^|\/)crates\/(contracts|[^/]*-contracts)\//.test(p) || /(^|\/)crds\//.test(p)
+}
+
 // ================= The optional pass =================
 // Three lenses that do not earn a place on every run. The basis is NOT equal across them: only
 // `ownership` (retired, not here) has three independent counts. The two earlier store-wide counts
@@ -612,6 +627,38 @@ const optionalSection = () => {
   const named = skipped.filter(l => optionalNamedByCritic.has(l))
   return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
+}
+
+// realm @nick/craft #102. Mirrors optionalSection(): a top-level set fed by reviewProfile's surface
+// gate and appended by out(), so it reaches every report the engine can return, and stated
+// MECHANICALLY rather than asked of the synthesis model (which can die or not obey). A whole-repo
+// lens is dropped when the diff does not touch the surface its defect class needs — that is an
+// ABSENCE of a result for those areas, NOT an approval of them.
+// This is the union of PER-PROFILE drops; it over-counts on a mixed diff and must be subtracted from
+// (see surfaceGateTally below).
+const surfaceGateDropped = new Set()
+// Mirrors optionalDispatched: a surface-gated lens actually DISPATCHED in some profile, recorded by
+// runLens (the single dispatch point on every path). The gate is a PER-PROFILE decision reading each
+// profile's own scout, and negative-space is force-added to every plan — so on a mixed rust+nix diff a
+// lens the gate drops in one profile can still run in another. `surfaceGateDropped` alone would then
+// report a lens as saved while it actually ran, corrupting #102's savings measurement — the same
+// snapshot-is-a-lie failure `optionalTally()` already fixed. `surfaceGateTally()` subtracts what ran.
+const surfaceGateDispatched = new Set()
+// Mirrors optionalNamedByCritic: a surface-gated lens the completeness critic named as an uncovered
+// surface. It is NOT re-dispatched (the diff's absent surface is the deliberate boundary, and the
+// critic is the same model whose spend this pass took out of model hands), but the signal is real and
+// must reach the reader rather than die in the filter.
+const surfaceGateNamedByCritic = new Set()
+// The run-level truth, DERIVED not accumulated (mirrors optionalTally): a lens counts as
+// surface-gate-dropped only if the gate dropped it somewhere AND it ran in NO active profile.
+const surfaceGateTally = () => ({ dropped: [...surfaceGateDropped].filter(l => !surfaceGateDispatched.has(l)) })
+const surfaceGateSection = () => {
+  const dropped = surfaceGateTally().dropped
+  if (!dropped.length) return ''
+  // `dropped` already subtracts what ran, so a critic-named lens that ran somewhere is not a gap.
+  const named = dropped.filter(l => surfaceGateNamedByCritic.has(l))
+  return `\n\n## Not run — the diff does not touch the surface these lenses need\n⚠️ These whole-repo lenses were NOT dispatched, so this review makes NO statement about what they cover: ${dropped.join(', ')}. Each fires only when the diff touches the surface its defect class needs (a cross-boundary symbol, a wire/serialized form, an invariant-bearing type), and this diff does not. That is an absence of a result, not a clean one.\n`
+    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still NOT dispatched — the surface gate is the deliberate boundary, not something a model re-opens mid-run — so treat this as a visible gap, not a clean pass.\n` : '')
 }
 
 const PROFILES = {}
@@ -992,6 +1039,18 @@ const SCOUT_SCHEMA = {
     intent: { type: 'string', description: 'what the change should do, from the brief/args; empty if unknown' },
     churn: { type: 'array', items: { type: 'string' }, description: 'hot/often-changed files to scrutinize; may be empty' },
     notes: { type: 'string', description: 'one line on what was detected' },
+    // realm @nick/craft #102: OPTIONAL by design — and NOT in `required` above on purpose. Its absence
+    // (and a missing key within it) is what makes the surface gate fail-open: the gate drops a lens
+    // only where the scout AFFIRMATIVELY set the needed surface false. Each key is likewise optional.
+    surfaces: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        crossBoundarySymbol: { type: 'boolean', description: 'diff changes the signature/shape of an exported/pub symbol that unchanged code depends on' },
+        wireForm: { type: 'boolean', description: 'diff changes a serialized/wire/API form — CRD schema, serde type, HTTP/OpenAPI, protocol' },
+        invariantType: { type: 'boolean', description: 'diff changes a type that carries an invariant other code relies on' },
+      },
+    },
   },
 }
 
@@ -2276,7 +2335,7 @@ const ragentQuietly = quietly(ragent)
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reportText}${optionalSection()}`
+  return `${telemetryLostSection(telemetryLost)}${reportText}${optionalSection()}${surfaceGateSection()}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -3192,7 +3251,11 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
 3. isLibrary: ${profile.usesLibrary ? 'true if this is a published library (has `[lib]`/looks publishable) — best effort.' : 'always false (not applicable to this language).'}
 4. securitySensitive: true if the diff touches ${profile.securityHints}.
 5. intent: ${intentArg ? `the caller provided: "${intentArg}". Refine it from the diff if needed.` : 'infer the change\'s purpose from the diff and any PR/commit messages; empty string if unclear.'}
-6. churn: list up to 5 files in the diff that git shows as frequently changed (\`git log --oneline -n 50 -- <file> | wc -l\` is a rough proxy). May be empty.`
+6. churn: list up to 5 files in the diff that git shows as frequently changed (\`git log --oneline -n 50 -- <file> | wc -l\` is a rough proxy). May be empty.
+7. surfaces: classify what the diff TOUCHES so the engine can skip a whole-repo lens whose defect class this diff cannot exhibit. Answer CONSERVATIVELY — if unsure, OMIT the field (or the individual key), or set it true; NEVER guess false. A false you are not sure of silences a lens.
+   - crossBoundarySymbol: does the diff change the signature/shape of an exported/\`pub\` symbol that unchanged code depends on?
+   - wireForm: does it change a serialized/wire/API form — a CRD schema, a serde type, an HTTP/OpenAPI shape, a protocol?
+   - invariantType: does it change a type that carries an invariant other code relies on?`
 }
 
 function negativeSpacePrompt(priorSummary, profile, plan) {
@@ -4072,6 +4135,23 @@ async function reviewProfile(profile) {
   // in the plan, so "permit" would have meant "nothing happens". Enforced in code, for the same
   // measured reason as the alwaysLenses loop above.
   for (const l of optionalRequested) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
+  // realm @nick/craft #102: surface gate — the LAST word on plan.lenses, sitting AFTER every floor
+  // that can add negative-space/compat/invariants (the scout's picks, the security/large floors, the
+  // optional request above). Each of those three fires only where the diff touches the surface its
+  // defect class needs; here that surface is read and the lens dropped only where the scout said the
+  // surface is absent. FAIL-OPEN: an undefined or true surface KEEPS the lens.
+  const surfaces = { ...(scout?.surfaces || {}) }
+  // Certain cross-boundary paths the scout can miss force their surfaces ON — never off, so this only
+  // ever adds a lens back, never removes one.
+  if (changedFiles.some(isContractOrSchemaPath)) { surfaces.crossBoundarySymbol = true; surfaces.wireForm = true }
+  const surfaceDropped = []
+  plan.lenses = plan.lenses.filter(lens => {
+    const need = SURFACE_GATED_LENSES[lens]
+    if (!need) return true
+    if (surfaces[need] === false) { surfaceDropped.push(lens); return false }
+    return true // fail-open: undefined/true keeps the lens
+  })
+  for (const l of surfaceDropped) surfaceGateDropped.add(l)
   // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. What
   // ran is recorded at dispatch (`runLens`) and subtracted by `optionalTally()`, because the plan is
   // not final at this point — see the tally's definition.
@@ -4095,6 +4175,9 @@ async function reviewProfile(profile) {
     // The single dispatch point for every lens on every path. Recording here — not at plan time — is
     // what makes the report and the run record physically unable to disagree with what happened.
     if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
+    // realm @nick/craft #102: mirrors the line above — a surface-gated lens that actually ran in ANY
+    // profile is subtracted from the reported/recorded "dropped" set by surfaceGateTally().
+    if (SURFACE_GATED_LENSES[lens]) surfaceGateDispatched.add(lens)
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
     const runGeneric = async () => {
       try {
@@ -4443,7 +4526,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
     for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
     const refusedOptional = named.filter(l => !admitted(l))
     if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
-    const followups = named.filter(l => admitted(l))
+    // realm @nick/craft #102: the surface gate BINDS the critic too, mirroring `admitted()` above and
+    // for the same reason. `candidates` is by construction the lenses NOT in the plan, so a lens the
+    // gate dropped is in it — and re-dispatching it here would buy back exactly the whole-repo lens the
+    // diff's absent surface said not to run, while `surfaceGateSection()` still reported it "not run"
+    // (the report would then LIE). `surfaceDropped` is the PER-PROFILE drop list, so a lens dropped in
+    // this profile does not wrongly suppress another profile's critic. A named-and-dropped lens is
+    // refused, carried to the reader as an uncovered surface, and kept out of the follow-up set.
+    for (const l of named) if (surfaceDropped.includes(l)) surfaceGateNamedByCritic.add(l)
+    const refusedSurface = named.filter(l => surfaceDropped.includes(l))
+    if (refusedSurface.length) log(`[${profile.id}] Completeness critic named surface-gated lens(es) ${refusedSurface.join(', ')} — NOT dispatched (the diff does not touch the surface their defect class needs); reported as uncovered.`)
+    const followups = named.filter(l => admitted(l) && !surfaceDropped.includes(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
@@ -4530,6 +4623,15 @@ function reviewRecord(extra) {
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
     // later — in analyze-runs, in a comparison between two runs — as a full one.
     optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
+    // realm @nick/craft #102: surfaceGate recorded for later analyze-runs measurement. Mirrors
+    // optionalPass so a cheap surface-gated run does not read later as one that never planned those
+    // whole-repo lenses: `dropped` is the load-bearing field, `namedByCritic` the lenses the
+    // completeness critic flagged that the gate deliberately kept dropped. Derived via
+    // surfaceGateTally(), not the raw per-profile set, so a lens dropped in one profile but dispatched
+    // in another (a mixed-diff run) is not double-counted as saved when it actually ran — the same fix
+    // surfaceGateSection() already carries. Run-level across profiles (same scope as optionalPass),
+    // sorted and unique.
+    surfaceGate: { dropped: surfaceGateTally().dropped.slice().sort(), namedByCritic: surfaceGateTally().dropped.filter(l => surfaceGateNamedByCritic.has(l)).sort() },
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
