@@ -546,7 +546,7 @@ const SURFACE_GATED_LENSES = { 'negative-space': 'crossBoundarySymbol', 'compat'
 // surfaces those paths imply ON — it never turns a surface off, so it can only ever ADD a lens back.
 function isContractOrSchemaPath(f) {
   const p = String(f || '')
-  return /(^|\/)crates\/[^/]*-contracts\//.test(p) || /(^|\/)crds\//.test(p)
+  return /(^|\/)crates\/(contracts|[^/]*-contracts)\//.test(p) || /(^|\/)crds\//.test(p)
 }
 
 // ================= The optional pass =================
@@ -4607,6 +4607,12 @@ function reviewRecord(extra) {
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
     // later — in analyze-runs, in a comparison between two runs — as a full one.
     optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
+    // realm @nick/craft #102: surfaceGate recorded for later analyze-runs measurement. Mirrors
+    // optionalPass so a cheap surface-gated run does not read later as one that never planned those
+    // whole-repo lenses: `dropped` is the load-bearing field, `namedByCritic` the lenses the
+    // completeness critic flagged that the gate deliberately kept dropped. Run-level across profiles
+    // (same scope as optionalPass), sorted and unique.
+    surfaceGate: { dropped: [...surfaceGateDropped].sort(), namedByCritic: [...surfaceGateNamedByCritic].sort() },
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
