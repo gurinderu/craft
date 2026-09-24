@@ -635,10 +635,17 @@ const optionalSection = () => {
 // lens is dropped when the diff does not touch the surface its defect class needs — that is an
 // ABSENCE of a result for those areas, NOT an approval of them.
 const surfaceGateDropped = new Set()
+// Mirrors optionalNamedByCritic: a surface-gated lens the completeness critic named as an uncovered
+// surface. It is NOT re-dispatched (the diff's absent surface is the deliberate boundary, and the
+// critic is the same model whose spend this pass took out of model hands), but the signal is real and
+// must reach the reader rather than die in the filter.
+const surfaceGateNamedByCritic = new Set()
 const surfaceGateSection = () => {
   const dropped = [...surfaceGateDropped]
   if (!dropped.length) return ''
+  const named = dropped.filter(l => surfaceGateNamedByCritic.has(l))
   return `\n\n## Not run — the diff does not touch the surface these lenses need\n⚠️ These whole-repo lenses were NOT dispatched, so this review makes NO statement about what they cover: ${dropped.join(', ')}. Each fires only when the diff touches the surface its defect class needs (a cross-boundary symbol, a wire/serialized form, an invariant-bearing type), and this diff does not. That is an absence of a result, not a clean one.\n`
+    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still NOT dispatched — the surface gate is the deliberate boundary, not something a model re-opens mid-run — so treat this as a visible gap, not a clean pass.\n` : '')
 }
 
 const PROFILES = {}
@@ -4503,7 +4510,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
     for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
     const refusedOptional = named.filter(l => !admitted(l))
     if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
-    const followups = named.filter(l => admitted(l))
+    // realm @nick/craft #102: the surface gate BINDS the critic too, mirroring `admitted()` above and
+    // for the same reason. `candidates` is by construction the lenses NOT in the plan, so a lens the
+    // gate dropped is in it — and re-dispatching it here would buy back exactly the whole-repo lens the
+    // diff's absent surface said not to run, while `surfaceGateSection()` still reported it "not run"
+    // (the report would then LIE). `surfaceDropped` is the PER-PROFILE drop list, so a lens dropped in
+    // this profile does not wrongly suppress another profile's critic. A named-and-dropped lens is
+    // refused, carried to the reader as an uncovered surface, and kept out of the follow-up set.
+    for (const l of named) if (surfaceDropped.includes(l)) surfaceGateNamedByCritic.add(l)
+    const refusedSurface = named.filter(l => surfaceDropped.includes(l))
+    if (refusedSurface.length) log(`[${profile.id}] Completeness critic named surface-gated lens(es) ${refusedSurface.join(', ')} — NOT dispatched (the diff does not touch the surface their defect class needs); reported as uncovered.`)
+    const followups = named.filter(l => admitted(l) && !surfaceDropped.includes(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
