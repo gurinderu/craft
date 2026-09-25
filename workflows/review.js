@@ -990,8 +990,9 @@ const LEDGER_ITEM = {
     title: { type: 'string' },
     why: { type: 'string' },
     // Optional (not in `required`): present only on an item whose `why` the loader script shortened for
-    // transport, and it points at the record the FULL `why` is recoverable from (the finding's birth
-    // record). The schema must PERMIT it so the loader's verbatim copy validates — additionalProperties
+    // transport, and it points at where the FULL `why` is recoverable — the finding's birth record: a
+    // finalized record filename, or a surviving partial-directory basename for an evidence-recovery item.
+    // The schema must PERMIT it so the loader's verbatim copy validates — additionalProperties
     // is false, so an emitted `whyRef` the schema did not name would null out the whole prior round.
     whyRef: {
       type: 'object',
