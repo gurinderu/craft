@@ -989,6 +989,20 @@ const LEDGER_ITEM = {
     ruleId: { type: 'string' },
     title: { type: 'string' },
     why: { type: 'string' },
+    // Optional (not in `required`): present only on an item whose `why` the loader script shortened for
+    // transport, and it points at where the FULL `why` is recoverable — the finding's birth record: a
+    // finalized record filename, or a surviving partial-directory basename for an evidence-recovery item.
+    // The schema must PERMIT it so the loader's verbatim copy validates — additionalProperties
+    // is false, so an emitted `whyRef` the schema did not name would null out the whole prior round.
+    whyRef: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['record', 'fp'],
+      properties: {
+        record: { type: 'string' },
+        fp: { type: 'string' },
+      },
+    },
   },
 }
 
@@ -5150,6 +5164,12 @@ const toLedgerEntry = (f, disposition, tier) => ({
   severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
   source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
   ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
+  // A CARRIED finding arrived from the prior-round transport with a SHORTENED `why` and a `whyRef`
+  // pointing at the record its FULL `why` lives in (its birth). Persist that pointer so the short-why/
+  // full-by-reference chain survives into the next round. A FRESH finding (born this round, straight
+  // from a lens) has no `whyRef`: its full `why` is persisted here verbatim and NO pointer is written.
+  ...(f.whyRef && typeof f.whyRef.record === 'string' && typeof f.whyRef.fp === 'string'
+    ? { whyRef: { record: f.whyRef.record, fp: f.whyRef.fp } } : {}),
 })
 // A tombstone for a resolved/retired prior: the same ledger shape, `disposition:'closed'`, but its
 // `why` is a fixed ORIGIN+round marker rather than the original rationale — a tombstone's only job is
@@ -5165,7 +5185,12 @@ const toLedgerEntry = (f, disposition, tier) => ({
 // the regression is missed in silence, the exact class the revision guard removes, only shifted a round
 // on. Minting every tombstone under the current basis closes it for BOTH paths (resolved and dismissed);
 // an incomparable CARRIED tombstone is dropped at assembly below, never re-minted here.
-const toTombstone = (f, origin = 'resolved') => ({ ...toLedgerEntry(f, 'closed', f.tier), fp: fingerprint(f), why: `${origin} in round ${thisRound}` })
+const toTombstone = (f, origin = 'resolved') => {
+  // A tombstone's `why` is a fixed ORIGIN+round marker, not a shortened rationale, so it owes no
+  // `whyRef` back-pointer — drop the one a carried source finding may bring in, keeping the row bare.
+  const { whyRef: _whyRef, ...entry } = toLedgerEntry(f, 'closed', f.tier)
+  return { ...entry, fp: fingerprint(f), why: `${origin} in round ${thisRound}` }
+}
 // The tombstone set is bounded against the border that actually governs the persisted
 // ledger: the single-call copy of the FINAL record refuses on the WHOLE ledger (~170 entries), live
 // rows AND tombstones together — NOT on tombstones alone. So count the live rows this ledger will carry
