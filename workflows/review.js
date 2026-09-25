@@ -4630,8 +4630,11 @@ function reviewRecord(extra) {
     // surfaceGateTally(), not the raw per-profile set, so a lens dropped in one profile but dispatched
     // in another (a mixed-diff run) is not double-counted as saved when it actually ran — the same fix
     // surfaceGateSection() already carries. Run-level across profiles (same scope as optionalPass),
-    // sorted and unique.
-    surfaceGate: { dropped: surfaceGateTally().dropped.slice().sort(), namedByCritic: surfaceGateTally().dropped.filter(l => surfaceGateNamedByCritic.has(l)).sort() },
+    // sorted and unique. `dispatched` is read directly off `surfaceGateDispatched` — the same
+    // dispatch-point Set `surfaceGateTally()` subtracts with, and the one source that survives the
+    // gateFailed early-exit — so analyze-runs can compute a share (saved / (saved + dispatched))
+    // without trusting the per-profile `dimensions` snapshot, which does not.
+    surfaceGate: { dropped: surfaceGateTally().dropped.slice().sort(), dispatched: [...surfaceGateDispatched].sort(), namedByCritic: surfaceGateTally().dropped.filter(l => surfaceGateNamedByCritic.has(l)).sort() },
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
