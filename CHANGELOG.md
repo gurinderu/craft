@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.20.0](https://github.com/gurinderu/craft/compare/v0.19.0...v0.20.0) (2026-09-25)
+
+
+### Features
+
+* **analyze:** report surface-gate savings from the run record ([#91](https://github.com/gurinderu/craft/issues/91)) ([ec6e396](https://github.com/gurinderu/craft/commit/ec6e396ce8c1db0a602a7e3e3b277119362a4954))
+* **review,analyze:** record dispatched gate lenses and report the surface-gate share ([#92](https://github.com/gurinderu/craft/issues/92)) ([2ca2eba](https://github.com/gurinderu/craft/commit/2ca2ebae32c69a5e42ecdeee1aa84368844d671e))
+* **review:** carry a short why in the prior-round transport, full why by reference ([#93](https://github.com/gurinderu/craft/issues/93)) ([331cc3e](https://github.com/gurinderu/craft/commit/331cc3ed1f61f4e9de26ded903142f8a0458ac52))
+* **review:** gate expensive whole-repo lenses on diff surface (fail-open) ([#89](https://github.com/gurinderu/craft/issues/89)) ([2939715](https://github.com/gurinderu/craft/commit/2939715d5e06e0cabaa0d983c2808b4fac548e44))
+
 ## [0.19.0](https://github.com/gurinderu/craft/compare/v0.18.1...v0.19.0) (2026-09-23)
 
 
