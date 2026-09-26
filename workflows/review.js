@@ -4600,6 +4600,14 @@ for (const p of active) results.push(await reviewProfile(p))
 const gateFailed = results.filter(r => r.gateStatus === 'fail')
 const mergedProvenance = results.map(r => `[${r.profile.id}] ${r.gateProvenance}`).join(' · ')
 const mergedGateStatus = gateFailed.length ? 'fail' : (results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown')
+// Run-level "did any profile complete its lens phase this run?". The merged `gate.status` is a
+// worst-of across profiles, so a mixed run where one profile failed its gate but another ran its
+// lenses and legitimately dropped a surface-gated lens carries `status:'fail'` with a real saving —
+// indistinguishable, on gate.status + dispatched alone, from a run where every profile aborted at the
+// gate before any lens ran. This is the one signal that tells them apart; analyze-runs reads it (as
+// `surfaceGate.lensesRan`) to stop excluding the former's real saving. TRUE when any profile finished
+// its lens phase (a gate-failed profile returns `ranLenses: []`, contributing nothing).
+const anyProfileRanLenses = results.some(r => (r.ranLenses || []).length > 0)
 
 // carriedChecks prints on EVERY verdict, red or green. A red-but-not-yours check that only appeared
 // on failure would be invisible exactly when the review passes — which is most of the time, and is
@@ -4648,7 +4656,7 @@ function reviewRecord(extra) {
     // dispatch-point Set `surfaceGateTally()` subtracts with, and the one source that survives the
     // gateFailed early-exit — so analyze-runs can compute a share (saved / (saved + dispatched))
     // without trusting the per-profile `dimensions` snapshot, which does not.
-    surfaceGate: { dropped: surfaceGateTally().dropped.slice().sort(), dispatched: [...surfaceGateDispatched].sort(), namedByCritic: surfaceGateTally().dropped.filter(l => surfaceGateNamedByCritic.has(l)).sort() },
+    surfaceGate: { dropped: surfaceGateTally().dropped.slice().sort(), dispatched: [...surfaceGateDispatched].sort(), namedByCritic: surfaceGateTally().dropped.filter(l => surfaceGateNamedByCritic.has(l)).sort(), lensesRan: anyProfileRanLenses },
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
