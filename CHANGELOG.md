@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/gurinderu/craft/compare/v0.20.0...v0.20.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **review:** surface-gate share keeps a passing profile's saving on a mixed gate-fail run ([#94](https://github.com/gurinderu/craft/issues/94)) ([1df9f95](https://github.com/gurinderu/craft/commit/1df9f95854e7f26e126fd7cf8f6c4677faf6e004))
+
 ## [0.20.0](https://github.com/gurinderu/craft/compare/v0.19.0...v0.20.0) (2026-09-25)
 
 
