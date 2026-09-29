@@ -2973,7 +2973,7 @@ function reReviewMemory(priorReason) {
   const reason = priorReason || null
   const chained = !reason
   const note = reason === 'no-branch'
-    ? 'Re-review memory is OFF: HEAD is detached, so there is no branch to chain review rounds on. Findings will not carry forward across runs. Check out a branch and re-review on it to enable round-to-round memory.'
+    ? 'Re-review memory is OFF: this run has no branch to chain review rounds on (usually a detached HEAD). Findings will not carry forward across runs. Check out a branch and re-review on it to enable round-to-round memory.'
     : null
   return { chained, reason, note }
 }
