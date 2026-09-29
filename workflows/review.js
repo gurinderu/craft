@@ -2345,11 +2345,21 @@ function noteTelemetryLoss(what, why) {
 // below); here it is bound to `ragent` so the retry-once behaviour still applies underneath.
 const ragentQuietly = quietly(ragent)
 
+// Re-review memory outcome, surfaced in the user-facing report (realm @nick/craft #104). A DETACHED
+// HEAD makes the prior-round lookup return 'no-branch', so the run silently becomes round 1 with no
+// chaining and no signal. `reReviewMemory` (below) sets this note; it is null on every run that chained
+// normally or is a genuine first review, so the section is empty then. Declared before `out()` so an
+// early exit that returns before the prior-round read sees a plain null, never a temporal-dead-zone.
+let reReviewMemoryNote = null
+// Prepended by `out()` — near the top, above the verdict — because a re-review that quietly forgot its
+// memory must be visible before the verdict, not buried after it.
+const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review memory off\n${reReviewMemoryNote}\n\n` : '')
+
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reportText}${optionalSection()}${surfaceGateSection()}`
+  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reportText}${optionalSection()}${surfaceGateSection()}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -2868,7 +2878,7 @@ function key(f) {
   return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
-// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict
+// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 function titleShingle(title) {
@@ -2950,6 +2960,22 @@ function dispositionFromTriage(v) {
 // carried (rejected/justified) findings are excluded by the caller, so they never reach here.
 function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
   return reviewVerdict([...stillOpen, ...regressed, ...neu])
+}
+
+// Whether re-review memory engaged this run, and — for the one silent-degradation case — a
+// user-facing note. `priorReason` is the prior-round lookup's non-found reason (empty/undefined when a
+// prior round WAS found and the run chained). A DETACHED HEAD makes findPriorRound return 'no-branch',
+// so the run silently becomes round 1 with no chaining and the operator gets no signal why; the note
+// is what makes that visible. Only 'no-branch' earns a note: a genuine first review on a branch
+// (no-candidate-rows, an ancestry rejection after a rebase, …) is normal, not a footgun, and stays
+// noteless, or the note fires on every first review and stops being read.
+function reReviewMemory(priorReason) {
+  const reason = priorReason || null
+  const chained = !reason
+  const note = reason === 'no-branch'
+    ? 'Re-review memory is OFF: this run has no branch to chain review rounds on (usually a detached HEAD). Findings will not carry forward across runs. Check out a branch and re-review on it to enable round-to-round memory.'
+    : null
+  return { chained, reason, note }
 }
 // <<< craft-inline
 // A re-review scans lenses only over the fix delta (prevHead...HEAD) by default — cheap, but a defect
@@ -3075,6 +3101,11 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // (`selectPriorRounds` skips `nested` rows). The run that has a history is the top-level one.
 // Unlike the condition this replaces, the skip is announced — a silent skip was that defect.
 let priorRound = null
+// The prior-round lookup's non-found reason, held here because `priorRound` is nulled on a miss below.
+// It is the reason the run did NOT chain to a prior round; null means it DID (reReviewMemory reads null
+// as "chained"). fresh and nested never look up a prior round, so they are their own reasons — not
+// "chained", and not the detached-HEAD footgun either (realm @nick/craft #104).
+let priorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
 if (!freshArg && viaArg) {
   log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
 }
@@ -3095,6 +3126,9 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // command replaced: the first re-review of a branch whose rows predate the absolute-path key
   // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
   if (!priorRound?.found) {
+    // Capture WHY there is no prior round BEFORE `priorRound` is nulled below: the re-review memory
+    // outcome (chained? and the detached-HEAD note) is derived from it (realm @nick/craft #104).
+    priorReason = priorRound?.reason || 'no-prior-round'
     if (priorRound?.reason) log(`No prior round: ${priorRound.reason}`)
     // A read that FAILED is the same lost-record class as a write that failed, and its silence is
     // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
@@ -3126,6 +3160,16 @@ if (priorRound && ledgerTruncated(priorRound)) {
 }
 if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${flattenField(priorRound.head)} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
 else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
+
+// realm @nick/craft #104: whether re-review memory engaged, and the note for the one case that fails
+// silently — a detached HEAD, where the lookup returns 'no-branch' and the run degrades to round 1
+// with no chaining. Recorded on the run record (reReview) and, when the note is set, shown at the top
+// of the user-facing report via reReviewMemorySection(). Derived once here, near the round it explains.
+const reReview = reReviewMemory(priorReason)
+if (reReview.note) {
+  reReviewMemoryNote = reReview.note
+  log(`⚠️ ${reReview.note}`)
+}
 
 // Re-review coverage guards (see ledgerDegraded / shouldFullRescan). thisRound is the round number we
 // are about to record; reused for the record below.
@@ -4661,6 +4705,10 @@ function reviewRecord(extra) {
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
     preflightProbeViolations: results.flatMap(r => (r.probeViolations || []).map(v => `[${r.profile.id}] ${v}`)),
+    // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
+    // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
+    // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
+    reReview: { chained: reReview.chained, reason: reReview.reason },
     outputTokens: budget.spent(),
     ...extra,
   }
