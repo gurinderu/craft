@@ -738,7 +738,7 @@ PROFILES.nix = {
 // language roster they need is the mutable PROFILES table above, so it is passed in as an argument
 // rather than read: that argument is exactly what keeps them extractable.
 
-// >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote telemetryLostSection
+// >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote verdictSuffix telemetryLostSection
 // The human-readable roster of what the engine can review, named in every coverage message so a
 // caller reading "nothing was reviewed" also learns what would have been.
 function supportedLangLabel(profiles) {
@@ -897,6 +897,16 @@ function nothingToReviewMessage(fileCount) {
 function uncoveredNotRunNote(material) {
   const shown = material.slice(0, 5).join(', ')
   return `${material.length} changed file(s) matched no language profile and were NOT reviewed (${shown}${material.length > 5 ? `, +${material.length - 5} more` : ''})`
+}
+
+// The verdict suffix names its cause: a genuine not-run (a scout/lens/critic died, scope dropped,
+// or the floor premise was revoked) is INCOMPLETE — re-running helps; a coverage hole (changed files
+// no profile covers) is PARTIAL COVERAGE — a re-run will not fix it. Both mean "not a clean verdict";
+// analyze-runs must treat both as non-clean (see its isIncomplete).
+function verdictSuffix({ notRun = [], coverageNotes = [], floorPremiseHeld = true } = {}) {
+  if (notRun.length || !floorPremiseHeld) return ' (INCOMPLETE)'
+  if (coverageNotes.length) return ' (PARTIAL COVERAGE)'
+  return ''
 }
 
 // ---- telemetry honesty ----
@@ -5071,9 +5081,13 @@ const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.
 // step so earlier tombstones are carried forward, exactly as carried priors (which make
 // `hasAdjudicated` true) already are — otherwise the memory evaporates on the first quiet round.
 if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated && !priorTombstones.length) {
-  await logRun(reviewRecord({ verdict: `Approve${incompleteNotes.length ? ' (INCOMPLETE)' : ''}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
-  const verdictLine = incompleteNotes.length
-    ? `⚠️ Approve (INCOMPLETE) — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language; anything else in the list is a failure to fix and re-run.`
+  // floorPremiseHeld is not yet known at this early exit (it is re-read after synthesis), so the
+  // suffix here rests on notRun + coverageNotes alone: INCOMPLETE for a genuine not-run, PARTIAL
+  // COVERAGE for a coverage hole a re-run will not fix.
+  const earlySuffix = verdictSuffix({ notRun, coverageNotes })
+  await logRun(reviewRecord({ verdict: `Approve${earlySuffix}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
+  const verdictLine = earlySuffix
+    ? `⚠️ Approve${earlySuffix} — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language${notRun.length ? '; anything else in the list is a failure to fix and re-run' : ''}.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
   // `scopeSection()` here too. The comment on its declaration promises it reaches "whichever report
   // is returned — every early exit included", and this exit was the one that did not: a run whose
@@ -5104,6 +5118,14 @@ const rereviewData = isRereview ? {
   // defect was "carried forward unchanged" while listing the same defect under New.
   regressed: adjudicated.regressed, carried: adjudicated.carried, retired: adjudicated.retired, neu: confirmed,
 } : null
+// The verdict-line clause the synthesis model is told to append when coverage was not complete. It
+// names the SAME cause the record string names: a genuine not-run is INCOMPLETE (re-running helps),
+// a coverage hole is PARTIAL COVERAGE (a re-run will not fix it). floorPremiseHeld is deliberately
+// not consulted here — the synthesis prompt is composed before the verdict exists, and the revoked-
+// floor cause is appended afterward by markVerdictIncomplete.
+const incompleteClause = incompleteNotes.length
+  ? ` Append " · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.`
+  : ''
 const report = await ragent(
   `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
 
@@ -5118,7 +5140,7 @@ CALIBRATE severities across the Confirmed set so the same kind of issue is not C
 DEDUPLICATE across lenses: findings that describe the same underlying defect (same file, same/overlapping lines, fixes that collapse into one edit) MUST be merged into ONE entry — keep the highest severity and the clearest why, credit the other lens in one clause. Never list per-lens duplicates as separate findings.
 
 ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
-1. \`## Verdict\` — driven ONLY by Still-open + Regressed + New Confirmed findings (Block on any Critical/High; Warning on Medium; else Approve). Resolved and Carried NEVER change the verdict.${incompleteNotes.length ? ` Append " · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
+1. \`## Verdict\` — driven ONLY by Still-open + Regressed + New Confirmed findings (Block on any Critical/High; Warning on Medium; else Approve). Resolved and Carried NEVER change the verdict.${incompleteClause}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## ✅ Resolved\` — prior findings the fixes closed (one line each); omit if empty.
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
@@ -5128,7 +5150,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
-1. \`## Verdict\` — one line (emoji + reason).${incompleteNotes.length ? ` Append " · ⚠️ INCOMPLETE — coverage was partial: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.` : ''}
+1. \`## Verdict\` — one line (emoji + reason).${incompleteClause}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
 4. \`## Suspected (needs confirmation)\` — findings a verifier DID examine and could not confirm; same format; omit the section if empty.
@@ -5301,7 +5323,7 @@ for (const shard of shardLedger(reviewLedger)) {
   await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
 }
 await logRun(reviewRecord({
-  verdict: recordVerdict + (incompleteNotes.length || !floorPremiseHeld ? ' (INCOMPLETE)' : ''),
+  verdict: recordVerdict + verdictSuffix({ notRun, coverageNotes, floorPremiseHeld }),
   savedByFloor,
   // Recorded as its own field, not inferred from the two lists: "the saving was legitimate" and
   // "the saving turned into a hole" are the question any later count of this economy has to ask
@@ -5340,7 +5362,7 @@ function fallbackReport() {
     // `notRun` LIVE, not the `incompleteNotes` snapshot taken before the verdict existed: the
     // revoked-premise path pushes into `notRun` afterwards, and a fallback rendered from the stale
     // snapshot would print a clean verdict over findings the same run has just declared unchecked.
-    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ INCOMPLETE — coverage was partial: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
+    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
