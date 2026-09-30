@@ -2888,7 +2888,7 @@ function key(f) {
   return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
-// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory
+// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory branchFromAbbrevRef
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 function titleShingle(title) {
@@ -2986,6 +2986,17 @@ function reReviewMemory(priorReason) {
     ? 'Re-review memory is OFF: this run has no branch to chain review rounds on (usually a detached HEAD). Findings will not carry forward across runs. Check out a branch and re-review on it to enable round-to-round memory.'
     : null
   return { chained, reason, note }
+}
+
+// `git rev-parse --abbrev-ref HEAD` prints the literal string `HEAD` on a detached HEAD, which is
+// NOT a branch name. Map it to '' so a detached run files no branch: findPriorRound/selectPriorRounds
+// then report `no-branch` and the run does not chain review rounds — filing "HEAD" as a branch would
+// pool every unrelated detached context under one shared key. A real branch name (and '' when git
+// could not resolve one) passes through unchanged. The one place this rule lives: gitIdentity
+// (lib/craft-log-run.mjs) and the review engine's detect capture (workflows/review.js) both route
+// their branch value through here (realm @nick/craft #104).
+function branchFromAbbrevRef(ref) {
+  return ref === 'HEAD' ? '' : ref
 }
 // <<< craft-inline
 // A re-review scans lenses only over the fix delta (prevHead...HEAD) by default — cheap, but a defect
@@ -3088,7 +3099,12 @@ const changedFiles = (Array.isArray(detected?.files) ? detected.files : []).map(
 // against the code by the intent lens. The one-line inferred `intent` is not enough: precise
 // claims ("never fails on X", "the only way to Y", "idempotent no-op") live in the full body.
 const spec = (typeof detected?.spec === 'string' ? detected.spec : '').slice(0, 4000)
-const branch = (typeof detected?.branch === 'string' ? detected.branch : '').trim()
+// The detect agent runs `git rev-parse --abbrev-ref HEAD`, which prints the literal string "HEAD" on
+// a DETACHED HEAD — a non-branch. Route it through the same rule gitIdentity applies (branchFromAbbrevRef,
+// inlined above from lib/run-record.mjs) so a detached run resolves to '' BEFORE this value becomes both
+// the record branch (below) and the prior-round `--branch` flag: a non-empty "HEAD" would pass the
+// no-branch guard and wrongly chain unrelated detached contexts to each other (realm @nick/craft #104).
+const branch = branchFromAbbrevRef((typeof detected?.branch === 'string' ? detected.branch : '').trim())
 const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 
 // Round detection: find the newest prior `review` run for this branch, and accept it as the prior
