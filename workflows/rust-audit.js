@@ -934,6 +934,13 @@ function verdictLine(report) {
 
 function reviewResult(dimension, report) {
   const line = verdictLine(report)
+  // A coverage-hole clause voids an otherwise-green verdict whether the engine spelled it INCOMPLETE
+  // (a genuine not-run) or PARTIAL COVERAGE (files no language profile covered) — review.js writes both
+  // via verdictSuffix (lib/review-coverage.mjs), and the model may drop the ⚠️ glyph when it rewrites
+  // the verdict line, so this classifies on the WORDS, not the emoji. It matches both markers, the same
+  // widening lib/analyze-runs.mjs's isIncomplete carries, so this reader and the run store never
+  // disagree — and it drives BOTH the verdict step below and the summary, which can then never diverge.
+  const incomplete = /INCOMPLETE|PARTIAL COVERAGE/i.test(line || '')
   // SEVERITY FIRST, then coverage — the same rule lib/analyze-runs.mjs states and implements for the
   // run store, and the two must not disagree. A `⛔ Block (INCOMPLETE)` is a block: partial coverage
   // cannot un-find a finding that was already made, so it must not be downgraded to Warning. Only an
@@ -942,13 +949,11 @@ function reviewResult(dimension, report) {
   const verdict = line == null ? 'Warning'
     : /⛔|Block/.test(line) ? 'Block'
       : /⚠️|Warning/.test(line) ? 'Warning'
-        : /INCOMPLETE/i.test(line) ? 'Warning'
+        : incomplete ? 'Warning'
           : /✅|Approve/.test(line) ? 'Approve' : 'Warning'
-  // The summary must follow the SAME classification as the verdict. A bare INCOMPLETE test here
-  // described a `⛔ Block (INCOMPLETE)` as "uncovered, not clean" — one dimension reported both as a
-  // Block and as a mere absence of coverage. Severity first here too: a Block is a Block, and the
-  // partial coverage is a clause on it, never a replacement for it.
-  const incomplete = /INCOMPLETE/i.test(line || '')
+  // The summary reads the SAME `incomplete` flag as the verdict above, so the two can never diverge on
+  // it: a `⛔ Block (INCOMPLETE)` is a Block AND carries the partial-coverage clause, never a bare
+  // "uncovered" that would report one dimension as both a Block and a mere absence of coverage.
   const summary = line == null
     ? 'Deep review verdict could not be read — this dimension is unverified, not clean.'
     : verdict === 'Block'
