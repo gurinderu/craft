@@ -602,31 +602,41 @@ const optionalRequested = optionalRequest.lenses
 // plan the moment it was built — but the plan is not final there: the completeness critic composes
 // lenses much later, on the synthesis phase. Any such later road made the snapshot a LIE in the one
 // direction that matters, printing "not looked at" over a lens whose findings were in the report.
-// So the two sets below record only what cannot be second-guessed: which optional lenses this run
-// could have bought at all (filled by each profile's planner), and which ones were actually
-// DISPATCHED (recorded by `runLens`, the single dispatch point for every lens on every path —
-// planned, resurrected, or critic-composed). `optionalTally()` subtracts. Sets, because two active
-// profiles may both carry the same optional lens and the reader wants the lens named once.
-const optionalInScope = new Set()
+// So the tally rests only on what cannot be second-guessed: which optional lenses each profile past
+// its mechanical gate could have bought at all (its `optionalScope`, returned on `results`), and
+// which ones were actually DISPATCHED (recorded by `runLens`, the single dispatch point for every
+// lens on every path — planned, resurrected, or critic-composed). optionalTallyFrom
+// (lib/profile-merge.mjs) subtracts, naming each lens once across profiles.
 const optionalDispatched = new Set()
 // An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
 // critic is the same model whose spend this pass deliberately took out of model hands), but the
 // signal is real and must reach the reader rather than die in the filter.
 const optionalNamedByCritic = new Set()
-const optionalTally = () => {
-  const inScope = [...optionalInScope]
-  return { ran: inScope.filter(l => optionalDispatched.has(l)), skipped: inScope.filter(l => !optionalDispatched.has(l)) }
-}
+const optionalTally = () => optionalTallyFrom(results, optionalDispatched, optionalRequested)
 // Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
-// one and the mechanical fallback. The earliest exits (no diff, red gate) run before any lens is
-// planned, so the list is empty there and no section is emitted; those reports already say plainly
-// that nothing was reviewed. It says "absence of a result", never "no problems found".
+// one and the mechanical fallback. The earliest exits (no diff) run before any profile is planned, so
+// the list is empty there. A red-gated profile contributes only lenses the caller explicitly requested
+// (it aborts before any lens could run), so a default run on which every profile carrying optional
+// lenses is red emits no section; a passing profile on a mixed red run still contributes its whole
+// scope, and the section then names the gate first. It says "absence of a result", never "no
+// problems found".
 const optionalSection = () => {
   const skipped = optionalTally().skipped
   if (!skipped.length) return ''
   const named = skipped.filter(l => optionalNamedByCritic.has(l))
+  // A red mechanical gate blocks the whole review on its own, so "buy them with optional=…" is the
+  // wrong next step there: lenses the caller already requested need no new request, and the rest are
+  // beside the point until the gate is green (realm @nick/craft #109).
+  if (failedProfiles(results).length) {
+    const unrequested = skipped.filter(l => !optionalRequested.includes(l))
+    // The critic only ever names an unrequested lens, so it is already in the one optional= offer
+    // above; here it is a signal for the re-run, not a second instruction.
+    const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was not dispatched; once the gate is green, weigh including it in that re-run.\n` : ''
+    return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n` + criticLine
+  }
+  const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : ''
   return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
-    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
+    + criticLine
 }
 
 // realm @nick/craft #102. Mirrors optionalSection(): derived from the per-profile results of
@@ -641,7 +651,7 @@ const optionalSection = () => {
 const results = []
 // The merge and the record's `gate` / `surfaceGate` fields live in lib/profile-merge.mjs (tested
 // there) and are pasted in by the craft-inline gate.
-// >>> craft-inline lib/profile-merge.mjs failedProfiles mergeGateStatus profilesRanLenses gateRecord savedSurfaceDrops surfaceGateRecord
+// >>> craft-inline lib/profile-merge.mjs failedProfiles mergeGateStatus profilesRanLenses gateRecord passedProfiles savedSurfaceDrops surfaceGateRecord optionalTallyFrom
 // The profiles whose mechanical gate is red. One rule, shared by the early Block exit and the
 // recorded gate status, so the run that aborted and the record that says it aborted cannot disagree.
 function failedProfiles(results) {
@@ -672,13 +682,20 @@ function gateRecord(results) {
   }
 }
 
+// The profiles that got PAST their mechanical gate. What a red profile planned — surface-gate
+// drops, optional scope — was never in play: it aborts before any lens can run, so nothing it
+// planned is a saving or a purchase the run declined.
+function passedProfiles(results) {
+  return results.filter(r => r.gateStatus !== 'fail')
+}
+
 // The run-level surface-gate saving (realm @nick/craft #102): the lenses the gate dropped in some
 // profile that got PAST its mechanical gate, minus any lens that was dispatched in another profile.
 // A gate-failed profile's drops are not savings — none of its lenses could have run — so counting
 // them on a mixed run would over-claim. Each profile result carries its own `surfaceDropped`.
 function savedSurfaceDrops(results, dispatched) {
   const ran = new Set(dispatched)
-  const dropped = new Set(results.filter(r => r.gateStatus !== 'fail').flatMap(r => r.surfaceDropped || []))
+  const dropped = new Set(passedProfiles(results).flatMap(r => r.surfaceDropped || []))
   return [...dropped].filter(l => !ran.has(l)).sort()
 }
 
@@ -693,6 +710,21 @@ function surfaceGateRecord(results, { dispatched, namedByCritic }) {
     namedByCritic: dropped.filter(l => named.has(l)),
     lensesRan: profilesRanLenses(results),
   }
+}
+
+// The record's and the report's optional-pass tally (realm @nick/craft #109): the optional lenses in
+// scope (`optionalScope`, in profile order then roster order, each named once), split by whether they were
+// dispatched anywhere. A profile past its gate contributes its whole scope. A red profile contributes
+// only what the caller REQUESTED: an unrequested lens there was never a purchase the run declined,
+// but a requested one was asked for and not delivered, and must still read as not looked at.
+// Derived, never accumulated: the plan is not final when a profile is planned (the completeness
+// critic composes lenses later), so only the dispatch point says what ran.
+function optionalTallyFrom(results, dispatched, requested = []) {
+  const ran = new Set(dispatched)
+  const asked = new Set(requested)
+  const passed = new Set(passedProfiles(results))
+  const inScope = [...new Set(results.flatMap(r => (r.optionalScope || []).filter(l => passed.has(r) || asked.has(l))))]
+  return { ran: inScope.filter(l => ran.has(l)), skipped: inScope.filter(l => !ran.has(l)) }
 }
 // <<< craft-inline
 // Mirrors optionalDispatched: a surface-gated lens actually DISPATCHED in some profile, recorded by
@@ -4294,10 +4326,10 @@ async function reviewProfile(profile) {
     if (surfaces[need] === false) { surfaceDropped.push(lens); return false }
     return true // fail-open: undefined/true keeps the lens
   })
-  // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. What
-  // ran is recorded at dispatch (`runLens`) and subtracted by `optionalTally()`, because the plan is
-  // not final at this point — see the tally's definition.
-  for (const l of profile.lenses) if (OPTIONAL_LENSES.includes(l)) optionalInScope.add(l)
+  // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. It rides
+  // back on the profile's result; what ran is recorded at dispatch (`runLens`) and subtracted by
+  // `optionalTally()`, because the plan is not final at this point — see the tally's definition.
+  const optionalScope = profile.lenses.filter(l => OPTIONAL_LENSES.includes(l))
   log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
@@ -4438,7 +4470,7 @@ async function reviewProfile(profile) {
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, surfaceDropped, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
+    return { profile, plan, surfaceDropped, optionalScope, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -4624,7 +4656,7 @@ async function reviewProfile(profile) {
     notRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, surfaceDropped, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '', probeViolations }
+    return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '', probeViolations }
   }
 
   // ---- Verify ----
@@ -4717,7 +4749,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, surfaceDropped, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
+  return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
 }
 
 // ================= Run each active profile, then merge =================

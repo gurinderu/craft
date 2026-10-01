@@ -213,7 +213,8 @@ Their findings are real and worth having, so they are not deleted; they are boug
 `optional=true` (or a subset: `optional=performance,api-boundary`). Neither `strict` nor the
 security-sensitive floor turns the pass on or off — the request is the only switch. A run that
 skipped it says so in its report and on its run record: that is an absence of a result, never a
-clean one.
+clean one. A run stopped by a red mechanical gate lists only the optional lenses you requested —
+the gate, not the optional pass, is why the rest did not run.
 
 The `ownership` lens was retired: across three independent runs it produced no High finding at all,
 against hundreds of suspicions verification would not confirm. The `OWN-*` rules stay in the rubric
