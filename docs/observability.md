@@ -222,3 +222,40 @@ ship. The cost is real and named here so the next editor is not surprised by it:
 each of the three functions grew, and none of the three is easier to change than
 it was. The extraction is a separate piece of work on its own branch, where a
 behaviour-preserving move can be checked as one.
+
+## Does a re-review get cheaper? — the round-pair measurement
+
+`node lib/analyze-runs.mjs --round-pairs [store]` pairs consecutive top-level `review` rounds of one
+project and branch (round n+1 with the newest round n before it) and compares them **only** when
+nothing but re-review memory differs between them. Each pair that fails a condition is listed with the
+reason and no numbers: a round whose engine is unknown, or a different engine; a moved `head`; a dirty
+working tree on either side; a round that did not run in full (gate failed, lenses not run, no
+verification); a round that scanned only a delta (`lensScope: 'delta'` — on an unchanged head that is an
+empty diff); a different configuration (languages, lenses, optional pass, `strict`); a later round whose
+memory was not in full effect (`reReview` not chained, its prior ledger degraded or rebuilt from a stalled
+run, fingerprints not comparable, tombstones dropped); a later round whose recorded prior (`reReview.priorRound`
+/ `priorHead`) is not this round; a different head, base or path; and no real `cost` (from
+`craft-log-run enrich-cost`) on both, or a partial one (`cost.skipped`). The totals are an unweighted sum
+of token kinds, so the report also prints output, input and cache-read deltas — read those as money, not
+the ratio alone. A record of the wrong shape is judged or named, never crashes the report. The
+configuration compared includes the lenses the completeness critic added and a digest of the `intent`
+text.
+
+Known limits, by construction: `head` is read when the record is written, after the run, so the tree must
+stay untouched during and between the rounds (a clean tree on both is checked; an edit made and undone
+inside a run is not); and the later round's prior is confirmed by its round number and head, not by
+the identity of the record it read, so two round-n records at the same head cannot be told apart.
+And a later round run soon after the first reads a prompt cache the first one warmed: the report prints
+how many minutes apart the rounds were next to the per-kind deltas, so read input and cache-write
+deltas with that in mind. `enrich-cost` records the run directory it summed (`cost.source`), and a pair
+whose two costs come from the same directory, or do not say, is not compared.
+
+To take the measurement: on a clean working tree, run a review on a branch; then, **without committing
+or editing anything**, run it again with `fullEvery=1` so the second round scans the full diff too;
+enrich both records with `enrich-cost --run-dir <the workflow run's transcript directory> --record
+<record>`; and run `--round-pairs`.
+
+Known gap: `enrich-cost` sums `agent-*.jsonl` transcripts in the workflow run directory. Claude Code
+2.1.286 on Linux was observed to write only `agent-*.meta.json` and `journal.jsonl` there, so no record
+can be enriched on that harness yet, and every pair reads `no real cost`.
+
