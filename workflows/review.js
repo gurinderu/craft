@@ -4666,16 +4666,19 @@ Also note in one line anything else likely missed (a changed file no finding tou
 const results = []
 for (const p of active) results.push(await reviewProfile(p))
 
-// A red gate on any active language blocks the whole review (findings can't be trusted on a broken tree).
-const gateFailed = results.filter(r => r.gateStatus === 'fail')
-const mergedProvenance = results.map(r => `[${r.profile.id}] ${r.gateProvenance}`).join(' · ')
-// The merge itself lives in lib/profile-merge.mjs (tested there) and is pasted in by the
-// craft-inline gate; analyze-runs reads `anyProfileRanLenses` as `surfaceGate.lensesRan`.
-// >>> craft-inline lib/profile-merge.mjs mergeGateStatus profilesRanLenses
+// The merge and the record's `gate` / `surfaceGate` fields live in lib/profile-merge.mjs (tested
+// there) and are pasted in by the craft-inline gate.
+// >>> craft-inline lib/profile-merge.mjs failedProfiles mergeGateStatus profilesRanLenses gateRecord surfaceGateRecord
+// The profiles whose mechanical gate is red. One rule, shared by the early Block exit and the
+// recorded gate status, so the run that aborted and the record that says it aborted cannot disagree.
+function failedProfiles(results) {
+  return results.filter(r => r.gateStatus === 'fail')
+}
+
 // Worst-of across profiles: any red gate blocks the whole review (findings can't be trusted on a
 // broken tree); green only when every profile is green; anything else is unknown.
 function mergeGateStatus(results) {
-  if (results.some(r => r.gateStatus === 'fail')) return 'fail'
+  if (failedProfiles(results).length) return 'fail'
   return results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown'
 }
 
@@ -4684,9 +4687,32 @@ function mergeGateStatus(results) {
 function profilesRanLenses(results) {
   return results.some(r => (r.ranLenses || []).length > 0)
 }
+
+// The record's `gate` field: merged status, per-profile provenance, and red-but-not-ours checks.
+function gateRecord(results) {
+  return {
+    status: mergeGateStatus(results),
+    provenance: results.map(r => `[${r.profile.id}] ${r.gateProvenance}`).join(' · '),
+    carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)),
+  }
+}
+
+// The record's `surfaceGate` field (realm @nick/craft #102): the run-level dropped / dispatched /
+// critic-named lens sets, sorted, plus `lensesRan` from the profile results.
+function surfaceGateRecord(results, { dropped, dispatched, namedByCritic }) {
+  return {
+    dropped: [...dropped].sort(),
+    dispatched: [...dispatched].sort(),
+    namedByCritic: [...namedByCritic].sort(),
+    lensesRan: profilesRanLenses(results),
+  }
+}
 // <<< craft-inline
-const mergedGateStatus = mergeGateStatus(results)
-const anyProfileRanLenses = profilesRanLenses(results)
+// A red gate on any active language blocks the whole review (findings can't be trusted on a broken tree).
+const gateFailed = failedProfiles(results)
+const runGate = gateRecord(results)
+const mergedProvenance = runGate.provenance
+const mergedGateStatus = runGate.status
 
 // carriedChecks prints on EVERY verdict, red or green. A red-but-not-yours check that only appeared
 // on failure would be invisible exactly when the review passes — which is most of the time, and is
@@ -4720,7 +4746,7 @@ function reviewRecord(extra) {
     uncoveredFiles,
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
     scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
-    gate: { status: mergedGateStatus, provenance: mergedProvenance, carriedChecks: results.flatMap(r => (r.carriedChecks || []).map(c => `[${r.profile.id}] ${c}`)) },
+    gate: runGate,
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
     // later — in analyze-runs, in a comparison between two runs — as a full one.
     optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
@@ -4735,7 +4761,7 @@ function reviewRecord(extra) {
     // dispatch-point Set `surfaceGateTally()` subtracts with, and the one source that survives the
     // gateFailed early-exit — so analyze-runs can compute a share (saved / (saved + dispatched))
     // without trusting the per-profile `dimensions` snapshot, which does not.
-    surfaceGate: { dropped: surfaceGateTally().dropped.slice().sort(), dispatched: [...surfaceGateDispatched].sort(), namedByCritic: surfaceGateTally().dropped.filter(l => surfaceGateNamedByCritic.has(l)).sort(), lensesRan: anyProfileRanLenses },
+    surfaceGate: surfaceGateRecord(results, { dropped: surfaceGateTally().dropped, dispatched: surfaceGateDispatched, namedByCritic: surfaceGateTally().dropped.filter(l => surfaceGateNamedByCritic.has(l)) }),
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
