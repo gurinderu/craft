@@ -2461,12 +2461,23 @@ let reReviewMemoryNote = null
 // Prepended by `out()` — near the top, above the verdict — because a re-review that quietly forgot its
 // memory must be visible before the verdict, not buried after it.
 const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review memory off\n${reReviewMemoryNote}\n\n` : '')
+// realm @nick/craft #113: a profile whose dedicated reviewer agent is not registered in this session
+// (typically: the craft plugin is not enabled in this project) runs every lens on the generic subagent.
+// The review still happens — but without the agent's rubric, and the operator otherwise sees only a
+// failed probe. Stated above the verdict, with the fix; recorded on the run record.
+const reviewerAgentUnavailable = []
+function noteReviewerAgentMissing(profile) {
+  if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent })
+}
+const reviewerAgentSection = () => (reviewerAgentUnavailable.length
+  ? `## ⚠️ Reviewer agent unavailable\n${reviewerAgentUnavailable.map(x => `- ${x.id}: \`${x.agent}\` is not registered in this session, so every ${x.id} lens ran on the generic subagent, without that agent's rubric — this review is weaker than a normal one, not broken.`).join('\n')}\nEnable the plugin in this project (\`/plugin install craft@craft\`, project or local scope) and re-run to review with it.\n\n`
+  : '')
 
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reportText}${optionalSection()}${surfaceGateSection()}`
+  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -4481,7 +4492,7 @@ async function reviewProfile(profile) {
       // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
       // as "died without an error" — and any sibling slice could overwrite it.
       if (!/not found/i.test(msg)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
-      reviewerAgentMissing = true
+      reviewerAgentMissing = true; noteReviewerAgentMissing(profile)
       log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
       return await runGeneric()
     }
@@ -4589,7 +4600,7 @@ async function reviewProfile(profile) {
       await agent('Reply with the single word: OK.', { label: `probe:${profile.id}`, phase: 'Gate', model: 'haiku', effort: 'low', agentType: profile.reviewerAgent })
     } catch (e) {
       if (/not found/i.test(String((e && e.message) || e))) {
-        reviewerAgentMissing = true
+        reviewerAgentMissing = true; noteReviewerAgentMissing(profile)
         log(`[${profile.id}] reviewer agent '${profile.reviewerAgent}' not registered — all lenses will use the generic subagent`)
       }
     }
@@ -4937,6 +4948,7 @@ function reviewRecord(extra) {
     lensScope: fullRescan ? 'full' : 'delta',
     strict,
     fullEvery,
+    reviewerAgentUnavailable: reviewerAgentUnavailable.map(x => x.id),
     // Against which base and path the diff was taken, which lenses the critic added on top of the plan,
     // and a digest of the caller's intent text (it feeds the intent lens) — all of which change what a
     // round costs without being memory (lib/round-pairs.mjs, realm @nick/craft #97).
