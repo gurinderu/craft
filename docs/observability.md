@@ -245,6 +245,10 @@ Known limits, by construction: `head` is read when the record is written, after 
 stay untouched during and between the rounds (a clean tree on both is checked; an edit made and undone
 inside a run is not); and the later round's prior is confirmed by its round number and head, not by
 the identity of the record it read, so two round-n records at the same head cannot be told apart.
+And a later round run soon after the first reads a prompt cache the first one warmed: the report prints
+how many minutes apart the rounds were next to the per-kind deltas, so read input and cache-write
+deltas with that in mind. `enrich-cost` records the run directory it summed (`cost.source`), and a pair
+whose two costs come from the same directory, or do not say, is not compared.
 
 To take the measurement: on a clean working tree, run a review on a branch; then, **without committing
 or editing anything**, run it again with `fullEvery=1` so the second round scans the full diff too;

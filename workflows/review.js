@@ -4888,6 +4888,11 @@ const carriedLine = (() => {
     : ''
 })()
 
+// A short, stable digest of a text, for recording WHAT a round was given without carrying the text.
+function digest(text) {
+  return [...String(text ?? '')].reduce((h, c) => ((h * 31) + c.charCodeAt(0)) >>> 0, 7).toString(16)
+}
+
 function reviewRecord(extra) {
   return {
     schemaVersion: 1,
@@ -4901,7 +4906,7 @@ function reviewRecord(extra) {
     languages: active.map(p => p.id),
     uncoveredFiles,
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
-    scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes })),
+    scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes, securitySensitive: !!r.plan.securitySensitive, isLibrary: !!r.plan.isLibrary })),
     gate: runGate,
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
     // later — in analyze-runs, in a comparison between two runs — as a full one.
@@ -4938,7 +4943,11 @@ function reviewRecord(extra) {
     base: baseRef || '',
     path: pathArg || '',
     criticFollowups: results.flatMap(r => (r.criticFollowupLenses || []).map(l => `${r.profile.id}:${l}`)).sort(),
-    intentDigest: [...intentArg].reduce((h, c) => ((h * 31) + c.charCodeAt(0)) >>> 0, 7).toString(16),
+    intentDigest: digest(intentArg),
+    // The author's description that reaches every lens (PR title/body or commit messages), and the
+    // changed-file set the diff was taken over — both fetched each round, both change what a round does.
+    specDigest: digest(spec),
+    filesDigest: digest([...changedFiles].sort().join('\n')),
     outputTokens: budget.spent(),
     ...extra,
   }
