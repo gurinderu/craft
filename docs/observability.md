@@ -222,3 +222,22 @@ ship. The cost is real and named here so the next editor is not surprised by it:
 each of the three functions grew, and none of the three is easier to change than
 it was. The extraction is a separate piece of work on its own branch, where a
 behaviour-preserving move can be checked as one.
+
+## Does a re-review get cheaper? — the round-pair measurement
+
+`node lib/analyze-runs.mjs --round-pairs [store]` pairs consecutive `review` rounds of one project and
+branch and compares them **only** when nothing but re-review memory differs between them:
+
+- the same `head` — a frozen diff; a fix pushed between rounds shrinks the work for a reason that is not memory (`diff moved`);
+- the same engine (`engineKey`) — a rubric change moves the cost by itself (`engine changed`);
+- a real `cost` on both records, from `craft-log-run enrich-cost` — the harness token pool is not a cost (`no real cost`).
+
+A pair that fails any of these is listed with the reason and no numbers. To take the measurement: run a
+review on a branch, then run it again on the **same commit** (do not push between them), enrich both
+records with `enrich-cost --run-dir <the workflow run's transcript directory> --record <record>`, and run
+`--round-pairs`.
+
+Known gap: `enrich-cost` sums `agent-*.jsonl` transcripts in the workflow run directory. Claude Code
+2.1.286 on Linux was observed to write only `agent-*.meta.json` and `journal.jsonl` there, so no record
+can be enriched on that harness yet, and every pair reads `no real cost`.
+
