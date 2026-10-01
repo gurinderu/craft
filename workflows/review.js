@@ -4922,6 +4922,12 @@ function reviewRecord(extra) {
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
     reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
+    // What the lenses were run over and how, so a later comparison of two rounds can tell a memory
+    // effect from a scope or configuration effect (lib/round-pairs.mjs, realm @nick/craft #97): a
+    // `delta` round on an unchanged head reviews an empty diff.
+    lensScope: fullRescan ? 'full' : 'delta',
+    strict,
+    fullEvery,
     outputTokens: budget.spent(),
     ...extra,
   }

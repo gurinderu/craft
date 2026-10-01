@@ -225,17 +225,20 @@ behaviour-preserving move can be checked as one.
 
 ## Does a re-review get cheaper? — the round-pair measurement
 
-`node lib/analyze-runs.mjs --round-pairs [store]` pairs consecutive `review` rounds of one project and
-branch and compares them **only** when nothing but re-review memory differs between them:
+`node lib/analyze-runs.mjs --round-pairs [store]` pairs consecutive top-level `review` rounds of one
+project and branch (round n+1 with the newest round n before it) and compares them **only** when
+nothing but re-review memory differs between them. Each pair that fails a condition is listed with the
+reason and no numbers: a round whose engine is unknown, or a different engine; a moved `head`; a dirty
+working tree on either side; a round that did not run in full (gate failed, lenses not run, no
+verification); a round that scanned only a delta (`lensScope: 'delta'` — on an unchanged head that is an
+empty diff); a different configuration (languages, lenses, optional pass, `strict`); a later round whose
+memory was not in full effect (`reReview` not chained, fingerprints not comparable, tombstones dropped);
+and no real `cost` (from `craft-log-run enrich-cost`) on both.
 
-- the same `head` — a frozen diff; a fix pushed between rounds shrinks the work for a reason that is not memory (`diff moved`);
-- the same engine (`engineKey`) — a rubric change moves the cost by itself (`engine changed`);
-- a real `cost` on both records, from `craft-log-run enrich-cost` — the harness token pool is not a cost (`no real cost`).
-
-A pair that fails any of these is listed with the reason and no numbers. To take the measurement: run a
-review on a branch, then run it again on the **same commit** (do not push between them), enrich both
-records with `enrich-cost --run-dir <the workflow run's transcript directory> --record <record>`, and run
-`--round-pairs`.
+To take the measurement: on a clean working tree, run a review on a branch; then, **without committing
+or editing anything**, run it again with `fullEvery=1` so the second round scans the full diff too;
+enrich both records with `enrich-cost --run-dir <the workflow run's transcript directory> --record
+<record>`; and run `--round-pairs`.
 
 Known gap: `enrich-cost` sums `agent-*.jsonl` transcripts in the workflow run directory. Claude Code
 2.1.286 on Linux was observed to write only `agent-*.meta.json` and `journal.jsonl` there, so no record
