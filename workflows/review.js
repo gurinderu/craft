@@ -3317,6 +3317,11 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // comparing hashes across incompatible bases and missing a regression silently (see the recidivism
 // block and the tombstone assembly; the memory rebuilds under the new basis from this round on).
 const priorFpComparable = priorRound ? priorRound.sameFpBasis === true : false
+// What the basis verdict actually was, and how many carried tombstones it cost — on the run record, so
+// whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
+// store rather than only readable in one run's log. Set where the tombstones are dropped.
+const priorBasisVerdict = typeof priorRound?.sameFpBasis === 'boolean' ? priorRound.sameFpBasis : 'absent'
+let tombstonesDroppedForBasis = 0
 const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
   log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
@@ -4820,7 +4825,7 @@ function reviewRecord(extra) {
     // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
-    reReview: { chained: reReview.chained, reason: reReview.reason },
+    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
     outputTokens: budget.spent(),
     ...extra,
   }
@@ -5103,20 +5108,23 @@ if (priorRound) {
   // verifier died or was floor-skipped, which is the run where the "it came back" signal matters most;
   // carried-unverified priors are excluded, as they are not freshly discovered.
   if (priorTombstones.length && !priorFpComparable) {
-    // The prior round's fingerprints were computed under a different basis (or the loader could not
-    // establish that it was the same one), so they are not comparable to this round's freshly computed ones. Skip the check
-    // for this one transition rather than comparing incompatible hashes and missing a regression in
-    // silence — the exact silent miss this guard exists to remove. Expected once, right after an
-    // upgrade across a fingerprint-basis change; the tombstones minted from THIS round on are all under the current basis (the
-    // incomparable carried ones are dropped at assembly), so the memory rebuilds from here.
-    if (typeof priorRound?.sameFpBasis !== 'boolean') {
+    // The prior round's fingerprints are not established as comparable to this round's freshly computed
+    // ones (a different basis, a different engine, or a basis that could not be established). Skip the
+    // check rather than comparing incompatible hashes and missing a regression in silence — the exact
+    // silent miss this guard exists to remove. The tombstones minted from THIS round on are all under
+    // the current basis (the incomparable carried ones are dropped at assembly), so the memory rebuilds
+    // from here; the cost is recorded on the run record (reReview.tombstonesDropped).
+    tombstonesDroppedForBasis = priorTombstones.length
+    if (priorBasisVerdict === 'absent') {
       // The answer carried no basis verdict at all — the loader printed none (a logger of another craft
       // version) or the relay dropped it; the schema leaves it optional precisely so this stays visible
-      // rather than being filled with a guessed boolean. That is a LOSS, not the expected once-per-basis-change reset,
-      // and it drops the carried tombstones for good, so it reaches the report, not just the log.
-      noteTelemetryLoss('re-review memory: the prior-round answer carried no sameFpBasis, so its fingerprints were not compared and its tombstones were dropped', 'a transport or version-skew loss, not a fingerprint-basis change')
+      // rather than being filled with a guessed boolean. It is a LOSS of re-review memory (the carried
+      // tombstones are dropped for good), so it is stated where lost memory is stated, above the verdict.
+      const note = `The prior round's answer carried no fingerprint-basis verdict (sameFpBasis), so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered. This is a transport or version-skew loss, not a fingerprint-basis change.`
+      reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
+      log(`⚠️ ${note}`)
     } else {
-      log('Re-review: the prior round\'s fingerprints are not on this engine\'s fingerprint basis (or that could not be established) — its resolved/dismissed fingerprints are not comparable to this round\'s, so the recidivism check is skipped for this transition (expected once, right after an upgrade that changed the basis); the memory rebuilds from this round on')
+      log('Re-review: the prior round\'s fingerprints are not comparable to this round\'s — its basis differs, it was written by a different engine (an upgrade, a downgrade, or two installs sharing one store), or its basis could not be established (a recovered or unreadable round) — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on')
     }
   } else if (priorTombstones.length) {
     const tombstoneByFp = new Map()
