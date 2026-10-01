@@ -665,12 +665,15 @@ function mergeGateStatus(results) {
   return results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown'
 }
 
-// TRUE when any profile's `ranLenses` is non-empty. A gate-failed profile returns `ranLenses: []`,
-// contributing nothing. `ranLenses` counts only lenses that returned on EVERY slice, so a profile
-// whose every lens lost a slice reads as not-run here — an under-count of its saving, never an
-// over-claim.
+// TRUE when any profile reached its lens phase and got at least one lens agent back (realm
+// @nick/craft #107). Not derived from `ranLenses` alone: that counts a lens only when it returned on
+// EVERY slice, so a profile that lost one slice per lens would read as never having reached its
+// lenses. `lensRounds[].returned` counts answers per round; `ranLenses` stays as the second source
+// because a lens recovered by resurrection is marked returned there but not in the round counts.
+// A gate-failed profile carries neither, contributing nothing. A profile whose every lens agent
+// died still reads false — an under-count of its saving, never an over-claim.
 function profilesRanLenses(results) {
-  return results.some(r => (r.ranLenses || []).length > 0)
+  return results.some(r => (r.ranLenses || []).length > 0 || (r.lensRounds || []).some(x => x.returned > 0))
 }
 
 // The record's `gate` field: merged status, per-profile provenance, and red-but-not-ours checks.
