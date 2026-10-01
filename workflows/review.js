@@ -1125,6 +1125,8 @@ const PRIOR_ROUND_SCHEMA = {
     journalSourced: { type: 'boolean', description: 'true when this ledger was reconstructed from a stalled run\'s journal.jsonl rather than a normal completed round; false when found=false. Its `head` may equal the OPERATOR\'S current HEAD (a re-run on the same stalled commit before any fix), so the workflow must not diff head...HEAD off it — see shouldFullRescan.' },
     sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true. Copy it exactly as the loader printed it, and OMIT it when the loader did not print it — never supply a value of your own: an omitted value is reported as a lost basis verdict.' },
     fpBasisKnown: { type: 'boolean', description: 'true when the loader could establish the prior round\'s fingerprint basis at all; false when it could not (a round recovered from a stopped run whose checkpoints do not attest to one basis, an unreadable record, a record with no revision or a newer one). Copy it exactly as the loader printed it, and omit it when the loader did not print it.' },
+    priorFpRevisions: { type: 'array', items: { type: 'integer' }, description: 'the raw engine revisions the prior round\'s fingerprints were minted under (empty when none can be established). The ENGINE decides comparability from these with its own table. Copy it exactly as the loader printed it, and omit it when the loader did not print it.' },
+    priorFpRevisionsCheck: { type: 'string', description: 'the same revisions as a comma-separated string, printed by the loader next to priorFpRevisions so the engine can tell the array survived transport. Copy it exactly as printed, and omit it when the loader did not print it.' },
   },
 }
 
@@ -2922,7 +2924,9 @@ async function checkpoint(phase, payloadIn, group) {
   // nothing. They belong on every slice, not just the final record.
   // craftVersion rides on every slice: it is what the checkpoint's own logger lookup derives its
   // version from, and a slice that cannot say which build wrote it is a slice `recover` cannot place.
-  const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn }
+  // workflowEngineRevision: THIS engine's revision, the side that computes the fingerprints — what a
+  // later round decides their basis by (realm @nick/craft #111). Last, so no payload key shadows it.
+  const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn, workflowEngineRevision: ENGINE_REVISION }
   // ragent does NOT catch a budget-exceeded throw (see its comment), and agent() throws for harness
   // reasons too — so a rejection, not just a null, is a real outcome here. It has to land in the same
   // place as every other failed write: the report. Letting it propagate would abort the whole review
@@ -2961,7 +2965,11 @@ async function checkpoint(phase, payloadIn, group) {
 // quoted heredoc into the script. It no longer computes ts/project/commit/dirty, chooses the filename,
 // hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
 // review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
-async function logRun(record) {
+async function logRun(recordIn) {
+  // Every review record — the early exits too, not only reviewRecord() — says which engine computed its
+  // fingerprints: a later round decides their basis by this (realm @nick/craft #111). Last, so no
+  // caller's field shadows it.
+  const record = { ...recordIn, workflowEngineRevision: ENGINE_REVISION }
   // `finalize`, not `write`: this is the one engine that checkpoints, so the script folds this run's
   // phase slices into the record it writes. Everything else — the prompt, the schema, the model
   // sizing, the outcome check — is the write path shared with the other three engines.
@@ -2983,7 +2991,7 @@ function key(f) {
   return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
-// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory branchFromAbbrevRef
+// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory branchFromAbbrevRef ENGINE_REVISION FP_BASIS_SINCE fpBasisOf fpBasisEstablished sameFpBasis basisVerdictFromRevisions
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 function titleShingle(title) {
@@ -3092,6 +3100,58 @@ function reReviewMemory(priorReason) {
 // their branch value through here (realm @nick/craft #104).
 function branchFromAbbrevRef(ref) {
   return ref === 'HEAD' ? '' : ref
+}
+
+// The current engine revision (the log above says what each one means). Inlined into the review engine
+// with the fingerprint-basis table below, so the side that computes fingerprints decides their basis.
+const ENGINE_REVISION = 4
+
+// The FINGERPRINT BASIS is a separate question from the engine revision, and it is answered here,
+// not by comparing revisions: the revision is also the telemetry label the analyzer slices on, and a
+// telemetry-only bump must not make the re-review memory treat every prior round as incomparable —
+// that drops each in-flight loop's tombstones and skips its recidivism check (realm @nick/craft #108).
+// Each entry is the engine revision at which a basis BEGAN; a revision's basis is the latest entry at
+// or below it. Add an entry — not a bump of ENGINE_REVISION alone — whenever `fingerprint()` changes
+// what a recorded `fp` means.
+//   1 — the title-anchored basis (file + symbol + ruleId + title shingle).
+//   3 — the ruleId-anchored basis (see revision 3 above).
+const FP_BASIS_SINCE = [1, 3]
+
+// The basis a record stamped with `rev` fingerprinted under; null when `rev` is not a revision
+// (a legacy record with no field) — such a record is never comparable.
+function fpBasisOf(rev) {
+  if (!Number.isInteger(rev) || rev < 1) return null
+  return Math.max(...FP_BASIS_SINCE.filter(b => b <= rev))
+}
+
+// Whether the basis `priorRev` fingerprinted under can be established at all: a revision this engine
+// knows — not missing (a legacy record), not newer than this engine (a table it does not have). The
+// complement is not "the basis changed" but "nobody can say", and the engine reports it as lost
+// re-review memory rather than an expected reset (realm @nick/craft #110).
+function fpBasisEstablished(priorRev, currentRev = ENGINE_REVISION) {
+  return Number.isInteger(priorRev) && priorRev >= 1 && priorRev <= currentRev
+}
+
+// Whether fingerprints recorded under `priorRev` may be compared to ones computed now. A prior
+// revision NEWER than this engine's is never comparable: it may have begun a basis this engine's
+// table does not know (a downgrade, or two installs writing one store), and the guard fails closed.
+function sameFpBasis(priorRev, currentRev = ENGINE_REVISION) {
+  if (Number.isInteger(priorRev) && priorRev > currentRev) return false
+  const prior = fpBasisOf(priorRev)
+  return prior !== null && prior === fpBasisOf(currentRev)
+}
+
+// The basis verdict from the RAW revisions a prior round's fingerprints were minted under (one for a
+// finished record, one per checkpoint for a recovered round), decided against `currentRev` — the
+// caller's own revision and table. Known only when every revision is established and all map to ONE
+// basis; then comparable when that basis is the caller's. Inlined into the review engine, which
+// computes the fingerprints and so is the side that decides (realm @nick/craft #111).
+function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
+  const list = Array.isArray(revs) ? revs : []
+  if (!list.length || !list.every(r => fpBasisEstablished(r, currentRev))) return { sameFpBasis: false, fpBasisKnown: false }
+  const bases = new Set(list.map(fpBasisOf))
+  if (bases.size !== 1) return { sameFpBasis: false, fpBasisKnown: false }
+  return { sameFpBasis: fpBasisOf(list[0]) === fpBasisOf(currentRev), fpBasisKnown: true }
 }
 // <<< craft-inline
 // A re-review scans lenses only over the fix delta (prevHead...HEAD) by default — cheap, but a defect
@@ -3240,7 +3300,7 @@ Run exactly this:
 ${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} \${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} --project "$PWD"
 \`\`\`
 
-It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the printed object has no \`sameFpBasis\`, leave it out; never invent one. The same holds for \`fpBasisKnown\`. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, fpBasisKnown:false, reason:"loader-did-not-run"}.`,
+It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the printed object has no \`sameFpBasis\`, leave it out; never invent one. The same holds for \`fpBasisKnown\`, \`priorFpRevisions\` (copy that array exactly) and \`priorFpRevisionsCheck\`. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, fpBasisKnown:false, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
@@ -3311,13 +3371,41 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // The prior round's finding fingerprints are comparable to this round's
 // only when both were fingerprinted under the same basis (FP_BASIS_SINCE in lib/run-record.mjs — a
 // separate question from the engine revision, so a telemetry-only bump keeps it; realm @nick/craft
-// #108). The loader reports this as `sameFpBasis` and sets it on every branch; ONLY an explicit true
-// is comparable. An absent field means the answer came from a logger that does not speak this name (a
-// different craft version resolved as the logger), and that is not evidence of a shared basis — so it
-// fails closed. When it is false — the first re-review after a fingerprint-basis change — the tombstone recidivism check is skipped for that one transition rather than
-// comparing hashes across incompatible bases and missing a regression silently (see the recidivism
-// block and the tombstone assembly; the memory rebuilds under the new basis from this round on).
-const priorFpComparable = priorRound ? priorRound.sameFpBasis === true : false
+// #108). The ENGINE decides it (below) from the raw revisions the loader hands over; the loader's own
+// `sameFpBasis` is only the fallback for a loader older than that field. Only an explicit "same basis"
+// is comparable; anything that is not established fails closed. When it is a known different basis —
+// the first re-review after a fingerprint-basis change — the tombstone recidivism check is skipped for
+// that one transition rather than comparing hashes across incompatible bases and missing a regression
+// silently (see the recidivism block and the tombstone assembly; the memory rebuilds from this round on).
+// The basis verdict is decided HERE, by the engine that computes the fingerprints, with its own
+// inlined table (realm @nick/craft #111): from the raw revisions the loader hands over. A loader that
+// predates that field still sends its own verdict, and that is used then.
+// The relayed array crosses a model; the loader prints the same list as a string next to it
+// (`priorFpRevisionsCheck`). The engine trusts the array only when the two still match — an invented []
+// or a truncated or swapped list does not — and otherwise fails closed, reporting a transport loss
+// (priorBasisMismatch). When the array arrived intact, THIS engine's table decides, whatever the
+// logger's own table said (realm @nick/craft #111).
+const relayedVerdict = priorRound && typeof priorRound.sameFpBasis === 'boolean'
+  ? { sameFpBasis: priorRound.sameFpBasis, fpBasisKnown: priorRound.fpBasisKnown } : null
+const relayedRevisions = priorRound && Array.isArray(priorRound.priorFpRevisions) ? priorRound.priorFpRevisions : null
+const relayedCheck = priorRound && typeof priorRound.priorFpRevisionsCheck === 'string' ? priorRound.priorFpRevisionsCheck : null
+// A new loader prints BOTH fields on every path; an older one prints neither. So: an array whose check
+// no longer matches, or a check with no array, is a transport loss. An EMPTY array whose '' check the
+// relay dropped is not — that is an honest "nothing established", and the absent check reads as ''.
+const priorBasisMismatch = !!priorRound && (relayedRevisions
+  ? (relayedCheck ?? (relayedRevisions.length ? null : '')) !== relayedRevisions.join(',')
+  : relayedCheck !== null)
+const engineFromRevisions = !priorBasisMismatch && relayedRevisions ? basisVerdictFromRevisions(relayedRevisions) : null
+// Where the engine's verdict departs from the logger's own, the engine wins (it computes the
+// fingerprints) — said in the log and on the record, so skew between the two tables can be counted.
+const basisOverridesLogger = !!(engineFromRevisions && relayedVerdict
+  && (engineFromRevisions.sameFpBasis !== relayedVerdict.sameFpBasis || engineFromRevisions.fpBasisKnown !== relayedVerdict.fpBasisKnown))
+if (priorBasisMismatch) log(`⚠️ prior-round revisions arrived altered (list ${JSON.stringify(relayedRevisions)}, check ${JSON.stringify(relayedCheck)}) — the fingerprint basis is treated as unknown`)
+if (basisOverridesLogger) log(`Re-review: this engine's fingerprint-basis verdict on revisions ${JSON.stringify(relayedRevisions)} (${JSON.stringify(engineFromRevisions)}) overrides the logger's (${JSON.stringify(relayedVerdict)}) — their tables differ`)
+const priorBasis = !priorRound ? null
+  : priorBasisMismatch ? { sameFpBasis: false, fpBasisKnown: false }
+    : engineFromRevisions || relayedVerdict
+const priorFpComparable = priorBasis ? priorBasis.sameFpBasis === true : false
 // What the basis verdict actually was, and how many carried tombstones it cost — on the run record, so
 // whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
 // store rather than only readable in one run's log. Set where the tombstones are dropped.
@@ -3326,9 +3414,9 @@ const priorFpComparable = priorRound ? priorRound.sameFpBasis === true : false
 // known basis, an unreadable round, a record it cannot place, or an answer whose fpBasisKnown was not
 // carried) — not a basis change, and reported as lost memory
 // (realm @nick/craft #110). Only an explicit fpBasisKnown: true makes "not comparable" a basis change.
-const priorBasisVerdict = typeof priorRound?.sameFpBasis !== 'boolean' ? 'absent'
-  : (priorRound.sameFpBasis === false && priorRound.fpBasisKnown !== true) ? 'unknown'
-    : priorRound.sameFpBasis
+const priorBasisVerdict = !priorBasis ? 'absent'
+  : (priorBasis.sameFpBasis === false && priorBasis.fpBasisKnown !== true) ? 'unknown'
+    : priorBasis.sameFpBasis
 let tombstonesDroppedForBasis = 0
 const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
@@ -4833,7 +4921,7 @@ function reviewRecord(extra) {
     // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
-    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
+    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
     outputTokens: budget.spent(),
     ...extra,
   }
@@ -5137,9 +5225,11 @@ if (priorRound) {
       // one) cannot establish the basis its tombstones were minted under. (A recovered round whose
       // checkpoints DO attest to one is decided like any other — realm @nick/craft #112.) Comparing anyway is the silent miss the guard exists
       // to prevent, so they are still dropped — but that is lost memory, and it is said so.
-      // When the answer did not even carry fpBasisKnown, the loader may well have known the basis —
+      // When the answer carried neither the raw revisions nor fpBasisKnown, the loader may well have known the basis —
       // the relay dropped the field, or a logger older than it answered — so the cause named is that.
-      const why = typeof priorRound?.fpBasisKnown === 'boolean'
+      const why = priorBasisMismatch
+        ? 'the revisions the loader printed did not survive transport intact (the list no longer matches its own check string) — a transport or version-skew loss'
+        : (Array.isArray(priorRound?.priorFpRevisions) || typeof priorRound?.fpBasisKnown === 'boolean')
         ? 'it was recovered from a stopped run whose checkpoints do not attest to one basis, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
         : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
       const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
