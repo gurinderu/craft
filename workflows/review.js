@@ -5135,7 +5135,12 @@ if (priorRound) {
       // this one cannot place (no revision, or a newer one) cannot establish the basis its tombstones
       // were minted under. Comparing anyway is the silent miss the guard exists
       // to prevent, so they are still dropped — but that is lost memory, and it is said so.
-      const note = `The fingerprint basis of the prior round could not be established — it was recovered from a stopped run, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store) — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
+      // When the answer did not even carry fpBasisKnown, the loader may well have known the basis —
+      // the relay dropped the field, or a logger older than it answered — so the cause named is that.
+      const why = typeof priorRound?.fpBasisKnown === 'boolean'
+        ? 'it was recovered from a stopped run, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
+        : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
+      const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
       reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
       log(`⚠️ ${note}`)
     } else {
