@@ -2466,12 +2466,29 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 // The review still happens — but without the agent's rubric, and the operator otherwise sees only a
 // failed probe. Stated above the verdict, with the fix; recorded on the run record.
 const reviewerAgentUnavailable = []
-function noteReviewerAgentMissing(profile) {
-  if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent })
+// Only an error that is about the AGENT TYPE counts: a missing model, a file or tool not found inside
+// the agent, or an HTTP 404 also say "not found", and an "install the plugin" line for those would send
+// the operator to the wrong fix.
+const isAgentTypeMissing = (msg, agent) => /not found/i.test(msg) && (/agent type/i.test(msg) || msg.includes(agent))
+function noteReviewerAgentMissing(profile, error) {
+  if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent, error: String(error || '').slice(0, 160) })
 }
-const reviewerAgentSection = () => (reviewerAgentUnavailable.length
-  ? `## ⚠️ Reviewer agent unavailable\n${reviewerAgentUnavailable.map(x => `- ${x.id}: \`${x.agent}\` is not registered in this session, so every ${x.id} lens ran on the generic subagent, without that agent's rubric — this review is weaker than a normal one, not broken.`).join('\n')}\nEnable the plugin in this project (\`/plugin install craft@craft\`, project or local scope) and re-run to review with it.\n\n`
-  : '')
+// Lens dispatches that came back EMPTY from the reviewer agent and were re-run on the generic
+// subagent. On some runtimes that is how an unknown agent type looks; it can also be a transient
+// death, so it is not taken as "missing" — but it is said, per profile, rather than staying silent.
+const reviewerAgentFallbacks = {}
+function noteReviewerAgentFallback(profile) {
+  reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
+}
+const reviewerAgentSection = () => {
+  const soft = Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
+  if (!reviewerAgentUnavailable.length && !soft.length) return ''
+  const lines = [
+    ...reviewerAgentUnavailable.map(x => `- ${x.id}: \`${x.agent}\` is not registered in this session, so every ${x.id} lens ran on the generic subagent, without that agent's rubric — this review is weaker than a normal one, not broken.${x.error ? ` (${x.error})` : ''}`),
+    ...soft.map(([id, n]) => `- ${id}: the reviewer agent returned nothing for ${n} lens dispatch(es), which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
+  ]
+  return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${reviewerAgentUnavailable.length ? 'Enable the plugin in this project (\`/plugin install craft@craft\`, project or local scope) and re-run to review with it.\n' : ''}\n`
+}
 
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
@@ -4484,15 +4501,16 @@ async function reviewProfile(profile) {
       // Null (not a throw) from the reviewer path: on some runtimes an unknown agent type returns
       // null rather than throwing. ragent already retried; try the generic subagent once. Do NOT
       // set reviewerAgentMissing — a null can be a transient API death, so later lenses still get
-      // a shot at the real reviewer agent.
+      // a shot at the real reviewer agent. Counted, so the report can say it happened.
+      noteReviewerAgentFallback(profile)
       return await runGeneric()
     } catch (e) {
       const msg = String((e && e.message) || e)
       // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
       // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
       // as "died without an error" — and any sibling slice could overwrite it.
-      if (!/not found/i.test(msg)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
-      reviewerAgentMissing = true; noteReviewerAgentMissing(profile)
+      if (!isAgentTypeMissing(msg, profile.reviewerAgent)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
+      reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
       log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
       return await runGeneric()
     }
@@ -4599,8 +4617,9 @@ async function reviewProfile(profile) {
     try {
       await agent('Reply with the single word: OK.', { label: `probe:${profile.id}`, phase: 'Gate', model: 'haiku', effort: 'low', agentType: profile.reviewerAgent })
     } catch (e) {
-      if (/not found/i.test(String((e && e.message) || e))) {
-        reviewerAgentMissing = true; noteReviewerAgentMissing(profile)
+      const msg = String((e && e.message) || e)
+      if (isAgentTypeMissing(msg, profile.reviewerAgent)) {
+        reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
         log(`[${profile.id}] reviewer agent '${profile.reviewerAgent}' not registered — all lenses will use the generic subagent`)
       }
     }
@@ -4949,6 +4968,7 @@ function reviewRecord(extra) {
     strict,
     fullEvery,
     reviewerAgentUnavailable: reviewerAgentUnavailable.map(x => x.id),
+    reviewerAgentFallbacks: { ...reviewerAgentFallbacks },
     // Against which base and path the diff was taken, which lenses the critic added on top of the plan,
     // and a digest of the caller's intent text (it feeds the intent lens) — all of which change what a
     // round costs without being memory (lib/round-pairs.mjs, realm @nick/craft #97).
