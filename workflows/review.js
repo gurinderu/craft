@@ -3322,8 +3322,9 @@ const priorFpComparable = priorRound ? priorRound.sameFpBasis === true : false
 // whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
 // store rather than only readable in one run's log. Set where the tombstones are dropped.
 // 'unknown' is a verdict of its own: the loader answered "not comparable" without establishing that
-// the prior's basis is a KNOWN different one (a recovered or unreadable round, a record it cannot place,
-// or an answer whose fpBasisKnown was not carried) — not a basis change, and reported as lost memory
+// the prior's basis is a KNOWN different one (a recovered round whose checkpoints do not attest to one
+// known basis, an unreadable round, a record it cannot place, or an answer whose fpBasisKnown was not
+// carried) — not a basis change, and reported as lost memory
 // (realm @nick/craft #110). Only an explicit fpBasisKnown: true makes "not comparable" a basis change.
 const priorBasisVerdict = typeof priorRound?.sameFpBasis !== 'boolean' ? 'absent'
   : (priorRound.sameFpBasis === false && priorRound.fpBasisKnown !== true) ? 'unknown'
@@ -5131,9 +5132,10 @@ if (priorRound) {
       reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
       log(`⚠️ ${note}`)
     } else if (priorBasisVerdict === 'unknown') {
-      // A round recovered from a stopped run, read from an unreadable record, or written by an engine
-      // this one cannot place (no revision, or a newer one) cannot establish the basis its tombstones
-      // were minted under. Comparing anyway is the silent miss the guard exists
+      // A round recovered from a stopped run whose checkpoints do not attest to one known basis, read
+      // from an unreadable record, or written by an engine this one cannot place (no revision, or a newer
+      // one) cannot establish the basis its tombstones were minted under. (A recovered round whose
+      // checkpoints DO attest to one is decided like any other — realm @nick/craft #112.) Comparing anyway is the silent miss the guard exists
       // to prevent, so they are still dropped — but that is lost memory, and it is said so.
       // When the answer did not even carry fpBasisKnown, the loader may well have known the basis —
       // the relay dropped the field, or a logger older than it answered — so the cause named is that.
