@@ -53,7 +53,7 @@ A bump is cheap for re-review memory: the revision is **not** the finding-finger
 a prior round's fingerprints compare to this round's is decided by `FP_BASIS_SINCE` in the same file
 (the revisions at which each basis began), so a telemetry-only bump keeps every review loop's
 tombstones. Change that table, not only the revision, when `fingerprint()` changes what an `fp` means.
-The review engine decides that comparability itself, with its own inlined copy of the table — it is the side that computes the fingerprints — so a `review` record and each of its checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp.
+The review engine decides that comparability itself, with its own inlined copy of the table — it is the side that computes the fingerprints — so a `review` record and each of its checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp. The analyzer's engine identity (`rN`) uses the engine's revision when a record carries it, and the logger's otherwise. The loader prints `priorFpRevisions` together with `priorFpRevisionsCheck` (the same list as a string), and the engine trusts the list only when the two still match after the model relay; a mismatch is recorded as `reReview.basisMismatch`.
 
 `node lib/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.

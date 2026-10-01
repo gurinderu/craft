@@ -1126,6 +1126,7 @@ const PRIOR_ROUND_SCHEMA = {
     sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true. Copy it exactly as the loader printed it, and OMIT it when the loader did not print it — never supply a value of your own: an omitted value is reported as a lost basis verdict.' },
     fpBasisKnown: { type: 'boolean', description: 'true when the loader could establish the prior round\'s fingerprint basis at all; false when it could not (a round recovered from a stopped run whose checkpoints do not attest to one basis, an unreadable record, a record with no revision or a newer one). Copy it exactly as the loader printed it, and omit it when the loader did not print it.' },
     priorFpRevisions: { type: 'array', items: { type: 'integer' }, description: 'the raw engine revisions the prior round\'s fingerprints were minted under (empty when none can be established). The ENGINE decides comparability from these with its own table. Copy it exactly as the loader printed it, and omit it when the loader did not print it.' },
+    priorFpRevisionsCheck: { type: 'string', description: 'the same revisions as a comma-separated string, printed by the loader next to priorFpRevisions so the engine can tell the array survived transport. Copy it exactly as printed, and omit it when the loader did not print it.' },
   },
 }
 
@@ -3299,7 +3300,7 @@ Run exactly this:
 ${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} \${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} --project "$PWD"
 \`\`\`
 
-It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the printed object has no \`sameFpBasis\`, leave it out; never invent one. The same holds for \`fpBasisKnown\` and \`priorFpRevisions\` (copy that array exactly). If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, fpBasisKnown:false, reason:"loader-did-not-run"}.`,
+It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the printed object has no \`sameFpBasis\`, leave it out; never invent one. The same holds for \`fpBasisKnown\`, \`priorFpRevisions\` (copy that array exactly) and \`priorFpRevisionsCheck\`. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, fpBasisKnown:false, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
@@ -3379,18 +3380,19 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // The basis verdict is decided HERE, by the engine that computes the fingerprints, with its own
 // inlined table (realm @nick/craft #111): from the raw revisions the loader hands over. A loader that
 // predates that field still sends its own verdict, and that is used then.
-// The relayed array is cross-checked against the loader's own verdict, derived from the SAME revisions:
-// if the two disagree on whether the basis is known, the array was mangled in transport (an invented
-// [] or a truncated list) or the logger's table differs from this engine's — either way nothing is
-// established, so it fails closed and is reported as such (priorBasisMismatch), never silently.
+// The relayed array crosses a model; the loader prints the same list as a string next to it
+// (`priorFpRevisionsCheck`). The engine trusts the array only when the two still match — an invented []
+// or a truncated or swapped list does not — and otherwise fails closed, reporting a transport loss
+// (priorBasisMismatch). When the array arrived intact, THIS engine's table decides, whatever the
+// logger's own table said (realm @nick/craft #111).
 const relayedVerdict = priorRound && typeof priorRound.sameFpBasis === 'boolean'
   ? { sameFpBasis: priorRound.sameFpBasis, fpBasisKnown: priorRound.fpBasisKnown } : null
-const engineVerdict = priorRound && Array.isArray(priorRound.priorFpRevisions) ? basisVerdictFromRevisions(priorRound.priorFpRevisions) : null
-const priorBasisMismatch = !!(engineVerdict && relayedVerdict && typeof relayedVerdict.fpBasisKnown === 'boolean'
-  && relayedVerdict.fpBasisKnown !== engineVerdict.fpBasisKnown)
+const relayedRevisions = priorRound && Array.isArray(priorRound.priorFpRevisions) ? priorRound.priorFpRevisions : null
+const priorBasisMismatch = !!(relayedRevisions && priorRound.priorFpRevisionsCheck !== relayedRevisions.join(','))
 const priorBasis = !priorRound ? null
   : priorBasisMismatch ? { sameFpBasis: false, fpBasisKnown: false }
-    : engineVerdict || relayedVerdict
+    : relayedRevisions ? basisVerdictFromRevisions(relayedRevisions)
+      : relayedVerdict
 const priorFpComparable = priorBasis ? priorBasis.sameFpBasis === true : false
 // What the basis verdict actually was, and how many carried tombstones it cost — on the run record, so
 // whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
@@ -4907,7 +4909,7 @@ function reviewRecord(extra) {
     // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
-    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
+    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
     outputTokens: budget.spent(),
     ...extra,
   }
@@ -5214,7 +5216,7 @@ if (priorRound) {
       // When the answer carried neither the raw revisions nor fpBasisKnown, the loader may well have known the basis —
       // the relay dropped the field, or a logger older than it answered — so the cause named is that.
       const why = priorBasisMismatch
-        ? 'the loader and this engine disagree on whether it is known (the revisions were altered in transport, or the logger\'s table differs from this engine\'s)'
+        ? 'the revisions the loader printed did not survive transport intact (the list no longer matches its own check string) — a transport or version-skew loss'
         : (Array.isArray(priorRound?.priorFpRevisions) || typeof priorRound?.fpBasisKnown === 'boolean')
         ? 'it was recovered from a stopped run whose checkpoints do not attest to one basis, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
         : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
