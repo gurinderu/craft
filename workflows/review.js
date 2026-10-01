@@ -1123,7 +1123,7 @@ const PRIOR_ROUND_SCHEMA = {
     reason: { type: 'string', description: 'why there is no prior round (no-store, no-index, no-candidate-rows, unattributable-rows-only, ancestry-rejected, detail-unreadable, partial-only, git-unavailable); empty when found=true' },
     priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
     journalSourced: { type: 'boolean', description: 'true when this ledger was reconstructed from a stalled run\'s journal.jsonl rather than a normal completed round; false when found=false. Its `head` may equal the OPERATOR\'S current HEAD (a re-run on the same stalled commit before any fix), so the workflow must not diff head...HEAD off it — see shouldFullRescan.' },
-    sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true. Optional: a degraded/legacy prior may omit it, and the workflow then treats the memory as comparable (its pre-guard behaviour).' },
+    sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true; an omitted value is treated as not comparable.' },
   },
 }
 
@@ -3310,12 +3310,13 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // The prior round's finding fingerprints are comparable to this round's
 // only when both were fingerprinted under the same basis (FP_BASIS_SINCE in lib/run-record.mjs — a
 // separate question from the engine revision, so a telemetry-only bump keeps it; realm @nick/craft
-// #108). The loader reports this as `sameFpBasis`; a degraded/legacy prior may omit it, and an omission is treated as
-// comparable (the pre-guard behaviour). When it is explicitly false — the first re-review after a
-// fingerprint-basis change — the tombstone recidivism check is skipped for that one transition rather than
+// #108). The loader reports this as `sameFpBasis` and sets it on every branch; ONLY an explicit true
+// is comparable. An absent field means the answer came from a logger that does not speak this name (a
+// different craft version resolved as the logger), and that is not evidence of a shared basis — so it
+// fails closed. When it is false — the first re-review after a fingerprint-basis change — the tombstone recidivism check is skipped for that one transition rather than
 // comparing hashes across incompatible bases and missing a regression silently (see the recidivism
 // block and the tombstone assembly; the memory rebuilds under the new basis from this round on).
-const priorFpComparable = priorRound ? priorRound.sameFpBasis !== false : false
+const priorFpComparable = priorRound ? priorRound.sameFpBasis === true : false
 const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
   log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
@@ -5102,13 +5103,13 @@ if (priorRound) {
   // verifier died or was floor-skipped, which is the run where the "it came back" signal matters most;
   // carried-unverified priors are excluded, as they are not freshly discovered.
   if (priorTombstones.length && !priorFpComparable) {
-    // The prior round used a different engine revision, so its stored fingerprints were computed under
-    // a different basis and are not comparable to this round's freshly computed ones. Skip the check
+    // The prior round's fingerprints were computed under a different basis (or the loader could not
+    // establish that it was the same one), so they are not comparable to this round's freshly computed ones. Skip the check
     // for this one transition rather than comparing incompatible hashes and missing a regression in
     // silence — the exact silent miss this guard exists to remove. Expected once, right after an
-    // upgrade; the tombstones minted from THIS round on are all under the current basis (the
+    // upgrade across a fingerprint-basis change; the tombstones minted from THIS round on are all under the current basis (the
     // incomparable carried ones are dropped at assembly), so the memory rebuilds from here.
-    log('Re-review: the prior round was produced under a different engine revision — its resolved/dismissed fingerprints are not comparable to this round\'s, so the recidivism check is skipped for this transition (expected once, right after an engine upgrade); the memory rebuilds from this round on')
+    log('Re-review: the prior round\'s fingerprints are not on this engine\'s fingerprint basis (or that could not be established) — its resolved/dismissed fingerprints are not comparable to this round\'s, so the recidivism check is skipped for this transition (expected once, right after an upgrade that changed the basis); the memory rebuilds from this round on')
   } else if (priorTombstones.length) {
     const tombstoneByFp = new Map()
     for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
