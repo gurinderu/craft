@@ -2964,7 +2964,11 @@ async function checkpoint(phase, payloadIn, group) {
 // quoted heredoc into the script. It no longer computes ts/project/commit/dirty, chooses the filename,
 // hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
 // review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
-async function logRun(record) {
+async function logRun(recordIn) {
+  // Every review record — the early exits too, not only reviewRecord() — says which engine computed its
+  // fingerprints: a later round decides their basis by this (realm @nick/craft #111). Last, so no
+  // caller's field shadows it.
+  const record = { ...recordIn, workflowEngineRevision: ENGINE_REVISION }
   // `finalize`, not `write`: this is the one engine that checkpoints, so the script folds this run's
   // phase slices into the record it writes. Everything else — the prompt, the schema, the model
   // sizing, the outcome check — is the write path shared with the other three engines.
@@ -3366,19 +3370,27 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // The prior round's finding fingerprints are comparable to this round's
 // only when both were fingerprinted under the same basis (FP_BASIS_SINCE in lib/run-record.mjs — a
 // separate question from the engine revision, so a telemetry-only bump keeps it; realm @nick/craft
-// #108). The loader reports this as `sameFpBasis` and sets it on every branch; ONLY an explicit true
-// is comparable. An absent field means the answer came from a logger that does not speak this name (a
-// different craft version resolved as the logger), and that is not evidence of a shared basis — so it
-// fails closed. When it is false — the first re-review after a fingerprint-basis change — the tombstone recidivism check is skipped for that one transition rather than
-// comparing hashes across incompatible bases and missing a regression silently (see the recidivism
-// block and the tombstone assembly; the memory rebuilds under the new basis from this round on).
+// #108). The ENGINE decides it (below) from the raw revisions the loader hands over; the loader's own
+// `sameFpBasis` is only the fallback for a loader older than that field. Only an explicit "same basis"
+// is comparable; anything that is not established fails closed. When it is a known different basis —
+// the first re-review after a fingerprint-basis change — the tombstone recidivism check is skipped for
+// that one transition rather than comparing hashes across incompatible bases and missing a regression
+// silently (see the recidivism block and the tombstone assembly; the memory rebuilds from this round on).
 // The basis verdict is decided HERE, by the engine that computes the fingerprints, with its own
 // inlined table (realm @nick/craft #111): from the raw revisions the loader hands over. A loader that
 // predates that field still sends its own verdict, and that is used then.
+// The relayed array is cross-checked against the loader's own verdict, derived from the SAME revisions:
+// if the two disagree on whether the basis is known, the array was mangled in transport (an invented
+// [] or a truncated list) or the logger's table differs from this engine's — either way nothing is
+// established, so it fails closed and is reported as such (priorBasisMismatch), never silently.
+const relayedVerdict = priorRound && typeof priorRound.sameFpBasis === 'boolean'
+  ? { sameFpBasis: priorRound.sameFpBasis, fpBasisKnown: priorRound.fpBasisKnown } : null
+const engineVerdict = priorRound && Array.isArray(priorRound.priorFpRevisions) ? basisVerdictFromRevisions(priorRound.priorFpRevisions) : null
+const priorBasisMismatch = !!(engineVerdict && relayedVerdict && typeof relayedVerdict.fpBasisKnown === 'boolean'
+  && relayedVerdict.fpBasisKnown !== engineVerdict.fpBasisKnown)
 const priorBasis = !priorRound ? null
-  : Array.isArray(priorRound.priorFpRevisions) ? basisVerdictFromRevisions(priorRound.priorFpRevisions)
-    : typeof priorRound.sameFpBasis === 'boolean' ? { sameFpBasis: priorRound.sameFpBasis, fpBasisKnown: priorRound.fpBasisKnown }
-      : null
+  : priorBasisMismatch ? { sameFpBasis: false, fpBasisKnown: false }
+    : engineVerdict || relayedVerdict
 const priorFpComparable = priorBasis ? priorBasis.sameFpBasis === true : false
 // What the basis verdict actually was, and how many carried tombstones it cost — on the run record, so
 // whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
@@ -4863,9 +4875,6 @@ function reviewRecord(extra) {
     schemaVersion: 1,
     runtime: 'claude-code',
     craftVersion: CRAFT_VERSION,
-    // This engine's revision, next to the logger's `engineRevision` stamp: the engine computes the
-    // fingerprints, so a later round decides their basis by THIS (realm @nick/craft #111).
-    workflowEngineRevision: ENGINE_REVISION,
     kind: 'workflow',
     name: 'review',
     nested: !!viaArg,
@@ -5204,7 +5213,9 @@ if (priorRound) {
       // to prevent, so they are still dropped — but that is lost memory, and it is said so.
       // When the answer carried neither the raw revisions nor fpBasisKnown, the loader may well have known the basis —
       // the relay dropped the field, or a logger older than it answered — so the cause named is that.
-      const why = (Array.isArray(priorRound?.priorFpRevisions) || typeof priorRound?.fpBasisKnown === 'boolean')
+      const why = priorBasisMismatch
+        ? 'the loader and this engine disagree on whether it is known (the revisions were altered in transport, or the logger\'s table differs from this engine\'s)'
+        : (Array.isArray(priorRound?.priorFpRevisions) || typeof priorRound?.fpBasisKnown === 'boolean')
         ? 'it was recovered from a stopped run whose checkpoints do not attest to one basis, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
         : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
       const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
