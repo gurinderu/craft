@@ -621,6 +621,13 @@ const optionalTally = () => optionalTallyFrom(results, optionalDispatched, optio
 const optionalSection = () => {
   const skipped = optionalTally().skipped
   if (!skipped.length) return ''
+  // A red mechanical gate blocks the whole review on its own, so "buy them with optional=…" is the
+  // wrong next step there: lenses the caller already requested need no new request, and the rest are
+  // beside the point until the gate is green (realm @nick/craft #109).
+  if (failedProfiles(results).length) {
+    const unrequested = skipped.filter(l => !optionalRequested.includes(l))
+    return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n`
+  }
   const named = skipped.filter(l => optionalNamedByCritic.has(l))
   return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
@@ -700,7 +707,7 @@ function surfaceGateRecord(results, { dispatched, namedByCritic }) {
 }
 
 // The record's and the report's optional-pass tally (realm @nick/craft #109): the optional lenses in
-// scope (`optionalScope`, in roster order, named once across profiles), split by whether they were
+// scope (`optionalScope`, in profile order then roster order, each named once), split by whether they were
 // dispatched anywhere. A profile past its gate contributes its whole scope. A red profile contributes
 // only what the caller REQUESTED: an unrequested lens there was never a purchase the run declined,
 // but a requested one was asked for and not delivered, and must still read as not looked at.
