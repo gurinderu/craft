@@ -3388,11 +3388,23 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 const relayedVerdict = priorRound && typeof priorRound.sameFpBasis === 'boolean'
   ? { sameFpBasis: priorRound.sameFpBasis, fpBasisKnown: priorRound.fpBasisKnown } : null
 const relayedRevisions = priorRound && Array.isArray(priorRound.priorFpRevisions) ? priorRound.priorFpRevisions : null
-const priorBasisMismatch = !!(relayedRevisions && priorRound.priorFpRevisionsCheck !== relayedRevisions.join(','))
+const relayedCheck = priorRound && typeof priorRound.priorFpRevisionsCheck === 'string' ? priorRound.priorFpRevisionsCheck : null
+// A new loader prints BOTH fields on every path; an older one prints neither. So: an array whose check
+// no longer matches, or a check with no array, is a transport loss. An EMPTY array whose '' check the
+// relay dropped is not — that is an honest "nothing established", and the absent check reads as ''.
+const priorBasisMismatch = !!priorRound && (relayedRevisions
+  ? (relayedCheck ?? (relayedRevisions.length ? null : '')) !== relayedRevisions.join(',')
+  : relayedCheck !== null)
+const engineFromRevisions = !priorBasisMismatch && relayedRevisions ? basisVerdictFromRevisions(relayedRevisions) : null
+// Where the engine's verdict departs from the logger's own, the engine wins (it computes the
+// fingerprints) — said in the log and on the record, so skew between the two tables can be counted.
+const basisOverridesLogger = !!(engineFromRevisions && relayedVerdict
+  && (engineFromRevisions.sameFpBasis !== relayedVerdict.sameFpBasis || engineFromRevisions.fpBasisKnown !== relayedVerdict.fpBasisKnown))
+if (priorBasisMismatch) log(`⚠️ prior-round revisions arrived altered (list ${JSON.stringify(relayedRevisions)}, check ${JSON.stringify(relayedCheck)}) — the fingerprint basis is treated as unknown`)
+if (basisOverridesLogger) log(`Re-review: this engine's fingerprint-basis verdict on revisions ${JSON.stringify(relayedRevisions)} (${JSON.stringify(engineFromRevisions)}) overrides the logger's (${JSON.stringify(relayedVerdict)}) — their tables differ`)
 const priorBasis = !priorRound ? null
   : priorBasisMismatch ? { sameFpBasis: false, fpBasisKnown: false }
-    : relayedRevisions ? basisVerdictFromRevisions(relayedRevisions)
-      : relayedVerdict
+    : engineFromRevisions || relayedVerdict
 const priorFpComparable = priorBasis ? priorBasis.sameFpBasis === true : false
 // What the basis verdict actually was, and how many carried tombstones it cost — on the run record, so
 // whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
@@ -4909,7 +4921,7 @@ function reviewRecord(extra) {
     // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
-    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
+    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
     outputTokens: budget.spent(),
     ...extra,
   }
