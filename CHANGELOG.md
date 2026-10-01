@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.0](https://github.com/gurinderu/craft/compare/v0.20.0...v0.21.0) (2026-09-30)
+
+
+### Features
+
+* **review:** surface when re-review memory is off on a detached HEAD ([#96](https://github.com/gurinderu/craft/issues/96)) ([050cedb](https://github.com/gurinderu/craft/commit/050cedb9cdf467329a2b52efe2b5a624ddf9de9d))
+
+
+### Bug Fixes
+
+* **review:** a detached HEAD stops chaining review rounds ([#99](https://github.com/gurinderu/craft/issues/99)) ([4b2388f](https://github.com/gurinderu/craft/commit/4b2388feb888e5ef05cb5b64814f86897a97cefa))
+* **review:** cap a re-found finding's transport why by length, not by whyRef ([#97](https://github.com/gurinderu/craft/issues/97)) ([a8017f1](https://github.com/gurinderu/craft/commit/a8017f15edf8083d64e20488ddad4144e28fed2f))
+* **review:** surface-gate share keeps a passing profile's saving on a mixed gate-fail run ([#94](https://github.com/gurinderu/craft/issues/94)) ([1df9f95](https://github.com/gurinderu/craft/commit/1df9f95854e7f26e126fd7cf8f6c4677faf6e004))
+* **review:** the verdict names its cause — INCOMPLETE (not-run) vs PARTIAL COVERAGE ([#98](https://github.com/gurinderu/craft/issues/98)) ([24c7b75](https://github.com/gurinderu/craft/commit/24c7b7514aaee00dd099fbd2b26ae20f6ac35d7a))
+
 ## [0.20.0](https://github.com/gurinderu/craft/compare/v0.19.0...v0.20.0) (2026-09-25)
 
 
