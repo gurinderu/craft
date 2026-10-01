@@ -3321,10 +3321,12 @@ const priorFpComparable = priorRound ? priorRound.sameFpBasis === true : false
 // What the basis verdict actually was, and how many carried tombstones it cost — on the run record, so
 // whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
 // store rather than only readable in one run's log. Set where the tombstones are dropped.
-// 'unknown' is a verdict of its own: the loader answered, but could not establish the prior's basis
-// (a recovered or unreadable round) — not a basis change, and reported as lost memory (realm @nick/craft #110).
+// 'unknown' is a verdict of its own: the loader answered "not comparable" without establishing that
+// the prior's basis is a KNOWN different one (a recovered or unreadable round, a record it cannot place,
+// or an answer whose fpBasisKnown was not carried) — not a basis change, and reported as lost memory
+// (realm @nick/craft #110). Only an explicit fpBasisKnown: true makes "not comparable" a basis change.
 const priorBasisVerdict = typeof priorRound?.sameFpBasis !== 'boolean' ? 'absent'
-  : (priorRound.sameFpBasis === false && priorRound.fpBasisKnown === false) ? 'unknown'
+  : (priorRound.sameFpBasis === false && priorRound.fpBasisKnown !== true) ? 'unknown'
     : priorRound.sameFpBasis
 let tombstonesDroppedForBasis = 0
 const priorLedgerDegraded = ledgerDegraded(priorRound)
@@ -5137,7 +5139,7 @@ if (priorRound) {
       reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
       log(`⚠️ ${note}`)
     } else {
-      log('Re-review: the prior round\'s fingerprints are not comparable to this round\'s — its basis differs, it was written by a different engine (an upgrade, a downgrade, or two installs sharing one store), or its basis could not be established (a recovered or unreadable round) — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on')
+      log('Re-review: the prior round was fingerprinted under a different, known basis — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on (expected once, right after an upgrade that changed the basis)')
     }
   } else if (priorTombstones.length) {
     const tombstoneByFp = new Map()
