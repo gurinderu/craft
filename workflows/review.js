@@ -4609,6 +4609,9 @@ async function reviewProfile(profile) {
   const expectedDispatches = new Set()
   const returnedDispatches = new Set()
   const lensRounds = []
+  // Lenses the completeness critic added and that were dispatched — on the record, because they change
+  // what a round cost without changing its plan (lib/round-pairs.mjs compares them, realm #97).
+  let criticFollowupLenses = []
   // Computed ONCE for the whole profile, not per round: the changed-file set does not move between
   // rounds, and re-slicing per round would let a lens's slice key drift between round 1 and round 2
   // for no reason a reader could follow in the transcript.
@@ -4818,6 +4821,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     const followups = named.filter(l => admitted(l) && !surfaceDropped.includes(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
+      criticFollowupLenses = [...followups]
       const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
       // A SILENT REFUSAL NEXT TO A LOUD ONE. `.filter(Boolean)` used to swallow a follow-up lens that
       // DIED — no notRun entry, no INCOMPLETE — while the branch two lines below, where the same lens
@@ -4854,7 +4858,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
   }
 
-  return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
+  return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, criticFollowupLenses, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
 }
 
 // ================= Run each active profile, then merge =================
@@ -4928,11 +4932,13 @@ function reviewRecord(extra) {
     lensScope: fullRescan ? 'full' : 'delta',
     strict,
     fullEvery,
-    // What was reviewed, as the ENGINE saw it at the start (the logger re-reads `head` from git when it
-    // writes, after the run), and against which base and path.
-    reviewedHead: head,
+    // Against which base and path the diff was taken, which lenses the critic added on top of the plan,
+    // and a digest of the caller's intent text (it feeds the intent lens) — all of which change what a
+    // round costs without being memory (lib/round-pairs.mjs, realm @nick/craft #97).
     base: baseRef || '',
     path: pathArg || '',
+    criticFollowups: results.flatMap(r => (r.criticFollowupLenses || []).map(l => `${r.profile.id}:${l}`)).sort(),
+    intentDigest: [...intentArg].reduce((h, c) => ((h * 31) + c.charCodeAt(0)) >>> 0, 7).toString(16),
     outputTokens: budget.spent(),
     ...extra,
   }

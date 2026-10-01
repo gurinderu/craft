@@ -234,10 +234,17 @@ verification); a round that scanned only a delta (`lensScope: 'delta'` — on an
 empty diff); a different configuration (languages, lenses, optional pass, `strict`); a later round whose
 memory was not in full effect (`reReview` not chained, its prior ledger degraded or rebuilt from a stalled
 run, fingerprints not comparable, tombstones dropped); a later round whose recorded prior (`reReview.priorRound`
-/ `priorHead`) is not this round; a different reviewed head, base or path; and no real `cost` (from
+/ `priorHead`) is not this round; a different head, base or path; and no real `cost` (from
 `craft-log-run enrich-cost`) on both, or a partial one (`cost.skipped`). The totals are an unweighted sum
 of token kinds, so the report also prints output, input and cache-read deltas — read those as money, not
-the ratio alone. A record of the wrong shape is judged or named, never crashes the report.
+the ratio alone. A record of the wrong shape is judged or named, never crashes the report. The
+configuration compared includes the lenses the completeness critic added and a digest of the `intent`
+text.
+
+Known limits, by construction: `head` is read when the record is written, after the run, so the tree must
+stay untouched during and between the rounds (a clean tree on both is checked; an edit made and undone
+inside a run is not); and the later round's prior is confirmed by its round number and head, not by
+the identity of the record it read, so two round-n records at the same head cannot be told apart.
 
 To take the measurement: on a clean working tree, run a review on a branch; then, **without committing
 or editing anything**, run it again with `fullEvery=1` so the second round scans the full diff too;
