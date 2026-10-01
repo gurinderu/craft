@@ -698,9 +698,9 @@ function surfaceGateRecord(results, { dispatched, namedByCritic }) {
 // Mirrors optionalDispatched: a surface-gated lens actually DISPATCHED in some profile, recorded by
 // runLens (the single dispatch point on every path). The gate is a PER-PROFILE decision reading each
 // profile's own scout, and negative-space is force-added to every plan — so on a mixed rust+nix diff a
-// lens the gate drops in one profile can still run in another. `surfaceGateDropped` alone would then
+// lens the gate drops in one profile can still run in another. The per-profile drops alone would then
 // report a lens as saved while it actually ran, corrupting #102's savings measurement — the same
-// snapshot-is-a-lie failure `optionalTally()` already fixed. `surfaceGateTally()` subtracts what ran.
+// snapshot-is-a-lie failure `optionalTally()` already fixed. savedSurfaceDrops subtracts what ran.
 const surfaceGateDispatched = new Set()
 // Mirrors optionalNamedByCritic: a surface-gated lens the completeness critic named as an uncovered
 // surface. It is NOT re-dispatched (the diff's absent surface is the deliberate boundary, and the
@@ -4767,12 +4767,12 @@ function reviewRecord(extra) {
     // realm @nick/craft #102: surfaceGate recorded for later analyze-runs measurement. Mirrors
     // optionalPass so a cheap surface-gated run does not read later as one that never planned those
     // whole-repo lenses: `dropped` is the load-bearing field, `namedByCritic` the lenses the
-    // completeness critic flagged that the gate deliberately kept dropped. Derived via
-    // surfaceGateTally(), not the raw per-profile set, so a lens dropped in one profile but dispatched
-    // in another (a mixed-diff run) is not double-counted as saved when it actually ran — the same fix
-    // surfaceGateSection() already carries. Run-level across profiles (same scope as optionalPass),
-    // sorted and unique. `dispatched` is read directly off `surfaceGateDispatched` — the same
-    // dispatch-point Set `surfaceGateTally()` subtracts with, and the one source that survives the
+    // completeness critic flagged that the gate deliberately kept dropped. Built by surfaceGateRecord
+    // from the per-profile `surfaceDropped`: only profiles past their mechanical gate count (a red
+    // profile's drops were never in play), and a lens dropped in one profile but dispatched in
+    // another (a mixed-diff run) is not counted as saved — the same set surfaceGateSection() prints.
+    // Run-level across profiles (same scope as optionalPass), sorted and unique. `dispatched` is read
+    // directly off `surfaceGateDispatched` — the same dispatch-point Set the saving subtracts, and the one source that survives the
     // gateFailed early-exit — so analyze-runs can compute a share (saved / (saved + dispatched))
     // without trusting the per-profile `dimensions` snapshot, which does not.
     surfaceGate: surfaceGateRecord(results, { dispatched: surfaceGateDispatched, namedByCritic: surfaceGateNamedByCritic }),
