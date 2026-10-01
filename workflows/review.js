@@ -1113,7 +1113,7 @@ const LEDGER_ITEM = {
 const PRIOR_ROUND_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['found', 'round', 'head', 'ledger', 'ledgerCount', 'priorFindings', 'journalSourced', 'sameFpBasis', 'reason'],
+  required: ['found', 'round', 'head', 'ledger', 'ledgerCount', 'priorFindings', 'journalSourced', 'reason'],
   properties: {
     found: { type: 'boolean' },
     round: { type: 'integer', description: 'the prior round number; 0 when found=false' },
@@ -1123,7 +1123,7 @@ const PRIOR_ROUND_SCHEMA = {
     reason: { type: 'string', description: 'why there is no prior round (no-store, no-index, no-candidate-rows, unattributable-rows-only, ancestry-rejected, detail-unreadable, partial-only, git-unavailable); empty when found=true' },
     priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
     journalSourced: { type: 'boolean', description: 'true when this ledger was reconstructed from a stalled run\'s journal.jsonl rather than a normal completed round; false when found=false. Its `head` may equal the OPERATOR\'S current HEAD (a re-run on the same stalled commit before any fix), so the workflow must not diff head...HEAD off it — see shouldFullRescan.' },
-    sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true; an omitted value is treated as not comparable. Copy it exactly as the loader printed it.' },
+    sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true. Copy it exactly as the loader printed it, and OMIT it when the loader did not print it — never supply a value of your own: an omitted value is reported as a lost basis verdict.' },
   },
 }
 
@@ -3239,7 +3239,7 @@ Run exactly this:
 ${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} \${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} --project "$PWD"
 \`\`\`
 
-It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, reason:"loader-did-not-run"}.`,
+It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the printed object has no \`sameFpBasis\`, leave it out; never invent one. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
@@ -5110,8 +5110,9 @@ if (priorRound) {
     // upgrade across a fingerprint-basis change; the tombstones minted from THIS round on are all under the current basis (the
     // incomparable carried ones are dropped at assembly), so the memory rebuilds from here.
     if (typeof priorRound?.sameFpBasis !== 'boolean') {
-      // The answer carried no basis verdict at all — a relay that dropped a required field, or a
-      // logger of another craft version. That is a LOSS, not the expected once-per-basis-change reset,
+      // The answer carried no basis verdict at all — the loader printed none (a logger of another craft
+      // version) or the relay dropped it; the schema leaves it optional precisely so this stays visible
+      // rather than being filled with a guessed boolean. That is a LOSS, not the expected once-per-basis-change reset,
       // and it drops the carried tombstones for good, so it reaches the report, not just the log.
       noteTelemetryLoss('re-review memory: the prior-round answer carried no sameFpBasis, so its fingerprints were not compared and its tombstones were dropped', 'a transport or version-skew loss, not a fingerprint-basis change')
     } else {
