@@ -4921,13 +4921,18 @@ function reviewRecord(extra) {
     // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
-    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis },
+    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis, ledgerDegraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced, priorRound: priorRound?.round ?? null, priorHead: priorRound?.head ?? null },
     // What the lenses were run over and how, so a later comparison of two rounds can tell a memory
     // effect from a scope or configuration effect (lib/round-pairs.mjs, realm @nick/craft #97): a
     // `delta` round on an unchanged head reviews an empty diff.
     lensScope: fullRescan ? 'full' : 'delta',
     strict,
     fullEvery,
+    // What was reviewed, as the ENGINE saw it at the start (the logger re-reads `head` from git when it
+    // writes, after the run), and against which base and path.
+    reviewedHead: head,
+    base: baseRef || '',
+    path: pathArg || '',
     outputTokens: budget.spent(),
     ...extra,
   }

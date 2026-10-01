@@ -232,8 +232,12 @@ reason and no numbers: a round whose engine is unknown, or a different engine; a
 working tree on either side; a round that did not run in full (gate failed, lenses not run, no
 verification); a round that scanned only a delta (`lensScope: 'delta'` — on an unchanged head that is an
 empty diff); a different configuration (languages, lenses, optional pass, `strict`); a later round whose
-memory was not in full effect (`reReview` not chained, fingerprints not comparable, tombstones dropped);
-and no real `cost` (from `craft-log-run enrich-cost`) on both.
+memory was not in full effect (`reReview` not chained, its prior ledger degraded or rebuilt from a stalled
+run, fingerprints not comparable, tombstones dropped); a later round whose recorded prior (`reReview.priorRound`
+/ `priorHead`) is not this round; a different reviewed head, base or path; and no real `cost` (from
+`craft-log-run enrich-cost`) on both, or a partial one (`cost.skipped`). The totals are an unweighted sum
+of token kinds, so the report also prints output, input and cache-read deltas — read those as money, not
+the ratio alone. A record of the wrong shape is judged or named, never crashes the report.
 
 To take the measurement: on a clean working tree, run a review on a branch; then, **without committing
 or editing anything**, run it again with `fullEvery=1` so the second round scans the full diff too;
