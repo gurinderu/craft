@@ -5129,10 +5129,11 @@ if (priorRound) {
       reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
       log(`⚠️ ${note}`)
     } else if (priorBasisVerdict === 'unknown') {
-      // A round recovered from a stopped run (or read from an unreadable record) cannot establish the
-      // basis its tombstones were minted under. Comparing anyway is the silent miss the guard exists
+      // A round recovered from a stopped run, read from an unreadable record, or written by an engine
+      // this one cannot place (no revision, or a newer one) cannot establish the basis its tombstones
+      // were minted under. Comparing anyway is the silent miss the guard exists
       // to prevent, so they are still dropped — but that is lost memory, and it is said so.
-      const note = `The prior round was recovered from a stopped run (or its record could not be read), so the fingerprint basis of its ${priorTombstones.length} resolved/dismissed finding(s) could not be established; they were not compared against this round and are no longer remembered.`
+      const note = `The fingerprint basis of the prior round could not be established — it was recovered from a stopped run, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store) — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
       reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
       log(`⚠️ ${note}`)
     } else {
