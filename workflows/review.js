@@ -1123,7 +1123,7 @@ const PRIOR_ROUND_SCHEMA = {
     reason: { type: 'string', description: 'why there is no prior round (no-store, no-index, no-candidate-rows, unattributable-rows-only, ancestry-rejected, detail-unreadable, partial-only, git-unavailable); empty when found=true' },
     priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
     journalSourced: { type: 'boolean', description: 'true when this ledger was reconstructed from a stalled run\'s journal.jsonl rather than a normal completed round; false when found=false. Its `head` may equal the OPERATOR\'S current HEAD (a re-run on the same stalled commit before any fix), so the workflow must not diff head...HEAD off it — see shouldFullRescan.' },
-    sameEngineRevision: { type: 'boolean', description: 'true when the prior round was produced under the SAME engine revision that stamps this round; false when it differs or is unknown, and when found=false. The finding fingerprint basis is revision-scoped, so the recidivism/tombstone check compares fp only when this is true. Optional: a degraded/legacy prior may omit it, and the workflow then treats the memory as comparable (its pre-guard behaviour).' },
+    sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true. Optional: a degraded/legacy prior may omit it, and the workflow then treats the memory as comparable (its pre-guard behaviour).' },
   },
 }
 
@@ -3308,14 +3308,14 @@ if (reReview.note) {
 // corruption — recorded here so the next reader meets the assumption before the store, not after.
 const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // The prior round's finding fingerprints are comparable to this round's
-// only when both were produced under the same engine revision: the fp basis is revision-scoped (a bump
-// changes what a recorded `fp` MEANS — see ENGINE_REVISION in lib/run-record.mjs). The loader reports
-// this as `sameEngineRevision`; a degraded/legacy prior may omit it, and an omission is treated as
-// comparable (the pre-guard behaviour). When it is explicitly false — the first re-review after an
-// engine upgrade — the tombstone recidivism check is skipped for that one transition rather than
+// only when both were fingerprinted under the same basis (FP_BASIS_SINCE in lib/run-record.mjs — a
+// separate question from the engine revision, so a telemetry-only bump keeps it; realm @nick/craft
+// #108). The loader reports this as `sameFpBasis`; a degraded/legacy prior may omit it, and an omission is treated as
+// comparable (the pre-guard behaviour). When it is explicitly false — the first re-review after a
+// fingerprint-basis change — the tombstone recidivism check is skipped for that one transition rather than
 // comparing hashes across incompatible bases and missing a regression silently (see the recidivism
 // block and the tombstone assembly; the memory rebuilds under the new basis from this round on).
-const priorFpComparable = priorRound ? priorRound.sameEngineRevision !== false : false
+const priorFpComparable = priorRound ? priorRound.sameFpBasis !== false : false
 const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
   log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)

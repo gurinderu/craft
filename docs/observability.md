@@ -49,6 +49,11 @@ engine identity of `runtime + craftVersion + rN`. Bump it in the same commit tha
 telemetry means. Nothing can enforce that, and a missed bump asserts sameness — which is why a
 record carrying no revision reads as `r?` and is never folded into the current engine.
 
+A bump is cheap for re-review memory: the revision is **not** the finding-fingerprint basis. Whether
+a prior round's fingerprints compare to this round's is decided by `FP_BASIS_SINCE` in the same file
+(the revisions at which each basis began), so a telemetry-only bump keeps every review loop's
+tombstones. Change that table, not only the revision, when `fingerprint()` changes what an `fp` means.
+
 `node lib/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.
 With no flag the report names the engines it spans **before** any rate, and says so plainly when it
