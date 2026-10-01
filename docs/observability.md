@@ -231,7 +231,8 @@ nothing but re-review memory differs between them. Each pair that fails a condit
 reason and no numbers: a round whose engine is unknown, or a different engine; a moved `head`; a dirty
 working tree on either side; a round that did not run in full (gate failed, lenses not run, no
 verification); a round that scanned only a delta (`lensScope: 'delta'` — on an unchanged head that is an
-empty diff); a different configuration (languages, lenses, optional pass, `strict`); a later round whose
+empty diff); a round that does not record the digest of its `intent` or of the author's description (an
+older record — an unknown input is not the same input); a different configuration (languages, lenses, optional pass, `strict`, the intent and description digests); a later round whose
 memory was not in full effect (`reReview` not chained, its prior ledger degraded or rebuilt from a stalled
 run, fingerprints not comparable, tombstones dropped); a later round whose recorded prior (`reReview.priorRound`
 / `priorHead`) is not this round; a different head, base or path; and no real `cost` (from
