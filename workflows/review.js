@@ -1113,7 +1113,7 @@ const LEDGER_ITEM = {
 const PRIOR_ROUND_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['found', 'round', 'head', 'ledger', 'ledgerCount', 'priorFindings', 'journalSourced', 'reason'],
+  required: ['found', 'round', 'head', 'ledger', 'ledgerCount', 'priorFindings', 'journalSourced', 'sameFpBasis', 'reason'],
   properties: {
     found: { type: 'boolean' },
     round: { type: 'integer', description: 'the prior round number; 0 when found=false' },
@@ -1123,7 +1123,7 @@ const PRIOR_ROUND_SCHEMA = {
     reason: { type: 'string', description: 'why there is no prior round (no-store, no-index, no-candidate-rows, unattributable-rows-only, ancestry-rejected, detail-unreadable, partial-only, git-unavailable); empty when found=true' },
     priorFindings: { type: 'integer', description: 'total findings the prior round reported (its record findings.total); 0 when found=false or unknown — used to detect a round that found bugs but persisted no ledger' },
     journalSourced: { type: 'boolean', description: 'true when this ledger was reconstructed from a stalled run\'s journal.jsonl rather than a normal completed round; false when found=false. Its `head` may equal the OPERATOR\'S current HEAD (a re-run on the same stalled commit before any fix), so the workflow must not diff head...HEAD off it — see shouldFullRescan.' },
-    sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true; an omitted value is treated as not comparable.' },
+    sameFpBasis: { type: 'boolean', description: 'true when the prior round fingerprinted its findings under the SAME basis as this round (the basis is not the engine revision: a telemetry-only revision bump keeps it); false when it differs or is unknown, and when found=false. The recidivism/tombstone check compares fp only when this is true; an omitted value is treated as not comparable. Copy it exactly as the loader printed it.' },
   },
 }
 
@@ -3239,7 +3239,7 @@ Run exactly this:
 ${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-round --branch ${shq(branch)} \${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} --project "$PWD"
 \`\`\`
 
-It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, reason:"loader-did-not-run"}.`,
+It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   )
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
@@ -5109,7 +5109,14 @@ if (priorRound) {
     // silence — the exact silent miss this guard exists to remove. Expected once, right after an
     // upgrade across a fingerprint-basis change; the tombstones minted from THIS round on are all under the current basis (the
     // incomparable carried ones are dropped at assembly), so the memory rebuilds from here.
-    log('Re-review: the prior round\'s fingerprints are not on this engine\'s fingerprint basis (or that could not be established) — its resolved/dismissed fingerprints are not comparable to this round\'s, so the recidivism check is skipped for this transition (expected once, right after an upgrade that changed the basis); the memory rebuilds from this round on')
+    if (typeof priorRound?.sameFpBasis !== 'boolean') {
+      // The answer carried no basis verdict at all — a relay that dropped a required field, or a
+      // logger of another craft version. That is a LOSS, not the expected once-per-basis-change reset,
+      // and it drops the carried tombstones for good, so it reaches the report, not just the log.
+      noteTelemetryLoss('re-review memory: the prior-round answer carried no sameFpBasis, so its fingerprints were not compared and its tombstones were dropped', 'a transport or version-skew loss, not a fingerprint-basis change')
+    } else {
+      log('Re-review: the prior round\'s fingerprints are not on this engine\'s fingerprint basis (or that could not be established) — its resolved/dismissed fingerprints are not comparable to this round\'s, so the recidivism check is skipped for this transition (expected once, right after an upgrade that changed the basis); the memory rebuilds from this round on')
+    }
   } else if (priorTombstones.length) {
     const tombstoneByFp = new Map()
     for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
@@ -5358,11 +5365,11 @@ const toLedgerEntry = (f, disposition, tier) => ({
 // the round it closed in, and no prose. The origin lives in `why` (not a new field) so it rides the
 // existing ledger shape and the round-marker regex reads both forms unchanged.
 // `fp` is RECOMPUTED under THIS round's basis, overriding the `f.fp || fingerprint(f)` toLedgerEntry
-// would otherwise carry: a prior LIVE finding loaded from a ledger written under an earlier engine
-// revision still carries its stored old-basis `fp`, and if a tombstone minted from it kept that stale
-// hash, a later same-revision round would key the recidivism check on the old basis (`t.fp`) while
+// would otherwise carry: a prior LIVE finding loaded from a ledger written under an earlier fingerprint
+// basis still carries its stored old-basis `fp`, and if a tombstone minted from it kept that stale
+// hash, a later same-basis round would key the recidivism check on the old basis (`t.fp`) while
 // looking the returning defect up under the current one (`fingerprint(f)`) — the two never match and
-// the regression is missed in silence, the exact class the revision guard removes, only shifted a round
+// the regression is missed in silence, the exact class the fingerprint-basis guard removes, only shifted a round
 // on. Minting every tombstone under the current basis closes it for BOTH paths (resolved and dismissed);
 // an incomparable CARRIED tombstone is dropped at assembly below, never re-minted here.
 const toTombstone = (f, origin = 'resolved') => {
@@ -5386,10 +5393,10 @@ const liveLedgerCount = confirmed.length + suspected.length +
 const tombstones = pruneTombstones([
   ...adjudicated.resolved.map(f => toTombstone(f, 'resolved')),
   ...adjudicated.retired.map(f => toTombstone(f, 'dismissed')),
-  // Carried tombstones from an incomparable engine revision are dropped, not carried
-  // forward under a stale basis: a clean baseline after a bump. This round's own tombstones are minted
-  // under the current basis (toTombstone recomputes `fp`, so even a prior loaded under an old revision
-  // gets a current-basis hash) and kept regardless.
+  // Carried tombstones from an incomparable fingerprint basis are dropped, not carried forward under a
+  // stale basis: a clean baseline after a basis change (or a reported loss when the basis verdict did
+  // not arrive). This round's own tombstones are minted under the current basis (toTombstone recomputes
+  // `fp`, so even a prior loaded under an old basis gets a current-basis hash) and kept regardless.
   ...(priorFpComparable ? priorTombstones : []),
 ], { max: tombstoneBudget(liveLedgerCount) })
 const reviewLedger = isRereview
