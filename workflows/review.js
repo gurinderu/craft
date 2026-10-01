@@ -614,22 +614,27 @@ const optionalDispatched = new Set()
 const optionalNamedByCritic = new Set()
 const optionalTally = () => optionalTallyFrom(results, optionalDispatched, optionalRequested)
 // Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
-// one and the mechanical fallback. The earliest exits (no diff) run before any profile is planned,
-// and a red-gated profile counts only lenses the caller explicitly requested (it aborts before any
-// lens could run), so on a default run the list is empty there and no section is emitted; those reports already say plainly
-// that nothing was reviewed. It says "absence of a result", never "no problems found".
+// one and the mechanical fallback. The earliest exits (no diff) run before any profile is planned, so
+// the list is empty there. A red-gated profile contributes only lenses the caller explicitly requested
+// (it aborts before any lens could run), so a default run on which every profile carrying optional
+// lenses is red emits no section; a passing profile on a mixed red run still contributes its whole
+// scope, and the section then names the gate first. It says "absence of a result", never "no
+// problems found".
 const optionalSection = () => {
   const skipped = optionalTally().skipped
   if (!skipped.length) return ''
   const named = skipped.filter(l => optionalNamedByCritic.has(l))
-  const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : ''
   // A red mechanical gate blocks the whole review on its own, so "buy them with optional=…" is the
   // wrong next step there: lenses the caller already requested need no new request, and the rest are
   // beside the point until the gate is green (realm @nick/craft #109).
   if (failedProfiles(results).length) {
     const unrequested = skipped.filter(l => !optionalRequested.includes(l))
+    // The critic only ever names an unrequested lens, so it is already in the one optional= offer
+    // above; here it is a signal for the re-run, not a second instruction.
+    const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was not dispatched; once the gate is green, weigh including it in that re-run.\n` : ''
     return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n` + criticLine
   }
+  const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : ''
   return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
     + criticLine
 }
