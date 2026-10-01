@@ -4669,15 +4669,24 @@ for (const p of active) results.push(await reviewProfile(p))
 // A red gate on any active language blocks the whole review (findings can't be trusted on a broken tree).
 const gateFailed = results.filter(r => r.gateStatus === 'fail')
 const mergedProvenance = results.map(r => `[${r.profile.id}] ${r.gateProvenance}`).join(' · ')
-const mergedGateStatus = gateFailed.length ? 'fail' : (results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown')
-// Run-level "did any profile complete its lens phase this run?". The merged `gate.status` is a
-// worst-of across profiles, so a mixed run where one profile failed its gate but another ran its
-// lenses and legitimately dropped a surface-gated lens carries `status:'fail'` with a real saving —
-// indistinguishable, on gate.status + dispatched alone, from a run where every profile aborted at the
-// gate before any lens ran. This is the one signal that tells them apart; analyze-runs reads it (as
-// `surfaceGate.lensesRan`) to stop excluding the former's real saving. TRUE when any profile finished
-// its lens phase (a gate-failed profile returns `ranLenses: []`, contributing nothing).
-const anyProfileRanLenses = results.some(r => (r.ranLenses || []).length > 0)
+// The merge itself lives in lib/profile-merge.mjs (tested there) and is pasted in by the
+// craft-inline gate; analyze-runs reads `anyProfileRanLenses` as `surfaceGate.lensesRan`.
+// >>> craft-inline lib/profile-merge.mjs mergeGateStatus profilesRanLenses
+// Worst-of across profiles: any red gate blocks the whole review (findings can't be trusted on a
+// broken tree); green only when every profile is green; anything else is unknown.
+function mergeGateStatus(results) {
+  if (results.some(r => r.gateStatus === 'fail')) return 'fail'
+  return results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown'
+}
+
+// TRUE when any profile finished its lens phase. A gate-failed profile returns `ranLenses: []`,
+// contributing nothing.
+function profilesRanLenses(results) {
+  return results.some(r => (r.ranLenses || []).length > 0)
+}
+// <<< craft-inline
+const mergedGateStatus = mergeGateStatus(results)
+const anyProfileRanLenses = profilesRanLenses(results)
 
 // carriedChecks prints on EVERY verdict, red or green. A red-but-not-yours check that only appeared
 // on failure would be invisible exactly when the review passes — which is most of the time, and is
