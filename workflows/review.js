@@ -629,8 +629,8 @@ const optionalSection = () => {
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : '')
 }
 
-// realm @nick/craft #102. Mirrors optionalSection(): a top-level set fed by reviewProfile's surface
-// gate and appended by out(), so it reaches every report the engine can return, and stated
+// realm @nick/craft #102. Mirrors optionalSection(): derived from the per-profile results of
+// reviewProfile's surface gate and appended by out(), so it reaches every report the engine can return, and stated
 // MECHANICALLY rather than asked of the synthesis model (which can die or not obey). A whole-repo
 // lens is dropped when the diff does not touch the surface its defect class needs — that is an
 // ABSENCE of a result for those areas, NOT an approval of them.
@@ -708,7 +708,8 @@ const surfaceGateDispatched = new Set()
 // must reach the reader rather than die in the filter.
 const surfaceGateNamedByCritic = new Set()
 // The run-level truth, DERIVED not accumulated (mirrors optionalTally): a lens counts as
-// surface-gate-dropped only if the gate dropped it somewhere AND it ran in NO active profile.
+// surface-gate-dropped only if the gate dropped it in a profile PAST its mechanical gate AND it ran
+// in NO active profile.
 const surfaceGateTally = () => ({ dropped: savedSurfaceDrops(results, surfaceGateDispatched) })
 const surfaceGateSection = () => {
   const dropped = surfaceGateTally().dropped
