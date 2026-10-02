@@ -10,7 +10,7 @@
 //
 // `fanOut` reaches the outside world through exactly one seam: `ctx.client.session`. A fake client
 // drives the whole dispatcher, which is the same shape the Claude Code engines are tested with.
-import { test } from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { fanOut, runAnswering } from './orchestrator.ts'
 // The PRODUCTION predicate, imported rather than re-spelled. A local copy is what let the gate and

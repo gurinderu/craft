@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Dev-only tooling for the craft plugin repo. craft itself ships no runtime dependencies.",
   "scripts": {
-    "test": "node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'",
+    "test": "vitest run",
     "lint": "eslint lib opencode/plugin knip.config.js --max-warnings 0",
     "check:workflows": "node lib/check-workflows.mjs",
     "check:skills": "node lib/check-skills.mjs",
@@ -22,6 +22,7 @@
     "eslint": "^9.39.0",
     "knip": "6.39.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.71.0"
+    "typescript-eslint": "8.71.0",
+    "vitest": "5.0.3"
   }
 }

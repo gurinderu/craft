@@ -7,7 +7,7 @@
 // presents itself as a complete triage. So the splitter discards only what is structurally furniture
 // — code fences, headings, a table's rule — and everything else is either an item or the
 // continuation of one.
-import { test } from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
