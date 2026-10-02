@@ -20,12 +20,13 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
-      # Lint reaches only the .mjs files under lib/ and opencode/plugin/. workflows/*.js cannot be
+      # Lint reaches only the .mjs files under lib/ and opencode/plugin/, and knip.config.js (it imports
+      # lib/inline-regions.mjs and decides what the dead-code gate sees). workflows/*.js cannot be
       # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
       # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs — the
       # typecheck step below is their gate. Keep this command identical to package.json's "lint".
       - name: Lint
-        run: npx eslint lib opencode/plugin --max-warnings 0
+        run: npx eslint lib opencode/plugin knip.config.js --max-warnings 0
       # tsc over opencode/plugin/*.ts and every opencode/plugin/*.mjs, tests included (config in
       # opencode/plugin/tsconfig.json: checkJs at the same maximum strictness as lib/tsconfig.json).
       # This is the only gate that compiles the TypeScript at all; before it existed a syntax error
@@ -75,10 +76,12 @@ jobs:
         run: node lib/check-evals.mjs
       # Unused files, exports and dependencies across lib/, workflows/ and the opencode plugin
       # (knip.config.js). The engines' craft-inline fences count as imports, so an inlined export
-      # is used. Tests count as users here, and any module a test names with `new URL(...)` has its
-      # exports unchecked; `npm run check:dead:production` (tests excluded) closes that, and is not
-      # a step yet: it names three test-only exports still to be removed.
-      - name: Check unused code (knip)
+      # is used. Production mode drops tests and checks what the shipped entries reach, so an
+      # export only a test uses is dead here. The default mode, tests included, is kept beside it:
+      # only it sees devDependencies and what the tests import (an unused or unlisted package).
+      - name: Check unused code, shipped entries (knip --production)
+        run: npm run check:dead:production
+      - name: Check unused code and dependencies, tests included (knip)
         run: npm run check:dead
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
       # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.

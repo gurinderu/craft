@@ -1,6 +1,6 @@
 import js from '@eslint/js'
 
-// Lint scope is the .mjs files under lib/ and opencode/plugin/ — nothing else.
+// Lint scope is the .mjs files under lib/ and opencode/plugin/, and knip.config.js — nothing else.
 //   - workflows/*.js are NOT linted and cannot be: they carry top-level export + await + return
 //     and only parse inside the Workflow sandbox wrapper — the same reason `node --check` cannot
 //     read them. `node lib/check-workflows.mjs` compiles them instead; that is their gate.
@@ -17,7 +17,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['lib/**/*.mjs', 'opencode/**/*.mjs'],
+    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
