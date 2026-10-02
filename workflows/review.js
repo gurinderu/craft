@@ -668,7 +668,7 @@ const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
 function parseOptionalRequest(raw) {
   if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
   if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
-  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
+  const names = (Array.isArray(raw) ? /** @type {unknown[]} */ (raw) : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
   return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
 }
 const optionalRequest = parseOptionalRequest(A['optional'])
@@ -685,6 +685,7 @@ const optionalRequested = optionalRequest.lenses
 // which ones were actually DISPATCHED (recorded by `runLens`, the single dispatch point for every
 // lens on every path — planned, resurrected, or critic-composed). optionalTallyFrom
 // (lib/profile-merge.mjs) subtracts, naming each lens once across profiles.
+/** @type {Set<string>} */
 const optionalDispatched = new Set()
 // An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
 // critic is the same model whose spend this pass deliberately took out of model hands), but the
@@ -852,11 +853,13 @@ function optionalTallyFrom(results, dispatched, requested = []) {
 // lens the gate drops in one profile can still run in another. The per-profile drops alone would then
 // report a lens as saved while it actually ran, corrupting #102's savings measurement — the same
 // snapshot-is-a-lie failure `optionalTally()` already fixed. savedSurfaceDrops subtracts what ran.
+/** @type {Set<string>} */
 const surfaceGateDispatched = new Set()
 // Mirrors optionalNamedByCritic: a surface-gated lens the completeness critic named as an uncovered
 // surface. It is NOT re-dispatched (the diff's absent surface is the deliberate boundary, and the
 // critic is the same model whose spend this pass took out of model hands), but the signal is real and
 // must reach the reader rather than die in the filter.
+/** @type {Set<string>} */
 const surfaceGateNamedByCritic = new Set()
 // The run-level truth, DERIVED not accumulated (mirrors optionalTally): a lens counts as
 // surface-gate-dropped only if the gate dropped it in a profile PAST its mechanical gate AND it ran
@@ -2890,7 +2893,7 @@ function reviewVerdict(confirmed) {
 // under a same-severity non-maintainability base would silently escape the strict Block.
 /** @param {Finding} f */
 function isMaintainability(f) {
-  return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && f['sources'].includes('maintainability'))
+  return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && /** @type {unknown[]} */ (f['sources']).includes('maintainability'))
 }
 /** @param {Finding[]} confirmed */
 function finalVerdict(confirmed) {
@@ -2953,10 +2956,43 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 // failed probe. Stated above the verdict, with the fix; recorded on the run record.
 /** @type {{ id: string, agent: string, error: string }[]} */
 const reviewerAgentUnavailable = []
-// Only an error that is about the AGENT TYPE counts: a missing model, a file or tool not found inside
-// the agent, or an HTTP 404 also say "not found", and an "install the plugin" line for those would send
-// the operator to the wrong fix.
-const isAgentTypeMissing = (/** @type {string} */ msg, /** @type {string} */ agent) => /not found/i.test(msg) && (/agent type/i.test(msg) || msg.includes(agent))
+// The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
+// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection
+// Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
+// or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
+// operator to the wrong fix.
+/** @param {unknown} msg @param {string} [agent] */
+function isAgentTypeMissing(msg, agent) {
+  const m = String(msg ?? '')
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+}
+
+// The report section. `missing`: [{ agent, what, error }] — an agent type the engine learned is not
+// registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
+// `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
+// came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
+// threw a "not found" isAgentTypeMissing does not recognise (the harness's wording for an unregistered
+// type is unobserved, #116) — said softly, without the install line, the error quoted. Empty string
+// when there is nothing to say.
+/**
+ * @param {{ agent: string, what: string, error?: string }[]} missing
+ * @param {{ agent: string, count: number, what: string, error?: string }[]} emptied
+ * @returns {string}
+ */
+function agentUnavailableSection(missing, emptied) {
+  const hard = Array.isArray(missing) ? missing : []
+  const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
+  if (!hard.length && !soft.length) return ''
+  const lines = [
+    ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} went to the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${String(x.error).slice(0, 160)})` : ''}`),
+    ...soft.map(x => x.error
+      ? `- \`${x.agent}\` failed with "${String(x.error).slice(0, 160)}" on ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent in wording this engine does not recognise, or a missing model or tool).`
+      : `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
+  ]
+  const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
+  return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
+}
+// <<< craft-inline
 /** @param {Profile} profile @param {unknown} error */
 function noteReviewerAgentMissing(profile, error) {
   if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent, error: String(error || '').slice(0, 160) })
@@ -2966,19 +3002,37 @@ function noteReviewerAgentMissing(profile, error) {
 // death, so it is not taken as "missing" — but it is said, per profile, rather than staying silent.
 /** @type {Record<string, number>} */
 const reviewerAgentFallbacks = {}
+/** @type {Record<string, string>} */
+const reviewerAgentNames = {}           // profile id -> its reviewer agent type, for the report line
+// Lens dispatches whose reviewer agent threw a "not found" isAgentTypeMissing does not recognise and the
+// generic subagent then answered: the harness's wording for an unregistered type is unobserved (#116),
+// so the lens keeps its coverage rather than dying on a guess about the text. Also in the record count.
+/** @type {Record<string, { count: number, error: string }>} */
+const reviewerAgentNotFound = {}
 /** @param {Profile} profile */
 function noteReviewerAgentFallback(profile) {
   reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
+  reviewerAgentNames[profile.id] = profile.reviewerAgent
 }
-const reviewerAgentSection = () => {
-  const soft = Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
-  if (!reviewerAgentUnavailable.length && !soft.length) return ''
-  const lines = [
-    ...reviewerAgentUnavailable.map(x => `- ${x.id}: \`${x.agent}\` is not registered in this session, so every ${x.id} lens ran on the generic subagent, without that agent's rubric — this review is weaker than a normal one, not broken.${x.error ? ` (${x.error})` : ''}`),
-    ...soft.map(([id, n]) => `- ${id}: the reviewer agent returned nothing for ${n} lens dispatch(es), which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
-  ]
-  return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${reviewerAgentUnavailable.length ? 'Enable the plugin in this project (\`/plugin install craft@craft\`, project or local scope) and re-run to review with it.\n' : ''}\n`
+/** @param {Profile} profile @param {string} error */
+function noteReviewerAgentNotFound(profile, error) {
+  const was = reviewerAgentNotFound[profile.id]
+  reviewerAgentNotFound[profile.id] = { count: (was?.count || 0) + 1, error }
+  reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
+  reviewerAgentNames[profile.id] = profile.reviewerAgent
 }
+const reviewerAgentSection = () => agentUnavailableSection(
+  reviewerAgentUnavailable.map(x => ({ agent: x.agent, what: `every ${x.id} lens`, error: x.error })),
+  Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
+    .flatMap(([id, n]) => {
+      const agent = reviewerAgentNames[id] || `${id} reviewer agent`
+      const nf = reviewerAgentNotFound[id]
+      return [
+        { agent, count: n - (nf?.count || 0), what: 'lens dispatch(es)' },
+        ...(nf ? [{ agent, count: nf.count, what: 'lens dispatch(es)', error: nf.error }] : []),
+      ]
+    }),
+)
 
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
@@ -4357,6 +4411,7 @@ function sameSpotGroups(pool) {
   const groups = []
   for (const [, idxs] of bySpot) {
     if (idxs.length < 2) continue
+    /** @type {Set<number>} */
     const taken = new Set()
     for (const i of idxs) {
       if (taken.has(i)) continue
@@ -4398,6 +4453,7 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   )
   /** @type {Finding[]} */
   const merged = []
+  /** @type {Set<number>} */
   const inGroup = new Set()
   for (const g of groups) {
     if (g.some(i => inGroup.has(i))) continue // overlapping groups: first wins
@@ -4641,7 +4697,7 @@ function batchDeath(res) {
   if (!res) return 'returned nothing at all — a dead agent, an exhausted retry, or an expired deadline'
   const verdicts = /** @type {{ verdicts?: unknown }} */ (res).verdicts
   if (!Array.isArray(verdicts)) return 'answered OFF-SCHEMA — its answer carried no verdict list at all'
-  if (!verdicts.length) return 'answered with an EMPTY verdict list — it judged nothing'
+  if (!/** @type {unknown[]} */ (verdicts).length) return 'answered with an EMPTY verdict list — it judged nothing'
   return null
 }
 // A vote is a JUDGEMENT only if it carries the four booleans tierFromVotes decides on. THE NINTH
@@ -5177,6 +5233,8 @@ async function reviewProfile(profile) {
     }
     return res
   }
+  // A fallback counts as answered only when runLens would accept it: an off-schema answer is a dead lens.
+  const answeredFindings = (/** @type {unknown} */ r) => r != null && Array.isArray(/** @type {{ findings?: unknown }} */ (r).findings)
   /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
   async function dispatchLens(lens, prompt, phaseName, labelSuffix, slice = null) {
     // The single dispatch point for every lens on every path. Recording here — not at plan time — is
@@ -5201,15 +5259,26 @@ async function reviewProfile(profile) {
       // Null (not a throw) from the reviewer path: on some runtimes an unknown agent type returns
       // null rather than throwing. ragent already retried; try the generic subagent once. Do NOT
       // set reviewerAgentMissing — a null can be a transient API death, so later lenses still get
-      // a shot at the real reviewer agent. Counted, so the report can say it happened.
-      noteReviewerAgentFallback(profile)
-      return await runGeneric()
+      // a shot at the real reviewer agent. Counted, so the report can say it happened — only when the
+      // generic subagent answered: dead on both paths is a dead lens, as rust-audit counts it (#116).
+      const fallback = await runGeneric()
+      if (answeredFindings(fallback)) noteReviewerAgentFallback(profile)
+      return fallback
     } catch (e) {
       const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
       // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
       // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
       // as "died without an error" — and any sibling slice could overwrite it.
-      if (!isAgentTypeMissing(msg, profile.reviewerAgent)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
+      if (!isAgentTypeMissing(msg, profile.reviewerAgent)) {
+        // Recorded first, so a generic run that also returns nothing still reports this error (a generic
+        // throw overwrites it with its own). Not memoized: a real unregistered type in unknown wording
+        // costs one failed agent dispatch per lens — the price of not guessing at the text (#116).
+        lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160))
+        if (!/not found/i.test(msg)) return null
+        const fallback = await runGeneric()
+        if (answeredFindings(fallback)) { lensFailures.delete(dispatchKey(lens, slice)); noteReviewerAgentNotFound(profile, msg.slice(0, 160)) }
+        return fallback
+      }
       reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
       log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
       return await runGeneric()
@@ -5327,6 +5396,7 @@ async function reviewProfile(profile) {
 
   // ---- Lenses (loop-until-dry) ----
   phase('Lenses')
+  /** @type {Set<string>} */
   const seen = new Set()
   const pool = []
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
@@ -6253,7 +6323,7 @@ const toLedgerEntry = (f, disposition, tier) => ({
   fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '',
   severity: f['severity'], tier: tier || f['tier'] || 'suspected', disposition: disposition || f['disposition'] || 'open',
   source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
-  ...(Array.isArray(f['sources']) ? { sources: f['sources'] } : {}),
+  ...(Array.isArray(f['sources']) ? { sources: /** @type {unknown[]} */ (f['sources']) } : {}),
   // A CARRIED finding arrived from the prior-round transport with a SHORTENED `why` and a `whyRef`
   // pointing at the record its FULL `why` lives in (its birth). Persist that pointer so the short-why/
   // full-by-reference chain survives into the next round. A FRESH finding (born this round, straight
