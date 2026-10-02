@@ -91,7 +91,7 @@ export async function runAnswering(
   // timeout and an errored session produce the byte-identical banner at the caller — the fan-out path
   // keeps that text on purpose (see `tryOne`), and the single-call path was held to the same GATE
   // but not to the same REPORTING.
-  const job = { label: agent || "default", agent, prompt, answered, timeoutMs, requires }
+  const job: Job = { label: agent || "default", agent, prompt, answered, timeoutMs, ...(requires === undefined ? {} : { requires }) }
   const r = await tryOne(ctx, job)
   return { ok: r.ok, text: r.text, note: r.ok ? "" : notRunNote(job, r.why, r.text, false, false) }
 }
@@ -168,28 +168,32 @@ const RETRY_BUDGET_MS = 30 * 60_000
 // the clipping branch at all: with thirty minutes remaining, `Math.min(job.timeoutMs, left)` is
 // always the job's own value, so the assertion held whether or not the clipping existed.
 export async function fanOut(ctx: PluginCtx, jobs: Job[], retryBudgetMs = RETRY_BUDGET_MS): Promise<JobResult[]> {
-  // Pass 1: concurrent.
-  const first = await Promise.all(jobs.map((j) => tryOne(ctx, j)))
-  const failedIdx = first.map((r, i) => (r.ok ? -1 : i)).filter((i) => i >= 0)
-  if (failedIdx.length === 0) return first
+  // Pass 1: concurrent. Each result travels with its job, so pass 2 reads no parallel array.
+  const slots: { job: Job; result: JobResult & { why?: Failure } }[] = await Promise.all(
+    jobs.map(async (job) => ({ job, result: await tryOne(ctx, job) })),
+  )
+  if (slots.every((s) => s.result.ok)) return slots.map((s) => s.result)
 
   // Pass 2: sequential retry of the stuck/failed jobs (the #8528/#6573 mitigation).
   const deadline = Date.now() + retryBudgetMs
-  for (const i of failedIdx) {
+  for (const slot of slots) {
+    if (slot.result.ok) continue
+    const { job } = slot
     const left = deadline - Date.now()
     if (left <= 0) {
-      first[i] = { label: jobs[i].label, ok: false, text: notRunNote(jobs[i], "budget", first[i].text) }
+      slot.result = { label: job.label, ok: false, text: notRunNote(job, "budget", slot.result.text) }
       continue
     }
     // The clipped deadline is what the retry actually ran under, so it is what the note must
     // describe. Reading the unclipped one told the reader "no result within 20 minutes" about a job
     // that was given ninety seconds — a false span pointing at a deadline that never fired.
-    const effective = { ...jobs[i], timeoutMs: Math.min(jobs[i].timeoutMs ?? STUCK_MS, left) }
-    const clipped = effective.timeoutMs < (jobs[i].timeoutMs ?? STUCK_MS)
+    const timeoutMs = Math.min(job.timeoutMs ?? STUCK_MS, left)
+    const effective: Job = { ...job, timeoutMs }
+    const clipped = timeoutMs < (job.timeoutMs ?? STUCK_MS)
     const retry = await tryOne(ctx, effective)
-    first[i] = retry.ok
+    slot.result = retry.ok
       ? retry
-      : { label: jobs[i].label, ok: false, text: notRunNote(effective, retry.why, retry.text, clipped) }
+      : { label: job.label, ok: false, text: notRunNote(effective, retry.why, retry.text, clipped) }
   }
-  return first
+  return slots.map((s) => s.result)
 }

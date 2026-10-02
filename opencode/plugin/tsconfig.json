@@ -5,9 +5,18 @@
     "moduleResolution": "nodenext",
     "target": "es2022",
     "allowJs": true,
+    "checkJs": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "*.mjs"]
 }
