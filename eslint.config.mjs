@@ -1,5 +1,6 @@
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
+import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 
 // Lint scope: the .mjs files under lib/ and opencode/plugin/, and opencode/plugin/*.ts.
 //   - workflows/*.js are NOT linted as files and cannot be: they carry top-level export + await + return
@@ -9,17 +10,17 @@ import tseslint from 'typescript-eslint'
 //   - opencode/plugin/*.ts are type-checked by `npm run check:types` (tsc, opencode/plugin/tsconfig.json);
 //     here they get the TypeScript parser and the type-aware rules below.
 //
-// Type-aware rules (typescript-eslint, devDependency only): each file is linted against the program
-// its own type check builds — lib/tsconfig.json or opencode/plugin/tsconfig.json — so a rule sees the
-// same types tsc does (JSDoc types in .mjs, though not a JSDoc cast: the parser drops its parentheses).
-// typescript-eslint loads `typescript` from the root node_modules, hence the root devDependency pinned
-// to the same version as opencode/plugin's; the two pins move together (lib/typescript-pin.test.mjs fails when they part). Only the rules of
-// recommended-type-checked that report nothing on today's tree are on, so the gate stays zero-warning.
-// Left off, by what they report (all of lib and opencode/plugin, tests included): the no-unsafe-*
-// family (~1,970 hits: in lib, untyped JSON and journal values read as `any`; in the plugin, the
-// SDK client and shell typed `any`), no-floating-promises (~1,180, node:test's unawaited test()/describe()), no-base-to-string and
-// restrict-template-expressions (~100, deliberate String() of untrusted values), no-implied-eval
-// (19, the syntax checks that compile with new Function), require-await, only-throw-error, unbound-method.
+// Type-aware rules (typescript-eslint, devDependency only; realm @nick/craft, #137): each file is linted
+// against the program its own type check builds — lib/tsconfig.json or opencode/plugin/tsconfig.json — so a
+// rule sees the same types tsc does (JSDoc types in .mjs, though not a JSDoc cast: the parser drops its
+// parentheses). typescript-eslint loads `typescript` from the root node_modules, hence the root
+// devDependency pinned to opencode/plugin's version (lib/typescript-pin.test.mjs fails when they part).
+// Only the rules of recommended-type-checked that report nothing on today's tree are on, so the gate stays
+// zero-warning; the rules left off and what they report are on #137.
+// Fail closed: a program missing a declared package still builds, its imports read as `any` and the rules
+// go quiet, so loading this config throws unless both installs are whole (lib/lint-prerequisites.mjs).
+assertLintPrerequisites(import.meta.dirname)
+
 const typeAware = {
   '@typescript-eslint/await-thenable': 'error',
   '@typescript-eslint/no-array-delete': 'error',
