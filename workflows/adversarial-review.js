@@ -126,18 +126,18 @@ function normalizeArgs(args, warn = () => {}) {
 // <<< craft-inline
 const A = normalizeArgs(args, log)
 
-const diffBase = A.diffBase ? String(A.diffBase) : ''
-const intentArg = A.intent ? String(A.intent) : ''
-const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow
+const diffBase = A['diffBase'] ? String(A['diffBase']) : ''
+const intentArg = A['intent'] ? String(A['intent']) : ''
+const viaArg = A['_via'] ? String(A['_via']) : ''   // set by a parent workflow
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // this engine has no `repo` argument (see the refusal above) and always reviews the checkout the
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the reviewed repo — where the script is not. Pass craftRoot then.
-const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
-const BATCH = A.batch ? Math.max(1, Number(A.batch)) : 4
+const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
+const BATCH = A['batch'] ? Math.max(1, Number(A['batch'])) : 4
 const RETRY_BATCH = 2                 // retry rounds run even quieter than the main pass
-const MAX_RETRY_ROUNDS = A.maxRetries != null ? Math.max(0, Number(A.maxRetries)) : 2
+const MAX_RETRY_ROUNDS = A['maxRetries'] != null ? Math.max(0, Number(A['maxRetries'])) : 2
 const BUDGET_FLOOR = 40_000           // stop spawning agents below this many remaining tokens
 
 // ---- schemas ----
@@ -213,7 +213,7 @@ const CROSSCHECK_SCHEMA = {
 }
 
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
-const isEscalated = f => f.lens !== 'complexity' && (f.severity === 'critical' || f.severity === 'high')
+const isEscalated = (/** @type {any} */ f) => f.lens !== 'complexity' && (f.severity === 'critical' || f.severity === 'high')
 
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
@@ -506,6 +506,7 @@ function quietly(call) {
 // A lost record NEVER fails the run: killing a review over a bookkeeping write would teach everyone
 // to ignore the very marker this exists to raise. It is reported instead — in the notRun notes a
 // human actually reads, because an empty store is otherwise indistinguishable from "never run".
+/** @type {string[]} */
 const telemetryLost = []
 // "lost" is asserted per line, not stamped on every line: the record landing while its run DIRECTORY
 // was refused is a different fact, and calling it a lost record is the same conflation the other
@@ -518,6 +519,7 @@ const telemetryNotes = () => telemetryLost.map(l => (
 
 const agentQuietly = quietly(agent)
 
+/** @param {any} record */
 async function logRun(record) {
   const res = await agentQuietly(
     logRunPrompt({ record, craftRoot: craftRootArg }),
@@ -536,9 +538,10 @@ async function logRun(record) {
 
 }
 // adversarial-review uses lowercase severities internally; the store schema is capitalized.
-const capSeverity = f => ({ ...f, severity: f.severity ? f.severity[0].toUpperCase() + f.severity.slice(1) : f.severity })
+const capSeverity = (/** @type {any} */ f) => ({ ...f, severity: f.severity ? f.severity[0].toUpperCase() + f.severity.slice(1) : f.severity })
 
 // ---- lens catalog ----
+/** @type {Record<string, string>} */
 const LENS_BRIEF = {
   correctness: 'logic and spec conformance: does the change do what it is supposed to? Wrong behavior behind correct-looking code, off-by-one, inverted conditions, missed requirements, broken invariants.',
   security: 'security: injection, authz/authn gaps, tenant isolation breaks, secrets in code, unsafe deserialization, path traversal, SSRF, untrusted input reaching sinks.',
@@ -550,6 +553,7 @@ const LENS_BRIEF = {
 }
 const ALL_LENSES = Object.keys(LENS_BRIEF)
 
+/** @param {string} lens */
 function finderPrompt(lens) {
   const base = diffBase ? `\`${diffBase}\`` : 'resolve it yourself: merge-base with origin/main, then main, then HEAD~1; target uncommitted changes if the tree is dirty'
   if (lens === 'complexity') {
@@ -624,21 +628,21 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
  * @typedef {object} ThrottledJob
  * @property {string} prompt
  * @property {string} label
- * @property {unknown} [schema]
- * @property {unknown} [effort]
+ * @property {object} [schema]
+ * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} [effort]
  * @property {(v: any) => void} onResult
  * @property {() => void} [onMissing]
  */
 /**
  * @typedef {object} ThrottledDeps
- * @property {(prompt: string, opts: { label: string, phase: string, schema?: unknown, effort?: unknown }) => Promise<any>} agent
+ * @property {(prompt: string, opts: { label: string, phase: string, schema?: object | undefined, effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined }) => Promise<any>} agent
  * @property {(fns: Array<() => Promise<any>>) => Promise<any[]>} parallel
  * @property {(msg: string) => void} log
  * @property {(label: string, note: string, incomplete: boolean) => void} markNotRun
  * @property {number} batch
  * @property {number} retryBatch
  * @property {number} maxRetryRounds
- * @property {{ total: number, remaining: () => number }} budget
+ * @property {{ total: number | null, remaining: () => number }} budget  `total` is null when no token target was set
  * @property {number} budgetFloor
  */
 /**
@@ -765,7 +769,7 @@ function nothingToReviewMessage(fileCount) {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A.repo) {
+if (A['repo']) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
     nested: !!viaArg, via: viaArg || null,
@@ -777,7 +781,7 @@ if (A.repo) {
   })
   return [
     `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
     ``,
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`adversarial-review\` there.`,
   ].join('\n')
@@ -808,10 +812,10 @@ const [scout, warmup] = await parallel([
 const plan = {
   baseRef: scout?.baseRef ?? diffBase,
   sizeBucket: scout?.sizeBucket ?? 'medium',
-  lenses: (scout?.lenses?.length ? scout.lenses.filter(l => ALL_LENSES.includes(l)) : ALL_LENSES),
+  lenses: (scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => ALL_LENSES.includes(l)) : ALL_LENSES),
 }
 if (!(warmup?.indexed)) {
-  plan.lenses = plan.lenses.filter(l => l !== 'complexity')
+  plan.lenses = plan.lenses.filter((/** @type {string} */ l) => l !== 'complexity')
   log(`codebase-memory index unavailable (${warmup?.notes ?? 'warm-up died'}) -> complexity lens dropped`)
 }
 log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${scout?.notes ?? 'scout died, running all lenses'}`)
@@ -841,7 +845,9 @@ log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${sc
 //   (the fragility signal is kept) but advisory; only an unreviewed dimension downgrades. This is
 //   the same line `review.js` draws: dead lenses and skipped critics mark INCOMPLETE, individual
 //   unverified checks do not.
+/** @type {{ label: string, note: string, incomplete: boolean }[]} */
 const notRun = []
+/** @type {(label: string, note: string, incomplete?: boolean) => number} */
 const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note, incomplete })
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
@@ -851,7 +857,7 @@ const runThrottled = makeThrottledRunner({
   batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
   budget, budgetFloor: BUDGET_FLOOR,
 })
-const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(f => typeof f === 'string' && f.trim()) : null
+const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter((/** @type {any} */ f) => typeof f === 'string' && f.trim()) : null
 if (!scout || !changedFiles) {
   markNotRun('scout-dead', scout
     ? 'the scout returned no file list — the diff was never enumerated, so what the lenses saw is unverified'
@@ -901,7 +907,7 @@ if (!scout || !changedFiles) {
 4. Set ok=true ONLY if the git command succeeded and \`files\` holds every path it printed. If anything failed, or you had to shorten the list for any reason, set ok=false.`,
     { label: 'inert-crosscheck', phase: 'Prep', schema: CROSSCHECK_SCHEMA, model: 'haiku', effort: 'low' },
   )
-  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter(f => typeof f === 'string' && f.trim()) : null
+  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter((/** @type {any} */ f) => typeof f === 'string' && f.trim()) : null
   const agrees = !!crossFiles
     && crossFiles.length === cross.fileCount
     && crossFiles.length === changedFiles.length
@@ -940,12 +946,12 @@ if (!scout || !changedFiles) {
 phase('Review')
 const lensResults = new Map()
 const deadLensJobs = await runThrottled(
-  plan.lenses.map(lens => ({
+  plan.lenses.map((/** @type {string} */ lens) => ({
     prompt: finderPrompt(lens),
     label: `review:${lens}`,
     schema: FINDINGS,
     effort: 'medium',
-    onResult: r => lensResults.set(lens, r),
+    onResult: (/** @type {any} */ r) => lensResults.set(lens, r),
   })),
   'Review', 'Review', { reportUnjudged: false },
 )
@@ -958,9 +964,9 @@ if (deadLenses.length) {
 }
 if (plan.lenses.length && deadLenses.length === plan.lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
 
-const all = plan.lenses.flatMap(lens => {
+const all = plan.lenses.flatMap((/** @type {string} */ lens) => {
   const r = lensResults.get(lens)
-  return r ? r.findings.map(x => ({ ...x, lens })) : []
+  return r ? r.findings.map((/** @type {any} */ x) => ({ ...x, lens })) : []
 })
 
 // ---- dedup, tier 1 (mechanical): neighbor line-buckets + title-token similarity ----
@@ -968,7 +974,8 @@ const all = plan.lenses.flatMap(lens => {
 // AND similar titles — proximity alone never merges, so two distinct issues in one window
 // survive as two findings. Under-merge costs one cheap verify agent; over-merge silently
 // loses a finding — stay conservative.
-const normTokens = t => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, ' ').split(' ').filter(w => w.length > 2))
+const normTokens = (/** @type {any} */ t) => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, ' ').split(' ').filter(w => w.length > 2))
+/** @param {any} a @param {any} b */
 function titleSimilar(a, b) {
   const tokensA = normTokens(a), B = normTokens(b)
   if (!tokensA.size || !B.size) return false
@@ -989,7 +996,7 @@ for (const f of all) {
   }
   if (hit) {
     if (!hit.sources.includes(f.lens)) hit.sources.push(f.lens)
-    if (SEV_RANK[f.severity] < SEV_RANK[hit.severity]) {
+    if (SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (f.severity)] < SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (hit.severity)]) {
       Object.assign(hit, { title: f.title, line: f.line, severity: f.severity, description: f.description, fix: f.fix, lens: f.lens })
     }
     continue
@@ -1000,7 +1007,7 @@ for (const f of all) {
   if (!buckets.has(key)) buckets.set(key, [])
   buckets.get(key).push(entry)
 }
-let kept = merged.sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity])
+let kept = merged.sort((a, b) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (a.severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (b.severity)])
 log(`Review: ${all.length} raw findings -> ${kept.length} after mechanical dedup`)
 
 // ---- dedup, tier 2 (semantic, thresholded): one haiku clusterer for cross-vocabulary duplicates ----
@@ -1034,7 +1041,7 @@ ${kept.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (le
   for (const cluster of (clusterer?.clusters ?? [])) {
     const idxs = [...new Set(cluster)]
       .filter(i => Number.isInteger(i) && i >= 0 && i < kept.length && !drop.has(i))
-      .sort((x, y) => SEV_RANK[kept[x].severity] - SEV_RANK[kept[y].severity])
+      .sort((x, y) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (kept[x].severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (kept[y].severity)])
     if (idxs.length < 2) continue
     const head = kept[idxs[0]]
     for (const i of idxs.slice(1)) {
@@ -1045,7 +1052,7 @@ ${kept.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (le
     }
   }
   if (drop.size) {
-    kept = kept.filter((f, i) => !drop.has(i))
+    kept = kept.filter((_f, i) => !drop.has(i))
     log(`Semantic dedup: merged ${drop.size} duplicate(s) -> ${kept.length} findings`)
   } else {
     log('Semantic dedup: no cross-vocabulary duplicates found')
@@ -1067,6 +1074,7 @@ Use ToolSearch to load the codebase-memory MCP tools. Check ALL THREE dimensions
 3. severity — calibrate real impact: is the function on a hot / caller-reachable path (trace_path), or dead-end cold code?
 Return refuted=true if ANY dimension fails; default to refuted=true when uncertain.
 Also set premiseSupported: true when you re-read the metric values yourself and they back the claim, false when the numbers came only from the finding's own description. Unsupported is NOT disproven — it demotes the finding without marking it refuted.`
+/** @type {[string, string][]} */
 const PANEL_LENSES = [
   ['code', 'Verify ONLY the factual claim against the code as written. Read the code yourself; refute if the description misstates it.'],
   ['exploit', 'Try to construct a concrete end-to-end exploit/trigger scenario. Refute if no realistic path exists.'],
@@ -1076,18 +1084,24 @@ const PANEL_LENSES = [
 // Builds verify jobs for a set of findings, writing votes into `sink[idx]`.
 // Single combined verifier (effort low) for medium/low; 3-lens panel (effort high)
 // for critical/high; metric-aware single verifier for complexity findings.
+/**
+ * @param {any[]} findings
+ * @param {any} sink
+ */
 function buildVerifyJobs(findings, sink) {
+  /** @type {any[]} */
   const jobs = []
   findings.forEach((f, idx) => {
     const ctx = `FINDING [${f.severity}] ${f.title} @ ${f.file}:${f.line}\n` +
       `Independently reported by lenses: ${(f.sources || [f.lens]).join(', ')}\n${f.description}\nProposed fix: ${f.fix}\n` +
       `Off-site evidence claimed: ${f.whereChecked || '(none — the finding claims to be self-contained at the cited line)'}`
+    /** @type {(lens: string, instr: string, effort: string, tagged: boolean) => number} */
     const push = (lens, instr, effort, tagged) => jobs.push({
       prompt: `${instr}\n\n${ctx}`,
       label: `verify${tagged ? `[${lens}]` : ''}:${f.file}:${f.line}`,
       schema: VERDICT,
       effort,
-      onResult: v => sink[idx].push({ lens, ...v }),
+      onResult: (/** @type {any} */ v) => sink[idx].push({ lens, ...v }),
       // A check that never returned leaves a placeholder, so the judge can SEE the panel is short.
       // Without it a 3-lens panel that lost one member is indistinguishable from a 2-lens panel.
       onMissing: () => sink[idx].push({ lens, missing: true }),
@@ -1220,6 +1234,7 @@ function judgeVotes(findings, sink, SEV_RANK) {
   }
 }
 // <<< craft-inline
+/** @param {Parameters<typeof judgeVotes>[0]} findings @param {Parameters<typeof judgeVotes>[1]} sink */
 const judge = (findings, sink) => judgeVotes(findings, sink, SEV_RANK)
 
 const votes = kept.map(() => [])
@@ -1269,7 +1284,7 @@ if (!critic) {
 }
 
 // Critic findings do not bypass verification — they ride the same throttled pipeline.
-const gaps = (critic?.findings ?? []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
+const gaps = (critic?.findings ?? []).map((/** @type {any} */ f) => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
 let refutedGaps = 0
 if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
@@ -1299,7 +1314,7 @@ if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   // advisory would let a plain `Approve` stand on a run whose named blind spots nobody opened.
   // It does not fire on routine runs: it needs the budget floor reached AND gaps raised.
   markNotRun('coverage-gaps-unverified', `${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, and the blind spots they name went unopened`)
-  suspected = suspected.concat(gaps.map(f => ({ ...f, confirmed: false, votes: [] })))
+  suspected = suspected.concat(gaps.map((/** @type {any} */ f) => ({ ...f, confirmed: false, votes: [] })))
 }
 
 // A verdict must never claim more coverage than the run had: a dimension that went unreviewed
@@ -1327,7 +1342,7 @@ await logRun({
   verdict,
   findings: summarizeFindings(confirmed.concat(suspected).map(capSeverity)),
   scout: { size: plan.sizeBucket, lenses: plan.lenses, indexed: !!(warmup?.indexed), batch: BATCH },
-  dimensions: plan.lenses.map(l => {
+  dimensions: plan.lenses.map((/** @type {string} */ l) => {
     const s = summarizeFindings(confirmed.filter(f => (f.sources || []).includes(l)).map(capSeverity))
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
   }),
@@ -1338,7 +1353,7 @@ await logRun({
 
 return {
   verdict,
-  confirmed: confirmed.map(({ votes: v, ...f }) => ({ ...f, votes: v.length, refutes: v.filter(x => x.refuted).length })),
+  confirmed: confirmed.map(({ votes: v, ...f }) => ({ ...f, votes: v.length, refutes: v.filter((/** @type {any} */ x) => x.refuted).length })),
   suspected: suspected.map(({ votes: v, ...f }) => f),
   notRun: notRunNotes().concat(telemetryNotes()),
   scout: { size: plan.sizeBucket, lenses: plan.lenses, deadLenses },
