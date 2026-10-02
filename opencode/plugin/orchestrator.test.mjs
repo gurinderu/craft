@@ -703,3 +703,25 @@ test('a job left over when the budget is spent is not attempted, and says so', a
   const skipped = rs.filter(r => /retry budget for this run was already spent/.test(r.text))
   assert.ok(skipped.length >= 1, 'at least one job is honestly reported as never retried')
 })
+
+test('the answer is read from every response shape a session may return', async () => {
+  // A response may carry its parts at the top, under `data` or under `message`, may arrive as an array
+  // whose last element is the message, or may carry only a top-level `text`. Each shape is an answer.
+  const line = 'VERDICT: APPROVE'
+  /** @type {Record<string, unknown>} */
+  const shapes = {
+    top: { parts: [{ type: 'text', text: line }] },
+    data: { data: { parts: [{ type: 'text', text: line }] } },
+    message: { message: { parts: [{ type: 'text', text: line }] } },
+    array: [{ parts: [] }, { parts: [{ type: 'text', text: line }] }],
+    text: { text: `  ${line}  ` },
+    nothing: { parts: [{ type: 'image', text: line }] },
+  }
+  for (const [shape, res] of Object.entries(shapes)) {
+    const ctx = fakeCtx({})
+    ctx.client.session.prompt = async () => res
+    const r = await runAnswering(ctx, 'rust-security-scanner', 'p', hasVerdictLine)
+    if (shape === 'nothing') assert.equal(r.ok, false, 'a part that is not text carries no answer')
+    else assert.deepEqual([shape, r.ok, r.text], [shape, true, line])
+  }
+})
