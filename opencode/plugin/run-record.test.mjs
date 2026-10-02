@@ -338,6 +338,7 @@ test('buildAuditRecord demotes a self-reported green with no Evidence line to IN
   assert.deepEqual(rec.noEvidence, ['security'], 'it lands in the noEvidence bucket')
   assert.deepEqual(rec.incomplete, [], 'and NOT in incomplete — the tool may have run, this is not tooling-absent')
   const security = rec.dimensions.find((d) => d.dimension === 'security')
+  assert.ok(security)
   assert.match(security.verdict, /^INCOMPLETE \(no evidence/, 'the demoted dimension keeps the honest verdict')
 })
 
@@ -376,7 +377,7 @@ test('auditSynthesisInput demotes a green-no-evidence dimension in the report in
   // The blob header carries the GATED verdict, not a bare "ran" or the raw Approve — so the synthesised
   // report (and the raw-blob fallback when synthesis dies) shows the dimension demoted.
   assert.match(blob, /^### security \(INCOMPLETE \(no evidence — claimed Approve\)\)/)
-  assert.doesNotMatch(blob.split('\n')[0], /\(ran\)/)
+  assert.doesNotMatch(blob.split('\n')[0] ?? '', /\(ran\)/)
   // Report and record cannot disagree: both derive from auditDimensions / the same evidence gate.
   const rec = buildAuditRecord({ results, baseRef: 'main', hasUnsafe: false, synthesisText: 'x\n\nVERDICT: APPROVE' })
   assert.deepEqual(rec.noEvidence, noEvidence, 'the store and the report input name the same demoted dimension')
@@ -466,8 +467,9 @@ test('indexProjection carries runtime and nulls findingsTotal when findings is n
 
 test('writeRecord writes a detail file and appends one index line', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'craft-obs-'))
-  process.env.CRAFT_RUNS_DIR = dir
+  process.env['CRAFT_RUNS_DIR'] = dir
   // Fake PluginCtx: $ is a tagged-template returning a .quiet() that yields canned git output.
+  /** @type {import('./run-record.mjs').ShellCtx} */
   const ctx = {
     worktree: '/proj',
     directory: '/proj',
@@ -488,7 +490,7 @@ test('writeRecord writes a detail file and appends one index line', async () => 
     }))
     const lines = readFileSync(join(dir, 'index.jsonl'), 'utf8').trim().split('\n')
     assert.equal(lines.length, 1)
-    const line = JSON.parse(lines[0])
+    const line = JSON.parse(lines[0] ?? '')
     assert.equal(line.runtime, 'opencode')
     assert.equal(line.kind, 'workflow')
     assert.equal(line.name, 'rust-audit')
@@ -500,7 +502,7 @@ test('writeRecord writes a detail file and appends one index line', async () => 
     const detail = readdirSync(dir).filter((f) => f.endsWith('.json'))
     assert.equal(detail.length, 1)
   } finally {
-    delete process.env.CRAFT_RUNS_DIR
+    delete process.env['CRAFT_RUNS_DIR']
   }
 })
 
