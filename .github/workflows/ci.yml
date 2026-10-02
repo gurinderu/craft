@@ -118,3 +118,32 @@ jobs:
             echo "::warning title=npm audit (dev tooling)::could not audit dev tooling (see the step log); not blocking"
             { echo '### npm audit (dev tooling): could not audit, not blocking'; echo '```'; tail -n 20 dev-audit.err; tail -n 20 dev-audit.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
+  # lib/, opencode/plugin/ and workflows/ (not opencode/install.sh or .github/). It found nothing real on adoption — it is here for code
+  # not yet written (realm @nick/craft, #138). A separate job, not a step in `test`: it is a Python
+  # tool in its own pinned image and fails on its own. Not reproducible, like the dependency audit
+  # (#141): `--config p/...` fetches the registry's rules as of the run, so a rule added upstream can
+  # turn a commit red that was green before; the image tag pins the engine, not the rules.
+  # A known false positive is suppressed in place with `nosemgrep: <rule-id>` and its reason.
+  # Every silent skip is turned off, since each reads as a clean run: `--timeout 0` (a rule that timed out
+  # on a file is skipped with exit 0), `--max-target-bytes 0` (a file over 1 MB is skipped with exit 0 —
+  # review.js is half that and growing), `--strict` (a partial parse fails instead of warning).
+  # .semgrep/child-process.yml covers `node:child_process`, the spelling the registry rule misses; its
+  # fixtures run first, so a rule that stopped firing fails the job.
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.178.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: semgrep (craft's own rules match their fixtures)
+        run: >-
+          semgrep --test --metrics=off --config .semgrep/child-process.yml .semgrep/child-process.mjs &&
+          semgrep --test --metrics=off --config .semgrep/child-process.yml .semgrep/child-process-cjs.js
+      - name: semgrep (public rule sets and craft's own)
+        run: >-
+          semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0
+          --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs
+          --config p/security-audit --config p/secrets --config p/default
+          lib opencode/plugin workflows

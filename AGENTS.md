@@ -130,8 +130,9 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | Unused files, exports, dependencies (config `knip.config.js`; an inlined export is used only where an engine calls it — listing it in a `craft-inline` fence is not a use) | `npm run check:dead:production` (tests excluded: an export only a test uses is dead) and `npm run check:dead` (tests included: devDependencies, packages tests import); both need `npm ci` and `npm ci --prefix opencode/plugin` |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
 | Audit the OpenCode plugin's locked production closure (blocking at high in CI; needs the network, so offline it is CI's to run — not reproducible, realm #141) | `npm audit --prefix opencode/plugin --omit=dev --audit-level=high` |
+| Static analysis, semgrep public rule sets (CI job `semgrep`, image pinned there; the rules come from the registry per run, so not reproducible) | `semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0 --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs --config p/security-audit --config p/secrets --config p/default lib opencode/plugin workflows` |
 
-There is no formatter and no pre-commit hook: run every row above before pushing (the audit row only with network; offline it is CI's to run); CI runs the same steps (one job, `test`). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
+There is no formatter and no pre-commit hook: run every row above before pushing (the audit and semgrep rows only with network; offline they are CI's to run); CI runs the same steps (two jobs: `test`, and `semgrep` for the semgrep row). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
 
 ## Project structure
 - `skills/` — 32 skills, one directory each with a `SKILL.md`.
