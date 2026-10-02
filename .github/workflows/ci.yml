@@ -85,13 +85,17 @@ jobs:
         run: npm run check:dead:production
       - name: Check unused code and dependencies, tests included (knip)
         run: npm run check:dead
-      # Copied code outside the craft-inline mechanism (.jscpd.json): lib/, opencode/plugin/ and
-      # workflows/*.js, tests excluded (fixture boilerplate), each fenced region skipped (its copy is
-      # byte-compared by the syntax-check step above). Exact clones of at least 50 tokens and 5 lines.
-      # The copies that existed on adoption are in .jscpd-baseline.json; a clone not in it fails.
-      # Fingerprints cover a clone's whole extent, so editing in or next to a baselined copy can read as
-      # a new clone: regenerate with `npm run check:dup:baseline` and say in the PR which copy moved.
-      # Every silent skip is off: `maxSize` 10mb (review.js is past half the 1mb default), `failOnEmpty`.
+      # Copied code outside the craft-inline mechanism (lib/check-dup.mjs running jscpd on .jscpd.json):
+      # lib/, opencode/plugin/ and workflows/*.js, tests excluded (fixture boilerplate), each fenced region
+      # skipped — its copy is byte-compared by the syntax-check step above, which is why a fence-shaped
+      # line anywhere but workflows/*.js fails this step. Exact clones of at least 50 tokens and 5 lines.
+      # Copies present on adoption are in .jscpd-baseline.json; a clone not in it fails. Its count is held
+      # to lib/dup-ceiling.json, which may only fall: a regenerated baseline that absorbed a new copy
+      # fails, and so does one still listing a copy no longer found. Fingerprints cover a clone's whole
+      # extent, so an edit in or beside a baselined copy reads as a new clone: `npm run check:dup:baseline`
+      # regenerates it, the count unchanged. `maxSize` 10mb (review.js is past half the 1mb default) and
+      # `failOnEmpty` turn off two silent skips; one remains — an ignorePattern jscpd cannot compile is
+      # dropped with a warning (lib/check-dup.test.mjs pins the pattern to the fence regexes).
       - name: Check duplicated code (jscpd)
         run: npm run check:dup
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or

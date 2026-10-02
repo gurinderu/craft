@@ -15,7 +15,7 @@
     "check:opencode-frontmatter": "python3 opencode/scripts/check-frontmatter.py agent opencode/agents/*.md && python3 opencode/scripts/check-frontmatter.py command opencode/commands/*.md",
     "check:dead": "knip --no-progress",
     "check:dead:production": "knip --no-progress --production",
-    "check:dup": "jscpd",
+    "check:dup": "node lib/check-dup.mjs",
     "check:dup:baseline": "jscpd --update-baseline"
   },
   "devDependencies": {
