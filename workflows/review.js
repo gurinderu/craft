@@ -5229,9 +5229,11 @@ async function reviewProfile(profile) {
       // Null (not a throw) from the reviewer path: on some runtimes an unknown agent type returns
       // null rather than throwing. ragent already retried; try the generic subagent once. Do NOT
       // set reviewerAgentMissing — a null can be a transient API death, so later lenses still get
-      // a shot at the real reviewer agent. Counted, so the report can say it happened.
-      noteReviewerAgentFallback(profile)
-      return await runGeneric()
+      // a shot at the real reviewer agent. Counted, so the report can say it happened — only when the
+      // generic subagent answered: dead on both paths is a dead lens, as rust-audit counts it (#116).
+      const fallback = await runGeneric()
+      if (fallback != null) noteReviewerAgentFallback(profile)
+      return fallback
     } catch (e) {
       const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
       // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
