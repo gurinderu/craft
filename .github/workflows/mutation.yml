@@ -39,6 +39,9 @@ jobs:
       # the child processes (git, tsc) its tests spawn.
       - name: Stryker over lib/
         run: npm run test:mutation -- --concurrency 4
+      # Uploaded on a red run too (below `break`). Stryker writes both files only when the run completes,
+      # so a run cut by the timeout has nothing to upload under any `if:` — its job log, with the
+      # progress lines, is all it leaves.
       - name: Upload the mutation report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
