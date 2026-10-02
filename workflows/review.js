@@ -1544,7 +1544,7 @@ function carriedKey(f) {
 /**
  * @param {Finding} f
  * @param {Finding[] | null | undefined} priors
- * @param {FallbackMatch} fallbackMatch
+ * @param {FallbackMatch} [fallbackMatch]
  * @returns {Finding | null}
  */
 function findCarrier(f, priors, fallbackMatch) {
@@ -1560,7 +1560,7 @@ function findCarrier(f, priors, fallbackMatch) {
 /**
  * @param {Finding} f
  * @param {Finding[] | null | undefined} priors
- * @param {FallbackMatch} fallbackMatch
+ * @param {FallbackMatch} [fallbackMatch]
  * @returns {boolean}
  */
 function alreadyCarried(f, priors, fallbackMatch) {
@@ -1703,7 +1703,7 @@ function absorbedPromptBlock(why) {
  * @param {Finding[] | null | undefined} findings
  * @param {Finding[] | null | undefined} livePriors
  * @param {RetiredSet} retired
- * @param {FallbackMatch} fallbackMatch
+ * @param {FallbackMatch} [fallbackMatch]
  * @param {Iterable<[Finding, string]> | null | undefined} [seed]
  */
 function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
@@ -1740,7 +1740,7 @@ function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
  * @param {(Finding[] | null | undefined)[] | null | undefined} lists
  * @param {Finding[] | null | undefined} livePriors
  * @param {RetiredSet} retired
- * @param {FallbackMatch} fallbackMatch
+ * @param {FallbackMatch} [fallbackMatch]
  */
 function absorbAcross(lists, livePriors, retired, fallbackMatch) {
   /** @type {ReturnType<typeof partitionAbsorbed>[]} */
@@ -1831,7 +1831,7 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
  * @param {Finding[] | null | undefined} findings
  * @param {Finding[] | null | undefined} livePriors
  * @param {RetiredSet} retired
- * @param {FallbackMatch} fallbackMatch
+ * @param {FallbackMatch} [fallbackMatch]
  */
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   /** @param {Finding} h */

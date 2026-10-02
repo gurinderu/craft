@@ -14,6 +14,7 @@ import { join } from 'node:path'
 // only a fallback for output carrying no structured line, and it reads the TAIL, not the whole
 // report: the mandated verdict sits at the end, and scanning everything is precisely what let a
 // quoted instruction forty lines up decide the verdict.
+/** @type {Record<string, string>} */
 const VERDICT_TOKEN = {
   APPROVE: 'Approve',
   WARNING: 'Warning',
@@ -188,6 +189,7 @@ const REFUSED_LINE =
 // `norm` keeps line structure; `flat` does not. The unanchored arms need the flat text, because a
 // clause wrapped at eighty columns must still read as one sentence; the anchored arm needs the
 // lines, because that is what it anchors to.
+/** @param {unknown} text */
 function plain(text) {
   return (
     String(text ?? '')
@@ -208,11 +210,13 @@ function plain(text) {
 }
 
 // One entry point, so no caller has to remember which normalisation an arm needs.
+/** @param {unknown} text */
 function refused(text) {
   const norm = plain(text)
   return REFUSED.test(norm.replace(/\n+/g, ' ')) || REFUSED_LINE.test(norm)
 }
 
+/** @param {unknown} text */
 export function hasVerdictLine(text) {
   // RAW for the evidence, flattened only for the refusal test. `verdictEvidence` is entirely
   // line-structured — `VERDICT_LINE`/`VERDICT_ROW` are `^`-anchored and the keyword fallback reads a
@@ -281,25 +285,36 @@ const FENCE = /^[ \t]*(`{3,}|~{3,})/
 // the SHAPE the marker is written in but whether the session says it could not do the work, and
 // that test now guards every marker (see REFUSED) whatever shape carries it — heading, HTML block
 // and quoted table included.
+/**
+ * @param {string} line
+ * @param {RegExp} marker
+ */
 function ownLine(line, marker) {
   if (marker.test(line)) return true
   if (!/^[ \t]{0,3}\|/.test(line)) return false
   return line.split('|').some((cell) => marker.test(cell.trim()))
 }
 
+/**
+ * @param {unknown} text
+ * @param {RegExp} marker
+ */
 function markerLine(text, marker) {
   // `\r` stripped: `PLAN_MARKER` is the one marker anchored with `$`, so a CRLF reply lost its plan
   // and discarded forty paid-for child sessions over a line ending.
   const lines = String(text ?? '').split('\n').map((l) => l.replace(/\r$/, ''))
+  /** @type {string | null} */
   let openedWith = null
   let openedAt = -1
   for (let i = 0; i < lines.length; i++) {
-    const f = lines[i].match(FENCE)
+    const ln = /** @type {string} */ (lines[i])
+    const f = ln.match(FENCE)
     if (f) {
+      const fence = /** @type {string} */ (f[1])
       if (openedWith === null) {
-        openedWith = f[1]
+        openedWith = fence
         openedAt = i
-      } else if (f[1][0] === openedWith[0] && f[1].length >= openedWith.length) {
+      } else if (fence[0] === openedWith[0] && fence.length >= openedWith.length) {
         openedWith = null
         openedAt = -1
       }
@@ -319,8 +334,8 @@ function markerLine(text, marker) {
     // indented block was accepted as an answer on both marker paths. The deletion was reasoned from
     // the fixtures that appeared to cover it, which `refused()` happened to catch for another
     // reason; that is the same mistake as trusting a falsifier that did not go red.
-    if (INDENTED.test(lines[i])) continue
-    if (openedWith === null && ownLine(lines[i], marker)) return true
+    if (INDENTED.test(ln)) continue
+    if (openedWith === null && ownLine(ln, marker)) return true
   }
   // An opener that never closed took the input's TAIL with it on a guess — so read that tail, and
   // only that tail. Re-reading every line instead re-admitted the contents of every properly closed
@@ -340,6 +355,7 @@ function markerLine(text, marker) {
 // meant a truncated or decorative one ("See:\n```rust\nfn f(){}") hid a real plan behind it and
 // discarded up to forty child sessions already paid for. An unterminated fence loses nothing here,
 // because the marker is looked for on every line the fence never closed over.
+/** @param {unknown} text */
 export function hasPlanMarkerLine(text) {
   return markerLine(text, PLAN_MARKER) && !refused(text)
 }
@@ -362,6 +378,7 @@ export function hasPlanMarkerLine(text) {
 // quoted its instructions back — and that one reaches the plan as a finding's reasoning.
 const OUTCOME_LINE = /^[ \t*_#-]*OUTCOME:[ \t]*[*_]*[ \t]*(accept|reject|defer|needs-decision|conflict)\b/i
 
+/** @param {unknown} text */
 export function hasOutcomeLine(text) {
   return markerLine(text, OUTCOME_LINE) && !refused(text)
 }
@@ -407,20 +424,29 @@ const INCOMPLETE_LINE = new RegExp(
 // A whole table cell holding the token, e.g. `| deps | INCOMPLETE |`.
 const INCOMPLETE_CELL = /\|[ \t]*\**[ \t]*INCOMPLETE[ \t]*\**[ \t]*\|/
 
+/**
+ * @param {RegExp} re
+ * @param {string} t
+ * @returns {string | null}
+ */
 function lastMatch(re, t) {
   re.lastIndex = 0
-  let m, last = null
-  while ((m = re.exec(t)) !== null) last = m[1]
+  let m, last = /** @type {string | null} */ (null)
+  while ((m = re.exec(t)) !== null) last = /** @type {string} */ (m[1])
   return last
 }
 
 // The single body both the reader and the gate ask. Returns the verdict together with WHAT decided
 // it, or null when nothing did — the two callers below differ only in which of those they keep, so
 // they cannot drift apart again.
+/**
+ * @param {string} t
+ * @returns {{ verdict: string, by: string } | null}
+ */
 function verdictEvidence(t) {
   // 1. Structural: the last `VERDICT: <TOKEN>` line wins, and is authoritative when present.
   const structured = lastMatch(VERDICT_LINE, t) ?? lastMatch(VERDICT_ROW, t)
-  if (structured) return { verdict: VERDICT_TOKEN[structured], by: 'structured' }
+  if (structured) return { verdict: /** @type {string} */ (VERDICT_TOKEN[structured]), by: 'structured' }
 
   // 2. Fallback for non-conforming output, over the tail only.
   const tail = t.split('\n').slice(-TAIL_LINES).join('\n')
@@ -451,13 +477,16 @@ function verdictEvidence(t) {
   return null
 }
 
+/** @param {unknown} text */
 export function parseVerdict(text) {
   return verdictEvidence(String(text || ''))?.verdict ?? 'Approve'
 }
 
 // Precedence for the top-level roll-up, worst wins.
+/** @type {Record<string, number>} */
 const RANK = { Approve: 0, 'INCOMPLETE (not run)': 1, Warning: 2, Block: 3 }
 
+/** @param {string[]} verdicts */
 export function worstOf(verdicts) {
   return verdicts.reduce((a, b) => ((RANK[b] ?? 0) > (RANK[a] ?? 0) ? b : a), 'Approve')
 }
@@ -492,6 +521,7 @@ export const EVIDENCE_LINE = /^evidence\s*:/i
 // rejecting one buried after real prose, and a marker with only decoration after it is still empty. Held
 // identical to lib/audit-evidence.mjs's copy (the Claude engine); both pinned to EVIDENCE_MARKER by a
 // test on each side (node #53).
+/** @param {unknown} text */
 export function hasEvidence(text) {
   for (const raw of String(text ?? '').split('\n')) {
     const line = raw.replace(/\r$/, '')
@@ -519,6 +549,15 @@ export function hasEvidence(text) {
 // dimension was demoted for showing no work — the report-vs-record skew (node #53). Before it, the
 // demotion lived only inside buildAuditRecord (the store), while the synthesis was built from the RAW
 // dimension text still carrying `VERDICT: APPROVE`, so a false green survived in the report a human reads.
+/**
+ * @typedef {{ ok?: boolean, label: string, text?: string | null }} AuditResult
+ * @typedef {{ dimension: string, ran: boolean, verdict: string }} AuditDimension
+ */
+
+/**
+ * @param {AuditResult[] | null | undefined} results
+ * @returns {AuditDimension[]}
+ */
 export function auditDimensions(results) {
   const rs = Array.isArray(results) ? results : []
   return rs.map((r) => {
@@ -537,11 +576,12 @@ export function auditDimensions(results) {
 // buildAuditRecord stores it demoted. The three coverage buckets travel with it so the synthesis
 // prompt can instruct the model to render each apart from a pass — the mirror of how the Claude
 // engine feeds `notRun`/`couldNotRun`/`noEvidence` to its report agent (node #53).
+/** @param {AuditResult[] | null | undefined} results */
 export function auditSynthesisInput(results) {
   const rs = Array.isArray(results) ? results : []
   const dims = auditDimensions(rs)
   const blob = rs
-    .map((r, i) => `### ${r.label} (${dims[i].ran ? dims[i].verdict : 'INCOMPLETE (not run)'})\n\n${r.text ?? ''}`)
+    .map((r, i) => `### ${r.label} (${/** @type {AuditDimension} */ (dims[i]).ran ? /** @type {AuditDimension} */ (dims[i]).verdict : 'INCOMPLETE (not run)'})\n\n${r.text ?? ''}`)
     .join('\n\n')
   const notRun = dims.filter((d) => !d.ran).map((d) => d.dimension)
   const couldNotRun = dims.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
@@ -554,11 +594,21 @@ export function auditSynthesisInput(results) {
 // whatever the final dimension wrote, commonly APPROVE. The human then saw INCOMPLETE while the
 // index recorded Approve for the same run, which is worse than either alone: the store and the
 // report disagree, and only the store is machine-read afterwards.
+/**
+ * @param {{
+ *   results: AuditResult[] | null | undefined,
+ *   baseRef?: string | undefined,
+ *   hasUnsafe?: boolean | undefined,
+ *   synthesisText?: unknown,
+ *   synthesized?: boolean | undefined,
+ * }} p
+ */
 export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, synthesized = true }) {
   const rs = Array.isArray(results) ? results : []
   const dimensions = auditDimensions(rs)
   // A verdict string leading with INCOMPLETE (either the tooling-absent token or a no-evidence
   // demotion) ranks as INCOMPLETE in the roll-up; worstOf keys on the exact token, so map it first.
+  /** @param {string} v */
   const asRank = (v) => (v.startsWith('INCOMPLETE') ? 'INCOMPLETE (not run)' : v)
   // The top-level verdict is the worst of the synthesis's own verdict and every dimension's, so it
   // no longer depends on the synthesising model restating the roll-up correctly — and no longer on
@@ -624,6 +674,14 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
 // `skipped` is here for the same reason `untriaged` is: it counts lines the splitter ATE, and the
 // fence path is the loss path this delivery introduced — the one the store could not see, while the
 // screen could. "No trace in the output OR the run record" is not half a rule.
+/**
+ * @param {{
+ *   results: AuditResult[] | null | undefined,
+ *   planned?: boolean | undefined,
+ *   untriaged?: number | undefined,
+ *   skipped?: number | undefined,
+ * }} p
+ */
 export function buildTriageRecord({ results, planned = true, untriaged = 0, skipped = 0 }) {
   const rs = Array.isArray(results) ? results : []
   return {
@@ -648,6 +706,24 @@ export function buildTriageRecord({ results, planned = true, untriaged = 0, skip
   }
 }
 
+/**
+ * @typedef {{
+ *   schemaVersion?: number | undefined,
+ *   runtime?: string | null | undefined,
+ *   ts?: string | undefined,
+ *   kind?: string | undefined,
+ *   name?: string | undefined,
+ *   project?: string | undefined,
+ *   commit?: string | undefined,
+ *   dirty?: boolean | undefined,
+ *   verdict?: string | undefined,
+ *   findings?: { total: number } | null | undefined,
+ *   nested?: boolean | undefined,
+ *   via?: string | null | undefined,
+ * }} RunRecord
+ */
+
+/** @param {RunRecord} r */
 export function indexProjection(r) {
   return {
     schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
@@ -658,14 +734,27 @@ export function indexProjection(r) {
 }
 
 function runsDir() {
-  return process.env.CRAFT_RUNS_DIR || join(homedir(), '.craft', 'runs')
+  return process.env['CRAFT_RUNS_DIR'] || join(homedir(), '.craft', 'runs')
 }
 
 // Filesystem-safe UTC: YYYY-MM-DDTHH-MM-SSZ (drop millis, replace the time colons).
+/** @param {Date} d */
 function tsStamp(d) {
   return d.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-')
 }
 
+/**
+ * @typedef {{
+ *   worktree?: string | undefined,
+ *   directory?: string | undefined,
+ *   $: (strings: TemplateStringsArray, ...exprs: any[]) => { quiet(): Promise<{ stdout?: { toString(): string } | null | undefined }> },
+ * }} ShellCtx
+ */
+
+/**
+ * @param {ShellCtx} ctx
+ * @param {string} cmd
+ */
 async function sh(ctx, cmd) {
   try {
     const r = await ctx.$`bash -lc ${cmd}`.quiet()
@@ -677,6 +766,10 @@ async function sh(ctx, cmd) {
 
 // Best-effort: stamp the runtime fields, write the detail file, append the index line. NEVER throws
 // into the caller — observability must not break a workflow run.
+/**
+ * @param {ShellCtx} ctx
+ * @param {RunRecord & { [k: string]: unknown }} record
+ */
 export async function writeRecord(ctx, record) {
   try {
     const dir = runsDir()
@@ -689,6 +782,6 @@ export async function writeRecord(ctx, record) {
     writeFileSync(join(dir, `${ts}-${full.kind}-${full.name}.json`), JSON.stringify(full, null, 2) + '\n')
     appendFileSync(join(dir, 'index.jsonl'), JSON.stringify(indexProjection(full)) + '\n')
   } catch (e) {
-    try { console.error(`craft observability: failed to write run record: ${e?.message ?? e}`) } catch { /* ignore */ }
+    try { console.error(`craft observability: failed to write run record: ${/** @type {{ message?: unknown } | null | undefined} */ (e)?.message ?? e}`) } catch { /* ignore */ }
   }
 }

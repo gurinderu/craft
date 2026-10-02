@@ -27,9 +27,8 @@
     "noUnusedParameters": true
   },
   "include": [
-    "**/*.mjs"
+    "**/*.mjs",
+    "../opencode/plugin/run-record.mjs"
   ],
-  "exclude": [
-    "**/*.test.mjs"
-  ]
+  "exclude": []
 }

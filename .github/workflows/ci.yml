@@ -32,7 +32,7 @@ jobs:
       - name: Typecheck opencode plugin
         run: npm run check:types
       # tsc --checkJs at maximum strictness (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes
-      # and the rest; lib/tsconfig.json) over every non-test lib/*.mjs, so a new module is strict at once.
+      # and the rest; lib/tsconfig.json) over every lib/**/*.mjs, tests included, so a new module is strict at once.
       # The compiler is the opencode plugin's pinned tsc (needs `npm ci --prefix opencode/plugin` above);
       # the Node typings are the root's @types/node 22.x, matching the Node this code runs on — the
       # plugin's newer typings would let post-22 APIs through. Types come from JSDoc; nothing shipped changes.
