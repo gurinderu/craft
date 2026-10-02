@@ -628,21 +628,21 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
  * @typedef {object} ThrottledJob
  * @property {string} prompt
  * @property {string} label
- * @property {unknown} [schema]
- * @property {unknown} [effort]
+ * @property {object} [schema]
+ * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} [effort]
  * @property {(v: any) => void} onResult
  * @property {() => void} [onMissing]
  */
 /**
  * @typedef {object} ThrottledDeps
- * @property {(prompt: string, opts: { label: string, phase: string, schema?: unknown, effort?: unknown }) => Promise<any>} agent
+ * @property {(prompt: string, opts: { label: string, phase: string, schema?: object | undefined, effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined }) => Promise<any>} agent
  * @property {(fns: Array<() => Promise<any>>) => Promise<any[]>} parallel
  * @property {(msg: string) => void} log
  * @property {(label: string, note: string, incomplete: boolean) => void} markNotRun
  * @property {number} batch
  * @property {number} retryBatch
  * @property {number} maxRetryRounds
- * @property {{ total: number, remaining: () => number }} budget
+ * @property {{ total: number | null, remaining: () => number }} budget  `total` is null when no token target was set
  * @property {number} budgetFloor
  */
 /**
