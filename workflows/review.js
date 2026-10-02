@@ -3053,7 +3053,7 @@ function out(reportText) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt makeRunLogger
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt makeRunLogger telemetryLossNoter
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
@@ -3372,6 +3372,20 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
   }
 }
+
+// The loss note of the engines that keep no other bookkeeping writes: every loss is kept for the
+// report, and logged — a landed record under its own prefix, never as a lost one.
+/**
+ * @param {string[]} lost
+ * @param {(line: string) => void} say
+ * @returns {(what: string, why: string, landed: boolean) => void}
+ */
+function telemetryLossNoter(lost, say) {
+  return (what, why, landed) => {
+    lost.push(`${what} — ${why}`)
+    say(landed ? `⚠️ telemetry: ${why}` : `⚠️ telemetry lost: ${what} — ${why}`)
+  }
+}
 // <<< craft-inline
 
 // The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
@@ -3646,8 +3660,11 @@ const logRun = makeRunLogger({
   // fingerprints: a later round decides their basis by this (realm @nick/craft #111). Last, so no
   // caller's field shadows it.
   prepare: recordIn => ({ ...recordIn, workflowEngineRevision: ENGINE_REVISION }),
-  // Every bookkeeping loss — checkpoints, the prior-round read, the record — goes through the one note.
-  noteLoss: noteTelemetryLoss,
+  // Into the same telemetryLost list the checkpoints and the prior-round read note into, but through
+  // the shared note: a record that landed with its run directory refused is logged as landed, never
+  // as lost (realm @nick/craft #39). makeRunLogger always hands it a non-empty reason, so the line kept
+  // for the report is the one noteTelemetryLoss would keep.
+  noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 
 /** @param {Finding} f */
