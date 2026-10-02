@@ -34,16 +34,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        id: setup_node
         with:
           node-version: '22'
       - name: Install dev tooling
+        id: install_tooling
         run: npm ci
       # inPlace mode runs the tsc-backed tests against the real tree, which read the plugin's tsc.
       - name: Install opencode plugin deps
+        id: install_plugin
         run: npm ci --prefix opencode/plugin
       # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
       # the child processes (git, tsc) its tests spawn.
       - name: Stryker over lib/
+        id: stryker
         timeout-minutes: 260
         run: npm run test:mutation -- --concurrency 4
       # Uploaded on a red run too (below `break`). Stryker writes both files only when the run completes,
@@ -62,8 +66,15 @@ jobs:
       # A red run — below lib/mutation-floor.json, timed out, or failed to install — is reported in one open
       # issue: while one titled "Weekly mutation run failed (…)" is open, the run and its score are a comment
       # on it; only when none is open is one created, titled with the score (lib/mutation-issue.mjs).
+      # Only a failed setup, install or Stryker step reports: an upload that fails after a green Stryker step
+      # makes the job red too, and `failure()` alone would file it with a score above the floor. `failure()`
+      # stays in the condition, since without a status check function `success()` is implied.
       - name: Report the red run in an issue
-        if: failure()
+        if: >-
+          ${{ failure() && (steps.setup_node.conclusion == 'failure'
+          || steps.install_tooling.conclusion == 'failure'
+          || steps.install_plugin.conclusion == 'failure'
+          || steps.stryker.conclusion == 'failure') }}
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
