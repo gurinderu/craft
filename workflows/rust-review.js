@@ -19,11 +19,11 @@ export const meta = {
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
- * @returns {{ options: Record<string, any>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
-  /** @type {Record<string, any>} */
+  /** @type {Record<string, unknown>} */
   const out = {}
   let pairs = 0
   /** @type {string[]} */
@@ -73,10 +73,10 @@ function parseOptions(text) {
  *
  * @param {unknown} args
  * @param {(msg: string) => void} [warn]
- * @returns {Record<string, any>}
+ * @returns {Record<string, unknown>}
  */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, any>} */ (args)
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -136,14 +136,17 @@ function normalizeArgs(args, warn = () => {}) {
 // that located the live failure at a consumer — so the caller fails loud instead of skipping the
 // review, and the record distinguishes a name that would not resolve from a run that died.
 /**
- * @param {(name: string, args: any) => Promise<any>} workflow
+ * @param {(name: string, args: unknown) => Promise<unknown>} workflow
  * @param {string} name
- * @param {any} args
+ * @param {unknown} args
  * @param {(msg: string) => void} [warn]
+ * @returns {Promise<unknown>} the nested run's result — `null` when it died
  */
 async function nestedWorkflow(workflow, name, args, warn = () => {}) {
-  /** @param {any} e */
-  const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
+  /** @param {unknown} e @returns {unknown} the refusal's message, or the thrown value itself */
+  const messageOf = e => (e && /** @type {{ message?: unknown }} */ (e).message) || e
+  /** @param {unknown} e */
+  const unresolved = e => /no workflow with that name/i.test(String(messageOf(e)))
   try {
     return await workflow(`craft:${name}`, args)
   } catch (e) {
@@ -153,7 +156,7 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
       return await workflow(name, args)
     } catch (e2) {
       if (unresolved(e2)) {
-        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${(/** @type {any} */ (e2) && /** @type {any} */ (e2).message) || e2})`)
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${String(messageOf(e2))})`)
       }
       throw e2
     }

@@ -65,11 +65,11 @@ export const meta = {
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
- * @returns {{ options: Record<string, any>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
-  /** @type {Record<string, any>} */
+  /** @type {Record<string, unknown>} */
   const out = {}
   let pairs = 0
   /** @type {string[]} */
@@ -119,10 +119,10 @@ function parseOptions(text) {
  *
  * @param {unknown} args
  * @param {(msg: string) => void} [warn]
- * @returns {Record<string, any>}
+ * @returns {Record<string, unknown>}
  */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, any>} */ (args)
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -350,7 +350,7 @@ ${rows.join('\n')}
 // that asks one source three times and declares one call passes here. What the audit buys is that
 // the honest path and the disciplined path are now the same path, and that a breach has to be
 // either declared or actively misreported — where before it was neither visible nor recorded.
-/** @param {{ probes?: any } | null | undefined} pf  the preflight agent's structured answer (model output)
+/** @param {{ probes?: unknown } | null | undefined} pf  the preflight agent's structured answer (model output)
  * @returns {string[]} */
 function auditPreflightProbes(pf) {
   if (!pf) return []
@@ -374,7 +374,9 @@ function auditPreflightProbes(pf) {
   }
   /** @type {Map<string, number>} */
   const seen = new Map()
-  for (const p of probes) {
+  for (const entry of probes) {
+    // Model output: an entry may be anything, so its two fields are read as unknown.
+    const p = entry && typeof entry === 'object' ? /** @type {{ source?: unknown, calls?: unknown }} */ (entry) : null
     const id = String((p && p.source) || '').trim()
     if (!id) { out.push('a `probes` entry has no `source`'); continue }
     if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
@@ -1505,9 +1507,11 @@ function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?
 // Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
 // adjusted adjudication plus degradation flags; the caller does the logging/counting.
 /**
+ * @template {Verdict} V
  * @param {Finding} f
- * @param {Verdict} adj
+ * @param {V} adj
  * @param {Verdict | null | undefined} rt
+ * @returns {{ adj: V, died: boolean, overturned: boolean, invalid: boolean }}
  */
 function classifyRedTeam(f, adj, rt) {
   if (!isHighSeverity(f.severity)) return { adj, died: false, overturned: false, invalid: false }
@@ -1521,8 +1525,11 @@ function classifyRedTeam(f, adj, rt) {
 // Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
 // and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
 /**
- * @param {Finding} f
+ * `entry` is `f` re-stamped (line, why, disposition, note), so it is returned as the caller's own type.
+ * @template {Finding} F
+ * @param {F} f
  * @param {Verdict | null | undefined} r
+ * @returns {{ track: 'stillOpen' | 'resolved' | 'regressed', entry: F & { line?: unknown, note?: string, disposition?: string }, adjudicatorDied?: boolean, demoted?: boolean, cannotTell?: boolean }}
  */
 function adjudicateOne(f, r) {
   const located = { ...f, line: r?.currentLine || f.line }
@@ -1612,10 +1619,12 @@ function carriedKey(f) {
 // otherwise keep the finding at a retired host that a live host could have absorbed). That
 // preference is positional, not enforced here; a caller reordering that array changes it.
 /**
- * @param {Finding} f
- * @param {Finding[] | null | undefined} priors
- * @param {FallbackMatch} [fallbackMatch]
- * @returns {Finding | null}
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F} f
+ * @param {P[] | null | undefined} priors
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @returns {P | null}
  */
 function findCarrier(f, priors, fallbackMatch) {
   const key = carriedKey(f)
@@ -1628,9 +1637,11 @@ function findCarrier(f, priors, fallbackMatch) {
 
 // True when `f` (a finding the lenses just discovered) is already tracked by one of `priors`.
 /**
- * @param {Finding} f
- * @param {Finding[] | null | undefined} priors
- * @param {FallbackMatch} [fallbackMatch]
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F} f
+ * @param {P[] | null | undefined} priors
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
  * @returns {boolean}
  */
 function alreadyCarried(f, priors, fallbackMatch) {
@@ -1770,18 +1781,21 @@ function absorbedPromptBlock(why) {
 // absorbAcross): the returned `updates` is cumulative, seeded entries included, and a host present
 // in it extends THAT text rather than its own un-absorbed `why`.
 /**
- * @param {Finding[] | null | undefined} findings
- * @param {Finding[] | null | undefined} livePriors
- * @param {RetiredSet} retired
- * @param {FallbackMatch} [fallbackMatch]
- * @param {Iterable<[Finding, string]> | null | undefined} [seed]
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F[] | null | undefined} findings
+ * @param {P[] | null | undefined} livePriors
+ * @param {RetiredSet<P>} retired
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @param {Iterable<[P, string]> | null | undefined} [seed]
+ * @returns {Partition<F, P>}
  */
 function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
-  /** @param {Finding} h */
+  /** @param {P} h */
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
-  /** @type {Finding[]} */
+  /** @type {F[]} */
   const kept = []
-  /** @type {Map<Finding, string>} */
+  /** @type {Map<P, string>} */
   const updates = new Map(seed || [])
   let absorbed = 0, keptAtRetired = 0
   for (const f of findings || []) {
@@ -1807,15 +1821,18 @@ function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
 //
 // Pure, like partitionAbsorbed: hosts are not mutated. The caller applies `updates` once.
 /**
- * @param {(Finding[] | null | undefined)[] | null | undefined} lists
- * @param {Finding[] | null | undefined} livePriors
- * @param {RetiredSet} retired
- * @param {FallbackMatch} [fallbackMatch]
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {(F[] | null | undefined)[] | null | undefined} lists
+ * @param {P[] | null | undefined} livePriors
+ * @param {RetiredSet<P>} retired
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @returns {{ runs: Partition<F, P>[], updates: Map<P, string>, absorbed: number, keptAtRetired: number }}
  */
 function absorbAcross(lists, livePriors, retired, fallbackMatch) {
-  /** @type {ReturnType<typeof partitionAbsorbed>[]} */
+  /** @type {Partition<F, P>[]} */
   const runs = []
-  /** @type {Map<Finding, string>} */
+  /** @type {Map<P, string>} */
   let updates = new Map()
   for (const list of lists || []) {
     const r = partitionAbsorbed(list, livePriors, retired, fallbackMatch, updates)
@@ -1898,13 +1915,16 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
 //
 // Pure: returns new finding objects and an `updates` map; neither the findings nor the hosts are mutated.
 /**
- * @param {Finding[] | null | undefined} findings
- * @param {Finding[] | null | undefined} livePriors
- * @param {RetiredSet} retired
- * @param {FallbackMatch} [fallbackMatch]
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F[] | null | undefined} findings
+ * @param {P[] | null | undefined} livePriors
+ * @param {RetiredSet<P>} retired
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @returns {{ kept: Array<F & { ledgerDupOfUnverifiedPrior?: boolean }>, marked: number, collapsed: number, updates: Map<P, string> }}
  */
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
-  /** @param {Finding} h */
+  /** @param {P} h */
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
   // A retired prior is no host here, so it is removed from the search rather than tested after it:
   // left in, it SHADOWS a live host at the same file+ruleId (`.find` takes the earliest) and the
@@ -1915,7 +1935,7 @@ function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   const unverifiedHosts = hosts.filter(h => String(h?.tier ?? '') === 'unverified')
   let marked = 0
   let collapsed = 0
-  /** @type {Map<Finding, string>} */
+  /** @type {Map<P, string>} */
   const updates = new Map()
   const kept = (findings || []).map(f => {
     const host = findCarrier(f, unverifiedHosts, fallbackMatch) || findCarrier(f, hosts, fallbackMatch)
@@ -2597,10 +2617,14 @@ function pathspecLiteral(file) {
 // Returns `expired` and `belowFloor` as QUESTIONS rather than numbers on purpose: with no clock
 // there is no honest "remaining", and a function that invented one would be read as a measurement.
 /**
+ * `schedule` and `cancel` come as a pair: a handle is only ever cancelled by the scheduler that issued
+ * it, so its type `H` is the scheduler's own and stays opaque here.
+ *
+ * @template H
  * @param {number} totalMs
- * @param {{ floorMs?: number, schedule?: (fn: () => void, ms: number) => any, cancel?: (t: any) => void }} [opts]
+ * @param {{ floorMs?: number } & ({ schedule?: undefined, cancel?: undefined } | { schedule: (fn: () => void, ms: number) => H, cancel: (t: H) => void })} [opts]
  */
-function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cancel = clearTimeout } = {}) {
+function makeDeadlineBudget(totalMs, { floorMs = 0, schedule, cancel } = {}) {
   const total = Number(totalMs)
   const capped = Number.isFinite(total) && total > 0 ? total : 0
   const floor = Math.max(0, Math.min(capped, Number(floorMs) || 0))
@@ -2609,7 +2633,13 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cance
   let belowFloor = capped === 0 || floor >= capped
   /** @type {((v: typeof DEADLINE_HIT) => void) | null} */
   let resolveHit = null
-  /** @type {any[]} */
+  // Each armed timer is kept as the call that disarms it, so the handle's type never leaves the pair
+  // that made it.
+  /** @type {(fn: () => void, ms: number) => () => void} */
+  const arm = schedule && cancel
+    ? (fn, ms) => { const t = schedule(fn, ms); return () => cancel(t) }
+    : (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t) }
+  /** @type {Array<() => void>} */
   const timers = []
 
   // The single promise every attempt races. It is created once, so a second attempt inherits
@@ -2620,10 +2650,10 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cance
     : new Promise(resolve => { resolveHit = resolve })
 
   if (capped > 0) {
-    timers.push(schedule(() => { expired = true; belowFloor = true; if (resolveHit) resolveHit(DEADLINE_HIT) }, capped))
+    timers.push(arm(() => { expired = true; belowFloor = true; if (resolveHit) resolveHit(DEADLINE_HIT) }, capped))
     // Armed at the point where the REMAINING budget drops to the floor, so "below the floor" is a
     // moment the host tells us about rather than a subtraction we perform.
-    if (floor > 0 && floor < capped) timers.push(schedule(() => { belowFloor = true }, capped - floor))
+    if (floor > 0 && floor < capped) timers.push(arm(() => { belowFloor = true }, capped - floor))
   }
 
   return {
@@ -2638,7 +2668,7 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cance
     // Clears the armed timers. Without it a pending timer holds the run open for the whole deadline
     // after the agent has already answered — invisible while a throw killed the run outright, and a
     // real leak once the caller swallows that throw.
-    dispose: () => { for (const t of timers) cancel(t) },
+    dispose: () => { for (const disarm of timers) disarm() },
   }
 }
 // <<< craft-inline
@@ -2890,9 +2920,7 @@ function noteTelemetryLoss(what, why) {
 // The bookkeeping calls — the run record, the phase checkpoints, the prior-round read — must not
 // take the run down when they throw. `quietly` is the shared wrapper (lib/run-logging.mjs, inlined
 // below); here it is bound to `ragent` so the retry-once behaviour still applies underneath.
-// Re-typed here: the shared wrapper is typed for every engine's callback (any in, any out), and that
-// would launder this engine's answers. What it really yields is ragent's answer, null, or the throw.
-/** @type {<T = unknown>(prompt: string, opts: AgentOpts & { schema?: Schema<T> | undefined }) => Promise<T | { __threw: string } | null>} */
+// The wrapper is generic over the callback, so what it yields is ragent's answer, null, or the throw.
 const ragentQuietly = quietly(ragent)
 /**
  * A quiet call's outcome split in two: the answer (null when the agent died OR threw), and the throw's
@@ -3116,12 +3144,12 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
-/** @param {{ record?: any, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String(record?.craftVersion ?? '')
+  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -3162,9 +3190,12 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
+// engine passes them on as they are.
 /**
- * @param {any} record
+ * @param {unknown} record
  * @param {{ phase?: string }} [opts]
+ * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
@@ -3178,14 +3209,18 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
-/** @param {any} res harness result of the logger agent (model output) */
+/**
+ * @param {unknown} res harness result of the logger agent (model output), or a quiet call's `{ __threw }`
+ * @returns {{ ok: boolean, reason: string }}
+ */
 function logRunOutcome(res) {
+  const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
   // marker that fires on a landed write is one people stop reading. But it must not vanish either —
   // the caller gets `ok: true` with a reason to surface.
-  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
-  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+  if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
+  return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
 // For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
@@ -3193,12 +3228,12 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
-/** @param {(prompt: any, opts: any) => Promise<any>} call a harness agent callback */
+/**
+ * @template P, O, R
+ * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
+ * @returns {(prompt: P, opts: O) => Promise<R | { __threw: string }>}
+ */
 function quietly(call) {
-  /**
-   * @param {any} prompt
-   * @param {any} opts
-   */
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
@@ -3214,14 +3249,14 @@ function quietly(call) {
 // on the original: the fixed staging path, the prelude ordering and the exit-code carry each had to
 // be applied twice, and each time the second copy was the one nearly missed. Same builder, one
 // difference — the checkpoint carries a phase and asks for the runDir back.
-/** @param {{ payload?: any, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
+/** @param {{ payload?: unknown, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
 function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
   // DERIVED from the payload, never passed alongside it. As a plumbing argument with a silent ''
   // default it was forgettable, and it was duly forgotten at one of three call sites — deleting it
   // there left every gate green while that engine's checkpoints went back to refusing exactly as
   // before the fix, with finalize and prior-round succeeding beside them. A checkpoint describes the
   // same run as the record, so the version belongs on the payload anyway.
-  const version = String(payload?.craftVersion ?? '')
+  const version = String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
   // See the matching note in logRunPrompt above: shell-expanded, never model-composed, and `:+`
   // degrades an unset/empty session id to no flag rather than to the literal string "".
   // Independent of `--dir`, for the reason spelled out in `logRunPrompt` above.
@@ -3517,9 +3552,8 @@ async function logRun(recordIn) {
       record, craftRoot: craftRootArg, repo: repoArg,
       command: 'finalize', dir: runDir, rejoin: rejoinArmed,
     }),
-    // Cast, not checked: the shared builder widens `effort` to string (lib/run-logging.mjs), though it
-    // only ever writes 'low'; and its LOGRUN_SCHEMA is untagged, so the answer stays `unknown`.
-    /** @type {AgentOpts & { schema: Schema<unknown> }} */ (logRunDispatch(record, { phase: 'Synthesize' })),
+    // LOGRUN_SCHEMA is untagged, so the answer stays `unknown` — logRunOutcome reads it as such.
+    logRunDispatch(record, { phase: 'Synthesize' }),
   )
   const landed = logRunOutcome(res)
   if (!landed.ok) noteTelemetryLoss('the run record', landed.reason)
@@ -4432,10 +4466,10 @@ function verifyWeight(f, plan) {
 //
 // An entry heavier than the whole budget still runs: it waits for an empty window, then goes alone.
 /**
- * @template T
- * @param {{run: unknown, weight?: unknown}[]} entries
+ * @template R, T
+ * @param {{run: R, weight?: unknown}[]} entries
  * @param {unknown} maxWeight
- * @param {(run: any, i: number) => T | PromiseLike<T>} runOne `run` is a workflow thunk (harness callback)
+ * @param {(run: R, i: number) => T | PromiseLike<T>} runOne `run` is the entry's own (a workflow thunk, in the engine)
  * @returns {Promise<(T | null)[]>}
  */
 async function weightedWindow(entries, maxWeight, runOne) {
@@ -4452,7 +4486,7 @@ async function weightedWindow(entries, maxWeight, runOne) {
         const i = next++
         inflight += w
         Promise.resolve()
-          .then(() => runOne(/** @type {{run: unknown}} */ (entries[i]).run, i))
+          .then(() => runOne(/** @type {{run: R}} */ (entries[i]).run, i))
           .then(v => { out[i] = v ?? null }, () => { out[i] = null })
           .then(() => { inflight -= w; pump() })
       }
@@ -5121,7 +5155,7 @@ async function reviewProfile(profile) {
   // without a findings array did not review — counting it as returned would read `{}` as a clean lens
   // and iterate a string or a number as findings. It is a lens failure with its own reason, so every
   // caller (the round, the resurrection sweep, the critic follow-ups) sees exactly what a dead lens is.
-  /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
+  /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] @returns {Promise<FindingsAnswer | null>} */
   async function runLens(lens, prompt, phaseName, labelSuffix, slice = null) {
     const res = await dispatchLens(lens, prompt, phaseName, labelSuffix, slice)
     if (res != null && !Array.isArray(/** @type {{ findings?: unknown }} */ (res).findings)) {
@@ -5328,9 +5362,9 @@ async function reviewProfile(profile) {
     const settled = await weightedWindow(
       dispatches.map(d => ({ weight: 1, run: () => runLens(d.lens, lensPrompt(d.lens, priorSummary, profile, plan, d.slice), 'Lenses', ` r${round}${d.slice ? ` ${d.slice.key}` : ''}`, d.slice) })),
       LENS_WINDOW_AGENTS,
-      (run, i) => run().then((/** @type {Result} */ r) => (r ? { ...r, __key: dispatchKey(/** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens, /** @type {(typeof dispatches)[number]} */ (dispatches[i]).slice), __lens: /** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens } : null)),
+      (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(/** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens, /** @type {(typeof dispatches)[number]} */ (dispatches[i]).slice), __lens: /** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens } : null)),
     )
-    const results = settled.filter(Boolean)
+    const results = settled.filter(r => r != null)
     // `__lens`, not the model's `lens` field. Coverage already avoided trusting it; the finding's
     // `source` and the ran-set did not, and a dispatch answering with a mangled name sent its
     // findings to `source: 'unknown'` while its dimension row read `ran: true` with zero findings —
@@ -5445,7 +5479,7 @@ async function reviewProfile(profile) {
   await checkpoint(`${profile.id}-lenses`, {
     language: profile.id, branch, head, baseRef, round: thisRound, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
-    candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
+    candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), /** @type {Record<string, number>} */ ({})),
     notRun,
   }, 'Lenses')
   if (!pool.length) {
@@ -5825,9 +5859,7 @@ Return {status, currentLine, note, invariant, attack}.`,
     if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
     if (cannotTell) { cannotTellCount++; log(`⚠️ adjudicator for ${f.file}:${f.line} could not tell — kept still-open, marked UNVERIFIED in the report`) }
     if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
-    // Cast, not checked: lib/review-adjudicate.mjs types its entries loosely (`unknown` fields); the
-    // entry is `f` re-stamped, and `f` is a Finding.
-    adjudicated[/** @type {keyof typeof adjudicated} */ (track)].push(/** @type {Finding} */ (entry))
+    adjudicated[track].push(entry)
   }
   log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${adjudicated.retired.length} carried→retired (code unchanged; leaves the ledger) · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
 }
@@ -5872,10 +5904,9 @@ if (priorRound) {
     // (markTrackedUnverified), so it neither disappears into the prior nor gates anything.
     const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
     for (const [host, why] of updates) host.why = why
-    // Cast, not checked: lib/review-adjudicate.mjs is not generic over the finding type, so what it
-    // hands back is its own looser Finding; the elements are this engine's findings, re-stamped.
-    confirmed = /** @type {Finding[]} */ (/** @type {(typeof runs)[number]} */ (runs[0]).kept)
-    suspected = /** @type {Finding[]} */ (/** @type {(typeof runs)[number]} */ (runs[1]).kept)
+    // Two lists in, two runs out — absorbAcross returns one run per list, in order.
+    confirmed = /** @type {(typeof runs)[number]} */ (runs[0]).kept
+    suspected = /** @type {(typeof runs)[number]} */ (runs[1]).kept
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
@@ -5889,7 +5920,7 @@ if (priorRound) {
   const trackingHosts = [...livePriors, ...carriedUnverified]
   if (trackingHosts.length) {
     const tracked = markTrackedUnverified(unverified.filter(f => !f.carriedUnverified), trackingHosts, retired, matchesPrior)
-    unverified = /** @type {Finding[]} */ (tracked.kept).concat(carriedUnverified)
+    unverified = tracked.kept.concat(carriedUnverified)
     // A COLLAPSED ROW IS NOT A DISCARDED FINDING. The carrier key is file+ruleId, coarser than a
     // site, so the row dropped from the ledger can be a genuinely distinct defect on another line.
     // Its site is written onto the host through the same bounded clause absorption uses; the reason
