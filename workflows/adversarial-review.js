@@ -125,19 +125,25 @@ function normalizeArgs(args, warn = () => {}) {
 }
 // <<< craft-inline
 const A = normalizeArgs(args, log)
+/** @param {string} key @returns {string} the argument as a string, '' when absent or falsy */
+const stringArg = key => A[key] ? String(A[key]) : ''
 
-const diffBase = A['diffBase'] ? String(A['diffBase']) : ''
-const intentArg = A['intent'] ? String(A['intent']) : ''
-const viaArg = A['_via'] ? String(A['_via']) : ''   // set by a parent workflow
+const diffBase = stringArg('diffBase')
+const intentArg = stringArg('intent')
+const viaArg = stringArg('_via')   // set by a parent workflow
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // this engine has no `repo` argument (see the refusal above) and always reviews the checkout the
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the reviewed repo — where the script is not. Pass craftRoot then.
-const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
-const BATCH = A['batch'] ? Math.max(1, Number(A['batch'])) : 4
+const craftRootArg = stringArg('craftRoot')
+/** @returns {number} */
+const batchArg = () => A['batch'] ? Math.max(1, Number(A['batch'])) : 4
+const BATCH = batchArg()
 const RETRY_BATCH = 2                 // retry rounds run even quieter than the main pass
-const MAX_RETRY_ROUNDS = A['maxRetries'] != null ? Math.max(0, Number(A['maxRetries'])) : 2
+/** @returns {number} */
+const maxRetriesArg = () => A['maxRetries'] != null ? Math.max(0, Number(A['maxRetries'])) : 2
+const MAX_RETRY_ROUNDS = maxRetriesArg()
 const BUDGET_FLOOR = 40_000           // stop spawning agents below this many remaining tokens
 
 // ---- schemas ----
@@ -578,6 +584,12 @@ async function logRun(record) {
 /** @template {{ severity: string }} F @param {F} f */
 const capSeverity = f => ({ ...f, severity: f.severity ? f.severity.charAt(0).toUpperCase() + f.severity.slice(1) : f.severity })
 
+// The fields every run record of this engine opens with, in the order the store has always seen them.
+const recordHead = () => ({
+  schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
+  nested: !!viaArg, via: viaArg || null,
+})
+
 // ---- lens catalog ----
 /** @type {Record<string, string>} */
 const LENS_BRIEF = {
@@ -807,10 +819,10 @@ function nothingToReviewMessage(fileCount) {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A['repo']) {
+/** @returns {Promise<string>} the refusal, after filing its run record */
+async function refuseRepo() {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
-    nested: !!viaArg, via: viaArg || null,
+    ...recordHead(),
     verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
     // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
     // make every repetition of this same misuse its own count-1 row.
@@ -824,12 +836,16 @@ if (A['repo']) {
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`adversarial-review\` there.`,
   ].join('\n')
 }
+if (A['repo']) return await refuseRepo()
+
+/** @returns {string} the scout's instruction for resolving the diff base */
+const scoutBaseStep = () => diffBase ? `Use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'
 
 phase('Prep')
 const [scoutRaw, warmupRaw] = await parallel([
   () => agent(
     `You are scouting a diff to plan an adversarial review. Use shell + read only — do NOT review yet.
-1. Resolve the diff base. ${diffBase ? `Use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
+1. Resolve the diff base. ${scoutBaseStep()}
 2. Inspect \`git diff --stat\` and list every touched path with \`git diff --name-only\` (same base) into changedFiles — complete and verbatim. sizeBucket: small = a few files / < ~80 changed lines; large = many files / > ~400 lines or auth/money/concurrency-heavy; medium otherwise.
 3. lenses: choose from ${JSON.stringify(ALL_LENSES)}.
    - small: only the touched categories (minimum 2; always include 'correctness').
@@ -849,16 +865,32 @@ const [scoutRaw, warmupRaw] = await parallel([
 const scout = /** @type {ScoutResult | null} */ (scoutRaw)
 const warmup = /** @type {WarmupResult | null} */ (warmupRaw)
 
-const plan = {
-  baseRef: scout?.baseRef ?? diffBase,
-  sizeBucket: scout?.sizeBucket ?? 'medium',
-  lenses: (scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => ALL_LENSES.includes(l)) : ALL_LENSES),
+/** @param {ScoutResult | null} scout @returns {string[]} the scout's lenses that are in the catalog, or every lens */
+const scoutLenses = scout => (scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => ALL_LENSES.includes(l)) : ALL_LENSES)
+/**
+ * The complexity lens is metrics-or-nothing: without a usable index it is dropped from the plan.
+ * @param {{ lenses: string[] }} plan @param {WarmupResult | null} warmup
+ */
+function dropComplexityUnlessIndexed(plan, warmup) {
+  if (!(warmup?.indexed)) {
+    plan.lenses = plan.lenses.filter((/** @type {string} */ l) => l !== 'complexity')
+    log(`codebase-memory index unavailable (${warmup?.notes ?? 'warm-up died'}) -> complexity lens dropped`)
+  }
 }
-if (!(warmup?.indexed)) {
-  plan.lenses = plan.lenses.filter((/** @type {string} */ l) => l !== 'complexity')
-  log(`codebase-memory index unavailable (${warmup?.notes ?? 'warm-up died'}) -> complexity lens dropped`)
+/** @param {ScoutResult | null} scout @param {WarmupResult | null} warmup */
+function planReview(scout, warmup) {
+  const plan = {
+    baseRef: scout?.baseRef ?? diffBase,
+    sizeBucket: scout?.sizeBucket ?? 'medium',
+    lenses: scoutLenses(scout),
+  }
+  dropComplexityUnlessIndexed(plan, warmup)
+  log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${scout?.notes ?? 'scout died, running all lenses'}`)
+  return plan
 }
-log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${scout?.notes ?? 'scout died, running all lenses'}`)
+const plan = planReview(scout, warmup)
+/** @param {string[]} lenses @returns {{ size: string, lenses: string[], indexed: boolean, batch: number }} the record's `scout` field */
+const scoutRecord = lenses => ({ size: plan.sizeBucket, lenses, indexed: !!(warmup?.indexed), batch: BATCH })
 
 // ---- coverage guard: a run that looked at nothing must not report a green Approve ----
 // The scout enumerates the diff; three outcomes have to be told apart, and only the third is a
@@ -897,134 +929,173 @@ const runThrottled = makeThrottledRunner({
   batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
   budget, budgetFloor: BUDGET_FLOOR,
 })
-const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : null
-if (!scout || !changedFiles) {
-  markNotRun('scout-dead', scout
-    ? 'the scout returned no file list — the diff was never enumerated, so what the lenses saw is unverified'
-    : 'scout died — the diff was never enumerated, so what the lenses saw is unverified')
-} else if (!changedFiles.length) {
-  const msg = noChangedFilesMessage()
-  log(`INCOMPLETE — ${msg}`)
+/**
+ * Files the record of a run that ended before any lens ran.
+ * @param {string} verdict @param {string[]} labels  its notRun classes
+ */
+async function fileEarlyExit(verdict, labels) {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow',
-    name: 'adversarial-review', nested: !!viaArg, via: viaArg || null,
-    verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]),
-    scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
+    ...recordHead(),
+    verdict, findings: summarizeFindings([]),
+    scout: scoutRecord([]),
     dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
-    notRun: ['empty-diff'], outputTokens: budget.spent(),
+    notRun: labels, outputTokens: budget.spent(),
   })
-  return { verdict: 'INCOMPLETE (empty diff)', confirmed: [], suspected: [], notRun: [msg].concat(telemetryNotes()), scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
-} else if (!materialUncovered(changedFiles).length) {
-  // All inert (docs/assets/lockfiles/generated). Nothing ran AND nothing needed to — an honest
-  // green, deliberately not marked INCOMPLETE: a marker that fires on every README-only change
-  // stops being read on the diffs that do hide unreviewed code.
-  //
-  // But this is the ONE exit where a green rests entirely on the scout's file list, and that list
-  // comes from a model, not from `git`. A scout that truncated, globbed, or resolved the wrong base
-  // and happened to emit only docs and lockfiles would approve a real code diff. The script itself
-  // has no shell (the Workflow sandbox has no filesystem or Node API), so the deterministic route
-  // is a second, single-purpose agent that does nothing but transcribe `git diff --name-only`. It
-  // is cheap and only fires on this branch. The green is taken only if that independent list is
-  // complete by its own `wc -l`, agrees with the scout's size, and is itself entirely inert;
-  // anything else — including a dead cross-check — falls back to INCOMPLETE.
-  //
-  // The base is resolved INDEPENDENTLY, not taken from `plan.baseRef`. Pinning the cross-check to
-  // the scout's own base would leave the wrong-base case structurally invisible — both agents would
-  // diff the same wrong ref, agree perfectly, and the green would be granted. Resolving it again
-  // from the same deterministic ladder turns a wrong base into a differing file list, which the
-  // comparison below already catches. Only an explicit `diffBase` argument is passed through: there
-  // the base is the caller's, not the scout's, so there is nothing to cross-check.
-  //
-  // What this still does NOT catch: `fileCount` and `files` come from the same model in the same
-  // response, so the self-consistency arm is self-reported — a model that truncates the list AND
-  // lowers its own count to match defeats it. What that arm actually rules out is the ordinary
-  // failure (a list shortened while the count stays honest), not a coordinated one.
+}
+
+/**
+ * An INCOMPLETE early exit: logged, filed under its one notRun class, and returned with its message.
+ * @param {string} verdict @param {string} label @param {string} msg
+ */
+async function incompleteExit(verdict, label, msg) {
+  log(`INCOMPLETE — ${msg}`)
+  await fileEarlyExit(verdict, [label])
+  return { verdict, confirmed: [], suspected: [], notRun: [msg].concat(telemetryNotes()), scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+}
+
+/** @returns {string} the cross-check's instruction for resolving the diff base */
+const crossBaseStep = () => diffBase ? `The caller pinned it: use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'
+
+/**
+ * Why the cross-check does not confirm the scout's all-inert list, or null when it does.
+ * @param {CrosscheckResult | null} cross @param {string[]} changedFiles @returns {string | null}
+ */
+function inertDisagreement(cross, changedFiles) {
+  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter(isPath) : null
+  // Read only where `crossFiles` is set, and that implies a live `cross`.
+  const crossCount = cross?.fileCount
+  if (!crossFiles) return 'the cross-check never returned a usable list'
+  if (crossFiles.length !== crossCount) return `the cross-check list is incomplete (${crossFiles.length} paths vs ${crossCount} reported by git)`
+  if (crossFiles.length !== changedFiles.length) return `git reports ${crossFiles.length} changed file(s), the scout reported ${changedFiles.length}`
+  if (materialUncovered(crossFiles).length) return `git's list contains reviewable code the scout did not report: ${materialUncovered(crossFiles).join(', ')}`
+  return null
+}
+
+// All inert (docs/assets/lockfiles/generated). Nothing ran AND nothing needed to — an honest
+// green, deliberately not marked INCOMPLETE: a marker that fires on every README-only change
+// stops being read on the diffs that do hide unreviewed code.
+//
+// But this is the ONE exit where a green rests entirely on the scout's file list, and that list
+// comes from a model, not from `git`. A scout that truncated, globbed, or resolved the wrong base
+// and happened to emit only docs and lockfiles would approve a real code diff. The script itself
+// has no shell (the Workflow sandbox has no filesystem or Node API), so the deterministic route
+// is a second, single-purpose agent that does nothing but transcribe `git diff --name-only`. It
+// is cheap and only fires on this branch. The green is taken only if that independent list is
+// complete by its own `wc -l`, agrees with the scout's size, and is itself entirely inert;
+// anything else — including a dead cross-check — falls back to INCOMPLETE.
+//
+// The base is resolved INDEPENDENTLY, not taken from `plan.baseRef`. Pinning the cross-check to
+// the scout's own base would leave the wrong-base case structurally invisible — both agents would
+// diff the same wrong ref, agree perfectly, and the green would be granted. Resolving it again
+// from the same deterministic ladder turns a wrong base into a differing file list, which the
+// comparison below already catches. Only an explicit `diffBase` argument is passed through: there
+// the base is the caller's, not the scout's, so there is nothing to cross-check.
+//
+// What this still does NOT catch: `fileCount` and `files` come from the same model in the same
+// response, so the self-consistency arm is self-reported — a model that truncates the list AND
+// lowers its own count to match defeats it. What that arm actually rules out is the ordinary
+// failure (a list shortened while the count stays honest), not a coordinated one.
+/** @param {string[]} changedFiles  the scout's list, every path inert */
+async function inertExit(changedFiles) {
   const cross = /** @type {CrosscheckResult | null} */ (await agent(
     `You are cross-checking a diff's file list. Run shell only — do NOT review, summarise, or judge anything.
-1. Resolve the diff base YOURSELF — do not take it from anyone else. ${diffBase ? `The caller pinned it: use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
+1. Resolve the diff base YOURSELF — do not take it from anyone else. ${crossBaseStep()}
 2. Run \`git diff --name-only <base>\` and \`git diff --name-only <base> | wc -l\`.
 3. Return every path VERBATIM in \`files\` — no truncation, no globbing, no sorting, no elision — and the \`wc -l\` number in \`fileCount\`.
 4. Set ok=true ONLY if the git command succeeded and \`files\` holds every path it printed. If anything failed, or you had to shorten the list for any reason, set ok=false.`,
     { label: 'inert-crosscheck', phase: 'Prep', schema: CROSSCHECK_SCHEMA, model: 'haiku', effort: 'low' },
   ))
-  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter(isPath) : null
-  // Read only where `crossFiles` is set, and that implies a live `cross`.
-  const crossCount = cross?.fileCount
-  const agrees = !!crossFiles
-    && crossFiles.length === crossCount
-    && crossFiles.length === changedFiles.length
-    && !materialUncovered(crossFiles).length
-  if (!agrees) {
-    const why = !crossFiles ? 'the cross-check never returned a usable list'
-      : crossFiles.length !== crossCount ? `the cross-check list is incomplete (${crossFiles.length} paths vs ${crossCount} reported by git)`
-        : crossFiles.length !== changedFiles.length ? `git reports ${crossFiles.length} changed file(s), the scout reported ${changedFiles.length}`
-          : `git's list contains reviewable code the scout did not report: ${materialUncovered(crossFiles).join(', ')}`
-    const msg = `NOT REVIEWED — the scout said every changed file was inert (docs/assets/lockfiles/generated), but ${why}. The scout's file list is the only thing that green rested on, so it is not granted: no lens ran, and this is not an approval. Re-run, checking the diff base.`
-    log(`INCOMPLETE — ${msg}`)
-    await logRun({
-      schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow',
-      name: 'adversarial-review', nested: !!viaArg, via: viaArg || null,
-      verdict: 'INCOMPLETE (unconfirmed inert diff)', findings: summarizeFindings([]),
-      scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
-      dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
-      notRun: ['inert-diff-unconfirmed'], outputTokens: budget.spent(),
-    })
-    return { verdict: 'INCOMPLETE (unconfirmed inert diff)', confirmed: [], suspected: [], notRun: [msg].concat(telemetryNotes()), scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+  const why = inertDisagreement(cross, changedFiles)
+  if (why) {
+    return await incompleteExit('INCOMPLETE (unconfirmed inert diff)', 'inert-diff-unconfirmed',
+      `NOT REVIEWED — the scout said every changed file was inert (docs/assets/lockfiles/generated), but ${why}. The scout's file list is the only thing that green rested on, so it is not granted: no lens ran, and this is not an approval. Re-run, checking the diff base.`)
   }
   const msg = nothingToReviewMessage(changedFiles.length)
   log(msg)
-  await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow',
-    name: 'adversarial-review', nested: !!viaArg, via: viaArg || null,
-    verdict: 'Approve', findings: summarizeFindings([]),
-    scout: { size: plan.sizeBucket, lenses: [], indexed: !!(warmup?.indexed), batch: BATCH },
-    dimensions: [], verification: { candidates: 0, confirmed: 0, refuteRate: 0 },
-    notRun: [], outputTokens: budget.spent(),
-  })
+  await fileEarlyExit('Approve', [])
   return { verdict: 'Approve', confirmed: [], suspected: [], notRun: telemetryNotes(), summary: msg, scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
 }
 
-// ================= Review: throttled finder lenses =================
-phase('Review')
-/** @type {Map<string, FindingsResult | null>} */
-const lensResults = new Map()
-const deadLensJobs = await runThrottled(
-  plan.lenses.map((/** @type {string} */ lens) => ({
-    prompt: finderPrompt(lens),
-    label: `review:${lens}`,
-    schema: FINDINGS,
-    effort: 'medium',
-    onResult: (/** @type {unknown} */ r) => lensResults.set(lens, /** @type {FindingsResult | null} */ (r)),
-  })),
-  'Review', 'Review', { reportUnjudged: false },
-)
-const diedLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
-if (diedLenses.length) {
-  log(`WARNING: finder lens(es) returned nothing: ${diedLenses.join(', ')}`)
-  // One entry PER dead lens: `lens:correctness` is what aggregates across runs into
-  // "3× lens:correctness", which is the whole point of ranking `notRun`.
-  for (const l of diedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
+/**
+ * Tells apart the scout's three outcomes: an unknown diff (opens notRun; the review proceeds), an
+ * empty one and an all-inert one (both end the run here). Returns the early result, or null to review.
+ * @param {ScoutResult | null} scout
+ */
+async function coverageGuard(scout) {
+  const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : null
+  if (!scout || !changedFiles) {
+    markNotRun('scout-dead', scout
+      ? 'the scout returned no file list — the diff was never enumerated, so what the lenses saw is unverified'
+      : 'scout died — the diff was never enumerated, so what the lenses saw is unverified')
+    return null
+  }
+  if (!changedFiles.length) return await incompleteExit('INCOMPLETE (empty diff)', 'empty-diff', noChangedFilesMessage())
+  if (!materialUncovered(changedFiles).length) return await inertExit(changedFiles)
+  return null
 }
-// A result is model output: the schema is enforced by the tool, but a lens that came back without a
-// findings array is a lens that did not review, not one that found nothing — and must not crash the run.
-// It is dead for every consumer of `deadLenses` (the all-dead check, the critic's prompt, the returned
-// scout), not only for `notRun`.
-const malformedLenses = plan.lenses.filter((/** @type {string} */ lens) => {
-  const r = lensResults.get(lens)
-  return r != null && !Array.isArray(r.findings)
-})
-if (malformedLenses.length) {
-  log(`WARNING: finder lens(es) answered without a findings array: ${malformedLenses.join(', ')}`)
-  for (const l of malformedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens returned no findings array — that dimension went unreviewed`)
-}
-/** @type {string[]} */
-const deadLenses = [...new Set([...diedLenses, ...malformedLenses])]
-if (plan.lenses.length && deadLenses.length === plan.lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
+const early = await coverageGuard(scout)
+if (early) return early
 
-const all = plan.lenses.flatMap((/** @type {string} */ lens) => {
-  const r = lensResults.get(lens)
-  return r && Array.isArray(r.findings) ? r.findings.map(x => ({ ...x, lens })) : []
-})
+// ================= Review: throttled finder lenses =================
+/**
+ * Lenses whose answer came back and is not a review, marked not-run one entry per lens.
+ * @param {string[]} lenses @param {Map<string, FindingsResult | null>} lensResults @returns {string[]}
+ */
+function markMalformedLenses(lenses, lensResults) {
+  // A result is model output: the schema is enforced by the tool, but a lens that came back without a
+  // findings array is a lens that did not review, not one that found nothing — and must not crash the run.
+  // It is dead for every consumer of `deadLenses` (the all-dead check, the critic's prompt, the returned
+  // scout), not only for `notRun`.
+  const malformedLenses = lenses.filter((/** @type {string} */ lens) => {
+    const r = lensResults.get(lens)
+    return r != null && !Array.isArray(r.findings)
+  })
+  if (malformedLenses.length) {
+    log(`WARNING: finder lens(es) answered without a findings array: ${malformedLenses.join(', ')}`)
+    for (const l of malformedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens returned no findings array — that dimension went unreviewed`)
+  }
+  return malformedLenses
+}
+
+/**
+ * Runs the finder lenses throttled; returns every finding tagged with its lens, and the lenses that
+ * did not review (died, or answered without a findings array).
+ * @param {string[]} lenses
+ */
+async function runFinderLenses(lenses) {
+  /** @type {Map<string, FindingsResult | null>} */
+  const lensResults = new Map()
+  const deadLensJobs = await runThrottled(
+    lenses.map((/** @type {string} */ lens) => ({
+      prompt: finderPrompt(lens),
+      label: `review:${lens}`,
+      schema: FINDINGS,
+      effort: 'medium',
+      onResult: (/** @type {unknown} */ r) => lensResults.set(lens, /** @type {FindingsResult | null} */ (r)),
+    })),
+    'Review', 'Review', { reportUnjudged: false },
+  )
+  const diedLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
+  if (diedLenses.length) {
+    log(`WARNING: finder lens(es) returned nothing: ${diedLenses.join(', ')}`)
+    // One entry PER dead lens: `lens:correctness` is what aggregates across runs into
+    // "3× lens:correctness", which is the whole point of ranking `notRun`.
+    for (const l of diedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
+  }
+  const malformedLenses = markMalformedLenses(lenses, lensResults)
+  /** @type {string[]} */
+  const deadLenses = [...new Set([...diedLenses, ...malformedLenses])]
+  if (lenses.length && deadLenses.length === lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
+
+  const all = lenses.flatMap((/** @type {string} */ lens) => {
+    const r = lensResults.get(lens)
+    return r && Array.isArray(r.findings) ? r.findings.map(x => ({ ...x, lens })) : []
+  })
+  return { deadLenses, all }
+}
+
+phase('Review')
+const { deadLenses, all } = await runFinderLenses(plan.lenses)
 
 // ---- dedup, tier 1 (mechanical): neighbor line-buckets + title-token similarity ----
 // Merging requires BOTH nearby lines (|Δ| <= 5, buckets k-1..k+1 so bucket borders don't split)
@@ -1040,34 +1111,51 @@ function titleSimilar(a, b) {
   for (const w of tokensA) if (B.has(w)) inter++
   return inter / (tokensA.size + B.size - inter) > 0.5
 }
-/** @type {Map<string, LensFinding[]>} */
-const buckets = new Map()   // `${file}:${bucket}` -> entries in that bucket
-/** @type {LensFinding[]} */
-const merged = []
-for (const f of all) {
-  const b = Math.floor(f.line / 10)
-  let hit = null
+/**
+ * The first entry in bucket b-1, b or b+1 of the finding's file that lies within 5 lines and has a similar title.
+ * @param {Map<string, LensFinding[]>} buckets @param {RawFinding} f @param {number} b @returns {LensFinding | null}
+ */
+function nearbySimilar(buckets, f, b) {
   for (const nb of [b - 1, b, b + 1]) {
     for (const e of (buckets.get(`${f.file}:${nb}`) || [])) {
-      if (Math.abs(e.line - f.line) <= 5 && titleSimilar(e.title, f.title)) { hit = e; break }
+      if (Math.abs(e.line - f.line) <= 5 && titleSimilar(e.title, f.title)) return e
     }
-    if (hit) break
   }
-  if (hit) {
-    if (!hit.sources.includes(f.lens)) hit.sources.push(f.lens)
-    if (SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (f.severity)] < SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (hit.severity)]) {
-      Object.assign(hit, { title: f.title, line: f.line, severity: f.severity, description: f.description, fix: f.fix, lens: f.lens })
-    }
-    continue
-  }
-  const entry = { ...f, sources: [f.lens] }
-  merged.push(entry)
-  const key = `${f.file}:${b}`
-  const bucket = buckets.get(key)
-  if (bucket) bucket.push(entry)
-  else buckets.set(key, [entry])
+  return null
 }
-let kept = merged.sort((a, b) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (a.severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (b.severity)])
+/**
+ * Folds a duplicate into the entry it hit: its lens joins the sources, and a more severe duplicate's wording wins.
+ * @param {LensFinding} hit @param {RawFinding & { lens: string }} f
+ */
+function absorbDuplicate(hit, f) {
+  if (!hit.sources.includes(f.lens)) hit.sources.push(f.lens)
+  if (SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (f.severity)] < SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (hit.severity)]) {
+    Object.assign(hit, { title: f.title, line: f.line, severity: f.severity, description: f.description, fix: f.fix, lens: f.lens })
+  }
+}
+/** @param {(RawFinding & { lens: string })[]} all @returns {LensFinding[]} the pool after mechanical dedup, most severe first */
+function mechanicalDedup(all) {
+  /** @type {Map<string, LensFinding[]>} */
+  const buckets = new Map()   // `${file}:${bucket}` -> entries in that bucket
+  /** @type {LensFinding[]} */
+  const merged = []
+  for (const f of all) {
+    const b = Math.floor(f.line / 10)
+    const hit = nearbySimilar(buckets, f, b)
+    if (hit) {
+      absorbDuplicate(hit, f)
+      continue
+    }
+    const entry = { ...f, sources: [f.lens] }
+    merged.push(entry)
+    const key = `${f.file}:${b}`
+    const bucket = buckets.get(key)
+    if (bucket) bucket.push(entry)
+    else buckets.set(key, [entry])
+  }
+  return merged.sort((a, b) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (a.severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (b.severity)])
+}
+let kept = mechanicalDedup(all)
 log(`Review: ${all.length} raw findings -> ${kept.length} after mechanical dedup`)
 
 // ---- dedup, tier 2 (semantic, thresholded): one haiku clusterer for cross-vocabulary duplicates ----
@@ -1076,7 +1164,37 @@ log(`Review: ${all.length} raw findings -> ${kept.length} after mechanical dedup
 // are likely; merges keep BOTH formulations so an over-eager merge degrades to a verbose
 // description instead of a lost finding.
 const DEDUP_THRESHOLD = 15
-if (kept.length > DEDUP_THRESHOLD && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
+/** @returns {boolean} whether the budget still allows spawning agents (an unlimited one always does) */
+const budgetAllows = () => !budget.total || budget.remaining() > BUDGET_FLOOR
+/**
+ * Merges each cluster's duplicates into its most severe member, keeping both formulations.
+ * @param {LensFinding[]} kept @param {number[][]} clusters @returns {Set<number>} the indices merged away
+ */
+function mergeClusters(kept, clusters) {
+  /** @type {Set<number>} */
+  const drop = new Set()
+  // Only ever called with an index the filter below has bounded to `kept`.
+  const at = (/** @type {number} */ i) => /** @type {LensFinding} */ (kept[i])
+  for (const cluster of clusters) {
+    const idxs = [...new Set(Array.isArray(cluster) ? cluster : [])]
+      .filter(i => Number.isInteger(i) && i >= 0 && i < kept.length && !drop.has(i))
+      .sort((x, y) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(x).severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(y).severity)])
+    if (idxs.length < 2) continue
+    const head = at(/** @type {number} */ (idxs[0]))
+    for (const i of idxs.slice(1)) {
+      mergeDuplicate(head, at(i))
+      drop.add(i)
+    }
+  }
+  return drop
+}
+/** @param {LensFinding} head @param {LensFinding} dup */
+function mergeDuplicate(head, dup) {
+  for (const s of dup.sources) if (!head.sources.includes(s)) head.sources.push(s)
+  head.description += `\n[merged duplicate] ${dup.title} @ ${dup.file}:${dup.line}: ${dup.description}`
+}
+/** @param {LensFinding[]} kept @returns {Promise<LensFinding[]>} the pool after the semantic clusterer, or `kept` itself when it merged nothing */
+async function semanticDedup(kept) {
   const CLUSTERS_SCHEMA = {
     type: 'object',
     additionalProperties: false,
@@ -1097,33 +1215,19 @@ FINDINGS:
 ${kept.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (lenses: ${f.sources.join(',')}) — ${f.description}`).join('\n')}`,
     { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low' },
   ))
-  /** @type {Set<number>} */
-  const drop = new Set()
-  // Only ever called with an index the filter below has bounded to `kept`.
-  const at = (/** @type {number} */ i) => /** @type {LensFinding} */ (kept[i])
   // Model output: a live clusterer whose `clusters` is not an array merged nothing — say so, never throw.
   const clusters = Array.isArray(clusterer?.clusters) ? clusterer.clusters : []
   if (clusterer && !Array.isArray(clusterer.clusters)) log('WARNING: semantic dedup returned clusters that are not an array — no semantic merge applied')
-  for (const cluster of clusters) {
-    const idxs = [...new Set(Array.isArray(cluster) ? cluster : [])]
-      .filter(i => Number.isInteger(i) && i >= 0 && i < kept.length && !drop.has(i))
-      .sort((x, y) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(x).severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(y).severity)])
-    if (idxs.length < 2) continue
-    const head = at(/** @type {number} */ (idxs[0]))
-    for (const i of idxs.slice(1)) {
-      const dup = at(i)
-      for (const s of dup.sources) if (!head.sources.includes(s)) head.sources.push(s)
-      head.description += `\n[merged duplicate] ${dup.title} @ ${dup.file}:${dup.line}: ${dup.description}`
-      drop.add(i)
-    }
-  }
-  if (drop.size) {
-    kept = kept.filter((_f, i) => !drop.has(i))
-    log(`Semantic dedup: merged ${drop.size} duplicate(s) -> ${kept.length} findings`)
-  } else {
+  const drop = mergeClusters(kept, clusters)
+  if (!drop.size) {
     log('Semantic dedup: no cross-vocabulary duplicates found')
+    return kept
   }
+  const rest = kept.filter((_f, i) => !drop.has(i))
+  log(`Semantic dedup: merged ${drop.size} duplicate(s) -> ${rest.length} findings`)
+  return rest
 }
+if (kept.length > DEDUP_THRESHOLD && budgetAllows()) kept = await semanticDedup(kept)
 
 // ================= Verify =================
 phase('Verify')
@@ -1313,8 +1417,9 @@ const votes = kept.map(() => [])
 const verifyJobs = buildVerifyJobs(kept, votes)
 log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept.filter(isEscalated).length} escalated to 3-lens panel), throttled to ${BATCH} concurrent`)
 // `runThrottled` records the unjudged checks in `notRun` itself (advisory) — see the region above.
-const unverifiedJobs = await runThrottled(verifyJobs, 'Verify', 'Verify')
-if (unverifiedJobs.length) log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
+/** @param {unknown[]} unverified */
+const warnUnverified = unverified => { if (unverified.length) log(`WARNING: ${unverified.length} checks got no verdict after retries`) }
+warnUnverified(await runThrottled(verifyJobs, 'Verify', 'Verify'))
 
 const judged = judge(kept, votes)
 let { confirmed, refuted } = judged
@@ -1334,82 +1439,109 @@ log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${su
 // here: a complexity finding is excluded by lens although the lens emits `high` and gets a single
 // verifier, and a `medium` finding is excluded by severity although one verifier can calibrate it to
 // `critical`. The judge computes the reachable tier instead.
-const undecidedEscalated = [...confirmed, ...refuted, ...judged.suspected].filter(f => f.undecidedByAbsence && f.couldHaveBlocked)
-if (undecidedEscalated.length) {
-  markNotRun('escalated-findings-undecided', `${undecidedEscalated.length} critical/high finding(s) lost the panel vote that would have decided them — this run cannot say whether it should have blocked`)
+/** @param {typeof judged} j */
+function markUndecidedEscalated(j) {
+  const undecidedEscalated = [...j.confirmed, ...j.refuted, ...j.suspected].filter(f => f.undecidedByAbsence && f.couldHaveBlocked)
+  if (undecidedEscalated.length) {
+    markNotRun('escalated-findings-undecided', `${undecidedEscalated.length} critical/high finding(s) lost the panel vote that would have decided them — this run cannot say whether it should have blocked`)
+  }
 }
+markUndecidedEscalated(judged)
 
 // ================= Coverage: critic, then verify its gaps through the same pipeline =================
-phase('Coverage')
-const CRITIC_PROMPT = `You are a completeness critic for an adversarial diff review (diff base: ${plan.baseRef || 'HEAD'}).
+/**
+ * The completeness critic (retried once), and its gaps tagged as coverage findings; a critic that died
+ * twice or answered without a findings array is not-run and yields no gaps.
+ * @param {{ title: string, file: string, line: number }[]} confirmed @param {{ title: string, file: string, line: number }[]} refuted
+ * @returns {Promise<LensFinding[]>}
+ */
+async function criticGaps(confirmed, refuted) {
+  const CRITIC_PROMPT = `You are a completeness critic for an adversarial diff review (diff base: ${plan.baseRef || 'HEAD'}).
 Ask: what is MISSING — a changed file no finding touched, a category of bug not checked, a dimension left uncovered?
 Report each gap as a concrete located finding (file:line of the suspicious spot, severity, description, fix).
 CONFIRMED findings (do not repeat them): ${JSON.stringify(confirmed.map(f => `${f.title} @ ${f.file}:${f.line}`))}
 REFUTED claims (do NOT re-report these — they were adversarially disproven): ${JSON.stringify(refuted.map(f => `${f.title} @ ${f.file}:${f.line}`))}
 Dead lenses this run (their dimension is UNCOVERED — look there first): ${JSON.stringify(deadLenses)}
 If coverage is complete, return {"findings": []}.`
-let critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
-if (!critic) {
-  log('Coverage critic failed, retrying once')
-  critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
-}
-if (!critic) {
-  // Without this the critic's silence is indistinguishable from "coverage is complete": `?? []`
-  // below yields zero gaps, and a diff whose blind spots were never looked for reads as covered.
-  log('WARNING: coverage critic died twice — completeness was never checked')
-  markNotRun('coverage-critic-dead', 'the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
-}
-
-// A live critic whose `findings` is not an array checked nothing we can read — that is not-run under
-// its own label, never a silent "coverage is complete" and never a crash.
-if (critic && !Array.isArray(critic.findings)) {
-  log('WARNING: coverage critic answered without a findings array — completeness was never checked')
-  markNotRun('coverage-critic-malformed', 'the coverage critic answered without a findings array — no usable completeness check ran, so blind spots in this review are unknown')
-}
-// Critic findings do not bypass verification — they ride the same throttled pipeline.
-/** @type {LensFinding[]} */
-const gaps = (critic && Array.isArray(critic.findings) ? critic.findings : []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
-let refutedGaps = 0
-if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
-  log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
-  /** @type {unknown[][]} */
-  const gapVotes = gaps.map(() => [])
-  // Opts out of the runner's advisory entry and marks its own BLOCKING one, for the reason the
-  // else-branch below spells out: a coverage gap is the critic's claim that something went
-  // UNREVIEWED. Crossing the budget floor midway through this pass leaves exactly the same blind
-  // spots unopened as failing to start it, so the two must land on the same side of the line —
-  // otherwise the identical run reads `Approve` or `Approve (INCOMPLETE)` depending only on which
-  // side of the first batch the floor happened to fall. Same label, so analyze-runs aggregates both.
-  const unverifiedGapJobs = await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage', { reportUnjudged: false })
-  if (unverifiedGapJobs.length) {
-    log(`WARNING: ${unverifiedGapJobs.length} coverage-gap checks got no verdict`)
-    markNotRun('coverage-gaps-unverified', `${unverifiedGapJobs.length} coverage-gap check(s) got no verdict — the blind spots they name went unopened`)
+  let critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
+  if (!critic) {
+    log('Coverage critic failed, retrying once')
+    critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
   }
-  const g = judge(gaps, gapVotes)
-  confirmed = confirmed.concat(g.confirmed)
-  suspected = suspected.concat(g.suspected)
-  refutedGaps = g.refuted.length
-  log(`Coverage gaps: +${g.confirmed.length} confirmed · +${g.suspected.length} suspected · ${g.refuted.length} refuted`)
-} else if (gaps.length) {
-  log(`Budget too low to verify ${gaps.length} coverage gap(s) -> reported as suspected`)
-  // Blocking, unlike `verify-checks-unjudged`, and the difference is epistemic rather than a matter
-  // of degree. An unjudged *finding* is a claim that something is wrong; reporting it as Suspected
-  // is already the honest answer, and the review still looked. A coverage gap is the critic's claim
-  // that something went UNREVIEWED — the same category as a dead lens, which downgrades. Leaving it
-  // advisory would let a plain `Approve` stand on a run whose named blind spots nobody opened.
-  // It does not fire on routine runs: it needs the budget floor reached AND gaps raised.
-  markNotRun('coverage-gaps-unverified', `${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, and the blind spots they name went unopened`)
-  suspected = suspected.concat(gaps.map(f => ({ ...f, confirmed: false, votes: [] })))
+  if (!critic) {
+    // Without this the critic's silence is indistinguishable from "coverage is complete": `?? []`
+    // below yields zero gaps, and a diff whose blind spots were never looked for reads as covered.
+    log('WARNING: coverage critic died twice — completeness was never checked')
+    markNotRun('coverage-critic-dead', 'the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
+  }
+
+  // A live critic whose `findings` is not an array checked nothing we can read — that is not-run under
+  // its own label, never a silent "coverage is complete" and never a crash.
+  if (critic && !Array.isArray(critic.findings)) {
+    log('WARNING: coverage critic answered without a findings array — completeness was never checked')
+    markNotRun('coverage-critic-malformed', 'the coverage critic answered without a findings array — no usable completeness check ran, so blind spots in this review are unknown')
+  }
+  // Critic findings do not bypass verification — they ride the same throttled pipeline.
+  return (critic && Array.isArray(critic.findings) ? critic.findings : []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
 }
+phase('Coverage')
+const gaps = await criticGaps(confirmed, refuted)
+
+/**
+ * Verifies the critic's gaps through the same pipeline, or — below the budget floor — reports them
+ * as suspected; returns the confirmed and suspected lists with the gaps' outcome folded in.
+ * @param {LensFinding[]} gaps @param {typeof confirmed} found @param {typeof suspected} doubtful
+ */
+async function withGapVerdicts(gaps, found, doubtful) {
+  if (gaps.length && budgetAllows()) {
+    log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
+    /** @type {unknown[][]} */
+    const gapVotes = gaps.map(() => [])
+    // Opts out of the runner's advisory entry and marks its own BLOCKING one, for the reason the
+    // budget-floor branch below spells out: a coverage gap is the critic's claim that something went
+    // UNREVIEWED. Crossing the budget floor midway through this pass leaves exactly the same blind
+    // spots unopened as failing to start it, so the two must land on the same side of the line —
+    // otherwise the identical run reads `Approve` or `Approve (INCOMPLETE)` depending only on which
+    // side of the first batch the floor happened to fall. Same label, so analyze-runs aggregates both.
+    const unverifiedGapJobs = await runThrottled(buildVerifyJobs(gaps, gapVotes), 'Coverage-verify', 'Coverage', { reportUnjudged: false })
+    if (unverifiedGapJobs.length) {
+      log(`WARNING: ${unverifiedGapJobs.length} coverage-gap checks got no verdict`)
+      markNotRun('coverage-gaps-unverified', `${unverifiedGapJobs.length} coverage-gap check(s) got no verdict — the blind spots they name went unopened`)
+    }
+    const g = judge(gaps, gapVotes)
+    log(`Coverage gaps: +${g.confirmed.length} confirmed · +${g.suspected.length} suspected · ${g.refuted.length} refuted`)
+    return { found: found.concat(g.confirmed), doubtful: doubtful.concat(g.suspected), refutedGaps: g.refuted.length }
+  }
+  if (gaps.length) {
+    log(`Budget too low to verify ${gaps.length} coverage gap(s) -> reported as suspected`)
+    // Blocking, unlike `verify-checks-unjudged`, and the difference is epistemic rather than a matter
+    // of degree. An unjudged *finding* is a claim that something is wrong; reporting it as Suspected
+    // is already the honest answer, and the review still looked. A coverage gap is the critic's claim
+    // that something went UNREVIEWED — the same category as a dead lens, which downgrades. Leaving it
+    // advisory would let a plain `Approve` stand on a run whose named blind spots nobody opened.
+    // It does not fire on routine runs: it needs the budget floor reached AND gaps raised.
+    markNotRun('coverage-gaps-unverified', `${gaps.length} coverage gap(s) were never verified (budget floor reached) — they are reported as Suspected, and the blind spots they name went unopened`)
+    return { found, doubtful: doubtful.concat(gaps.map(f => ({ ...f, confirmed: false, votes: [] }))), refutedGaps: 0 }
+  }
+  return { found, doubtful, refutedGaps: 0 }
+}
+const gapped = await withGapVerdicts(gaps, confirmed, suspected)
+confirmed = gapped.found
+suspected = gapped.doubtful
+const refutedGaps = gapped.refutedGaps
 
 // A verdict must never claim more coverage than the run had: a dimension that went unreviewed
 // downgrades the verdict, so a run where the work died cannot read exactly like a clean one. The
 // advisory entries (see `markNotRun`) are recorded and printed but do NOT downgrade — their
 // findings are already reported as Suspected, and a marker that fires on routine runs stops being
 // read on the runs that need it.
-const baseVerdict = confirmed.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
-  : confirmed.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
-const verdict = notRunBlocking().length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
+/** @param {{ severity: string }[]} found @returns {string} */
+function verdictOf(found) {
+  const baseVerdict = found.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
+    : found.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
+  return notRunBlocking().length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
+}
+const verdict = verdictOf(confirmed)
 log(`Verdict: ${verdict} — ${confirmed.length} confirmed, ${suspected.length} suspected`)
 for (const e of notRun) log(`${e.incomplete ? 'NOT RUN' : 'PARTIAL'}: ${e.note}`)
 
@@ -1417,16 +1549,10 @@ for (const e of notRun) log(`${e.incomplete ? 'NOT RUN' : 'PARTIAL'}: ${e.note}`
 const candidates = kept.length + gaps.length
 const refutedTotal = refuted.length + refutedGaps
 await logRun({
-  schemaVersion: 1,
-  runtime: 'claude-code',
-  craftVersion: CRAFT_VERSION,
-  kind: 'workflow',
-  name: 'adversarial-review',
-  nested: !!viaArg,
-  via: viaArg || null,
+  ...recordHead(),
   verdict,
   findings: summarizeFindings([...confirmed, ...suspected].map(capSeverity)),
-  scout: { size: plan.sizeBucket, lenses: plan.lenses, indexed: !!(warmup?.indexed), batch: BATCH },
+  scout: scoutRecord(plan.lenses),
   dimensions: plan.lenses.map((/** @type {string} */ l) => {
     const s = summarizeFindings(confirmed.filter(f => (f.sources || []).includes(l)).map(capSeverity))
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
