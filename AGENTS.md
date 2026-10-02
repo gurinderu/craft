@@ -120,7 +120,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | Unit tests | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` |
 | Lint (zero-warning, identical to CI) | `npm run lint` — read the raw exit code |
 | Typecheck the OpenCode plugin | `npm run check:types` (needs `npm ci --prefix opencode/plugin` once) |
-| Typecheck `lib/*.mjs` (checkJs, JSDoc types; same toolchain) | `npm run check:types:lib` |
+| Typecheck `lib/*.mjs` (checkJs, JSDoc types, Node 22 typings) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Syntax-check workflow scripts; byte-compare inlined regions | `node lib/check-workflows.mjs` (`--fix` regenerates the regions) |
 | Skills and agents (frontmatter + `craft:<slug>` refs) | `node lib/check-skills.mjs` |
 | Delivery parity of review agents | `node lib/check-delivery-parity.mjs` |
