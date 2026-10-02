@@ -1,0 +1,16 @@
+{
+  "path": ["lib", "opencode/plugin", "workflows"],
+  "format": ["javascript", "typescript"],
+  "ignore": ["**/*.test.mjs", "**/node_modules/**"],
+  "ignorePattern": ["(?m)^\\/\\/ >>> craft-inline (\\S+)((?: +\\S+)+)\\s*$[\\s\\S]*?^\\/\\/ <<< craft-inline\\s*$"],
+  "crossFormats": ["js-ts"],
+  "minTokens": 50,
+  "minLines": 5,
+  "maxSize": "10mb",
+  "absolute": true,
+  "reporters": ["console"],
+  "baseline": ".jscpd-baseline.json",
+  "failOnNewClones": 0,
+  "failOnEmpty": true,
+  "noTips": true
+}
