@@ -57,15 +57,15 @@ export function splitFindings(blob: string): { findings: string[]; dropped: numb
     // the other half of the property. Without it a ```` fence wrapping a ``` example was closed by
     // the inner marker, and the findings after it were discarded as "code" with `dropped` still 0,
     // so the loud banner never fired. Same silent loss as the inline-span defect, by the other door.
-    const fence = l.match(/^(`{3,}|~{3,})/)
-    const isDelimiter = fence && !l.slice(fence[0].length).includes(fence[1][0].repeat(3))
+    const marker = l.match(/^(`{3,}|~{3,})/)?.[1]
+    const isDelimiter = marker !== undefined && !l.slice(marker.length).includes(marker.charAt(0).repeat(3))
     if (isDelimiter && !inFence) {
       inFence = true
-      openedWith = fence[1]
+      openedWith = marker
       continue
     }
     if (isDelimiter && inFence) {
-      const closes = fence[1][0] === openedWith[0] && fence[1].length >= openedWith.length
+      const closes = marker.charAt(0) === openedWith.charAt(0) && marker.length >= openedWith.length
       if (closes) {
         inFence = false
         pending.length = 0 // it really did close: what it held was code
