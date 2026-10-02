@@ -118,15 +118,16 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | What | Command |
 |---|---|
 | Unit tests | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` |
-| Lint (zero-warning, identical to CI) | `npm run lint` — read the raw exit code |
+| Lint (zero-warning, identical to CI; type-aware rules over the `lib/` and `opencode/plugin/` programs) | `npm run lint` — read the raw exit code (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci --prefix opencode/plugin` once) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
-| Typecheck the engines' own code `workflows/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`) | `npm run check:types:workflows` (same prerequisites) |
+| Typecheck the engines' own code `workflows/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`), plus typescript-eslint's `no-unsafe-*` rules at zero on the same program | `npm run check:types:workflows` (same prerequisites) |
 | Syntax-check workflow scripts; byte-compare inlined regions; inlined code is strictly typed | `node lib/check-workflows.mjs` (needs `npm ci --prefix opencode/plugin` for tsc; `--fix` regenerates the regions) |
 | Skills and agents (frontmatter + `craft:<slug>` refs) | `node lib/check-skills.mjs` |
 | Delivery parity of review agents | `node lib/check-delivery-parity.mjs` |
 | OpenCode agent/command frontmatter | `npm run check:opencode-frontmatter` |
 | Eval corpus shape | `node lib/check-evals.mjs` |
+| Unused files, exports, dependencies (config `knip.config.js`; an inlined export is used only where an engine calls it — listing it in a `craft-inline` fence is not a use) | `npm run check:dead:production` (tests excluded: an export only a test uses is dead) and `npm run check:dead` (tests included: devDependencies, packages tests import); both need `npm ci` and `npm ci --prefix opencode/plugin` |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
 | Audit the OpenCode plugin's locked production closure (blocking at high in CI; needs the network, so offline it is CI's to run — not reproducible, realm #141) | `npm audit --prefix opencode/plugin --omit=dev --audit-level=high` |
 

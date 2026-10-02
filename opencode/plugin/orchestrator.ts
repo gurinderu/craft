@@ -3,8 +3,9 @@
 // session is created but never executes within STUCK_MS, retry the failed jobs one at a time;
 // if a job still yields nothing, surface a clear, actionable error rather than hang.
 //
-// Signatures (client.session.create / client.session.prompt) follow the opencode SDK docs;
-// `tsc` will flag any mismatch against the installed @opencode-ai/sdk types — adjust there.
+// Signatures (client.session.create / client.session.prompt) follow the opencode SDK docs and are
+// NOT type-checked: PluginCtx.client is `any` and nothing here imports @opencode-ai/sdk, so `tsc`
+// passes whatever the SDK's real shapes are. A mismatch shows only at runtime, in opencode.
 import type { PluginCtx } from "./index.ts"
 
 // A dimension that runs `cargo clippy --all-targets` and `cargo test` on a real workspace takes
