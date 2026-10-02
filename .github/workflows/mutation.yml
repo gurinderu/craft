@@ -1,0 +1,70 @@
+name: Mutation testing
+
+# Weekly Stryker run over lib/ (realm @nick/craft, #146): how much of lib/'s logic the unit tests pin.
+# Not a PR check and not a gate: it runs on a schedule and by hand, never on push or pull_request, so a
+# red run here blocks no merge. It turns red when the score falls below the floor in lib/mutation-floor.json
+# (stryker.config.mjs's `thresholds.break`; it may only rise, which CI's `test` job holds on pull requests),
+# and a red run opens an issue — that is the signal, read in the report artifact, not a failure to fix in place.
+on:
+  schedule:
+    # Sundays 03:17 UTC: a quiet hour for the shared runners, off the top of the hour most crons pick.
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+
+# issues: write is this workflow's alone — the step that opens an issue for a red run needs it.
+permissions:
+  contents: read
+  issues: write
+
+# A manual run while the weekly one is still going waits for it rather than racing it.
+concurrency:
+  group: mutation
+  cancel-in-progress: false
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    # The run measured 29 minutes on 15 workers over 10492 mutants (about 440 worker-minutes, static mutants
+    # ignored); on four workers that is near two hours, and the slower runner cores take more — four hours
+    # were set for it. lib/ has grown since: the dry run now instruments 11949 mutants, so both limits are
+    # scaled by 11949/10492 and rounded up (240 → 275, 225 → 260), still under GitHub's 360-minute job cap so a hung run is
+    # cut off sooner. The Stryker step has its own, shorter limit: a step that times out fails, so the steps
+    # after it still run — a job that times out is cancelled, and opens no issue.
+    timeout-minutes: 275
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dev tooling
+        run: npm ci
+      # inPlace mode runs the tsc-backed tests against the real tree, which read the plugin's tsc.
+      - name: Install opencode plugin deps
+        run: npm ci --prefix opencode/plugin
+      # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
+      # the child processes (git, tsc) its tests spawn.
+      - name: Stryker over lib/
+        timeout-minutes: 260
+        run: npm run test:mutation -- --concurrency 4
+      # Uploaded on a red run too (below `break`). Stryker writes both files only when the run completes,
+      # so a run cut by the timeout has nothing to upload under any `if:` — its job log, with the
+      # progress lines, is all it leaves.
+      - name: Upload the mutation report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: |
+            reports/mutation/mutation.html
+            reports/mutation/mutation.json
+          if-no-files-found: warn
+          retention-days: 90
+      # A red run — below lib/mutation-floor.json, timed out, or failed to install — is reported in one open
+      # issue: while one titled "Weekly mutation run failed (…)" is open, the run and its score are a comment
+      # on it; only when none is open is one created, titled with the score (lib/mutation-issue.mjs).
+      - name: Report the red run in an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node lib/mutation-issue.mjs reports/mutation/mutation.json
