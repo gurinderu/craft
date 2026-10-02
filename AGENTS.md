@@ -118,19 +118,21 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | What | Command |
 |---|---|
 | Unit tests | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` |
-| Lint (zero-warning, identical to CI) | `npm run lint` — read the raw exit code |
+| Lint (zero-warning, identical to CI; type-aware rules over the `lib/` and `opencode/plugin/` programs) | `npm run lint` — read the raw exit code (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci --prefix opencode/plugin` once) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
-| Typecheck the engines' own code `workflows/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`) | `npm run check:types:workflows` (same prerequisites) |
+| Typecheck the engines' own code `workflows/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`), plus typescript-eslint's `no-unsafe-*` rules at zero on the same program | `npm run check:types:workflows` (same prerequisites) |
 | Syntax-check workflow scripts; byte-compare inlined regions; inlined code is strictly typed | `node lib/check-workflows.mjs` (needs `npm ci --prefix opencode/plugin` for tsc; `--fix` regenerates the regions) |
 | Skills and agents (frontmatter + `craft:<slug>` refs) | `node lib/check-skills.mjs` |
 | Delivery parity of review agents | `node lib/check-delivery-parity.mjs` |
 | OpenCode agent/command frontmatter | `npm run check:opencode-frontmatter` |
 | Eval corpus shape | `node lib/check-evals.mjs` |
+| Unused files, exports, dependencies (config `knip.config.js`; an inlined export is used only where an engine calls it — listing it in a `craft-inline` fence is not a use) | `npm run check:dead:production` (tests excluded: an export only a test uses is dead) and `npm run check:dead` (tests included: devDependencies, packages tests import); both need `npm ci` and `npm ci --prefix opencode/plugin` |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
+| Audit the OpenCode plugin's locked production closure (blocking at high in CI; needs the network, so offline it is CI's to run — not reproducible, realm #141) | `npm audit --prefix opencode/plugin --omit=dev --audit-level=high` |
 | Static analysis, semgrep public rule sets (CI job `semgrep`, image pinned there; the rules come from the registry per run, so not reproducible) | `semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0 --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs --config p/security-audit --config p/secrets --config p/default lib opencode/plugin workflows` |
 
-There is no formatter and no pre-commit hook: run every row above before pushing; CI runs the same steps (two jobs: `test`, and `semgrep` for the last row). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
+There is no formatter and no pre-commit hook: run every row above before pushing (the audit and semgrep rows only with network; offline they are CI's to run); CI runs the same steps (two jobs: `test`, and `semgrep` for the semgrep row). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
 
 ## Project structure
 - `skills/` — 32 skills, one directory each with a `SKILL.md`.
@@ -177,7 +179,7 @@ There is no formatter and no pre-commit hook: run every row above before pushing
 - **Forge**: GitHub (`git@github.com:gurinderu/craft.git`); CLI `gh`. Observe with `gh pr checks <n> --watch`, `gh pr view <n>`; trunk as the forge sees it — `gh api repos/gurinderu/craft/commits/main --jq .sha`. Never treat a local ref as current — `git fetch origin main` first.
 - **Conventional commits** (`feat:`/`fix:`/`chore:`/`refactor:`/`docs:`/`test:`) — release-please parses them, so the prefix carries the version; branches `feat/…`, `fix/…`, `chore/…`; PR titles in the same format.
 - **No co-author trailer and no "Generated with Claude Code"** — neither on commits nor in PR bodies.
-- **Gate before push**: every row of "Commands"; there is no pre-commit hook and no single gate call yet (cover, "Gate").
+- **Gate before push**: every row of "Commands" (the audit row needs the network — offline it is CI's); there is no pre-commit hook and no single gate call yet (cover, "Gate").
 - **Push, review, then PR**: push the branch so the reviewer can read `origin/<branch>`; open the PR once the cold review's verdict is in and its findings are worked (above). A branch whose review is done does not live without a PR.
 - **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (one job, `test`; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
