@@ -296,6 +296,15 @@ function ownLine(line, marker) {
 }
 
 /**
+ * Whether `fence` closes a block opened with `openedWith`: the same character, at least as long.
+ * @param {string} fence
+ * @param {string} openedWith
+ */
+function closesFence(fence, openedWith) {
+  return fence[0] === openedWith[0] && fence.length >= openedWith.length
+}
+
+/**
  * @param {unknown} text
  * @param {RegExp} marker
  */
@@ -314,7 +323,7 @@ function markerLine(text, marker) {
       if (openedWith === null) {
         openedWith = fence
         openedAt = i
-      } else if (fence[0] === openedWith[0] && fence.length >= openedWith.length) {
+      } else if (closesFence(fence, openedWith)) {
         openedWith = null
         openedAt = -1
       }
@@ -449,7 +458,15 @@ function verdictEvidence(t) {
   if (structured) return { verdict: /** @type {string} */ (VERDICT_TOKEN[structured]), by: 'structured' }
 
   // 2. Fallback for non-conforming output, over the tail only.
-  const tail = t.split('\n').slice(-TAIL_LINES).join('\n')
+  return tailEvidence(t.split('\n').slice(-TAIL_LINES).join('\n'))
+}
+
+/**
+ * The fallback half of `verdictEvidence`: what decides the verdict of output with no structured line.
+ * @param {string} tail
+ * @returns {{ verdict: string, by: string } | null}
+ */
+function tailEvidence(tail) {
   // Word boundaries (and the verdict emoji) so prose like "no blocking issues" / "unblocked"
   // doesn't collide with the Block keyword. Worst signal still wins (Block before Warning), and
   // both outrank a labelled statement: an agent claiming Approve while reporting UB is not taken

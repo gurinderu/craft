@@ -43,11 +43,16 @@ async function runAgent(ctx: PluginCtx, agentName: string, prompt: string): Prom
   return extractText(res)
 }
 
+// The parts of a message, wherever the response shape keeps them.
+function partsOf(root: any): any[] {
+  return root?.parts ?? root?.data?.parts ?? root?.message?.parts ?? []
+}
+
 function extractText(res: any): string {
   // Normalize a streaming/array response to its last message before reading parts, so an array
   // shape isn't mistaken for "no output" (which would mis-mark a successful job NOT RUN).
   const root = Array.isArray(res) ? res[res.length - 1] : res
-  const parts = root?.parts ?? root?.data?.parts ?? root?.message?.parts ?? []
+  const parts = partsOf(root)
   const text = parts
     .filter((p: any) => p?.type === "text" && typeof p.text === "string")
     .map((p: any) => p.text)
@@ -119,6 +124,26 @@ async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Fai
   }
 }
 
+// Seconds below a minute: `Math.round` turned every short deadline into "within 0 minutes", which
+// is what a test drove without noticing, because it asserted only the prefix.
+function spanOf(ms: number): string {
+  return ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : ms >= 1000 ? `${Math.round(ms / 1000)} seconds` : `${ms} ms`
+}
+
+function failureCause(job: Job, why: Failure | undefined, span: string, boundByBudget: boolean, retried: boolean): string {
+  if (why === "budget") return `the retry budget for this run was already spent on earlier jobs, so it was not attempted a second time`
+  if (why === "timeout") {
+    return boundByBudget
+      ? `it produced no result within ${span} — which is all that was left of this run's shared retry budget, not its own deadline. Earlier retries spent the rest; raising this job's timeout would not have helped`
+      : `it produced no result within ${span}. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
+  }
+  if (why === "unanswered") return `it answered, but without the ${job.requires ?? "machine-readable line"} the prompt requires — so nothing it said can be read as a result. Its output is kept below`
+  if (why === "error") return `the child session errored on its last attempt`
+  return retried
+    ? `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
+    : `the child session produced no output on its single attempt. This step is not retried, so there is nothing more to read into it than that the session returned nothing`
+}
+
 // `boundByBudget` says the deadline this attempt ran under was the shared retry budget's remainder,
 // not anything the job or the config chose. Without it the note named a span that exists nowhere —
 // "no result within 10 minutes" for a 20-minute job clipped by what was left — and a reader either
@@ -136,24 +161,8 @@ function notRunNote(
   // the very path this branch exists to keep honest.
   retried = true,
 ): string {
-  const ms = job.timeoutMs ?? STUCK_MS
-  // Seconds below a minute: `Math.round` turned every short deadline into "within 0 minutes", which
-  // is what a test drove without noticing, because it asserted only the prefix.
-  const span = ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : ms >= 1000 ? `${Math.round(ms / 1000)} seconds` : `${ms} ms`
-  const cause =
-    why === "budget"
-      ? `the retry budget for this run was already spent on earlier jobs, so it was not attempted a second time`
-      : why === "timeout"
-        ? boundByBudget
-          ? `it produced no result within ${span} — which is all that was left of this run's shared retry budget, not its own deadline. Earlier retries spent the rest; raising this job's timeout would not have helped`
-          : `it produced no result within ${span}. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
-        : why === "unanswered"
-          ? `it answered, but without the ${job.requires ?? "machine-readable line"} the prompt requires — so nothing it said can be read as a result. Its output is kept below`
-          : why === "error"
-            ? `the child session errored on its last attempt`
-            : retried
-              ? `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
-              : `the child session produced no output on its single attempt. This step is not retried, so there is nothing more to read into it than that the session returned nothing`
+  const span = spanOf(job.timeoutMs ?? STUCK_MS)
+  const cause = failureCause(job, why, span, boundByBudget, retried)
   return `INCOMPLETE (not run) — the child session for "${job.agent || "the default model"}" did not deliver a result: ${cause}. ${detail}`.trim()
 }
 
