@@ -206,6 +206,17 @@ const PLAN_SCHEMA = {
   },
 }
 
+// The shapes the three schemas above promise. `agent()` returns them only when it ran: a skipped
+// or dead agent yields `null`, so every call site casts to `T | null` and handles the null.
+/** @typedef {{ severity: string, title: string, location: string, detail: string, proposed_fix: string, thread_id: string }} RawFinding */
+/** @typedef {{ source: string, findings: RawFinding[] }} RawResult */
+/** @typedef {RawFinding & { source: string }} SourcedFinding */
+/** @typedef {{ stable_id: string, verdict: string, reason: string, fix_pointer: string, premise_checked: string }} Validation */
+/** @typedef {{ stable_id: string, verdict: string, reason: string }} LedgerEntry */
+/** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
+// What this script adds to the plan before returning it — not part of PLAN_SCHEMA.
+/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[] }} TriagePlan */
+
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
@@ -558,7 +569,7 @@ function telemetryLostSection(lost) {
 const telemetryLost = []
 const agentQuietly = quietly(agent)
 
-/** @param {any} record */
+/** @param {Record<string, unknown>} record */
 async function logRun(record) {
   const res = await agentQuietly(
     logRunPrompt({ record, craftRoot: craftRootArg }),
@@ -611,32 +622,34 @@ if (!pr && !report) {
   throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a rust-audit report).')
 }
 
+/** @type {Array<() => Promise<RawResult | null>>} */
 const gatherTasks = []
 const requestedLocators = []   // parallel to gatherTasks; drives NOT-RUN bookkeeping for the run record
 if (report) {
   requestedLocators.push('report')
-  gatherTasks.push(() => agent(
+  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
     `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
     { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
-  ))
+  )))
 }
 if (pr) {
   requestedLocators.push('pr')
-  gatherTasks.push(() => agent(
+  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
     `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
     { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
-  ))
+  )))
 }
 
 const gatherResults = await parallel(gatherTasks)   // order preserved → align with requestedLocators
 const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
 if (notRunSources.length) log(`WARNING: source(s) that produced nothing: ${notRunSources.join(', ')} — the triage covers fewer sources than asked.`)
-const gathered = gatherResults.filter(Boolean)
-const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(/** @param {any} f */ f => ({ ...f, source: g.source })))
+const gathered = gatherResults.filter(g => !!g)
+/** @type {SourcedFinding[]} */
+const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 
 // stable composite id; reused for dedup, ledger, and idempotent re-runs
-/** @param {any} f */
+/** @param {SourcedFinding} f */
 const idOf = f => `${f.source}::${f.location || 'no-loc'}::${f.title}`
 const priorById = new Map(priorLedger.map(e => [e.stable_id, e]))
 
@@ -651,8 +664,9 @@ const pin = base
 // is what keeps such an entry OUT of the carry-forward set on the next run.
 const UNJUDGED_MARKER = 'NOT JUDGED'
 
+/** @type {string[]} */
 const deadValidations = []
-const validations = (await parallel(raw.map(f => () => {
+const validations = (await parallel(raw.map(f => /** @returns {Promise<Validation>} */ () => {
   const id = idOf(f)
   const prior = priorById.get(id)
   // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
@@ -671,7 +685,7 @@ const validations = (await parallel(raw.map(f => () => {
     // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
   }
-  return agent(
+  return /** @type {Promise<Validation | null>} */ (agent(
     `Judge ONE review finding against the actual code. ${pin}
 
 Finding (source: ${f.source}):
@@ -692,7 +706,7 @@ PREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outsid
 stable_id MUST be exactly: ${id}
 Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     { label: `validate:${(f.location || f.title).slice(0, 40)}`, phase: 'Validate', schema: VALIDATION_SCHEMA },
-  ).then(v => {
+  )).then(v => {
     // A dead validator used to be dropped by `filter(Boolean)`, which removed the finding from the
     // plan AND from the ledger: a Critical whose judge died did not appear as unjudged, it appeared
     // as nothing. It is unjudged, so it becomes the verdict that already means "a human must look
@@ -701,7 +715,7 @@ Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     deadValidations.push(id)
     return { stable_id: id, verdict: 'needs-decision', reason: `${UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code`, fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
   })
-}))).filter(Boolean)
+}))).filter(v => !!v)
 
 const accepted = validations.filter(v => v.verdict === 'accept')
 log(`Validated ${validations.length}: ${accepted.length} accept, ${validations.length - accepted.length} other.`)
@@ -713,7 +727,7 @@ phase('Plan')
 const rawById = new Map(raw.map(f => [idOf(f), f]))
 const acceptedEnriched = accepted.map(v => ({ ...v, finding: rawById.get(v.stable_id) || null }))
 
-const plan = await agent(
+const plan = /** @type {TriagePlan | null} */ (await agent(
   `Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose \`finding\` is null (a data glitch) — leave it out of the plan and note it in the summary.
 
 1. Dedup by stable_id (merge findings at the same location with the same fix).
@@ -728,11 +742,12 @@ ${JSON.stringify(acceptedEnriched, null, 2)}
 ALL VERDICTS (include reject/defer/needs-decision in the ledger):
 ${JSON.stringify(validations, null, 2)}`,
   { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA },
-)
+))
 
 // ---- Observability: persist a run record (best-effort) -------------------
 // Prefer the plan's ledger (it carries the cross-finding `conflict` disposition); fall back to the
 // solo validations when the Plan phase produced nothing.
+/** @type {LedgerEntry[]} */
 let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
 
 // The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
@@ -742,11 +757,11 @@ let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
 // run three. So the script re-injects it deterministically. `validations` is the local record of
 // what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
 // re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
-if (ledger !== validations) {
+if (plan && ledger !== validations) {   // `ledger !== validations` already implies a plan; `plan &&` says so to the checker
   const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
   if (unjudged.size) {
     const seen = new Set()
-    ledger = ledger.map(/** @param {any} e */ e => {
+    ledger = ledger.map(e => {
       const v = e && unjudged.get(e.stable_id)
       if (!v) return e
       seen.add(e.stable_id)

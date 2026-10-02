@@ -229,6 +229,26 @@ const UNUSED_VERDICT_SCHEMA = {
   },
 }
 
+// The shapes the three schemas above make the sandbox hand back. agent() resolves to `null` when the
+// subagent is skipped or dies, so every read site takes `<Shape> | null`, never the bare shape.
+/** @typedef {{ name: string, path: string }} CrateItem */
+/** @typedef {{ from: string, to: string }} EdgeItem */
+/**
+ * @typedef {{ hasDiff: boolean, hasUnsafe: boolean, baseRef: string, repoRoot: string, crates: CrateItem[],
+ *   changedCrates: CrateItem[], edges: EdgeItem[], notes: string }} ScoutResult
+ */
+/** @typedef {{ severity: string, title: string, location: string, detail: string }} Finding */
+/** @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence: string }} FindingsResult */
+/** @typedef {{ confirmedUnused: boolean, evidence: string, removal: string }} UnusedVerdict */
+// One dimension's result as the aggregate reads it: an agent's FindingsResult, a nested review mapped
+// by reviewResult (no evidence), or the unused-crates tally (which carries `_verification`).
+/**
+ * @typedef {{ candidates: number, confirmed: number, refuted: number, died: number, judged: number,
+ *   refuteRate: number | null }} VerificationStats
+ * @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence?: string,
+ *   _verification?: VerificationStats }} DimResult
+ */
+
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
@@ -509,7 +529,7 @@ function demoteUnsupportedGreen(r) {
 // shares); a match becomes Approve. INCOMPLETE passes through untouched; anything genuinely
 // unrecognisable is returned UNCHANGED, so it still lands in the non-permissive branch of
 // worstVerdict — this widens the green vocabulary, it never weakens the default.
-/** @param {any} v model output */
+/** @param {unknown} v model output */
 function normalizeDimensionVerdict(v) {
   const t = String(v == null ? '' : v).trim()
   if (!t) return t
@@ -537,11 +557,11 @@ function auditVerdict(worst, notRun) {
 
 // Drop internal (`_`-prefixed) keys so they never leak into the synthesis prompt.
 /**
- * @param {Record<string, any>} obj
- * @returns {Record<string, any>}
+ * @param {Record<string, unknown>} obj
+ * @returns {Record<string, unknown>}
  */
 function stripInternal(obj) {
-  /** @type {Record<string, any>} */
+  /** @type {Record<string, unknown>} */
   const out = {}
   for (const k of Object.keys(obj)) if (!k.startsWith('_')) out[k] = obj[k]
   return out
@@ -853,7 +873,7 @@ function telemetryLostSection(lost) {
 const telemetryLost = []
 const agentQuietly = quietly(agent)
 
-/** @param {any} record */
+/** @param {object} record */
 async function logRun(record) {
   const res = await agentQuietly(
     logRunPrompt({ record, craftRoot: craftRootArg }),
@@ -878,11 +898,12 @@ async function logRun(record) {
 // self-contained) and REMEMBER the miss so later dimensions skip straight to generic instead of
 // re-failing. Without this, the contract/architecture/security/miri dimensions silently become
 // NOT RUN whenever the craft agents aren't registered.
+/** @type {Set<string>} */
 const agentTypeMissing = new Set()
 /**
  * @param {string} prompt
- * @param {Record<string, any>} [opts]
- * @returns {Promise<any>}
+ * @param {AgentOptions} [opts]  the sandbox's closed option set — a misspelt key fails the type check
+ * @returns {Promise<unknown>}
  */
 async function safeAgent(prompt, opts = {}) {
   const at = opts['agentType']
@@ -930,7 +951,7 @@ if (A['repo']) {
 }
 
 phase('Scout')
-const scout = await agent(
+const scout = /** @type {ScoutResult | null} */ (await agent(
   `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
 
 1. Determine the diff base. ${baseArg
@@ -945,7 +966,7 @@ const scout = await agent(
 7. edges = intra-workspace dependency edges from \`cargo metadata --format-version 1\`: {from, to} where BOTH \`from\` and \`to\` are workspace members and \`from\` depends on \`to\`. Empty array if \`cargo metadata\` is unavailable.`,
   // Scout is pure mechanics (git refs + grep) — run it cheap: Haiku at low effort.
   { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
-)
+))
 // scout is null if the agent was skipped or died — fall back to safe defaults rather than crash.
 const baseRef = scout?.baseRef ?? ''
 const hasUnsafe = scout?.hasUnsafe ?? true // fail-safe: run Miri when detection didn't resolve
@@ -991,11 +1012,11 @@ function crateScope(p) {
   for (let i = 0; i < r.length; i++) if (abs[i] !== r[i]) return null
   return abs.slice(r.length).join('/') || '.'
 }
-/** @type {any[]} */
+/** @type {CrateItem[]} */
 const crates = Array.isArray(scout?.crates) ? scout.crates : []
-/** @type {any[]} */
+/** @type {CrateItem[]} */
 const changedCrates = Array.isArray(scout?.changedCrates) ? scout.changedCrates : []
-/** @type {any[]} */
+/** @type {EdgeItem[]} */
 const edges = Array.isArray(scout?.edges) ? scout.edges : []
 log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no base ref')
 
@@ -1137,7 +1158,7 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
 // review's definite death — so dimResult takes the reason as an argument rather than asserting one it
 // cannot confirm. Likewise the throw line: `opts.threw` lets a review keep its own "review failed:"
 // wording (which stays legible as refusal-vs-death). The defaults carry the agent-dimension wording,
-// so the ten agent sites call `dispatchDim(dim, promise)` unchanged.
+// so the agent sites call `dispatchDim(dim, promise)` with no options, the promise cast to its result type.
 // `evidenceGate` (default ON) runs a self-reported GREEN result through demoteUnsupportedGreen: a
 // claimed pass with no `Evidence:` line becomes INCOMPLETE by construction (invariant #53), and —
 // because the demoted string leads with INCOMPLETE — falls into couldNotRun/worstVerdict with no
@@ -1146,7 +1167,7 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
 // them would demote every honest zero-finding review (the one false-positive the design excludes).
 /**
  * @param {string} dimension
- * @param {any} r agent result
+ * @param {DimResult | null | undefined} r agent result
  * @param {string} deadReason
  * @param {boolean} [evidenceGate]
  */
@@ -1155,14 +1176,14 @@ function dimResult(dimension, r, deadReason, evidenceGate = true) {
   const tagged = { ...r, dimension }
   if (!evidenceGate) return tagged
   const demoted = demoteUnsupportedGreen(tagged)
-  if (demoted !== tagged) log(`${dimension}: reported ${r.verdict} with no Evidence — demoted to ${demoted.verdict}`)
+  if (demoted !== tagged) log(`${dimension}: reported ${r.verdict} with no Evidence — demoted to ${demoted?.verdict}`)
   return demoted
 }
 
 /**
  * @param {string} dimension
- * @param {Promise<any>} promise agent result
- * @param {{ deadReason?: string, threw?: (msg: any) => string, evidenceGate?: boolean }} [opts]
+ * @param {Promise<DimResult | null>} promise agent result
+ * @param {{ deadReason?: string, threw?: (msg: unknown) => string, evidenceGate?: boolean }} [opts]
  */
 function dispatchDim(dimension, promise, opts = {}) {
   const deadReason = opts.deadReason || 'agent returned no result (died or skipped) — dimension NOT RUN'
@@ -1172,7 +1193,9 @@ function dispatchDim(dimension, promise, opts = {}) {
     .catch(e => { log(threw((e && e.message) || e)); return null })
 }
 
+/** @type {Array<() => Promise<DimResult | null | undefined> | null>} */
 const tasks = []
+/** @type {string[]} */
 const dispatched = []
 
 // Review dimension — per-crate fan-out (feature A). changedCrates → diff-scoped; no base → all
@@ -1195,7 +1218,7 @@ if (reviewCrates.length > 1) {
         // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
         // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
         // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
-        .then(report => report == null ? null : reviewResult(`review:${c.name}`, report)),
+        .then(/** @param {unknown} report */ report => report == null ? null : reviewResult(`review:${c.name}`, report)),
       // A swallowed throw is a name that would not resolve OR a run that died; keep the
       // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
       // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
@@ -1213,7 +1236,7 @@ if (reviewCrates.length > 1) {
                                                 : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
       // As at the per-crate site: report==null is a dead nested engine — resolve to null before
       // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
-      .then(report => report == null ? null : reviewResult('review', report)),
+      .then(/** @param {unknown} report */ report => report == null ? null : reviewResult('review', report)),
     // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
     // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
     { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
@@ -1230,10 +1253,10 @@ if (touchedEdges.length) {
   // `dispatched` entry use the Unicode `→` (U+2192). Keep those two in sync — the NOT-RUN
   // bookkeeping compares `dispatched` against `dimension`; do NOT "unify" them to the label's `->`.
   for (const e of touchedEdges) {
-    tasks.push(() => dispatchDim(`contract:${e.from}→${e.to}`, safeAgent(
+    tasks.push(() => dispatchDim(`contract:${e.from}→${e.to}`, /** @type {Promise<FindingsResult | null>} */ (safeAgent(
       `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
       { label: `contract:${e.from}->${e.to}`, agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
-    )))
+    ))))
     dispatched.push(`contract:${e.from}→${e.to}`)
   }
 } else {
@@ -1241,29 +1264,29 @@ if (touchedEdges.length) {
 }
 
 // Crate-decomposition dimension (feature C) — whole-project; runs even on a single crate.
-tasks.push(() => dispatchDim('crate-decomposition', agent(
+tasks.push(() => dispatchDim('crate-decomposition', /** @type {Promise<FindingsResult | null>} */ (agent(
   `Judge this Rust workspace's crate boundaries and recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back. Load the rust-ecosystem skill and its crate-extraction.md rubric, and build on the workspace dependency graph (\`cargo metadata\`). For EACH recommendation give: the DRIVER (reuse / compile parallelism / dependency inversion / trust boundary / independent semver / test isolation / god-crate split — or, for a merge, "single consumer, no boundary reason"), the BOUNDARY (which module or code), and the HOW. Recommend only — do NOT move code. Return a verdict (Healthy / Concerns / At-risk) and findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo metadata\`) and manifests you read this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'crate-decomposition', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'medium' },
-)))
+))))
 dispatched.push('crate-decomposition')
 
-tasks.push(() => dispatchDim('architecture', safeAgent(
+tasks.push(() => dispatchDim('architecture', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
   `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings. If NO dependency graph could be built at all (cargo metadata/tree failed, cargo-modules absent, and no manifest or source structure was readable), nothing was judged: return verdict "INCOMPLETE (not run)" naming what was missing — not "Healthy". A graph built from the source fallback IS a graph: rate it normally.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
-)))
+))))
 dispatched.push('architecture')
 
-tasks.push(() => dispatchDim('security', safeAgent(
+tasks.push(() => dispatchDim('security', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
   `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings. If NONE of the tools is installed, so nothing was actually scanned, return verdict "INCOMPLETE (not run)" and name the missing tools — a scan that ran nothing is not an Approve.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
-)))
+))))
 dispatched.push('security')
 
 if (hasUnsafe) {
-  tasks.push(() => dispatchDim('miri', safeAgent(
+  tasks.push(() => dispatchDim('miri', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
     `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found), or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
     { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
-  )))
+  ))))
   dispatched.push('miri')
 } else {
   log('No unsafe code detected — skipping Miri.')
@@ -1274,22 +1297,22 @@ if (hasUnsafe) {
 // `INCOMPLETE (not run)`, not Approve. Approve stays reserved for "the tool ran and found
 // nothing"; a reader of the dimension table must be able to tell those two apart. ----
 
-tasks.push(() => dispatchDim('semver', agent(
+tasks.push(() => dispatchDim('semver', /** @type {Promise<FindingsResult | null>} */ (agent(
   `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran and crates you checked this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-)))
+))))
 dispatched.push('semver')
 
-tasks.push(() => dispatchDim('build-matrix', agent(
+tasks.push(() => dispatchDim('build-matrix', /** @type {Promise<FindingsResult | null>} */ (agent(
   `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (feature sets, MSRV checks) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-)))
+))))
 dispatched.push('build-matrix')
 
-tasks.push(() => dispatchDim('deps', agent(
+tasks.push(() => dispatchDim('deps', /** @type {Promise<FindingsResult | null>} */ (agent(
   `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo tree -d\`, \`cargo outdated\`) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-)))
+))))
 dispatched.push('deps')
 
 // Unused-crates dimension — detect, then ADVERSARIALLY VERIFY, two classes of dead weight:
@@ -1301,7 +1324,7 @@ dispatched.push('deps')
 // verifier tries HARD to prove the crate IS used and only the survivors are kept. Self-contained
 // find→verify pipeline inside one thunk so it composes with the flat `parallel(tasks)` fan-out.
 tasks.push(() => dispatchDim('unused-crates', (async () => {
-  const found = await agent(
+  const found = /** @type {FindingsResult | null} */ (await agent(
     `Find UNUSED crates in this Rust workspace, in two classes:
 (a) ORPHAN workspace members — from \`cargo metadata --format-version 1\`, workspace members that NO other workspace member depends on (any dependency kind), EXCLUDING binaries (a [[bin]] target or src/main.rs) and published libraries (Cargo.toml \`publish\` is not false / it is meant for crates.io).
 (b) UNUSED dependencies — run \`cargo machete\` (or \`cargo +nightly udeps\` if machete is absent) to list dependencies declared in a Cargo.toml but not used.
@@ -1309,13 +1332,13 @@ Skip a tool that is not installed with a note — do NOT fail. \`cargo metadata\
 Load the rust-ecosystem skill (dependency / crate hygiene).
 These are CANDIDATES, not confirmed — they will be verified downstream. Return one finding per candidate: title = "orphan-member: <crate>" or "unused-dep: <dep> in <crate>", location = the owning manifest path, detail = why the graph/tool thinks it is unused. Use severity Info (verification sets the real severity).`,
     { label: 'unused-crates:find', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-  )
+  ))
   // A dead find-step nulls the whole dimension. Return the null and let dispatchDim log its reason
   // in the one place both sub-deaths are named — including a THROWN find-step, which rejects this
   // IIFE and is caught by dispatchDim's `.catch` (that is why the thunk is wrapped, not mapped inline).
   if (!found) return null
   const candidates = (Array.isArray(found.findings) ? found.findings : [])
-    .filter(/** @param {any} f */ f => /^(orphan-member|unused-dep):/.test(f.title || ''))
+    .filter(f => /^(orphan-member|unused-dep):/.test(f.title || ''))
   // No candidates: the find step IS the whole verification, and its verdict distinguishes a computed
   // clean (cargo metadata loaded, no orphans → a green) from a non-run (metadata absent → INCOMPLETE).
   // Like its sibling branches (unusedCratesResult, lines below), a computed-clean green is gated and so
@@ -1330,27 +1353,27 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
   }
   // Verify each candidate: prove it is USED. Default to "used" (drop it) when uncertain —
   // recommending deletion of live code is the costly error here.
-  const verdicts = await parallel(candidates.map(/** @param {any} c @param {number} i */ (c, i) => () =>
-    agent(
+  const verdicts = await parallel(candidates.map((c, i) => () =>
+    /** @type {Promise<UnusedVerdict | null>} */ (agent(
       `A detector flagged a crate/dependency as UNUSED. Try HARD to REFUTE that — prove it IS used — before accepting it. Candidate: ${JSON.stringify(c)}.
 Check the usages machete/udeps and the dependency graph miss: \`use\`/path references; cfg-gated and feature-gated usage; macro-only and re-exported (\`pub use\`) usage; build.rs / [build-dependencies]; [dev-dependencies] exercised only in tests, benches, or examples; and for an orphan member whether it is actually a bin, an example/bench/xtask, or consumed/published outside this workspace. Grep the source to confirm.
 Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; default to false when uncertain.`,
       { label: `unused-crates:verify#${i + 1}`, phase: 'Verify', schema: UNUSED_VERDICT_SCHEMA, model: 'opus' },
-    ).then(v => wrapVerdict(c, v)),
+    )).then(v => wrapVerdict(c, v)),
   ))
   return unusedCratesResult(candidates, verdicts)
 })()))
 dispatched.push('unused-crates')
 
-tasks.push(() => dispatchDim('tests-cov', agent(
+tasks.push(() => dispatchDim('tests-cov', /** @type {Promise<FindingsResult | null>} */ (agent(
   `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-)))
+))))
 dispatched.push('tests-cov')
 
 // Normalise every dimension verdict ONCE, here, so the aggregate, the persisted record and the
 // synthesis prompt all read the same vocabulary (reviewResult already normalised its own).
-const results = (await parallel(tasks)).filter(Boolean).map(r => ({ ...r, verdict: normalizeDimensionVerdict(r.verdict) }))
+const results = (await parallel(tasks)).filter(r => !!r).map(r => ({ ...r, verdict: normalizeDimensionVerdict(r.verdict) }))
 
 // Two ways a dimension can fail to produce an answer, and BOTH have to reach the report:
 //   NOT RUN      — a dispatched dimension that produced no result at all (its agent failed).
@@ -1458,5 +1481,6 @@ await logRun(auditRecord)
 // for death. Interpolating it turns a dead synthesizer into the literal four-character string "null",
 // which reads as a successful audit with an empty body — and that is exactly the run where the
 // telemetry marker is also empty, so nothing at all says the synthesis died.
-if (!report) return `${telemetryLostSection(telemetryLost)}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
+// Without a schema a live agent returns its final text, so anything but a non-empty string is a death.
+if (typeof report !== 'string' || !report) return `${telemetryLostSection(telemetryLost)}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
 return `${telemetryLostSection(telemetryLost)}${report}`
