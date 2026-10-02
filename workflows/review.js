@@ -5910,6 +5910,7 @@ async function reviewProfile(profile) {
   phase('Lenses')
   /** @type {Set<string>} */
   const seen = new Set()
+  /** @type {Finding[]} */
   const pool = []
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
   const notRun = [...scoutNotRun]
@@ -5922,6 +5923,7 @@ async function reviewProfile(profile) {
   const expectedDispatches = new Set()
   /** @type {Set<string>} */
   const returnedDispatches = new Set()
+  /** @type {Array<{ round: number, agents: number, returned: number, newFindings: number }>} */
   const lensRounds = []
   // Lenses the completeness critic added and that were dispatched — on the record, because they change
   // what a round cost without changing its plan (lib/round-pairs.mjs compares them, realm #97).
@@ -5938,8 +5940,9 @@ async function reviewProfile(profile) {
   // `[null]` means "one dispatch, unsliced" — the shape the caller had before slicing existed, so
   // the unsliced path stays the same code rather than a branch that can drift from it.
   const lensSlicesFor = (/** @type {string} */ lens) => (diffSlices.length && sliceableLens(lens) ? diffSlices : [null])
-  let dry = false
-  for (let round = 1; round <= plan.maxRounds && !dry; round++) {
+  // One round of the lens loop; true when it surfaced nothing new (the loop is dry).
+  /** @param {number} round */
+  async function lensRound(round) {
     const priorSummary = priorFoundSummary(pool)
     // EXPECTED is built from the same expression that dispatches, so the two cannot drift. What a
     // lens fanned out into is now the unit of coverage: before slicing, a lens either ran or did
@@ -5998,8 +6001,10 @@ async function reviewProfile(profile) {
     // makes a lost slice visible in the record at all.
     lensRounds.push({ round, agents: dispatches.length, returned: results.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
-    if (!fresh.length) dry = true
+    return !fresh.length
   }
+  let dry = false
+  for (let round = 1; round <= plan.maxRounds && !dry; round++) dry = await lensRound(round)
 
   // ---- Resurrection sweep ----
   // A lens agent occasionally returns null on a transient API death / connection drop. That
@@ -6011,52 +6016,63 @@ async function reviewProfile(profile) {
   // fact that its other five returned, so the sweep must see it — and the retry it sends is
   // deliberately UNSLICED, which is why recovering it restores the lens's whole coverage below.
   const lensesWithHoles = () => plan.lenses.filter(l => [...expectedDispatches].some(k => (k === l || k.startsWith(`${l} :: `)) && !returnedDispatches.has(k)))
-  let missing = lensesWithHoles()
-  for (let sweep = 1; sweep <= 2 && missing.length; sweep++) {
-    log(`[${profile.id}] Resurrection sweep ${sweep}: retrying ${missing.length} lens(es) that never returned (${missing.join(', ')})`)
-    const priorSummary = priorFoundSummary(pool)
-    // Carries the lens it DISPATCHED alongside the answer. Everywhere else this accounting refuses
-    // to trust the model-returned `lens` field, and here it was still being trusted: a resurrection
-    // that succeeded but answered with a missing or mangled `lens` closed no holes, so the sweep
-    // kept seeing them, both attempts were spent, and the run reported INCOMPLETE over coverage it
-    // actually had. A false hole that cannot be cleared is as much a lie as a hidden one.
-    const attempts = missing.map(lens => ({ lens }))
-    const settled = await parallel(attempts.map(a => () =>
-      runLens(a.lens, lensPrompt(a.lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`)
-        .then(r => (r ? { ...r, __lens: a.lens } : null)),
-    ))
-    const results = settled.filter(r => r != null)
-    for (const r of results) {
-      const lens = r.__lens
-      // A resurrection dispatch carries NO slice, so it reviewed the whole diff — which is exactly
-      // what closes every hole this lens had. Marking only the lens name would leave the per-slice
-      // ledger still reporting holes that were just filled, and the run would claim INCOMPLETE over
-      // coverage it actually has.
-      for (const k of expectedDispatches) if (k === lens || k.startsWith(`${lens} :: `)) returnedDispatches.add(k)
-      for (const f0 of (r.findings || [])) {
-        const f = { ...f0, source: lens }
-        const k = key(f)
-        if (!seen.has(k)) { seen.add(k); pool.push(f) }
-      }
+  // A resurrected lens's answer: its holes closed, its new findings pooled.
+  /** @param {FindingsAnswer & { __lens: string }} r */
+  function absorbResurrected(r) {
+    const lens = r.__lens
+    // A resurrection dispatch carries NO slice, so it reviewed the whole diff — which is exactly
+    // what closes every hole this lens had. Marking only the lens name would leave the per-slice
+    // ledger still reporting holes that were just filled, and the run would claim INCOMPLETE over
+    // coverage it actually has.
+    for (const k of expectedDispatches) if (k === lens || k.startsWith(`${lens} :: `)) returnedDispatches.add(k)
+    for (const f0 of (r.findings || [])) {
+      const f = { ...f0, source: lens }
+      const k = key(f)
+      if (!seen.has(k)) { seen.add(k); pool.push(f) }
     }
-    missing = lensesWithHoles()
   }
+  async function resurrectionSweep() {
+    let missing = lensesWithHoles()
+    for (let sweep = 1; sweep <= 2 && missing.length; sweep++) {
+      log(`[${profile.id}] Resurrection sweep ${sweep}: retrying ${missing.length} lens(es) that never returned (${missing.join(', ')})`)
+      const priorSummary = priorFoundSummary(pool)
+      // Carries the lens it DISPATCHED alongside the answer. Everywhere else this accounting refuses
+      // to trust the model-returned `lens` field, and here it was still being trusted: a resurrection
+      // that succeeded but answered with a missing or mangled `lens` closed no holes, so the sweep
+      // kept seeing them, both attempts were spent, and the run reported INCOMPLETE over coverage it
+      // actually had. A false hole that cannot be cleared is as much a lie as a hidden one.
+      const attempts = missing.map(lens => ({ lens }))
+      const settled = await parallel(attempts.map(a => () =>
+        runLens(a.lens, lensPrompt(a.lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`)
+          .then(r => (r ? { ...r, __lens: a.lens } : null)),
+      ))
+      const results = settled.filter(r => r != null)
+      for (const r of results) absorbResurrected(r)
+      missing = lensesWithHoles()
+    }
+  }
+  await resurrectionSweep()
 
   // DERIVED by subtraction from what was dispatched, never from a list built beside it. A lens whose
   // every slice returned contributes nothing here; a lens that lost one slice of six is reported as
   // losing that slice, by name, because "safety ran" is true and useless when five sixths of the
   // diff got no safety review.
-  const droppedLenses = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
-  if (droppedLenses.length) {
-    // Falls back to the BARE lens name, because the resurrection sweep dispatches unsliced and can
-    // only key its failure that way. Without the fallback every sliced hole read "died without an
-    // error" even when the retry died with a captured message — losing the diagnosis for exactly
-    // the sliced case, which is what keying by dispatch was introduced to fix.
-    const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(k.split(' :: ')[0] ?? k) || 'returned no result (skipped or died without an error)'
-    const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
-    notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
-    log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
+  // The dispatches that never returned, each with its reason, carried into notRun and the log.
+  function reportDroppedLenses() {
+    const droppedLenses = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
+    if (droppedLenses.length) {
+      // Falls back to the BARE lens name, because the resurrection sweep dispatches unsliced and can
+      // only key its failure that way. Without the fallback every sliced hole read "died without an
+      // error" even when the retry died with a captured message — losing the diagnosis for exactly
+      // the sliced case, which is what keying by dispatch was introduced to fix.
+      const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(k.split(' :: ')[0] ?? k) || 'returned no result (skipped or died without an error)'
+      const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
+      notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
+      log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
+    }
+    return droppedLenses
   }
+  const droppedLenses = reportDroppedLenses()
   // `ranLenses` rides along to the record: the dimension rows are built from plan.lenses, so a lens
   // that never returned still gets a row reading 0 findings — indistinguishable from a lens that ran
   // and found nothing. That is the difference between "redundant, consider dropping it" and "broken,
@@ -6101,9 +6117,17 @@ async function reviewProfile(profile) {
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
   phase('Synthesize')
-  let criticNotes = ''
-  const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
-  if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
+  // The completeness critic, when the plan is large or security-sensitive and the budget allows it.
+  async function completenessCritic() {
+    const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
+    if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
+      await runCritic()
+    } else if (criticInScope) {
+      notRun.push(`${profile.id} completeness-critic`)
+      log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
+    }
+  }
+  async function runCritic() {
     const candidates = profile.lenses.filter((/** @type {string} */ l) => !plan.lenses.includes(l))
     const critic = await ragent(
       `You are a completeness critic for a ${profile.lang} review of the diff (base ${flattenField(baseRef) || 'HEAD'}).
@@ -6120,6 +6144,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
     // would return that spend through a side door and undo the boundary. The signal is not thrown
     // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
     const named = (critic?.missingLenses ?? []).filter((/** @type {string} */ l) => candidates.includes(l))
+    const followups = refuseCriticNames(named)
+    if (followups.length && (!budget.total || budget.remaining() > 60000)) {
+      await criticFollowups(followups)
+    } else if (followups.length) {
+      notRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
+      log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] critic follow-up lenses. Review marked INCOMPLETE.`)
+    }
+  }
+  // The critic's names the optional request or the surface gate refuses, recorded as uncovered; the rest are follow-ups.
+  /** @param {string[]} named @returns {string[]} */
+  function refuseCriticNames(named) {
     for (const l of named) if (!admittedLens(l)) optionalNamedByCritic.add(l)
     const refusedOptional = named.filter((/** @type {string} */ l) => !admittedLens(l))
     if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
@@ -6133,45 +6168,42 @@ Also note in one line anything else likely missed (a changed file no finding tou
     for (const l of named) if (surfaceDropped.includes(l)) surfaceGateNamedByCritic.add(l)
     const refusedSurface = named.filter((/** @type {string} */ l) => surfaceDropped.includes(l))
     if (refusedSurface.length) log(`[${profile.id}] Completeness critic named surface-gated lens(es) ${refusedSurface.join(', ')} — NOT dispatched (the diff does not touch the surface their defect class needs); reported as uncovered.`)
-    const followups = named.filter((/** @type {string} */ l) => admittedLens(l) && !surfaceDropped.includes(l))
-    if (followups.length && (!budget.total || budget.remaining() > 60000)) {
-      log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
-      criticFollowupLenses = [...followups]
-      const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
-      // A SILENT REFUSAL NEXT TO A LOUD ONE. `.filter(Boolean)` used to swallow a follow-up lens that
-      // DIED — no notRun entry, no INCOMPLETE — while the branch two lines below, where the same lens
-      // is skipped for lack of budget, records both. "The critic said run it and it died" is not a
-      // cleaner outcome than "the critic said run it and there was no budget"; it is the same hole in
-      // coverage, and the one a re-run can actually fix.
-      const settledExtra = await parallel(followups.map((/** @type {string} */ lens) => () =>
-        runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Synthesize', ' (critic)'),
-      ))
-      const deadFollowups = followups.filter((/** @type {string} */ _l, /** @type {number} */ i) => !settledExtra[i])
-      if (deadFollowups.length) {
-        notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
-        log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
-      }
-      const extra = settledExtra.filter(r => r != null).flatMap(r => r.findings || [])
-      const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
-      if (fresh.length) {
-        const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
-        notRun.push(...(v.notRun || []))
-        savedByFloor = savedByFloor.concat(v.savedByFloor || [])
-        confirmed = confirmed.concat(v.confirmed)
-        suspected = suspected.concat(v.suspected)
-        unverified = unverified.concat(v.unverified)
-        dropped += v.dropped
-        refuted = refuted.concat(v.refuted)
-        log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted · +${v.unverified.length} not verified`)
-      }
-    } else if (followups.length) {
-      notRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
-      log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] critic follow-up lenses. Review marked INCOMPLETE.`)
-    }
-  } else if (criticInScope) {
-    notRun.push(`${profile.id} completeness-critic`)
-    log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
+    return named.filter((/** @type {string} */ l) => admittedLens(l) && !surfaceDropped.includes(l))
   }
+  /** @param {string[]} followups */
+  async function criticFollowups(followups) {
+    log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
+    criticFollowupLenses = [...followups]
+    const priorSummary = `Earlier lenses already produced ${pool.length} findings — do NOT repeat them; surface only what your lens would add.`
+    // A SILENT REFUSAL NEXT TO A LOUD ONE. `.filter(Boolean)` used to swallow a follow-up lens that
+    // DIED — no notRun entry, no INCOMPLETE — while the branch two lines below, where the same lens
+    // is skipped for lack of budget, records both. "The critic said run it and it died" is not a
+    // cleaner outcome than "the critic said run it and there was no budget"; it is the same hole in
+    // coverage, and the one a re-run can actually fix.
+    const settledExtra = await parallel(followups.map((/** @type {string} */ lens) => () =>
+      runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Synthesize', ' (critic)'),
+    ))
+    const deadFollowups = followups.filter((/** @type {string} */ _l, /** @type {number} */ i) => !settledExtra[i])
+    if (deadFollowups.length) {
+      notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
+      log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
+    }
+    const extra = settledExtra.filter(r => r != null).flatMap(r => r.findings || [])
+    const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
+    if (fresh.length) {
+      const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
+      notRun.push(...(v.notRun || []))
+      savedByFloor = savedByFloor.concat(v.savedByFloor || [])
+      confirmed = confirmed.concat(v.confirmed)
+      suspected = suspected.concat(v.suspected)
+      unverified = unverified.concat(v.unverified)
+      dropped += v.dropped
+      refuted = refuted.concat(v.refuted)
+      log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted · +${v.unverified.length} not verified`)
+    }
+  }
+  let criticNotes = ''
+  await completenessCritic()
 
   return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, criticFollowupLenses, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
 }
