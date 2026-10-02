@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.22.0](https://github.com/gurinderu/craft/compare/v0.21.0...v0.22.0) (2026-10-01)
+
+
+### Features
+
+* **analyze:** round-pair measurement of whether a re-review gets cheaper ([#108](https://github.com/gurinderu/craft/issues/108)) ([b7e9f82](https://github.com/gurinderu/craft/commit/b7e9f8255779773ba21f7896efcd7bdb0f403e95))
+
+
+### Bug Fixes
+
+* **analyze:** a round pair with no recorded input digests is not comparable ([#109](https://github.com/gurinderu/craft/issues/109)) ([870f39e](https://github.com/gurinderu/craft/commit/870f39e6ad587fe6f425735d9349ba59c7ac87fb))
+* **review:** a gate-failed profile's surface drops are not savings; test the lensesRan merge end to end ([#100](https://github.com/gurinderu/craft/issues/100)) ([406fc72](https://github.com/gurinderu/craft/commit/406fc7216890e5b9af1da0211bf710ddeb820592))
+* **review:** a red gate does not record its profile's unrequested optional lenses as skipped ([#102](https://github.com/gurinderu/craft/issues/102)) ([fcbf692](https://github.com/gurinderu/craft/commit/fcbf692f7e89b55b4e1a52bba0a237af2dbb7dcc))
+* **review:** an unestablished fingerprint basis reports lost re-review memory instead of passing as a basis change ([#105](https://github.com/gurinderu/craft/issues/105)) ([e736fcc](https://github.com/gurinderu/craft/commit/e736fccbf414e8edd12a99b10c9b7d19ea3ce67c))
+* **review:** checkpoints carry the run's engine revision, so a recovered round keeps a same-basis memory ([#106](https://github.com/gurinderu/craft/issues/106)) ([379b620](https://github.com/gurinderu/craft/commit/379b620526959ca904a725f0a3491d38aa1eeaac))
+* **review:** lensesRan holds for a profile that lost a slice of every lens ([#103](https://github.com/gurinderu/craft/issues/103)) ([544b43e](https://github.com/gurinderu/craft/commit/544b43e7f5c9fe668bc00e1cbeaae0615bc7ac78))
+* **review:** say in the report when the reviewer agent was unavailable, what it cost, and how to enable it ([#110](https://github.com/gurinderu/craft/issues/110)) ([1a9e1f4](https://github.com/gurinderu/craft/commit/1a9e1f45a8a7349b22305e088f7234ee1719b11f))
+* **review:** the engine, which computes the fingerprints, decides their basis from raw revisions ([#107](https://github.com/gurinderu/craft/issues/107)) ([aac5eb7](https://github.com/gurinderu/craft/commit/aac5eb7fff6952a3a6ab9aae20ad98780844d072))
+* **review:** the fingerprint basis is its own table, so a revision bump keeps re-review memory ([#104](https://github.com/gurinderu/craft/issues/104)) ([319a42c](https://github.com/gurinderu/craft/commit/319a42ccef1aa6387f46132fbab44be0a5fa52d3))
+
 ## [0.21.0](https://github.com/gurinderu/craft/compare/v0.20.0...v0.21.0) (2026-09-30)
 
 
