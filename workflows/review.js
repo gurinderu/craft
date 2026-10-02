@@ -200,14 +200,18 @@ function normalizeArgs(args, warn = () => {}) {
 // <<< craft-inline
 /** @type {Record<string, unknown>} */
 const A = normalizeArgs(args, log)
-const baseArg = A['base'] ? String(A['base']) : ''
-const intentArg = A['intent'] ? String(A['intent']) : ''
+/** A string argument as given, or '' when it is absent or falsy. @param {string} key */
+function argString(key) {
+  return A[key] ? String(A[key]) : ''
+}
+const baseArg = argString('base')
+const intentArg = argString('intent')
 const postComments = !!A['comment']
-let pathArg = A['path'] ? String(A['path']) : ''   // optional crate-scope (audit per-crate fan-out)
+let pathArg = argString('path')   // optional crate-scope (audit per-crate fan-out)
 // Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
 // it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
 // its own checkout — reviewing a PR in another repo silently reviewed craft instead.
-let repoArg = A['repo'] ? String(A['repo']) : ''
+let repoArg = argString('repo')
 // `path` is a git PATHSPEC resolved against the reviewed repo; `repo` selects the repo. An ABSOLUTE
 // `path` is therefore ambiguous in the one way the sandbox cannot resolve: it is either a repo the
 // caller meant to select, or a directory INSIDE the repo they meant to narrow to — and with no disk
@@ -273,35 +277,39 @@ function relativeToRepo(abs, repo) {
   for (let i = 0; i < r.length; i++) if (p[i] !== r[i]) return null
   return p.slice(r.length).join('/')
 }
-if (ABSOLUTE_PATH.test(pathArg)) {
-  const rel = repoArg ? relativeToRepo(pathArg, repoArg) : null
-  if (rel != null) {
-    // It names a directory inside the repo under review: that is a SCOPE, spelled absolutely. Keep
-    // the narrowing the caller asked for — dropping it here would silently widen the review.
-    log(`⚠️ path=${pathArg} is absolute but sits inside repo=${repoArg} — read as the repo-relative scope ${shq(rel)}.`)
-    pathArg = rel
-  } else if (repoArg) {
-    const msg = `the requested scope path=${pathArg} was DROPPED: it is ABSOLUTE and does not resolve inside repo=${repoArg}, and an absolute pathspec matches nothing (the review would have seen an EMPTY diff). The review below therefore covers the WHOLE repository, not the requested scope — re-run with a repo-relative path to narrow it.`
-    log(`⚠️ ${msg}`)
-    // TWO STRINGS ON PURPOSE. `msg` is for a reader — it names this run's path and repo, and it
-    // reaches the report's Scope section. `scopeNotRun` feeds the run record's `notRun`, which
-    // lib/analyze-runs.mjs ranks BY EXACT STRING to surface repeated fragility: a path in there
-    // makes every dispatch of the same shape its own count-1 row and sinks the real repeats. Same
-    // argument that moved the uncovered-files note out of `notRun` entirely.
-    scopeNotRun = ['the requested scope was DROPPED — an absolute `path` that does not resolve inside `repo`, so the review covered the whole repository instead']
-    scopeDetail = msg
-    pathArg = ''
-  } else {
-    // No `repo` to decide against. Refusing costs nothing and says exactly what to do; either guess
-    // costs a full run and reports a scope nobody asked for.
-    ambiguousPath = pathArg
+// Settles an absolute `path` against `repo` once, before anything is dispatched.
+function resolveScopePath() {
+  if (ABSOLUTE_PATH.test(pathArg)) {
+    const rel = repoArg ? relativeToRepo(pathArg, repoArg) : null
+    if (rel != null) {
+      // It names a directory inside the repo under review: that is a SCOPE, spelled absolutely. Keep
+      // the narrowing the caller asked for — dropping it here would silently widen the review.
+      log(`⚠️ path=${pathArg} is absolute but sits inside repo=${repoArg} — read as the repo-relative scope ${shq(rel)}.`)
+      pathArg = rel
+    } else if (repoArg) {
+      const msg = `the requested scope path=${pathArg} was DROPPED: it is ABSOLUTE and does not resolve inside repo=${repoArg}, and an absolute pathspec matches nothing (the review would have seen an EMPTY diff). The review below therefore covers the WHOLE repository, not the requested scope — re-run with a repo-relative path to narrow it.`
+      log(`⚠️ ${msg}`)
+      // TWO STRINGS ON PURPOSE. `msg` is for a reader — it names this run's path and repo, and it
+      // reaches the report's Scope section. `scopeNotRun` feeds the run record's `notRun`, which
+      // lib/analyze-runs.mjs ranks BY EXACT STRING to surface repeated fragility: a path in there
+      // makes every dispatch of the same shape its own count-1 row and sinks the real repeats. Same
+      // argument that moved the uncovered-files note out of `notRun` entirely.
+      scopeNotRun = ['the requested scope was DROPPED — an absolute `path` that does not resolve inside `repo`, so the review covered the whole repository instead']
+      scopeDetail = msg
+      pathArg = ''
+    } else {
+      // No `repo` to decide against. Refusing costs nothing and says exactly what to do; either guess
+      // costs a full run and reports a scope nobody asked for.
+      ambiguousPath = pathArg
+    }
   }
 }
+resolveScopePath()
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. As an installed plugin
 // CLAUDE_PLUGIN_ROOT is set for us; when the engine is launched by scriptPath from a checkout it is
 // NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
 // be there and the whole record would be lost to a "Cannot find module". Pass craftRoot then.
-const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
+const craftRootArg = argString('craftRoot')
 // Every logger command runs as `cd <reviewed repo> && node <logger>`, so the `:-.` fallback would be
 // resolved AFTER the cd — against the reviewed repo, where the script is not. That lost every
 // checkpoint, the finalize record and the prior-round chain to "Cannot find module", silently.
@@ -314,7 +322,7 @@ const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
 // other two found their script. Deferring the call to use time is what lets all three agree.
 const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION, repoArg)
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
-const viaArg = A['_via'] ? String(A['_via']) : ''   // set by a parent workflow (e.g. rust-audit)
+const viaArg = argString('_via')   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
@@ -326,7 +334,11 @@ const freshArg = !!A['fresh']   // force a full first-pass review, ignore any pr
 // Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
 // code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
 // re-scan (stateless, like adversarial-review); 0 = never (pure incremental — the pre-guard behavior).
-const fullEvery = (A['fullEvery'] != null) ? Math.max(0, Number(A['fullEvery'])) : 3
+const fullEvery = fullEveryArg()
+/** @returns {number} */
+function fullEveryArg() {
+  return (A['fullEvery'] != null) ? Math.max(0, Number(A['fullEvery'])) : 3
+}
 
 // A cold full-workspace build is the one step in this workflow that can run for an hour and take the
 // whole review down with it: a gate agent that sits in `cargo clippy` stops emitting, the harness
@@ -738,9 +750,12 @@ function parseOptionalRequest(raw) {
   return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
 }
 const optionalRequest = parseOptionalRequest(A['optional'])
-if (optionalRequest.unknown.length) {
-  log(`⚠️ optional=${JSON.stringify(A['optional'])} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
+function warnUnknownOptional() {
+  if (optionalRequest.unknown.length) {
+    log(`⚠️ optional=${JSON.stringify(A['optional'])} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
+  }
 }
+warnUnknownOptional()
 const optionalRequested = optionalRequest.lenses
 // The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
 // plan the moment it was built — but the plan is not final there: the completeness critic composes
@@ -2220,9 +2235,12 @@ const AGENT_TRIES = 2
 // Every prompt in this workflow goes through ragent, so this is the one place that can retarget the
 // whole review at another checkout. Prepended (not appended) because it has to win over the git
 // commands the individual prompts spell out; shq() because the path is an argument to a real `cd`.
-const REPO_DIRECTIVE = repoArg
-  ? `WORKING DIRECTORY: this review targets the repository at ${shq(repoArg)} — NOT the directory you start in. Before ANY git / cargo / nix / file command, \`cd\` there (or pass \`git -C\`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\n`
-  : ''
+const REPO_DIRECTIVE = repoDirective()
+function repoDirective() {
+  return repoArg
+    ? `WORKING DIRECTORY: this review targets the repository at ${shq(repoArg)} — NOT the directory you start in. Before ANY git / cargo / nix / file command, \`cd\` there (or pass \`git -C\`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\n`
+    : ''
+}
 // ---- per-agent wall-clock deadline ----
 // The retry above only fires when agent() RESOLVES to null. An agent whose request hangs mid-response
 // never resolves and never throws, so nothing above catches it. A measured run lost 64 minutes — a
@@ -2881,7 +2899,10 @@ const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verif
 // A caller-supplied ceiling, applied to every phase that does not name its own. It only ever
 // REPLACES the per-phase table, never the explicit `deadlineMs` an individual dispatch passes —
 // preflight's 5min is a property of preflight, not a default to be overridden from the outside.
-const deadlineArg = Number(A['deadlineMs']) > 0 ? Number(A['deadlineMs']) : 0
+const deadlineArg = deadlineArgMs()
+function deadlineArgMs() {
+  return Number(A['deadlineMs']) > 0 ? Number(A['deadlineMs']) : 0
+}
 // The CEILING on the smallest remainder a re-dispatch is allowed to be launched into — not the
 // floor itself, which is derived from the budget by `retryFloorFor` below. A POLICY DECISION, not a
 // measurement: nothing recorded derives it. It is set against the measured live distribution from
@@ -2907,29 +2928,32 @@ const retryFloorMs = (/** @type {unknown} */ totalMs) => Math.min(RETRY_FLOOR_MS
 // transcript, from the API outage this code was written for — so the mistake would be diagnosed as
 // the very thing it imitates. Naming the override where a reader meets it first is the cheapest
 // defence there is; the transcript is the only carrier the run's clock is ever measured from.
-if (deadlineArg) {
-  // BOTH DIRECTIONS. The argument replaces the table, so it lengthens as readily as it shortens, and
-  // a phase given four times its budget changes what the run does just as surely — it is simply
-  // slower to notice. Naming only the cuts left the other half of the override unrecorded in the one
-  // place this run's clock is ever read from.
-  // Sub-minute values print as seconds. Rounding a 30s override to "0min" is the same defect the
-  // deadline log was fixed for, inverted — and worse here, because 30000 is exactly the documented
-  // diagnostic value this warning exists to explain, so the one reader it was written for is the one
-  // it would mislead.
-  const m = (/** @type {number} */ v) => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
-  const moved = (/** @type {number} */ dir) => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
-  const shortened = moved(-1)
-  const lengthened = moved(1)
-  log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
-    + `${shortened.length ? ` — SHORTENING ${shortened.join(', ')}. A phase cut below the live distribution will fire its deadline on healthy agents, and a transcript full of deadline fires reads like an API outage.` : ''}`
-    + `${lengthened.length ? ` — LENGTHENING ${lengthened.join(', ')}.` : ''}`
-    // Scoped honestly: the floor is derived per dispatch, and a dispatch that names its own deadline
-    // (preflight's 5 minutes) is not overridden by this argument at all, so its floor stays the full
-    // minute. Stating the drop globally would hand the transcript's reader a calibration that holds
-    // for most agents and not all — and a wrong calibration is read with the same confidence as a
-    // right one.
-    + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: for the phases this argument governs, the re-dispatch floor drops with it to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual; a dispatch carrying its own deadline keeps its own floor.` : ''}`)
+function announceDeadlineOverride() {
+  if (deadlineArg) {
+    // BOTH DIRECTIONS. The argument replaces the table, so it lengthens as readily as it shortens, and
+    // a phase given four times its budget changes what the run does just as surely — it is simply
+    // slower to notice. Naming only the cuts left the other half of the override unrecorded in the one
+    // place this run's clock is ever read from.
+    // Sub-minute values print as seconds. Rounding a 30s override to "0min" is the same defect the
+    // deadline log was fixed for, inverted — and worse here, because 30000 is exactly the documented
+    // diagnostic value this warning exists to explain, so the one reader it was written for is the one
+    // it would mislead.
+    const m = (/** @type {number} */ v) => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
+    const moved = (/** @type {number} */ dir) => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
+    const shortened = moved(-1)
+    const lengthened = moved(1)
+    log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
+      + `${shortened.length ? ` — SHORTENING ${shortened.join(', ')}. A phase cut below the live distribution will fire its deadline on healthy agents, and a transcript full of deadline fires reads like an API outage.` : ''}`
+      + `${lengthened.length ? ` — LENGTHENING ${lengthened.join(', ')}.` : ''}`
+      // Scoped honestly: the floor is derived per dispatch, and a dispatch that names its own deadline
+      // (preflight's 5 minutes) is not overridden by this argument at all, so its floor stays the full
+      // minute. Stating the drop globally would hand the transcript's reader a calibration that holds
+      // for most agents and not all — and a wrong calibration is read with the same confidence as a
+      // right one.
+      + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: for the phases this argument governs, the re-dispatch floor drops with it to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual; a dispatch carrying its own deadline keeps its own floor.` : ''}`)
+  }
 }
+announceDeadlineOverride()
 /** @param {AgentOpts} opts */
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
