@@ -24,11 +24,11 @@ concurrency:
 jobs:
   mutation:
     runs-on: ubuntu-latest
-    # The run measured 29 minutes on 15 workers over 10492 mutants (about 440 worker-minutes, static mutants
-    # ignored); on four workers that is near two hours, and the slower runner cores take more — four hours
-    # were set for it. lib/ has grown since: the dry run now instruments 11949 mutants, so both limits are
-    # scaled by 11949/10492 and rounded up (240 → 275, 225 → 260), still under GitHub's 360-minute job cap so a hung run is
-    # cut off sooner. The Stryker step has its own, shorter limit: a step that times out fails, so the steps
+    # Both limits are extrapolated, not observed: a local full run's wall time times its worker count gives
+    # worker-minutes, spread over the runner's four slower workers with headroom, then scaled by the mutant
+    # count now over the count then (`npx stryker run --dryRunOnly` logs `Instrumented … with <N> mutant(s)`)
+    # and rounded up; the dated measurements are the realm's. Both stay under GitHub's 360-minute job cap so
+    # a hung run is cut off sooner. The Stryker step has its own, shorter limit: a step that times out fails, so the steps
     # after it still run — a job that times out is cancelled, and opens no issue.
     timeout-minutes: 275
     steps:

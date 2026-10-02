@@ -22,9 +22,10 @@ export default {
   // instrumented files in lib/, which `git status` shows and a checkout of lib/ restores.
   inPlace: true,
   // A static mutant (a module-level constant, evaluated once on import) cannot be attributed to a test,
-  // so each one reruns the whole suite (about a minute): 464 of 10492 mutants when measured, estimated to cost about as
-  // much as the other 10028 together and to push CI's run past its timeout. Ignored, they are reported as
-  // such and left out of the score.
+  // so each one reruns the whole suite: when measured they were a small share of the mutants, estimated to
+  // cost about as much as all the others together and to push CI's run past its timeout (the dated counts
+  // are the realm's). Ignored, they are reported as such — status `Ignored`, reason "Static mutant", in
+  // reports/mutation/mutation.json, which is where to count them — and left out of the score.
   ignoreStatic: true,
   // The score was 72.6% when the floor was set at 70 (static mutants ignored). Below `break` the run exits
   // non-zero, which turns the weekly job red and opens an issue — a visible drop, not a blocked merge: the
