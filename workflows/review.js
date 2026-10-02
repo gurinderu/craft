@@ -668,7 +668,7 @@ const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
 function parseOptionalRequest(raw) {
   if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
   if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
-  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
+  const names = (Array.isArray(raw) ? /** @type {unknown[]} */ (raw) : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
   return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
 }
 const optionalRequest = parseOptionalRequest(A['optional'])
@@ -685,6 +685,7 @@ const optionalRequested = optionalRequest.lenses
 // which ones were actually DISPATCHED (recorded by `runLens`, the single dispatch point for every
 // lens on every path — planned, resurrected, or critic-composed). optionalTallyFrom
 // (lib/profile-merge.mjs) subtracts, naming each lens once across profiles.
+/** @type {Set<string>} */
 const optionalDispatched = new Set()
 // An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
 // critic is the same model whose spend this pass deliberately took out of model hands), but the
@@ -852,11 +853,13 @@ function optionalTallyFrom(results, dispatched, requested = []) {
 // lens the gate drops in one profile can still run in another. The per-profile drops alone would then
 // report a lens as saved while it actually ran, corrupting #102's savings measurement — the same
 // snapshot-is-a-lie failure `optionalTally()` already fixed. savedSurfaceDrops subtracts what ran.
+/** @type {Set<string>} */
 const surfaceGateDispatched = new Set()
 // Mirrors optionalNamedByCritic: a surface-gated lens the completeness critic named as an uncovered
 // surface. It is NOT re-dispatched (the diff's absent surface is the deliberate boundary, and the
 // critic is the same model whose spend this pass took out of model hands), but the signal is real and
 // must reach the reader rather than die in the filter.
+/** @type {Set<string>} */
 const surfaceGateNamedByCritic = new Set()
 // The run-level truth, DERIVED not accumulated (mirrors optionalTally): a lens counts as
 // surface-gate-dropped only if the gate dropped it in a profile PAST its mechanical gate AND it ran
@@ -2890,7 +2893,7 @@ function reviewVerdict(confirmed) {
 // under a same-severity non-maintainability base would silently escape the strict Block.
 /** @param {Finding} f */
 function isMaintainability(f) {
-  return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && f['sources'].includes('maintainability'))
+  return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && /** @type {unknown[]} */ (f['sources']).includes('maintainability'))
 }
 /** @param {Finding[]} confirmed */
 function finalVerdict(confirmed) {
@@ -4408,6 +4411,7 @@ function sameSpotGroups(pool) {
   const groups = []
   for (const [, idxs] of bySpot) {
     if (idxs.length < 2) continue
+    /** @type {Set<number>} */
     const taken = new Set()
     for (const i of idxs) {
       if (taken.has(i)) continue
@@ -4449,6 +4453,7 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   )
   /** @type {Finding[]} */
   const merged = []
+  /** @type {Set<number>} */
   const inGroup = new Set()
   for (const g of groups) {
     if (g.some(i => inGroup.has(i))) continue // overlapping groups: first wins
@@ -4692,7 +4697,7 @@ function batchDeath(res) {
   if (!res) return 'returned nothing at all — a dead agent, an exhausted retry, or an expired deadline'
   const verdicts = /** @type {{ verdicts?: unknown }} */ (res).verdicts
   if (!Array.isArray(verdicts)) return 'answered OFF-SCHEMA — its answer carried no verdict list at all'
-  if (!verdicts.length) return 'answered with an EMPTY verdict list — it judged nothing'
+  if (!/** @type {unknown[]} */ (verdicts).length) return 'answered with an EMPTY verdict list — it judged nothing'
   return null
 }
 // A vote is a JUDGEMENT only if it carries the four booleans tierFromVotes decides on. THE NINTH
@@ -5391,6 +5396,7 @@ async function reviewProfile(profile) {
 
   // ---- Lenses (loop-until-dry) ----
   phase('Lenses')
+  /** @type {Set<string>} */
   const seen = new Set()
   const pool = []
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
@@ -6317,7 +6323,7 @@ const toLedgerEntry = (f, disposition, tier) => ({
   fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '',
   severity: f['severity'], tier: tier || f['tier'] || 'suspected', disposition: disposition || f['disposition'] || 'open',
   source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
-  ...(Array.isArray(f['sources']) ? { sources: f['sources'] } : {}),
+  ...(Array.isArray(f['sources']) ? { sources: /** @type {unknown[]} */ (f['sources']) } : {}),
   // A CARRIED finding arrived from the prior-round transport with a SHORTENED `why` and a `whyRef`
   // pointing at the record its FULL `why` lives in (its birth). Persist that pointer so the short-why/
   // full-by-reference chain survives into the next round. A FRESH finding (born this round, straight
