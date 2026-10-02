@@ -69,7 +69,7 @@ excluded from `--engine latest` by construction. The shared write path is `lib/r
 inlined into each engine by the `craft-inline` gate.
 Records written before these fields carry `null` and are outside any filter.
 
-Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*, and is `null` when nothing was — a run whose verifiers all died reports no rate rather than a rate of zero; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
+Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` and `adversarial-review` record `0` (`refuteRate()` in `lib/run-record.mjs`), and `lib/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
 `notRun[]`, `outputTokens` (the whole-run token **pool** — `budget.spent()`: input + output +
 parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-review (`round > 1`)
 runs an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally larger than a

@@ -4,8 +4,10 @@
 //   • talks only to the injected local `client`; opens no ports, no outbound network, no telemetry
 //   • the 4 review subagents stay hidden (their own frontmatter: hidden: true)
 //
-// Signatures follow the opencode docs; if the installed @opencode-ai/* types differ, `tsc` will
-// flag it — adjust to the installed types (the shapes here are the documented ones).
+// The plugin's own shape — the `Plugin` signature, `tool({ description, args, execute })` and
+// `tool.schema` — is type-checked by `tsc` against the installed @opencode-ai/plugin. The session
+// calls are NOT: PluginCtx.client (and `$`) is `any` and nothing here imports @opencode-ai/sdk, so
+// `tsc` passes whatever the SDK's real shapes are; a mismatch there shows only at runtime, in opencode.
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 import { runRustAudit } from "./rust-audit.ts"
