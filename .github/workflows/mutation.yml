@@ -24,11 +24,13 @@ concurrency:
 jobs:
   mutation:
     runs-on: ubuntu-latest
-    # The run measured 29 minutes on 15 workers (about 440 worker-minutes, static mutants ignored); on four
-    # workers that is near two hours, and the slower runner cores take more. Four hours, not the six-hour cap,
-    # so a hung run is cut off sooner. The Stryker step has its own, shorter limit: a step that times out
-    # fails, so the steps after it still run — a job that times out is cancelled, and opens no issue.
-    timeout-minutes: 240
+    # The run measured 29 minutes on 15 workers over 10492 mutants (about 440 worker-minutes, static mutants
+    # ignored); on four workers that is near two hours, and the slower runner cores take more — four hours
+    # were set for it. lib/ has grown since: the dry run now instruments 11949 mutants, so both limits are
+    # scaled by 11949/10492 and rounded up (240 → 275, 225 → 260), still under GitHub's 360-minute job cap so a hung run is
+    # cut off sooner. The Stryker step has its own, shorter limit: a step that times out fails, so the steps
+    # after it still run — a job that times out is cancelled, and opens no issue.
+    timeout-minutes: 275
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,7 +44,7 @@ jobs:
       # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
       # the child processes (git, tsc) its tests spawn.
       - name: Stryker over lib/
-        timeout-minutes: 225
+        timeout-minutes: 260
         run: npm run test:mutation -- --concurrency 4
       # Uploaded on a red run too (below `break`). Stryker writes both files only when the run completes,
       # so a run cut by the timeout has nothing to upload under any `if:` — its job log, with the

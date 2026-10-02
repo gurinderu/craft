@@ -22,7 +22,7 @@ export default {
   // instrumented files in lib/, which `git status` shows and a checkout of lib/ restores.
   inPlace: true,
   // A static mutant (a module-level constant, evaluated once on import) cannot be attributed to a test,
-  // so each one reruns the whole suite (about a minute): 464 of 10492 mutants, estimated to cost about as
+  // so each one reruns the whole suite (about a minute): 464 of 10492 mutants when measured, estimated to cost about as
   // much as the other 10028 together and to push CI's run past its timeout. Ignored, they are reported as
   // such and left out of the score.
   ignoreStatic: true,
