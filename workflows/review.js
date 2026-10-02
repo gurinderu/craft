@@ -212,6 +212,13 @@ let scopeDetail = ''
 // the drop happened before all of them. Appended to the synthesized report too rather than asked of
 // the synthesis model: what the review DID NOT cover is not something a prompt may forget.
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
+// >>> craft-inline lib/path-segments.mjs pathSegments
+// A path as normalized SEGMENTS, for containment decided segment by segment rather than on a raw
+// string prefix: `/r/./crates/../crates/core` is inside `/r`, and `/r-evil` is not. Both separators
+// split, empty and `.` segments vanish, and an interior `..` pops its parent. A `..` with nothing left
+// to pop is KEPT as a literal segment, so a path that climbs out stays visibly out — a caller refuses
+// it (`segs[0] === '..'`) or it fails to match a root, never reads as inside. No disk and no Node API
+// (the engines inline this into the sandbox): symlinks and case-insensitive filesystems are not seen.
 /** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
@@ -222,6 +229,7 @@ function pathSegments(p) {
   }
   return segs
 }
+// <<< craft-inline
 // The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
 /** @param {unknown} abs @param {unknown} repo */
 function relativeToRepo(abs, repo) {
@@ -3045,7 +3053,7 @@ function out(reportText) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt makeRunLogger telemetryLossNoter
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
@@ -3335,6 +3343,49 @@ The script owns naming, sequencing and every computed field. Copy PAYLOAD verbat
 PAYLOAD:
 ${JSON.stringify(payload, null, 2)}`
 }
+
+// The run-record writer each engine binds as its `logRun` — one body for all four. What differs
+// between engines is BOUND, not copied: the agent call (review's retries underneath `quietly`, the
+// others' plain `agent`), the phase the write is dispatched under, where the logger writes (`target`,
+// read at each call: review finalizes into a `runDir` that only exists once a checkpoint has run),
+// what is stamped onto every record (`prepare`: review's fingerprint basis), and how a loss is noted
+// (review's one noteTelemetryLoss for every bookkeeping write; telemetryLossNoter for the others).
+// A lost record NEVER fails the run: it is noted, and the engine renders the note where a human reads.
+// The returned function must still be bound to the NAME `logRun` in the engine — see the header.
+/**
+ * @template O
+ * @param {object} o
+ * @param {(prompt: string, opts: ReturnType<typeof logRunDispatch>) => Promise<O>} o.call  a `quietly`-wrapped agent callback
+ * @param {string} o.phase
+ * @param {() => { craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} o.target
+ * @param {(what: string, why: string, landed: boolean) => void} o.noteLoss
+ * @param {(record: Record<string, unknown>) => Record<string, unknown>} [o.prepare]
+ * @returns {(record: Record<string, unknown>) => Promise<void>}
+ */
+function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+  return async recordIn => {
+    const record = prepare(recordIn)
+    const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
+    if (!landed.ok) noteLoss('the run record', landed.reason, false)
+    // The record landed and the script still had something to say — a run directory refused or left
+    // behind. Not a lost record, so it must not read as one, but not silence either.
+    else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
+  }
+}
+
+// The loss note of the engines that keep no other bookkeeping writes: every loss is kept for the
+// report, and logged — a landed record under its own prefix, never as a lost one.
+/**
+ * @param {string[]} lost
+ * @param {(line: string) => void} say
+ * @returns {(what: string, why: string, landed: boolean) => void}
+ */
+function telemetryLossNoter(lost, say) {
+  return (what, why, landed) => {
+    lost.push(`${what} — ${why}`)
+    say(landed ? `⚠️ telemetry: ${why}` : `⚠️ telemetry lost: ${what} — ${why}`)
+  }
+}
 // <<< craft-inline
 
 // The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
@@ -3595,29 +3646,26 @@ async function checkpoint(phase, payloadIn, group) {
 // quoted heredoc into the script. It no longer computes ts/project/commit/dirty, chooses the filename,
 // hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
 // review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
-/** @param {Record<string, unknown>} recordIn */
-async function logRun(recordIn) {
+// The write itself is the one every engine binds (lib/run-logging.mjs, makeRunLogger); what is
+// review's own is bound here.
+const logRun = makeRunLogger({
+  // ragent underneath `quietly`, so the retry-once behaviour still applies to the record write.
+  call: ragentQuietly,
+  phase: 'Synthesize',
+  // `finalize`, not `write`: this is the one engine that checkpoints, so the script folds this run's
+  // phase slices into the record it writes. Read at each call — `runDir` and `rejoinArmed` move as
+  // the checkpoints run.
+  target: () => ({ craftRoot: craftRootArg, repo: repoArg, command: 'finalize', dir: runDir, rejoin: rejoinArmed }),
   // Every review record — the early exits too, not only reviewRecord() — says which engine computed its
   // fingerprints: a later round decides their basis by this (realm @nick/craft #111). Last, so no
   // caller's field shadows it.
-  const record = { ...recordIn, workflowEngineRevision: ENGINE_REVISION }
-  // `finalize`, not `write`: this is the one engine that checkpoints, so the script folds this run's
-  // phase slices into the record it writes. Everything else — the prompt, the schema, the model
-  // sizing, the outcome check — is the write path shared with the other three engines.
-  const res = await ragentQuietly(
-    logRunPrompt({
-      record, craftRoot: craftRootArg, repo: repoArg,
-      command: 'finalize', dir: runDir, rejoin: rejoinArmed,
-    }),
-    // LOGRUN_SCHEMA is untagged, so the answer stays `unknown` — logRunOutcome reads it as such.
-    logRunDispatch(record, { phase: 'Synthesize' }),
-  )
-  const landed = logRunOutcome(res)
-  if (!landed.ok) noteTelemetryLoss('the run record', landed.reason)
-  // The record landed and the script still had something to say — a run directory refused or left
-  // behind. Not a lost record, so it must not read as one, but not silence either.
-  else if (landed.reason) noteTelemetryLoss('the run directory (the record itself landed)', landed.reason)
-}
+  prepare: recordIn => ({ ...recordIn, workflowEngineRevision: ENGINE_REVISION }),
+  // Into the same telemetryLost list the checkpoints and the prior-round read note into, but through
+  // the shared note: a record that landed with its run directory refused is logged as landed, never
+  // as lost (realm @nick/craft #39). makeRunLogger always hands it a non-empty reason, so the line kept
+  // for the report is the one noteTelemetryLoss would keep.
+  noteLoss: telemetryLossNoter(telemetryLost, log),
+})
 
 /** @param {Finding} f */
 function key(f) {
