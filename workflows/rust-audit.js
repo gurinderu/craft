@@ -977,7 +977,15 @@ async function safeAgent(prompt, opts = {}) {
     return fallback
   } catch (e) {
     const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
-    if (!isAgentTypeMissing(msg, at)) throw e
+    // A "not found" that does not name the agent type may still be the harness's way of saying it —
+    // its live wording is unobserved (#116) — so the dimension keeps its coverage on the generic
+    // subagent, said softly (no install line), and is not memoized.
+    if (!isAgentTypeMissing(msg, at)) {
+      if (!/not found/i.test(msg)) throw e
+      const fallback = await agent(prompt, generic)
+      if (fallback != null) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
+      return fallback
+    }
     agentTypeMissing.set(at, msg)
     log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
     return agent(prompt, generic)

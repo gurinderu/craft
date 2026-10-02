@@ -86,6 +86,12 @@ shape is workflow-specific — rust-review records `{size, lenses, model, maxRou
 rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
 adversarial-review records `{size, lenses, indexed, batch}`; see each
 workflow's `logRun`/record assembly for the exact fields.
+When a craft agent type was not registered in the session, `review` records `reviewerAgentUnavailable[]`
+(`{id, agent, error}` per profile whose reviewer agent was missing) and `reviewerAgentFallbacks` (lens
+dispatches per profile that came back empty and were answered by the generic subagent); `rust-audit`
+records `agentUnavailable[]` (agent types) and `agentFallbacks` (dispatches per agent type answered by
+the generic subagent after the agent came back empty or with an unrecognised "not found"). The two
+shapes differ; nothing reads them yet.
 `triage-findings` is not a review: it carries `verdict: ""` and `findings` summarizing the findings
 it *triaged* (total + severity mix of the gathered raw findings, not findings it produced). It adds
 `sources[]` (`{source, count}` per gathered source) and `triage {gathered, validated, accept,
