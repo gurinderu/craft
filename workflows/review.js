@@ -2293,6 +2293,17 @@ function uniqueKey(key, groups) {
 }
 
 /**
+ * Partition changed files into cohesive slices.
+ *
+ * Returns `[]` when slicing is not worth it — fewer files than `minFiles`, or only one group — and
+ * the caller then dispatches the lens against the whole diff as before. Returning an empty array
+ * rather than a single all-files group is deliberate: "do not slice" and "slice into one" are
+ * different instructions to the caller, and collapsing them hides which one happened.
+ *
+ * Each slice is `{ key, files }` where `files` INCLUDES the shared files, so every slice can check
+ * the code it holds against the manifest that declares it.
+ */
+/**
  * @param {unknown} files
  * @param {{ minFiles?: number, maxSlices?: number, maxFilesPerSlice?: number, owns?: ((f: string) => boolean) | null }} [opts]
  * @returns {Group[]}
