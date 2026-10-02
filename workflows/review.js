@@ -4398,10 +4398,13 @@ const { priorRound, priorReason } = await loadPriorRound()
 // with no chaining. Recorded on the run record (reReview) and, when the note is set, shown at the top
 // of the user-facing report via reReviewMemorySection(). Derived once here, near the round it explains.
 const reReview = reReviewMemory(priorReason)
-if (reReview.note) {
-  reReviewMemoryNote = reReview.note
-  log(`⚠️ ${reReview.note}`)
+function applyReReviewNote() {
+  if (reReview.note) {
+    reReviewMemoryNote = reReview.note
+    log(`⚠️ ${reReview.note}`)
+  }
 }
+applyReReviewNote()
 
 // Re-review coverage guards (see ledgerDegraded / shouldFullRescan). thisRound is the round number we
 // are about to record; reused for the record below.
@@ -4418,7 +4421,10 @@ if (reReview.note) {
 // and the loser's ledger is orphaned. Live findings recover on the next full rescan; the one casualty
 // with no recovery path is the loser's monotonic tombstone set. This is an accepted, bounded loss, not
 // corruption — recorded here so the next reader meets the assumption before the store, not after.
-const thisRound = priorRound ? (priorRound['round'] || 1) + 1 : 1
+const thisRound = roundNumber()
+function roundNumber() {
+  return priorRound ? (priorRound['round'] || 1) + 1 : 1
+}
 // The prior round's finding fingerprints are comparable to this round's
 // only when both were fingerprinted under the same basis (FP_BASIS_SINCE in lib/run-record.mjs — a
 // separate question from the engine revision, so a telemetry-only bump keeps it; realm @nick/craft
@@ -4436,27 +4442,54 @@ const thisRound = priorRound ? (priorRound['round'] || 1) + 1 : 1
 // or a truncated or swapped list does not — and otherwise fails closed, reporting a transport loss
 // (priorBasisMismatch). When the array arrived intact, THIS engine's table decides, whatever the
 // logger's own table said (realm @nick/craft #111).
-const relayedVerdict = priorRound && typeof priorRound['sameFpBasis'] === 'boolean'
-  ? { sameFpBasis: priorRound['sameFpBasis'], fpBasisKnown: priorRound['fpBasisKnown'] } : null
-const relayedRevisions = priorRound && Array.isArray(priorRound['priorFpRevisions']) ? priorRound['priorFpRevisions'] : null
-const relayedCheck = priorRound && typeof priorRound['priorFpRevisionsCheck'] === 'string' ? priorRound['priorFpRevisionsCheck'] : null
+const relayedVerdict = relayedVerdictOf()
+function relayedVerdictOf() {
+  return priorRound && typeof priorRound['sameFpBasis'] === 'boolean'
+    ? { sameFpBasis: priorRound['sameFpBasis'], fpBasisKnown: priorRound['fpBasisKnown'] } : null
+}
+const relayedRevisions = relayedRevisionsOf()
+function relayedRevisionsOf() {
+  return priorRound && Array.isArray(priorRound['priorFpRevisions']) ? priorRound['priorFpRevisions'] : null
+}
+const relayedCheck = relayedCheckOf()
+function relayedCheckOf() {
+  return priorRound && typeof priorRound['priorFpRevisionsCheck'] === 'string' ? priorRound['priorFpRevisionsCheck'] : null
+}
 // A new loader prints BOTH fields on every path; an older one prints neither. So: an array whose check
 // no longer matches, or a check with no array, is a transport loss. An EMPTY array whose '' check the
 // relay dropped is not — that is an honest "nothing established", and the absent check reads as ''.
-const priorBasisMismatch = !!priorRound && (relayedRevisions
-  ? (relayedCheck ?? (relayedRevisions.length ? null : '')) !== relayedRevisions.join(',')
-  : relayedCheck !== null)
-const engineFromRevisions = !priorBasisMismatch && relayedRevisions ? basisVerdictFromRevisions(relayedRevisions) : null
+const priorBasisMismatch = basisMismatchOf()
+function basisMismatchOf() {
+  return !!priorRound && (relayedRevisions
+    ? (relayedCheck ?? (relayedRevisions.length ? null : '')) !== relayedRevisions.join(',')
+    : relayedCheck !== null)
+}
+const engineFromRevisions = engineBasisOf()
+function engineBasisOf() {
+  return !priorBasisMismatch && relayedRevisions ? basisVerdictFromRevisions(relayedRevisions) : null
+}
 // Where the engine's verdict departs from the logger's own, the engine wins (it computes the
 // fingerprints) — said in the log and on the record, so skew between the two tables can be counted.
-const basisOverridesLogger = !!(engineFromRevisions && relayedVerdict
-  && (engineFromRevisions.sameFpBasis !== relayedVerdict.sameFpBasis || engineFromRevisions.fpBasisKnown !== relayedVerdict.fpBasisKnown))
-if (priorBasisMismatch) log(`⚠️ prior-round revisions arrived altered (list ${JSON.stringify(relayedRevisions)}, check ${JSON.stringify(relayedCheck)}) — the fingerprint basis is treated as unknown`)
-if (basisOverridesLogger) log(`Re-review: this engine's fingerprint-basis verdict on revisions ${JSON.stringify(relayedRevisions)} (${JSON.stringify(engineFromRevisions)}) overrides the logger's (${JSON.stringify(relayedVerdict)}) — their tables differ`)
-const priorBasis = !priorRound ? null
-  : priorBasisMismatch ? { sameFpBasis: false, fpBasisKnown: false }
-    : engineFromRevisions || relayedVerdict
-const priorFpComparable = priorBasis ? priorBasis.sameFpBasis === true : false
+const basisOverridesLogger = basisOverridesLoggerOf()
+function basisOverridesLoggerOf() {
+  return !!(engineFromRevisions && relayedVerdict
+    && (engineFromRevisions.sameFpBasis !== relayedVerdict.sameFpBasis || engineFromRevisions.fpBasisKnown !== relayedVerdict.fpBasisKnown))
+}
+function logBasisRelay() {
+  if (priorBasisMismatch) log(`⚠️ prior-round revisions arrived altered (list ${JSON.stringify(relayedRevisions)}, check ${JSON.stringify(relayedCheck)}) — the fingerprint basis is treated as unknown`)
+  if (basisOverridesLogger) log(`Re-review: this engine's fingerprint-basis verdict on revisions ${JSON.stringify(relayedRevisions)} (${JSON.stringify(engineFromRevisions)}) overrides the logger's (${JSON.stringify(relayedVerdict)}) — their tables differ`)
+}
+logBasisRelay()
+const priorBasis = priorBasisOf()
+function priorBasisOf() {
+  return !priorRound ? null
+    : priorBasisMismatch ? { sameFpBasis: false, fpBasisKnown: false }
+      : engineFromRevisions || relayedVerdict
+}
+const priorFpComparable = fpComparableOf()
+function fpComparableOf() {
+  return priorBasis ? priorBasis.sameFpBasis === true : false
+}
 // What the basis verdict actually was, and how many carried tombstones it cost — on the run record, so
 // whether a revision bump kept every loop's memory (realm @nick/craft #108) is measurable from the
 // store rather than only readable in one run's log. Set where the tombstones are dropped.
@@ -4465,39 +4498,56 @@ const priorFpComparable = priorBasis ? priorBasis.sameFpBasis === true : false
 // known basis, an unreadable round, a record it cannot place, or an answer whose fpBasisKnown was not
 // carried) — not a basis change, and reported as lost memory
 // (realm @nick/craft #110). Only an explicit fpBasisKnown: true makes "not comparable" a basis change.
-const priorBasisVerdict = !priorBasis ? 'absent'
-  : (priorBasis.sameFpBasis === false && priorBasis.fpBasisKnown !== true) ? 'unknown'
-    : priorBasis.sameFpBasis
+const priorBasisVerdict = basisVerdictOf()
+function basisVerdictOf() {
+  return !priorBasis ? 'absent'
+    : (priorBasis.sameFpBasis === false && priorBasis.fpBasisKnown !== true) ? 'unknown'
+      : priorBasis.sameFpBasis
+}
 let tombstonesDroppedForBasis = 0
 const priorLedgerDegraded = ledgerDegraded(priorRound)
-if (priorLedgerDegraded) {
-  log(`⚠️ Re-review DEGRADED: prior round ${/** @type {PriorRound} */ (priorRound)['round']} reported ${/** @type {PriorRound} */ (priorRound)['priorFindings']} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
+function warnLedgerDegraded() {
+  if (priorLedgerDegraded) {
+    log(`⚠️ Re-review DEGRADED: prior round ${/** @type {PriorRound} */ (priorRound)['round']} reported ${/** @type {PriorRound} */ (priorRound)['priorFindings']} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
+  }
 }
+warnLedgerDegraded()
 // Distinct from `priorLedgerDegraded`: the ledger itself is fine here, but a journal-reconstructed
 // round's `head` is the commit the DEAD run stalled on, which the operator typically re-runs against
 // BEFORE making any fix — so it can equal the current HEAD and a delta scan would review nothing.
-const priorRoundJournalSourced = Boolean(priorRound?.['journalSourced'])
-if (priorRoundJournalSourced) {
-  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${/** @type {PriorRound} */ (priorRound)['round']}'s head ${flattenField(/** @type {PriorRound} */ (priorRound)['head'])} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+const priorRoundJournalSourced = journalSourcedOf()
+function journalSourcedOf() {
+  return Boolean(priorRound?.['journalSourced'])
 }
+function warnJournalSourced() {
+  if (priorRoundJournalSourced) {
+    log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${/** @type {PriorRound} */ (priorRound)['round']}'s head ${flattenField(/** @type {PriorRound} */ (priorRound)['head'])} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+  }
+}
+warnJournalSourced()
 const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
 // regressions the fixes introduced. But every `fullEvery`-th round (and whenever the prior ledger is
 // degraded, or the prior round came from a stalled run's journal) we widen back to the FULL
 // base...HEAD diff so a defect an earlier round missed in code it never touched is re-discovered.
 // `fresh` (priorRound=null) always keeps the full base...HEAD scan.
-const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
-if (priorRound) {
-  log(`Re-review round ${thisRound} lens scope: ${fullRescan
-    ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}${priorRoundJournalSourced ? ', prior round journal-sourced' : ''}) — earlier misses in untouched code are re-checked`
-    : `incremental delta ${flattenField(priorRound['head'])}...HEAD (fix commits only)`}`)
+const lensBase = lensScope()
+// The base the lenses diff against, logged on a re-review with whether this round is a full re-scan.
+function lensScope() {
+  const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
+  if (priorRound) {
+    log(`Re-review round ${thisRound} lens scope: ${fullRescan
+      ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}${priorRoundJournalSourced ? ', prior round journal-sourced' : ''}) — earlier misses in untouched code are re-checked`
+      : `incremental delta ${flattenField(priorRound['head'])}...HEAD (fix commits only)`}`)
+  }
+  return lensBase
 }
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
 // the detector missed (best-effort detection), honor the pin. An unknown pin id is an ERROR (it used
 // to be dropped by `filter(Boolean)`), and a diff no profile covers is INCOMPLETE, never an Approve.
 const { pinned: pinnedLangs, unknown: unknownLangs } = resolveProfilePin(PROFILES, requestedLangs)
-if (unknownLangs.length) {
+async function unknownPinExit() {
   const msg = unknownPinMessage(PROFILES, unknownLangs)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
@@ -4515,7 +4565,14 @@ const detectedActive = Object.values(PROFILES).filter(p => (!pinnedLangs || pinn
 // nothing and returned a bare `✅ Approve — no findings across rust`.
 const coverage = resolveCoverage({ profiles: PROFILES, changedFiles, detectedActive, pinnedLangs })
 const active = coverage.active
-if (coverage.outcome === 'empty') {
+// The coverage decision's early exits: an empty diff, nothing reviewable, or no profile for what changed.
+async function coverageExit() {
+  if (coverage.outcome === 'empty') return emptyDiffExit()
+  if (coverage.outcome === 'nothing-to-review') return nothingToReviewExit()
+  if (coverage.outcome === 'no-profile') return noProfileExit()
+  return null
+}
+async function emptyDiffExit() {
   const emptyMsg = noChangedFilesMessage()
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
@@ -4527,7 +4584,7 @@ if (coverage.outcome === 'empty') {
     ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
   ].join('\n') + scopeSection())
 }
-if (coverage.outcome === 'nothing-to-review') {
+async function nothingToReviewExit() {
   // Nothing was reviewed AND nothing needed reviewing — an honest green, not a coverage hole. A
   // marker that fires on every README-only change stops being read.
   const okMsg = nothingToReviewMessage(changedFiles.length)
@@ -4542,7 +4599,7 @@ if (coverage.outcome === 'nothing-to-review') {
     ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map((/** @type {string} */ f) => `- ${f}`),
   ].join('\n') + scopeSection())
 }
-if (coverage.outcome === 'no-profile') {
+async function noProfileExit() {
   const msg = noLanguageMessage(PROFILES, changedFiles.length, coverage.material.length)
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
@@ -4555,7 +4612,13 @@ if (coverage.outcome === 'no-profile') {
     ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n') + scopeSection())
 }
-log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
+// An unknown language pin first: it stops the run before any profile is activated.
+const languageStop = unknownLangs.length ? await unknownPinExit() : await coverageExit()
+if (languageStop !== null) return languageStop
+function logActiveProfiles() {
+  log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
+}
+logActiveProfiles()
 
 // Changed files no active profile covers are NOT reviewed — say so instead of silently shrinking scope.
 // The ones that are a real coverage gap (see coverageGapFiles: material AND not project config)
@@ -4563,7 +4626,10 @@ log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinn
 // bare Approve.
 const uncoveredFiles = changedFiles.filter((/** @type {string} */ f) => !active.some(p => p.detect([f])))
 const uncoveredGap = coverageGapFiles(uncoveredFiles)
-if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}${uncoveredGap.length ? ` — ${uncoveredGap.length} unreviewed source file(s)` : ' (docs/assets/lockfiles/project config only — not a coverage gap)'}`)
+function logUncoveredFiles() {
+  if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}${uncoveredGap.length ? ` — ${uncoveredGap.length} unreviewed source file(s)` : ' (docs/assets/lockfiles/project config only — not a coverage gap)'}`)
+}
+logUncoveredFiles()
 
 // ================= Prompt builders (profile-parameterized) =================
 /** @param {Profile} profile */
