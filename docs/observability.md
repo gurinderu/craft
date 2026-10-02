@@ -148,10 +148,13 @@ run is enriched — and it does not enter the `index.jsonl` projection.
 nothing to the cost average and is **not** read as a zero-cost run (`costRuns` counts the usable
 enriched runs apart), the same "not measured is not zero" stance the pool split takes for a missing
 `round`. A cost is judged by one rule shared with `--round-pairs` (`costProblem` in
-`lib/run-record.mjs`): a cost that is not an object, or has a field present but not a non-negative
-number, is **malformed**; one with `skipped > 0` is **partial** (a lower bound); one with nothing
-measured (no positive total, or parts that sum to zero) counts as not enriched. Malformed and partial
-costs stay out of the per-run averages and are counted in `costMalformedRuns` / `costPartialRuns`,
+`lib/run-record.mjs`), which follows what enrich-cost writes — all four token parts, `agents`, a
+`total` equal to their sum, a `source`: **missing** means never enriched; **malformed** means not an
+object, none of the measured fields, a field that is not a non-negative number, a `source` that is not
+a string, or a `total` that is not the sum of its parts; **empty** means written but measured nothing
+(enrich-cost's flag for transcripts that parse yet carry no usage, realm #98 — even when some were
+skipped); **partial** means `skipped > 0`, a lower bound. Malformed, empty and partial costs stay out
+of the per-run averages and are counted in `costMalformedRuns` / `costEmptyRuns` / `costPartialRuns`,
 named on the report line. A record with no `total` uses the sum of its four token parts.
 
 ## How it is produced
@@ -242,7 +245,7 @@ older record — an unknown input is not the same input); a different configurat
 memory was not in full effect (`reReview` not chained, its prior ledger degraded or rebuilt from a stalled
 run, fingerprints not comparable, tombstones dropped); a later round whose recorded prior (`reReview.priorRound`
 / `priorHead`) is not this round; a different head, base or path; and no real `cost` (from
-`craft-log-run enrich-cost`) on both, or a partial one (`cost.skipped`). The totals are an unweighted sum
+`craft-log-run enrich-cost`) on both, or a cost that is malformed, empty (measured nothing — usage missing from the transcripts, realm #98) or partial (`cost.skipped`), or a malformed candidate, finding or lens-dispatch count. A cost with no `total` is compared on the sum of its four token parts. The totals are an unweighted sum
 of token kinds, so the report also prints output, input and cache-read deltas — read those as money, not
 the ratio alone. A record of the wrong shape is judged or named, never crashes the report. The
 configuration compared includes the lenses the completeness critic added and a digest of the `intent`
