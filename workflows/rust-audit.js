@@ -583,7 +583,7 @@ function stripInternal(obj) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
@@ -840,6 +840,49 @@ function quietly(call) {
     }
   }
 }
+
+// The run-record writer each engine binds as its `logRun` — one body for all four. What differs
+// between engines is BOUND, not copied: the agent call (review's retries underneath `quietly`, the
+// others' plain `agent`), the phase the write is dispatched under, where the logger writes (`target`,
+// read at each call: review finalizes into a `runDir` that only exists once a checkpoint has run),
+// what is stamped onto every record (`prepare`: review's fingerprint basis), and how a loss is noted
+// (review's one noteTelemetryLoss for every bookkeeping write; telemetryLossNoter for the others).
+// A lost record NEVER fails the run: it is noted, and the engine renders the note where a human reads.
+// The returned function must still be bound to the NAME `logRun` in the engine — see the header.
+/**
+ * @template O
+ * @param {object} o
+ * @param {(prompt: string, opts: ReturnType<typeof logRunDispatch>) => Promise<O>} o.call  a `quietly`-wrapped agent callback
+ * @param {string} o.phase
+ * @param {() => { craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} o.target
+ * @param {(what: string, why: string, landed: boolean) => void} o.noteLoss
+ * @param {(record: Record<string, unknown>) => Record<string, unknown>} [o.prepare]
+ * @returns {(record: Record<string, unknown>) => Promise<void>}
+ */
+function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+  return async recordIn => {
+    const record = prepare(recordIn)
+    const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
+    if (!landed.ok) noteLoss('the run record', landed.reason, false)
+    // The record landed and the script still had something to say — a run directory refused or left
+    // behind. Not a lost record, so it must not read as one, but not silence either.
+    else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
+  }
+}
+
+// The loss note of the engines that keep no other bookkeeping writes: every loss is kept for the
+// report, and logged — a landed record under its own prefix, never as a lost one.
+/**
+ * @param {string[]} lost
+ * @param {(line: string) => void} say
+ * @returns {(what: string, why: string, landed: boolean) => void}
+ */
+function telemetryLossNoter(lost, say) {
+  return (what, why, landed) => {
+    lost.push(`${what} — ${why}`)
+    say(landed ? `⚠️ telemetry: ${why}` : `⚠️ telemetry lost: ${what} — ${why}`)
+  }
+}
 // <<< craft-inline
 // The banner that leads the report when a write did not land — the same one review.js uses.
 // >>> craft-inline lib/review-coverage.mjs telemetryLostSection
@@ -892,26 +935,11 @@ function telemetryLostSection(lost) {
 // human actually reads — an empty store is otherwise indistinguishable from "never run".
 /** @type {string[]} */
 const telemetryLost = []
-const agentQuietly = quietly(agent)
-
-/** @param {object} record */
-async function logRun(record) {
-  const res = await agentQuietly(
-    logRunPrompt({ record, craftRoot: craftRootArg }),
-    logRunDispatch(record, { phase: 'Synthesize' }),
-  )
-  const landed = logRunOutcome(res)
-  if (!landed.ok) {
-    telemetryLost.push(`the run record — ${landed.reason}`)
-    log(`⚠️ telemetry lost: the run record — ${landed.reason}`)
-  }  // The record landed and the script still had something to say — a run directory refused or left
-  // behind. Not a lost record, so it must not read as one, but not silence either.
-  else if (landed.reason) {
-    telemetryLost.push(`the run directory (the record itself landed) — ${landed.reason}`)
-    log(`⚠️ telemetry: ${landed.reason}`)
-  }
-
-}
+// The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note.
+const logRun = makeRunLogger({
+  call: quietly(agent), phase: 'Synthesize', target: () => ({ craftRoot: craftRootArg }),
+  noteLoss: telemetryLossNoter(telemetryLost, log),
+})
 
 // Plugin agent types (craft:*) are frequently absent from the workflow sandbox's registry. Dispatch
 // to the requested agentType, but on an "agent type '<x>' not found" throw — or a null on runtimes
