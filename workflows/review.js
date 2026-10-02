@@ -346,7 +346,7 @@ continues on the remaining signals with status=unknown — an incomplete gate be
 // in here by the craft-inline gate, because this script cannot be imported (top-level export +
 // await + return). The module's header carries why the audit is a DECLARATION audit and what that
 // does and does not close.
-// >>> craft-inline lib/preflight-probes.mjs PROBE_BUDGETS probeDeclarationBlock auditPreflightProbes
+// >>> craft-inline lib/preflight-probes.mjs PROBE_BUDGETS probeDeclarationBlock auditPreflightProbes readProbeEntry probeCallCount probeBudgetProblems
 // The per-source budget. A source is named by the QUESTION it answers, not by the command that
 // answers it: two spellings of "which checks are green for this SHA" are one source, which is the
 // whole point — the old failure mode was three routes to one answer, each looking like a fresh
@@ -409,37 +409,56 @@ function auditPreflightProbes(pf) {
   /** @type {Map<string, number>} */
   const seen = new Map()
   for (const entry of probes) {
-    // Model output: an entry may be anything, so its two fields are read as unknown.
-    const p = entry && typeof entry === 'object' ? /** @type {{ source?: unknown, calls?: unknown }} */ (entry) : null
-    const id = String((p && p.source) || '').trim()
-    if (!id) { out.push('a `probes` entry has no `source`'); continue }
-    if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
-      out.push(`unrecognized probe source \`${id}\` — not one of the declared ids, so its budget is unknown`)
-      continue
-    }
-    // Every way a count can fail to be a count is named, because each one used to coerce to zero and
-    // land the entry inside its budget: an omitted `calls` via `?? 0`, a non-numeric one via `NaN`
-    // and the `Number.isFinite` guard below, and a negative one by SUBTRACTING from the total — so
-    // `[{blocker-probe:9},{blocker-probe:-8}]` read as 1 call against a budget of 4. A bad count is
-    // now a violation of its own AND is excluded from the sum, so it can neither hide nor offset.
-    const raw = p ? p.calls : undefined
-    if (raw == null) {
-      out.push(`probe source \`${id}\` declared no \`calls\` — an entry without a count cannot be audited, and a missing count is not zero`)
-      continue
-    }
-    const calls = Number(raw)
-    if (!Number.isInteger(calls)) {
-      out.push(`probe source \`${id}\` declared a non-integer call count \`${String(raw)}\` — invocations are counted in whole numbers`)
-      continue
-    }
-    if (calls < 0) {
-      out.push(`probe source \`${id}\` declared a negative call count ${calls} — a call cannot be un-made, and a negative must not offset a real one`)
-      continue
-    }
+    const read = readProbeEntry(entry)
+    if (typeof read === 'string') { out.push(read); continue }
     // Two entries for one id are the repeat this exists to catch, split across rows. Summed, never
     // taken as the larger: splitting 3 calls into 2+1 would otherwise read as within a budget of 2.
-    seen.set(id, (seen.get(id) ?? 0) + calls)
+    seen.set(read.id, (seen.get(read.id) ?? 0) + read.calls)
   }
+  out.push(...probeBudgetProblems(seen))
+  return out
+}
+
+// One declared probe entry read as a source id and a whole, non-negative call count — or the violation
+// line that says why it cannot be counted.
+/** @param {unknown} entry @returns {{ id: string, calls: number } | string} */
+function readProbeEntry(entry) {
+  // Model output: an entry may be anything, so its two fields are read as unknown.
+  const p = entry && typeof entry === 'object' ? /** @type {{ source?: unknown, calls?: unknown }} */ (entry) : null
+  const id = String((p && p.source) || '').trim()
+  if (!id) return 'a `probes` entry has no `source`'
+  if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
+    return `unrecognized probe source \`${id}\` — not one of the declared ids, so its budget is unknown`
+  }
+  // Every way a count can fail to be a count is named, because each one used to coerce to zero and
+  // land the entry inside its budget: an omitted `calls` via `?? 0`, a non-numeric one via `NaN`
+  // and the `Number.isFinite` guard below, and a negative one by SUBTRACTING from the total — so
+  // `[{blocker-probe:9},{blocker-probe:-8}]` read as 1 call against a budget of 4. A bad count is
+  // now a violation of its own AND is excluded from the sum, so it can neither hide nor offset.
+  const calls = probeCallCount(id, p ? p.calls : undefined)
+  return typeof calls === 'string' ? calls : { id, calls }
+}
+
+// A declared `calls` value as a whole, non-negative count, or the violation line naming why it is not one.
+/** @param {string} id @param {unknown} raw @returns {number | string} */
+function probeCallCount(id, raw) {
+  if (raw == null) {
+    return `probe source \`${id}\` declared no \`calls\` — an entry without a count cannot be audited, and a missing count is not zero`
+  }
+  const calls = Number(raw)
+  if (!Number.isInteger(calls)) {
+    return `probe source \`${id}\` declared a non-integer call count \`${String(raw)}\` — invocations are counted in whole numbers`
+  }
+  if (calls < 0) {
+    return `probe source \`${id}\` declared a negative call count ${calls} — a call cannot be un-made, and a negative must not offset a real one`
+  }
+  return calls
+}
+
+// The summed calls per source against its budget: a forbidden source used at all, or any over its max.
+/** @param {Map<string, number>} seen @returns {string[]} */
+function probeBudgetProblems(seen) {
+  const out = []
   for (const [id, total] of seen) {
     const { max, what } = PROBE_BUDGETS[/** @type {keyof typeof PROBE_BUDGETS} */ (id)]
     if (max === 0 && total > 0) out.push(`forbidden probe source \`${id}\` used ${total}×: ${what}`)
