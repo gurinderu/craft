@@ -20,12 +20,14 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
-      # Lint reaches only the .mjs files under lib/ and opencode/plugin/. workflows/*.js cannot be
-      # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
-      # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs — the
-      # typecheck step below is their gate. Keep this command identical to package.json's "lint".
+      # Lint reaches the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, and
+      # knip.config.js (it imports lib/inline-regions.mjs and decides what the dead-code gate sees), with
+      # typescript-eslint's type-aware rules over each tsconfig's program (so it needs the plugin
+      # deps above). workflows/*.js cannot be parsed by ESLint for the same reason `node --check`
+      # cannot read them — the syntax-check and engine typecheck steps below are their gates.
+      # Keep this command identical to package.json's "lint".
       - name: Lint
-        run: npx eslint lib opencode/plugin --max-warnings 0
+        run: npx eslint lib opencode/plugin knip.config.js --max-warnings 0
       # tsc over opencode/plugin/*.ts and every opencode/plugin/*.mjs, tests included (config in
       # opencode/plugin/tsconfig.json: checkJs at the same maximum strictness as lib/tsconfig.json).
       # This is the only gate that compiles the TypeScript at all; before it existed a syntax error
@@ -43,7 +45,8 @@ jobs:
       # The engines' own code (workflows/*.js) at the same strictness: each script wrapped as the sandbox
       # runs it, its craft-inline regions swapped for imports of the lib modules they come from, the
       # sandbox globals declared in lib/workflow-sandbox.d.ts; errors reported at their workflows/ line.
-      # Agent results are typed `any` (model output), so fields read off them are not checked.
+      # On the same program, typescript-eslint's no-unsafe-* family holds each engine to zero (needs the
+      # root deps; a missing ESLint fails the step).
       - name: Typecheck workflow engines (checkJs)
         run: npm run check:types:workflows
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
@@ -73,9 +76,74 @@ jobs:
       # harness (need a live model) — see evals/README.md — and are intentionally NOT run in CI.
       - name: Check evals corpus
         run: node lib/check-evals.mjs
+      # Unused files, exports and dependencies across lib/, workflows/ and the opencode plugin
+      # (knip.config.js). An inlined export counts as used only where an engine references it outside
+      # its source's own craft-inline regions: listed in a fence but never called is dead. Production mode drops tests and checks what the shipped entries reach, so an
+      # export only a test uses is dead here. The default mode, tests included, is kept beside it:
+      # only it sees devDependencies and what the tests import (an unused or unlisted package).
+      - name: Check unused code, shipped entries (knip --production)
+        run: npm run check:dead:production
+      - name: Check unused code and dependencies, tests included (knip)
+        run: npm run check:dead
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
       # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.
       - name: Validate plugin manifests
         run: |
           npm install -g @anthropic-ai/claude-code
           claude plugin validate . --strict
+      # The OpenCode plugin's dependencies are the only ones a consumer installs (craft itself ships
+      # none), so a known high-severity advisory in its LOCKED production closure fails the build.
+      # Last in the job, so a red audit never hides the other checks' verdict on the diff.
+      # Deliberately not reproducible: a new advisory, or an unreachable registry, can turn a commit red
+      # that was green (realm @nick/craft, #141). Green here is not a claim about a consumer's install:
+      # per opencode/README.md the plugin's deps land in the consumer's opencode tree (or they add
+      # @opencode-ai/plugin and @opencode-ai/sdk, unpinned, to their own package.json) — that closure
+      # is whatever their tree resolves, and this audit does not cover it.
+      - name: Audit shipped dependencies
+        run: npm audit --prefix opencode/plugin --omit=dev --audit-level=high
+      # Dev tooling never reaches a consumer: an advisory there is reported — a warning annotation on the
+      # run and the job summary — not blocking, so a new advisory in a linter does not turn unrelated PRs
+      # red. Fix with `npm audit fix` in its own PR. Runs even when an earlier step failed. An advisory is
+      # told apart from a failure to audit (registry unreachable, unreadable output) by the JSON counts.
+      - name: Audit dev tooling (report only)
+        if: ${{ !cancelled() }}
+        run: |
+          npm audit --json > dev-audit.json 2> dev-audit.err || true
+          if n=$(node -e 'const v=JSON.parse(require("fs").readFileSync("dev-audit.json","utf8")).metadata.vulnerabilities; const n=v.high+v.critical; if(!Number.isInteger(n)) process.exit(1); console.log(n)' 2>/dev/null); then
+            if [ "$n" -gt 0 ]; then
+              echo "::warning title=npm audit (dev tooling)::$n dev-tooling package(s) with a high/critical advisory; fix with npm audit fix in its own PR"
+              { echo '### npm audit (dev tooling, not blocking)'; echo '```'; npm audit --audit-level=high 2>&1 | tail -n 40; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "::warning title=npm audit (dev tooling)::could not audit dev tooling (see the step log); not blocking"
+            { echo '### npm audit (dev tooling): could not audit, not blocking'; echo '```'; tail -n 20 dev-audit.err; tail -n 20 dev-audit.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
+  # lib/, opencode/plugin/ and workflows/ (not opencode/install.sh or .github/). It found nothing real on adoption — it is here for code
+  # not yet written (realm @nick/craft, #138). A separate job, not a step in `test`: it is a Python
+  # tool in its own pinned image and fails on its own. Not reproducible, like the dependency audit
+  # (#141): `--config p/...` fetches the registry's rules as of the run, so a rule added upstream can
+  # turn a commit red that was green before; the image tag pins the engine, not the rules.
+  # A known false positive is suppressed in place with `nosemgrep: <rule-id>` and its reason.
+  # Every silent skip is turned off, since each reads as a clean run: `--timeout 0` (a rule that timed out
+  # on a file is skipped with exit 0), `--max-target-bytes 0` (a file over 1 MB is skipped with exit 0 —
+  # review.js is half that and growing), `--strict` (a partial parse fails instead of warning).
+  # .semgrep/child-process.yml covers `node:child_process`, the spelling the registry rule misses; its
+  # fixtures run first, so a rule that stopped firing fails the job.
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.178.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: semgrep (craft's own rules match their fixtures)
+        run: >-
+          semgrep --test --metrics=off --config .semgrep/child-process.yml .semgrep/child-process.mjs &&
+          semgrep --test --metrics=off --config .semgrep/child-process.yml .semgrep/child-process-cjs.js
+      - name: semgrep (public rule sets and craft's own)
+        run: >-
+          semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0
+          --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs
+          --config p/security-audit --config p/secrets --config p/default
+          lib opencode/plugin workflows
