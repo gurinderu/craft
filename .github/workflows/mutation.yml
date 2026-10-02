@@ -57,20 +57,12 @@ jobs:
             reports/mutation/mutation.json
           if-no-files-found: warn
           retention-days: 90
-      # A red run — below lib/mutation-floor.json, timed out, or failed to install — opens one issue, unless
-      # an open issue already carries the same title (the score is in it, so a different score is a new one).
-      - name: Open an issue for the red run
+      # A red run — below lib/mutation-floor.json, timed out, or failed to install — is reported in one open
+      # issue: while one titled "Weekly mutation run failed (…)" is open, the run and its score are a comment
+      # on it; only when none is open is one created, titled with the score (lib/mutation-issue.mjs).
+      - name: Report the red run in an issue
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          score=$(node lib/mutation-score.mjs reports/mutation/mutation.json) || score='no report'
-          title="Weekly mutation run failed ($score)"
-          if gh issue list --state open --limit 200 --search 'in:title "Weekly mutation run failed"' --json title --jq '.[].title' | grep -Fxq -- "$title"; then
-            echo "An open issue already reads: $title"
-            exit 0
-          fi
-          printf 'The weekly mutation run failed: %s\n\nScore: %s (the floor is in `lib/mutation-floor.json`). Report: the `mutation-report` artifact of the run, when there is one — a run cut by its timeout, or one that failed before Stryker finished, leaves none.\n' \
-            "$RUN_URL" "$score" > issue.md
-          gh issue create --title "$title" --body-file issue.md
+        run: node lib/mutation-issue.mjs reports/mutation/mutation.json

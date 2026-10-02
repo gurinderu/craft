@@ -81,7 +81,7 @@ export default {
         'lib/quality-delta.mjs!',
         // Run by the weekly mutation workflow's failure step (.github/workflows/mutation.yml), CI-only like
         // the one above: not imported, and production mode does not read the workflows.
-        'lib/mutation-score.mjs!',
+        'lib/mutation-issue.mjs!',
         // The gate's own checkers (CI workflow, package.json scripts).
         'lib/check-*.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
