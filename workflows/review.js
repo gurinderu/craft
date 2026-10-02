@@ -4702,6 +4702,16 @@ const ROLLUP_MAX = 3
 function rollupPool(pool, profile) {
   const ids = profile.rollupRuleIds || []
   if (!ids.length) return pool
+  const { groups, out } = rollupGroups(pool, ids)
+  for (const [, g] of groups) out.push(...rolledUp(g, profile))
+  return out
+}
+
+/**
+ * The pool split into findings a roll-up rule names, grouped by lens and rule, and the rest in order.
+ * @param {Finding[]} pool @param {string[]} ids @returns {{ groups: Map<string, Finding[]>, out: Finding[] }}
+ */
+function rollupGroups(pool, ids) {
   /** @type {Map<string, Finding[]>} */
   const groups = new Map()
   const out = []
@@ -4713,22 +4723,30 @@ function rollupPool(pool, profile) {
     if (!g) { g = []; groups.set(k, g) }
     g.push(f)
   }
-  for (const [, g] of groups) {
-    // Order by severity so the representative is the worst instance, not an arbitrary one.
-    const sorted = g.slice().sort((/** @type {Finding} */ a, /** @type {Finding} */ b) => (SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9))
-    if (sorted.length <= ROLLUP_MAX) { out.push(...sorted); continue }
-    const keep = sorted.slice(0, ROLLUP_MAX)
-    const folded = sorted.slice(ROLLUP_MAX)
-    const rep = /** @type {Finding} */ (folded[0])   // folded is non-empty: sorted.length > ROLLUP_MAX
-    const where = folded.slice(0, 6).map((/** @type {Finding} */ f) => `${f['file'] || '?'}:${f['line'] || 0}`).join(', ')
-    out.push(...keep, {
-      ...rep,
-      title: `${rep.title} — and ${folded.length - 1} more of the same (${rep.ruleId})`,
-      why: `${rep.why} Repeated ${folded.length} more times across the diff (${where}${folded.length > 6 ? ', …' : ''}); rolled into one finding because per-occurrence reporting of this rule buries the rest of the review. Fix the pattern, not the instance.`,
-    })
-    log(`[${profile.id}] Roll-up: ${g.length}× ${rep.ruleId} from '${rep.source}' → ${keep.length} individual + 1 grouped`)
-  }
-  return out
+  return { groups, out }
+}
+
+/** A finding's severity rank, unknown severities last. @param {Finding} f */
+function sevRankOf(f) {
+  return SEV_RANK[f['severity'] ?? ''] ?? 9
+}
+
+/** One roll-up group as it enters the pool: as is up to ROLLUP_MAX, else the worst ROLLUP_MAX and one folded finding. @param {Finding[]} g @param {Profile} profile @returns {Finding[]} */
+function rolledUp(g, profile) {
+  // Order by severity so the representative is the worst instance, not an arbitrary one.
+  const sorted = g.slice().sort((/** @type {Finding} */ a, /** @type {Finding} */ b) => sevRankOf(a) - sevRankOf(b))
+  if (sorted.length <= ROLLUP_MAX) return sorted
+  const keep = sorted.slice(0, ROLLUP_MAX)
+  const folded = sorted.slice(ROLLUP_MAX)
+  const rep = /** @type {Finding} */ (folded[0])   // folded is non-empty: sorted.length > ROLLUP_MAX
+  const where = folded.slice(0, 6).map((/** @type {Finding} */ f) => `${f['file'] || '?'}:${f['line'] || 0}`).join(', ')
+  const rolled = [...keep, {
+    ...rep,
+    title: `${rep.title} — and ${folded.length - 1} more of the same (${rep.ruleId})`,
+    why: `${rep.why} Repeated ${folded.length} more times across the diff (${where}${folded.length > 6 ? ', …' : ''}); rolled into one finding because per-occurrence reporting of this rule buries the rest of the review. Fix the pattern, not the instance.`,
+  }]
+  log(`[${profile.id}] Roll-up: ${g.length}× ${rep.ruleId} from '${rep.source}' → ${keep.length} individual + 1 grouped`)
+  return rolled
 }
 
 // Two findings at the SAME file:line whose titles are near-identical are one defect, and the model
@@ -4753,26 +4771,36 @@ function sameSpotGroups(pool) {
   const groups = []
   for (const [, idxs] of bySpot) {
     if (idxs.length < 2) continue
-    /** @type {Set<number>} */
-    const taken = new Set()
-    for (const i of idxs) {
-      if (taken.has(i)) continue
-      const g = [i]
-      for (const j of idxs) {
-        if (j === i || taken.has(j)) continue
-        if (shingleOverlap(/** @type {Finding} */ (pool[i])['title'], /** @type {Finding} */ (pool[j])['title']) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
-      }
-      if (g.length > 1) { taken.add(i); groups.push(g) }
-    }
+    groups.push(...spotGroups(pool, idxs))
   }
   return groups
 }
 
-/** @param {Finding[]} pool @param {Profile} profile */
-async function dedupPool(pool, profile) {
-  if (pool.length < 2) return pool
-  const isToolSrc = (/** @type {Finding} */ f) => isToolSource(profile, f['source'])
-  const listing = pool.map((/** @type {Finding} */ f, /** @type {number} */ i) => `${i}. ${f['file'] || '?'}:${f['line'] || 0} [${f['severity']}] (${f['source']}) ${f['title']} — ${String(f['why'] || '').slice(0, 160)}`).join('\n')
+/** Near-identical titles among the findings at one spot, grouped (first match takes a finding). @param {Finding[]} pool @param {number[]} idxs */
+function spotGroups(pool, idxs) {
+  const groups = []
+  /** @type {Set<number>} */
+  const taken = new Set()
+  for (const i of idxs) {
+    if (taken.has(i)) continue
+    const g = [i, ...sameTitleAt(pool, idxs, i, taken)]
+    if (g.length > 1) { taken.add(i); groups.push(g) }
+  }
+  return groups
+}
+
+/** The not-yet-taken findings at the spot whose title matches finding i's; each one returned is marked taken. @param {Finding[]} pool @param {number[]} idxs @param {number} i @param {Set<number>} taken */
+function sameTitleAt(pool, idxs, i, taken) {
+  const g = []
+  for (const j of idxs) {
+    if (j === i || taken.has(j)) continue
+    if (shingleOverlap(/** @type {Finding} */ (pool[i])['title'], /** @type {Finding} */ (pool[j])['title']) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
+  }
+  return g
+}
+
+/** The model's same-defect groups over the listed pool, or null when the pass failed (logged). @param {Profile} profile @param {string} listing */
+async function dedupModelGroups(profile, listing) {
   let res = null
   try {
     res = await ragent(
@@ -4787,6 +4815,30 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   } catch (e) {
     log(`[${profile.id}] dedup pass failed (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 80)}) — verifying the raw pool`)
   }
+  return res
+}
+
+/** One same-defect group merged onto its strictest member. @param {Finding[]} members @param {(f: Finding) => boolean} isToolSrc @returns {Finding} */
+function mergedGroup(members, isToolSrc) {
+  // Base = the strictest member: tool-sourced first (a tool finding can only be refuted by
+  // re-running the tool), then highest severity.
+  const base = /** @type {Finding} */ (members.slice().sort((a, b) => (/** @type {number} */ (/** @type {unknown} */ (isToolSrc(b))) - /** @type {number} */ (/** @type {unknown} */ (isToolSrc(a)))) || ((SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9)))[0])
+  const others = members.filter(m => m !== base)
+  // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
+  // escalation) still fires when its trigger lens was merged into a different-source base.
+  const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
+  // Union the off-site evidence too: a merged-away member may have pinned the premise the base
+  // only asserted, and dropping it would cost the group its Confirmed tier at verification.
+  const whereChecked = [...new Set(members.map(m => m['whereChecked']).filter(Boolean))].join('; ')
+  return { ...base, sources, whereChecked, why: `${base['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` }
+}
+
+/** @param {Finding[]} pool @param {Profile} profile */
+async function dedupPool(pool, profile) {
+  if (pool.length < 2) return pool
+  const isToolSrc = (/** @type {Finding} */ f) => isToolSource(profile, f['source'])
+  const listing = pool.map((/** @type {Finding} */ f, /** @type {number} */ i) => `${i}. ${f['file'] || '?'}:${f['line'] || 0} [${f['severity']}] (${f['source']}) ${f['title']} — ${String(f['why'] || '').slice(0, 160)}`).join('\n')
+  const res = await dedupModelGroups(profile, listing)
   // Deterministic same-spot groups go FIRST: the "overlapping groups: first wins" rule below then
   // makes them authoritative over a model group that would have split the same indices differently.
   const detGroups = sameSpotGroups(pool)
@@ -4800,18 +4852,7 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   for (const g of groups) {
     if (g.some(i => inGroup.has(i))) continue // overlapping groups: first wins
     for (const i of g) inGroup.add(i)
-    const members = g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i]))
-    // Base = the strictest member: tool-sourced first (a tool finding can only be refuted by
-    // re-running the tool), then highest severity.
-    const base = /** @type {Finding} */ (members.slice().sort((a, b) => (/** @type {number} */ (/** @type {unknown} */ (isToolSrc(b))) - /** @type {number} */ (/** @type {unknown} */ (isToolSrc(a)))) || ((SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9)))[0])
-    const others = members.filter(m => m !== base)
-    // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
-    // escalation) still fires when its trigger lens was merged into a different-source base.
-    const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
-    // Union the off-site evidence too: a merged-away member may have pinned the premise the base
-    // only asserted, and dropping it would cost the group its Confirmed tier at verification.
-    const whereChecked = [...new Set(members.map(m => m['whereChecked']).filter(Boolean))].join('; ')
-    merged.push({ ...base, sources, whereChecked, why: `${base['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` })
+    merged.push(mergedGroup(g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i])), isToolSrc))
   }
   if (!merged.length) return pool
   const out = pool.filter((/** @type {Finding} */ _f, /** @type {number} */ i) => !inGroup.has(i)).concat(merged)
@@ -5082,6 +5123,14 @@ function decideTier(f, live, v) {
       ? 'the verifier ANSWERED OFF-SCHEMA — its verdict carried none of the judgements this tier is decided on, so nothing was checked against the code'
       : 'every verifier vote for this finding died before returning a verdict — nothing was checked against the code')
   }
+  const { tier, premiseOk, reach } = votePanel(v)
+  if (tier === 'confirmed' && !premiseOk) return premiseDemoted(f)
+  if (tier === 'confirmed' && !reach) return reachDemoted(f, tier)
+  return { ...f, tier }
+}
+
+/** What a panel of shaped votes decides: the tier by majority, and whether the premise and the reach held. @param {Vote[]} v */
+function votePanel(v) {
   const half = v.length / 2
   const lineOk = v.filter((/** @type {Vote} */ x) => x['citedLineMatches']).length >= Math.ceil(half)
   const reach = v.filter((/** @type {Vote} */ x) => x['reachable']).length >= Math.ceil(half)
@@ -5092,15 +5141,19 @@ function decideTier(f, live, v) {
   else if (refutes > half) tier = 'refuted'
   else if (refutes === 0) tier = 'confirmed'
   else tier = 'suspected'
-  if (tier === 'confirmed' && !premiseOk) {
-    return { ...f, tier: 'suspected', why: `${f['why']} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f['whereChecked'] ? ` — claimed at ${f['whereChecked']}` : ', and whereChecked was empty'})` }
-  }
-  if (tier === 'confirmed' && !reach) {
-    const demoted = DEMOTE[f['severity'] ?? ''] || f['severity']
-    // `demoted` is undefined only when `f` carries no severity, which `...f` already says.
-    return { ...f, tier, ...(demoted === undefined ? {} : { severity: demoted }), why: `${f['why']} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
-  }
-  return { ...f, tier }
+  return { tier, premiseOk, reach }
+}
+
+/** A confirmed finding whose off-site premise no verifier pinned: Suspected. @param {Finding} f @returns {Finding} */
+function premiseDemoted(f) {
+  return { ...f, tier: 'suspected', why: `${f['why']} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f['whereChecked'] ? ` — claimed at ${f['whereChecked']}` : ', and whereChecked was empty'})` }
+}
+
+/** A confirmed finding off every production-reachable path: one severity lower. @param {Finding} f @param {string} tier @returns {Finding} */
+function reachDemoted(f, tier) {
+  const demoted = DEMOTE[f['severity'] ?? ''] || f['severity']
+  // `demoted` is undefined only when `f` carries no severity, which `...f` already says.
+  return { ...f, tier, ...(demoted === undefined ? {} : { severity: demoted }), why: `${f['why']} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
 }
 // Shared vote→tier decision, so the batched path cannot drift from the individual one.
 //
