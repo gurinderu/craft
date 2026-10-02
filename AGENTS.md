@@ -127,6 +127,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | Delivery parity of review agents | `node lib/check-delivery-parity.mjs` |
 | OpenCode agent/command frontmatter | `npm run check:opencode-frontmatter` |
 | Eval corpus shape | `node lib/check-evals.mjs` |
+| Unused files, exports, dependencies (config `knip.config.js`; `craft-inline` fences count as imports) | `npm run check:dead` (needs `npm ci` and `npm ci --prefix opencode/plugin`); not yet a gate: `npm run check:dead:production` (tests excluded) |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
 
 There is no formatter and no pre-commit hook: run every row above before pushing; CI runs the same steps (one job, `test`). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.

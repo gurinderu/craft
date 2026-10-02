@@ -12,11 +12,14 @@
     "check:types": "npm --prefix opencode/plugin run typecheck",
     "check:types:lib": "opencode/plugin/node_modules/.bin/tsc -p lib/tsconfig.json",
     "check:types:workflows": "node lib/check-workflow-types.mjs",
-    "check:opencode-frontmatter": "python3 opencode/scripts/check-frontmatter.py agent opencode/agents/*.md && python3 opencode/scripts/check-frontmatter.py command opencode/commands/*.md"
+    "check:opencode-frontmatter": "python3 opencode/scripts/check-frontmatter.py agent opencode/agents/*.md && python3 opencode/scripts/check-frontmatter.py command opencode/commands/*.md",
+    "check:dead": "knip --no-progress",
+    "check:dead:production": "knip --no-progress --production"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
     "@types/node": "22.20.5",
-    "eslint": "^9.39.0"
+    "eslint": "^9.39.0",
+    "knip": "6.39.0"
   }
 }

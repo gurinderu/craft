@@ -73,6 +73,13 @@ jobs:
       # harness (need a live model) — see evals/README.md — and are intentionally NOT run in CI.
       - name: Check evals corpus
         run: node lib/check-evals.mjs
+      # Unused files, exports and dependencies across lib/, workflows/ and the opencode plugin
+      # (knip.config.js). The engines' craft-inline fences count as imports, so an inlined export
+      # is used. Tests count as users here, and any module a test names with `new URL(...)` has its
+      # exports unchecked; `npm run check:dead:production` (tests excluded) closes that, and is not
+      # a step yet: it names three test-only exports still to be removed.
+      - name: Check unused code (knip)
+        run: npm run check:dead
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
       # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.
       - name: Validate plugin manifests
