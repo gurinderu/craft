@@ -2844,7 +2844,7 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
 // rereviewVerdict. (selectPriorRound is NOT mirrored: round selection, ancestry and record loading
 // now happen in `craft-log-run.mjs prior-round`, so no mirror is needed — a haiku still runs the
 // command and carries the bytes back, but it decides nothing.)
-// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings reviewVerdict
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings reviewVerdict refuteRate
 /** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
@@ -2878,6 +2878,19 @@ function reviewVerdict(confirmed) {
   if (by.Critical || by.High) return 'Block'
   if (by.Medium) return 'Warning'
   return 'Approve'
+}
+
+// Fraction of the judged candidates that were refuted: refuted / candidates, 2-dp, 0 when nothing was
+// judged. review and adversarial-review record it. Not (candidates - confirmed) / candidates: review's
+// `confirmed` excludes a "suspected" tier that is NOT refuted. rust-audit's unused-crates records
+// null rather than 0 when nothing was judged, and computes that in lib/audit-verification.mjs.
+/**
+ * @param {number} refuted
+ * @param {number} candidates
+ * @returns {number}
+ */
+function refuteRate(refuted, candidates) {
+  return candidates ? Math.round((refuted / candidates) * 100) / 100 : 0
 }
 // <<< craft-inline
 // finalVerdict is workflow-local — NOT part of the lib/run-record.mjs mirror above.
@@ -6083,7 +6096,7 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
   // suffix here rests on notRun + coverageNotes alone: INCOMPLETE for a genuine not-run, PARTIAL
   // COVERAGE for a coverage hole a re-run will not fix.
   const earlySuffix = verdictSuffix({ notRun, coverageNotes })
-  await logRun(reviewRecord({ verdict: `Approve${earlySuffix}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: dropped ? 1 : 0 }, notRun }))
+  await logRun(reviewRecord({ verdict: `Approve${earlySuffix}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: refuteRate(dropped, dropped) }, notRun }))
   const verdictLine = earlySuffix
     ? `⚠️ Approve${earlySuffix} — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language${notRun.length ? '; anything else in the list is a failure to fix and re-run' : ''}.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
@@ -6356,7 +6369,7 @@ await logRun(reviewRecord({
     const ran = r.ranLenses ? r.ranLenses.includes(l) : true
     return { dimension: `${r.profile.id}:${l}`, ran, verdict: '', findingCount: s.total, bySeverity: s.bySeverity, confirmedCount, suspectedCount, refutedCount, unverifiedCount }
   })),
-  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: totalVerified ? Math.round((dropped / totalVerified) * 100) / 100 : 0, unverified: unverified.length, thinned },
+  verification: { candidates: totalVerified, confirmed: confirmed.length, refuteRate: refuteRate(dropped, totalVerified), unverified: unverified.length, thinned },
   notRun,
 }))
 

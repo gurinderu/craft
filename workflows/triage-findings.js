@@ -251,6 +251,8 @@ function summarizeFindings(findings) {
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
+// Triage produces per-finding dispositions, not a severity verdict. Tally a ledger/validation list
+// (each entry `{verdict}`) into the fixed disposition buckets; unknown/malformed verdicts are dropped.
 /**
  * @param {unknown} entries
  * @returns {Record<TriageVerdict, number>}
