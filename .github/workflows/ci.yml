@@ -20,6 +20,15 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
+      # The OpenCode plugin's dependencies are the only ones a consumer installs (craft itself ships
+      # none), so a known high-severity advisory there fails the build.
+      - name: Audit shipped dependencies
+        run: npm audit --prefix opencode/plugin --omit=dev --audit-level=high
+      # Dev tooling never reaches a consumer: an advisory there is reported, not blocking, so a new
+      # advisory in a linter does not turn unrelated PRs red. Fix with `npm audit fix` in its own PR.
+      - name: Audit dev tooling (report only)
+        continue-on-error: true
+        run: npm audit --audit-level=high
       # Lint reaches only the .mjs files under lib/ and opencode/plugin/. workflows/*.js cannot be
       # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
       # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs — the
