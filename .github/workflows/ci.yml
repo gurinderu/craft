@@ -21,7 +21,10 @@ jobs:
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
       # The OpenCode plugin's dependencies are the only ones a consumer installs (craft itself ships
-      # none), so a known high-severity advisory there fails the build.
+      # none), so a known high-severity advisory in its LOCKED production closure fails the build.
+      # Deliberately not reproducible: a new advisory, or an unreachable registry, can turn a commit red
+      # that was green (realm @nick/craft, #141). Consumers resolve floating transitives via Bun, so
+      # green here is not a claim about their install.
       - name: Audit shipped dependencies
         run: npm audit --prefix opencode/plugin --omit=dev --audit-level=high
       # Dev tooling never reaches a consumer: an advisory there is reported, not blocking, so a new
