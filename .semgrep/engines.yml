@@ -1,0 +1,57 @@
+# Trial (chore/semgrep-trial): the engines' clock rule and host-route refusals as semgrep rules,
+# over workflows/*.js whole — own code and craft-inline regions alike. Run: semgrep scan --config .semgrep
+# --error --metrics=off; self-test: semgrep --test .semgrep. Not wired into CI.
+# The TypeScript originals: lib/engine-clock-rule.mjs, lib/inlined-sandbox-names.mjs (realm @nick/craft, #136, #134).
+rules:
+  - id: engine-clock
+    languages: [javascript]
+    severity: ERROR
+    message: reads the clock or randomness, which the Workflow sandbox throws on
+    paths:
+      include: ['/workflows/*.js', '/.semgrep/*.js']
+    options:
+      symbolic_propagation: true
+    pattern-either:
+      - pattern: Date.now
+      - pattern: Math.random
+      - pattern: Date[$K]
+      - pattern: Math[$K]
+      - pattern: new Date()
+      - pattern: new Date
+      - pattern: new Date(...$A)
+      - pattern: Date()
+  - id: engine-clock-global-as-value
+    languages: [javascript]
+    severity: ERROR
+    message: Date/Math as a value — an alias reaches Date.now/Math.random out of sight; use Date.x directly
+    paths:
+      include: ['/workflows/*.js', '/.semgrep/*.js']
+    patterns:
+      - pattern-either:
+          - pattern: Date
+          - pattern: Math
+      - pattern-not-inside: Date.$X
+      - pattern-not-inside: Math.$X
+      - pattern-not-inside: new Date($A, ...)
+      - pattern-not-inside: $V instanceof Date
+  # The engines never name globalThis; refusing it outright closes every route through it
+  # (globalThis.globalThis.Date, `const { Date: D } = globalThis`), which the clock rule above leaves open.
+  - id: engine-no-globalthis
+    languages: [javascript]
+    severity: ERROR
+    message: reaches for globalThis, which carries more in Node than in the sandbox and walks around the clock rule
+    paths:
+      include: ['/workflows/*.js', '/.semgrep/*.js']
+    pattern: globalThis
+  - id: engine-host-route
+    languages: [javascript]
+    severity: ERROR
+    message: reaches the host past name resolution (require, import(), import.meta, eval, Function), which the Workflow sandbox does not provide
+    paths:
+      include: ['/workflows/*.js', '/.semgrep/*.js']
+    pattern-either:
+      - pattern: require(...)
+      - pattern: import($M)
+      - pattern: import.meta
+      - pattern: eval
+      - pattern: Function
