@@ -1,0 +1,87 @@
+# The registry's detect-child-process misses this repo's spelling, `node:child_process` (realm
+# @nick/craft, #138), so the shell-running calls are held here for both spellings. Argument arrays
+# with execFile/spawn (no shell) are the safe form craft uses and stay unflagged.
+rules:
+  - id: craft-child-process-shell-command
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      A shell command built at run time ($F): an interpolated or concatenated string reaches a shell.
+      Use execFile/execFileSync or spawn with an argument array instead.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-inside: |
+                  import { $F } from '$M'
+                  ...
+              - pattern: "$F($CMD, ...)"
+          - patterns:
+              - pattern-inside: |
+                  import * as $NS from '$M'
+                  ...
+              - pattern: "$NS.$F($CMD, ...)"
+          - patterns:
+              - pattern-inside: |
+                  $NS = require('$M')
+                  ...
+              - pattern: "$NS.$F($CMD, ...)"
+          - patterns:
+              - pattern-inside: |
+                  const { $F } = require('$M')
+                  ...
+              - pattern: "$F($CMD, ...)"
+          - patterns:
+              - pattern-inside: |
+                  const { $F } = await import('$M')
+                  ...
+              - pattern: "$F($CMD, ...)"
+          - pattern: "require('$M').$F($CMD, ...)"
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(node:)?child_process$
+      - metavariable-regex:
+          metavariable: $F
+          regex: ^(exec|execSync)$
+      - metavariable-pattern:
+          metavariable: $CMD
+          patterns:
+            - pattern-not: '"..."'
+  - id: craft-child-process-shell-option
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >-
+      $F with `shell: true` runs its command through a shell. Drop the option and pass an argument array.
+    patterns:
+      - pattern-either:
+          - patterns:
+              - pattern-inside: |
+                  import { $F } from '$M'
+                  ...
+              - pattern: "$F(..., {..., shell: true, ...}, ...)"
+          - patterns:
+              - pattern-inside: |
+                  import * as $NS from '$M'
+                  ...
+              - pattern: "$NS.$F(..., {..., shell: true, ...}, ...)"
+          - patterns:
+              - pattern-inside: |
+                  $NS = require('$M')
+                  ...
+              - pattern: "$NS.$F(..., {..., shell: true, ...}, ...)"
+          - patterns:
+              - pattern-inside: |
+                  const { $F } = require('$M')
+                  ...
+              - pattern: "$F(..., {..., shell: true, ...}, ...)"
+          - patterns:
+              - pattern-inside: |
+                  const { $F } = await import('$M')
+                  ...
+              - pattern: "$F(..., {..., shell: true, ...}, ...)"
+          - pattern: "require('$M').$F(..., {..., shell: true, ...}, ...)"
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(node:)?child_process$
+      - metavariable-regex:
+          metavariable: $F
+          regex: ^(spawn|spawnSync|execFile|execFileSync|exec|execSync|fork)$
