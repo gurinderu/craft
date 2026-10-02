@@ -65,6 +65,13 @@ function parseOptions(text) {
   return { options: out, pairs, ignored }
 }
 
+/**
+ * Normalize whatever arrived into an options object.
+ *
+ * `warn` is called with one human sentence per degradation and must not throw — engines pass their
+ * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
+ * shape it had to repair teaches the next caller nothing.
+ */
 /** @param {(msg: string) => void} [warn] */
 function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return args
