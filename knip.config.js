@@ -76,6 +76,9 @@ export default {
         'lib/analyze-runs.mjs!',
         // The gate's own checkers (CI workflow, package.json scripts).
         'lib/check-*.mjs!',
+        // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
+        // reads only outside production mode, so its import is not followed there.
+        'lib/lint-prerequisites.mjs!',
       ],
       project: [
         'lib/**/*.mjs!',

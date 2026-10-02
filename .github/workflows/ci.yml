@@ -20,11 +20,12 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
-      # Lint reaches only the .mjs files under lib/ and opencode/plugin/, and knip.config.js (it imports
-      # lib/inline-regions.mjs and decides what the dead-code gate sees). workflows/*.js cannot be
-      # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
-      # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs — the
-      # typecheck step below is their gate. Keep this command identical to package.json's "lint".
+      # Lint reaches the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, and
+      # knip.config.js (it imports lib/inline-regions.mjs and decides what the dead-code gate sees), with
+      # typescript-eslint's type-aware rules over each tsconfig's program (so it needs the plugin
+      # deps above). workflows/*.js cannot be parsed by ESLint for the same reason `node --check`
+      # cannot read them — the syntax-check and engine typecheck steps below are their gates.
+      # Keep this command identical to package.json's "lint".
       - name: Lint
         run: npx eslint lib opencode/plugin knip.config.js --max-warnings 0
       # tsc over opencode/plugin/*.ts and every opencode/plugin/*.mjs, tests included (config in
@@ -44,7 +45,8 @@ jobs:
       # The engines' own code (workflows/*.js) at the same strictness: each script wrapped as the sandbox
       # runs it, its craft-inline regions swapped for imports of the lib modules they come from, the
       # sandbox globals declared in lib/workflow-sandbox.d.ts; errors reported at their workflows/ line.
-      # Agent results are typed `any` (model output), so fields read off them are not checked.
+      # On the same program, typescript-eslint's no-unsafe-* family holds each engine to zero (needs the
+      # root deps; a missing ESLint fails the step).
       - name: Typecheck workflow engines (checkJs)
         run: npm run check:types:workflows
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).

@@ -919,8 +919,51 @@ async function logRun(record) {
 // self-contained) and REMEMBER the miss so later dimensions skip straight to generic instead of
 // re-failing. Without this, the contract/architecture/security/miri dimensions silently become
 // NOT RUN whenever the craft agents aren't registered.
-/** @type {Set<string>} */
-const agentTypeMissing = new Set()
+// What fell back is also SAID — in the report and on the record — with the same match and wording as the
+// review engine (lib/agent-fallback.mjs, realm @nick/craft #116): a weaker audit must not read as a
+// normal one.
+// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection
+// Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
+// or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
+// operator to the wrong fix.
+/** @param {unknown} msg @param {string} [agent] */
+function isAgentTypeMissing(msg, agent) {
+  const m = String(msg ?? '')
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+}
+
+// The report section. `missing`: [{ agent, what, error }] — an agent type the engine learned is not
+// registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
+// `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
+// came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
+// threw a "not found" isAgentTypeMissing does not recognise (the harness's wording for an unregistered
+// type is unobserved, #116) — said softly, without the install line, the error quoted. Empty string
+// when there is nothing to say.
+/**
+ * @param {{ agent: string, what: string, error?: string }[]} missing
+ * @param {{ agent: string, count: number, what: string, error?: string }[]} emptied
+ * @returns {string}
+ */
+function agentUnavailableSection(missing, emptied) {
+  const hard = Array.isArray(missing) ? missing : []
+  const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
+  if (!hard.length && !soft.length) return ''
+  const lines = [
+    ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} went to the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${String(x.error).slice(0, 160)})` : ''}`),
+    ...soft.map(x => x.error
+      ? `- \`${x.agent}\` failed with "${String(x.error).slice(0, 160)}" on ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent in wording this engine does not recognise, or a missing model or tool).`
+      : `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
+  ]
+  const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
+  return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
+}
+// <<< craft-inline
+/** @type {Map<string, string>} */
+const agentTypeMissing = new Map()      // agent type -> the error the engine saw
+/** @type {Record<string, number>} */
+const agentTypeEmptied = {}             // agent type -> dispatches that came back empty and the generic subagent answered
+/** @type {Map<string, { count: number, error: string }>} */
+const agentTypeNotFound = new Map()     // agent type -> dispatches that threw an unrecognised "not found" and the generic subagent answered
 /**
  * @param {string} prompt
  * @param {AgentOptions} [opts]  the sandbox's closed option set — a misspelt key fails the type check
@@ -934,13 +977,49 @@ async function safeAgent(prompt, opts = {}) {
   try {
     const res = await agent(prompt, opts)
     if (res != null) return res
-    return await agent(prompt, generic)   // null: try generic once; don't memoize (may be transient)
+    // null: try generic once; don't memoize (may be transient). Counted only when the generic run
+    // ANSWERED: the section says what entered the audit without the rubric, and a dispatch that died on
+    // both paths is a dead dimension (NOT RUN), the same outcome as one that threw.
+    const fallback = await agent(prompt, generic)
+    // Falsy, not just null: dimResult reads any falsy result as a dead dimension.
+    if (fallback) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
+    return fallback
   } catch (e) {
-    if (!/not found/i.test(String((e && /** @type {{ message?: unknown }} */ (e).message) || e))) throw e
-    agentTypeMissing.add(at)
+    const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
+    // A "not found" that does not name the agent type may still be the harness's way of saying it —
+    // its live wording is unobserved (#116) — so the dimension keeps its coverage on the generic
+    // subagent, said softly (no install line), and is not memoized: a real unregistered type in unknown
+    // wording costs one failed agent dispatch per dimension — the price of not guessing at the text.
+    if (!isAgentTypeMissing(msg, at)) {
+      if (!/not found/i.test(msg)) throw e
+      const fallback = await agent(prompt, generic)
+      // Dead on both paths: the agent's error is the only one there is, so it is rethrown for the
+      // dimension's NOT RUN line rather than lost to an anonymous "no result".
+      if (!fallback) throw e
+      agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
+      return fallback
+    }
+    agentTypeMissing.set(at, msg)
     log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
-    return agent(prompt, generic)
+    const fallback = await agent(prompt, generic)
+    // Dead on the generic path too: the dimension is NOT RUN, and its line names the agent's error.
+    if (!fallback) throw e
+    return fallback
   }
+}
+const agentSection = () => agentUnavailableSection(
+  [...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
+  [
+    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count, what: 'dimension dispatch(es)' })),
+    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
+  ].filter(x => !agentTypeMissing.has(x.agent)),
+)
+// The record counts both kinds of answered fallback per agent type.
+const agentFallbackCounts = () => {
+  /** @type {Record<string, number>} */
+  const out = { ...agentTypeEmptied }
+  for (const [a, x] of agentTypeNotFound) out[a] = (out[a] || 0) + x.count
+  return out
 }
 
 // `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
@@ -1495,6 +1574,10 @@ const auditRecord = {
   notRun,
   couldNotRun,
   noEvidence,
+  // Agent types that were not registered (so their dimensions ran on the generic subagent) and
+  // dispatches that came back empty and went generic — realm @nick/craft #116.
+  agentUnavailable: [...agentTypeMissing.keys()].sort(),
+  agentFallbacks: agentFallbackCounts(),
   outputTokens: budget.spent(),
 }
 await logRun(auditRecord)
@@ -1506,5 +1589,5 @@ await logRun(auditRecord)
 // which reads as a successful audit with an empty body — and that is exactly the run where the
 // telemetry marker is also empty, so nothing at all says the synthesis died.
 // Without a schema a live agent returns its final text, so anything but a non-empty string is a death.
-if (typeof report !== 'string' || !report) return `${telemetryLostSection(telemetryLost)}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
-return `${telemetryLostSection(telemetryLost)}${report}`
+if (typeof report !== 'string' || !report) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}`
