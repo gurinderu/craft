@@ -57,6 +57,7 @@ function parseOptions(text) {
   return { options: out, pairs, ignored }
 }
 
+/** @param {(msg: string) => void} [warn] */
 function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return args
   if (typeof args !== 'string' || !args.trim()) return {}
@@ -117,6 +118,7 @@ function normalizeArgs(args, warn = () => {}) {
 // both attempts AND carries the last refusal verbatim — its `Available:` listing is the diagnosis
 // that located the live failure at a consumer — so the caller fails loud instead of skipping the
 // review, and the record distinguishes a name that would not resolve from a run that died.
+/** @param {(msg: string) => void} [warn] */
 async function nestedWorkflow(workflow, name, args, warn = () => {}) {
   const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
   try {

@@ -64,6 +64,7 @@ function parseOptions(text) {
   return { options: out, pairs, ignored }
 }
 
+/** @param {(msg: string) => void} [warn] */
 function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return args
   if (typeof args !== 'string' || !args.trim()) return {}
@@ -640,6 +641,7 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
+/** @param {{ record?: any, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
@@ -985,6 +987,7 @@ function reviewResult(dimension, report) {
 // both attempts AND carries the last refusal verbatim — its `Available:` listing is the diagnosis
 // that located the live failure at a consumer — so the caller fails loud instead of skipping the
 // review, and the record distinguishes a name that would not resolve from a run that died.
+/** @param {(msg: string) => void} [warn] */
 async function nestedWorkflow(workflow, name, args, warn = () => {}) {
   const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
   try {
