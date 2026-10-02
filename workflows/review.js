@@ -63,6 +63,14 @@ function parseOptions(text) {
   return { options: out, pairs, ignored }
 }
 
+/**
+ * Normalize whatever arrived into an options object.
+ *
+ * `warn` is called with one human sentence per degradation and must not throw — engines pass their
+ * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
+ * shape it had to repair teaches the next caller nothing.
+ */
+/** @param {(msg: string) => void} [warn] */
 function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return args
   if (typeof args !== 'string' || !args.trim()) return {}
@@ -2147,6 +2155,27 @@ function sliceableLens(lens) {
   return !WHOLE_DIFF_LENSES.includes(String(lens))
 }
 
+/**
+ * Lenses that must NOT be sliced, and why each one.
+ *
+ * These judge the diff AS A WHOLE, so a slice of it is not a smaller version of their question —
+ * it is a different and wrong question. `negative-space` looks for what is missing, and absence is
+ * only visible against the whole change. `intent` checks the author's stated claims, which are
+ * stated about the change entire. `compat` asks what an other-versioned reader makes of the new
+ * wire shapes, and a shape is only breaking in relation to every producer and consumer in the diff.
+ *
+ * `invariants` and `failure-windows` are here for a sharper reason than the other three, and they
+ * were missed on the first pass. Their briefs are MIRROR WALKS: invariants asks, for each site,
+ * where its mirror is — client against server, send against receive, offered against accepted — and
+ * failure-windows asks for interleavings BETWEEN two components. Both halves of such a pair are
+ * ordinary source files, so the shared-file rule does not reach them, and in a real tree the two
+ * halves live in different modules by construction: a handler in one binary, the contract type in
+ * another crate. Slice them and a guard present on one side with its mirror missing on the other is
+ * visible to NO agent — the one concrete class of defect this partition would otherwise delete in
+ * silence, which is the failure mode the whole engine exists to prevent.
+ *
+ * Everything else is code-intrinsic: it judges code by properties the code has in front of it.
+ */
 const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat', 'invariants', 'failure-windows']
 
 // How many lens agents may be in flight at once. Slicing multiplies the round-1 wave by the slice
@@ -2650,6 +2679,7 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
+/** @param {{ record?: any, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
@@ -2737,6 +2767,7 @@ function quietly(call) {
 // on the original: the fixed staging path, the prelude ordering and the exit-code carry each had to
 // be applied twice, and each time the second copy was the one nearly missed. Same builder, one
 // difference — the checkpoint carries a phase and asks for the runDir back.
+/** @param {{ payload?: any, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
 function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
   // DERIVED from the payload, never passed alongside it. As a plumbing argument with a silent ''
   // default it was forgettable, and it was duly forgotten at one of three call sites — deleting it
