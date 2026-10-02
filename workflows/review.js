@@ -2966,12 +2966,14 @@ function isAgentTypeMissing(msg, agent) {
 
 // The report section. `missing`: [{ agent, what, error }] — an agent type the engine learned is not
 // registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
-// `emptied`: [{ agent, count, what }] — dispatches that came back EMPTY from the agent and were re-run
-// on the generic subagent (an unregistered agent on some runtimes, or a transient failure) — said
-// softly, without the install line. Empty string when there is nothing to say.
+// `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
+// came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
+// threw a "not found" isAgentTypeMissing does not recognise (the harness's wording for an unregistered
+// type is unobserved, #116) — said softly, without the install line, the error quoted. Empty string
+// when there is nothing to say.
 /**
  * @param {{ agent: string, what: string, error?: string }[]} missing
- * @param {{ agent: string, count: number, what: string }[]} emptied
+ * @param {{ agent: string, count: number, what: string, error?: string }[]} emptied
  * @returns {string}
  */
 function agentUnavailableSection(missing, emptied) {
@@ -2980,7 +2982,9 @@ function agentUnavailableSection(missing, emptied) {
   if (!hard.length && !soft.length) return ''
   const lines = [
     ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} went to the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${String(x.error).slice(0, 160)})` : ''}`),
-    ...soft.map(x => `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
+    ...soft.map(x => x.error
+      ? `- \`${x.agent}\` failed with "${String(x.error).slice(0, 160)}" on ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent in wording this engine does not recognise, or a missing model or tool).`
+      : `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
   ]
   const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
@@ -2997,15 +3001,34 @@ function noteReviewerAgentMissing(profile, error) {
 const reviewerAgentFallbacks = {}
 /** @type {Record<string, string>} */
 const reviewerAgentNames = {}           // profile id -> its reviewer agent type, for the report line
+// Lens dispatches whose reviewer agent threw a "not found" isAgentTypeMissing does not recognise and the
+// generic subagent then answered: the harness's wording for an unregistered type is unobserved (#116),
+// so the lens keeps its coverage rather than dying on a guess about the text. Also in the record count.
+/** @type {Record<string, { count: number, error: string }>} */
+const reviewerAgentNotFound = {}
 /** @param {Profile} profile */
 function noteReviewerAgentFallback(profile) {
+  reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
+  reviewerAgentNames[profile.id] = profile.reviewerAgent
+}
+/** @param {Profile} profile @param {string} error */
+function noteReviewerAgentNotFound(profile, error) {
+  const was = reviewerAgentNotFound[profile.id]
+  reviewerAgentNotFound[profile.id] = { count: (was?.count || 0) + 1, error }
   reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
   reviewerAgentNames[profile.id] = profile.reviewerAgent
 }
 const reviewerAgentSection = () => agentUnavailableSection(
   reviewerAgentUnavailable.map(x => ({ agent: x.agent, what: `every ${x.id} lens`, error: x.error })),
   Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
-    .map(([id, n]) => ({ agent: reviewerAgentNames[id] || `${id} reviewer agent`, count: n, what: 'lens dispatch(es)' })),
+    .flatMap(([id, n]) => {
+      const agent = reviewerAgentNames[id] || `${id} reviewer agent`
+      const nf = reviewerAgentNotFound[id]
+      return [
+        { agent, count: n - (nf?.count || 0), what: 'lens dispatch(es)' },
+        ...(nf ? [{ agent, count: nf.count, what: 'lens dispatch(es)', error: nf.error }] : []),
+      ]
+    }),
 )
 
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
@@ -5239,7 +5262,12 @@ async function reviewProfile(profile) {
       // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
       // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
       // as "died without an error" — and any sibling slice could overwrite it.
-      if (!isAgentTypeMissing(msg, profile.reviewerAgent)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
+      if (!isAgentTypeMissing(msg, profile.reviewerAgent)) {
+        if (!/not found/i.test(msg)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
+        const fallback = await runGeneric()
+        if (fallback != null) noteReviewerAgentNotFound(profile, msg.slice(0, 160))
+        return fallback
+      }
       reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
       log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
       return await runGeneric()

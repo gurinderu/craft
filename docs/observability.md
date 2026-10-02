@@ -87,8 +87,9 @@ rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsaf
 adversarial-review records `{size, lenses, indexed, batch}`; see each
 workflow's `logRun`/record assembly for the exact fields.
 When a craft agent type was not registered in the session, `review` records `reviewerAgentUnavailable[]`
-(`{id, agent, error}` per profile whose reviewer agent was missing) and `reviewerAgentFallbacks` (lens
-dispatches per profile that came back empty and were answered by the generic subagent); `rust-audit`
+(the ids of the profiles whose reviewer agent was missing) and `reviewerAgentFallbacks` (lens
+dispatches per profile answered by the generic subagent after the agent came back empty or with an
+unrecognised "not found"); `rust-audit`
 records `agentUnavailable[]` (agent types) and `agentFallbacks` (dispatches per agent type answered by
 the generic subagent after the agent came back empty or with an unrecognised "not found"). The two
 shapes differ; nothing reads them yet.

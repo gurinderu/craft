@@ -932,12 +932,14 @@ function isAgentTypeMissing(msg, agent) {
 
 // The report section. `missing`: [{ agent, what, error }] — an agent type the engine learned is not
 // registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
-// `emptied`: [{ agent, count, what }] — dispatches that came back EMPTY from the agent and were re-run
-// on the generic subagent (an unregistered agent on some runtimes, or a transient failure) — said
-// softly, without the install line. Empty string when there is nothing to say.
+// `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
+// came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
+// threw a "not found" isAgentTypeMissing does not recognise (the harness's wording for an unregistered
+// type is unobserved, #116) — said softly, without the install line, the error quoted. Empty string
+// when there is nothing to say.
 /**
  * @param {{ agent: string, what: string, error?: string }[]} missing
- * @param {{ agent: string, count: number, what: string }[]} emptied
+ * @param {{ agent: string, count: number, what: string, error?: string }[]} emptied
  * @returns {string}
  */
 function agentUnavailableSection(missing, emptied) {
@@ -946,7 +948,9 @@ function agentUnavailableSection(missing, emptied) {
   if (!hard.length && !soft.length) return ''
   const lines = [
     ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} went to the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${String(x.error).slice(0, 160)})` : ''}`),
-    ...soft.map(x => `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
+    ...soft.map(x => x.error
+      ? `- \`${x.agent}\` failed with "${String(x.error).slice(0, 160)}" on ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent in wording this engine does not recognise, or a missing model or tool).`
+      : `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
   ]
   const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
@@ -956,6 +960,8 @@ function agentUnavailableSection(missing, emptied) {
 const agentTypeMissing = new Map()      // agent type -> the error the engine saw
 /** @type {Record<string, number>} */
 const agentTypeEmptied = {}             // agent type -> dispatches that came back empty and the generic subagent answered
+/** @type {Map<string, { count: number, error: string }>} */
+const agentTypeNotFound = new Map()     // agent type -> dispatches that threw an unrecognised "not found" and the generic subagent answered
 /**
  * @param {string} prompt
  * @param {AgentOptions} [opts]  the sandbox's closed option set — a misspelt key fails the type check
@@ -983,7 +989,7 @@ async function safeAgent(prompt, opts = {}) {
     if (!isAgentTypeMissing(msg, at)) {
       if (!/not found/i.test(msg)) throw e
       const fallback = await agent(prompt, generic)
-      if (fallback != null) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
+      if (fallback != null) agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
       return fallback
     }
     agentTypeMissing.set(at, msg)
@@ -993,9 +999,18 @@ async function safeAgent(prompt, opts = {}) {
 }
 const agentSection = () => agentUnavailableSection(
   [...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
-  Object.entries(agentTypeEmptied).filter(([a]) => !agentTypeMissing.has(a))
-    .map(([agent, count]) => ({ agent, count, what: 'dimension dispatch(es)' })),
+  [
+    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count, what: 'dimension dispatch(es)' })),
+    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
+  ].filter(x => !agentTypeMissing.has(x.agent)),
 )
+// The record counts both kinds of answered fallback per agent type.
+const agentFallbackCounts = () => {
+  /** @type {Record<string, number>} */
+  const out = { ...agentTypeEmptied }
+  for (const [a, x] of agentTypeNotFound) out[a] = (out[a] || 0) + x.count
+  return out
+}
 
 // `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
 // session sits. Accepting it silently is the failure this family exists to end — the caller names
@@ -1552,7 +1567,7 @@ const auditRecord = {
   // Agent types that were not registered (so their dimensions ran on the generic subagent) and
   // dispatches that came back empty and went generic — realm @nick/craft #116.
   agentUnavailable: [...agentTypeMissing.keys()].sort(),
-  agentFallbacks: { ...agentTypeEmptied },
+  agentFallbacks: agentFallbackCounts(),
   outputTokens: budget.spent(),
 }
 await logRun(auditRecord)
