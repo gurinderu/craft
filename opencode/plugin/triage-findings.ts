@@ -36,75 +36,107 @@ const MAX_FINDINGS = 40
 // can see is exactly how that recurs.
 export const VALIDATION_MS = 5 * 60_000
 
+// The walk's state across lines: the items so far, the furniture skipped, and the open fence if any.
+interface SplitState {
+  items: string[]
+  skipped: number
+  inFence: boolean
+  open: boolean // whether the last item is still accepting continuation lines
+  pending: string[] // lines held inside a fence that may turn out never to close
+  openedWith: string // the exact marker that opened the current block, so only its match can close it
+}
+
+// A fence DELIMITER is a line that opens or closes a block — not any line that happens to start
+// with backticks. `\`\`\`cargo test\`\`\` fails on main` opens and closes an inline span on one
+// line; toggling on it swallowed every finding after it, silently, because `dropped` stayed 0 so
+// the loud "N were NOT triaged" banner never fired. That is a loss path this file INVENTED: on
+// the previous behaviour a fence could not lose a finding, and the test at the top of the test
+// file says a wrongly-dropped line is the expensive error. The property is "an opener has a
+// partner", not "the line starts with a fence".
+// Returns the delimiter's marker, or undefined when the line is not a delimiter.
+function fenceDelimiter(l: string): string | undefined {
+  const marker = l.match(/^(`{3,}|~{3,})/)?.[1]
+  return marker !== undefined && !l.slice(marker.length).includes(marker.charAt(0).repeat(3)) ? marker : undefined
+}
+
+// A delimiter met inside a block.
+// A closer must match its opener in CHARACTER and be at least as long — the CommonMark rule, and
+// the other half of the property. Without it a ```` fence wrapping a ``` example was closed by
+// the inner marker, and the findings after it were discarded as "code" with `dropped` still 0,
+// so the loud banner never fired. Same silent loss as the inline-span defect, by the other door.
+function delimiterInFence(s: SplitState, marker: string, l: string): void {
+  const closes = marker.charAt(0) === s.openedWith.charAt(0) && marker.length >= s.openedWith.length
+  if (closes) {
+    s.inFence = false
+    s.pending.length = 0 // it really did close: what it held was code
+    return
+  }
+  // A shorter or different marker inside a block is content, not a closer.
+  s.skipped++
+  s.pending.push(l)
+}
+
+// Fence handling for one line; true when the line belonged to a fence (a delimiter or a line inside one).
+function fenceStep(s: SplitState, l: string): boolean {
+  const marker = fenceDelimiter(l)
+  if (marker !== undefined && !s.inFence) {
+    s.inFence = true
+    s.openedWith = marker
+    return true
+  }
+  if (marker !== undefined) {
+    delimiterInFence(s, marker, l)
+    return true
+  }
+  if (!s.inFence) return false
+  if (l.length) { s.skipped++; s.pending.push(l) }
+  return true
+}
+
+// Furniture: a horizontal rule, a table's |---|---| rule, a lone bold heading.
+function isFurniture(l: string): boolean {
+  return /^([-*_])\1{2,}$/.test(l.replace(/\s+/g, "")) || /^\|[\s|:-]*\|$/.test(l) || /^\*\*[^*]+\*\*$/.test(l)
+}
+
+function startsItem(l: string): boolean {
+  return /^[-*+]\s+\S/.test(l) || /^\d+[.)]\s+\S/.test(l) || /^\|.*\|$/.test(l)
+}
+
+// One line outside every fence.
+function contentStep(s: SplitState, l: string): void {
+  // A blank line ends an item. This is what makes a PARAGRAPH one finding instead of one per line:
+  // markdown wraps at column zero, so "indented means continuation" was true of code and false of
+  // prose — and an ordinary multi-KB report then saturated the cap on paragraph fragments alone,
+  // spending forty child sessions on half-sentences while real findings past the cap were dropped.
+  if (!l.length) { s.open = false; return }
+  if (/^#{1,6}\s/.test(l)) { s.open = false; return }
+  if (isFurniture(l)) {
+    s.skipped++
+    s.open = false
+    return
+  }
+  if (startsItem(l)) { s.items.push(l); s.open = true; return }
+  // Anything else continues the item above it — including a line at column zero, which is what a
+  // wrapped bullet and a wrapped paragraph both look like. Only when no item is open does it start
+  // one, so a paragraph becomes a single finding rather than one per line.
+  if (s.open && s.items.length) { s.items[s.items.length - 1] += ` ${l}` } else { s.items.push(l); s.open = true }
+}
+
 export function splitFindings(blob: string): { findings: string[]; dropped: number; skipped: number } {
-  const raw = blob.split("\n")
-  const items: string[] = []
-  let skipped = 0
-  let inFence = false
-  let open = false // whether the last item is still accepting continuation lines
-  const pending: string[] = [] // lines held inside a fence that may turn out never to close
-  let openedWith = "" // the exact marker that opened the current block, so only its match can close it
-  for (const line of raw) {
+  const s: SplitState = { items: [], skipped: 0, inFence: false, open: false, pending: [], openedWith: "" }
+  for (const line of blob.split("\n")) {
     const l = line.trim()
-    // A fence DELIMITER is a line that opens or closes a block — not any line that happens to start
-    // with backticks. `\`\`\`cargo test\`\`\` fails on main` opens and closes an inline span on one
-    // line; toggling on it swallowed every finding after it, silently, because `dropped` stayed 0 so
-    // the loud "N were NOT triaged" banner never fired. That is a loss path this file INVENTED: on
-    // the previous behaviour a fence could not lose a finding, and the test at the top of the test
-    // file says a wrongly-dropped line is the expensive error. The property is "an opener has a
-    // partner", not "the line starts with a fence".
-    // A closer must match its opener in CHARACTER and be at least as long — the CommonMark rule, and
-    // the other half of the property. Without it a ```` fence wrapping a ``` example was closed by
-    // the inner marker, and the findings after it were discarded as "code" with `dropped` still 0,
-    // so the loud banner never fired. Same silent loss as the inline-span defect, by the other door.
-    const marker = l.match(/^(`{3,}|~{3,})/)?.[1]
-    const isDelimiter = marker !== undefined && !l.slice(marker.length).includes(marker.charAt(0).repeat(3))
-    if (isDelimiter && !inFence) {
-      inFence = true
-      openedWith = marker
-      continue
-    }
-    if (isDelimiter && inFence) {
-      const closes = marker.charAt(0) === openedWith.charAt(0) && marker.length >= openedWith.length
-      if (closes) {
-        inFence = false
-        pending.length = 0 // it really did close: what it held was code
-        continue
-      }
-      // A shorter or different marker inside a block is content, not a closer.
-      skipped++
-      pending.push(l)
-      continue
-    }
-    if (inFence) { if (l.length) { skipped++; pending.push(l) } continue }
-    // A blank line ends an item. This is what makes a PARAGRAPH one finding instead of one per line:
-    // markdown wraps at column zero, so "indented means continuation" was true of code and false of
-    // prose — and an ordinary multi-KB report then saturated the cap on paragraph fragments alone,
-    // spending forty child sessions on half-sentences while real findings past the cap were dropped.
-    if (!l.length) { open = false; continue }
-    if (/^#{1,6}\s/.test(l)) { open = false; continue }
-    // Furniture: a horizontal rule, a table's |---|---| rule, a lone bold heading.
-    if (/^([-*_])\1{2,}$/.test(l.replace(/\s+/g, "")) || /^\|[\s|:-]*\|$/.test(l) || /^\*\*[^*]+\*\*$/.test(l)) {
-      skipped++
-      open = false
-      continue
-    }
-    const starts = /^[-*+]\s+\S/.test(l) || /^\d+[.)]\s+\S/.test(l) || /^\|.*\|$/.test(l)
-    if (starts) { items.push(l); open = true; continue }
-    // Anything else continues the item above it — including a line at column zero, which is what a
-    // wrapped bullet and a wrapped paragraph both look like. Only when no item is open does it start
-    // one, so a paragraph becomes a single finding rather than one per line.
-    if (open && items.length) { items[items.length - 1] += ` ${l}` } else { items.push(l); open = true }
+    if (!fenceStep(s, l)) contentStep(s, l)
   }
   // An unterminated fence means the input was truncated or the marker was decorative. Swallowing the
   // remainder would lose findings on a guess; re-reading it as content costs at worst some noise,
   // and noise is visible where a missing Critical is not.
-  if (inFence && pending.length) {
-    for (const l of pending) items.push(l)
-    skipped -= pending.length
+  if (s.inFence && s.pending.length) {
+    for (const l of s.pending) s.items.push(l)
+    s.skipped -= s.pending.length
   }
-  const findings = items.slice(0, MAX_FINDINGS)
-  return { findings, dropped: Math.max(0, items.length - MAX_FINDINGS), skipped }
+  const findings = s.items.slice(0, MAX_FINDINGS)
+  return { findings, dropped: Math.max(0, s.items.length - MAX_FINDINGS), skipped: s.skipped }
 }
 
 export async function runTriageFindings(ctx: PluginCtx, args: { locator: string }): Promise<string> {
