@@ -31,7 +31,9 @@ jobs:
       # green. It type-checks only — no emit — and does not cover the .md agents/commands beside it.
       - name: Typecheck opencode plugin
         run: npm run check:types
-      # tsc --checkJs over lib/*.mjs (tests excluded; config in lib/tsconfig.json), non-strict for now.
+      # tsc --checkJs over lib/*.mjs (tests excluded) in two tiers: lib/tsconfig.json, non-strict, over
+      # every module; then lib/tsconfig.strict.json at maximum strictness over a file list that only
+      # grows — every module inlined into workflows/ must be on it (check-workflows fails otherwise).
       # The compiler is the opencode plugin's pinned tsc (needs `npm ci --prefix opencode/plugin` above);
       # the Node typings are the root's @types/node 22.x, matching the Node this code runs on — the
       # plugin's newer typings would let post-22 APIs through. Types come from JSDoc; nothing shipped changes.
