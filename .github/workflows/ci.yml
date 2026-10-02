@@ -79,3 +79,23 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           claude plugin validate . --strict
+
+  # Static analysis with semgrep's public registry rule sets over the code craft ships and runs
+  # (lib/, opencode/plugin/, workflows/). It found nothing real on adoption — it is here for code
+  # not yet written (realm @nick/craft, #138). A separate job, not a step in `test`: it is a Python
+  # tool in its own pinned image and fails on its own. Not reproducible, like the dependency audit
+  # (#141): `--config p/...` fetches the registry's rules as of the run, so a rule added upstream can
+  # turn a commit red that was green before; the image tag pins the engine, not the rules.
+  # A known false positive is suppressed in place with `nosemgrep: <rule-id>` and its reason.
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.178.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: semgrep (public rule sets)
+        run: >-
+          semgrep scan --metrics=off --error
+          --config p/javascript --config p/typescript --config p/nodejs
+          --config p/security-audit --config p/secrets --config p/default
+          lib opencode/plugin workflows
