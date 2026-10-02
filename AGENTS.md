@@ -120,8 +120,8 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | Unit tests | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` |
 | Lint (zero-warning, identical to CI) | `npm run lint` — read the raw exit code |
 | Typecheck the OpenCode plugin | `npm run check:types` (needs `npm ci --prefix opencode/plugin` once) |
-| Typecheck `lib/*.mjs` (checkJs, JSDoc types, Node 22 typings): non-strict over all, maximum strictness over `lib/tsconfig.strict.json` `files` — a module inlined into `workflows/` must be on that list | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
-| Syntax-check workflow scripts; byte-compare inlined regions | `node lib/check-workflows.mjs` (`--fix` regenerates the regions) |
+| Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests excluded) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
+| Syntax-check workflow scripts; byte-compare inlined regions; inlined code is strictly typed | `node lib/check-workflows.mjs` (needs `npm ci --prefix opencode/plugin` for tsc; `--fix` regenerates the regions) |
 | Skills and agents (frontmatter + `craft:<slug>` refs) | `node lib/check-skills.mjs` |
 | Delivery parity of review agents | `node lib/check-delivery-parity.mjs` |
 | OpenCode agent/command frontmatter | `npm run check:opencode-frontmatter` |
