@@ -999,7 +999,10 @@ async function safeAgent(prompt, opts = {}) {
     }
     agentTypeMissing.set(at, msg)
     log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
-    return agent(prompt, generic)
+    const fallback = await agent(prompt, generic)
+    // Dead on the generic path too: the dimension is NOT RUN, and its line names the agent's error.
+    if (!fallback) throw e
+    return fallback
   }
 }
 const agentSection = () => agentUnavailableSection(
