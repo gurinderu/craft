@@ -145,8 +145,14 @@ run is enriched — and it does not enter the `index.jsonl` projection.
 
 `node lib/analyze-runs.mjs` surfaces it per workflow beside the three-state pool, leading with
 `cacheRead` because that IS the spend. A record with no `cost` was never enriched: it contributes
-nothing to the cost average and is **not** read as a zero-cost run (`costRuns` counts the enriched
-runs apart), the same "not measured is not zero" stance the pool split takes for a missing `round`.
+nothing to the cost average and is **not** read as a zero-cost run (`costRuns` counts the usable
+enriched runs apart), the same "not measured is not zero" stance the pool split takes for a missing
+`round`. A cost is judged by one rule shared with `--round-pairs` (`costProblem` in
+`lib/run-record.mjs`): a cost that is not an object, or has a field present but not a non-negative
+number, is **malformed**; one with `skipped > 0` is **partial** (a lower bound); one with nothing
+measured (no positive total, or parts that sum to zero) counts as not enriched. Malformed and partial
+costs stay out of the per-run averages and are counted in `costMalformedRuns` / `costPartialRuns`,
+named on the report line. A record with no `total` uses the sum of its four token parts.
 
 ## How it is produced
 
