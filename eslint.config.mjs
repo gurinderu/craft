@@ -35,6 +35,25 @@ const typeAware = {
   '@typescript-eslint/restrict-plus-operands': 'error',
 }
 
+// Cyclomatic complexity (ESLint's classic count): 20 for every linted function, tests included. A file
+// that held a function above 20 when the rule landed is capped at its own maximum then, so none grows
+// further; lower a cap when its function is split, drop it when the file meets 20.
+const COMPLEXITY = 20
+const complexityCeilings = {
+  'lib/craft-log-run.mjs': 61,
+  'lib/analyze-runs.mjs': 52,
+  'lib/check-workflow-types.mjs': 35,
+  'lib/loop-state.mjs': 32,
+  'lib/engine-any-sites.mjs': 31,
+  'opencode/plugin/triage-findings.ts': 25,
+  'lib/lens-scope.mjs': 24,
+  'lib/engine-clock-rule.mjs': 23,
+  'lib/inline-regions.mjs': 23,
+  'lib/run-record.mjs': 22,
+  'lib/adversarial-judge.mjs': 21,
+  'lib/preflight-probes.mjs': 21,
+}
+
 export default [
   {
     ignores: [
@@ -89,4 +108,9 @@ export default [
     languageOptions: { parserOptions: { project: ['./opencode/plugin/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
     rules: typeAware,
   },
+  {
+    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'opencode/plugin/*.ts', 'knip.config.js'],
+    rules: { complexity: ['error', COMPLEXITY] },
+  },
+  ...Object.entries(complexityCeilings).map(([file, max]) => ({ files: [file], rules: { complexity: ['error', max] } })),
 ]
