@@ -74,6 +74,8 @@ export default {
         'lib/craft-log-run.mjs!',
         // Run by hand (AGENTS.md, "Commands": not a gate).
         'lib/analyze-runs.mjs!',
+        // Run by CI's quality-delta job and by hand (AGENTS.md, "Commands"): a signal, not a gate.
+        'lib/quality-delta.mjs!',
         // The gate's own checkers (CI workflow, package.json scripts).
         'lib/check-*.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
