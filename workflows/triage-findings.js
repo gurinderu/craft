@@ -136,6 +136,7 @@ const argv = A
 const pr = argv['pr'] ? String(argv['pr']) : ''
 const report = argv['report'] ? String(argv['report']) : ''
 const base = argv['base'] ? String(argv['base']) : ''
+/** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? argv['priorLedger'] : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // this engine has no `repo` argument (see the refusal above) and always triages the checkout the
@@ -658,7 +659,14 @@ log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 // stable composite id; reused for dedup, ledger, and idempotent re-runs
 /** @param {SourcedFinding} f */
 const idOf = f => `${f.source}::${f.location || 'no-loc'}::${f.title}`
-const priorById = new Map(priorLedger.map(e => [e.stable_id, e]))
+// The prior ledger arrives in args, so an entry is read only as far as it is an object, its fields as text.
+/** @type {Map<string, LedgerEntry>} */
+const priorById = new Map()
+for (const e of priorLedger) {
+  if (!e || typeof e !== 'object') continue
+  const x = /** @type {Record<string, unknown>} */ (e)
+  priorById.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? '') })
+}
 
 // ---- Validate ------------------------------------------------------------
 phase('Validate')

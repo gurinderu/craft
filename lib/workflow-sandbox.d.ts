@@ -1,7 +1,8 @@
 // The globals the Workflow tool's sandbox hands an engine script, as the tool documents them (the
 // workflow-authoring reference; realm @nick/craft, node #134). lib/engine-harness.mjs reproduces the
-// same eight for tests. `args` stays `unknown` where the reference says `any`: every engine normalises
-// it before use, so the stricter type costs nothing and catches a read before normalisation.
+// same eight for tests. `args`, and each `pipeline` stage's `prev`/`item`, stay `unknown` where the
+// reference says `any`: an engine narrows them before use, so the stricter type costs nothing and
+// catches a read before narrowing (and the engines' `any` count would otherwise see every such read).
 // Every option is optional; an explicit `undefined` reads as absent, as an options bag does.
 type AgentOptions = {
   label?: string | undefined, phase?: string | undefined, schema?: object | undefined, model?: string | undefined,
@@ -18,7 +19,7 @@ declare function agent(prompt: string, opts?: AgentOptions): Promise<unknown>
 /** A barrier; a thunk that throws resolves to `null` in its slot, and the call itself never rejects. */
 declare function parallel<T>(thunks: Array<() => T | Promise<T>>): Promise<Array<Awaited<T> | null>>
 /** Each item through every stage, no barrier; a stage that throws drops that item to `null`. */
-declare function pipeline(items: unknown[], ...stages: Array<(prev: any, item: any, index: number) => unknown>): Promise<unknown[]>
+declare function pipeline(items: unknown[], ...stages: Array<(prev: unknown, item: unknown, index: number) => unknown>): Promise<unknown[]>
 declare function phase(title: string): void
 declare function log(message: string): void
 /** Runs another workflow inline; one level only; throws on an unknown name. */

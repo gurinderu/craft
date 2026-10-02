@@ -668,7 +668,7 @@ const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
 function parseOptionalRequest(raw) {
   if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
   if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
-  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean)
+  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
   return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
 }
 const optionalRequest = parseOptionalRequest(A['optional'])
@@ -689,6 +689,7 @@ const optionalDispatched = new Set()
 // An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
 // critic is the same model whose spend this pass deliberately took out of model hands), but the
 // signal is real and must reach the reader rather than die in the filter.
+/** @type {Set<string>} */
 const optionalNamedByCritic = new Set()
 const optionalTally = () => optionalTallyFrom(results, optionalDispatched, optionalRequested)
 // Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
@@ -2646,6 +2647,7 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule, cancel } = {}) {
   // The single promise every attempt races. It is created once, so a second attempt inherits
   // whatever is left of the first one's wait rather than starting a fresh one — no subtraction, no
   // clock, and nothing to get wrong when the host's timers drift.
+  /** @type {Promise<typeof DEADLINE_HIT>} */
   const hit = capped === 0
     ? Promise.resolve(DEADLINE_HIT)
     : new Promise(resolve => { resolveHit = resolve })
@@ -4304,13 +4306,15 @@ const ROLLUP_MAX = 3
 function rollupPool(pool, profile) {
   const ids = profile.rollupRuleIds || []
   if (!ids.length) return pool
+  /** @type {Map<string, Finding[]>} */
   const groups = new Map()
   const out = []
   for (const f of pool) {
     const id = f['ruleId'] || ''
     if (!ids.includes(id)) { out.push(f); continue }
     const k = `${f['source'] || ''}::${id}`
-    const g = groups.get(k) || (groups.set(k, []), groups.get(k))
+    let g = groups.get(k)
+    if (!g) { g = []; groups.set(k, g) }
     g.push(f)
   }
   for (const [, g] of groups) {
@@ -4319,7 +4323,7 @@ function rollupPool(pool, profile) {
     if (sorted.length <= ROLLUP_MAX) { out.push(...sorted); continue }
     const keep = sorted.slice(0, ROLLUP_MAX)
     const folded = sorted.slice(ROLLUP_MAX)
-    const rep = folded[0]
+    const rep = /** @type {Finding} */ (folded[0])   // folded is non-empty: sorted.length > ROLLUP_MAX
     const where = folded.slice(0, 6).map((/** @type {Finding} */ f) => `${f['file'] || '?'}:${f['line'] || 0}`).join(', ')
     out.push(...keep, {
       ...rep,
@@ -4341,11 +4345,14 @@ function rollupPool(pool, profile) {
 const SAME_SPOT_OVERLAP = 0.6
 /** @param {Finding[]} pool */
 function sameSpotGroups(pool) {
+  /** @type {Map<string, number[]>} */
   const bySpot = new Map()
   pool.forEach((/** @type {Finding} */ f, /** @type {number} */ i) => {
     if (!f || !f['file']) return // no location → nothing to key on; leave it to the model pass
     const k = `${String(f['file']).toLowerCase()}:${f['line'] || 0}`
-    ;(bySpot.get(k) || (bySpot.set(k, []), bySpot.get(k))).push(i)
+    const at = bySpot.get(k)
+    if (at) at.push(i)
+    else bySpot.set(k, [i])
   })
   const groups = []
   for (const [, idxs] of bySpot) {
@@ -4818,10 +4825,13 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   }))
 
   // Batched tier: group by file so one agent reads one file's context once.
+  /** @type {Map<string, Finding[]>} */
   const byFile = new Map()
   for (const f of route.batch) {
     const k = f['file'] || '?'
-    ;(byFile.get(k) || (byFile.set(k, []), byFile.get(k))).push(f)
+    const at = byFile.get(k)
+    if (at) at.push(f)
+    else byFile.set(k, [f])
   }
   /** @type {Finding[][]} */
   const groups = []
@@ -4928,7 +4938,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     return parallel([cull(0), auth]).then(async vs => {
       const opening = vs.filter(Boolean)
       if (opening.length === 2 && votesAgree(opening[0], opening[1])) return tierFromVotes(f, opening)
-      const rest = await parallel(Array.from({ length: Math.max(0, n1 - 1) }, (_unused, i) => cull(i + 1)))
+      const rest = await parallel(Array.from({ length: Math.max(0, n1 - 1) }, (/** @type {unknown} */ _unused, /** @type {number} */ i) => cull(i + 1)))
       return tierFromVotes(f, opening.concat(rest.filter(Boolean)))
     })
   })
@@ -5146,6 +5156,7 @@ async function reviewProfile(profile) {
   // with "agent type '<x>' not found". Both failure shapes are handled — a thrown /not found/ and
   // a null return (some runtimes signal an unknown agent type that way). Record the real failure
   // reason so INCOMPLETE reporting doesn't have to guess (budget vs registry vs death).
+  /** @type {Map<string, string>} */
   const lensFailures = new Map()
   let reviewerAgentMissing = false
   // Keyed by DISPATCH, not by lens name. Once a lens fans out over slices there are several live
@@ -5325,7 +5336,9 @@ async function reviewProfile(profile) {
   // comment still claimed a role, which is how a reader comes to believe there are two ledgers that
   // might disagree. A dispatch that was expected and never came back is a hole whatever its
   // siblings did, and that is the whole of it.
+  /** @type {Set<string>} */
   const expectedDispatches = new Set()
+  /** @type {Set<string>} */
   const returnedDispatches = new Set()
   const lensRounds = []
   // Lenses the completeness critic added and that were dispatched — on the record, because they change
@@ -5457,7 +5470,7 @@ async function reviewProfile(profile) {
     // only key its failure that way. Without the fallback every sliced hole read "died without an
     // error" even when the retry died with a captured message — losing the diagnosis for exactly
     // the sliced case, which is what keying by dispatch was introduced to fix.
-    const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(String(k).split(' :: ')[0]) || 'returned no result (skipped or died without an error)'
+    const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(k.split(' :: ')[0] ?? k) || 'returned no result (skipped or died without an error)'
     const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
     notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
     log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
@@ -5992,6 +6005,7 @@ if (priorRound) {
       log('Re-review: the prior round was fingerprinted under a different, known basis — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on (expected once, right after an upgrade that changed the basis)')
     }
   } else if (priorTombstones.length) {
+    /** @type {Map<string, LedgerAnswer>} */
     const tombstoneByFp = new Map()
     for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
     let regressions = 0
@@ -6002,7 +6016,8 @@ if (priorRound) {
       if (!hit) return
       const why = String(hit.why || '')
       const m = /round (\d+)/.exec(why)
-      const r = m ? m[1] : (hit.round || '?')
+      // A LEDGER_ITEM carries no round, so this falls through to '?' unless a ledger extra supplies one.
+      const r = m ? m[1] : (/** @type {{ round?: unknown }} */ (hit).round || '?')
       if (/^dismissed /.test(why)) {
         f['why'] = `${f['why']} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
         reraised++
@@ -6151,12 +6166,14 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}
 UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, null, 2)}`,
   { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
 // Without a schema the answer is the agent's final text; anything else is no report at all — but a
-// LIVE agent that answered with a non-string did not die, and the fallback must not say it did.
+// LIVE agent that answered with a non-string, or with blank text, did not die, and the fallback must
+// not say it did: every non-null answer that reaches the fallback is an unusable one.
 ).then(text => {
-  if (typeof text === 'string') return text
+  if (typeof text === 'string' && text.trim()) return text
   if (text != null) {
     synthesisUnusable = true
-    log(`⚠️ synthesis agent answered with ${Array.isArray(text) ? 'an array' : `a value of type ${typeof text}`}, not report text — discarded; using the mechanical fallback report`)
+    const what = typeof text === 'string' ? 'blank text' : Array.isArray(text) ? 'an array' : `a value of type ${typeof text}`
+    log(`⚠️ synthesis agent answered with ${what}, not report text — discarded; using the mechanical fallback report`)
   }
   return null
 })

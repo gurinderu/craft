@@ -1212,7 +1212,7 @@ function dispatchDim(dimension, promise, opts = {}) {
   const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
   return promise
     .then(r => dimResult(dimension, r, deadReason, opts.evidenceGate ?? true))
-    .catch(e => { log(threw((e && e.message) || e)); return null })
+    .catch((/** @type {unknown} */ e) => { log(threw((e && /** @type {{ message?: unknown }} */ (e).message) || e)); return null })
 }
 
 /** @type {Array<() => Promise<DimResult | null | undefined> | null>} */
