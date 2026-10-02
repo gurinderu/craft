@@ -2466,10 +2466,33 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 // The review still happens — but without the agent's rubric, and the operator otherwise sees only a
 // failed probe. Stated above the verdict, with the fix; recorded on the run record.
 const reviewerAgentUnavailable = []
-// Only an error that is about the AGENT TYPE counts: a missing model, a file or tool not found inside
-// the agent, or an HTTP 404 also say "not found", and an "install the plugin" line for those would send
-// the operator to the wrong fix.
-const isAgentTypeMissing = (msg, agent) => /not found/i.test(msg) && (/agent type/i.test(msg) || msg.includes(agent))
+// The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
+// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection
+// Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
+// or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
+// operator to the wrong fix.
+function isAgentTypeMissing(msg, agent) {
+  const m = String(msg ?? '')
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+}
+
+// The report section. `missing`: [{ agent, what, error }] — an agent type the engine learned is not
+// registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
+// `emptied`: [{ agent, count, what }] — dispatches that came back EMPTY from the agent and were re-run
+// on the generic subagent (an unregistered agent on some runtimes, or a transient failure) — said
+// softly, without the install line. Empty string when there is nothing to say.
+function agentUnavailableSection(missing, emptied) {
+  const hard = Array.isArray(missing) ? missing : []
+  const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
+  if (!hard.length && !soft.length) return ''
+  const lines = [
+    ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} ran on the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${String(x.error).slice(0, 160)})` : ''}`),
+    ...soft.map(x => `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
+  ]
+  const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
+  return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
+}
+// <<< craft-inline
 function noteReviewerAgentMissing(profile, error) {
   if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent, error: String(error || '').slice(0, 160) })
 }
@@ -2477,18 +2500,16 @@ function noteReviewerAgentMissing(profile, error) {
 // subagent. On some runtimes that is how an unknown agent type looks; it can also be a transient
 // death, so it is not taken as "missing" — but it is said, per profile, rather than staying silent.
 const reviewerAgentFallbacks = {}
+const reviewerAgentNames = {}           // profile id -> its reviewer agent type, for the report line
 function noteReviewerAgentFallback(profile) {
   reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
+  reviewerAgentNames[profile.id] = profile.reviewerAgent
 }
-const reviewerAgentSection = () => {
-  const soft = Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
-  if (!reviewerAgentUnavailable.length && !soft.length) return ''
-  const lines = [
-    ...reviewerAgentUnavailable.map(x => `- ${x.id}: \`${x.agent}\` is not registered in this session, so every ${x.id} lens ran on the generic subagent, without that agent's rubric — this review is weaker than a normal one, not broken.${x.error ? ` (${x.error})` : ''}`),
-    ...soft.map(([id, n]) => `- ${id}: the reviewer agent returned nothing for ${n} lens dispatch(es), which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
-  ]
-  return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${reviewerAgentUnavailable.length ? 'Enable the plugin in this project (\`/plugin install craft@craft\`, project or local scope) and re-run to review with it.\n' : ''}\n`
-}
+const reviewerAgentSection = () => agentUnavailableSection(
+  reviewerAgentUnavailable.map(x => ({ agent: x.agent, what: `every ${x.id} lens`, error: x.error })),
+  Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
+    .map(([id, n]) => ({ agent: reviewerAgentNames[id] || `${id} reviewer agent`, count: n, what: 'lens dispatch(es)' })),
+)
 
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
