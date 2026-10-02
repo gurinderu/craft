@@ -126,9 +126,8 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | OpenCode agent/command frontmatter | `npm run check:opencode-frontmatter` |
 | Eval corpus shape | `node lib/check-evals.mjs` |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
-| Run-store analysis | `node lib/analyze-runs.mjs` (`--round-pairs` for re-review cost pairs) |
 
-There is no formatter and no pre-commit hook: run every row above before pushing; CI runs the same steps (one job, `test`). What each gate does not cover — realm `@nick/craft`, #121.
+There is no formatter and no pre-commit hook: run every row above before pushing; CI runs the same steps (one job, `test`). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
 
 ## Project structure
 - `skills/` — 32 skills, one directory each with a `SKILL.md`.
@@ -176,7 +175,7 @@ There is no formatter and no pre-commit hook: run every row above before pushing
 - **Conventional commits** (`feat:`/`fix:`/`chore:`/`refactor:`/`docs:`/`test:`) — release-please parses them, so the prefix carries the version; branches `feat/…`, `fix/…`, `chore/…`; PR titles in the same format.
 - **No co-author trailer and no "Generated with Claude Code"** — neither on commits nor in PR bodies.
 - **Gate before push**: every row of "Commands"; there is no pre-commit hook and no single gate call yet (cover, "Gate").
-- **A branch does not live without a PR** — once the cold review has returned its verdict (above): push, then open the PR in the same move (draft if the work is unfinished).
+- **Push, review, then PR**: push the branch so the reviewer can read `origin/<branch>`; open the PR once the cold review's verdict is in and its findings are worked (above). A branch whose review is done does not live without a PR.
 - **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (one job, `test`; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
 
