@@ -108,7 +108,8 @@ jobs:
       - name: Check duplicated code (jscpd)
         run: npm run check:dup
       # The mutation floor (lib/mutation-floor.json, the weekly Stryker run's `thresholds.break`) may only
-      # rise: on a pull request it is compared with the base's (lib/check-mutation-floor.mjs). The checkout
+      # rise and its `mutate` only widen: on a pull request the file is compared with the base's, and
+      # stryker.config.mjs must apply it (lib/check-mutation-floor.mjs). The checkout
       # holds only the merge commit, so the base is fetched first; a base that cannot be read fails the step.
       - name: Check the mutation floor does not fall
         if: github.event_name == 'pull_request'
