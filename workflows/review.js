@@ -5263,9 +5263,13 @@ async function reviewProfile(profile) {
       // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
       // as "died without an error" — and any sibling slice could overwrite it.
       if (!isAgentTypeMissing(msg, profile.reviewerAgent)) {
-        if (!/not found/i.test(msg)) { lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160)); return null }
+        // Recorded first, so a generic run that also returns nothing still reports this error (a generic
+        // throw overwrites it with its own). Not memoized: a real unregistered type in unknown wording
+        // costs one failed agent dispatch per lens — the price of not guessing at the text (#116).
+        lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160))
+        if (!/not found/i.test(msg)) return null
         const fallback = await runGeneric()
-        if (fallback != null) noteReviewerAgentNotFound(profile, msg.slice(0, 160))
+        if (fallback != null) { lensFailures.delete(dispatchKey(lens, slice)); noteReviewerAgentNotFound(profile, msg.slice(0, 160)) }
         return fallback
       }
       reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
