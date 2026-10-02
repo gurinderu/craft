@@ -2630,26 +2630,6 @@ fi
 `
 }
 
-// The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
-// readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
-// review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
-// THE STAGING FILE IS PER-RUN, AND THAT IS LOAD-BEARING. It used to be the fixed `/tmp/craft-rec.json`
-// in one engine; extracting the prompt propagated that path to all four, which is three new ways to
-// be wrong at once. (a) `cat >` follows a symlink, so any other local uid can pre-create that name
-// pointing at a file this user owns and have the next run truncate it — an arbitrary-overwrite
-// primitive on a shared or CI box, and `/tmp`'s sticky bit does not stop CREATING an entry. (b) The
-// record holds every finding title, path and quoted snippet from the reviewed repo, and a default
-// umask leaves it world-readable, never removed. (c) A fixed name carries no run id, while craft's
-// own fan-out puts several runs in flight — rust-audit dispatches one nested review per changed crate
-// through `parallel` — so between one agent's `cat >` and its own redirect another can overwrite the
-// file: run A files run B's record under A's identity, the script succeeds, the readback verifies,
-// `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
-// created without following anything. The exit code is carried past the cleanup so a failed write
-// still reports as one.
-// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
-// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
-// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
-// repository the run never looked at — a lie in the one field the store is keyed by.
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
@@ -2731,12 +2711,6 @@ function quietly(call) {
   }
 }
 
-// A dead logger agent and a failed script are the same outcome — no record on disk — so both are
-// reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
-// The checkpoint prompt was a hand-copy of the record one, and copies drift the moment a fix lands
-// on the original: the fixed staging path, the prelude ordering and the exit-code carry each had to
-// be applied twice, and each time the second copy was the one nearly missed. Same builder, one
-// difference — the checkpoint carries a phase and asks for the runDir back.
 function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
   // DERIVED from the payload, never passed alongside it. As a plumbing argument with a silent ''
   // default it was forgettable, and it was duly forgotten at one of three call sites — deleting it

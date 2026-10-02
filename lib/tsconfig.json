@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "types": ["node"],
+    "typeRoots": ["../opencode/plugin/node_modules/@types"],
+    "skipLibCheck": true
+  },
+  "include": ["*.mjs"],
+  "exclude": ["*.test.mjs"]
+}
