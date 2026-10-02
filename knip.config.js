@@ -79,6 +79,9 @@ export default {
         // Run by CI's quality-delta job and by hand (AGENTS.md, "Commands"): a signal, not a gate. CI-only
         // with every devDependency installed, so not a consumer-side entry (lib/shipped-entries.mjs).
         'lib/quality-delta.mjs!',
+        // Run by the weekly mutation workflow's failure step (.github/workflows/mutation.yml), CI-only like
+        // the one above: not imported, and production mode does not read the workflows.
+        'lib/mutation-score.mjs!',
         // The gate's own checkers (CI workflow, package.json scripts).
         'lib/check-*.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin

@@ -1,6 +1,12 @@
 // Mutation testing (realm @nick/craft, #146): which lib/ logic the unit tests actually pin. Run weekly by
 // .github/workflows/mutation.yml, never per PR and never as a gate. Dev tooling only, never shipped (#124).
 // Run: `npm run test:mutation`, or narrow with `-- --mutate lib/x.mjs`.
+import fs from 'node:fs'
+import { parseFloor } from './lib/check-mutation-floor.mjs'
+
+// The floor below which the run fails: committed, and it may only rise (lib/check-mutation-floor.mjs).
+const floor = parseFloor(fs.readFileSync(new URL('./lib/mutation-floor.json', import.meta.url), 'utf8'))
+
 export default {
   testRunner: 'vitest',
   plugins: ['@stryker-mutator/vitest-runner'],
@@ -18,9 +24,10 @@ export default {
   // much as the other 10028 together and to push CI's run past its timeout. Ignored, they are reported as
   // such and left out of the score.
   ignoreStatic: true,
-  // The score was 72.6% when this was set (static mutants ignored). Below `break` the run exits non-zero,
-  // which turns the weekly job red — a visible drop, not a blocked merge: the job is no PR check.
-  thresholds: { high: 80, low: 70, break: 60 },
+  // The score was 72.6% when the floor was set at 70 (static mutants ignored). Below `break` the run exits
+  // non-zero, which turns the weekly job red and opens an issue — a visible drop, not a blocked merge: the
+  // job is no PR check. `high` follows a floor raised past it, since Stryker refuses `high` below `low`.
+  thresholds: { high: Math.max(80, floor), low: floor, break: floor },
   reporters: ['clear-text', 'progress-append-only', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation/mutation.html' },
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },

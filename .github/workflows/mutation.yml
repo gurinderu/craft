@@ -2,16 +2,19 @@ name: Mutation testing
 
 # Weekly Stryker run over lib/ (realm @nick/craft, #146): how much of lib/'s logic the unit tests pin.
 # Not a PR check and not a gate: it runs on a schedule and by hand, never on push or pull_request, so a
-# red run here blocks no merge. It turns red when the score falls below stryker.config.mjs's
-# `thresholds.break` — that red is the signal, read in the report artifact, not a failure to fix in place.
+# red run here blocks no merge. It turns red when the score falls below the floor in lib/mutation-floor.json
+# (stryker.config.mjs's `thresholds.break`; it may only rise, which CI's `test` job holds on pull requests),
+# and a red run opens an issue — that is the signal, read in the report artifact, not a failure to fix in place.
 on:
   schedule:
     # Sundays 03:17 UTC: a quiet hour for the shared runners, off the top of the hour most crons pick.
     - cron: '17 3 * * 0'
   workflow_dispatch:
 
+# issues: write is this workflow's alone — the step that opens an issue for a red run needs it.
 permissions:
   contents: read
+  issues: write
 
 # A manual run while the weekly one is still going waits for it rather than racing it.
 concurrency:
@@ -23,7 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     # The run measured 29 minutes on 15 workers (about 440 worker-minutes, static mutants ignored); on four
     # workers that is near two hours, and the slower runner cores take more. Four hours, not the six-hour cap,
-    # so a hung run is cut off sooner.
+    # so a hung run is cut off sooner. The Stryker step has its own, shorter limit: a step that times out
+    # fails, so the steps after it still run — a job that times out is cancelled, and opens no issue.
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +42,7 @@ jobs:
       # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
       # the child processes (git, tsc) its tests spawn.
       - name: Stryker over lib/
+        timeout-minutes: 225
         run: npm run test:mutation -- --concurrency 4
       # Uploaded on a red run too (below `break`). Stryker writes both files only when the run completes,
       # so a run cut by the timeout has nothing to upload under any `if:` — its job log, with the
@@ -52,3 +57,20 @@ jobs:
             reports/mutation/mutation.json
           if-no-files-found: warn
           retention-days: 90
+      # A red run — below lib/mutation-floor.json, timed out, or failed to install — opens one issue, unless
+      # an open issue already carries the same title (the score is in it, so a different score is a new one).
+      - name: Open an issue for the red run
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          score=$(node lib/mutation-score.mjs reports/mutation/mutation.json) || score='no report'
+          title="Weekly mutation run failed ($score)"
+          if gh issue list --state open --limit 200 --search 'in:title "Weekly mutation run failed"' --json title --jq '.[].title' | grep -Fxq -- "$title"; then
+            echo "An open issue already reads: $title"
+            exit 0
+          fi
+          printf 'The weekly mutation run failed: %s\n\nScore: %s (the floor is in `lib/mutation-floor.json`). Report: the `mutation-report` artifact of the run, when there is one — a run cut by its timeout, or one that failed before Stryker finished, leaves none.\n' \
+            "$RUN_URL" "$score" > issue.md
+          gh issue create --title "$title" --body-file issue.md

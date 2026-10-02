@@ -107,6 +107,16 @@ jobs:
       # dropped with a warning (lib/check-dup.test.mjs pins the pattern to the fence regexes).
       - name: Check duplicated code (jscpd)
         run: npm run check:dup
+      # The mutation floor (lib/mutation-floor.json, the weekly Stryker run's `thresholds.break`) may only
+      # rise: on a pull request it is compared with the base's (lib/check-mutation-floor.mjs). The checkout
+      # holds only the merge commit, so the base is fetched first; a base that cannot be read fails the step.
+      - name: Check the mutation floor does not fall
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node lib/check-mutation-floor.mjs --base "$BASE_SHA"
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
       # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.
       - name: Validate plugin manifests
