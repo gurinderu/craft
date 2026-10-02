@@ -87,6 +87,8 @@ jobs:
   # (#141): `--config p/...` fetches the registry's rules as of the run, so a rule added upstream can
   # turn a commit red that was green before; the image tag pins the engine, not the rules.
   # A known false positive is suppressed in place with `nosemgrep: <rule-id>` and its reason.
+  # `--timeout 0`: a rule that times out on a file is skipped with exit 0 — a skipped check reading as a
+  # clean one; with no per-rule deadline every rule finishes.
   semgrep:
     runs-on: ubuntu-latest
     container:
@@ -95,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: semgrep (public rule sets)
         run: >-
-          semgrep scan --metrics=off --error
+          semgrep scan --metrics=off --error --timeout 0
           --config p/javascript --config p/typescript --config p/nodejs
           --config p/security-audit --config p/secrets --config p/default
           lib opencode/plugin workflows
