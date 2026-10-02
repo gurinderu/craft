@@ -748,34 +748,43 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
  */
 function makeThrottledRunner(deps) {
   const { agent, parallel, log, markNotRun, batch: BATCH, retryBatch, maxRetryRounds, budget, budgetFloor } = deps
-  return async function runThrottled(jobs, tag, phaseTitle, { reportUnjudged = true } = {}) {
-    let pending = jobs
-    let done = 0
-    /** @type {ThrottledJob[] | null} */
-    let unfinished = null
-    for (let round = 0; round <= maxRetryRounds && pending.length && !unfinished; round++) {
-      const size = round === 0 ? BATCH : retryBatch
-      if (round > 0) log(`${tag} retry round ${round}: ${pending.length} failed calls, batches of ${size}`)
-      /** @type {ThrottledJob[]} */
-      const failed = []
-      for (let i = 0; i < pending.length; i += size) {
-        if (budget.total && budget.remaining() < budgetFloor) {
-          const skipped = pending.length - i + failed.length
-          log(`Budget guard: ~${Math.round(budget.remaining() / 1000)}k tokens left -> stopping ${tag}, ${skipped} calls skipped`)
-          unfinished = pending.slice(i).concat(failed)
-          break
-        }
-        const slice = pending.slice(i, i + size)
-        const res = await parallel(slice.map(j => () =>
-          agent(j.prompt, { label: (round ? `retry${round}:` : '') + j.label, phase: phaseTitle, schema: j.schema, effort: j.effort })))
-        res.forEach((v, k) => {
-          if (v) { /** @type {ThrottledJob} */ (slice[k]).onResult(v); done++ } else failed.push(/** @type {ThrottledJob} */ (slice[k]))
-        })
-        log(`${tag}: ${done}/${jobs.length} calls done`)
+  // One round over `pending` in batches of `size`: the jobs that produced no result, and — when the
+  // budget guard stopped the round — every job left unfinished (null when it ran to the end).
+  /**
+   * @param {ThrottledJob[]} pending
+   * @param {number} size
+   * @param {number} round
+   * @param {string} tag
+   * @param {string} phaseTitle
+   * @param {{ done: number, jobs: ThrottledJob[] }} progress  `done` counts across rounds
+   * @returns {Promise<{ failed: ThrottledJob[], unfinished: ThrottledJob[] | null }>}
+   */
+  const runRound = async (pending, size, round, tag, phaseTitle, progress) => {
+    /** @type {ThrottledJob[]} */
+    const failed = []
+    for (let i = 0; i < pending.length; i += size) {
+      if (budget.total && budget.remaining() < budgetFloor) {
+        const skipped = pending.length - i + failed.length
+        log(`Budget guard: ~${Math.round(budget.remaining() / 1000)}k tokens left -> stopping ${tag}, ${skipped} calls skipped`)
+        return { failed, unfinished: pending.slice(i).concat(failed) }
       }
-      if (!unfinished) pending = failed
+      const slice = pending.slice(i, i + size)
+      const res = await parallel(slice.map(j => () =>
+        agent(j.prompt, { label: (round ? `retry${round}:` : '') + j.label, phase: phaseTitle, schema: j.schema, effort: j.effort })))
+      res.forEach((v, k) => {
+        if (v) { /** @type {ThrottledJob} */ (slice[k]).onResult(v); progress.done++ } else failed.push(/** @type {ThrottledJob} */ (slice[k]))
+      })
+      log(`${tag}: ${progress.done}/${progress.jobs.length} calls done`)
     }
-    if (!unfinished) unfinished = pending
+    return { failed, unfinished: null }
+  }
+  /**
+   * @param {ThrottledJob[]} unfinished
+   * @param {string} tag
+   * @param {number} total
+   * @param {boolean} reportUnjudged
+   */
+  const settle = (unfinished, tag, total, reportUnjudged) => {
     // A job that never produced a verdict must leave a TRACE where the verdict would have gone, not
     // only a line in the run record. Its absence is what the judge has to see: a panel silently one
     // vote short reads as a whole panel, and a 1-1 split then counts as a refutation.
@@ -783,7 +792,22 @@ function makeThrottledRunner(deps) {
     // `total` lets the entry tell a gap apart from a pass that judged nothing — including the pass
     // stopped by the budget guard before it spawned its first agent, which returned an empty
     // leftover list and therefore reported as clean.
-    if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished, { total: jobs.length })) markNotRun(e.label, e.note, e.incomplete)
+    if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished, { total })) markNotRun(e.label, e.note, e.incomplete)
+  }
+  return async function runThrottled(jobs, tag, phaseTitle, { reportUnjudged = true } = {}) {
+    let pending = jobs
+    const progress = { done: 0, jobs }
+    /** @type {ThrottledJob[] | null} */
+    let unfinished = null
+    for (let round = 0; round <= maxRetryRounds && pending.length && !unfinished; round++) {
+      const size = round === 0 ? BATCH : retryBatch
+      if (round > 0) log(`${tag} retry round ${round}: ${pending.length} failed calls, batches of ${size}`)
+      const ran = await runRound(pending, size, round, tag, phaseTitle, progress)
+      unfinished = ran.unfinished
+      if (!unfinished) pending = ran.failed
+    }
+    if (!unfinished) unfinished = pending
+    settle(unfinished, tag, jobs.length, reportUnjudged)
     return unfinished
   }
 }
