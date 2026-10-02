@@ -20,18 +20,6 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
-      # The OpenCode plugin's dependencies are the only ones a consumer installs (craft itself ships
-      # none), so a known high-severity advisory in its LOCKED production closure fails the build.
-      # Deliberately not reproducible: a new advisory, or an unreachable registry, can turn a commit red
-      # that was green (realm @nick/craft, #141). Consumers resolve floating transitives via Bun, so
-      # green here is not a claim about their install.
-      - name: Audit shipped dependencies
-        run: npm audit --prefix opencode/plugin --omit=dev --audit-level=high
-      # Dev tooling never reaches a consumer: an advisory there is reported, not blocking, so a new
-      # advisory in a linter does not turn unrelated PRs red. Fix with `npm audit fix` in its own PR.
-      - name: Audit dev tooling (report only)
-        continue-on-error: true
-        run: npm audit --audit-level=high
       # Lint reaches only the .mjs files under lib/ and opencode/plugin/. workflows/*.js cannot be
       # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
       # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs — the
@@ -91,3 +79,20 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           claude plugin validate . --strict
+      # The OpenCode plugin's dependencies are the only ones a consumer installs (craft itself ships
+      # none), so a known high-severity advisory in its LOCKED production closure fails the build.
+      # Last in the job, so a red audit never hides the other checks' verdict on the diff.
+      # Deliberately not reproducible: a new advisory, or an unreachable registry, can turn a commit red
+      # that was green (realm @nick/craft, #141). Consumers resolve floating transitives via Bun, so
+      # green here is not a claim about their install.
+      - name: Audit shipped dependencies
+        run: npm audit --prefix opencode/plugin --omit=dev --audit-level=high
+      # Dev tooling never reaches a consumer: an advisory there is reported — a warning annotation on the
+      # run and the job summary — not blocking, so a new advisory in a linter does not turn unrelated PRs
+      # red. Fix with `npm audit fix` in its own PR.
+      - name: Audit dev tooling (report only)
+        run: |
+          if ! npm audit --audit-level=high > dev-audit.txt 2>&1; then
+            echo "::warning title=npm audit (dev tooling)::high-severity advisory in dev tooling; fix with npm audit fix in its own PR"
+            { echo '### npm audit (dev tooling, not blocking)'; echo '```'; tail -n 40 dev-audit.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi

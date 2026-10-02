@@ -128,7 +128,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | OpenCode agent/command frontmatter | `npm run check:opencode-frontmatter` |
 | Eval corpus shape | `node lib/check-evals.mjs` |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
-| Audit the OpenCode plugin's locked production closure (blocking at high; not reproducible — realm #141) | `npm audit --prefix opencode/plugin --omit=dev --audit-level=high` |
+| Audit the OpenCode plugin's locked production closure (blocking at high in CI; needs the network, so offline it is CI's to run — not reproducible, realm #141) | `npm audit --prefix opencode/plugin --omit=dev --audit-level=high` |
 
 There is no formatter and no pre-commit hook: run every row above before pushing; CI runs the same steps (one job, `test`). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
 
