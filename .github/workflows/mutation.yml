@@ -1,0 +1,51 @@
+name: Mutation testing
+
+# Weekly Stryker run over lib/ (realm @nick/craft, #146): how much of lib/'s logic the unit tests pin.
+# Not a PR check and not a gate: it runs on a schedule and by hand, never on push or pull_request, so a
+# red run here blocks no merge. It turns red when the score falls below stryker.config.mjs's
+# `thresholds.break` — that red is the signal, read in the report artifact, not a failure to fix in place.
+on:
+  schedule:
+    # Sundays 03:17 UTC: a quiet hour for the shared runners, off the top of the hour most crons pick.
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A manual run while the weekly one is still going waits for it rather than racing it.
+concurrency:
+  group: mutation
+  cancel-in-progress: false
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    # The run measured 29 minutes on 15 workers (about 440 worker-minutes, static mutants ignored); on four
+    # workers that is near two hours, and the slower runner cores take more. Four hours, not the six-hour cap,
+    # so a hung run is cut off sooner.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dev tooling
+        run: npm ci
+      # inPlace mode runs the tsc-backed tests against the real tree, which read the plugin's tsc.
+      - name: Install opencode plugin deps
+        run: npm ci --prefix opencode/plugin
+      # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
+      # the child processes (git, tsc) its tests spawn.
+      - name: Stryker over lib/
+        run: npm run test:mutation -- --concurrency 4
+      - name: Upload the mutation report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: |
+            reports/mutation/mutation.html
+            reports/mutation/mutation.json
+          if-no-files-found: warn
+          retention-days: 90
