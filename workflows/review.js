@@ -6715,17 +6715,29 @@ if (!floorPremiseHeld) {
 // duplicate of a fresh computation.
 /** @param {Finding} f @param {string | undefined} disposition @param {string} [tier] */
 const toLedgerEntry = (f, disposition, tier) => ({
-  fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '',
+  ...ledgerLocation(f),
   severity: f['severity'], tier: tier || f['tier'] || 'suspected', disposition: disposition || f['disposition'] || 'open',
   source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
-  ...(Array.isArray(f['sources']) ? { sources: /** @type {unknown[]} */ (f['sources']) } : {}),
+  ...ledgerSources(f),
+  ...ledgerWhyRef(f),
+})
+/** The leading fields of a ledger entry: its fingerprint and where it sits. @param {Finding} f */
+function ledgerLocation(f) {
+  return { fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '' }
+}
+/** A ledger entry's `sources`, present only when the finding carries an array of them. @param {Finding} f */
+function ledgerSources(f) {
+  return Array.isArray(f['sources']) ? { sources: /** @type {unknown[]} */ (f['sources']) } : {}
+}
+/** @param {Finding} f */
+function ledgerWhyRef(f) {
   // A CARRIED finding arrived from the prior-round transport with a SHORTENED `why` and a `whyRef`
   // pointing at the record its FULL `why` lives in (its birth). Persist that pointer so the short-why/
   // full-by-reference chain survives into the next round. A FRESH finding (born this round, straight
   // from a lens) has no `whyRef`: its full `why` is persisted here verbatim and NO pointer is written.
-  ...(f['whyRef'] && typeof f['whyRef'].record === 'string' && typeof f['whyRef'].fp === 'string'
-    ? { whyRef: { record: f['whyRef'].record, fp: f['whyRef'].fp } } : {}),
-})
+  return f['whyRef'] && typeof f['whyRef'].record === 'string' && typeof f['whyRef'].fp === 'string'
+    ? { whyRef: { record: f['whyRef'].record, fp: f['whyRef'].fp } } : {}
+}
 // A tombstone for a resolved/retired prior: the same ledger shape, `disposition:'closed'`, but its
 // `why` is a fixed ORIGIN+round marker rather than the original rationale — a tombstone's only job is
 // an equality test (the recidivism check on load) plus telling a fixed defect that REGRESSED
@@ -6841,15 +6853,27 @@ function fallbackReport() {
     // `notRun` LIVE, not the `incompleteNotes` snapshot taken before the verdict existed: the
     // revoked-premise path pushes into `notRun` afterwards, and a fallback rendered from the stale
     // snapshot would print a clean verdict over findings the same run has just declared unchecked.
-    `${emoji} — ${cause}; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
+    `${emoji} — ${cause}; mechanical fallback report (findings listed unmerged).${fallbackIncompleteClause()}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
-    ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
-    ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
+    ...fallbackRereviewTracks(bySev, fmt),
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
     ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
     ...(unverified.length ? [``, `## Unverified (not checked)`, UNVERIFIED_PREAMBLE, ...bySev(unverified).map(fmt)] : []),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n')
+}
+
+/** The fallback verdict line's incompleteness clause, read from the live `notRun`. */
+function fallbackIncompleteClause() {
+  return [...notRun, ...coverageNotes].length ? ` · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${[...notRun, ...coverageNotes].join('; ')}.` : ''
+}
+
+/** A re-review's still-open and regressed tracks in the fallback report. @param {(a: Finding[]) => Finding[]} bySev @param {(f: Finding) => string} fmt @returns {string[]} */
+function fallbackRereviewTracks(bySev, fmt) {
+  return [
+    ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
+    ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
+  ]
 }
 
 // APPENDED AFTER SYNTHESIS, because the synthesis prompt is composed before the verdict exists and
