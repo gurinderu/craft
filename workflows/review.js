@@ -212,6 +212,13 @@ let scopeDetail = ''
 // the drop happened before all of them. Appended to the synthesized report too rather than asked of
 // the synthesis model: what the review DID NOT cover is not something a prompt may forget.
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
+// >>> craft-inline lib/path-segments.mjs pathSegments
+// A path as normalized SEGMENTS, for containment decided segment by segment rather than on a raw
+// string prefix: `/r/./crates/../crates/core` is inside `/r`, and `/r-evil` is not. Both separators
+// split, empty and `.` segments vanish, and an interior `..` pops its parent. A `..` with nothing left
+// to pop is KEPT as a literal segment, so a path that climbs out stays visibly out — a caller refuses
+// it (`segs[0] === '..'`) or it fails to match a root, never reads as inside. No disk and no Node API
+// (the engines inline this into the sandbox): symlinks and case-insensitive filesystems are not seen.
 /** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
@@ -222,6 +229,7 @@ function pathSegments(p) {
   }
   return segs
 }
+// <<< craft-inline
 // The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
 /** @param {unknown} abs @param {unknown} repo */
 function relativeToRepo(abs, repo) {

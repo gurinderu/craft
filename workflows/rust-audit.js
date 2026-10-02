@@ -1125,6 +1125,13 @@ const repoRoot = typeof scout?.repoRoot === 'string' ? scout.repoRoot.trim() : '
 // same request as `crates/core`. No disk and no Node API here, so a symlinked or differently-cased
 // spelling stays unrepairable — such a crate is reported NOT RUN rather than reviewed unscoped.
 const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
+// >>> craft-inline lib/path-segments.mjs pathSegments
+// A path as normalized SEGMENTS, for containment decided segment by segment rather than on a raw
+// string prefix: `/r/./crates/../crates/core` is inside `/r`, and `/r-evil` is not. Both separators
+// split, empty and `.` segments vanish, and an interior `..` pops its parent. A `..` with nothing left
+// to pop is KEPT as a literal segment, so a path that climbs out stays visibly out — a caller refuses
+// it (`segs[0] === '..'`) or it fails to match a root, never reads as inside. No disk and no Node API
+// (the engines inline this into the sandbox): symlinks and case-insensitive filesystems are not seen.
 /** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
@@ -1135,6 +1142,7 @@ function pathSegments(p) {
   }
   return segs
 }
+// <<< craft-inline
 // The repo-relative crate directory, or null when it cannot be derived.
 /** @param {unknown} p */
 function crateScope(p) {
