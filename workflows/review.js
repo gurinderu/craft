@@ -663,7 +663,7 @@ EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote th
 Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits.`
 }
 
-// Admitted by a code signal, never by a floor. See `blanket()` in planFor: a blanket roster fill
+// Admitted by a code signal, never by a floor. See `blanketLenses()` in planFor: a blanket roster fill
 // says "nothing is known about this diff", which is not a reason to pay for the roster's most
 // expensive lens. `failure-windows` is gated on the scout having CHOSEN `reconciler` (controller
 // code); nothing else here yet, and the list exists so the next such lens has somewhere to be
@@ -713,7 +713,7 @@ function isContractOrSchemaPath(f) {
 //     confirmed findings into presumptive blockers. Letting it also buy three unrelated lenses
 //     would make one flag mean two things, and would deliver the optional pass to a caller who
 //     asked for something else.
-//   · The security-sensitive floor expands `blanket()`, and `blanket()` excludes the optional set
+//   · The security-sensitive floor expands `blanketLenses()`, and `blanketLenses()` excludes the optional set
 //     exactly as it excludes CONDITIONAL_LENSES. A floor is a statement of IGNORANCE about the
 //     diff, and ignorance is not a reason to buy the three lenses that measured worst.
 //   · Neither may silently DISABLE it either: an explicit `optional=` request is honoured on every
@@ -5497,43 +5497,49 @@ const RIGOR_BY_SIZE = {
 }
 const LENS_MODEL = 'opus'
 
-// ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
-/** @param {Profile} profile */
-async function reviewProfile(profile) {
-  // ---- Scout ----
-  const scout = await ragent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
-  // A dead/timed-out scout falls back to the CONSERVATIVE plan (all lenses, security floor → 3-vote),
-  // never a permissive one — but it must not read as a successful classification either: the fallback
-  // loses the scouted intent, churn and size, so it is logged loudly and carried into `notRun` so the
-  // verdict says INCOMPLETE rather than a clean Approve.
-  const scoutFailed = !scout
-  const scoutNotRun = scoutFailed
-    ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one`]
-    : []
+// ---- the per-profile plan: the scout's classification, then every floor and gate, in this order ----
+// Lenses a BLANKET expansion of the roster must not include. A lens is a full agent — the
+// dominant per-run cost — and `failure-windows` is the heaviest in the Rust roster: it enumerates
+// every mutating request on the changed path and plays out each adjacent pair. Its premise is a
+// code shape (a controller / reconcile loop), and its gate is the `reconciler` lens below. But it
+// also sits in `profile.lenses`, so every blanket fill of that list — the security-sensitive
+// rigor floor, the empty-lens fallback, and the conservative plan used when the scout DIED —
+// bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
+// A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
+// signal. The scout may still pick it deliberately; only the floors may not.
+// `admittedLens` is the ONE gate the optional set passes through, and it must sit under EVERY path
+// into the plan — the scout's own picks, the blanket fills, and therefore the security floor and
+// the empty-lens fallback that call `blanketLenses()`. There is a fourth path, far later and easy to
+// miss: the completeness critic on the synthesis phase, which composes from the lenses NOT
+// selected — by construction the whole optional set. It went ungated once and bought two of the
+// three on an ordinary large diff. It calls `admittedLens` too now; putting the gate anywhere but
+// under each of these leaves a door, because every one of them names lenses on its own signals.
+/** Whether a lens may enter the plan at all: the optional set only by an explicit request. @param {string} l */
+function admittedLens(l) {
+  return !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
+}
+
+/** The profile's roster as a blanket fill takes it: no conditional lens, nothing unrequested. @param {Profile} profile @returns {string[]} */
+function blanketLenses(profile) {
+  return profile.lenses.filter((/** @type {string} */ l) => !CONDITIONAL_LENSES.includes(l) && admittedLens(l))
+}
+
+/** @param {ScoutAnswer | null} scout @returns {keyof typeof RIGOR_BY_SIZE} */
+function rigorSize(scout) {
   // hasOwn, not truthiness: a bucket of "constructor" would index Object.prototype and pass.
-  const size = /** @type {keyof typeof RIGOR_BY_SIZE} */ (Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout?.sizeBucket : 'medium')
-  // Lenses a BLANKET expansion of the roster must not include. A lens is a full agent — the
-  // dominant per-run cost — and `failure-windows` is the heaviest in the Rust roster: it enumerates
-  // every mutating request on the changed path and plays out each adjacent pair. Its premise is a
-  // code shape (a controller / reconcile loop), and its gate is the `reconciler` lens below. But it
-  // also sits in `profile.lenses`, so every blanket fill of that list — the security-sensitive
-  // rigor floor, the empty-lens fallback, and the conservative plan used when the scout DIED —
-  // bought it on any Rust diff at all, which is the opposite of "find more without paying hugely".
-  // A blanket fill is a statement of IGNORANCE about the diff, and ignorance is not this lens's
-  // signal. The scout may still pick it deliberately; only the floors may not.
-  // `admitted` is the ONE gate the optional set passes through, and it must sit under EVERY path
-  // into the plan — the scout's own picks, the blanket fills, and therefore the security floor and
-  // the empty-lens fallback that call `blanket()`. There is a fourth path, far later and easy to
-  // miss: the completeness critic on the synthesis phase, which composes from the lenses NOT
-  // selected — by construction the whole optional set. It went ungated once and bought two of the
-  // three on an ordinary large diff. It calls `admitted` too now; putting the gate anywhere but
-  // under each of these leaves a door, because every one of them names lenses on its own signals.
-  const admitted = (/** @type {string} */ l) => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
-  const blanket = () => profile.lenses.filter((/** @type {string} */ l) => !CONDITIONAL_LENSES.includes(l) && admitted(l))
-  /** @type {Plan} */
-  const plan = {
+  return /** @type {keyof typeof RIGOR_BY_SIZE} */ (Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout?.sizeBucket : 'medium')
+}
+
+/** The lenses the scout picked that the roster has and the gate admits; a blanket fill when it picked none. @param {Profile} profile @param {ScoutAnswer | null} scout @returns {string[]} */
+function scoutPickedLenses(profile, scout) {
+  return scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => profile.lenses.includes(l) && admittedLens(l)) : blanketLenses(profile)
+}
+
+/** @param {Profile} profile @param {ScoutAnswer | null} scout @param {keyof typeof RIGOR_BY_SIZE} size @returns {Plan} */
+function initialPlan(profile, scout, size) {
+  return {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => profile.lenses.includes(l) && admitted(l)) : blanket()),
+    lenses: scoutPickedLenses(profile, scout),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -5543,11 +5549,24 @@ async function reviewProfile(profile) {
     spec,
     churn: scout?.churn ?? [],
   }
-  if (!plan.lenses.length) plan.lenses = blanket()
+}
+
+/** Adds a lens the plan lacks. @param {Plan} plan @param {string} l */
+function addMissingLens(plan, l) {
+  if (!plan.lenses.includes(l)) plan.lenses.push(l)
+}
+
+/** Adds a lens the plan lacks, if the profile's roster offers it. @param {Profile} profile @param {Plan} plan @param {string} l */
+function addOfferedLens(profile, plan, l) {
+  if (profile.lenses.includes(l)) addMissingLens(plan, l)
+}
+
+/** The lenses the plan must carry whatever the scout picked: the always set, and those the scout's own signals call for. @param {Profile} profile @param {ScoutAnswer | null} scout @param {Plan} plan */
+function addRequiredLenses(profile, scout, plan) {
   // "Always" lenses are enforced HERE, not left to the scout: smoke runs showed prompt-side
   // "always include X" gets dropped. 'intent' is the lens that catches correct-looking code
   // with wrong behavior — it runs at every size.
-  for (const l of (profile.alwaysLenses || [])) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
+  for (const l of (profile.alwaysLenses || [])) addOfferedLens(profile, plan, l)
   // `reconciler` in the plan IS the signal that this is controller code, and controller code is
   // where the windows between two committed writes live. Enforced here rather than in the scout
   // prompt for the same measured reason as the alwaysLenses loop above: a prompt-side "also include"
@@ -5557,26 +5576,37 @@ async function reviewProfile(profile) {
   // the plan let the floors back in through the gate's own door: the check passed, and the
   // conditional lens was conditional on nothing.
   const scoutedReconciler = Array.isArray(scout?.lenses) && scout.lenses.includes('reconciler')
-  if (scoutedReconciler && profile.lenses.includes('failure-windows') && !plan.lenses.includes('failure-windows')) plan.lenses.push('failure-windows')
-  if (strict && profile.lenses.includes('maintainability') && !plan.lenses.includes('maintainability')) plan.lenses.push('maintainability')
+  if (scoutedReconciler) addOfferedLens(profile, plan, 'failure-windows')
+  if (strict) addOfferedLens(profile, plan, 'maintainability')
+}
+
+/** The rigor floors: security, the size-driven lenses, and an explicit optional request. @param {Profile} profile @param {Plan} plan */
+function addRigorFloors(profile, plan) {
   // Security-sensitive rigor floor: don't let the size heuristic gate rigor on a security-touching change.
-  if (plan.securitySensitive) {
-    for (const l of blanket()) if (!plan.lenses.includes(l)) plan.lenses.push(l)
-    plan.verifyVotes = Math.max(plan.verifyVotes, 3)
-    plan.maxRounds = Math.max(plan.maxRounds, 2)
-  }
+  if (plan.securitySensitive) applySecurityFloor(profile, plan)
   // Negative-space lens where new reachable surface tends to appear.
-  if ((plan.securitySensitive || plan.sizeBucket === 'large') && !plan.lenses.includes('negative-space')) plan.lenses.push('negative-space')
+  if (plan.securitySensitive || plan.sizeBucket === 'large') addMissingLens(plan, 'negative-space')
   // Compat lens on large diffs too: changed serialized/persisted representations break other-versioned
   // readers (rolling deploy, already-stored rows) invisibly to the code-intrinsic lenses. Security-sensitive
   // diffs already get it via the all-lenses floor above (compat ∈ profile.lenses).
-  if (plan.sizeBucket === 'large' && profile.lenses.includes('compat') && !plan.lenses.includes('compat')) plan.lenses.push('compat')
+  if (plan.sizeBucket === 'large') addOfferedLens(profile, plan, 'compat')
   // An explicit request ADDS the lens; it does not merely permit it. A caller who writes
   // `optional=performance` is asking for the performance pass to RUN, not for the scout to be
   // allowed to pick it — and on a small diff with no security floor nothing else would ever put it
   // in the plan, so "permit" would have meant "nothing happens". Enforced in code, for the same
   // measured reason as the alwaysLenses loop above.
-  for (const l of optionalRequested) if (profile.lenses.includes(l) && !plan.lenses.includes(l)) plan.lenses.push(l)
+  for (const l of optionalRequested) addOfferedLens(profile, plan, l)
+}
+
+/** @param {Profile} profile @param {Plan} plan */
+function applySecurityFloor(profile, plan) {
+  for (const l of blanketLenses(profile)) addMissingLens(plan, l)
+  plan.verifyVotes = Math.max(plan.verifyVotes, 3)
+  plan.maxRounds = Math.max(plan.maxRounds, 2)
+}
+
+/** Drops each surface-gated lens whose surface the scout said is absent; returns what it dropped. @param {ScoutAnswer | null} scout @param {Plan} plan @returns {string[]} */
+function applySurfaceGate(scout, plan) {
   // realm @nick/craft #102: surface gate — the LAST word on plan.lenses, sitting AFTER every floor
   // that can add negative-space/compat/invariants (the scout's picks, the security/large floors, the
   // optional request above). Each of those three fires only where the diff touches the surface its
@@ -5594,11 +5624,43 @@ async function reviewProfile(profile) {
     if (surfaces[need] === false) { surfaceDropped.push(lens); return false }
     return true // fail-open: undefined/true keeps the lens
   })
+  return surfaceDropped
+}
+
+/** @param {Profile} profile @param {ScoutAnswer | null} scout @returns {{ plan: Plan, surfaceDropped: string[] }} */
+function planFromScout(profile, scout) {
+  const plan = initialPlan(profile, scout, rigorSize(scout))
+  if (!plan.lenses.length) plan.lenses = blanketLenses(profile)
+  addRequiredLenses(profile, scout, plan)
+  addRigorFloors(profile, plan)
+  const surfaceDropped = applySurfaceGate(scout, plan)
+  return { plan, surfaceDropped }
+}
+
+/** @param {Profile} profile @param {ScoutAnswer | null} scout @param {Plan} plan */
+function logScoutPlan(profile, scout, plan) {
+  log(`[${profile.id}] ${!scout ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
+}
+
+// ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
+/** @param {Profile} profile */
+async function reviewProfile(profile) {
+  // ---- Scout ----
+  const scout = await ragent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
+  // A dead/timed-out scout falls back to the CONSERVATIVE plan (all lenses, security floor → 3-vote),
+  // never a permissive one — but it must not read as a successful classification either: the fallback
+  // loses the scouted intent, churn and size, so it is logged loudly and carried into `notRun` so the
+  // verdict says INCOMPLETE rather than a clean Approve.
+  const scoutFailed = !scout
+  const scoutNotRun = scoutFailed
+    ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one`]
+    : []
+  const { plan, surfaceDropped } = planFromScout(profile, scout)
   // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. It rides
   // back on the profile's result; what ran is recorded at dispatch (`runLens`) and subtracted by
   // `optionalTally()`, because the plan is not final at this point — see the tally's definition.
   const optionalScope = profile.lenses.filter((/** @type {string} */ l) => OPTIONAL_LENSES.includes(l))
-  log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
+  logScoutPlan(profile, scout, plan)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
   // registered in this session (stale plugin registry), fall back to the generic workflow
@@ -5996,17 +6058,17 @@ Also note in one line anything else likely missed (a changed file no finding tou
       { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
     )
     criticNotes = critic?.notes ?? ''
-    // `admitted()` gates HERE too, and this is the fourth road into the plan, not a redundant check:
+    // `admittedLens()` gates HERE too, and this is the fourth road into the plan, not a redundant check:
     // `candidates` is by construction the lenses NOT selected, so the whole optional set is in it.
     // The critic is the same model whose hands this project deliberately took the spend out of
     // ("the scout classifies, the code budgets"); letting it re-order lenses on the synthesis phase
     // would return that spend through a side door and undo the boundary. The signal is not thrown
     // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
     const named = (critic?.missingLenses ?? []).filter((/** @type {string} */ l) => candidates.includes(l))
-    for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
-    const refusedOptional = named.filter((/** @type {string} */ l) => !admitted(l))
+    for (const l of named) if (!admittedLens(l)) optionalNamedByCritic.add(l)
+    const refusedOptional = named.filter((/** @type {string} */ l) => !admittedLens(l))
     if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
-    // realm @nick/craft #102: the surface gate BINDS the critic too, mirroring `admitted()` above and
+    // realm @nick/craft #102: the surface gate BINDS the critic too, mirroring `admittedLens()` above and
     // for the same reason. `candidates` is by construction the lenses NOT in the plan, so a lens the
     // gate dropped is in it — and re-dispatching it here would buy back exactly the whole-repo lens the
     // diff's absent surface said not to run, while `surfaceGateSection()` still reported it "not run"
@@ -6016,7 +6078,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     for (const l of named) if (surfaceDropped.includes(l)) surfaceGateNamedByCritic.add(l)
     const refusedSurface = named.filter((/** @type {string} */ l) => surfaceDropped.includes(l))
     if (refusedSurface.length) log(`[${profile.id}] Completeness critic named surface-gated lens(es) ${refusedSurface.join(', ')} — NOT dispatched (the diff does not touch the surface their defect class needs); reported as uncovered.`)
-    const followups = named.filter((/** @type {string} */ l) => admitted(l) && !surfaceDropped.includes(l))
+    const followups = named.filter((/** @type {string} */ l) => admittedLens(l) && !surfaceDropped.includes(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       criticFollowupLenses = [...followups]
