@@ -6,7 +6,9 @@ import sonarjs from 'eslint-plugin-sonarjs'
 import { COMPLEXITY_RULES } from './lib/complexity-rules.mjs'
 import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 
-// Lint scope: the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, and knip.config.js.
+// Lint scope: the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, knip.config.js and
+// .dependency-cruiser.mjs (both decide what a gate sees; tsc checks their JSDoc types — a test imports the
+// first, lib/tsconfig.json names the second, which a wildcard would skip as a dot-file).
 //   - workflows/*.js are NOT linted as files and cannot be: they carry top-level export + await + return
 //     and only parse inside the Workflow sandbox wrapper — the same reason `node --check` cannot
 //     read them. `node lib/check-workflows.mjs` compiles them, and `npm run check:types:workflows`
@@ -49,7 +51,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js'],
+    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js', '.dependency-cruiser.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
@@ -83,6 +85,11 @@ export default [
   // Core no-unused-vars reads a function type's parameter names as unused bindings; tsc's
   // noUnusedLocals/noUnusedParameters (opencode/plugin/tsconfig.json) already hold the real ones.
   { files: ['opencode/plugin/*.ts'], rules: { 'no-unused-vars': 'off' } },
+  // Under verbatimModuleSyntax (opencode/plugin/tsconfig.json) `import { type X } from 'p'` is not erased:
+  // it runs as `import {} from 'p'`, loading a package that a type-only reading takes for absent. Written
+  // `import type`, it is erased. .dependency-cruiser.mjs follows the same tsconfig and catches the
+  // runtime import too; this keeps the shape out of the source (realm @nick/craft, #145).
+  { files: ['opencode/plugin/*.ts'], rules: { '@typescript-eslint/no-import-type-side-effects': 'error' } },
   {
     files: ['lib/**/*.mjs'],
     languageOptions: { parserOptions: { project: ['./lib/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
@@ -95,7 +102,7 @@ export default [
   },
   // Every linted function, tests included; the engines get the same rules through lib/engine-lint.mjs.
   {
-    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'opencode/plugin/*.ts', 'knip.config.js'],
+    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'opencode/plugin/*.ts', 'knip.config.js', '.dependency-cruiser.mjs'],
     plugins: { sonarjs },
     rules: COMPLEXITY_RULES,
   },
