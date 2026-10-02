@@ -17,10 +17,16 @@ export const meta = {
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+/**
+ * @param {string} text
+ * @returns {{ options: Record<string, any>, pairs: number, ignored: string[] }}
+ */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  /** @type {Record<string, any>} */
   const out = {}
   let pairs = 0
+  /** @type {string[]} */
   const ignored = []
   let m
   let cursor = 0
@@ -33,9 +39,10 @@ function parseOptions(text) {
     // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
     // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
     // private helper reaches every engine as a ReferenceError on first use, with the gate green.
+    /** @param {string} k */
     const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
     if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
-    const key = m[2]
+    const key = /** @type {string} */ (m[2])
     // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
     // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
     // the logger agent is handed. The args string is model-composed, so this is the same threat shape
@@ -46,9 +53,9 @@ function parseOptions(text) {
     const quoted = m[4] ?? m[5]
     if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
-      out[key] = JSON.parse(m[3])
+      out[key] = JSON.parse(/** @type {string} */ (m[3]))
     } catch {
-      out[key] = m[3]
+      out[key] = /** @type {string} */ (m[3])
     }
     pairs++
   }
@@ -63,10 +70,13 @@ function parseOptions(text) {
  * `warn` is called with one human sentence per degradation and must not throw — engines pass their
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
+ *
+ * @param {unknown} args
+ * @param {(msg: string) => void} [warn]
+ * @returns {Record<string, any>}
  */
-/** @param {(msg: string) => void} [warn] */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return args
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, any>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -85,7 +95,7 @@ function normalizeArgs(args, warn = () => {}) {
       warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
       return {}
     } catch (e) {
-      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
       return {}
     }
   }
@@ -125,8 +135,14 @@ function normalizeArgs(args, warn = () => {}) {
 // both attempts AND carries the last refusal verbatim — its `Available:` listing is the diagnosis
 // that located the live failure at a consumer — so the caller fails loud instead of skipping the
 // review, and the record distinguishes a name that would not resolve from a run that died.
-/** @param {(msg: string) => void} [warn] */
+/**
+ * @param {(name: string, args: any) => Promise<any>} workflow
+ * @param {string} name
+ * @param {any} args
+ * @param {(msg: string) => void} [warn]
+ */
 async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+  /** @param {any} e */
   const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
   try {
     return await workflow(`craft:${name}`, args)
@@ -137,7 +153,7 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
       return await workflow(name, args)
     } catch (e2) {
       if (unresolved(e2)) {
-        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${(e2 && e2.message) || e2})`)
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${(/** @type {any} */ (e2) && /** @type {any} */ (e2).message) || e2})`)
       }
       throw e2
     }
