@@ -1,0 +1,35 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": [],
+  "files": [
+    "adversarial-judge.mjs",
+    "agent-deadline.mjs",
+    "agent-retry.mjs",
+    "audit-evidence.mjs",
+    "audit-verification.mjs",
+    "ledger-shards.mjs",
+    "lens-scope.mjs",
+    "nested-workflow.mjs",
+    "preflight-probes.mjs",
+    "profile-merge.mjs",
+    "review-adjudicate.mjs",
+    "review-coverage.mjs",
+    "review-waves.mjs",
+    "run-logging.mjs",
+    "run-record.mjs",
+    "throttled-runner.mjs",
+    "verify-economy.mjs",
+    "workflow-args.mjs"
+  ]
+}
