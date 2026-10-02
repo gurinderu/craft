@@ -3678,10 +3678,12 @@ function normalizeSymbol(symbol) {
  * @returns {string}
  */
 function fingerprint(f) {
-  const ruleId = f?.ruleId || ''
+  /** @type {FindingKey} */
+  const k = f || {}
+  const ruleId = k.ruleId || ''
   const basis = ruleId
-    ? [f?.file || '', normalizeSymbol(f?.symbol), ruleId].join('\0')
-    : [f?.file || '', normalizeSymbol(f?.symbol), '', titleShingle(f?.title)].join('\0')
+    ? [k.file || '', normalizeSymbol(k.symbol), ruleId].join('\0')
+    : [k.file || '', normalizeSymbol(k.symbol), '', titleShingle(k.title)].join('\0')
   let h = 5381
   for (let i = 0; i < basis.length; i++) h = ((h << 5) + h + basis.charCodeAt(i)) >>> 0
   return h.toString(16).padStart(8, '0')
@@ -3711,9 +3713,14 @@ function shingleOverlap(a, b) {
  * @returns {boolean}
  */
 function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
-  if ((cur?.file || '') !== (prior?.file || '')) return false
-  if ((cur?.ruleId || '') !== (prior?.ruleId || '')) return false
-  if ((cur?.symbol || '') && (prior?.symbol || '') && /** @type {FindingKey} */ (cur).symbol !== /** @type {FindingKey} */ (prior).symbol) return false
+  /** @type {(n: 'file' | 'ruleId' | 'symbol') => [unknown, unknown]} */
+  const field = n => [cur?.[n] || '', prior?.[n] || '']
+  const [curFile, priorFile] = field('file')
+  if (curFile !== priorFile) return false
+  const [curRule, priorRule] = field('ruleId')
+  if (curRule !== priorRule) return false
+  const [curSymbol, priorSymbol] = field('symbol')
+  if (curSymbol && priorSymbol && curSymbol !== priorSymbol) return false
   return shingleOverlap(cur?.title, prior?.title) >= threshold
 }
 
