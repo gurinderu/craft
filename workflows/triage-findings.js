@@ -25,10 +25,16 @@ export const meta = {
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+/**
+ * @param {string} text
+ * @returns {{ options: Record<string, any>, pairs: number, ignored: string[] }}
+ */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  /** @type {Record<string, any>} */
   const out = {}
   let pairs = 0
+  /** @type {string[]} */
   const ignored = []
   let m
   let cursor = 0
@@ -41,9 +47,10 @@ function parseOptions(text) {
     // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
     // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
     // private helper reaches every engine as a ReferenceError on first use, with the gate green.
+    /** @param {string} k */
     const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
     if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
-    const key = m[2]
+    const key = /** @type {string} */ (m[2])
     // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
     // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
     // the logger agent is handed. The args string is model-composed, so this is the same threat shape
@@ -54,9 +61,9 @@ function parseOptions(text) {
     const quoted = m[4] ?? m[5]
     if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
-      out[key] = JSON.parse(m[3])
+      out[key] = JSON.parse(/** @type {string} */ (m[3]))
     } catch {
-      out[key] = m[3]
+      out[key] = /** @type {string} */ (m[3])
     }
     pairs++
   }
@@ -71,10 +78,13 @@ function parseOptions(text) {
  * `warn` is called with one human sentence per degradation and must not throw — engines pass their
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
+ *
+ * @param {unknown} args
+ * @param {(msg: string) => void} [warn]
+ * @returns {Record<string, any>}
  */
-/** @param {(msg: string) => void} [warn] */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return args
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, any>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -93,7 +103,7 @@ function normalizeArgs(args, warn = () => {}) {
       warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
       return {}
     } catch (e) {
-      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
       return {}
     }
   }
@@ -205,25 +215,38 @@ const CRAFT_VERSION = '0.22.0' // x-release-please-version
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings tallyVerdicts
+/** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
+/**
+ * @param {unknown} findings
+ * @returns {Record<Severity, number>}
+ */
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
-    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[/** @type {Severity} */ (f.severity)] += 1
   }
   return by
 }
 
+/**
+ * @param {unknown} findings
+ * @returns {{ total: number, bySeverity: Record<Severity, number> }}
+ */
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
+/**
+ * @param {unknown} entries
+ * @returns {Record<TriageVerdict, number>}
+ */
 function tallyVerdicts(entries) {
   const t = { accept: 0, reject: 0, defer: 0, 'needs-decision': 0, conflict: 0 }
   for (const e of (Array.isArray(entries) ? entries : [])) {
-    if (e && Object.prototype.hasOwnProperty.call(t, e.verdict)) t[e.verdict] += 1
+    if (e && Object.prototype.hasOwnProperty.call(t, e.verdict)) t[/** @type {TriageVerdict} */ (e.verdict)] += 1
   }
   return t
 }
@@ -246,6 +269,7 @@ const LOGRUN_SCHEMA = {
   },
 }
 
+/** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
 // Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
@@ -263,6 +287,11 @@ function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
+/**
+ * @param {string | undefined} craftRoot
+ * @param {string} [version]
+ * @param {string} [repo]
+ */
 function loggerPrelude(craftRoot, version = '', repo = '') {
   // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
   // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
@@ -349,6 +378,7 @@ CRAFT_LOGGER=""
   // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
   // candidate can be re-pointed into the reviewed repository. Handing over the path that was
   // actually checked closes that window and costs nothing.
+  /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
   craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
@@ -429,6 +459,10 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+/**
+ * @param {any} record
+ * @param {{ phase?: string }} [opts]
+ */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
@@ -441,6 +475,7 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
+/** @param {any} res harness result of the logger agent (model output) */
 function logRunOutcome(res) {
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
@@ -455,12 +490,17 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
+/** @param {(prompt: any, opts: any) => Promise<any>} call a harness agent callback */
 function quietly(call) {
+  /**
+   * @param {any} prompt
+   * @param {any} opts
+   */
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
     } catch (e) {
-      return { __threw: String((e && e.message) || e) }
+      return { __threw: String((e && /** @type {{ message?: unknown }} */ (e).message) || e) }
     }
   }
 }
@@ -487,8 +527,9 @@ function quietly(call) {
 // Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
 // agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
 // structure — a heading, a verdict line — above the verdict the engine actually computed.
+/** @param {unknown} lost */
 function telemetryLostSection(lost) {
-  const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
+  const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
   // A record that LANDED while its run directory did not is a different fact from a record nobody
   // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the

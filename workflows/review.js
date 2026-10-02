@@ -23,10 +23,16 @@ export const meta = {
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+/**
+ * @param {string} text
+ * @returns {{ options: Record<string, any>, pairs: number, ignored: string[] }}
+ */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  /** @type {Record<string, any>} */
   const out = {}
   let pairs = 0
+  /** @type {string[]} */
   const ignored = []
   let m
   let cursor = 0
@@ -39,9 +45,10 @@ function parseOptions(text) {
     // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
     // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
     // private helper reaches every engine as a ReferenceError on first use, with the gate green.
+    /** @param {string} k */
     const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
     if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
-    const key = m[2]
+    const key = /** @type {string} */ (m[2])
     // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
     // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
     // the logger agent is handed. The args string is model-composed, so this is the same threat shape
@@ -52,9 +59,9 @@ function parseOptions(text) {
     const quoted = m[4] ?? m[5]
     if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
-      out[key] = JSON.parse(m[3])
+      out[key] = JSON.parse(/** @type {string} */ (m[3]))
     } catch {
-      out[key] = m[3]
+      out[key] = /** @type {string} */ (m[3])
     }
     pairs++
   }
@@ -69,10 +76,13 @@ function parseOptions(text) {
  * `warn` is called with one human sentence per degradation and must not throw — engines pass their
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
+ *
+ * @param {unknown} args
+ * @param {(msg: string) => void} [warn]
+ * @returns {Record<string, any>}
  */
-/** @param {(msg: string) => void} [warn] */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return args
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, any>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -91,7 +101,7 @@ function normalizeArgs(args, warn = () => {}) {
       warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
       return {}
     } catch (e) {
-      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
       return {}
     }
   }
@@ -296,6 +306,8 @@ ${rows.join('\n')}
 // that asks one source three times and declares one call passes here. What the audit buys is that
 // the honest path and the disciplined path are now the same path, and that a breach has to be
 // either declared or actively misreported — where before it was neither visible nor recorded.
+/** @param {{ probes?: any } | null | undefined} pf  the preflight agent's structured answer (model output)
+ * @returns {string[]} */
 function auditPreflightProbes(pf) {
   if (!pf) return []
   const out = []
@@ -316,6 +328,7 @@ function auditPreflightProbes(pf) {
     out.push('preflight declared an EMPTY `probes` list — a preflight consults something by definition, and an empty declaration is not a clean one (a partial run still reports what it did)')
     return out
   }
+  /** @type {Map<string, number>} */
   const seen = new Map()
   for (const p of probes) {
     const id = String((p && p.source) || '').trim()
@@ -348,7 +361,7 @@ function auditPreflightProbes(pf) {
     seen.set(id, (seen.get(id) ?? 0) + calls)
   }
   for (const [id, total] of seen) {
-    const { max, what } = PROBE_BUDGETS[id]
+    const { max, what } = PROBE_BUDGETS[/** @type {keyof typeof PROBE_BUDGETS} */ (id)]
     if (max === 0 && total > 0) out.push(`forbidden probe source \`${id}\` used ${total}×: ${what}`)
     else if (total > max) out.push(`probe source \`${id}\` used ${total}×, budget ${max}: ${what}`)
   }
@@ -662,12 +675,20 @@ const results = []
 // >>> craft-inline lib/profile-merge.mjs failedProfiles mergeGateStatus profilesRanLenses gateRecord passedProfiles savedSurfaceDrops surfaceGateRecord optionalTallyFrom
 // The profiles whose mechanical gate is red. One rule, shared by the early Block exit and the
 // recorded gate status, so the run that aborted and the record that says it aborted cannot disagree.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {ProfileResult[]}
+ */
 function failedProfiles(results) {
   return results.filter(r => r.gateStatus === 'fail')
 }
 
 // Worst-of across profiles: any red gate blocks the whole review (findings can't be trusted on a
 // broken tree); green only when every profile is green; anything else is unknown.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {'fail'|'pass'|'unknown'}
+ */
 function mergeGateStatus(results) {
   if (failedProfiles(results).length) return 'fail'
   return results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown'
@@ -680,11 +701,19 @@ function mergeGateStatus(results) {
 // because a lens recovered by resurrection is marked returned there but not in the round counts.
 // A gate-failed profile carries neither, contributing nothing. A profile whose every lens agent
 // died still reads false — an under-count of its saving, never an over-claim.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {boolean}
+ */
 function profilesRanLenses(results) {
   return results.some(r => (r.ranLenses || []).length > 0 || (r.lensRounds || []).some(x => x.returned > 0))
 }
 
 // The record's `gate` field: merged status, per-profile provenance, and red-but-not-ours checks.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {{status: string, provenance: string, carriedChecks: string[]}}
+ */
 function gateRecord(results) {
   return {
     status: mergeGateStatus(results),
@@ -696,6 +725,10 @@ function gateRecord(results) {
 // The profiles that got PAST their mechanical gate. What a red profile planned — surface-gate
 // drops, optional scope — was never in play: it aborts before any lens can run, so nothing it
 // planned is a saving or a purchase the run declined.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {ProfileResult[]}
+ */
 function passedProfiles(results) {
   return results.filter(r => r.gateStatus !== 'fail')
 }
@@ -704,6 +737,11 @@ function passedProfiles(results) {
 // profile that got PAST its mechanical gate, minus any lens that was dispatched in another profile.
 // A gate-failed profile's drops are not savings — none of its lenses could have run — so counting
 // them on a mixed run would over-claim. Each profile result carries its own `surfaceDropped`.
+/**
+ * @param {ProfileResult[]} results
+ * @param {Iterable<string>} dispatched
+ * @returns {string[]}
+ */
 function savedSurfaceDrops(results, dispatched) {
   const ran = new Set(dispatched)
   const dropped = new Set(passedProfiles(results).flatMap(r => r.surfaceDropped || []))
@@ -712,6 +750,11 @@ function savedSurfaceDrops(results, dispatched) {
 
 // The record's `surfaceGate` field: the saving above, the dispatched set, the critic-named lenses
 // that are still in the saving (a named lens that ran somewhere is not a gap), and `lensesRan`.
+/**
+ * @param {ProfileResult[]} results
+ * @param {{dispatched: Iterable<string>, namedByCritic: Iterable<string>}} opts
+ * @returns {{dropped: string[], dispatched: string[], namedByCritic: string[], lensesRan: boolean}}
+ */
 function surfaceGateRecord(results, { dispatched, namedByCritic }) {
   const dropped = savedSurfaceDrops(results, dispatched)
   const named = new Set(namedByCritic)
@@ -730,6 +773,12 @@ function surfaceGateRecord(results, { dispatched, namedByCritic }) {
 // but a requested one was asked for and not delivered, and must still read as not looked at.
 // Derived, never accumulated: the plan is not final when a profile is planned (the completeness
 // critic composes lenses later), so only the dispatch point says what ran.
+/**
+ * @param {ProfileResult[]} results
+ * @param {Iterable<string>} dispatched
+ * @param {Iterable<string>} [requested]
+ * @returns {{ran: string[], skipped: string[]}}
+ */
 function optionalTallyFrom(results, dispatched, requested = []) {
   const ran = new Set(dispatched)
   const asked = new Set(requested)
@@ -843,6 +892,7 @@ PROFILES.nix = {
 // >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote verdictSuffix telemetryLostSection
 // The human-readable roster of what the engine can review, named in every coverage message so a
 // caller reading "nothing was reviewed" also learns what would have been.
+/** @param {Record<string, {lang: string}>} profiles */
 function supportedLangLabel(profiles) {
   return Object.values(profiles).map(p => p.lang).join('/')
 }
@@ -855,10 +905,15 @@ function supportedLangLabel(profiles) {
 // the old `includes` form tolerated a string by accident, and calling `.filter` on one threw a
 // TypeError that aborted the whole review. Degrade toward running the review, never toward crashing:
 // an unusable shape (empty list, object, number) is treated as "no pin at all".
+/**
+ * @param {Record<string, unknown>} profiles
+ * @param {unknown} requested
+ * @returns {{pinned: string[] | null, unknown: string[]}}
+ */
 function resolveProfilePin(profiles, requested) {
   if (!requested) return { pinned: null, unknown: [] }
-  const list = (Array.isArray(requested) ? requested : [requested])
-    .filter(id => typeof id === 'string')
+  const list = /** @type {unknown[]} */ (Array.isArray(requested) ? requested : [requested])
+    .filter(/** @returns {id is string} */ id => typeof id === 'string')
     .map(id => id.trim().toLowerCase())
     .filter(Boolean)
   if (!list.length) return { pinned: null, unknown: [] }
@@ -870,11 +925,21 @@ function resolveProfilePin(profiles, requested) {
   return { pinned: uniq.filter(id => !!profiles[id]), unknown: uniq.filter(id => !profiles[id]) }
 }
 
+/**
+ * @param {Record<string, unknown>} profiles
+ * @param {string[]} unknown
+ */
 function unknownPinMessage(profiles, unknown) {
+  /** @param {string[]} xs */
   const q = xs => xs.map(x => `\`${x}\``).join(', ')
   return `unknown language pin ${q(unknown)} — available: ${q(Object.keys(profiles))}`
 }
 
+/**
+ * @param {Record<string, {lang: string}>} profiles
+ * @param {number} fileCount
+ * @param {number} [materialCount]
+ */
 function noLanguageMessage(profiles, fileCount, materialCount = fileCount) {
   return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel(profiles)} only), and ${materialCount} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.`
 }
@@ -917,11 +982,13 @@ const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
 
 const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
 
+/** @param {unknown} f */
 function isInertUncovered(f) {
-  const base = String(f).split('/').pop().toLowerCase()
-  return INERT_EXT.test(f) || INERT_NAMES.has(base) || GENERATED_PATH.test(f) || GENERATED_FILE.test(f)
+  const base = /** @type {string} */ (String(f).split('/').pop()).toLowerCase()
+  return INERT_EXT.test(String(f)) || INERT_NAMES.has(base) || GENERATED_PATH.test(String(f)) || GENERATED_FILE.test(String(f))
 }
 
+/** @param {unknown[]} files */
 function materialUncovered(files) {
   return files.filter(f => !isInertUncovered(f))
 }
@@ -953,15 +1020,17 @@ const ANCILLARY_NAMES = new Set([
 
 const ANCILLARY_PATH = /(^|\/)(\.github|\.gitlab|\.circleci|\.woodpecker|\.buildkite)\//i
 
+/** @param {unknown} f */
 function isAncillaryConfig(f) {
   const p = String(f)
-  const base = p.split('/').pop().toLowerCase()
+  const base = /** @type {string} */ (p.split('/').pop()).toLowerCase()
   return ANCILLARY_NAMES.has(base) || ANCILLARY_PATH.test(p) || /\.dockerfile$/i.test(base)
 }
 
 // The files whose absence from the review actually voids a green verdict: material, and not mere
 // project configuration. This — not `materialUncovered` — drives the INCOMPLETE marker on a run
 // that DID review code.
+/** @param {unknown[]} files */
 function coverageGapFiles(files) {
   return materialUncovered(files).filter(f => !isAncillaryConfig(f))
 }
@@ -975,14 +1044,19 @@ function coverageGapFiles(files) {
 //   'review'            — go ahead, with `active`.
 // A pin only takes effect in the last step: it says WHICH profile reviews the material, never that
 // material exists.
+/**
+ * @template {{lang: string}} P
+ * @param {{profiles: Record<string, P>, changedFiles: unknown, detectedActive: unknown, pinnedLangs: unknown}} args
+ * @returns {{outcome: string, active: P[], material: unknown[]}}
+ */
 function resolveCoverage({ profiles, changedFiles, detectedActive, pinnedLangs }) {
-  const files = Array.isArray(changedFiles) ? changedFiles : []
-  const detected = Array.isArray(detectedActive) ? detectedActive : []
+  const files = /** @type {unknown[]} */ (Array.isArray(changedFiles) ? changedFiles : [])
+  const detected = /** @type {P[]} */ (Array.isArray(detectedActive) ? detectedActive : [])
   if (!files.length) return { outcome: 'empty', active: [], material: [] }
   const material = materialUncovered(files)
   if (!material.length && !detected.length) return { outcome: 'nothing-to-review', active: [], material }
   let active = detected
-  if (!active.length && Array.isArray(pinnedLangs) && pinnedLangs.length) active = pinnedLangs.map(id => profiles[id])
+  if (!active.length && Array.isArray(pinnedLangs) && pinnedLangs.length) active = /** @type {string[]} */ (pinnedLangs).map(id => /** @type {P} */ (profiles[id]))
   if (!active.length) return { outcome: 'no-profile', active: [], material }
   return { outcome: 'review', active, material }
 }
@@ -992,10 +1066,12 @@ function resolveCoverage({ profiles, changedFiles, detectedActive, pinnedLangs }
 // statement from "files went unreviewed", and it must not be dressed up as a coverage hole. A
 // marker that fires on every README-only change stops being read, which destroys the value of the
 // marker on the diffs that do hide unreviewed code.
+/** @param {number} fileCount */
 function nothingToReviewMessage(fileCount) {
   return `NOTHING NEEDED REVIEWING — all ${fileCount} changed file(s) are documentation, assets, lockfiles or generated output; none carries reviewable code. No lens ran because none had anything to look at.`
 }
 
+/** @param {unknown[]} material */
 function uncoveredNotRunNote(material) {
   const shown = material.slice(0, 5).join(', ')
   return `${material.length} changed file(s) matched no language profile and were NOT reviewed (${shown}${material.length > 5 ? `, +${material.length - 5} more` : ''})`
@@ -1005,6 +1081,7 @@ function uncoveredNotRunNote(material) {
 // or the floor premise was revoked) is INCOMPLETE — re-running helps; a coverage hole (changed files
 // no profile covers) is PARTIAL COVERAGE — a re-run will not fix it. Both mean "not a clean verdict";
 // analyze-runs must treat both as non-clean (see its isIncomplete).
+/** @param {{notRun?: unknown[], coverageNotes?: unknown[], floorPremiseHeld?: boolean}} [opts] */
 function verdictSuffix({ notRun = [], coverageNotes = [], floorPremiseHeld = true } = {}) {
   if (notRun.length || !floorPremiseHeld) return ' (INCOMPLETE)'
   if (coverageNotes.length) return ' (PARTIAL COVERAGE)'
@@ -1031,8 +1108,9 @@ function verdictSuffix({ notRun = [], coverageNotes = [], floorPremiseHeld = tru
 // Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
 // agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
 // structure — a heading, a verdict line — above the verdict the engine actually computed.
+/** @param {unknown} lost */
 function telemetryLostSection(lost) {
-  const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
+  const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
   // A record that LANDED while its run directory did not is a different fact from a record nobody
   // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the
@@ -1293,6 +1371,10 @@ const ATTACK_MAX = 500
 // Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
 // prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
 // injected output cannot restyle the report or compound across re-review rounds.
+/**
+ * @param {unknown} text
+ * @returns {string}
+ */
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
   // `REGRESSED after fix` / `UNVERIFIED` / `still-open` marker word to a plain space, and likewise
@@ -1323,13 +1405,19 @@ function sanitizeAttack(text) {
 // so the ONLY markers in `why` are the real per-round appends plus any in the original (unsanitized)
 // rationale. The LAST-marker split then both PREVENTS accretion (each round strips the prior append
 // before re-appending — `why` is stable round-over-round) AND preserves a rationale that quotes a marker.
+/**
+ * @param {unknown} why
+ * @returns {string}
+ */
 function baseWhy(why) {
   const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
     .replace(/ — still-open \(adjudicator did not run[^)]*\)\s*$/, '')
     .replace(/ — REGRESSED after fix \(no detail[^)]*\)\s*$/, '')
     .replace(/ — UNVERIFIED \(adjudicator could not tell[^)]*\)\s*$/, '')
   const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix|UNVERIFIED \(adjudicator could not tell\)): /g
-  let last = -1, m
+  let last = -1
+  /** @type {RegExpExecArray | null} */
+  let m
   while ((m = re.exec(s))) last = m.index
   return last === -1 ? s : s.slice(0, last)
 }
@@ -1338,10 +1426,19 @@ function baseWhy(why) {
 // would fail the whole prior-round ledger load and silently degrade re-review to a first pass), so a
 // drifted `critical`/`CRITICAL` value must still trip the red-team gate. Exact-match `=== 'Critical'`
 // would silently skip red-team on such a prior.
+/**
+ * @param {unknown} sev
+ * @returns {boolean}
+ */
 function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
 
 // Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
 // adjusted adjudication plus degradation flags; the caller does the logging/counting.
+/**
+ * @param {Finding} f
+ * @param {Verdict} adj
+ * @param {Verdict | null | undefined} rt
+ */
 function classifyRedTeam(f, adj, rt) {
   if (!isHighSeverity(f.severity)) return { adj, died: false, overturned: false, invalid: false }
   if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false, invalid: false }
@@ -1353,6 +1450,10 @@ function classifyRedTeam(f, adj, rt) {
 
 // Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
 // and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
+/**
+ * @param {Finding} f
+ * @param {Verdict | null | undefined} r
+ */
 function adjudicateOne(f, r) {
   const located = { ...f, line: r?.currentLine || f.line }
   const attack = sanitizeAttack(r?.attack)
@@ -1378,6 +1479,10 @@ function adjudicateOne(f, r) {
 // wastes an opus call and lets the red-team overwrite the adjudicator's own attack. Only a genuinely
 // clean resolved (no attack) gets red-teamed. Emptiness is judged on the SANITIZED attack so a
 // markdown-only "attack" counts as none.
+/**
+ * @param {Verdict | null | undefined} r
+ * @returns {boolean}
+ */
 function shouldRedTeam(r) {
   return r?.status === 'resolved' && !sanitizeAttack(r.attack)
 }
@@ -1385,6 +1490,10 @@ function shouldRedTeam(r) {
 // The coarse identity used to decide whether a lens finding is ALREADY on the adjudicate track:
 // file + ruleId, case- and whitespace-normalised. Empty when either half is missing — a finding
 // with no ruleId cannot be keyed this way, and the caller falls back to the exact matcher.
+/**
+ * @param {Finding | null | undefined} f
+ * @returns {string}
+ */
 function carriedKey(f) {
   const file = String(f?.file ?? '').trim().toLowerCase()
   const ruleId = String(f?.ruleId ?? '').trim().toLowerCase()
@@ -1432,6 +1541,12 @@ function carriedKey(f) {
 // reaches the next ledger is preferred over one that is leaving it (partitionAbsorbed would
 // otherwise keep the finding at a retired host that a live host could have absorbed). That
 // preference is positional, not enforced here; a caller reordering that array changes it.
+/**
+ * @param {Finding} f
+ * @param {Finding[] | null | undefined} priors
+ * @param {FallbackMatch} fallbackMatch
+ * @returns {Finding | null}
+ */
 function findCarrier(f, priors, fallbackMatch) {
   const key = carriedKey(f)
   return (priors || []).find(p => {
@@ -1442,6 +1557,12 @@ function findCarrier(f, priors, fallbackMatch) {
 }
 
 // True when `f` (a finding the lenses just discovered) is already tracked by one of `priors`.
+/**
+ * @param {Finding} f
+ * @param {Finding[] | null | undefined} priors
+ * @param {FallbackMatch} fallbackMatch
+ * @returns {boolean}
+ */
 function alreadyCarried(f, priors, fallbackMatch) {
   return !!findCarrier(f, priors, fallbackMatch)
 }
@@ -1466,11 +1587,21 @@ const ABSORB_TITLE_MAX = 160
 
 // sanitizeAttack, then a tighter cap. Shares the sanitiser so the marker-collapsing (and therefore
 // the forgery defence) applies to every part of a clause.
+/**
+ * @param {unknown} text
+ * @param {number} max
+ * @returns {string}
+ */
 function clampField(text, max) {
   const s = sanitizeAttack(text)
   return s.length > max ? `${s.slice(0, max)}…` : s
 }
 
+/**
+ * @param {unknown} baseText
+ * @param {Finding | null | undefined} f
+ * @returns {string}
+ */
 function noteAbsorbed(baseText, f) {
   const base = String(baseText ?? '')
   const mark = ' — also reported at '
@@ -1486,6 +1617,11 @@ function noteAbsorbed(baseText, f) {
 // TRAILING marker), so the base can be extended and this round's marker suffix re-attached
 // unchanged — which is what keeps the clause alive across rounds: next round's baseWhy strips the
 // marker and keeps everything the clause sits in.
+/**
+ * @param {unknown} hostWhy
+ * @param {Finding | null | undefined} f
+ * @returns {string}
+ */
 function absorbInto(hostWhy, f) {
   const s = String(hostWhy ?? '')
   const base = baseWhy(s)
@@ -1506,6 +1642,10 @@ function absorbInto(hostWhy, f) {
 // as a real absorbed report. It needs the exact em-dash phrasing, so it is unlikely — but it is not
 // prevented, and the delimiter is textual, so no amount of sanitising downstream can prevent it.
 // (This is the same honesty baseWhy's own comment keeps about a rationale that QUOTES a marker.)
+/**
+ * @param {unknown} why
+ * @returns {{ base: string, sites: string[], more: number }}
+ */
 function splitAbsorbed(why) {
   const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
   let head = baseWhy(why)
@@ -1513,13 +1653,17 @@ function splitAbsorbed(why) {
   const more = m ? Number(m[1]) : 0
   if (m) head = head.replace(overflow, '')
   const parts = head.split(' — also reported at ')
-  return { base: parts[0], sites: parts.slice(1).map(s => s.trim()).filter(Boolean), more }
+  return { base: /** @type {string} */ (parts[0]), sites: parts.slice(1).map(s => s.trim()).filter(Boolean), more }
 }
 
 // The `why` as it should be interpolated into a prompt: the rationale plus this round's marker
 // suffix, with the absorbed clauses removed — they are delivered separately (absorbedPromptBlock)
 // because this field is passed through sanitizeAttack's ATTACK_MAX cap and a trailing clause on a
 // paragraph-length rationale is simply cut off.
+/**
+ * @param {unknown} why
+ * @returns {string}
+ */
 function withoutAbsorbed(why) {
   const s = String(why ?? '')
   return splitAbsorbed(s).base + s.slice(baseWhy(s).length)
@@ -1529,6 +1673,10 @@ function withoutAbsorbed(why) {
 // capped `why` field, one site per line, and — the half a bare list leaves out — a sentence saying
 // what their presence means for the verdict. Empty string when nothing was absorbed, so the caller
 // can interpolate it unconditionally.
+/**
+ * @param {unknown} why
+ * @returns {string}
+ */
 function absorbedPromptBlock(why) {
   const { sites, more } = splitAbsorbed(why)
   if (!sites.length && !more) return ''
@@ -1551,9 +1699,20 @@ function absorbedPromptBlock(why) {
 // `seed` carries absorptions ALREADY decided for these same hosts by an earlier call (see
 // absorbAcross): the returned `updates` is cumulative, seeded entries included, and a host present
 // in it extends THAT text rather than its own un-absorbed `why`.
+/**
+ * @param {Finding[] | null | undefined} findings
+ * @param {Finding[] | null | undefined} livePriors
+ * @param {RetiredSet} retired
+ * @param {FallbackMatch} fallbackMatch
+ * @param {Iterable<[Finding, string]> | null | undefined} [seed]
+ */
 function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
+  /** @param {Finding} h */
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
-  const kept = [], updates = new Map(seed || [])
+  /** @type {Finding[]} */
+  const kept = []
+  /** @type {Map<Finding, string>} */
+  const updates = new Map(seed || [])
   let absorbed = 0, keptAtRetired = 0
   for (const f of findings || []) {
     const host = findCarrier(f, livePriors, fallbackMatch)
@@ -1577,8 +1736,16 @@ function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
 // through the seed, so the clauses accumulate.
 //
 // Pure, like partitionAbsorbed: hosts are not mutated. The caller applies `updates` once.
+/**
+ * @param {(Finding[] | null | undefined)[] | null | undefined} lists
+ * @param {Finding[] | null | undefined} livePriors
+ * @param {RetiredSet} retired
+ * @param {FallbackMatch} fallbackMatch
+ */
 function absorbAcross(lists, livePriors, retired, fallbackMatch) {
+  /** @type {ReturnType<typeof partitionAbsorbed>[]} */
   const runs = []
+  /** @type {Map<Finding, string>} */
   let updates = new Map()
   for (const list of lists || []) {
     const r = partitionAbsorbed(list, livePriors, retired, fallbackMatch, updates)
@@ -1660,7 +1827,14 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
 // win the preference would leave the finding neither collapsed nor even marked.
 //
 // Pure: returns new finding objects and an `updates` map; neither the findings nor the hosts are mutated.
+/**
+ * @param {Finding[] | null | undefined} findings
+ * @param {Finding[] | null | undefined} livePriors
+ * @param {RetiredSet} retired
+ * @param {FallbackMatch} fallbackMatch
+ */
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
+  /** @param {Finding} h */
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
   // A retired prior is no host here, so it is removed from the search rather than tested after it:
   // left in, it SHADOWS a live host at the same file+ruleId (`.find` takes the earliest) and the
@@ -1671,6 +1845,7 @@ function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   const unverifiedHosts = hosts.filter(h => String(h?.tier ?? '') === 'unverified')
   let marked = 0
   let collapsed = 0
+  /** @type {Map<Finding, string>} */
   const updates = new Map()
   const kept = (findings || []).map(f => {
     const host = findCarrier(f, unverifiedHosts, fallbackMatch) || findCarrier(f, hosts, fallbackMatch)
@@ -1747,8 +1922,10 @@ function isCommitish(s) {
 // silently bucket it as 0 Critical/0 High — a fail-open that clears a still-broken Critical fix.
 // Mapping known values to canonical case here (and passing an unknown value through, trimmed — never
 // dropping it) means EVERY downstream comparison sees canonical severity for priors.
+/** @type {Record<string, string>} */
 const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
 
+/** @param {unknown} sev */
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
 
 // ---- The ALREADY-FOUND block of a lens prompt ----
@@ -1795,15 +1972,22 @@ const PRIOR_SUMMARY_MAX_CHARS = 3000
 
 const PRIOR_SUMMARY_TITLE_MAX = 120
 
+/**
+ * @typedef {{file?: unknown, line?: unknown, title?: unknown, severity?: unknown} | null | undefined} PriorFinding
+ * @param {unknown} pool
+ * @param {{maxChars?: number, titleMax?: number}} [opts]
+ */
 function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax = PRIOR_SUMMARY_TITLE_MAX } = {}) {
-  const items = Array.isArray(pool) ? pool : []
+  const items = /** @type {PriorFinding[]} */ (Array.isArray(pool) ? pool : [])
   if (!items.length) return 'none yet'
   // Local, not a module const: this function is pasted into workflows/review.js by the craft-inline
   // gate, which copies only the symbols its fence header names — a helper const outside the body
   // would arrive there undefined.
+  /** @type {Record<string, number>} */
   const rank = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
   // Model-authored titles land in a prompt here: a newline in one would forge extra ALREADY-FOUND
   // rows, so flatten before clamping (same reason flattenField exists on the verify track).
+  /** @param {PriorFinding} f */
   const line = f => `${String(f?.file ?? '').replace(/[\r\n]+/g, ' ').trim() || '?'}:${f?.line || 0} ${String(f?.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, titleMax)}`.trimEnd()
   const ordered = items
     .map((f, i) => ({ f, i }))
@@ -1882,6 +2066,11 @@ const DEATH_WINDOW_DISPATCHES = 6
 
 const DEATHS_IN_WINDOW_TO_OPEN = 3
 
+/**
+ * @param {unknown} value
+ * @param {number} fallback
+ * @returns {number}
+ */
 function positiveInt(value, fallback) {
   const n = Math.floor(Number(value))
   return Number.isFinite(n) && n >= 1 ? n : fallback
@@ -1892,11 +2081,14 @@ function positiveInt(value, fallback) {
 // — a per-agent view would see one death each and never see the outage at all. It is an INSTANCE,
 // not a module-level variable: a pass gets its own, so a window left half-full by one profile's
 // verification cannot decide anything for the next profile's, whose reachability it never observed.
+/** @param {{ window?: number, toOpen?: number }} [opts] */
 function makeDeathBreaker(opts = {}) {
   const windowLen = positiveInt(opts.window, DEATH_WINDOW_DISPATCHES)
   const toOpen = Math.min(windowLen, positiveInt(opts.toOpen, Math.min(windowLen, DEATHS_IN_WINDOW_TO_OPEN)))
   // The last `windowLen` observed outcomes, oldest first; true = the dispatch returned nothing.
+  /** @type {boolean[]} */
   const recent = []
+  /** @param {boolean} isDeath */
   const observe = isDeath => {
     recent.push(isDeath)
     while (recent.length > windowLen) recent.shift()
@@ -1950,6 +2142,7 @@ function makeDeathBreaker(opts = {}) {
 // Every one of those hands the lens a SMALLER diff than it believes it has, with no error — the
 // file is simply never reviewed. That risk arrives with slicing, because the file list stops being
 // advisory (the glob covered everything) and becomes the authoritative scope.
+/** @param {unknown} file */
 function decodeGitPath(file) {
   const raw = String(file ?? '')
   if (!(raw.length > 1 && raw.startsWith('"') && raw.endsWith('"'))) return raw
@@ -1966,6 +2159,7 @@ function decodeGitPath(file) {
   // `\uFFFD\uFFFD` and the name matched nothing.
   const body = [...raw.slice(1, -1)]
   const enc = new TextEncoder()
+  /** @type {Record<string, number>} */
   const SIMPLE = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
   const bytes = []
   for (let i = 0; i < body.length; i++) {
@@ -2008,10 +2202,15 @@ const SHARED_SUFFIXES = ['.lock', '.yml', '.yaml', '.toml', '.json']
 // nothing, while depth 3+ splits a module from its own tests.
 const GROUP_DEPTH = 2
 
+/** @param {string} file */
 function isShared(file) {
   return SHARED_SUFFIXES.some(s => file.endsWith(s))
 }
 
+/**
+ * @param {string} file
+ * @param {number} [depth]
+ */
 function groupKey(file, depth = GROUP_DEPTH) {
   const parts = String(file).split('/')
   return parts.length <= depth ? (parts.slice(0, -1).join('/') || '.') : parts.slice(0, depth).join('/')
@@ -2021,13 +2220,24 @@ function groupKey(file, depth = GROUP_DEPTH) {
 // deeper stops separating anything. Without this the top-level grouping is decorative on the shape
 // real diffs actually have: on the measured tree, depth 2 put 36 of 53 files in one slice, leaving
 // the multiplicand almost untouched — the work looks partitioned and is not.
+/**
+ * @typedef {{ key: string, files: string[] }} Group
+ */
+/**
+ * @param {Group} group
+ * @param {number} cap
+ * @param {number} depth
+ * @returns {Group[]}
+ */
 function splitDeep(group, cap, depth) {
   if (group.files.length <= cap || depth > 8) return [group]
+  /** @type {Map<string, string[]>} */
   const byKey = new Map()
   for (const f of group.files) {
     const k = groupKey(f, depth)
-    if (!byKey.has(k)) byKey.set(k, [])
-    byKey.get(k).push(f)
+    const bucket = byKey.get(k)
+    if (bucket) bucket.push(f)
+    else byKey.set(k, [f])
   }
   // A level that separates NOTHING is not a reason to stop — it is a shared prefix to walk through.
   // Every file of the measured 36-file module sits under `.../src`, so stopping at the first
@@ -2043,6 +2253,10 @@ function splitDeep(group, cap, depth) {
 // How many leading path segments two group keys share. The unit is the SEGMENT, not the character:
 // `bin/service-a` and `bin/service-admin` share one directory, while a character measure would
 // score them as nearly identical and merge them ahead of true siblings.
+/**
+ * @param {string} a
+ * @param {string} b
+ */
 function commonPrefixLength(a, b) {
   const x = String(a).split('/')
   const y = String(b).split('/')
@@ -2055,6 +2269,10 @@ function commonPrefixLength(a, b) {
 // what the lens prompt shows the agent and what the log line carries, so a key that says
 // the module's own directory tells a reader what the slice IS, where a concatenation of four
 // unrelated paths tells them only that a merge happened.
+/**
+ * @param {string} a
+ * @param {string} b
+ */
 function mergedKey(a, b) {
   const n = commonPrefixLength(a, b)
   return n > 0 ? String(a).split('/').slice(0, n).join('/') : `${a} + ${b}`
@@ -2063,6 +2281,10 @@ function mergedKey(a, b) {
 // Two merges can land on the same ancestor and produce two slices with one name. The key is what a
 // lens prompt shows and what the log line carries, so identical names make two different slices
 // indistinguishable in the transcript — and the transcript is where a run is diagnosed.
+/**
+ * @param {string} key
+ * @param {Group[]} groups
+ */
 function uniqueKey(key, groups) {
   if (!groups.some(g => g.key === key)) return key
   let n = 2
@@ -2070,6 +2292,11 @@ function uniqueKey(key, groups) {
   return `${key} (${n})`
 }
 
+/**
+ * @param {unknown} files
+ * @param {{ minFiles?: number, maxSlices?: number, maxFilesPerSlice?: number, owns?: ((f: string) => boolean) | null }} [opts]
+ * @returns {Group[]}
+ */
 function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, owns = null } = {}) {
   const all = (Array.isArray(files) ? files : []).map(String).filter(Boolean)
   // `owns` is the PROFILE's question — which of the changed files this language reviews — and it is
@@ -2084,6 +2311,7 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   // degenerate code-free slice holding nothing but manifests, costing one agent per lens per round
   // to review no code at all. A manifest is shared BECAUSE of what it is, not because the profile
   // happens not to claim it.
+  /** @type {(f: string) => boolean} */
   const isOwned = typeof owns === 'function' ? owns : f => !isShared(f)
   const sharedAll = all.filter(isShared)
     .sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))
@@ -2097,11 +2325,13 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   const owned = all.filter(f => isOwned(f) && !isShared(f)).concat(evicted)
   if (owned.length < minFiles) return []
 
+  /** @type {Map<string, string[]>} */
   const byKey = new Map()
   for (const f of owned) {
     const k = groupKey(f)
-    if (!byKey.has(k)) byKey.set(k, [])
-    byKey.get(k).push(f)
+    const bucket = byKey.get(k)
+    if (bucket) bucket.push(f)
+    else byKey.set(k, [f])
   }
   if (byKey.size <= 1) return []
 
@@ -2128,22 +2358,27 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
     // is not considered at all while any merge under it exists; only when nothing fits does the
     // smallest available merge win, because at that point some slice must grow and the least bad
     // choice is the smallest one.
+    /** @type {{ i: number, j: number, shared: number, size: number } | null} */
     let best = null
+    /** @type {{ i: number, j: number, shared: number, size: number } | null} */
     let fallback = null
     for (let i = 0; i < groups.length; i++) {
       for (let j = i + 1; j < groups.length; j++) {
-        const shared = commonPrefixLength(groups[i].key, groups[j].key)
-        const size = groups[i].files.length + groups[j].files.length
+        const gi = /** @type {Group} */ (groups[i])
+        const gj = /** @type {Group} */ (groups[j])
+        const shared = commonPrefixLength(gi.key, gj.key)
+        const size = gi.files.length + gj.files.length
         const cand = { i, j, shared, size }
         if (!fallback || size < fallback.size) fallback = cand
         if (size > cap) continue
         if (!best || shared > best.shared || (shared === best.shared && size < best.size)) best = cand
       }
     }
-    best = best || fallback
-    const a = groups[best.i]
-    const b = groups[best.j]
-    groups = groups.filter((_unused, idx) => idx !== best.i && idx !== best.j)
+    // With maxSlices >= 1 and groups.length > maxSlices there are always >= 2 groups, so a pair exists.
+    const pick = /** @type {{ i: number, j: number, shared: number, size: number }} */ (best || fallback)
+    const a = /** @type {Group} */ (groups[pick.i])
+    const b = /** @type {Group} */ (groups[pick.j])
+    groups = groups.filter((_unused, idx) => idx !== pick.i && idx !== pick.j)
     groups.push({ key: uniqueKey(mergedKey(a.key, b.key), groups), files: [...a.files, ...b.files] })
   }
   groups.sort((a, b) => b.files.length - a.files.length || a.key.localeCompare(b.key))
@@ -2151,6 +2386,7 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   return groups.map(g => ({ key: g.key, files: [...g.files, ...shared] }))
 }
 
+/** @param {string} lens */
 function sliceableLens(lens) {
   return !WHOLE_DIFF_LENSES.includes(String(lens))
 }
@@ -2198,6 +2434,7 @@ const LENS_WINDOW_AGENTS = 16
 //
 // What it does do is stop git reading the name as a pattern: wildmatch is the default, so a real
 // file named `f[1].rs` does not match itself, and a leading `:` is pathspec magic.
+/** @param {unknown} file */
 function pathspecLiteral(file) {
   const f = String(file ?? '')
   // An empty name is not a pathspec, it is the absence of one. Emitting `:(literal)` for it would
@@ -2221,6 +2458,10 @@ function pathspecLiteral(file) {
 //
 // Returns `expired` and `belowFloor` as QUESTIONS rather than numbers on purpose: with no clock
 // there is no honest "remaining", and a function that invented one would be read as a measurement.
+/**
+ * @param {number} totalMs
+ * @param {{ floorMs?: number, schedule?: (fn: () => void, ms: number) => any, cancel?: (t: any) => void }} [opts]
+ */
 function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cancel = clearTimeout } = {}) {
   const total = Number(totalMs)
   const capped = Number.isFinite(total) && total > 0 ? total : 0
@@ -2228,7 +2469,9 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cance
 
   let expired = capped === 0
   let belowFloor = capped === 0 || floor >= capped
+  /** @type {((v: typeof DEADLINE_HIT) => void) | null} */
   let resolveHit = null
+  /** @type {any[]} */
   const timers = []
 
   // The single promise every attempt races. It is created once, so a second attempt inherits
@@ -2418,21 +2661,34 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
 // now happen in `craft-log-run.mjs prior-round`, so no mirror is needed — a haiku still runs the
 // command and carries the bytes back, but it decides nothing.)
 // >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings reviewVerdict
+/** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
+/**
+ * @param {unknown} findings
+ * @returns {Record<Severity, number>}
+ */
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
-    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[/** @type {Severity} */ (f.severity)] += 1
   }
   return by
 }
 
+/**
+ * @param {unknown} findings
+ * @returns {{ total: number, bySeverity: Record<Severity, number> }}
+ */
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
+/**
+ * @param {unknown} confirmed
+ * @returns {string}
+ */
 function reviewVerdict(confirmed) {
   const by = countBySeverity(confirmed)
   if (by.Critical || by.High) return 'Block'
@@ -2559,6 +2815,11 @@ const LOGRUN_SCHEMA = {
 // the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
+/**
+ * @param {string | undefined} craftRoot
+ * @param {string} [version]
+ * @param {string} [repo]
+ */
 function loggerPrelude(craftRoot, version = '', repo = '') {
   // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
   // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
@@ -2645,6 +2906,7 @@ CRAFT_LOGGER=""
   // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
   // candidate can be re-pointed into the reviewed repository. Handing over the path that was
   // actually checked closes that window and costs nothing.
+  /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
   craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
@@ -2725,6 +2987,10 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+/**
+ * @param {any} record
+ * @param {{ phase?: string }} [opts]
+ */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
@@ -2737,6 +3003,7 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
+/** @param {any} res harness result of the logger agent (model output) */
 function logRunOutcome(res) {
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
@@ -2751,12 +3018,17 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
+/** @param {(prompt: any, opts: any) => Promise<any>} call a harness agent callback */
 function quietly(call) {
+  /**
+   * @param {any} prompt
+   * @param {any} opts
+   */
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
     } catch (e) {
-      return { __threw: String((e && e.message) || e) }
+      return { __threw: String((e && /** @type {{ message?: unknown }} */ (e).message) || e) }
     }
   }
 }
@@ -2864,6 +3136,10 @@ const LEDGER_TOMBSTONE_MAX = LEDGER_COPY_REFUSAL_ENTRIES - LEDGER_COPY_SAFETY_RO
 // cold read reported 14265B compact becoming 17314B. So the ratio is established and the crossing
 // is fixture-dependent — no run has been observed crossing it. The bound itself does not move; it
 // never had to. The measure was simply not measuring the thing that is paid for.
+/**
+ * @param {unknown} item
+ * @returns {number}
+ */
 function payloadBytes(item) {
   const pretty = JSON.stringify(item, null, 2)
   if (typeof pretty !== 'string') return 2
@@ -2871,19 +3147,25 @@ function payloadBytes(item) {
   return pretty.length + pretty.split('\n').length * 4 + 2
 }
 
+/**
+ * @param {unknown} ledger
+ * @param {{ max?: number, maxShards?: number }} [opts]
+ * @returns {{ ledgerShard: { index: number, of: number, total: number }, ledgerItems: unknown[] }[]}
+ */
 function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_SHARD_MAX_SHARDS } = {}) {
   const items = Array.isArray(ledger) ? ledger : []
   if (!items.length) return []
+  /** @type {unknown[][]} */
   const groups = []
   let bytes = 0
   for (const item of items) {
     const size = payloadBytes(item)
-    if (!groups.length || (groups[groups.length - 1].length && bytes + size > max)) {
+    if (!groups.length || (/** @type {unknown[]} */ (groups[groups.length - 1]).length && bytes + size > max)) {
       if (groups.length >= maxShards) break          // the overflow is declared below, not hidden
       groups.push([])
       bytes = 0
     }
-    groups[groups.length - 1].push(item)
+    /** @type {unknown[]} */ (groups[groups.length - 1]).push(item)
     bytes += size
   }
   return groups.map((group, i) => ({
@@ -2904,6 +3186,13 @@ function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_
 // The round a tombstone closed in, read from its `why` marker ("resolved in round N" / "dismissed
 // in round N"), with the stored `round` field as a fallback and 0 as the floor. Used only to order
 // tombstones by age for dedup and eviction — the regression message reads the same marker itself.
+/**
+ * @typedef {{ fp?: unknown, why?: unknown, round?: unknown }} Tombstone
+ */
+/**
+ * @param {Tombstone | null | undefined} t
+ * @returns {number}
+ */
 function tombstoneRound(t) {
   const m = /round (\d+)/.exec(String((t && t.why) || ''))
   if (m) return Number(m[1])
@@ -2923,9 +3212,17 @@ function tombstoneRound(t) {
 //      a fresh finding is most likely to match.
 // Tombstones without an `fp` are never merged (they have no identity to merge on) and are kept as-is,
 // still subject to the count cap. Insertion order is otherwise preserved below the cap.
+/**
+ * @param {unknown} tombstones
+ * @param {{ max?: number }} [opts]
+ * @returns {Tombstone[]}
+ */
 function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
+  /** @type {Tombstone[]} */
   const items = Array.isArray(tombstones) ? tombstones : []
+  /** @type {Map<unknown, Tombstone>} */
   const newestByFp = new Map()
+  /** @type {Tombstone[]} */
   const noFp = []
   for (const t of items) {
     if (!t || typeof t !== 'object') continue
@@ -2951,6 +3248,11 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
 // call copy of the final record refuses on. When live findings alone already fill the ceiling the
 // budget is 0: tombstones cannot rescue a ledger the live rows have pushed over, and adding them would
 // only deepen the overflow that inverts the memory into a per-round full rescan.
+/**
+ * @param {unknown} liveCount
+ * @param {{ ceiling?: number }} [opts]
+ * @returns {number}
+ */
 function tombstoneBudget(liveCount, { ceiling = LEDGER_TOMBSTONE_MAX } = {}) {
   const live = Math.max(0, Number(liveCount) || 0)
   return Math.max(0, ceiling - live)
@@ -3053,6 +3355,10 @@ function key(f) {
 // >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory branchFromAbbrevRef ENGINE_REVISION FP_BASIS_SINCE fpBasisOf fpBasisEstablished sameFpBasis basisVerdictFromRevisions
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
+/**
+ * @param {unknown} title
+ * @returns {string}
+ */
 function titleShingle(title) {
   return String(title || '')
     .toLowerCase()
@@ -3068,6 +3374,10 @@ function titleShingle(title) {
 // case (`Foo::Bar` vs `foo::bar`), the `fn `/`impl ` keyword, and generic parameters (`parse<T>`).
 // Kept deliberately small — it absorbs decoration noise, not structure: a rename is still a
 // different symbol, which is the acceptable, rare identity loss the fingerprint is built to take.
+/**
+ * @param {unknown} symbol
+ * @returns {string}
+ */
 function normalizeSymbol(symbol) {
   let s = String(symbol || '').toLowerCase().replace(/\b(?:fn|impl)\s+/g, '')
   // Strip generics INNERMOST-first, looping until stable. A single /<[^>]*>/g pass stops its class at
@@ -3091,6 +3401,10 @@ function normalizeSymbol(symbol) {
 // tombstone/recidivism check only ever keys ruleId findings, so it never sees the title-bearing form.
 // djb2 (not crypto) — the sandbox has no crypto and bans Math.random, and we only need a stable,
 // collision-resistant-enough key, computed identically in the lib and in the workflow mirror.
+/**
+ * @param {FindingKey | null | undefined} f
+ * @returns {string}
+ */
 function fingerprint(f) {
   const ruleId = f?.ruleId || ''
   const basis = ruleId
@@ -3101,6 +3415,11 @@ function fingerprint(f) {
   return h.toString(16).padStart(8, '0')
 }
 
+/**
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {number}
+ */
 function shingleOverlap(a, b) {
   const sa = new Set(titleShingle(a).split(' ').filter(Boolean))
   const sb = new Set(titleShingle(b).split(' ').filter(Boolean))
@@ -3113,10 +3432,16 @@ function shingleOverlap(a, b) {
 // True when `cur` (a freshly located finding) is the same defect as `prior` (from the ledger).
 // file + ruleId must match exactly; a symbol mismatch only disqualifies when BOTH carry one (a
 // finding can move symbols across a fix, so an absent symbol is not a veto); titles must overlap.
+/**
+ * @param {FindingKey | null | undefined} cur
+ * @param {FindingKey | null | undefined} prior
+ * @param {{ threshold?: number }} [options]
+ * @returns {boolean}
+ */
 function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
   if ((cur?.file || '') !== (prior?.file || '')) return false
   if ((cur?.ruleId || '') !== (prior?.ruleId || '')) return false
-  if ((cur?.symbol || '') && (prior?.symbol || '') && cur.symbol !== prior.symbol) return false
+  if ((cur?.symbol || '') && (prior?.symbol || '') && /** @type {FindingKey} */ (cur).symbol !== /** @type {FindingKey} */ (prior).symbol) return false
   return shingleOverlap(cur?.title, prior?.title) >= threshold
 }
 
@@ -3124,12 +3449,20 @@ function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
 // `open` (still to be adjudicated or fixed); only reject/defer carry a settled disposition.
 const DISPOSITION_FROM_TRIAGE = { reject: 'rejected', defer: 'deferred', accept: 'open', 'needs-decision': 'open', conflict: 'open' }
 
+/**
+ * @param {unknown} v
+ * @returns {string}
+ */
 function dispositionFromTriage(v) {
-  return Object.prototype.hasOwnProperty.call(DISPOSITION_FROM_TRIAGE, v) ? DISPOSITION_FROM_TRIAGE[v] : 'open'
+  return Object.prototype.hasOwnProperty.call(DISPOSITION_FROM_TRIAGE, /** @type {PropertyKey} */ (v)) ? DISPOSITION_FROM_TRIAGE[/** @type {TriageVerdict} */ (v)] : 'open'
 }
 
 // Re-review verdict: reviewVerdict over the findings that still matter this round. resolved and
 // carried (rejected/justified) findings are excluded by the caller, so they never reach here.
+/**
+ * @param {{ stillOpen?: unknown[], regressed?: unknown[], neu?: unknown[] }} [findings]
+ * @returns {string}
+ */
 function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
   return reviewVerdict([...stillOpen, ...regressed, ...neu])
 }
@@ -3141,6 +3474,10 @@ function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
 // is what makes that visible. Only 'no-branch' earns a note: a genuine first review on a branch
 // (no-candidate-rows, an ancestry rejection after a rebase, …) is normal, not a footgun, and stays
 // noteless, or the note fires on every first review and stops being read.
+/**
+ * @param {string | null | undefined} priorReason
+ * @returns {{ chained: boolean, reason: string | null, note: string | null }}
+ */
 function reReviewMemory(priorReason) {
   const reason = priorReason || null
   const chained = !reason
@@ -3157,6 +3494,10 @@ function reReviewMemory(priorReason) {
 // could not resolve one) passes through unchanged. The one place this rule lives: gitIdentity
 // (lib/craft-log-run.mjs) and the review engine's detect capture (workflows/review.js) both route
 // their branch value through here (realm @nick/craft #104).
+/**
+ * @param {string} ref
+ * @returns {string}
+ */
 function branchFromAbbrevRef(ref) {
   return ref === 'HEAD' ? '' : ref
 }
@@ -3178,24 +3519,38 @@ const FP_BASIS_SINCE = [1, 3]
 
 // The basis a record stamped with `rev` fingerprinted under; null when `rev` is not a revision
 // (a legacy record with no field) — such a record is never comparable.
+/**
+ * @param {unknown} rev
+ * @returns {number | null}
+ */
 function fpBasisOf(rev) {
-  if (!Number.isInteger(rev) || rev < 1) return null
-  return Math.max(...FP_BASIS_SINCE.filter(b => b <= rev))
+  if (!Number.isInteger(rev) || /** @type {number} */ (rev) < 1) return null
+  return Math.max(...FP_BASIS_SINCE.filter(b => b <= /** @type {number} */ (rev)))
 }
 
 // Whether the basis `priorRev` fingerprinted under can be established at all: a revision this engine
 // knows — not missing (a legacy record), not newer than this engine (a table it does not have). The
 // complement is not "the basis changed" but "nobody can say", and the engine reports it as lost
 // re-review memory rather than an expected reset (realm @nick/craft #110).
+/**
+ * @param {unknown} priorRev
+ * @param {number} [currentRev]
+ * @returns {boolean}
+ */
 function fpBasisEstablished(priorRev, currentRev = ENGINE_REVISION) {
-  return Number.isInteger(priorRev) && priorRev >= 1 && priorRev <= currentRev
+  return Number.isInteger(priorRev) && /** @type {number} */ (priorRev) >= 1 && /** @type {number} */ (priorRev) <= currentRev
 }
 
 // Whether fingerprints recorded under `priorRev` may be compared to ones computed now. A prior
 // revision NEWER than this engine's is never comparable: it may have begun a basis this engine's
 // table does not know (a downgrade, or two installs writing one store), and the guard fails closed.
+/**
+ * @param {unknown} priorRev
+ * @param {number} [currentRev]
+ * @returns {boolean}
+ */
 function sameFpBasis(priorRev, currentRev = ENGINE_REVISION) {
-  if (Number.isInteger(priorRev) && priorRev > currentRev) return false
+  if (Number.isInteger(priorRev) && /** @type {number} */ (priorRev) > currentRev) return false
   const prior = fpBasisOf(priorRev)
   return prior !== null && prior === fpBasisOf(currentRev)
 }
@@ -3205,6 +3560,11 @@ function sameFpBasis(priorRev, currentRev = ENGINE_REVISION) {
 // caller's own revision and table. Known only when every revision is established and all map to ONE
 // basis; then comparable when that basis is the caller's. Inlined into the review engine, which
 // computes the fingerprints and so is the side that decides (realm @nick/craft #111).
+/**
+ * @param {unknown} revs
+ * @param {number} [currentRev]
+ * @returns {{ sameFpBasis: boolean, fpBasisKnown: boolean }}
+ */
 function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
   const list = Array.isArray(revs) ? revs : []
   if (!list.length || !list.every(r => fpBasisEstablished(r, currentRev))) return { sameFpBasis: false, fpBasisKnown: false }
@@ -3849,6 +4209,11 @@ const VERIFY_WINDOW_AGENTS = 24
 // Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
 // never over. A batch thunk is one agent; a High/Critical opens with a cull + the authoritative
 // vote and, if they split, buys the remaining n1-1 culls — 1 + max(1, verifyVotes) in total.
+/**
+ * @param {{severity?: string}} f
+ * @param {{verifyVotes?: unknown} | null | undefined} plan
+ * @returns {number}
+ */
 function verifyWeight(f, plan) {
   const isHigh = f.severity === 'Critical' || f.severity === 'High'
   return isHigh ? 1 + Math.max(1, Number(plan?.verifyVotes) || 1) : 1
@@ -3869,28 +4234,35 @@ function verifyWeight(f, plan) {
 // runOne rejects with is recorded as null rather than tearing down the whole dispatch.
 //
 // An entry heavier than the whole budget still runs: it waits for an empty window, then goes alone.
+/**
+ * @template T
+ * @param {{run: unknown, weight?: unknown}[]} entries
+ * @param {unknown} maxWeight
+ * @param {(run: any, i: number) => T | PromiseLike<T>} runOne `run` is a workflow thunk (harness callback)
+ * @returns {Promise<(T | null)[]>}
+ */
 async function weightedWindow(entries, maxWeight, runOne) {
   const cap = Math.max(1, Number(maxWeight) || 1)
-  const out = new Array(entries.length).fill(null)
+  const out = /** @type {(T | null)[]} */ (new Array(entries.length).fill(null))
   let next = 0
   let inflight = 0
-  await new Promise(resolve => {
+  await /** @type {Promise<void>} */ (new Promise(resolve => {
     const pump = () => {
       while (next < entries.length) {
-        const w = Math.max(1, Number(entries[next].weight) || 1)
+        const w = Math.max(1, Number(/** @type {{weight?: unknown}} */ (entries[next]).weight) || 1)
         // `inflight > 0 &&`: an over-budget entry is never starved, it just never shares the window.
         if (inflight > 0 && inflight + w > cap) break
         const i = next++
         inflight += w
         Promise.resolve()
-          .then(() => runOne(entries[i].run, i))
+          .then(() => runOne(/** @type {{run: unknown}} */ (entries[i]).run, i))
           .then(v => { out[i] = v ?? null }, () => { out[i] = null })
           .then(() => { inflight -= w; pump() })
       }
       if (next >= entries.length && inflight === 0) resolve()
     }
     pump()
-  })
+  }))
   return out
 }
 // <<< craft-inline
@@ -3935,9 +4307,15 @@ function verifyTier(f) {
 // The severities whose confirmation alone forces Block, per `reviewVerdict` in lib/run-record.mjs.
 // Kept as data next to the rule it mirrors: if that rule ever gains a severity, the skip below is
 // wrong in the direction of skipping too much, and this is the one line to change.
+/** @type {readonly (string | undefined)[]} */
 const BLOCKING_SEVERITIES = ['Critical', 'High']
 
 // Does this JUDGED finding, by itself, already fix the verdict at Block?
+/**
+ * @typedef {{ tier?: string, severity?: string, title?: string, file?: string, line?: number }} JudgedFinding
+ * @typedef {{ record: (f: JudgedFinding | null | undefined) => boolean, secured: () => boolean, securedBy: () => JudgedFinding | null }} VerdictFloor
+ */
+/** @param {JudgedFinding | null | undefined} f */
 function securesBlock(f) {
   return !!f && f.tier === 'confirmed' && BLOCKING_SEVERITIES.includes(f.severity)
 }
@@ -3946,14 +4324,16 @@ function securesBlock(f) {
 // dispatched verification entries on purpose — the same reason the death breaker is shared: the
 // individual panel and the batch groups are in flight together, so a per-entry view would never see
 // the confirmation another entry brought back.
+/** @returns {VerdictFloor} */
 function makeVerdictFloor() {
+  /** @type {JudgedFinding | null} */
   let by = null
   return {
     // Feed every settled verdict through here, judged or not. Returns whether THIS one raised the
     // floor, which is what a caller logs.
     record(f) {
       if (by !== null || !securesBlock(f)) return false
-      by = f
+      by = /** @type {JudgedFinding} */ (f)
       return true
     },
     // Answers about what has ALREADY come back. Never predicts.
@@ -3971,6 +4351,10 @@ function makeVerdictFloor() {
 // Medium and nothing else: Critical/High decide the verdict themselves and are never skipped, and
 // Low/Info never reach here — `verifyTier` has already routed them to the skip tier for a reason
 // that does not depend on the floor.
+/**
+ * @param {JudgedFinding | null | undefined} f
+ * @param {VerdictFloor | null | undefined} floor
+ */
 function verdictNeutralNow(f, floor) {
   return !!f && f.severity === 'Medium' && !!floor && floor.secured()
 }
@@ -3978,6 +4362,7 @@ function verdictNeutralNow(f, floor) {
 // Why a Medium went unverified, in the finding's own `why`. It names the evidence — the confirmed
 // finding that fixed the verdict — because "we did not check this" is only legitimate when the
 // reader can see what made the check pointless.
+/** @param {VerdictFloor | null | undefined} floor */
 function floorSkipReason(floor) {
   const by = floor && floor.securedBy()
   const where = by ? `${by.severity} "${by.title || '?'}" at ${by.file || '?'}:${by.line || 0}` : 'a confirmed blocking finding'
