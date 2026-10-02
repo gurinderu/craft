@@ -127,13 +127,13 @@ function normalizeArgs(args, warn = () => {}) {
 // <<< craft-inline
 const A = normalizeArgs(args, log)
 
-const baseArg = A.base ? String(A.base) : ''
-const runMutants = !!A.mutants
+const baseArg = A['base'] ? String(A['base']) : ''
+const runMutants = !!A['mutants']
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. This engine has NO
 // `repo` argument — see the refusal below; it audits the checkout the session runs in, always. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
-const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
+const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
 
 const CRATE_ITEM = {
   type: 'object',
@@ -509,6 +509,7 @@ function demoteUnsupportedGreen(r) {
 // shares); a match becomes Approve. INCOMPLETE passes through untouched; anything genuinely
 // unrecognisable is returned UNCHANGED, so it still lands in the non-permissive branch of
 // worstVerdict — this widens the green vocabulary, it never weakens the default.
+/** @param {any} v model output */
 function normalizeDimensionVerdict(v) {
   const t = String(v == null ? '' : v).trim()
   if (!t) return t
@@ -525,13 +526,22 @@ function normalizeDimensionVerdict(v) {
 // The audit verdict carries an (INCOMPLETE) marker when any dimension failed to run OR could not
 // run (its tooling was absent, so it checked nothing) — unless the aggregate is already an
 // INCOMPLETE verdict in its own right.
+/**
+ * @param {string} worst
+ * @param {unknown[]} notRun
+ */
 function auditVerdict(worst, notRun) {
   if (!notRun.length || /INCOMPLETE/i.test(worst)) return worst
   return `${worst} (INCOMPLETE)`
 }
 
 // Drop internal (`_`-prefixed) keys so they never leak into the synthesis prompt.
+/**
+ * @param {Record<string, any>} obj
+ * @returns {Record<string, any>}
+ */
 function stripInternal(obj) {
+  /** @type {Record<string, any>} */
   const out = {}
   for (const k of Object.keys(obj)) if (!k.startsWith('_')) out[k] = obj[k]
   return out
@@ -839,9 +849,11 @@ function telemetryLostSection(lost) {
 // A lost record NEVER fails the audit: killing it over a bookkeeping write would teach everyone to
 // ignore the very marker this exists to raise. It is reported instead, at the head of the report a
 // human actually reads — an empty store is otherwise indistinguishable from "never run".
+/** @type {string[]} */
 const telemetryLost = []
 const agentQuietly = quietly(agent)
 
+/** @param {any} record */
 async function logRun(record) {
   const res = await agentQuietly(
     logRunPrompt({ record, craftRoot: craftRootArg }),
@@ -867,17 +879,22 @@ async function logRun(record) {
 // re-failing. Without this, the contract/architecture/security/miri dimensions silently become
 // NOT RUN whenever the craft agents aren't registered.
 const agentTypeMissing = new Set()
+/**
+ * @param {string} prompt
+ * @param {Record<string, any>} [opts]
+ * @returns {Promise<any>}
+ */
 async function safeAgent(prompt, opts = {}) {
-  const at = opts.agentType
+  const at = opts['agentType']
   const generic = { ...opts }
-  delete generic.agentType
+  delete generic['agentType']
   if (!at || agentTypeMissing.has(at)) return agent(prompt, generic)
   try {
     const res = await agent(prompt, opts)
     if (res != null) return res
     return await agent(prompt, generic)   // null: try generic once; don't memoize (may be transient)
   } catch (e) {
-    if (!/not found/i.test(String((e && e.message) || e))) throw e
+    if (!/not found/i.test(String((e && /** @type {{ message?: unknown }} */ (e).message) || e))) throw e
     agentTypeMissing.add(at)
     log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
     return agent(prompt, generic)
@@ -894,7 +911,7 @@ async function safeAgent(prompt, opts = {}) {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A.repo) {
+if (A['repo']) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'rust-audit',
     nested: false, via: null,
@@ -906,7 +923,7 @@ if (A.repo) {
   })
   return [
     `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
     ``,
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`rust-audit\` there.`,
   ].join('\n')
@@ -942,6 +959,7 @@ const repoRoot = typeof scout?.repoRoot === 'string' ? scout.repoRoot.trim() : '
 // same request as `crates/core`. No disk and no Node API here, so a symlinked or differently-cased
 // spelling stays unrepairable — such a crate is reported NOT RUN rather than reviewed unscoped.
 const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
+/** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
   for (const s of String(p).split(/[\\/]+/)) {
@@ -952,6 +970,7 @@ function pathSegments(p) {
   return segs
 }
 // The repo-relative crate directory, or null when it cannot be derived.
+/** @param {unknown} p */
 function crateScope(p) {
   const raw = String(p ?? '').trim()
   if (!raw) return null
@@ -972,8 +991,11 @@ function crateScope(p) {
   for (let i = 0; i < r.length; i++) if (abs[i] !== r[i]) return null
   return abs.slice(r.length).join('/') || '.'
 }
+/** @type {any[]} */
 const crates = Array.isArray(scout?.crates) ? scout.crates : []
+/** @type {any[]} */
 const changedCrates = Array.isArray(scout?.changedCrates) ? scout.changedCrates : []
+/** @type {any[]} */
 const edges = Array.isArray(scout?.edges) ? scout.edges : []
 log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no base ref')
 
@@ -985,6 +1007,7 @@ phase('Audit')
 // INCOMPLETE (the "Not reviewed" list, "Coverage gaps"), so a substring match over the whole report
 // scored a plain Approve as a Warning and any mention of the word as uncovered. A report with no
 // `## Verdict` heading is one we cannot read, and the non-permissive default applies.
+/** @param {unknown} report */
 function verdictLine(report) {
   const text = String(report || '')
   const m = /^[ \t]*#{1,6}[ \t]*Verdict\b(.*)$/im.exec(text)
@@ -1002,6 +1025,10 @@ function verdictLine(report) {
   return null
 }
 
+/**
+ * @param {string} dimension
+ * @param {unknown} report
+ */
 function reviewResult(dimension, report) {
   const line = verdictLine(report)
   // A coverage-hole clause voids an otherwise-green verdict whether the engine spelled it INCOMPLETE
@@ -1117,6 +1144,12 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
 // change to the rollup. The `review`/`review:<crate>` sites pass it false: their verdict is grounded
 // by review.js's confirmed-finding count and their synthetic summary carries no marker, so gating
 // them would demote every honest zero-finding review (the one false-positive the design excludes).
+/**
+ * @param {string} dimension
+ * @param {any} r agent result
+ * @param {string} deadReason
+ * @param {boolean} [evidenceGate]
+ */
 function dimResult(dimension, r, deadReason, evidenceGate = true) {
   if (!r) { log(`${dimension}: ${deadReason}`); return null }
   const tagged = { ...r, dimension }
@@ -1126,6 +1159,11 @@ function dimResult(dimension, r, deadReason, evidenceGate = true) {
   return demoted
 }
 
+/**
+ * @param {string} dimension
+ * @param {Promise<any>} promise agent result
+ * @param {{ deadReason?: string, threw?: (msg: any) => string, evidenceGate?: boolean }} [opts]
+ */
 function dispatchDim(dimension, promise, opts = {}) {
   const deadReason = opts.deadReason || 'agent returned no result (died or skipped) — dimension NOT RUN'
   const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
@@ -1277,7 +1315,7 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
   // IIFE and is caught by dispatchDim's `.catch` (that is why the thunk is wrapped, not mapped inline).
   if (!found) return null
   const candidates = (Array.isArray(found.findings) ? found.findings : [])
-    .filter(f => /^(orphan-member|unused-dep):/.test(f.title || ''))
+    .filter(/** @param {any} f */ f => /^(orphan-member|unused-dep):/.test(f.title || ''))
   // No candidates: the find step IS the whole verification, and its verdict distinguishes a computed
   // clean (cargo metadata loaded, no orphans → a green) from a non-run (metadata absent → INCOMPLETE).
   // Like its sibling branches (unusedCratesResult, lines below), a computed-clean green is gated and so
@@ -1292,7 +1330,7 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
   }
   // Verify each candidate: prove it is USED. Default to "used" (drop it) when uncertain —
   // recommending deletion of live code is the costly error here.
-  const verdicts = await parallel(candidates.map((c, i) => () =>
+  const verdicts = await parallel(candidates.map(/** @param {any} c @param {number} i */ (c, i) => () =>
     agent(
       `A detector flagged a crate/dependency as UNUSED. Try HARD to REFUTE that — prove it IS used — before accepting it. Candidate: ${JSON.stringify(c)}.
 Check the usages machete/udeps and the dependency graph miss: \`use\`/path references; cfg-gated and feature-gated usage; macro-only and re-exported (\`pub use\`) usage; build.rs / [build-dependencies]; [dev-dependencies] exercised only in tests, benches, or examples; and for an orphan member whether it is actually a bin, an example/bench/xtask, or consumed/published outside this workspace. Grep the source to confirm.
@@ -1388,8 +1426,8 @@ const auditRecord = {
   via: null,
   scout: { baseRef, crateCount: crates.length, changedCrateCount: changedCrates.length, edgeCount: edges.length, hasUnsafe },
   dimensions: stripped.map(r => {
-    const s = summarizeFindings(r.findings)
-    return { dimension: r.dimension, verdict: r.verdict, findingCount: s.total, bySeverity: s.bySeverity }
+    const s = summarizeFindings(r['findings'])
+    return { dimension: r['dimension'], verdict: r['verdict'], findingCount: s.total, bySeverity: s.bySeverity }
   }),
   // The rate is over what was JUDGED, not over the candidates: charging the deaths to the detector
   // is the same conflation the dimension's verdict was fixed for, and this record — not the console

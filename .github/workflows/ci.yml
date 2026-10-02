@@ -38,6 +38,12 @@ jobs:
       # plugin's newer typings would let post-22 APIs through. Types come from JSDoc; nothing shipped changes.
       - name: Typecheck lib (checkJs)
         run: npm run check:types:lib
+      # The engines' own code (workflows/*.js) at the same strictness: each script wrapped as the sandbox
+      # runs it, its craft-inline regions swapped for imports of the lib modules they come from, the
+      # sandbox globals declared in lib/workflow-sandbox.d.ts; errors reported at their workflows/ line.
+      # Agent results are typed `any` (model output), so fields read off them are not checked.
+      - name: Typecheck workflow engines (checkJs)
+        run: npm run check:types:workflows
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
       - name: Unit tests
         run: node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'

