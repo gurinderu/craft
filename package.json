@@ -27,6 +27,7 @@
     "@types/node": "22.20.5",
     "dependency-cruiser": "18.5.0",
     "eslint": "^9.39.0",
+    "eslint-plugin-sonarjs": "4.2.2",
     "jscpd": "5.4.0",
     "knip": "6.39.0",
     "typescript": "5.9.3",

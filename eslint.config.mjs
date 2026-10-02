@@ -1,5 +1,9 @@
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
+// eslint-plugin-sonarjs is LGPL-3.0-only (craft is MIT): a devDependency that never ships; only its
+// cognitive-complexity rule is on (realm @nick/craft, #155).
+import sonarjs from 'eslint-plugin-sonarjs'
+import { COMPLEXITY_RULES } from './lib/complexity-rules.mjs'
 import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 
 // Lint scope: the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, knip.config.js and
@@ -45,6 +49,9 @@ export default [
       'opencode/plugin/node_modules/**',
     ],
   },
+  // No inline `eslint-disable`: the complexity bars admit no exception (realm @nick/craft, #155), and no
+  // other rule is waived in place either — as the engines' lint already refuses it (lib/engine-lint.mjs).
+  { linterOptions: { noInlineConfig: true } },
   js.configs.recommended,
   {
     files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js', '.dependency-cruiser.mjs'],
@@ -95,5 +102,11 @@ export default [
     files: ['opencode/plugin/*.mjs', 'opencode/plugin/*.ts'],
     languageOptions: { parserOptions: { project: ['./opencode/plugin/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
     rules: typeAware,
+  },
+  // Every linted function, tests included; the engines get the same rules through lib/engine-lint.mjs.
+  {
+    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'opencode/plugin/*.ts', 'knip.config.js', '.dependency-cruiser.mjs'],
+    plugins: { sonarjs },
+    rules: COMPLEXITY_RULES,
   },
 ]
