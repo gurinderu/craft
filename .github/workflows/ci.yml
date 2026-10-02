@@ -88,7 +88,9 @@ jobs:
       # Copied code outside the craft-inline mechanism (lib/check-dup.mjs running jscpd on .jscpd.json):
       # lib/, opencode/plugin/ and workflows/*.js, tests excluded (fixture boilerplate), each fenced region
       # skipped — its copy is byte-compared by the syntax-check step above, which is why a fence-shaped
-      # line anywhere but workflows/*.js fails this step. Exact clones of at least 50 tokens and 5 lines.
+      # line in a scanned file other than workflows/*.js fails this step. A new clone is read from
+      # jscpd's report; a non-zero exit with none (a missing platform package, a config error) fails as
+      # jscpd failing, not as a copy. Exact clones of at least 50 tokens and 5 lines.
       # Copies present on adoption are in .jscpd-baseline.json; a clone not in it fails. Its count is held
       # to lib/dup-ceiling.json, which may only fall: a regenerated baseline that absorbed a new copy
       # fails, and so does one still listing a copy no longer found. Fingerprints cover a clone's whole
