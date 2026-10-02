@@ -7,7 +7,7 @@
 //
 // Writing to the real store is not acceptable from a test, so `CRAFT_RUNS_DIR` is pointed at a temp
 // directory. It is read at call time, so this is airtight rather than hopeful.
-import { test } from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -117,7 +117,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 ## Commands
 | What | Command |
 |---|---|
-| Unit tests | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` |
+| Unit tests | `npm test` (`vitest run`; files in `vitest.config.mjs`) |
 | Lint (zero-warning, identical to CI) | `npm run lint` — read the raw exit code |
 | Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci --prefix opencode/plugin` once) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
