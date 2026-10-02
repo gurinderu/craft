@@ -21,13 +21,24 @@ import { hasVerdictLine, parseVerdict } from './run-record.mjs'
 
 // Answers keyed by agent name; a function may answer differently per attempt, which is how the
 // sequential retry is exercised.
+/** @typedef {string | Error | ((nth: number) => unknown)} Answer */
+/**
+ * @param {Record<string, Answer>} answers
+ * @param {string[]} [calls]
+ * @returns {import('./index.ts').PluginCtx & { calls: string[] }}
+ */
 function fakeCtx(answers, calls = []) {
   return {
     calls,
+    // The dispatcher reaches only `client`; the rest of the plugin input is present to make this a
+    // whole PluginCtx, and nothing here reads it.
+    $: null,
+    directory: '',
+    worktree: '',
     client: {
       session: {
-        create: async ({ body }) => ({ id: `s-${calls.length}`, title: body?.title }),
-        prompt: async ({ body }) => {
+        create: async (/** @type {{ body?: { title?: string } }} */ { body }) => ({ id: `s-${calls.length}`, title: body?.title }),
+        prompt: async (/** @type {{ body?: { agent?: string } }} */ { body }) => {
           const agent = body?.agent ?? ''
           calls.push(agent)
           const nth = calls.filter(a => a === agent).length - 1
@@ -40,6 +51,7 @@ function fakeCtx(answers, calls = []) {
   }
 }
 
+/** @param {Partial<import('./orchestrator.ts').Job>} [over] @returns {import('./orchestrator.ts').Job} */
 const job = (over = {}) => ({ label: 'security', agent: 'rust-security-scanner', prompt: 'p', answered: hasVerdictLine, ...over })
 
 test('output without the answer the job asked for is NOT a result', async () => {
@@ -48,6 +60,7 @@ test('output without the answer the job asked for is NOT a result', async () => 
   // but it must never be reported as a dimension that ran.
   const ctx = fakeCtx({ 'rust-security-scanner': 'I cannot run that command without permission.' })
   const [r] = await fanOut(ctx, [job()])
+  assert.ok(r)
   assert.equal(r.ok, false, 'a refusal is not a verdict')
   assert.match(r.text, /INCOMPLETE \(not run\)/, 'and it is reported as not run')
   assert.match(r.text, /without the machine-readable line/, 'naming why, not blaming an unrelated bug')
@@ -57,6 +70,7 @@ test('output without the answer the job asked for is NOT a result', async () => 
 test('an answer carrying the verdict line is a result', async () => {
   const ctx = fakeCtx({ 'rust-security-scanner': 'cargo-audit found nothing.\n\nVERDICT: APPROVE' })
   const [r] = await fanOut(ctx, [job()])
+  assert.ok(r)
   assert.equal(r.ok, true)
   assert.match(r.text, /VERDICT: APPROVE/)
   assert.ok(!/INCOMPLETE/.test(r.text), 'a real answer is not decorated with a not-run note')
@@ -67,14 +81,17 @@ test('a job with no expectation keeps the old non-empty rule', async () => {
   // for them would be a false discriminator.
   const ctx = fakeCtx({ writer: 'some prose' })
   const [r] = await fanOut(ctx, [{ label: 'w', agent: 'writer', prompt: 'p' }])
+  assert.ok(r)
   assert.equal(r.ok, true)
 })
 
 test('the sequential retry is what rescues a first-pass failure', async () => {
   // The #8528/#6573 mitigation. Answer nothing the first time, properly the second.
+  /** @type {string[]} */
   const calls = []
   const ctx = fakeCtx({ 'rust-security-scanner': n => (n === 0 ? '' : 'ok\n\nVERDICT: WARNING') }, calls)
   const [r] = await fanOut(ctx, [job()])
+  assert.ok(r)
   assert.equal(r.ok, true, 'the retry result is the one that counts')
   assert.match(r.text, /VERDICT: WARNING/)
   assert.equal(calls.length, 2, 'and it took exactly one retry')
@@ -86,6 +103,7 @@ test('a job that times out says so, and does not blame an opencode bug', async (
   // version problem. A deadline must report itself as a deadline.
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
   const [r] = await fanOut(ctx, [{ label: 'review', agent: 'slow', prompt: 'p', answered: hasVerdictLine, timeoutMs: 20 }])
+  assert.ok(r)
   assert.equal(r.ok, false)
   assert.match(r.text, /no result within/, 'the cause named is the deadline')
   assert.match(r.text, /may simply need longer/, 'and the reader is pointed at the real remedy')
@@ -95,6 +113,7 @@ test('a job that times out says so, and does not blame an opencode bug', async (
 test('a session that throws is reported as an error, not as silence', async () => {
   const ctx = fakeCtx({ 'rust-security-scanner': new Error('permission denied') })
   const [r] = await fanOut(ctx, [job()])
+  assert.ok(r)
   assert.equal(r.ok, false)
   assert.match(r.text, /errored/)
   assert.match(r.text, /permission denied/, 'the actual error survives to the reader')
@@ -110,7 +129,9 @@ test('one dead dimension does not take the live ones down with it', async () => 
     { label: 'b', agent: 'bad', prompt: 'p', answered: hasVerdictLine },
   ])
   assert.deepEqual(rs.map(r => r.ok), [true, false])
-  assert.match(rs[1].text, /INCOMPLETE \(not run\)/)
+  const [, dead] = rs
+  assert.ok(dead)
+  assert.match(dead.text, /INCOMPLETE \(not run\)/)
 })
 
 test('a verdict a model would ordinarily write — decorated — still counts as an answer', async () => {
@@ -121,6 +142,7 @@ test('a verdict a model would ordinarily write — decorated — still counts as
   for (const line of ['**VERDICT: BLOCK**', '> VERDICT: BLOCK', '`VERDICT: BLOCK`', '- VERDICT: BLOCK', '| VERDICT: BLOCK |']) {
     const ctx = fakeCtx({ 'rust-security-scanner': `findings above\n\n${line}` })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `decorated verdict must be accepted: ${line}`)
   }
 })
@@ -139,6 +161,7 @@ test('the gate accepts everything the parser reads as a verdict, prose included'
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `the parser reads this, so the gate must too: ${JSON.stringify(text)}`)
   }
 })
@@ -163,6 +186,7 @@ test('a keyword in prose is not a judgement, however the parser weighs it', asyn
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, false, `a bare keyword is not an answer: ${JSON.stringify(text)}`)
   }
   // And the reader is unchanged: it still reads severity out of exactly that text.
@@ -245,6 +269,7 @@ test('a session that says it could not do the work is not answering, however it 
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, false, `a declined run is not an answer: ${JSON.stringify(text)}`)
   }
 
@@ -252,6 +277,7 @@ test('a session that says it could not do the work is not answering, however it 
   // deliver exactly the line it was asked for.
   const ctx = fakeCtx({ 'rust-security-scanner': 'I could not run miri.\n\nVERDICT: INCOMPLETE' })
   const [ok] = await fanOut(ctx, [job()])
+  assert.ok(ok)
   assert.equal(ok.ok, true, 'the structured line still answers')
 
   // Except a claimed APPROVE over a run that checked NOTHING. A blanket exemption made the refusal
@@ -273,6 +299,7 @@ test('a session that says it could not do the work is not answering, however it 
   ]) {
     const claimed = fakeCtx({ 'rust-security-scanner': text })
     const [refused] = await fanOut(claimed, [job()])
+    assert.ok(refused)
     assert.equal(refused.ok, false, `an Approve holds only over what was looked at: ${JSON.stringify(text)}`)
   }
 })
@@ -305,6 +332,7 @@ test('quoting the instructions is not answering them', async () => {
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, false, `a quoted verdict line is not an answer: ${JSON.stringify(text)}`)
   }
 
@@ -326,6 +354,7 @@ test('quoting the instructions is not answering them', async () => {
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `its own line still answers: ${JSON.stringify(text)}`)
   }
 })
@@ -396,6 +425,7 @@ test('prose about the CODE does not read as the session declining', async () => 
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `a finding is not a refusal: ${JSON.stringify(text)}`)
   }
 })
@@ -416,6 +446,7 @@ test('no markdown shape lets a refusal certify itself', async () => {
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, false, `a refusal is a refusal in any shape: ${JSON.stringify(text)}`)
   }
 
@@ -428,6 +459,7 @@ test('no markdown shape lets a refusal certify itself', async () => {
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `a clean run answers in any shape too: ${JSON.stringify(text)}`)
   }
 })
@@ -448,6 +480,7 @@ test('a conforming Approve survives ordinary prose about what could not be done'
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `a conforming Approve must remain reachable: ${JSON.stringify(text)}`)
   }
 })
@@ -469,6 +502,7 @@ test('prose about the CODE is not a session declining', async () => {
     // vocabulary can then be broad, and what it costs is stated where it is applied.
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `this is a finding, not a self-report: ${JSON.stringify(text)}`)
     assert.equal(parseVerdict(text), 'Block')
   }
@@ -489,6 +523,7 @@ test('reported severity in prose IS an answer, even unlabelled', async () => {
   ]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, true, `reported severity is an answer: ${JSON.stringify(text)}`)
     assert.equal(parseVerdict(text), 'Block')
   }
@@ -501,6 +536,7 @@ test('a session that decided nothing is not an answer', async () => {
   for (const text of ['I cannot run those tools here.', "I'll start by looking at the repo."]) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
+    assert.ok(r)
     assert.equal(r.ok, false, `nothing decided this: ${JSON.stringify(text)}`)
     assert.match(r.text, /INCOMPLETE \(not run\)/)
   }
@@ -520,6 +556,7 @@ test('a single-call failure does not claim a retry that never happened', async (
   // fanOut DOES retry, so it keeps the original wording — the two notes differ because the two
   // paths differ, which is the whole point.
   const [f] = await fanOut(ctx, [{ label: 'd', agent: 'rust-security-scanner', prompt: 'p', answered: hasVerdictLine }])
+  assert.ok(f)
   assert.match(f.text, /sequential retry/)
 })
 
@@ -578,6 +615,7 @@ test('the sequential retries share one budget instead of multiplying the deadlin
   // Raising the per-job deadline made the retry arithmetic unlivable: ten dimensions retried one
   // after another is hours with nothing on screen. Whoever is left when the budget runs out is
   // reported not-run WITHOUT being attempted, which is the truthful thing to say about them.
+  /** @type {string[]} */
   const calls = []
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) }, calls)
   const jobs = Array.from({ length: 3 }, (_, i) => ({
@@ -595,6 +633,7 @@ test('a retry clipped by the budget is described by the deadline it actually ran
   // that never fired.
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
   const [r] = await fanOut(ctx, [{ label: 'd', agent: 'slow', prompt: 'p', answered: hasVerdictLine, timeoutMs: 30 }])
+  assert.ok(r)
   assert.match(r.text, /no result within 30 ms/, 'the span named is the one that applied')
   assert.ok(!/minutes/.test(r.text), 'and not a deadline that never ran')
 })
@@ -606,6 +645,7 @@ test('the note names the line THIS job required, not a line from another engine'
   const [r] = await fanOut(ctx, [{
     label: 'f1', agent: 'validator', prompt: 'p', answered: () => false, requires: 'OUTCOME: line',
   }])
+  assert.ok(r)
   assert.match(r.text, /without the OUTCOME: line the prompt requires/)
   assert.ok(!/verdict/i.test(r.text), 'and never names a line the job did not ask for')
 })
@@ -622,9 +662,10 @@ test('a retry is clipped to what is left of the shared budget', async () => {
     // millisecond of arithmetic buys nothing the same branch cannot show in 300ms.
     { label: 'b', agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 300 },
   ]
-  const rs = await fanOut(ctx, jobs, 80) // 80ms of retry budget for both
-  assert.match(rs[1].text, /no result within/, 'the second retry ran under a clipped deadline')
-  assert.ok(!/300 ms/.test(rs[1].text), 'and is not described by the deadline it never got')
+  const [, second] = await fanOut(ctx, jobs, 80) // 80ms of retry budget for both
+  assert.ok(second)
+  assert.match(second.text, /no result within/, 'the second retry ran under a clipped deadline')
+  assert.ok(!/300 ms/.test(second.text), 'and is not described by the deadline it never got')
 })
 
 test('a retry clipped by the budget names the budget, not a deadline that exists nowhere', async () => {
@@ -641,11 +682,12 @@ test('a retry clipped by the budget names the budget, not a deadline that exists
   // job's own deadline, which is what makes it CLIPPED, and comfortably above zero, which is what
   // stops a scheduling stall flipping it to "already spent". The previous 100ms left 20ms of slack
   // and could flake into the wrong branch.
-  const rs = await fanOut(ctx, jobs, 130)
-  assert.match(rs[0].text, /may simply need longer than that deadline/, 'the unclipped one still says so')
-  assert.match(rs[1].text, /all that was left of this run's shared retry budget/, 'the clipped one names the budget')
+  const [unclipped, clipped] = await fanOut(ctx, jobs, 130)
+  assert.ok(unclipped && clipped)
+  assert.match(unclipped.text, /may simply need longer than that deadline/, 'the unclipped one still says so')
+  assert.match(clipped.text, /all that was left of this run's shared retry budget/, 'the clipped one names the budget')
   assert.ok(
-    !/may simply need longer than that deadline/.test(rs[1].text),
+    !/may simply need longer than that deadline/.test(clipped.text),
     'and does not send the reader after a per-job deadline that was never the limit',
   )
 })
