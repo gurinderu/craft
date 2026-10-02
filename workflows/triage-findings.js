@@ -226,7 +226,7 @@ const PLAN_SCHEMA = {
 const CRAFT_VERSION = '0.22.0' // x-release-please-version
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
-// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings tallyVerdicts
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings tallyVerdicts repoRefusal
 /** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
@@ -263,6 +263,35 @@ function tallyVerdicts(entries) {
     if (e && Object.prototype.hasOwnProperty.call(t, e.verdict)) t[/** @type {TriageVerdict} */ (e.verdict)] += 1
   }
   return t
+}
+
+// The refusal of a `repo` argument by an engine whose agents run git/cargo wherever the session sits:
+// accepting it silently reads THIS checkout and reports a normal-looking verdict for the wrong code.
+// The engine files `record` through its logRun — a repeated wrong dispatch has to reach the `notRun`
+// fragility ranking — and returns `report`, before anything has run. One helper for every engine that
+// refuses, so the record and the advice cannot drift between them.
+/**
+ * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number, via?: string }} o
+ *   `via`: the parent workflow that dispatched this run, '' when it was not nested
+ */
+function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
+  return {
+    record: {
+      schemaVersion: 1, runtime: 'claude-code', craftVersion, kind: 'workflow', name: engine,
+      nested: !!via, via: via || null,
+      verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
+      // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
+      // make every repetition of this same misuse its own count-1 row.
+      notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
+      outputTokens,
+    },
+    report: [
+      `## Verdict`,
+      `⚠️ INCOMPLETE — \`repo=${repo}\` was given, but \`${engine}\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+      ``,
+      `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`${engine}\` there.`,
+    ].join('\n'),
+  }
 }
 // <<< craft-inline
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -638,21 +667,9 @@ const logRun = makeRunLogger({
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
 if (A['repo']) {
-  await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'triage-findings',
-    nested: false, via: null,
-    verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
-    // make every repetition of this same misuse its own count-1 row.
-    notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
-    outputTokens: budget.spent(),
-  })
-  return [
-    `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
-    ``,
-    `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`triage-findings\` there.`,
-  ].join('\n')
+  const refused = repoRefusal({ engine: 'triage-findings', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  await logRun(refused.record)
+  return refused.report
 }
 
 phase('Gather')
