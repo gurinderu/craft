@@ -85,6 +85,15 @@ jobs:
         run: npm run check:dead:production
       - name: Check unused code and dependencies, tests included (knip)
         run: npm run check:dead
+      # Copied code outside the craft-inline mechanism (.jscpd.json): lib/, opencode/plugin/ and
+      # workflows/*.js, tests excluded (fixture boilerplate), each fenced region skipped (its copy is
+      # byte-compared by the syntax-check step above). Exact clones of at least 50 tokens and 5 lines.
+      # The copies that existed on adoption are in .jscpd-baseline.json; a clone not in it fails.
+      # Fingerprints cover a clone's whole extent, so editing in or next to a baselined copy can read as
+      # a new clone: regenerate with `npm run check:dup:baseline` and say in the PR which copy moved.
+      # Every silent skip is off: `maxSize` 10mb (review.js is past half the 1mb default), `failOnEmpty`.
+      - name: Check duplicated code (jscpd)
+        run: npm run check:dup
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
       # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.
       - name: Validate plugin manifests
