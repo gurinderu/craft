@@ -26,9 +26,11 @@ jobs:
       # typecheck step below is their gate. Keep this command identical to package.json's "lint".
       - name: Lint
         run: npx eslint lib opencode/plugin --max-warnings 0
-      # tsc --strict over opencode/plugin/*.ts (config in opencode/plugin/tsconfig.json). This is the
-      # only gate that compiles the TypeScript at all; before it existed a syntax error there shipped
-      # green. It type-checks only — no emit — and does not cover the .md agents/commands beside it.
+      # tsc over opencode/plugin/*.ts and every opencode/plugin/*.mjs, tests included (config in
+      # opencode/plugin/tsconfig.json: checkJs at the same maximum strictness as lib/tsconfig.json).
+      # This is the only gate that compiles the TypeScript at all; before it existed a syntax error
+      # there shipped green. Its Node typings are the plugin's own pinned @types/node, not Node 22.
+      # It type-checks only — no emit — and does not cover the .md agents/commands beside it.
       - name: Typecheck opencode plugin
         run: npm run check:types
       # tsc --checkJs at maximum strictness (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes
