@@ -2,7 +2,9 @@ import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 
-// Lint scope: the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, and knip.config.js.
+// Lint scope: the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, knip.config.js and
+// .dependency-cruiser.mjs (both decide what a gate sees; tsc checks their JSDoc types — a test imports the
+// first, lib/tsconfig.json names the second, which a wildcard would skip as a dot-file).
 //   - workflows/*.js are NOT linted as files and cannot be: they carry top-level export + await + return
 //     and only parse inside the Workflow sandbox wrapper — the same reason `node --check` cannot
 //     read them. `node lib/check-workflows.mjs` compiles them, and `npm run check:types:workflows`
@@ -45,7 +47,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js'],
+    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js', '.dependency-cruiser.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
