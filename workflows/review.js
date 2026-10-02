@@ -4220,7 +4220,7 @@ phase('Scout')
 // An absolute `path` with no `repo` to decide it against: refuse BEFORE the first agent is
 // dispatched. Zero cost, and the caller is told the two spellings that are unambiguous — against a
 // run that guesses, which costs a full fan-out and then reports a scope nobody asked for.
-if (ambiguousPath) {
+async function ambiguousPathExit() {
   const msg = `path=${ambiguousPath} is an absolute path and no \`repo\` was given, so it is ambiguous: it could name the REPOSITORY to review (pass it as \`repo\`) or a directory INSIDE the repository to narrow to (pass it relative to the repo root). Nothing ran — re-dispatch with one of those two spellings.`
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
@@ -4231,8 +4231,18 @@ if (ambiguousPath) {
   })
   return out([`## Verdict`, `⚠️ INCOMPLETE — ${msg}`].join('\n'))
 }
-const detected = await ragent(
-  `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under ${shq(pathArg)}; pass \`-- ${shq(pathArg)}\` to the git commands below.` : ''}
+async function detectDiedExit() {
+  await logRun({
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun], outputTokens: budget.spent(),
+  })
+  return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
+}
+/** @returns {Promise<{ exit: string, detected: null } | { exit: null, detected: DetectAnswer }>} */
+async function detectChanges() {
+  if (ambiguousPath) return { exit: await ambiguousPathExit(), detected: null }
+  const detected = await ragent(
+    `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under ${shq(pathArg)}; pass \`-- ${shq(pathArg)}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
@@ -4240,37 +4250,41 @@ const detected = await ragent(
 3. Capture the VERBATIM change description as \`spec\` — the authors' own written claims/invariants, checked against code later. If the current branch has an OPEN PR, run \`gh pr view --json body,title\` and use its title + body. Otherwise use the commit messages on the diff range: \`git log <base>..HEAD --format=%B\`. Do not summarize or paraphrase — copy the text as-is. Truncate to ~4000 chars. Empty string if there is no PR and no commit body (e.g. only uncommitted changes). If \`gh\` is missing/unauthenticated, fall through to the commit messages.
 4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). These two are a FALLBACK only: the logger reads both off the working copy with git at the moment a record is written, and its values win. Do not work to fill them — an empty string is a fine answer.
 Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, and head.`,
-  { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
-)
-// If base resolution died even after the retry, say so loudly — falling through would
-// produce a misleading "Approve — no supported language" on an empty file list.
-if (!detected) {
-  await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
-    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun], outputTokens: budget.spent(),
-  })
-  return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
+    { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
+  )
+  // If base resolution died even after the retry, say so loudly — falling through would
+  // produce a misleading "Approve — no supported language" on an empty file list.
+  if (!detected) return { exit: await detectDiedExit(), detected: null }
+  return { exit: null, detected }
 }
-const baseRef = detected?.baseRef ?? baseArg
-// DECODED HERE, at the source, before anything asks what a file is. The list comes back as git
-// printed it, and git C-quotes any name holding a space or a non-ASCII character — so the string
-// ends in `"`, `detect` sees no `.rs` suffix, the shared-suffix test sees no `.lock`, and the file
-// belongs to no profile and enters no slice. Decoding it further downstream, at the point the
-// pathspec is rendered, was the first attempt and it could never fire: the name had already been
-// filtered out. Normalising once here also corrects which profiles are considered active and which
-// files are reported as covered by none.
-const changedFiles = (Array.isArray(detected?.files) ? detected.files : []).map(decodeGitPath)
-// The authors' OWN written spec (PR body/title or commit messages) — checked claim-by-claim
-// against the code by the intent lens. The one-line inferred `intent` is not enough: precise
-// claims ("never fails on X", "the only way to Y", "idempotent no-op") live in the full body.
-const spec = (typeof detected?.spec === 'string' ? detected.spec : '').slice(0, 4000)
-// The detect agent runs `git rev-parse --abbrev-ref HEAD`, which prints the literal string "HEAD" on
-// a DETACHED HEAD — a non-branch. Route it through the same rule gitIdentity applies (branchFromAbbrevRef,
-// inlined above from lib/run-record.mjs) so a detached run resolves to '' BEFORE this value becomes both
-// the record branch (below) and the prior-round `--branch` flag: a non-empty "HEAD" would pass the
-// no-branch guard and wrongly chain unrelated detached contexts to each other (realm @nick/craft #104).
-const branch = branchFromAbbrevRef((typeof detected?.branch === 'string' ? detected.branch : '').trim())
-const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
+const detection = await detectChanges()
+if (detection.exit !== null) return detection.exit
+const detected = detection.detected
+/** What the detect agent resolved, normalised: the base, the changed files, the spec and the run's identity. @param {DetectAnswer} detected */
+function detectedChange(detected) {
+  const baseRef = detected.baseRef ?? baseArg
+  // DECODED HERE, at the source, before anything asks what a file is. The list comes back as git
+  // printed it, and git C-quotes any name holding a space or a non-ASCII character — so the string
+  // ends in `"`, `detect` sees no `.rs` suffix, the shared-suffix test sees no `.lock`, and the file
+  // belongs to no profile and enters no slice. Decoding it further downstream, at the point the
+  // pathspec is rendered, was the first attempt and it could never fire: the name had already been
+  // filtered out. Normalising once here also corrects which profiles are considered active and which
+  // files are reported as covered by none.
+  const changedFiles = (Array.isArray(detected.files) ? detected.files : []).map(decodeGitPath)
+  // The authors' OWN written spec (PR body/title or commit messages) — checked claim-by-claim
+  // against the code by the intent lens. The one-line inferred `intent` is not enough: precise
+  // claims ("never fails on X", "the only way to Y", "idempotent no-op") live in the full body.
+  const spec = (typeof detected.spec === 'string' ? detected.spec : '').slice(0, 4000)
+  // The detect agent runs `git rev-parse --abbrev-ref HEAD`, which prints the literal string "HEAD" on
+  // a DETACHED HEAD — a non-branch. Route it through the same rule gitIdentity applies (branchFromAbbrevRef,
+  // inlined above from lib/run-record.mjs) so a detached run resolves to '' BEFORE this value becomes both
+  // the record branch (below) and the prior-round `--branch` flag: a non-empty "HEAD" would pass the
+  // no-branch guard and wrongly chain unrelated detached contexts to each other (realm @nick/craft #104).
+  const branch = branchFromAbbrevRef((typeof detected.branch === 'string' ? detected.branch : '').trim())
+  const head = (typeof detected.head === 'string' ? detected.head : '').trim()
+  return { baseRef, changedFiles, spec, branch, head }
+}
+const { baseRef, changedFiles, spec, branch, head } = detectedChange(detected)
 
 // Round detection: find the newest prior `review` run for this branch, and accept it as the prior
 // round ONLY if its head is an ANCESTOR of the current HEAD (a rebase/force-push makes a stale run
@@ -4291,20 +4305,29 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // own, so it does not enter the chain: not as a reader (here) and not as a candidate
 // (`selectPriorRounds` skips `nested` rows). The run that has a history is the top-level one.
 // Unlike the condition this replaces, the skip is announced — a silent skip was that defect.
-/** @type {PriorRound | null} */
-let priorRound = null
-// The prior-round lookup's non-found reason, held here because `priorRound` is nulled on a miss below.
-// It is the reason the run did NOT chain to a prior round; null means it DID (reReviewMemory reads null
-// as "chained"). fresh and nested never look up a prior round, so they are their own reasons — not
-// "chained", and not the detached-HEAD footgun either (realm @nick/craft #104).
-let priorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
-if (!freshArg && viaArg) {
-  log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
+// The prior round as the loader read it, hardened, with the reason it was not chained when it was not.
+async function loadPriorRound() {
+  /** @type {PriorRound | null} */
+  let priorRound = null
+  // The prior-round lookup's non-found reason, held here because `priorRound` is nulled on a miss below.
+  // It is the reason the run did NOT chain to a prior round; null means it DID (reReviewMemory reads null
+  // as "chained"). fresh and nested never look up a prior round, so they are their own reasons — not
+  // "chained", and not the detached-HEAD footgun either (realm @nick/craft #104).
+  /** @type {string | null} */
+  let priorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
+  if (!freshArg && viaArg) {
+    log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
+  }
+  if (!freshArg && !viaArg) ({ priorRound, priorReason } = await readPriorRound(priorReason))
+  announcePriorRound(priorRound)
+  return { priorRound, priorReason }
 }
-// The loader's throw, held apart from its answer so `priorRound` is only ever an answer or null.
-let priorReadThrew = ''
-if (!freshArg && !viaArg) {
-  priorRound = await ragentQuietly(
+/** @param {string | null} priorReason @returns {Promise<{ priorRound: PriorRound | null, priorReason: string | null }>} */
+async function readPriorRound(priorReason) {
+  // The loader's throw, held apart from its answer so `priorRound` is only ever an answer or null.
+  let priorReadThrew = ''
+  /** @type {PriorRound | null} */
+  let priorRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
 Run exactly this:
@@ -4320,22 +4343,7 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // command replaced: the first re-review of a branch whose rows predate the absolute-path key
   // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
   if (!priorRound?.['found']) {
-    // Capture WHY there is no prior round BEFORE `priorRound` is nulled below: the re-review memory
-    // outcome (chained? and the detached-HEAD note) is derived from it (realm @nick/craft #104).
-    priorReason = priorRound?.['reason'] || 'no-prior-round'
-    if (priorRound?.['reason']) log(`No prior round: ${priorRound['reason']}`)
-    // A read that FAILED is the same lost-record class as a write that failed, and its silence is
-    // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
-    // track is skipped) and the report cannot be told apart from a genuine first pass.
-    // Narrow on purpose: the loader tells "there IS no prior round" (no-candidate-rows, no-branch, an
-    // ancestry rejection after a rebase — health, and the common case: every first review) apart from
-    // "the read could not run". Only the latter is a lost record; marking the former would fire the
-    // marker on every first review, which is precisely how a marker stops being read.
-    const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
-    const readFailed = !priorRound || !!priorReadThrew || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRound)['reason'] || '').startsWith(r))
-    if (readFailed) {
-      noteTelemetryLoss('the prior-round ledger', priorReadThrew || priorRound?.['reason'] || 'the loader agent returned no result')
-    }
+    priorReason = rejectedPriorReason(priorRound, priorReadThrew)
     priorRound = null
   }
   // Harden the model-authored ledger `head` at the LOAD boundary before it ever reaches a shell
@@ -4347,13 +4355,43 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
     log(`⚠️ prior-round head ${JSON.stringify(priorRound['head'])} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
     priorRound['head'] = baseRef
   }
+  return { priorRound, priorReason }
 }
-// Transport integrity: assert the ledger we received is the ledger the script printed.
-if (priorRound && ledgerTruncated(priorRound)) {
-  log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound['ledgerCount']} entr(ies), ${priorRound['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
+// Why there is no prior round, logged; a read that failed (rather than found nothing) is a lost record.
+/** @param {PriorRound | null} priorRound @param {string} priorReadThrew */
+function rejectedPriorReason(priorRound, priorReadThrew) {
+  // Capture WHY there is no prior round BEFORE `priorRound` is nulled below: the re-review memory
+  // outcome (chained? and the detached-HEAD note) is derived from it (realm @nick/craft #104).
+  const priorReason = priorRound?.['reason'] || 'no-prior-round'
+  if (priorRound?.['reason']) log(`No prior round: ${priorRound['reason']}`)
+  notePriorReadFailure(priorRound, priorReadThrew)
+  return priorReason
 }
-if (priorRound) log(`Re-review: prior round ${priorRound['round']} @ ${flattenField(priorRound['head'])} · ${priorRound['ledger']?.length || 0} ledger finding(s)`)
-else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
+/** @param {PriorRound | null} priorRound @param {string} priorReadThrew */
+function notePriorReadFailure(priorRound, priorReadThrew) {
+  // A read that FAILED is the same lost-record class as a write that failed, and its silence is
+  // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
+  // track is skipped) and the report cannot be told apart from a genuine first pass.
+  // Narrow on purpose: the loader tells "there IS no prior round" (no-candidate-rows, no-branch, an
+  // ancestry rejection after a rebase — health, and the common case: every first review) apart from
+  // "the read could not run". Only the latter is a lost record; marking the former would fire the
+  // marker on every first review, which is precisely how a marker stops being read.
+  const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
+  const readFailed = !priorRound || !!priorReadThrew || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRound)['reason'] || '').startsWith(r))
+  if (readFailed) {
+    noteTelemetryLoss('the prior-round ledger', priorReadThrew || priorRound?.['reason'] || 'the loader agent returned no result')
+  }
+}
+/** @param {PriorRound | null} priorRound */
+function announcePriorRound(priorRound) {
+  // Transport integrity: assert the ledger we received is the ledger the script printed.
+  if (priorRound && ledgerTruncated(priorRound)) {
+    log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound['ledgerCount']} entr(ies), ${priorRound['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
+  }
+  if (priorRound) log(`Re-review: prior round ${priorRound['round']} @ ${flattenField(priorRound['head'])} · ${priorRound['ledger']?.length || 0} ledger finding(s)`)
+  else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
+}
+const { priorRound, priorReason } = await loadPriorRound()
 
 // realm @nick/craft #104: whether re-review memory engaged, and the note for the one case that fails
 // silently — a detached HEAD, where the lookup returns 'no-branch' and the run degrades to round 1
