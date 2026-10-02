@@ -18,18 +18,26 @@
     "agent-retry.mjs",
     "audit-evidence.mjs",
     "audit-verification.mjs",
+    "check-delivery-parity.mjs",
+    "check-evals.mjs",
+    "check-skills.mjs",
+    "inline-regions.mjs",
+    "journal-link.mjs",
     "ledger-shards.mjs",
     "lens-scope.mjs",
+    "loop-state.mjs",
     "nested-workflow.mjs",
     "preflight-probes.mjs",
     "profile-merge.mjs",
     "review-adjudicate.mjs",
     "review-coverage.mjs",
     "review-waves.mjs",
+    "round-pairs.mjs",
     "run-logging.mjs",
     "run-record.mjs",
     "throttled-runner.mjs",
     "verify-economy.mjs",
-    "workflow-args.mjs"
+    "workflow-args.mjs",
+    "workflow-version.mjs"
   ]
 }
