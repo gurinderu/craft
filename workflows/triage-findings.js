@@ -775,6 +775,7 @@ let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
 if (plan && ledger !== validations) {   // `ledger !== validations` already implies a plan; `plan &&` says so to the checker
   const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
   if (unjudged.size) {
+    /** @type {Set<string>} */
     const seen = new Set()
     ledger = ledger.map(e => {
       const v = e && unjudged.get(e.stable_id)
