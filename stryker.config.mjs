@@ -6,7 +6,8 @@ import { parseFloor } from './lib/mutation-floor.mjs'
 
 // The floor below which the run fails and what it is measured over: committed, and neither may fall —
 // `break` only rises, `mutate` only widens; lib/check-mutation-floor.mjs also fails this config when its
-// `mutate` or `thresholds.break` stops being the file's.
+// `mutate` or `thresholds.break` stops being the file's, or when it sets `ignorePatterns` or `files`:
+// Stryker drops the files they match before `mutate` applies.
 const floor = parseFloor(fs.readFileSync(new URL('./lib/mutation-floor.json', import.meta.url), 'utf8'))
 
 export default {
