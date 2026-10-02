@@ -3487,7 +3487,7 @@ ${JSON.stringify(payload, null, 2)}`
 
 // The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
 // shard cutter is fenced in from lib/ledger-shards.mjs, where it is linted and unit-tested.
-// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS LEDGER_COPY_REFUSAL_ENTRIES LEDGER_COPY_SAFETY_ROWS LEDGER_TOMBSTONE_MAX payloadBytes shardLedger tombstoneRound pruneTombstones tombstoneBudget
+// >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS LEDGER_COPY_REFUSAL_ENTRIES LEDGER_COPY_SAFETY_ROWS LEDGER_TOMBSTONE_MAX payloadBytes shardLedger packLedgerGroups tombstoneRound pruneTombstones newestTombstonePerFp tombstoneBudget
 // At most this many bytes of JSON per shard. Two ceilings bound it from above and one need from
 // below. Above: `logRunDispatch` treats 24KB as the point where a payload stops being safe for the
 // cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
@@ -3570,19 +3570,7 @@ function payloadBytes(item) {
 function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_SHARD_MAX_SHARDS } = {}) {
   const items = Array.isArray(ledger) ? ledger : []
   if (!items.length) return []
-  /** @type {unknown[][]} */
-  const groups = []
-  let bytes = 0
-  for (const item of items) {
-    const size = payloadBytes(item)
-    if (!groups.length || (/** @type {unknown[]} */ (groups[groups.length - 1]).length && bytes + size > max)) {
-      if (groups.length >= maxShards) break          // the overflow is declared below, not hidden
-      groups.push([])
-      bytes = 0
-    }
-    /** @type {unknown[]} */ (groups[groups.length - 1]).push(item)
-    bytes += size
-  }
+  const groups = packLedgerGroups(items, max, maxShards)
   return groups.map((group, i) => ({
     // One key, one object: a checkpoint payload is merged into the record by `finalizeRun`, so a
     // bare `ledger` key here would collide with the record's own field.
@@ -3596,6 +3584,31 @@ function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_
     },
     ledgerItems: group,
   }))
+}
+
+// Items packed in order into groups of at most `max` payload bytes (an item larger than that alone in
+// its own), at most `maxShards` groups; what does not fit is left out here and declared by the caller.
+/**
+ * @param {unknown[]} items
+ * @param {number} max
+ * @param {number} maxShards
+ * @returns {unknown[][]}
+ */
+function packLedgerGroups(items, max, maxShards) {
+  /** @type {unknown[][]} */
+  const groups = []
+  let bytes = 0
+  for (const item of items) {
+    const size = payloadBytes(item)
+    if (!groups.length || (/** @type {unknown[]} */ (groups[groups.length - 1]).length && bytes + size > max)) {
+      if (groups.length >= maxShards) break          // the overflow is declared below, not hidden
+      groups.push([])
+      bytes = 0
+    }
+    /** @type {unknown[]} */ (groups[groups.length - 1]).push(item)
+    bytes += size
+  }
+  return groups
 }
 
 // The round a tombstone closed in, read from its `why` marker ("resolved in round N" / "dismissed
@@ -3635,6 +3648,22 @@ function tombstoneRound(t) {
 function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
   /** @type {Tombstone[]} */
   const items = Array.isArray(tombstones) ? tombstones : []
+  const deduped = newestTombstonePerFp(items)
+  if (deduped.length <= max) return deduped
+  // Decorate–sort–undecorate (Schwartzian): tombstoneRound parses a regex on every call, so calling it
+  // inside the comparator re-parses each row O(n log n) times. Compute it once per row, sort on the
+  // cached value (newest round first), drop the wrapper. Order-preserving: same key, and sort is stable.
+  return deduped
+    .map(row => ({ row, r: tombstoneRound(row) }))
+    .sort((a, b) => b.r - a.r)
+    .slice(0, max)
+    .map(d => d.row)
+}
+
+// Bound 1 of pruneTombstones: the newest tombstone per fingerprint (a later one wins a tie), in first-seen
+// order, then the fingerprint-less ones as they came; non-objects dropped.
+/** @param {Tombstone[]} items @returns {Tombstone[]} */
+function newestTombstonePerFp(items) {
   /** @type {Map<unknown, Tombstone>} */
   const newestByFp = new Map()
   /** @type {Tombstone[]} */
@@ -3645,16 +3674,7 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
     const prev = newestByFp.get(t.fp)
     if (!prev || tombstoneRound(t) >= tombstoneRound(prev)) newestByFp.set(t.fp, t)
   }
-  const deduped = [...newestByFp.values(), ...noFp]
-  if (deduped.length <= max) return deduped
-  // Decorate–sort–undecorate (Schwartzian): tombstoneRound parses a regex on every call, so calling it
-  // inside the comparator re-parses each row O(n log n) times. Compute it once per row, sort on the
-  // cached value (newest round first), drop the wrapper. Order-preserving: same key, and sort is stable.
-  return deduped
-    .map(row => ({ row, r: tombstoneRound(row) }))
-    .sort((a, b) => b.r - a.r)
-    .slice(0, max)
-    .map(d => d.row)
+  return [...newestByFp.values(), ...noFp]
 }
 
 // The tombstone budget for THIS ledger assembly: the combined-ledger ceiling (LEDGER_TOMBSTONE_MAX)
