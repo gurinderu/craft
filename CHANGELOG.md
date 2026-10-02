@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.23.0](https://github.com/gurinderu/craft/compare/v0.22.0...v0.23.0) (2026-10-02)
+
+
+### Features
+
+* **ci:** quality delta between a PR's base and head in the job summary ([#136](https://github.com/gurinderu/craft/issues/136)) ([fcdf184](https://github.com/gurinderu/craft/commit/fcdf184ceedec07641476f6ea502ade015964e39))
+* **gate:** every lib module at maximum type strictness; harden run-store readers ([#116](https://github.com/gurinderu/craft/issues/116)) ([2a5a418](https://github.com/gurinderu/craft/commit/2a5a41897905ba8e5c6224dc5da62ae233cb3785))
+* **gate:** hold the inlined lib modules to maximum type strictness ([#115](https://github.com/gurinderu/craft/issues/115)) ([ac60751](https://github.com/gurinderu/craft/commit/ac60751a607b153d5e6caee8d2b4e3c1fe2c460f))
+* **gate:** the engines read model output as unknown, pass closed agent options, and cannot reach the clock ([#122](https://github.com/gurinderu/craft/issues/122)) ([4ad720b](https://github.com/gurinderu/craft/commit/4ad720b1227a1d5720c8f4c49e40fd9250731560))
+* **gate:** the engines' own code under maximum type strictness ([#119](https://github.com/gurinderu/craft/issues/119)) ([c2bf4f2](https://github.com/gurinderu/craft/commit/c2bf4f27112ee6ec376dcd7a78e9613993f4e3c6))
+* **gate:** the OpenCode plugin's .mjs, tests included, under maximum type strictness ([#120](https://github.com/gurinderu/craft/issues/120)) ([0659840](https://github.com/gurinderu/craft/commit/0659840d4d900b449eae398eeb3f2e9a6ba5fbff))
+* **gate:** the tests under maximum type strictness ([#118](https://github.com/gurinderu/craft/issues/118)) ([cb8db6f](https://github.com/gurinderu/craft/commit/cb8db6fabce2f8273ae7a1148b52d161d6fcb78b))
+* **gate:** type-check lib/*.mjs with tsc --checkJs ([#113](https://github.com/gurinderu/craft/issues/113)) ([6632a8a](https://github.com/gurinderu/craft/commit/6632a8a1947bca926a972155d91b06018cc956ea))
+* **gate:** typescript-eslint type-aware rules in lint and on the engines ([#126](https://github.com/gurinderu/craft/issues/126)) ([11e54e8](https://github.com/gurinderu/craft/commit/11e54e8ae31c2bf28708c804f7a47acb13142d82))
+
+
+### Bug Fixes
+
+* **audit:** say in the report and record when a craft agent was unavailable ([#111](https://github.com/gurinderu/craft/issues/111)) ([0885377](https://github.com/gurinderu/craft/commit/08853773c49edda29082f651dc364e60c51055a9))
+* **audit:** treat a whitespace-only synthesis answer as no report ([#130](https://github.com/gurinderu/craft/issues/130)) ([0062f65](https://github.com/gurinderu/craft/commit/0062f656cc1ef2ef891d535a40657af26f561bce))
+* **gate:** count any carried inside a type; refuse globalThis and host escapes in the engines ([#125](https://github.com/gurinderu/craft/issues/125)) ([dfb4b81](https://github.com/gurinderu/craft/commit/dfb4b81cba2d10c91e4bb5f6a38aa68232e1f4dc))
+* **log-run:** a checkpoint file holding valid JSON that is not an object ([2a5a418](https://github.com/gurinderu/craft/commit/2a5a41897905ba8e5c6224dc5da62ae233cb3785))
+* **review:** decode git paths without TextEncoder/TextDecoder, which the Workflow sandbox lacks ([#121](https://github.com/gurinderu/craft/issues/121)) ([55c3e17](https://github.com/gurinderu/craft/commit/55c3e17a6eba3ecaf1f4ec80d4e3398891c1785f))
+* **run-record:** one stored-record type and one cost rule for every reader ([#117](https://github.com/gurinderu/craft/issues/117)) ([6ab4820](https://github.com/gurinderu/craft/commit/6ab482091233299938f20c8ad3c5433b5a6f48be))
+
 ## [0.22.0](https://github.com/gurinderu/craft/compare/v0.21.0...v0.22.0) (2026-10-01)
 
 
