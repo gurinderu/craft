@@ -694,12 +694,36 @@ test('a retry clipped by the budget names the budget, not a deadline that exists
 
 test('a job left over when the budget is spent is not attempted, and says so', async () => {
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
-  const jobs = Array.from({ length: 3 }, (_, i) => ({
+  const jobs = Array.from({ length: 5 }, (_, i) => ({
     label: `d${i}`, agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 50,
   }))
-  // 60ms against three 50ms jobs left ~10ms of slack and flaked once in twenty runs; the sibling
-  // test above was widened for the same reason and this one was left.
-  const rs = await fanOut(ctx, jobs, 90)
+  // A budget the retries exactly use up is a race: 90ms against 50ms jobs (one full retry, one
+  // clipped to the remainder) left the third job's check at `left` 0 or 1 by timer jitter, and
+  // failed in CI under load. 30ms is less than one job's deadline: the first retry is clipped to
+  // the whole budget, and of five jobs the later ones find it spent.
+  const rs = await fanOut(ctx, jobs, 30)
   const skipped = rs.filter(r => /retry budget for this run was already spent/.test(r.text))
   assert.ok(skipped.length >= 1, 'at least one job is honestly reported as never retried')
+})
+
+test('the answer is read from every response shape a session may return', async () => {
+  // A response may carry its parts at the top, under `data` or under `message`, may arrive as an array
+  // whose last element is the message, or may carry only a top-level `text`. Each shape is an answer.
+  const line = 'VERDICT: APPROVE'
+  /** @type {Record<string, unknown>} */
+  const shapes = {
+    top: { parts: [{ type: 'text', text: line }] },
+    data: { data: { parts: [{ type: 'text', text: line }] } },
+    message: { message: { parts: [{ type: 'text', text: line }] } },
+    array: [{ parts: [] }, { parts: [{ type: 'text', text: line }] }],
+    text: { text: `  ${line}  ` },
+    nothing: { parts: [{ type: 'image', text: line }] },
+  }
+  for (const [shape, res] of Object.entries(shapes)) {
+    const ctx = fakeCtx({})
+    ctx.client.session.prompt = async () => res
+    const r = await runAnswering(ctx, 'rust-security-scanner', 'p', hasVerdictLine)
+    if (shape === 'nothing') assert.equal(r.ok, false, 'a part that is not text carries no answer')
+    else assert.deepEqual([shape, r.ok, r.text], [shape, true, line])
+  }
 })

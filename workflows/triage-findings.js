@@ -19,7 +19,44 @@ export const meta = {
 // through every `typeof args === 'object'` guard, so every option reverted to its default and the
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
-// >>> craft-inline lib/workflow-args.mjs parseOptions normalizeArgs
+// >>> craft-inline lib/workflow-args.mjs applyOption parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
+// One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
+// name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
+// module-level helper is copied into the engines' inlined regions only when it is, and the fence's
+// sibling check only knows about EXPORTS — a private helper reaches every engine as a ReferenceError
+// on first use, with the gate green.
+/**
+ * @param {RegExpExecArray} m
+ * @param {Record<string, unknown>} out
+ * @param {string[]} ignored
+ * @returns {number}
+ */
+function applyOption(m, out, ignored) {
+  /** @param {string} k */
+  const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
+  if (m[7]) {
+    if (banned(m[7])) { ignored.push(m[7]); return 0 }
+    out[m[7]] = true
+    return 1
+  }
+  const key = /** @type {string} */ (m[2])
+  // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
+  // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
+  // the logger agent is handed. The args string is model-composed, so this is the same threat shape
+  // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
+  // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
+  // legitimate option names, so they are refused by name and reported.
+  if (banned(key)) { ignored.push(key); return 0 }
+  const quoted = m[4] ?? m[5]
+  if (quoted !== undefined) { out[key] = quoted; return 1 }
+  try {
+    out[key] = JSON.parse(/** @type {string} */ (m[3]))
+  } catch {
+    out[key] = /** @type {string} */ (m[3])
+  }
+  return 1
+}
+
 // Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
 // A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
@@ -44,32 +81,58 @@ function parseOptions(text) {
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
     cursor = pair.lastIndex
-    // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
-    // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
-    // private helper reaches every engine as a ReferenceError on first use, with the gate green.
-    /** @param {string} k */
-    const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
-    if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
-    const key = /** @type {string} */ (m[2])
-    // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
-    // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
-    // the logger agent is handed. The args string is model-composed, so this is the same threat shape
-    // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
-    // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
-    // legitimate option names, so they are refused by name and reported.
-    if (banned(key)) { ignored.push(key); continue }
-    const quoted = m[4] ?? m[5]
-    if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
-    try {
-      out[key] = JSON.parse(/** @type {string} */ (m[3]))
-    } catch {
-      out[key] = /** @type {string} */ (m[3])
-    }
-    pairs++
+    pairs += applyOption(m, out, ignored)
   }
   const tail = text.slice(cursor).trim()
   if (tail) ignored.push(...tail.split(/\s+/))
   return { options: out, pairs, ignored }
+}
+
+// normalizeArgs' branch for a string that starts with `{`.
+/**
+ * @param {string} text
+ * @param {(msg: string) => void} warn
+ * @returns {Record<string, unknown>}
+ */
+function normalizeJsonArgs(text, warn) {
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      warn('⚠️ args arrived as a JSON string, not an object — parsed it; pass a real object to avoid this')
+      return parsed
+    }
+    warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
+    return {}
+  } catch (e) {
+    warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+    return {}
+  }
+}
+
+// normalizeArgs' last branch: a non-empty string that is not JSON, read as `key=value` options.
+/**
+ * @param {string} text
+ * @param {(msg: string) => void} warn
+ * @returns {Record<string, unknown>}
+ */
+function normalizeKeyValueArgs(text, warn) {
+  const { options, pairs, ignored } = parseOptions(text)
+  if (pairs) {
+    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
+    // and testing "is any value not true" threw away every string made only of boolean options —
+    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
+    // requested mutation pass would silently not run.
+    warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
+    if (ignored.length) {
+      warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
+    }
+    return options
+  }
+  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
+  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
+  // verdict that reads exactly like a requested one.
+  warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
+  return {}
 }
 
 /**
@@ -93,37 +156,8 @@ function normalizeArgs(args, warn = () => {}) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
   }
-  if (text.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(text)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        warn('⚠️ args arrived as a JSON string, not an object — parsed it; pass a real object to avoid this')
-        return parsed
-      }
-      warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
-      return {}
-    } catch (e) {
-      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
-      return {}
-    }
-  }
-  const { options, pairs, ignored } = parseOptions(text)
-  if (pairs) {
-    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
-    // and testing "is any value not true" threw away every string made only of boolean options —
-    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
-    // requested mutation pass would silently not run.
-    warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
-    if (ignored.length) {
-      warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
-    }
-    return options
-  }
-  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
-  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
-  // verdict that reads exactly like a requested one.
-  warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
-  return {}
+  if (text.startsWith('{')) return normalizeJsonArgs(text, warn)
+  return normalizeKeyValueArgs(text, warn)
 }
 // <<< craft-inline
 const A = normalizeArgs(args, log)
@@ -133,9 +167,14 @@ const A = normalizeArgs(args, log)
 // later — a loud drop undone in silence, which is worse than either behaviour alone.
 const argv = A
 
-const pr = argv['pr'] ? String(argv['pr']) : ''
-const report = argv['report'] ? String(argv['report']) : ''
-const base = argv['base'] ? String(argv['base']) : ''
+/** A text argument: its string form when given (truthy), else ''. @param {string} key @returns {string} */
+function textArg(key) {
+  return argv[key] ? String(argv[key]) : ''
+}
+
+const pr = textArg('pr')
+const report = textArg('report')
+const base = textArg('base')
 /** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
@@ -143,7 +182,7 @@ const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} *
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the triaged repo — where the script is not. Pass craftRoot then.
-const craftRootArg = argv['craftRoot'] ? String(argv['craftRoot']) : ''
+const craftRootArg = textArg('craftRoot')
 
 const RAW_SCHEMA = {
   type: 'object',
@@ -297,7 +336,7 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
@@ -436,6 +475,19 @@ fi
 `
 }
 
+// The craft version a record or checkpoint payload claims, as text ('' when it claims none).
+/** @param {unknown} payload @returns {string} */
+function payloadVersion(payload) {
+  return String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
+}
+
+// The logger flags both prompts share: `--dir`, `--rejoin` and the shell-expanded session id, each
+// independent of the others (see logRunPrompt below), with the trailing space the command line needs.
+/** @param {string} dir @param {boolean} rejoin @returns {string} */
+function runDirFlags(dir, rejoin) {
+  return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+}
+
 // The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
 // readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
 // review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
@@ -461,7 +513,7 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
+  const version = payloadVersion(record)
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -476,7 +528,7 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
   // rejoin search outright in that case (see its `target` comment), because the single candidate a
   // garbled sibling finds is its neighbour's LIVE directory.
-  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+  const flags = runDirFlags(dir, rejoin)
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -672,29 +724,40 @@ if (A['repo']) {
   return refused.report
 }
 
+
 phase('Gather')
 if (!pr && !report) {
   throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a rust-audit report).')
 }
 
-/** @type {Array<() => Promise<RawResult | null>>} */
-const gatherTasks = []
-const requestedLocators = []   // parallel to gatherTasks; drives NOT-RUN bookkeeping for the run record
-if (report) {
-  requestedLocators.push('report')
-  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
-    `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
-    { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
-  )))
-}
-if (pr) {
-  requestedLocators.push('pr')
-  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
-    `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
-    { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
-  )))
+/**
+ * One gather task per requested source, and the source each stands for, in the same order: the
+ * locators drive NOT-RUN bookkeeping for the run record.
+ * @returns {{ gatherTasks: Array<() => Promise<RawResult | null>>, requestedLocators: string[] }}
+ */
+function gatherPlan() {
+  /** @type {Array<() => Promise<RawResult | null>>} */
+  const gatherTasks = []
+  /** @type {string[]} */
+  const requestedLocators = []
+  if (report) {
+    requestedLocators.push('report')
+    gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
+      `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
+      { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
+    )))
+  }
+  if (pr) {
+    requestedLocators.push('pr')
+    gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
+      `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
+      { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
+    )))
+  }
+  return { gatherTasks, requestedLocators }
 }
 
+const { gatherTasks, requestedLocators } = gatherPlan()
 const gatherResults = await parallel(gatherTasks)   // order preserved → align with requestedLocators
 const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
 if (notRunSources.length) log(`WARNING: source(s) that produced nothing: ${notRunSources.join(', ')} — the triage covers fewer sources than asked.`)
@@ -707,13 +770,18 @@ log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 /** @param {SourcedFinding} f */
 const idOf = f => `${f.source}::${f.location || 'no-loc'}::${f.title}`
 // The prior ledger arrives in args, so an entry is read only as far as it is an object, its fields as text.
-/** @type {Map<string, LedgerEntry>} */
-const priorById = new Map()
-for (const e of priorLedger) {
-  if (!e || typeof e !== 'object') continue
-  const x = /** @type {Record<string, unknown>} */ (e)
-  priorById.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? '') })
+/** @param {unknown[]} entries @returns {Map<string, LedgerEntry>} */
+function ledgerById(entries) {
+  /** @type {Map<string, LedgerEntry>} */
+  const byId = new Map()
+  for (const e of entries) {
+    if (!e || typeof e !== 'object') continue
+    const x = /** @type {Record<string, unknown>} */ (e)
+    byId.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? '') })
+  }
+  return byId
 }
+const priorById = ledgerById(priorLedger)
 
 // ---- Validate ------------------------------------------------------------
 phase('Validate')
@@ -728,7 +796,8 @@ const UNJUDGED_MARKER = 'NOT JUDGED'
 
 /** @type {string[]} */
 const deadValidations = []
-const validations = (await parallel(raw.map(f => /** @returns {Promise<Validation>} */ () => {
+/** One finding's verdict: carried from the prior ledger when settled there, else judged by an agent. @param {SourcedFinding} f @returns {Promise<Validation>} */
+function validateOne(f) {
   const id = idOf(f)
   const prior = priorById.get(id)
   // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
@@ -777,7 +846,8 @@ Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     deadValidations.push(id)
     return { stable_id: id, verdict: 'needs-decision', reason: `${UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code`, fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
   })
-}))).filter(v => !!v)
+}
+const validations = (await parallel(raw.map(f => () => validateOne(f)))).filter(v => !!v)
 
 const accepted = validations.filter(v => v.verdict === 'accept')
 log(`Validated ${validations.length}: ${accepted.length} accept, ${validations.length - accepted.length} other.`)
@@ -809,31 +879,34 @@ ${JSON.stringify(validations, null, 2)}`,
 // ---- Observability: persist a run record (best-effort) -------------------
 // Prefer the plan's ledger (it carries the cross-finding `conflict` disposition); fall back to the
 // solo validations when the Plan phase produced nothing.
-/** @type {LedgerEntry[]} */
-let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
-
-// The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
-// summarising model paraphrases a one-line free-text reason as a matter of course, and the marker
-// is the ONLY thing that tells the next run this finding was never judged: lose it and the finding
-// reads as settled forever — exactly the bug this marker exists to prevent, returning silently on
-// run three. So the script re-injects it deterministically. `validations` is the local record of
-// what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
-// re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
-if (plan && ledger !== validations) {   // `ledger !== validations` already implies a plan; `plan &&` says so to the checker
+/**
+ * The ledger the record tallies, set back on the plan when the marker had to be re-injected.
+ * @param {TriagePlan | null} plan @returns {LedgerEntry[]}
+ */
+function finalLedger(plan) {
+  if (!plan || !Array.isArray(plan.ledger)) return validations
+  // The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
+  // summarising model paraphrases a one-line free-text reason as a matter of course, and the marker
+  // is the ONLY thing that tells the next run this finding was never judged: lose it and the finding
+  // reads as settled forever — exactly the bug this marker exists to prevent, returning silently on
+  // run three. So the script re-injects it deterministically. `validations` is the local record of
+  // what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
+  // re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
   const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
-  if (unjudged.size) {
-    /** @type {Set<string>} */
-    const seen = new Set()
-    ledger = ledger.map(e => {
-      const v = e && unjudged.get(e.stable_id)
-      if (!v) return e
-      seen.add(e.stable_id)
-      return String(e.reason || '').includes(UNJUDGED_MARKER) ? e : { ...e, verdict: v.verdict, reason: v.reason }
-    })
-    for (const [id, v] of unjudged) if (!seen.has(id)) ledger.push({ stable_id: id, verdict: v.verdict, reason: v.reason })
-    plan.ledger = ledger
-  }
+  if (!unjudged.size) return plan.ledger
+  /** @type {Set<string>} */
+  const seen = new Set()
+  const ledger = plan.ledger.map(e => {
+    const v = e && unjudged.get(e.stable_id)
+    if (!v) return e
+    seen.add(e.stable_id)
+    return String(e.reason || '').includes(UNJUDGED_MARKER) ? e : { ...e, verdict: v.verdict, reason: v.reason }
+  })
+  for (const [id, v] of unjudged) if (!seen.has(id)) ledger.push({ stable_id: id, verdict: v.verdict, reason: v.reason })
+  plan.ledger = ledger
+  return ledger
 }
+const ledger = finalLedger(plan)
 await logRun({
   schemaVersion: 1,
   runtime: 'claude-code',
@@ -856,22 +929,26 @@ await logRun({
 
 if (!plan) return `${telemetryLostSection(telemetryLost)}Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.`
 
-// What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
-// agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
-// it is indistinguishable from one that covered everything.
-const incomplete = notRunSources.map(src => `source \`${src}\` produced nothing — its findings are NOT in this plan`)
-  .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan`] : [])
-if (incomplete.length) {
-  const banner = ['> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:', ...incomplete.map(l => `> - ${l}`), ''].join('\n')
-  plan.plan_markdown = `${banner}\n${plan.plan_markdown ?? ''}`
-  plan.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${plan.summary ?? ''}`
-  plan.notRun = incomplete
+/** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} plan @returns {TriagePlan} */
+function bannered(plan) {
+  // What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
+  // agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
+  // it is indistinguishable from one that covered everything.
+  const incomplete = notRunSources.map(src => `source \`${src}\` produced nothing — its findings are NOT in this plan`)
+    .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan`] : [])
+  if (incomplete.length) {
+    const banner = ['> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:', ...incomplete.map(l => `> - ${l}`), ''].join('\n')
+    plan.plan_markdown = `${banner}\n${plan.plan_markdown ?? ''}`
+    plan.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${plan.summary ?? ''}`
+    plan.notRun = incomplete
+  }
+  // A write that did not land leads the plan: a reader about to look this triage up in the store has
+  // to learn here that it may not be there.
+  const lostBanner = telemetryLostSection(telemetryLost)
+  if (lostBanner) {
+    plan.plan_markdown = `${lostBanner}${plan.plan_markdown ?? ''}`
+    plan.telemetryLost = telemetryLost.slice()
+  }
+  return plan
 }
-// A write that did not land leads the plan: a reader about to look this triage up in the store has
-// to learn here that it may not be there.
-const lostBanner = telemetryLostSection(telemetryLost)
-if (lostBanner) {
-  plan.plan_markdown = `${lostBanner}${plan.plan_markdown ?? ''}`
-  plan.telemetryLost = telemetryLost.slice()
-}
-return plan
+return bannered(plan)
