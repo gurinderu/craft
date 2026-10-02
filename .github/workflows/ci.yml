@@ -51,7 +51,7 @@ jobs:
         run: npm run check:types:workflows
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
       - name: Unit tests
-        run: node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'
+        run: npm test
       # Workflow scripts can't be `node --check`'d directly (top-level export+await+return); this
       # reproduces the sandbox wrapper and compile-checks each one. It also regenerates every fenced
       # `craft-inline` region from lib/ and fails on any drift in the pasted-in helper copies.

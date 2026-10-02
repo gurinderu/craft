@@ -1,5 +1,5 @@
 // Observability run-record helpers for the opencode adapter. Plain JS (no opencode imports) so it
-// is node --test-able. The opencode plugin is NOT sandboxed: this module reads the clock and writes
+// is unit-testable. The opencode plugin is NOT sandboxed: this module reads the clock and writes
 // files directly, so there is no logger agent (unlike the Claude Code workflows). opencode records
 // are a deterministic subset of the shared schema: no findings.bySeverity, no outputTokens.
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
