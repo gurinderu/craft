@@ -6337,7 +6337,10 @@ Also note in one line anything else likely missed (a changed file no finding tou
 }
 
 // ================= Run each active profile, then merge =================
-for (const p of active) results.push(await reviewProfile(p))
+async function reviewActiveProfiles() {
+  for (const p of active) results.push(await reviewProfile(p))
+}
+await reviewActiveProfiles()
 
 // A red gate on any active language blocks the whole review (findings can't be trusted on a broken tree).
 const gateFailed = /** @type {Result[]} */ (failedProfiles(results))
@@ -6432,7 +6435,7 @@ function reviewRecord(extra) {
   }
 }
 
-if (gateFailed.length) {
+async function gateFailedExit() {
   await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map((/** @type {string} */ c) => `[${r.profile.id}] ${c}`)) }))
   return out([
     `## Verdict`,
@@ -6447,6 +6450,7 @@ if (gateFailed.length) {
     `Fix the gate before a semantic review is worthwhile.`,
   ].join('\n'))
 }
+if (gateFailed.length) return await gateFailedExit()
 
 let confirmed = results.flatMap(r => r['confirmed'])
 let suspected = results.flatMap(r => r['suspected'])
@@ -6469,32 +6473,8 @@ const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], r
 // a lost tombstone is caught by the same ledgerCount check every other row is.
 /** @type {LedgerAnswer[]} */
 const priorTombstones = []
-if (priorRound?.['ledger']?.length) {
-  phase('Adjudicate')
-  // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
-  // LEDGER_ITEM.severity has no enum, so a drifted `critical`/`CRITICAL` prior would trip the
-  // case-insensitive gates (isHighSeverity in classifyRedTeam / the red-team gate) yet be bucketed as
-  // 0 Critical/0 High by countBySeverity (exact-case) — a fail-open re-review Approve over a
-  // still-broken Critical fix. Mapping through canonicalSeverity here means adjudicateOne's
-  // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
-  // escalation) and the re-persisted ledger all see canonical severity for priors.
-  const priorLedgerAll = priorRound['ledger'].map(f => ({ ...f, severity: canonicalSeverity(f['severity']) }))
-  // TOMBSTONES ARE CARVED OUT BEFORE THE SPLIT. A `disposition:'closed'` row is a resolved/retired
-  // prior kept only so a later round can recognise the defect's return — it is already answered.
-  // Left in the pool it would fall into `toCheck` below and be sent to the adjudicator, spending an
-  // agent to ask whether a closed defect is "still present" at a site where nothing remains to judge.
-  // So it is pulled here and never enters the unverified/settled/toCheck partitions.
-  priorTombstones.push(...priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] === 'closed'))
-  const priorLive = priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] !== 'closed')
-  // THE UNVERIFIED TIER SURVIVES THE ROUND BOUNDARY. A prior carrying `tier: 'unverified'` was never
-  // checked against the code — so there is nothing to adjudicate: "is the defect still present?"
-  // presumes someone established it was present. Adjudicating it anyway routed it into `stillOpen`,
-  // where it renders as a live prior finding AND feeds the verdict (`rereviewVerdict` counts
-  // stillOpen) — so a finding no verifier ever looked at became a gating one after one hop, and the
-  // tier that exists to say "nothing checked this" lived only inside the round that minted it.
-  // It re-enters THIS round's own unverified track instead: label kept, out of the verdict, out of
-  // the refutation denominator, re-persisted as `unverified` for the next round.
-  const priorUnverified = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') === 'unverified')
+/** Priors carrying the unverified tier re-enter this round's unverified track. @param {Finding[]} priorUnverified @param {PriorRound} priorRound */
+function carryUnverifiedPriors(priorUnverified, priorRound) {
   if (priorUnverified.length) {
     log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
     unverified = unverified.concat(priorUnverified.map((/** @type {Finding} */ f) => ({
@@ -6509,91 +6489,124 @@ if (priorRound?.['ledger']?.length) {
       why: `${baseWhy(f['why'])} (STILL NOT VERIFIED: carried from round ${priorRound['round']}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
-  const priorLedger = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') !== 'unverified')
-  const settled = priorLedger.filter((/** @type {Finding} */ f) => f['disposition'] === 'rejected' || f['disposition'] === 'justified')
-  const toCheck = priorLedger.filter((/** @type {Finding} */ f) => !(f['disposition'] === 'rejected' || f['disposition'] === 'justified'))
+}
+// The adjudicate track, on a re-review with a prior ledger.
+async function adjudicatePriors() {
+  if (priorRound?.['ledger']?.length) {
+    phase('Adjudicate')
+    // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
+    // LEDGER_ITEM.severity has no enum, so a drifted `critical`/`CRITICAL` prior would trip the
+    // case-insensitive gates (isHighSeverity in classifyRedTeam / the red-team gate) yet be bucketed as
+    // 0 Critical/0 High by countBySeverity (exact-case) — a fail-open re-review Approve over a
+    // still-broken Critical fix. Mapping through canonicalSeverity here means adjudicateOne's
+    // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
+    // escalation) and the re-persisted ledger all see canonical severity for priors.
+    const priorLedgerAll = priorRound['ledger'].map(f => ({ ...f, severity: canonicalSeverity(f['severity']) }))
+    // TOMBSTONES ARE CARVED OUT BEFORE THE SPLIT. A `disposition:'closed'` row is a resolved/retired
+    // prior kept only so a later round can recognise the defect's return — it is already answered.
+    // Left in the pool it would fall into `toCheck` below and be sent to the adjudicator, spending an
+    // agent to ask whether a closed defect is "still present" at a site where nothing remains to judge.
+    // So it is pulled here and never enters the unverified/settled/toCheck partitions.
+    priorTombstones.push(...priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] === 'closed'))
+    const priorLive = priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] !== 'closed')
+    // THE UNVERIFIED TIER SURVIVES THE ROUND BOUNDARY. A prior carrying `tier: 'unverified'` was never
+    // checked against the code — so there is nothing to adjudicate: "is the defect still present?"
+    // presumes someone established it was present. Adjudicating it anyway routed it into `stillOpen`,
+    // where it renders as a live prior finding AND feeds the verdict (`rereviewVerdict` counts
+    // stillOpen) — so a finding no verifier ever looked at became a gating one after one hop, and the
+    // tier that exists to say "nothing checked this" lived only inside the round that minted it.
+    // It re-enters THIS round's own unverified track instead: label kept, out of the verdict, out of
+    // the refutation denominator, re-persisted as `unverified` for the next round.
+    const priorUnverified = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') === 'unverified')
+    carryUnverifiedPriors(priorUnverified, priorRound)
+    const priorLedger = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') !== 'unverified')
+    const settled = priorLedger.filter((/** @type {Finding} */ f) => f['disposition'] === 'rejected' || f['disposition'] === 'justified')
+    const toCheck = priorLedger.filter((/** @type {Finding} */ f) => !(f['disposition'] === 'rejected' || f['disposition'] === 'justified'))
 
-  // Settled priors: carried unless the code around them changed since the prior round.
-  const carriedResults = (await parallel(settled.map((/** @type {Finding} */ f) => () => {
-    const pf = promptFields(f)
-    return ragent(
-      `A prior review finding was dismissed by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
+    // Settled priors: carried unless the code around them changed since the prior round.
+    const carriedResults = (await parallel(settled.map((/** @type {Finding} */ f) => () => {
+      const pf = promptFields(f)
+      return ragent(
+        `A prior review finding was dismissed by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
 FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f['line']} (symbol ${pf.symbol}), rule ${pf.ruleId}.
 Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} -- ${shq(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
-      { label: `carry:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
-    ).then(r => ({ f, changed: r == null ? null : !!r.changed }))
-  }))).filter(x => x != null)
-  // A dead carry agent (changed == null) is indeterminate — keep the dismissed prior as carried (do
-  // NOT reopen on an indeterminate carry), but count + ⚠️-log it like the other death paths so this
-  // is no longer the one unaudited death path.
-  //
-  // THE EXIT, AND WHY IT LOSES NOTHING. A dismissal is the author's decision; the only thing that
-  // can invalidate it is the code around it changing. So one carry-check that says "unchanged" is
-  // the whole answer, and re-asking it every round forever buys nothing — it was the only track
-  // with no exit at all, costing one agent per dismissal per round in perpetuity. A retired prior
-  // is not forgotten into silence: the lenses raise the finding fresh, on its merits — which is
-  // exactly what the `changed === true` branch does here, minus the stale `rejected` label.
-  //
-  // WHEN THE RE-RAISE HAPPENS, HONESTLY. Not only "if that code is ever touched again". On a full
-  // re-scan the lenses see the whole diff and re-invent every prior, so the re-discovery can land in
-  // the SAME round the dismissal retires: partitionAbsorbed refuses to absorb into a retired host
-  // (it is not persisted), the finding is KEPT, and it enters the next ledger as `open`. The
-  // author's dismissal is then undone with no code change, and next round it costs a full
-  // adjudicator instead of a cheap carry agent.
-  //
-  // THAT IS THE ACCEPTED COST, AND THE ALTERNATIVE IS WORSE. Dropping a finding whose only carrier
-  // retired would reinstate exactly the loss class partitionAbsorbed exists to close: retirement is
-  // judged at REGION granularity while the carrier matches on file+ruleId, so a genuinely NEW defect
-  // elsewhere in the same file under the same rule would be discarded by a host whose own region did
-  // not move — silently, into no report and no ledger. Losing a label is recoverable (the author
-  // re-dismisses it, once); losing a defect is not.
-  //
-  // An INDETERMINATE carry-check (agent died) retires nothing: it stays carried and is asked again
-  // next round.
-  let carryDied = 0
-  for (const { f, changed } of carriedResults) {
-    if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
-    else if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
-    else adjudicated.retired.push(f)
-  }
+        { label: `carry:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
+      ).then(r => ({ f, changed: r == null ? null : !!r.changed }))
+    }))).filter(x => x != null)
+    // A dead carry agent (changed == null) is indeterminate — keep the dismissed prior as carried (do
+    // NOT reopen on an indeterminate carry), but count + ⚠️-log it like the other death paths so this
+    // is no longer the one unaudited death path.
+    //
+    // THE EXIT, AND WHY IT LOSES NOTHING. A dismissal is the author's decision; the only thing that
+    // can invalidate it is the code around it changing. So one carry-check that says "unchanged" is
+    // the whole answer, and re-asking it every round forever buys nothing — it was the only track
+    // with no exit at all, costing one agent per dismissal per round in perpetuity. A retired prior
+    // is not forgotten into silence: the lenses raise the finding fresh, on its merits — which is
+    // exactly what the `changed === true` branch does here, minus the stale `rejected` label.
+    //
+    // WHEN THE RE-RAISE HAPPENS, HONESTLY. Not only "if that code is ever touched again". On a full
+    // re-scan the lenses see the whole diff and re-invent every prior, so the re-discovery can land in
+    // the SAME round the dismissal retires: partitionAbsorbed refuses to absorb into a retired host
+    // (it is not persisted), the finding is KEPT, and it enters the next ledger as `open`. The
+    // author's dismissal is then undone with no code change, and next round it costs a full
+    // adjudicator instead of a cheap carry agent.
+    //
+    // THAT IS THE ACCEPTED COST, AND THE ALTERNATIVE IS WORSE. Dropping a finding whose only carrier
+    // retired would reinstate exactly the loss class partitionAbsorbed exists to close: retirement is
+    // judged at REGION granularity while the carrier matches on file+ruleId, so a genuinely NEW defect
+    // elsewhere in the same file under the same rule would be discarded by a host whose own region did
+    // not move — silently, into no report and no ledger. Losing a label is recoverable (the author
+    // re-dismisses it, once); losing a defect is not.
+    //
+    // An INDETERMINATE carry-check (agent died) retires nothing: it stays carried and is asked again
+    // next round.
+    let carryDied = 0
+    /** @param {(typeof carriedResults)[number]} c */
+    const applyCarry = c => {
+      const { f, changed } = c
+      if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
+      else if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
+      else adjudicated.retired.push(f)
+    }
+    for (const c of carriedResults) applyCarry(c)
 
-  // Open/deferred/confirmed priors: is the defect CLASS still present at its (re-located) site?
-  // The adjudicator must state the violated invariant and attack the fix — a fix that closes the
-  // literal repro but not the class must not close. A "resolved" Critical/High is then re-attacked
-  // by an independent red-team agent that never sees the adjudicator's verdict.
-  const adjudModel = results[0]?.['plan']?.lensModel || 'opus'
-  let overturned = 0
-  let redTeamDied = 0
-  let invalidRedTeam = 0
-  let adjudicatorDied = 0
-  let cannotTellCount = 0
-  const redTeam = async (/** @type {Finding} */ f, /** @type {AdjudicateAnswer} */ adj) => {
-    if (!isHighSeverity(f['severity'])) return adj
-    const pf = promptFields(f)
-    const rt = await ragent(
-      `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
+    // Open/deferred/confirmed priors: is the defect CLASS still present at its (re-located) site?
+    // The adjudicator must state the violated invariant and attack the fix — a fix that closes the
+    // literal repro but not the class must not close. A "resolved" Critical/High is then re-attacked
+    // by an independent red-team agent that never sees the adjudicator's verdict.
+    const adjudModel = results[0]?.['plan']?.lensModel || 'opus'
+    let overturned = 0
+    let redTeamDied = 0
+    let invalidRedTeam = 0
+    let adjudicatorDied = 0
+    let cannotTellCount = 0
+    const redTeam = async (/** @type {Finding} */ f, /** @type {AdjudicateAnswer} */ adj) => {
+      if (!isHighSeverity(f['severity'])) return adj
+      const pf = promptFields(f)
+      const rt = await ragent(
+        `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
 FINDING: [${pf.severity}] ${pf.title}
   originally at ${pf.file}:${f['line']} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
 Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
-      { label: `redteam:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
-    )
-    // A dead red-teamer keeps `resolved`: the adjudicator already ran its own attack pass, and a
-    // transient agent death must not spuriously reopen findings. But the degradation must be
-    // auditable — count it, log it, and annotate the note so "red-team passed" is distinguishable
-    // from "red-team never ran" in the report and the run log.
-    const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
-    if (died) { redTeamDied++; log(`⚠️ red-team for ${f['file']}:${f['line']} died — "resolved" stands on the adjudicator's own attack pass only`) }
-    if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f['file']}:${f['line']} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
-    if (ov) overturned++
-    return out
-  }
-  const checkResults = (await parallel(toCheck.map((/** @type {Finding} */ f) => () => {
-    const pf = promptFields(f)
-    return ragent(
-      `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${/** @type {Profile} */ (active[0]).rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
+        { label: `redteam:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
+      )
+      // A dead red-teamer keeps `resolved`: the adjudicator already ran its own attack pass, and a
+      // transient agent death must not spuriously reopen findings. But the degradation must be
+      // auditable — count it, log it, and annotate the note so "red-team passed" is distinguishable
+      // from "red-team never ran" in the report and the run log.
+      const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
+      if (died) { redTeamDied++; log(`⚠️ red-team for ${f['file']}:${f['line']} died — "resolved" stands on the adjudicator's own attack pass only`) }
+      if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f['file']}:${f['line']} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
+      if (ov) overturned++
+      return out
+    }
+    const checkResults = (await parallel(toCheck.map((/** @type {Finding} */ f) => () => {
+      const pf = promptFields(f)
+      return ragent(
+        `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${/** @type {Profile} */ (active[0]).rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
 FINDING: [${pf.severity}] ${pf.title}
   originally at ${pf.file}:${f['line']} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
@@ -6607,18 +6620,23 @@ METHOD:
   - "cannot-tell": you could NOT determine the answer — the file is gone or renamed, the symbol no longer exists, or you could not read enough of the code to judge. Say why in \`note\`. Use this rather than "resolved" whenever you are guessing: "resolved" means you checked and every attack failed, never "I could not find it".
   - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
 Return {status, currentLine, note, invariant, attack}.`,
-      { label: `adjudicate:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
-    ).then(async r => ({ f, r: r && shouldRedTeam(r) ? await redTeam(f, r) : r }))
-  }))).filter(x => x != null)
-  for (const { f, r } of checkResults) {
-    const { track, entry, demoted, cannotTell, adjudicatorDied: adjDied } = adjudicateOne(f, r)
-    if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
-    if (cannotTell) { cannotTellCount++; log(`⚠️ adjudicator for ${f.file}:${f.line} could not tell — kept still-open, marked UNVERIFIED in the report`) }
-    if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
-    adjudicated[track].push(entry)
+        { label: `adjudicate:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
+      ).then(async r => ({ f, r: r && shouldRedTeam(r) ? await redTeam(f, r) : r }))
+    }))).filter(x => x != null)
+    /** @param {(typeof checkResults)[number]} c */
+    const tallyAdjudication = c => {
+      const { f, r } = c
+      const { track, entry, demoted, cannotTell, adjudicatorDied: adjDied } = adjudicateOne(f, r)
+      if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
+      if (cannotTell) { cannotTellCount++; log(`⚠️ adjudicator for ${f.file}:${f.line} could not tell — kept still-open, marked UNVERIFIED in the report`) }
+      if (adjDied) { adjudicatorDied++; log(`⚠️ adjudicator for ${f.file}:${f.line} died — no verdict returned; kept still-open by default`) }
+      adjudicated[track].push(entry)
+    }
+    for (const c of checkResults) tallyAdjudication(c)
+    log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${adjudicated.retired.length} carried→retired (code unchanged; leaves the ledger) · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
   }
-  log(`Adjudicate: ${adjudicated.resolved.length} resolved · ${adjudicated.stillOpen.length} still-open · ${adjudicated.regressed.length} regressed · ${adjudicated.carried.length} carried · ${adjudicated.retired.length} carried→retired (code unchanged; leaves the ledger) · ${overturned} overturned by red-team · ${redTeamDied} red-team died · ${invalidRedTeam} invalid red-team · ${adjudicatorDied} adjudicator died · ${cannotTellCount} could not tell · ${carryDied} carry died`)
 }
+await adjudicatePriors()
 
 // On a re-review, lenses can re-surface a finding that is already tracked on the adjudicate track —
 // always on a full re-scan (the lenses saw the whole diff), and even on the delta path when a fix
@@ -6633,148 +6651,165 @@ Return {status, currentLine, note, invariant, attack}.`,
 // the fallback for a finding with no ruleId to key on.
 // Do NOT dedup against RESOLVED priors: a new finding matching a resolved one is a regression signal
 // and must survive.
-if (priorRound) {
-  const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried, ...adjudicated.retired]
-  // A RETIRED host absorbs NOTHING and tracks nothing — hoisted because BOTH passes below need it.
-  const retired = new Set(adjudicated.retired)
-  // Priors carrying the unverified tier were never adjudicated, so they are absent from `livePriors`
-  // — they were carried straight into THIS round's `unverified` list instead. They are nonetheless
-  // still-live rows of the next ledger, and they are precisely the hosts that matter for a site that
-  // stays unchecked round after round, which is why the tracking pass takes them too.
-  const carriedUnverified = unverified.filter(f => f.carriedUnverified)
-  if (livePriors.length) {
-    // A RETIRED host absorbs NOTHING — it is not persisted, so a clause on it would leave the
-    // absorbed report in no report and no ledger. partitionAbsorbed keeps those findings instead;
-    // the reasoning (and why the granularity mismatch makes this the loss class the design set out
-    // to close) is in lib/review-adjudicate.mjs.
-    // ONE threaded accumulation across both tracks, not two independent ones: the tracks share
-    // hosts (the carrier key is file+ruleId, orthogonal to the confirmed/suspected split), and two
-    // independent partitions would each compute their clause from the same un-absorbed `host.why`,
-    // so applying them afterwards would drop one report entirely — into no track, no host and no
-    // ledger. absorbAcross returns the cumulative `updates`; it is applied once.
-    // ONLY the JUDGED tracks are absorbed. An unverified finding may not be written onto a prior's
-    // `why`: that clause tells the next adjudicator that "resolved" requires the absorbed report to
-    // be gone, which lets something nothing ever checked hold a prior open and gate the re-review
-    // verdict — the exact substitution the unverified tier exists to end, and it carries a dead
-    // verifier's Critical/High, not just an unpaid-for Low. It is marked in place instead
-    // (markTrackedUnverified), so it neither disappears into the prior nor gates anything.
-    const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
-    for (const [host, why] of updates) host.why = why
-    // Two lists in, two runs out — absorbAcross returns one run per list, in order.
-    confirmed = /** @type {(typeof runs)[number]} */ (runs[0]).kept
-    suspected = /** @type {(typeof runs)[number]} */ (runs[1]).kept
-    if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
-    if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
-  }
-  // The tracking pass runs on its OWN guard, not inside the absorption one: a round whose only live
-  // prior carries the unverified tier has an EMPTY `livePriors` (nothing was adjudicated) and is
-  // exactly the round where a site accretes a second unchecked row. And that is only the EMPTY case:
-  // a site can hold a live judged prior AND a carried unverified one at the same file+rule, and the
-  // judged one comes first in this array. The collapse must not depend on that — markTrackedUnverified
-  // picks its host BY TIER, not by this order (see lib/review-adjudicate.mjs); the order here is only
-  // the fallback for a finding no unverified host tracks.
-  const trackingHosts = [...livePriors, ...carriedUnverified]
-  if (trackingHosts.length) {
-    const tracked = markTrackedUnverified(unverified.filter(f => !f.carriedUnverified), trackingHosts, retired, matchesPrior)
-    unverified = tracked.kept.concat(carriedUnverified)
-    // A COLLAPSED ROW IS NOT A DISCARDED FINDING. The carrier key is file+ruleId, coarser than a
-    // site, so the row dropped from the ledger can be a genuinely distinct defect on another line.
-    // Its site is written onto the host through the same bounded clause absorption uses; the reason
-    // this is not the obligation absorption was refused for is in lib/review-adjudicate.mjs.
-    // WHAT "BOUNDED" MEANS HERE, EXACTLY: the bound is ABSORBED_MAX and it is GLOBAL, not per round.
-    // At most three sites are ever NAMED on one host's `why`; a fourth and every later one — in this
-    // round or any later one — is traded for the overflow counter, so its line, title and rationale
-    // do not reach the next ledger. That is not a lost finding: it is in THIS round's report, the
-    // counter keeps "more than one defect sits here" true, and the lenses re-raise the site next
-    // round. It is a loss of detail, and the cap is deliberate (absorbInto's clause is re-interpolated
-    // into every later prompt) — but it is a cap, so do not read the clause as a per-site record.
-    // OPEN, AND DELIBERATELY NOT CLOSED HERE: an unverified row has no exit from the ledger, so its
-    // `why` still accretes across rounds through the per-round NOT_VERIFIED suffixes, which have no
-    // cap of their own. The growth is of one persistent field, and bounding it is its own work.
-    for (const [host, why] of tracked.updates) host.why = why
-    if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
-    if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
-  }
-  // RECIDIVISM. A freshly discovered finding whose fingerprint matches a prior tombstone has RETURNED,
-  // and the two tombstone ORIGINS mean different things. A `resolved` tombstone is a defect that was
-  // actually fixed, so a match is a REGRESSION — the fix came undone. A `dismissed` tombstone is a
-  // prior the AUTHOR rejected/justified and whose carry-check found the code around it UNCHANGED
-  // (retirement): the engine's own separate `reopened` path already handles the code-CHANGED case, so
-  // a match here is not a regression at all — nothing was fixed and nothing broke — it is the same
-  // dismissed defect being re-raised, and it is labelled as exactly that. Exact fingerprint match
-  // only, and only for a finding that carries a ruleId: an ad-hoc finding has no stable identity, so
-  // it gets no tombstone check rather than a fuzzy one (fuzzy title matching was measured at 2/59
-  // recall). This is a HUMAN-FACING annotation on `why` only: it neither moves the finding between
-  // tiers nor changes the verdict, which still counts each returning finding by its own severity
-  // exactly as a novel one (whether a regression should escalate the verdict is a separate decision,
-  // deliberately not taken here). All three live tiers are scanned — confirmed, suspected AND
-  // unverified — because the unverified tier is precisely where a returning defect lands when its
-  // verifier died or was floor-skipped, which is the run where the "it came back" signal matters most;
-  // carried-unverified priors are excluded, as they are not freshly discovered.
-  if (priorTombstones.length && !priorFpComparable) {
-    // The prior round's fingerprints are not established as comparable to this round's freshly computed
-    // ones (a different basis, a different engine, or a basis that could not be established). Skip the
-    // check rather than comparing incompatible hashes and missing a regression in silence — the exact
-    // silent miss this guard exists to remove. The tombstones minted from THIS round on are all under
-    // the current basis (the incomparable carried ones are dropped at assembly), so the memory rebuilds
-    // from here; the cost is recorded on the run record (reReview.tombstonesDropped).
-    tombstonesDroppedForBasis = priorTombstones.length
-    if (priorBasisVerdict === 'absent') {
-      // The answer carried no basis verdict at all — the loader printed none (a logger of another craft
-      // version) or the relay dropped it; the schema leaves it optional precisely so this stays visible
-      // rather than being filled with a guessed boolean. It is a LOSS of re-review memory (the carried
-      // tombstones are dropped for good), so it is stated where lost memory is stated, above the verdict.
-      const note = `The prior round's answer carried no fingerprint-basis verdict (sameFpBasis), so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered. This is a transport or version-skew loss, not a fingerprint-basis change.`
-      reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
-      log(`⚠️ ${note}`)
-    } else if (priorBasisVerdict === 'unknown') {
-      // A round recovered from a stopped run whose checkpoints do not attest to one known basis, read
-      // from an unreadable record, or written by an engine this one cannot place (no revision, or a newer
-      // one) cannot establish the basis its tombstones were minted under. (A recovered round whose
-      // checkpoints DO attest to one is decided like any other — realm @nick/craft #112.) Comparing anyway is the silent miss the guard exists
-      // to prevent, so they are still dropped — but that is lost memory, and it is said so.
-      // When the answer carried neither the raw revisions nor fpBasisKnown, the loader may well have known the basis —
-      // the relay dropped the field, or a logger older than it answered — so the cause named is that.
-      const why = priorBasisMismatch
-        ? 'the revisions the loader printed did not survive transport intact (the list no longer matches its own check string) — a transport or version-skew loss'
-        : (Array.isArray(priorRound?.['priorFpRevisions']) || typeof priorRound?.['fpBasisKnown'] === 'boolean')
-        ? 'it was recovered from a stopped run whose checkpoints do not attest to one basis, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
-        : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
-      const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
-      reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
-      log(`⚠️ ${note}`)
-    } else {
-      log('Re-review: the prior round was fingerprinted under a different, known basis — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on (expected once, right after an upgrade that changed the basis)')
-    }
-  } else if (priorTombstones.length) {
-    /** @type {Map<string, LedgerAnswer>} */
-    const tombstoneByFp = new Map()
-    for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
-    let regressions = 0
-    let reraised = 0
-    const flagRegression = (/** @type {Finding} */ f) => {
-      if (!f['ruleId']) return
-      const hit = tombstoneByFp.get(fingerprint(f))
-      if (!hit) return
-      const why = String(hit.why || '')
-      const m = /round (\d+)/.exec(why)
-      // A LEDGER_ITEM carries no round, so this falls through to '?' unless a ledger extra supplies one.
-      const r = m ? m[1] : (/** @type {{ round?: unknown }} */ (hit).round || '?')
-      if (/^dismissed /.test(why)) {
-        f['why'] = `${f['why']} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
-        reraised++
-      } else {
-        f['why'] = `${f['why']} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
-        regressions++
-      }
-    }
-    confirmed.forEach(flagRegression)
-    suspected.forEach(flagRegression)
-    unverified.filter(f => !f.carriedUnverified).forEach(flagRegression)
-    if (regressions) log(`Re-review: ${regressions} fresh finding(s) match a defect RESOLVED in an earlier round — annotated as REGRESSION in the report; the verdict still counts each by its severity`)
-    if (reraised) log(`Re-review: ${reraised} fresh finding(s) match a defect the author DISMISSED in an earlier round — annotated as re-raised, not a regression; the verdict still counts each by its severity`)
+/** The judged tracks' findings absorbed into the still-live priors they repeat. @param {Finding[]} livePriors @param {Set<Finding>} retired */
+function absorbIntoLivePriors(livePriors, retired) {
+  // A RETIRED host absorbs NOTHING — it is not persisted, so a clause on it would leave the
+  // absorbed report in no report and no ledger. partitionAbsorbed keeps those findings instead;
+  // the reasoning (and why the granularity mismatch makes this the loss class the design set out
+  // to close) is in lib/review-adjudicate.mjs.
+  // ONE threaded accumulation across both tracks, not two independent ones: the tracks share
+  // hosts (the carrier key is file+ruleId, orthogonal to the confirmed/suspected split), and two
+  // independent partitions would each compute their clause from the same un-absorbed `host.why`,
+  // so applying them afterwards would drop one report entirely — into no track, no host and no
+  // ledger. absorbAcross returns the cumulative `updates`; it is applied once.
+  // ONLY the JUDGED tracks are absorbed. An unverified finding may not be written onto a prior's
+  // `why`: that clause tells the next adjudicator that "resolved" requires the absorbed report to
+  // be gone, which lets something nothing ever checked hold a prior open and gate the re-review
+  // verdict — the exact substitution the unverified tier exists to end, and it carries a dead
+  // verifier's Critical/High, not just an unpaid-for Low. It is marked in place instead
+  // (markTrackedUnverified), so it neither disappears into the prior nor gates anything.
+  const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
+  for (const [host, why] of updates) host.why = why
+  // Two lists in, two runs out — absorbAcross returns one run per list, in order.
+  confirmed = /** @type {(typeof runs)[number]} */ (runs[0]).kept
+  suspected = /** @type {(typeof runs)[number]} */ (runs[1]).kept
+  if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
+  if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
+}
+/** Unverified findings at a site a live prior tracks: marked, or collapsed onto an unverified prior. @param {Finding[]} trackingHosts @param {Set<Finding>} retired @param {Finding[]} carriedUnverified */
+function trackUnverifiedAtPriors(trackingHosts, retired, carriedUnverified) {
+  const tracked = markTrackedUnverified(unverified.filter(f => !f.carriedUnverified), trackingHosts, retired, matchesPrior)
+  unverified = tracked.kept.concat(carriedUnverified)
+  // A COLLAPSED ROW IS NOT A DISCARDED FINDING. The carrier key is file+ruleId, coarser than a
+  // site, so the row dropped from the ledger can be a genuinely distinct defect on another line.
+  // Its site is written onto the host through the same bounded clause absorption uses; the reason
+  // this is not the obligation absorption was refused for is in lib/review-adjudicate.mjs.
+  // WHAT "BOUNDED" MEANS HERE, EXACTLY: the bound is ABSORBED_MAX and it is GLOBAL, not per round.
+  // At most three sites are ever NAMED on one host's `why`; a fourth and every later one — in this
+  // round or any later one — is traded for the overflow counter, so its line, title and rationale
+  // do not reach the next ledger. That is not a lost finding: it is in THIS round's report, the
+  // counter keeps "more than one defect sits here" true, and the lenses re-raise the site next
+  // round. It is a loss of detail, and the cap is deliberate (absorbInto's clause is re-interpolated
+  // into every later prompt) — but it is a cap, so do not read the clause as a per-site record.
+  // OPEN, AND DELIBERATELY NOT CLOSED HERE: an unverified row has no exit from the ledger, so its
+  // `why` still accretes across rounds through the per-round NOT_VERIFIED suffixes, which have no
+  // cap of their own. The growth is of one persistent field, and bounding it is its own work.
+  for (const [host, why] of tracked.updates) host.why = why
+  if (tracked.marked) log(`Re-review: ${tracked.marked} unverified finding(s) sit at a site a still-live prior already tracks — noted on each, NOT absorbed into the prior: nothing checked them, so they may not hold it open`)
+  if (tracked.collapsed) log(`Re-review: ${tracked.collapsed} unverified finding(s) sit at a site an equally UNVERIFIED prior already holds in the ledger — shown in this round's report but not persisted as a second ledger row, so an unchecked site does not gain a row per round`)
+}
+/** Why the prior round's fingerprint basis could not be established, as the lost-memory note names it. */
+function unknownBasisWhy() {
+  return priorBasisMismatch
+      ? 'the revisions the loader printed did not survive transport intact (the list no longer matches its own check string) — a transport or version-skew loss'
+      : (Array.isArray(priorRound?.['priorFpRevisions']) || typeof priorRound?.['fpBasisKnown'] === 'boolean')
+      ? 'it was recovered from a stopped run whose checkpoints do not attest to one basis, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
+      : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
+}
+/** The recidivism check skipped: the prior's fingerprints are not comparable, so its tombstones are dropped (and said so). */
+function dropTombstonesForBasis() {
+  // The prior round's fingerprints are not established as comparable to this round's freshly computed
+  // ones (a different basis, a different engine, or a basis that could not be established). Skip the
+  // check rather than comparing incompatible hashes and missing a regression in silence — the exact
+  // silent miss this guard exists to remove. The tombstones minted from THIS round on are all under
+  // the current basis (the incomparable carried ones are dropped at assembly), so the memory rebuilds
+  // from here; the cost is recorded on the run record (reReview.tombstonesDropped).
+  tombstonesDroppedForBasis = priorTombstones.length
+  if (priorBasisVerdict === 'absent') {
+    // The answer carried no basis verdict at all — the loader printed none (a logger of another craft
+    // version) or the relay dropped it; the schema leaves it optional precisely so this stays visible
+    // rather than being filled with a guessed boolean. It is a LOSS of re-review memory (the carried
+    // tombstones are dropped for good), so it is stated where lost memory is stated, above the verdict.
+    const note = `The prior round's answer carried no fingerprint-basis verdict (sameFpBasis), so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered. This is a transport or version-skew loss, not a fingerprint-basis change.`
+    reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
+    log(`⚠️ ${note}`)
+  } else if (priorBasisVerdict === 'unknown') {
+    // A round recovered from a stopped run whose checkpoints do not attest to one known basis, read
+    // from an unreadable record, or written by an engine this one cannot place (no revision, or a newer
+    // one) cannot establish the basis its tombstones were minted under. (A recovered round whose
+    // checkpoints DO attest to one is decided like any other — realm @nick/craft #112.) Comparing anyway is the silent miss the guard exists
+    // to prevent, so they are still dropped — but that is lost memory, and it is said so.
+    // When the answer carried neither the raw revisions nor fpBasisKnown, the loader may well have known the basis —
+    // the relay dropped the field, or a logger older than it answered — so the cause named is that.
+    const why = unknownBasisWhy()
+    const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
+    reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
+    log(`⚠️ ${note}`)
+  } else {
+    log('Re-review: the prior round was fingerprinted under a different, known basis — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on (expected once, right after an upgrade that changed the basis)')
   }
 }
+/** Fresh findings matching a prior tombstone: annotated as a regression or a re-raised dismissal. */
+function flagReturningDefects() {
+  /** @type {Map<string, LedgerAnswer>} */
+  const tombstoneByFp = new Map()
+  for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
+  let regressions = 0
+  let reraised = 0
+  const flagRegression = (/** @type {Finding} */ f) => {
+    if (!f['ruleId']) return
+    const hit = tombstoneByFp.get(fingerprint(f))
+    if (!hit) return
+    const why = String(hit.why || '')
+    const m = /round (\d+)/.exec(why)
+    // A LEDGER_ITEM carries no round, so this falls through to '?' unless a ledger extra supplies one.
+    const r = m ? m[1] : (/** @type {{ round?: unknown }} */ (hit).round || '?')
+    if (/^dismissed /.test(why)) {
+      f['why'] = `${f['why']} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
+      reraised++
+    } else {
+      f['why'] = `${f['why']} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
+      regressions++
+    }
+  }
+  confirmed.forEach(flagRegression)
+  suspected.forEach(flagRegression)
+  unverified.filter(f => !f.carriedUnverified).forEach(flagRegression)
+  if (regressions) log(`Re-review: ${regressions} fresh finding(s) match a defect RESOLVED in an earlier round — annotated as REGRESSION in the report; the verdict still counts each by its severity`)
+  if (reraised) log(`Re-review: ${reraised} fresh finding(s) match a defect the author DISMISSED in an earlier round — annotated as re-raised, not a regression; the verdict still counts each by its severity`)
+}
+// Absorption, unverified tracking and the recidivism check against the prior round's ledger.
+function reconcileWithPriors() {
+  if (priorRound) {
+    const livePriors = [...adjudicated.stillOpen, ...adjudicated.regressed, ...adjudicated.carried, ...adjudicated.retired]
+    // A RETIRED host absorbs NOTHING and tracks nothing — hoisted because BOTH passes below need it.
+    const retired = new Set(adjudicated.retired)
+    // Priors carrying the unverified tier were never adjudicated, so they are absent from `livePriors`
+    // — they were carried straight into THIS round's `unverified` list instead. They are nonetheless
+    // still-live rows of the next ledger, and they are precisely the hosts that matter for a site that
+    // stays unchecked round after round, which is why the tracking pass takes them too.
+    const carriedUnverified = unverified.filter(f => f.carriedUnverified)
+    if (livePriors.length) absorbIntoLivePriors(livePriors, retired)
+    // The tracking pass runs on its OWN guard, not inside the absorption one: a round whose only live
+    // prior carries the unverified tier has an EMPTY `livePriors` (nothing was adjudicated) and is
+    // exactly the round where a site accretes a second unchecked row. And that is only the EMPTY case:
+    // a site can hold a live judged prior AND a carried unverified one at the same file+rule, and the
+    // judged one comes first in this array. The collapse must not depend on that — markTrackedUnverified
+    // picks its host BY TIER, not by this order (see lib/review-adjudicate.mjs); the order here is only
+    // the fallback for a finding no unverified host tracks.
+    const trackingHosts = [...livePriors, ...carriedUnverified]
+    if (trackingHosts.length) trackUnverifiedAtPriors(trackingHosts, retired, carriedUnverified)
+    // RECIDIVISM. A freshly discovered finding whose fingerprint matches a prior tombstone has RETURNED,
+    // and the two tombstone ORIGINS mean different things. A `resolved` tombstone is a defect that was
+    // actually fixed, so a match is a REGRESSION — the fix came undone. A `dismissed` tombstone is a
+    // prior the AUTHOR rejected/justified and whose carry-check found the code around it UNCHANGED
+    // (retirement): the engine's own separate `reopened` path already handles the code-CHANGED case, so
+    // a match here is not a regression at all — nothing was fixed and nothing broke — it is the same
+    // dismissed defect being re-raised, and it is labelled as exactly that. Exact fingerprint match
+    // only, and only for a finding that carries a ruleId: an ad-hoc finding has no stable identity, so
+    // it gets no tombstone check rather than a fuzzy one (fuzzy title matching was measured at 2/59
+    // recall). This is a HUMAN-FACING annotation on `why` only: it neither moves the finding between
+    // tiers nor changes the verdict, which still counts each returning finding by its own severity
+    // exactly as a novel one (whether a regression should escalate the verdict is a separate decision,
+    // deliberately not taken here). All three live tiers are scanned — confirmed, suspected AND
+    // unverified — because the unverified tier is precisely where a returning defect lands when its
+    // verifier died or was floor-skipped, which is the run where the "it came back" signal matters most;
+    // carried-unverified priors are excluded, as they are not freshly discovered.
+    if (priorTombstones.length && !priorFpComparable) dropTombstonesForBasis()
+    else if (priorTombstones.length) flagReturningDefects()
+  }
+}
+reconcileWithPriors()
 
 const dropped = results.reduce((n, r) => n + r['dropped'], 0)
 // Findings whose verdict was reached after at least one returned vote was DISCARDED as off-schema.
@@ -6813,14 +6848,20 @@ const criticNotes = results.map(r => r['criticNotes']).filter(n => n && n.trim()
 // A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
 // through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
 // here would wrongly erase still-open/regressed priors.
-const hasAdjudicated = !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length || adjudicated.retired.length)
+const hasAdjudicated = hasAdjudicatedTracks()
+function hasAdjudicatedTracks() {
+  return !!(adjudicated.stillOpen.length || adjudicated.regressed.length || adjudicated.resolved.length || adjudicated.carried.length || adjudicated.retired.length)
+}
 // `unverified` counts here too: they are real reported findings, and falling into the "nothing
 // survived" branch would delete them from the report entirely.
 // `priorTombstones.length` keeps this exit from silently dropping the recidivism memory: a clean
 // re-review round that found nothing and adjudicated nothing must still fall through to the ledger
 // step so earlier tombstones are carried forward, exactly as carried priors (which make
 // `hasAdjudicated` true) already are — otherwise the memory evaporates on the first quiet round.
-if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated && !priorTombstones.length) {
+function nothingSurvived() {
+  return !confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated && !priorTombstones.length
+}
+async function noFindingsExit() {
   // floorPremiseHeld is not yet known at this early exit (it is re-read after synthesis), so the
   // suffix here rests on notRun + coverageNotes alone: INCOMPLETE for a genuine not-run, PARTIAL
   // COVERAGE for a coverage hole a re-run will not fix.
@@ -6838,6 +6879,7 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n') + scopeSection())
 }
+if (nothingSurvived()) return await noFindingsExit()
 
 // ================= Synthesize one merged report =================
 // ONE sentence, three readers: the first-pass template, the re-review template and the mechanical
@@ -6850,26 +6892,34 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
 const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or because the verdict was already fixed at Block by a confirmed Critical/High and a Medium cannot move it, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
-const rereviewData = isRereview ? {
-  resolved: adjudicated.resolved, stillOpen: adjudicated.stillOpen,
-  // `retired` is NOT folded into `carried`: they answer different questions for the reader. A
-  // carried prior is re-checked next round; a retired one leaves the ledger, and on a full rescan
-  // its re-discovery is kept as a New Confirmed finding — so folding them made the report say a
-  // defect was "carried forward unchanged" while listing the same defect under New.
-  regressed: adjudicated.regressed, carried: adjudicated.carried, retired: adjudicated.retired, neu: confirmed,
-} : null
+const rereviewData = rereviewDataOf()
+function rereviewDataOf() {
+  return isRereview ? {
+    resolved: adjudicated.resolved, stillOpen: adjudicated.stillOpen,
+    // `retired` is NOT folded into `carried`: they answer different questions for the reader. A
+    // carried prior is re-checked next round; a retired one leaves the ledger, and on a full rescan
+    // its re-discovery is kept as a New Confirmed finding — so folding them made the report say a
+    // defect was "carried forward unchanged" while listing the same defect under New.
+    regressed: adjudicated.regressed, carried: adjudicated.carried, retired: adjudicated.retired, neu: confirmed,
+  } : null
+}
 // The verdict-line clause the synthesis model is told to append when coverage was not complete. It
 // names the SAME cause the record string names: a genuine not-run is INCOMPLETE (re-running helps),
 // a coverage hole is PARTIAL COVERAGE (a re-run will not fix it). floorPremiseHeld is deliberately
 // not consulted here — the synthesis prompt is composed before the verdict exists, and the revoked-
 // floor cause is appended afterward by markVerdictIncomplete.
-const incompleteClause = incompleteNotes.length
-  ? ` Append " · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.`
-  : ''
+const incompleteClause = incompleteClauseOf()
+function incompleteClauseOf() {
+  return incompleteNotes.length
+    ? ` Append " · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.`
+    : ''
+}
 // Set when the synthesis agent answered but not with report text, so the fallback names the real cause.
 let synthesisUnusable = false
-const report = await ragent(
-  `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
+// The synthesis agent's report text, or null when it died or answered with something else (logged).
+async function synthesize() {
+  return ragent(
+    `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
 
 VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ⛔ Block if any Confirmed Critical or High.
@@ -6906,52 +6956,62 @@ CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
 SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}
 
 UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, null, 2)}`,
-  { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
-// Without a schema the answer is the agent's final text; anything else is no report at all — but a
-// LIVE agent that answered with a non-string, or with blank text, did not die, and the fallback must
-// not say it did: every non-null answer that reaches the fallback is an unusable one.
-).then(text => {
-  if (typeof text === 'string' && text.trim()) return text
-  if (text != null) {
-    synthesisUnusable = true
-    const what = typeof text === 'string' ? 'blank text' : Array.isArray(text) ? 'an array' : `a value of type ${typeof text}`
-    log(`⚠️ synthesis agent answered with ${what}, not report text — discarded; using the mechanical fallback report`)
-  }
-  return null
-})
+    { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
+  // Without a schema the answer is the agent's final text; anything else is no report at all — but a
+  // LIVE agent that answered with a non-string, or with blank text, did not die, and the fallback must
+  // not say it did: every non-null answer that reaches the fallback is an unusable one.
+  ).then(text => {
+    if (typeof text === 'string' && text.trim()) return text
+    if (text != null) {
+      synthesisUnusable = true
+      const what = typeof text === 'string' ? 'blank text' : Array.isArray(text) ? 'an array' : `a value of type ${typeof text}`
+      log(`⚠️ synthesis agent answered with ${what}, not report text — discarded; using the mechanical fallback report`)
+    }
+    return null
+  })
+}
+const report = await synthesize()
 
 // Optional: post Confirmed findings as inline PR comments (best-effort).
 // Best-effort means it must not FAIL the run; it does not mean it may be INVISIBLE. The caller asked
 // for comments, so whether they landed is part of the answer: the outcome is returned under a schema
 // and logged, including "the agent died and we do not know". Discarding the return value made the
 // prompt's own "report that" reach nobody.
-if (postComments && confirmed.length) {
-  const posted = await ragent(
-    `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, post nothing and say so in \`reason\` — never fail.
+async function postPrComments() {
+  if (postComments && confirmed.length) {
+    const posted = await ragent(
+      `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, post nothing and say so in \`reason\` — never fail.
 For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
 ${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}
 Return {posted: <how many comments you actually created>, reason: <one line: the PR you posted to, or why nothing was posted>}.`,
-    { label: 'pr-comments', phase: 'Synthesize', effort: 'low', schema: PR_COMMENTS_SCHEMA },
-  )
-  if (posted == null) log(`⚠️ PR comments: the poster agent returned nothing — ${confirmed.length} Confirmed finding(s) may or may not have been posted; check the PR`)
-  else if (Number(posted.posted) > 0) log(`PR comments: posted ${Number(posted.posted)} of ${confirmed.length} Confirmed finding(s) — ${posted.reason || 'no detail'}`)
-  else log(`⚠️ PR comments: nothing was posted (${confirmed.length} Confirmed finding(s) requested) — ${posted.reason || 'no reason given'}`)
+      { label: 'pr-comments', phase: 'Synthesize', effort: 'low', schema: PR_COMMENTS_SCHEMA },
+    )
+    if (posted == null) log(`⚠️ PR comments: the poster agent returned nothing — ${confirmed.length} Confirmed finding(s) may or may not have been posted; check the PR`)
+    else if (Number(posted.posted) > 0) log(`PR comments: posted ${Number(posted.posted)} of ${confirmed.length} Confirmed finding(s) — ${posted.reason || 'no detail'}`)
+    else log(`⚠️ PR comments: nothing was posted (${confirmed.length} Confirmed finding(s) requested) — ${posted.reason || 'no reason given'}`)
+  }
 }
+await postPrComments()
 
 const allReviewFindings = confirmed.concat(suspected, unverified)
 // The verification denominator: what verification ACTUALLY judged. `unverified` is deliberately
 // absent — including it once made refuteRate incomparable across runs (on one measured run 118 of
 // 215 findings were Low/Info, so the denominator was more than double the 89 verdicts really cast).
 const totalVerified = confirmed.length + suspected.length + dropped
-let recordVerdict = isRereview
-  ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
-  : finalVerdict(confirmed)
-// Strict-mode maintainability escalation applies to a re-review too (finalVerdict already covers the
-// first-pass path): a Confirmed Medium+ maintainability finding among the live re-review set blocks.
-if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed, ...confirmed]
-  .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
-  recordVerdict = 'Block'
+/** The verdict the record carries: the re-review tracks or the confirmed set, escalated by strict maintainability. */
+function decideRecordVerdict() {
+  let recordVerdict = isRereview
+    ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
+    : finalVerdict(confirmed)
+  // Strict-mode maintainability escalation applies to a re-review too (finalVerdict already covers the
+  // first-pass path): a Confirmed Medium+ maintainability finding among the live re-review set blocks.
+  if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed, ...confirmed]
+    .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
+    recordVerdict = 'Block'
+  }
+  return recordVerdict
 }
+const recordVerdict = decideRecordVerdict()
 // THE PREMISE OF THE SAVING, CHECKED AGAINST THE VERDICT THAT ACTUALLY CAME OUT. Skipping a Medium
 // is legitimate only while "the verdict is already Block" stays true, and that is a claim about a
 // moment, not an invariant: the floor is raised during Verify, and a confirmed finding can still
@@ -6964,10 +7024,13 @@ if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed,
 // `notRun` entry, which a re-run can and should fix. This is the one case where the saving and the
 // failure are the same event, told apart only by an outcome that is not known when the skip is made.
 const floorPremiseHeld = !savedByFloor.length || recordVerdict === 'Block'
-if (!floorPremiseHeld) {
-  notRun.push(...savedByFloor.map(n => `${n} — AND THE PREMISE DID NOT HOLD: the run ended at ${recordVerdict}, not Block, so the saving rested on a confirmed finding that did not reach the verdict; re-run to check them`))
-  log(`⚠️ ${savedByFloor.length} verification(s) were skipped because the verdict was already Block, but the run ended at ${recordVerdict} — the skipped findings are reported as a coverage hole, not as a saving`)
+function reportRevokedPremise() {
+  if (!floorPremiseHeld) {
+    notRun.push(...savedByFloor.map(n => `${n} — AND THE PREMISE DID NOT HOLD: the run ended at ${recordVerdict}, not Block, so the saving rested on a confirmed finding that did not reach the verdict; re-run to check them`))
+    log(`⚠️ ${savedByFloor.length} verification(s) were skipped because the verdict was already Block, but the run ended at ${recordVerdict} — the skipped findings are reported as a coverage hole, not as a saving`)
+  }
 }
+reportRevokedPremise()
 // Persist the ledger so round N+1 can find round N. On a re-review it grows by FOUR paths, not the
 // three that are obvious: (1) the new delta findings; (2) still-open/regressed priors, as 'open';
 // (3) dismissed priors still carried, with their disposition; and (4) — easy to miss because it
@@ -7047,34 +7110,40 @@ const toTombstone = (/** @type {Finding} */ f, origin = 'resolved') => {
 const liveLedgerCount = confirmed.length + suspected.length +
   unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).length +
   adjudicated.stillOpen.length + adjudicated.regressed.length + adjudicated.carried.length
-const tombstones = pruneTombstones([
-  ...adjudicated.resolved.map(f => toTombstone(f, 'resolved')),
-  ...adjudicated.retired.map(f => toTombstone(f, 'dismissed')),
-  // Carried tombstones from an incomparable fingerprint basis are dropped, not carried forward under a
-  // stale basis: a clean baseline after a basis change (or a reported loss when the basis verdict did
-  // not arrive). This round's own tombstones are minted under the current basis (toTombstone recomputes
-  // `fp`, so even a prior loaded under an old basis gets a current-basis hash) and kept regardless.
-  ...(priorFpComparable ? priorTombstones : []),
-], { max: tombstoneBudget(liveLedgerCount) })
-const reviewLedger = isRereview
-  ? [
-    ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
-    ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
-    // An unverified finding whose carrier is ITSELF an unverified prior writes no second row: see
-    // `ledgerDupOfUnverifiedPrior` in lib/review-adjudicate.mjs for why that host and no other.
-    ...unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).map(f => toLedgerEntry(f, 'open', 'unverified')),
-    ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
-    ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
-    // `adjudicated.resolved`/`adjudicated.retired` no longer leave the ledger silently: each becomes a
-    // lightweight TOMBSTONE (`disposition:'closed'`) so a later round can tell the defect's RETURN
-    // from a genuine novelty. It is not a live finding — the carve-out on load keeps it out of the
-    // adjudicator — and it costs one bare row, not a re-adjudicated one. The set (this round's plus
-    // the earlier ones carried forward) is deduped and capped above; each row keeps its own origin+
-    // round marker, which is the round the REGRESSION / re-raised note reports.
-    ...tombstones,
-    ...adjudicated.carried.map(f => toLedgerEntry(f, f['disposition'])),
-  ]
-  : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
+const tombstones = assembleTombstones()
+function assembleTombstones() {
+  return pruneTombstones([
+    ...adjudicated.resolved.map(f => toTombstone(f, 'resolved')),
+    ...adjudicated.retired.map(f => toTombstone(f, 'dismissed')),
+    // Carried tombstones from an incomparable fingerprint basis are dropped, not carried forward under a
+    // stale basis: a clean baseline after a basis change (or a reported loss when the basis verdict did
+    // not arrive). This round's own tombstones are minted under the current basis (toTombstone recomputes
+    // `fp`, so even a prior loaded under an old basis gets a current-basis hash) and kept regardless.
+    ...(priorFpComparable ? priorTombstones : []),
+  ], { max: tombstoneBudget(liveLedgerCount) })
+}
+const reviewLedger = assembleLedger()
+function assembleLedger() {
+  return isRereview
+    ? [
+      ...confirmed.map(f => toLedgerEntry(f, 'open', 'confirmed')),
+      ...suspected.map(f => toLedgerEntry(f, 'open', 'suspected')),
+      // An unverified finding whose carrier is ITSELF an unverified prior writes no second row: see
+      // `ledgerDupOfUnverifiedPrior` in lib/review-adjudicate.mjs for why that host and no other.
+      ...unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).map(f => toLedgerEntry(f, 'open', 'unverified')),
+      ...adjudicated.stillOpen.map(f => toLedgerEntry(f, 'open')),
+      ...adjudicated.regressed.map(f => toLedgerEntry(f, 'open')),
+      // `adjudicated.resolved`/`adjudicated.retired` no longer leave the ledger silently: each becomes a
+      // lightweight TOMBSTONE (`disposition:'closed'`) so a later round can tell the defect's RETURN
+      // from a genuine novelty. It is not a live finding — the carve-out on load keeps it out of the
+      // adjudicator — and it costs one bare row, not a re-adjudicated one. The set (this round's plus
+      // the earlier ones carried forward) is deduped and capped above; each row keeps its own origin+
+      // round marker, which is the round the REGRESSION / re-raised note reports.
+      ...tombstones,
+      ...adjudicated.carried.map(f => toLedgerEntry(f, f['disposition'])),
+    ]
+    : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
+}
 // THE LEDGER IS PERSISTED BEFORE THE RECORD IS ATTEMPTED, in bounded shards, one small checkpoint
 // per shard (lib/ledger-shards.mjs carries the measurement and the reasoning). The final record is
 // written once, at the end, through a model copying the whole thing in one tool call — the step that
@@ -7085,9 +7154,12 @@ const reviewLedger = isRereview
 //
 // Written HERE and not earlier because this is the first moment the ledger exists — it is the
 // carry-forward, so it needs the adjudication of the prior round that only just finished.
-for (const shard of shardLedger(reviewLedger)) {
-  await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
+async function persistLedgerShards() {
+  for (const shard of shardLedger(reviewLedger)) {
+    await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
+  }
 }
+await persistLedgerShards()
 await logRun(reviewRecord({
   verdict: recordVerdict + verdictSuffix({ notRun, coverageNotes, floorPremiseHeld }),
   savedByFloor,
