@@ -27,9 +27,9 @@
     "noUnusedParameters": true
   },
   "include": [
-    "*.mjs"
+    "**/*.mjs"
   ],
   "exclude": [
-    "*.test.mjs"
+    "**/*.test.mjs"
   ]
 }
