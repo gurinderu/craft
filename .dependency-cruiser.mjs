@@ -8,11 +8,17 @@
 // through (realm @nick/craft, #145). The engines (workflows/*.js) are not here: they import nothing,
 // and what is inlined into them is held by lib/inlined-sandbox-names.mjs.
 //
-// Type-only imports are erased before anything runs, so they are not followed (tsPreCompilationDeps).
+// Only imports that survive compilation are followed (tsPreCompilationDeps: false), and the TypeScript is
+// compiled under the plugin's own tsconfig. That matters: under its verbatimModuleSyntax `import type`
+// is erased, but `import { type X } from 'p'` is not — it runs as `import {} from 'p'` and is followed
+// here (lint also refuses that shape: @typescript-eslint/no-import-type-side-effects). The tsconfig path
+// is absolute: given a relative one, dependency-cruiser 18.5.0 reads its `include` as matching nothing.
+//
+// Blind spots (REALITY.md): `createRequire(…)(…)`, `import()` with a non-literal argument, and code a
+// shipped entry starts as another process or reads from disk at run time.
+import { SHIPPED_NODE_ENTRIES } from './lib/shipped-entries.mjs'
 
-/** The entry points that run in a consumer's repo: the run-record CLI the engines shell out to, the
- * run-store reader, and the OpenCode plugin. */
-const SHIPPED = '^(lib/(craft-log-run|analyze-runs)[.]mjs|opencode/plugin/index[.]ts)$'
+const SHIPPED = `^(${SHIPPED_NODE_ENTRIES.map(p => p.replace(/[.]/g, '[.]')).join('|')})$`
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
@@ -49,6 +55,7 @@ export default {
   options: {
     doNotFollow: { path: '(^|/)node_modules/' },
     tsPreCompilationDeps: false,
+    tsConfig: { fileName: `${import.meta.dirname}/opencode/plugin/tsconfig.json` },
     // @opencode-ai/plugin exports only an `import` condition.
     enhancedResolveOptions: { conditionNames: ['import', 'node', 'default'], exportsFields: ['exports'] },
   },

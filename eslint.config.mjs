@@ -79,6 +79,11 @@ export default [
   // Core no-unused-vars reads a function type's parameter names as unused bindings; tsc's
   // noUnusedLocals/noUnusedParameters (opencode/plugin/tsconfig.json) already hold the real ones.
   { files: ['opencode/plugin/*.ts'], rules: { 'no-unused-vars': 'off' } },
+  // Under verbatimModuleSyntax (opencode/plugin/tsconfig.json) `import { type X } from 'p'` is not erased:
+  // it runs as `import {} from 'p'`, loading a package that a type-only reading takes for absent. Written
+  // `import type`, it is erased. .dependency-cruiser.mjs follows the same tsconfig and catches the
+  // runtime import too; this keeps the shape out of the source (realm @nick/craft, #145).
+  { files: ['opencode/plugin/*.ts'], rules: { '@typescript-eslint/no-import-type-side-effects': 'error' } },
   {
     files: ['lib/**/*.mjs'],
     languageOptions: { parserOptions: { project: ['./lib/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
