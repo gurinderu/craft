@@ -979,7 +979,8 @@ async function safeAgent(prompt, opts = {}) {
     // ANSWERED: the section says what entered the audit without the rubric, and a dispatch that died on
     // both paths is a dead dimension (NOT RUN), the same outcome as one that threw.
     const fallback = await agent(prompt, generic)
-    if (fallback != null) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
+    // Falsy, not just null: dimResult reads any falsy result as a dead dimension.
+    if (fallback) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
     return fallback
   } catch (e) {
     const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
@@ -992,7 +993,7 @@ async function safeAgent(prompt, opts = {}) {
       const fallback = await agent(prompt, generic)
       // Dead on both paths: the agent's error is the only one there is, so it is rethrown for the
       // dimension's NOT RUN line rather than lost to an anonymous "no result".
-      if (fallback == null) throw e
+      if (!fallback) throw e
       agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
       return fallback
     }
