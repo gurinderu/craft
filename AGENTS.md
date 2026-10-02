@@ -129,8 +129,9 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | Eval corpus shape | `node lib/check-evals.mjs` |
 | Unused files, exports, dependencies (config `knip.config.js`; an inlined export is used only where an engine calls it — listing it in a `craft-inline` fence is not a use) | `npm run check:dead:production` (tests excluded: an export only a test uses is dead) and `npm run check:dead` (tests included: devDependencies, packages tests import); both need `npm ci` and `npm ci --prefix opencode/plugin` |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
+| Audit the OpenCode plugin's locked production closure (blocking at high in CI; needs the network, so offline it is CI's to run — not reproducible, realm #141) | `npm audit --prefix opencode/plugin --omit=dev --audit-level=high` |
 
-There is no formatter and no pre-commit hook: run every row above before pushing; CI runs the same steps (one job, `test`). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
+There is no formatter and no pre-commit hook: run every row above before pushing (the audit row only with network; offline it is CI's to run); CI runs the same steps (one job, `test`). Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs). What each gate does not cover — realm `@nick/craft`, #121.
 
 ## Project structure
 - `skills/` — 32 skills, one directory each with a `SKILL.md`.
@@ -177,7 +178,7 @@ There is no formatter and no pre-commit hook: run every row above before pushing
 - **Forge**: GitHub (`git@github.com:gurinderu/craft.git`); CLI `gh`. Observe with `gh pr checks <n> --watch`, `gh pr view <n>`; trunk as the forge sees it — `gh api repos/gurinderu/craft/commits/main --jq .sha`. Never treat a local ref as current — `git fetch origin main` first.
 - **Conventional commits** (`feat:`/`fix:`/`chore:`/`refactor:`/`docs:`/`test:`) — release-please parses them, so the prefix carries the version; branches `feat/…`, `fix/…`, `chore/…`; PR titles in the same format.
 - **No co-author trailer and no "Generated with Claude Code"** — neither on commits nor in PR bodies.
-- **Gate before push**: every row of "Commands"; there is no pre-commit hook and no single gate call yet (cover, "Gate").
+- **Gate before push**: every row of "Commands" (the audit row needs the network — offline it is CI's); there is no pre-commit hook and no single gate call yet (cover, "Gate").
 - **Push, review, then PR**: push the branch so the reviewer can read `origin/<branch>`; open the PR once the cold review's verdict is in and its findings are worked (above). A branch whose review is done does not live without a PR.
 - **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (one job, `test`; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
