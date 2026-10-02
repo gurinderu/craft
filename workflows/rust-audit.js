@@ -990,7 +990,10 @@ async function safeAgent(prompt, opts = {}) {
     if (!isAgentTypeMissing(msg, at)) {
       if (!/not found/i.test(msg)) throw e
       const fallback = await agent(prompt, generic)
-      if (fallback != null) agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
+      // Dead on both paths: the agent's error is the only one there is, so it is rethrown for the
+      // dimension's NOT RUN line rather than lost to an anonymous "no result".
+      if (fallback == null) throw e
+      agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
       return fallback
     }
     agentTypeMissing.set(at, msg)

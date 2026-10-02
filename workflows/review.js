@@ -5228,6 +5228,8 @@ async function reviewProfile(profile) {
     }
     return res
   }
+  // A fallback counts as answered only when runLens would accept it: an off-schema answer is a dead lens.
+  const answeredFindings = (/** @type {unknown} */ r) => r != null && Array.isArray(/** @type {{ findings?: unknown }} */ (r).findings)
   /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
   async function dispatchLens(lens, prompt, phaseName, labelSuffix, slice = null) {
     // The single dispatch point for every lens on every path. Recording here — not at plan time — is
@@ -5255,7 +5257,7 @@ async function reviewProfile(profile) {
       // a shot at the real reviewer agent. Counted, so the report can say it happened — only when the
       // generic subagent answered: dead on both paths is a dead lens, as rust-audit counts it (#116).
       const fallback = await runGeneric()
-      if (fallback != null) noteReviewerAgentFallback(profile)
+      if (answeredFindings(fallback)) noteReviewerAgentFallback(profile)
       return fallback
     } catch (e) {
       const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
@@ -5269,7 +5271,7 @@ async function reviewProfile(profile) {
         lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160))
         if (!/not found/i.test(msg)) return null
         const fallback = await runGeneric()
-        if (fallback != null) { lensFailures.delete(dispatchKey(lens, slice)); noteReviewerAgentNotFound(profile, msg.slice(0, 160)) }
+        if (answeredFindings(fallback)) { lensFailures.delete(dispatchKey(lens, slice)); noteReviewerAgentNotFound(profile, msg.slice(0, 160)) }
         return fallback
       }
       reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
