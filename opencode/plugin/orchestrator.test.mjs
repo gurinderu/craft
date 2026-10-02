@@ -694,12 +694,14 @@ test('a retry clipped by the budget names the budget, not a deadline that exists
 
 test('a job left over when the budget is spent is not attempted, and says so', async () => {
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
-  const jobs = Array.from({ length: 3 }, (_, i) => ({
+  const jobs = Array.from({ length: 5 }, (_, i) => ({
     label: `d${i}`, agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 50,
   }))
-  // 60ms against three 50ms jobs left ~10ms of slack and flaked once in twenty runs; the sibling
-  // test above was widened for the same reason and this one was left.
-  const rs = await fanOut(ctx, jobs, 90)
+  // A budget the retries exactly use up is a race: 90ms against 50ms jobs (one full retry, one
+  // clipped to the remainder) left the third job's check at `left` 0 or 1 by timer jitter, and
+  // failed in CI under load. 30ms is less than one job's deadline: the first retry is clipped to
+  // the whole budget, and of five jobs the later ones find it spent.
+  const rs = await fanOut(ctx, jobs, 30)
   const skipped = rs.filter(r => /retry budget for this run was already spent/.test(r.text))
   assert.ok(skipped.length >= 1, 'at least one job is honestly reported as never retried')
 })
