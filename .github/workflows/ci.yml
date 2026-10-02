@@ -20,10 +20,11 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
-      # Lint reaches only the .mjs files under lib/ and opencode/plugin/. workflows/*.js cannot be
-      # parsed by ESLint for the same reason `node --check` cannot read them — the syntax-check
-      # step below is their gate. opencode/plugin/*.ts are outside ESLint's default globs — the
-      # typecheck step below is their gate. Keep this command identical to package.json's "lint".
+      # Lint reaches the .mjs files under lib/ and opencode/plugin/ and opencode/plugin/*.ts, with
+      # typescript-eslint's type-aware rules over each tsconfig's program (so it needs the plugin
+      # deps above). workflows/*.js cannot be parsed by ESLint for the same reason `node --check`
+      # cannot read them — the syntax-check and engine typecheck steps below are their gates.
+      # Keep this command identical to package.json's "lint".
       - name: Lint
         run: npx eslint lib opencode/plugin --max-warnings 0
       # tsc over opencode/plugin/*.ts and every opencode/plugin/*.mjs, tests included (config in

@@ -118,7 +118,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | What | Command |
 |---|---|
 | Unit tests | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` |
-| Lint (zero-warning, identical to CI) | `npm run lint` — read the raw exit code |
+| Lint (zero-warning, identical to CI; type-aware rules over the `lib/` and `opencode/plugin/` programs) | `npm run lint` — read the raw exit code (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci --prefix opencode/plugin` once) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Typecheck the engines' own code `workflows/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`) | `npm run check:types:workflows` (same prerequisites) |
