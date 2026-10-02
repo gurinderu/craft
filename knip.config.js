@@ -12,6 +12,9 @@
 // names with `new URL('./x.mjs', import.meta.url)` (Knip takes that as a whole-module reference).
 // `knip --production` drops tests and checks what the shipped entries (marked `!`) reach.
 import { FENCE_CLOSE, FENCE_OPEN } from './lib/inline-regions.mjs'
+import { SHIPPED_NODE_ENTRIES } from './lib/shipped-entries.mjs'
+
+const PLUGIN = 'opencode/plugin/'
 
 // A comment names helpers without calling them: it is not a use. Stripped: a line comment (`//` at
 // the start or after whitespace, so a `://` inside a URL survives) and a block comment opened at the
@@ -70,10 +73,9 @@ export default {
     '.': {
       entry: [
         'workflows/*.js!',
-        // Run by the engines through a shell line they build at runtime, not imported.
-        'lib/craft-log-run.mjs!',
-        // Run by hand (AGENTS.md, "Commands": not a gate).
-        'lib/analyze-runs.mjs!',
+        // lib/craft-log-run.mjs (run by the engines through a shell line they build at runtime) and
+        // lib/analyze-runs.mjs (run by hand): not imported. The list is shared with .dependency-cruiser.mjs.
+        ...SHIPPED_NODE_ENTRIES.filter(p => !p.startsWith(PLUGIN)).map(p => `${p}!`),
         // The gate's own checkers (CI workflow, package.json scripts).
         'lib/check-*.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
@@ -90,7 +92,7 @@ export default {
     },
     'opencode/plugin': {
       // Loaded by opencode from plugins/craft-rust (opencode/install.sh links it there), not imported.
-      entry: ['index.ts!'],
+      entry: SHIPPED_NODE_ENTRIES.filter(p => p.startsWith(PLUGIN)).map(p => `${p.slice(PLUGIN.length)}!`),
       project: ['**/*.{ts,mjs,js}!'],
       // Pinned exactly beside @opencode-ai/plugin on purpose, though nothing imports it directly
       // (realm @nick/craft, node #124).

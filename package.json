@@ -5,7 +5,7 @@
   "description": "Dev-only tooling for the craft plugin repo. craft itself ships no runtime dependencies.",
   "scripts": {
     "test": "vitest run",
-    "lint": "eslint lib opencode/plugin knip.config.js --max-warnings 0",
+    "lint": "eslint lib opencode/plugin knip.config.js .dependency-cruiser.mjs --max-warnings 0",
     "check:workflows": "node lib/check-workflows.mjs",
     "check:skills": "node lib/check-skills.mjs",
     "check:evals": "node lib/check-evals.mjs",
@@ -14,11 +14,13 @@
     "check:types:workflows": "node lib/check-workflow-types.mjs",
     "check:opencode-frontmatter": "python3 opencode/scripts/check-frontmatter.py agent opencode/agents/*.md && python3 opencode/scripts/check-frontmatter.py command opencode/commands/*.md",
     "check:dead": "knip --no-progress",
-    "check:dead:production": "knip --no-progress --production"
+    "check:dead:production": "knip --no-progress --production",
+    "check:deps": "depcruise --config .dependency-cruiser.mjs lib opencode/plugin"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
     "@types/node": "22.20.5",
+    "dependency-cruiser": "18.5.0",
     "eslint": "^9.39.0",
     "knip": "6.39.0",
     "typescript": "5.9.3",
