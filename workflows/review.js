@@ -2172,9 +2172,10 @@ function makeDeathBreaker(opts = {}) {
 // >>> craft-inline lib/lens-scope.mjs utf8Bytes utf8Text decodeGitPath MAX_SHARED_PER_SLICE SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
 // UTF-8 by hand. The Workflow sandbox has no TextEncoder or TextDecoder — a probe workflow saw both
 // undefined (realm @nick/craft, #135) — and decodeGitPath runs there, inlined into review.js. These
-// follow the platform objects exactly: a lone surrogate encodes as U+FFFD, and decoding replaces each
-// maximal invalid subpart with U+FFFD as the WHATWG UTF-8 decoder does (pinned against
-// TextDecoder by a differential test).
+// follow the platform objects: a lone surrogate encodes as U+FFFD, and decoding replaces each maximal
+// invalid subpart with U+FFFD as the WHATWG UTF-8 decoder does (pinned against TextDecoder by a
+// differential test). One deliberate difference: a leading BOM is kept, as `ignoreBOM: true` keeps it —
+// a path is not a document, and a file whose name starts with U+FEFF must decode to that name.
 /** @param {string} text @returns {number[]} */
 function utf8Bytes(text) {
   /** @type {number[]} */
