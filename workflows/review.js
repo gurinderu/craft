@@ -5117,8 +5117,22 @@ async function reviewProfile(profile) {
   // dispatches under one name, and a name-keyed map keeps only the last failure — so the reported
   // reason would name one slice's error as if it were the lens's.
   const dispatchKey = (/** @type {string} */ lens, /** @type {Slice | null} */ slice) => (slice ? `${lens} :: ${slice.key}` : lens)
+  // An answer is model output: the schema shapes it, but an off-schema answer still arrives. One
+  // without a findings array did not review — counting it as returned would read `{}` as a clean lens
+  // and iterate a string or a number as findings. It is a lens failure with its own reason, so every
+  // caller (the round, the resurrection sweep, the critic follow-ups) sees exactly what a dead lens is.
   /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
   async function runLens(lens, prompt, phaseName, labelSuffix, slice = null) {
+    const res = await dispatchLens(lens, prompt, phaseName, labelSuffix, slice)
+    if (res != null && !Array.isArray(/** @type {{ findings?: unknown }} */ (res).findings)) {
+      lensFailures.set(dispatchKey(lens, slice), 'answered off-schema (no findings array)')
+      log(`⚠️ [${profile.id}] lens ${dispatchKey(lens, slice)} answered off-schema (no findings array) — counted as not returned`)
+      return null
+    }
+    return res
+  }
+  /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
+  async function dispatchLens(lens, prompt, phaseName, labelSuffix, slice = null) {
     // The single dispatch point for every lens on every path. Recording here — not at plan time — is
     // what makes the report and the run record physically unable to disagree with what happened.
     if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
@@ -5504,7 +5518,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
       ))
       const deadFollowups = followups.filter((/** @type {string} */ _l, /** @type {number} */ i) => !settledExtra[i])
       if (deadFollowups.length) {
-        notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and died before returning findings`))
+        notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
         log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
       }
       const extra = settledExtra.filter(r => r != null).flatMap(r => r.findings || [])
@@ -6063,6 +6077,8 @@ const rereviewData = isRereview ? {
 const incompleteClause = incompleteNotes.length
   ? ` Append " · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.`
   : ''
+// Set when the synthesis agent answered but not with report text, so the fallback names the real cause.
+let synthesisUnusable = false
 const report = await ragent(
   `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
 
@@ -6102,8 +6118,16 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}
 
 UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, null, 2)}`,
   { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
-// Without a schema the answer is the agent's final text; anything else is no report at all.
-).then(text => (typeof text === 'string' ? text : null))
+// Without a schema the answer is the agent's final text; anything else is no report at all — but a
+// LIVE agent that answered with a non-string did not die, and the fallback must not say it did.
+).then(text => {
+  if (typeof text === 'string') return text
+  if (text != null) {
+    synthesisUnusable = true
+    log(`⚠️ synthesis agent answered with ${Array.isArray(text) ? 'an array' : `a value of type ${typeof text}`}, not report text — discarded; using the mechanical fallback report`)
+  }
+  return null
+})
 
 // Optional: post Confirmed findings as inline PR comments (best-effort).
 // Best-effort means it must not FAIL the run; it does not mean it may be INVISIBLE. The caller asked
@@ -6290,6 +6314,8 @@ await logRun(reviewRecord({
 // If the synthesis agent died even after the retry, don't lose the whole run — assemble a
 // mechanical report from the verified findings (unmerged, but complete).
 function fallbackReport() {
+  // Why there is no synthesized report: a death and a live answer that was not report text read differently.
+  const cause = synthesisUnusable ? 'synthesis agent returned no usable report' : 'synthesis agent died twice'
   // On a re-review the verdict must come from recordVerdict (still-open+regressed+new), NOT
   // finalVerdict(confirmed) — confirmed holds only the delta, so finalVerdict would print a false
   // Approve and hide live still-open/regressed priors. Render those tracks too.
@@ -6301,7 +6327,7 @@ function fallbackReport() {
     // `notRun` LIVE, not the `incompleteNotes` snapshot taken before the verdict existed: the
     // revoked-premise path pushes into `notRun` afterwards, and a fallback rendered from the stale
     // snapshot would print a clean verdict over findings the same run has just declared unchecked.
-    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
+    `${emoji} — ${cause}; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),

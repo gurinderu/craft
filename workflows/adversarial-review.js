@@ -978,20 +978,31 @@ const deadLensJobs = await runThrottled(
   })),
   'Review', 'Review', { reportUnjudged: false },
 )
-const deadLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
-if (deadLenses.length) {
-  log(`WARNING: finder lens(es) returned nothing: ${deadLenses.join(', ')}`)
+const diedLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
+if (diedLenses.length) {
+  log(`WARNING: finder lens(es) returned nothing: ${diedLenses.join(', ')}`)
   // One entry PER dead lens: `lens:correctness` is what aggregates across runs into
   // "3× lens:correctness", which is the whole point of ranking `notRun`.
-  for (const l of deadLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
+  for (const l of diedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
 }
-if (plan.lenses.length && deadLenses.length === plan.lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
-
 // A result is model output: the schema is enforced by the tool, but a lens that came back without a
 // findings array is a lens that did not review, not one that found nothing — and must not crash the run.
+// It is dead for every consumer of `deadLenses` (the all-dead check, the critic's prompt, the returned
+// scout), not only for `notRun`.
+const malformedLenses = plan.lenses.filter((/** @type {string} */ lens) => {
+  const r = lensResults.get(lens)
+  return r != null && !Array.isArray(r.findings)
+})
+if (malformedLenses.length) {
+  log(`WARNING: finder lens(es) answered without a findings array: ${malformedLenses.join(', ')}`)
+  for (const l of malformedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens returned no findings array — that dimension went unreviewed`)
+}
+/** @type {string[]} */
+const deadLenses = [...new Set([...diedLenses, ...malformedLenses])]
+if (plan.lenses.length && deadLenses.length === plan.lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
+
 const all = plan.lenses.flatMap((/** @type {string} */ lens) => {
   const r = lensResults.get(lens)
-  if (r && !Array.isArray(r.findings)) markNotRun(`lens:${lens}`, `the ${lens} finder lens returned no findings array — that dimension went unreviewed`)
   return r && Array.isArray(r.findings) ? r.findings.map(x => ({ ...x, lens })) : []
 })
 
@@ -1070,7 +1081,10 @@ ${kept.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (le
   const drop = new Set()
   // Only ever called with an index the filter below has bounded to `kept`.
   const at = (/** @type {number} */ i) => /** @type {LensFinding} */ (kept[i])
-  for (const cluster of (clusterer?.clusters ?? [])) {
+  // Model output: a live clusterer whose `clusters` is not an array merged nothing — say so, never throw.
+  const clusters = Array.isArray(clusterer?.clusters) ? clusterer.clusters : []
+  if (clusterer && !Array.isArray(clusterer.clusters)) log('WARNING: semantic dedup returned clusters that are not an array — no semantic merge applied')
+  for (const cluster of clusters) {
     const idxs = [...new Set(Array.isArray(cluster) ? cluster : [])]
       .filter(i => Number.isInteger(i) && i >= 0 && i < kept.length && !drop.has(i))
       .sort((x, y) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(x).severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(y).severity)])
@@ -1323,9 +1337,15 @@ if (!critic) {
   markNotRun('coverage-critic-dead', 'the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
 }
 
+// A live critic whose `findings` is not an array checked nothing we can read — that is not-run under
+// its own label, never a silent "coverage is complete" and never a crash.
+if (critic && !Array.isArray(critic.findings)) {
+  log('WARNING: coverage critic answered without a findings array — completeness was never checked')
+  markNotRun('coverage-critic-malformed', 'the coverage critic answered without a findings array — no usable completeness check ran, so blind spots in this review are unknown')
+}
 // Critic findings do not bypass verification — they ride the same throttled pipeline.
 /** @type {LensFinding[]} */
-const gaps = (critic?.findings ?? []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
+const gaps = (critic && Array.isArray(critic.findings) ? critic.findings : []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
 let refutedGaps = 0
 if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
