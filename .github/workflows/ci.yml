@@ -26,11 +26,26 @@ jobs:
       # typecheck step below is their gate. Keep this command identical to package.json's "lint".
       - name: Lint
         run: npx eslint lib opencode/plugin --max-warnings 0
-      # tsc --strict over opencode/plugin/*.ts (config in opencode/plugin/tsconfig.json). This is the
-      # only gate that compiles the TypeScript at all; before it existed a syntax error there shipped
-      # green. It type-checks only — no emit — and does not cover the .md agents/commands beside it.
+      # tsc over opencode/plugin/*.ts and every opencode/plugin/*.mjs, tests included (config in
+      # opencode/plugin/tsconfig.json: checkJs at the same maximum strictness as lib/tsconfig.json).
+      # This is the only gate that compiles the TypeScript at all; before it existed a syntax error
+      # there shipped green. Its Node typings are the plugin's own pinned @types/node, not Node 22.
+      # It type-checks only — no emit — and does not cover the .md agents/commands beside it.
       - name: Typecheck opencode plugin
         run: npm run check:types
+      # tsc --checkJs at maximum strictness (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes
+      # and the rest; lib/tsconfig.json) over every lib/**/*.mjs, tests included, so a new module is strict at once.
+      # The compiler is the opencode plugin's pinned tsc (needs `npm ci --prefix opencode/plugin` above);
+      # the Node typings are the root's @types/node 22.x, matching the Node this code runs on — the
+      # plugin's newer typings would let post-22 APIs through. Types come from JSDoc; nothing shipped changes.
+      - name: Typecheck lib (checkJs)
+        run: npm run check:types:lib
+      # The engines' own code (workflows/*.js) at the same strictness: each script wrapped as the sandbox
+      # runs it, its craft-inline regions swapped for imports of the lib modules they come from, the
+      # sandbox globals declared in lib/workflow-sandbox.d.ts; errors reported at their workflows/ line.
+      # Agent results are typed `any` (model output), so fields read off them are not checked.
+      - name: Typecheck workflow engines (checkJs)
+        run: npm run check:types:workflows
       # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
       - name: Unit tests
         run: node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'

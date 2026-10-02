@@ -14,11 +14,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runRustAudit } from './rust-audit.ts'
 
+/** @typedef {{ body?: { agent?: string, parts?: { text?: string }[] } }} PromptRequest */
+
 // `$` is Bun's shell used as a tagged template; every call in the audit is a read-only probe whose
 // failure the code already tolerates, so answering "" for all of them is faithful.
 const shell = () => Object.assign(() => ({ quiet: async () => ({ stdout: '' }) }), {})
 
+/** @param {(q: { agent: string, isSynthesis: boolean }) => string | null} answerFor */
 function fakeCtx(answerFor) {
+  /** @type {string[]} */
   const seen = []
   return {
     seen,
@@ -28,7 +32,7 @@ function fakeCtx(answerFor) {
     client: {
       session: {
         create: async () => ({ id: 's' }),
-        prompt: async ({ body }) => {
+        prompt: async (/** @type {PromptRequest} */ { body }) => {
           const agent = body?.agent ?? ''
           const isSynthesis = /consolidating a Rust audit/.test(body?.parts?.[0]?.text ?? '')
           seen.push(isSynthesis ? 'synthesis' : agent || 'dimension')
@@ -40,18 +44,24 @@ function fakeCtx(answerFor) {
   }
 }
 
+/** @param {(dir: string) => unknown} fn */
 function withStore(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'craft-store-'))
-  const prev = process.env.CRAFT_RUNS_DIR
-  process.env.CRAFT_RUNS_DIR = dir
+  const prev = process.env['CRAFT_RUNS_DIR']
+  process.env['CRAFT_RUNS_DIR'] = dir
   return Promise.resolve(fn(dir)).finally(() => {
-    if (prev === undefined) delete process.env.CRAFT_RUNS_DIR
-    else process.env.CRAFT_RUNS_DIR = prev
+    if (prev === undefined) delete process.env['CRAFT_RUNS_DIR']
+    else process.env['CRAFT_RUNS_DIR'] = prev
     rmSync(dir, { recursive: true, force: true })
   })
 }
 
-const record = dir => JSON.parse(readFileSync(join(dir, readdirSync(dir).find(f => f.endsWith('.json'))), 'utf8'))
+/** @param {string} dir @returns {ReturnType<typeof import('./run-record.mjs').buildAuditRecord>} */
+const record = dir => {
+  const detail = readdirSync(dir).find(f => f.endsWith('.json'))
+  assert.ok(detail, 'a detail file was written')
+  return JSON.parse(readFileSync(join(dir, detail), 'utf8'))
+}
 
 test('a refusing synthesis is not a report, and is not filed as a verdict', async () => {
   // The one path that used to be exempt from the branch's own rule. A refusal is non-empty, so it
@@ -109,7 +119,7 @@ test('an echoed synthesis cannot lift the record above what the dimensions said'
         : `- ${agent}: nothing found\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE`
     })
     const inner = ctx.client.session.prompt
-    ctx.client.session.prompt = async (req) => {
+    ctx.client.session.prompt = async (/** @type {PromptRequest} */ req) => {
       const text = req?.body?.parts?.[0]?.text ?? ''
       if (/consolidating a Rust audit/.test(text)) {
         const blob = text.slice(text.indexOf('RESULTS:') + 'RESULTS:'.length).trim()
@@ -136,7 +146,7 @@ test('a faithful consolidation that reuses the input lines is used, not thrown a
       return null
     })
     const inner = ctx.client.session.prompt
-    ctx.client.session.prompt = async (req) => {
+    ctx.client.session.prompt = async (/** @type {PromptRequest} */ req) => {
       const text = req?.body?.parts?.[0]?.text ?? ''
       if (/consolidating a Rust audit/.test(text)) {
         const findings = text.split('\n').filter(l => l.startsWith('- '))

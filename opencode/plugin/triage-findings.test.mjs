@@ -27,7 +27,7 @@ test('a wrapped continuation stays with its finding, indented or not', () => {
   // fragments while real findings past it were dropped.
   const indented = splitFindings('- Critical: the parser drops bytes\n  see src/parse.rs:88 for the site')
   assert.equal(indented.findings.length, 1, 'an indented continuation belongs to the bullet above')
-  assert.match(indented.findings[0], /drops bytes see src\/parse\.rs:88/)
+  assert.match(indented.findings[0] ?? '', /drops bytes see src\/parse\.rs:88/)
 
   const wrapped = splitFindings('- Critical: the parser drops bytes\nsee src/parse.rs:88 for the site')
   assert.equal(wrapped.findings.length, 1, 'and so does one wrapped at column zero')
@@ -39,8 +39,8 @@ test('a paragraph is ONE finding, and a blank line ends it', () => {
   // paragraphs coalesced it produces 17 and drops none.
   const { findings } = splitFindings('The parser drops bytes\nwhen the buffer wraps.\n\nThe retry loop\nnever terminates.')
   assert.equal(findings.length, 2, 'two paragraphs, two findings')
-  assert.match(findings[0], /drops bytes when the buffer wraps/)
-  assert.match(findings[1], /retry loop never terminates/)
+  assert.match(findings[0] ?? '', /drops bytes when the buffer wraps/)
+  assert.match(findings[1] ?? '', /retry loop never terminates/)
 })
 
 test('an inline code span is not a fence, and does not swallow the findings after it', () => {
@@ -65,8 +65,8 @@ test('an inline code span is not a fence, and does not swallow the findings afte
     ].join('\n'),
   )
   assert.equal(findings.length, 3, 'all three findings survive the inline span and the real block')
-  assert.match(findings[1], /src\/b\.rs:20/, 'the one between them is not eaten by a phantom fence')
-  assert.match(findings[2], /src\/c\.rs:5/)
+  assert.match(findings[1] ?? '', /src\/b\.rs:20/, 'the one between them is not eaten by a phantom fence')
+  assert.match(findings[2] ?? '', /src\/c\.rs:5/)
   assert.ok(!findings.some(f => /sample output/.test(f)), 'and the real block is still not a finding')
   assert.equal(dropped, 0)
 })
@@ -101,8 +101,8 @@ test('prose is triaged, not discarded because something else was structured', ()
     'The parser drops trailing bytes.\nThe retry loop never terminates.\n- src/a.rs:10 unbounded growth',
   )
   assert.equal(findings.length, 2, 'the prose block is one finding, the bullet is another')
-  assert.match(findings[0], /drops trailing bytes.*never terminates/, 'and neither sentence is lost')
-  assert.match(findings[1], /src\/a\.rs:10/)
+  assert.match(findings[0] ?? '', /drops trailing bytes.*never terminates/, 'and neither sentence is lost')
+  assert.match(findings[1] ?? '', /src\/a\.rs:10/)
   assert.equal(skipped, 0)
 
   // Separated by a blank line, they are two findings — which is how a report that means two says so.
@@ -153,6 +153,9 @@ test('an empty blob yields nothing rather than a phantom finding', () => {
 // a planner predicate satisfied by a refusal, and a record that could not say the plan never came —
 // were invisible to a suite that covered the splitter thoroughly.
 
+/** @typedef {{ body?: { parts?: { text?: string }[] } }} PromptRequest */
+
+/** @param {(q: { isPlan: boolean }) => string} answerFor @param {string[]} [prompts] */
 function fakeCtx(answerFor, prompts = []) {
   return {
     directory: '/repo',
@@ -161,7 +164,7 @@ function fakeCtx(answerFor, prompts = []) {
     client: {
       session: {
         create: async () => ({ id: 's' }),
-        prompt: async ({ body }) => {
+        prompt: async (/** @type {PromptRequest} */ { body }) => {
           const text = body?.parts?.[0]?.text ?? ''
           prompts.push(text)
           const isPlan = /ordered fix plan/i.test(text)
@@ -172,18 +175,24 @@ function fakeCtx(answerFor, prompts = []) {
   }
 }
 
+/** @param {(dir: string) => unknown} fn */
 function withStore(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'craft-triage-'))
-  const prev = process.env.CRAFT_RUNS_DIR
-  process.env.CRAFT_RUNS_DIR = dir
+  const prev = process.env['CRAFT_RUNS_DIR']
+  process.env['CRAFT_RUNS_DIR'] = dir
   return Promise.resolve(fn(dir)).finally(() => {
-    if (prev === undefined) delete process.env.CRAFT_RUNS_DIR
-    else process.env.CRAFT_RUNS_DIR = prev
+    if (prev === undefined) delete process.env['CRAFT_RUNS_DIR']
+    else process.env['CRAFT_RUNS_DIR'] = prev
     rmSync(dir, { recursive: true, force: true })
   })
 }
 
-const record = dir => JSON.parse(readFileSync(join(dir, readdirSync(dir).find(f => f.endsWith('.json'))), 'utf8'))
+/** @param {string} dir @returns {ReturnType<typeof import('./run-record.mjs').buildTriageRecord>} */
+const record = dir => {
+  const detail = readdirSync(dir).find(f => f.endsWith('.json'))
+  assert.ok(detail, 'a detail file was written')
+  return JSON.parse(readFileSync(join(dir, detail), 'utf8'))
+}
 
 test('a planner that refuses does not produce a plan, on screen or in the store', async () => {
   // The first predicate accepted "I cannot build the triage ledger from these results", because
@@ -206,6 +215,7 @@ test('a plan is not accepted from a refusal that quotes its own instructions', a
   // Asserted on the text ACTUALLY SENT, not on the source: the predicate must of course name the
   // marker, so grepping the file would only prove the gate exists. What matters is that the prompt
   // does not hand the model a line it can copy.
+  /** @type {string[]} */
   const prompts = []
   await withStore(async dir => {
     const quoted =

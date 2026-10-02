@@ -25,10 +25,16 @@ export const meta = {
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+/**
+ * @param {string} text
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
+ */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  /** @type {Record<string, unknown>} */
   const out = {}
   let pairs = 0
+  /** @type {string[]} */
   const ignored = []
   let m
   let cursor = 0
@@ -41,9 +47,10 @@ function parseOptions(text) {
     // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
     // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
     // private helper reaches every engine as a ReferenceError on first use, with the gate green.
+    /** @param {string} k */
     const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
     if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
-    const key = m[2]
+    const key = /** @type {string} */ (m[2])
     // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
     // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
     // the logger agent is handed. The args string is model-composed, so this is the same threat shape
@@ -54,9 +61,9 @@ function parseOptions(text) {
     const quoted = m[4] ?? m[5]
     if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
-      out[key] = JSON.parse(m[3])
+      out[key] = JSON.parse(/** @type {string} */ (m[3]))
     } catch {
-      out[key] = m[3]
+      out[key] = /** @type {string} */ (m[3])
     }
     pairs++
   }
@@ -65,8 +72,19 @@ function parseOptions(text) {
   return { options: out, pairs, ignored }
 }
 
+/**
+ * Normalize whatever arrived into an options object.
+ *
+ * `warn` is called with one human sentence per degradation and must not throw — engines pass their
+ * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
+ * shape it had to repair teaches the next caller nothing.
+ *
+ * @param {unknown} args
+ * @param {(msg: string) => void} [warn]
+ * @returns {Record<string, unknown>}
+ */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return args
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -85,7 +103,7 @@ function normalizeArgs(args, warn = () => {}) {
       warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
       return {}
     } catch (e) {
-      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
       return {}
     }
   }
@@ -115,16 +133,17 @@ const A = normalizeArgs(args, log)
 // later — a loud drop undone in silence, which is worse than either behaviour alone.
 const argv = A
 
-const pr = argv.pr ? String(argv.pr) : ''
-const report = argv.report ? String(argv.report) : ''
-const base = argv.base ? String(argv.base) : ''
-const priorLedger = Array.isArray(argv.priorLedger) ? argv.priorLedger : []
+const pr = argv['pr'] ? String(argv['pr']) : ''
+const report = argv['report'] ? String(argv['report']) : ''
+const base = argv['base'] ? String(argv['base']) : ''
+/** @type {unknown[]} */
+const priorLedger = Array.isArray(argv['priorLedger']) ? argv['priorLedger'] : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // this engine has no `repo` argument (see the refusal above) and always triages the checkout the
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the triaged repo — where the script is not. Pass craftRoot then.
-const craftRootArg = argv.craftRoot ? String(argv.craftRoot) : ''
+const craftRootArg = argv['craftRoot'] ? String(argv['craftRoot']) : ''
 
 const RAW_SCHEMA = {
   type: 'object',
@@ -188,6 +207,17 @@ const PLAN_SCHEMA = {
   },
 }
 
+// The shapes the three schemas above promise. `agent()` returns them only when it ran: a skipped
+// or dead agent yields `null`, so every call site casts to `T | null` and handles the null.
+/** @typedef {{ severity: string, title: string, location: string, detail: string, proposed_fix: string, thread_id: string }} RawFinding */
+/** @typedef {{ source: string, findings: RawFinding[] }} RawResult */
+/** @typedef {RawFinding & { source: string }} SourcedFinding */
+/** @typedef {{ stable_id: string, verdict: string, reason: string, fix_pointer: string, premise_checked: string }} Validation */
+/** @typedef {{ stable_id: string, verdict: string, reason: string }} LedgerEntry */
+/** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
+// What this script adds to the plan before returning it — not part of PLAN_SCHEMA.
+/** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[] }} TriagePlan */
+
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
@@ -197,25 +227,38 @@ const CRAFT_VERSION = '0.22.0' // x-release-please-version
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings tallyVerdicts
+/** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
+/**
+ * @param {unknown} findings
+ * @returns {Record<Severity, number>}
+ */
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
-    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[/** @type {Severity} */ (f.severity)] += 1
   }
   return by
 }
 
+/**
+ * @param {unknown} findings
+ * @returns {{ total: number, bySeverity: Record<Severity, number> }}
+ */
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
+/**
+ * @param {unknown} entries
+ * @returns {Record<TriageVerdict, number>}
+ */
 function tallyVerdicts(entries) {
   const t = { accept: 0, reject: 0, defer: 0, 'needs-decision': 0, conflict: 0 }
   for (const e of (Array.isArray(entries) ? entries : [])) {
-    if (e && Object.prototype.hasOwnProperty.call(t, e.verdict)) t[e.verdict] += 1
+    if (e && Object.prototype.hasOwnProperty.call(t, e.verdict)) t[/** @type {TriageVerdict} */ (e.verdict)] += 1
   }
   return t
 }
@@ -238,6 +281,7 @@ const LOGRUN_SCHEMA = {
   },
 }
 
+/** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
 // Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
@@ -255,6 +299,11 @@ function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
+/**
+ * @param {string | undefined} craftRoot
+ * @param {string} [version]
+ * @param {string} [repo]
+ */
 function loggerPrelude(craftRoot, version = '', repo = '') {
   // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
   // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
@@ -341,6 +390,7 @@ CRAFT_LOGGER=""
   // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
   // candidate can be re-pointed into the reviewed repository. Handing over the path that was
   // actually checked closes that window and costs nothing.
+  /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
   craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
@@ -375,11 +425,12 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String(record?.craftVersion ?? '')
+  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -420,6 +471,13 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
+// engine passes them on as they are.
+/**
+ * @param {unknown} record
+ * @param {{ phase?: string }} [opts]
+ * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
+ */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
@@ -432,13 +490,18 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
+/**
+ * @param {unknown} res harness result of the logger agent (model output), or a quiet call's `{ __threw }`
+ * @returns {{ ok: boolean, reason: string }}
+ */
 function logRunOutcome(res) {
+  const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
   // marker that fires on a landed write is one people stop reading. But it must not vanish either —
   // the caller gets `ok: true` with a reason to surface.
-  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
-  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+  if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
+  return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
 // For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
@@ -446,12 +509,17 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
+/**
+ * @template P, O, R
+ * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
+ * @returns {(prompt: P, opts: O) => Promise<R | { __threw: string }>}
+ */
 function quietly(call) {
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
     } catch (e) {
-      return { __threw: String((e && e.message) || e) }
+      return { __threw: String((e && /** @type {{ message?: unknown }} */ (e).message) || e) }
     }
   }
 }
@@ -478,8 +546,9 @@ function quietly(call) {
 // Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
 // agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
 // structure — a heading, a verdict line — above the verdict the engine actually computed.
+/** @param {unknown} lost */
 function telemetryLostSection(lost) {
-  const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
+  const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
   // A record that LANDED while its run directory did not is a different fact from a record nobody
   // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the
@@ -504,9 +573,11 @@ function telemetryLostSection(lost) {
 // A lost record NEVER fails the triage: killing it over a bookkeeping write would teach everyone to
 // ignore the very marker this exists to raise. It is reported instead, at the head of the plan a
 // human actually reads — an empty store is otherwise indistinguishable from "never run".
+/** @type {string[]} */
 const telemetryLost = []
 const agentQuietly = quietly(agent)
 
+/** @param {Record<string, unknown>} record */
 async function logRun(record) {
   const res = await agentQuietly(
     logRunPrompt({ record, craftRoot: craftRootArg }),
@@ -536,7 +607,7 @@ async function logRun(record) {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A.repo) {
+if (A['repo']) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'triage-findings',
     nested: false, via: null,
@@ -548,7 +619,7 @@ if (A.repo) {
   })
   return [
     `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
     ``,
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`triage-findings\` there.`,
   ].join('\n')
@@ -559,33 +630,43 @@ if (!pr && !report) {
   throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a rust-audit report).')
 }
 
+/** @type {Array<() => Promise<RawResult | null>>} */
 const gatherTasks = []
 const requestedLocators = []   // parallel to gatherTasks; drives NOT-RUN bookkeeping for the run record
 if (report) {
   requestedLocators.push('report')
-  gatherTasks.push(() => agent(
+  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
     `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
     { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
-  ))
+  )))
 }
 if (pr) {
   requestedLocators.push('pr')
-  gatherTasks.push(() => agent(
+  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
     `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
     { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
-  ))
+  )))
 }
 
 const gatherResults = await parallel(gatherTasks)   // order preserved → align with requestedLocators
 const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
 if (notRunSources.length) log(`WARNING: source(s) that produced nothing: ${notRunSources.join(', ')} — the triage covers fewer sources than asked.`)
-const gathered = gatherResults.filter(Boolean)
+const gathered = gatherResults.filter(g => !!g)
+/** @type {SourcedFinding[]} */
 const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 
 // stable composite id; reused for dedup, ledger, and idempotent re-runs
+/** @param {SourcedFinding} f */
 const idOf = f => `${f.source}::${f.location || 'no-loc'}::${f.title}`
-const priorById = new Map(priorLedger.map(e => [e.stable_id, e]))
+// The prior ledger arrives in args, so an entry is read only as far as it is an object, its fields as text.
+/** @type {Map<string, LedgerEntry>} */
+const priorById = new Map()
+for (const e of priorLedger) {
+  if (!e || typeof e !== 'object') continue
+  const x = /** @type {Record<string, unknown>} */ (e)
+  priorById.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? '') })
+}
 
 // ---- Validate ------------------------------------------------------------
 phase('Validate')
@@ -598,8 +679,9 @@ const pin = base
 // is what keeps such an entry OUT of the carry-forward set on the next run.
 const UNJUDGED_MARKER = 'NOT JUDGED'
 
+/** @type {string[]} */
 const deadValidations = []
-const validations = (await parallel(raw.map(f => () => {
+const validations = (await parallel(raw.map(f => /** @returns {Promise<Validation>} */ () => {
   const id = idOf(f)
   const prior = priorById.get(id)
   // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
@@ -618,7 +700,7 @@ const validations = (await parallel(raw.map(f => () => {
     // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
   }
-  return agent(
+  return /** @type {Promise<Validation | null>} */ (agent(
     `Judge ONE review finding against the actual code. ${pin}
 
 Finding (source: ${f.source}):
@@ -639,7 +721,7 @@ PREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outsid
 stable_id MUST be exactly: ${id}
 Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     { label: `validate:${(f.location || f.title).slice(0, 40)}`, phase: 'Validate', schema: VALIDATION_SCHEMA },
-  ).then(v => {
+  )).then(v => {
     // A dead validator used to be dropped by `filter(Boolean)`, which removed the finding from the
     // plan AND from the ledger: a Critical whose judge died did not appear as unjudged, it appeared
     // as nothing. It is unjudged, so it becomes the verdict that already means "a human must look
@@ -648,7 +730,7 @@ Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     deadValidations.push(id)
     return { stable_id: id, verdict: 'needs-decision', reason: `${UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code`, fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
   })
-}))).filter(Boolean)
+}))).filter(v => !!v)
 
 const accepted = validations.filter(v => v.verdict === 'accept')
 log(`Validated ${validations.length}: ${accepted.length} accept, ${validations.length - accepted.length} other.`)
@@ -660,7 +742,7 @@ phase('Plan')
 const rawById = new Map(raw.map(f => [idOf(f), f]))
 const acceptedEnriched = accepted.map(v => ({ ...v, finding: rawById.get(v.stable_id) || null }))
 
-const plan = await agent(
+const plan = /** @type {TriagePlan | null} */ (await agent(
   `Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose \`finding\` is null (a data glitch) — leave it out of the plan and note it in the summary.
 
 1. Dedup by stable_id (merge findings at the same location with the same fix).
@@ -675,11 +757,12 @@ ${JSON.stringify(acceptedEnriched, null, 2)}
 ALL VERDICTS (include reject/defer/needs-decision in the ledger):
 ${JSON.stringify(validations, null, 2)}`,
   { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA },
-)
+))
 
 // ---- Observability: persist a run record (best-effort) -------------------
 // Prefer the plan's ledger (it carries the cross-finding `conflict` disposition); fall back to the
 // solo validations when the Plan phase produced nothing.
+/** @type {LedgerEntry[]} */
 let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
 
 // The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
@@ -689,7 +772,7 @@ let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
 // run three. So the script re-injects it deterministically. `validations` is the local record of
 // what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
 // re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
-if (ledger !== validations) {
+if (plan && ledger !== validations) {   // `ledger !== validations` already implies a plan; `plan &&` says so to the checker
   const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
   if (unjudged.size) {
     const seen = new Set()

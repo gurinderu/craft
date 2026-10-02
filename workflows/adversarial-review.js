@@ -23,10 +23,16 @@ export const meta = {
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+/**
+ * @param {string} text
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
+ */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  /** @type {Record<string, unknown>} */
   const out = {}
   let pairs = 0
+  /** @type {string[]} */
   const ignored = []
   let m
   let cursor = 0
@@ -39,9 +45,10 @@ function parseOptions(text) {
     // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
     // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
     // private helper reaches every engine as a ReferenceError on first use, with the gate green.
+    /** @param {string} k */
     const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
     if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
-    const key = m[2]
+    const key = /** @type {string} */ (m[2])
     // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
     // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
     // the logger agent is handed. The args string is model-composed, so this is the same threat shape
@@ -52,9 +59,9 @@ function parseOptions(text) {
     const quoted = m[4] ?? m[5]
     if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
-      out[key] = JSON.parse(m[3])
+      out[key] = JSON.parse(/** @type {string} */ (m[3]))
     } catch {
-      out[key] = m[3]
+      out[key] = /** @type {string} */ (m[3])
     }
     pairs++
   }
@@ -63,8 +70,19 @@ function parseOptions(text) {
   return { options: out, pairs, ignored }
 }
 
+/**
+ * Normalize whatever arrived into an options object.
+ *
+ * `warn` is called with one human sentence per degradation and must not throw — engines pass their
+ * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
+ * shape it had to repair teaches the next caller nothing.
+ *
+ * @param {unknown} args
+ * @param {(msg: string) => void} [warn]
+ * @returns {Record<string, unknown>}
+ */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return args
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -83,7 +101,7 @@ function normalizeArgs(args, warn = () => {}) {
       warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
       return {}
     } catch (e) {
-      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
       return {}
     }
   }
@@ -108,18 +126,18 @@ function normalizeArgs(args, warn = () => {}) {
 // <<< craft-inline
 const A = normalizeArgs(args, log)
 
-const diffBase = A.diffBase ? String(A.diffBase) : ''
-const intentArg = A.intent ? String(A.intent) : ''
-const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow
+const diffBase = A['diffBase'] ? String(A['diffBase']) : ''
+const intentArg = A['intent'] ? String(A['intent']) : ''
+const viaArg = A['_via'] ? String(A['_via']) : ''   // set by a parent workflow
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // this engine has no `repo` argument (see the refusal above) and always reviews the checkout the
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the reviewed repo — where the script is not. Pass craftRoot then.
-const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
-const BATCH = A.batch ? Math.max(1, Number(A.batch)) : 4
+const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
+const BATCH = A['batch'] ? Math.max(1, Number(A['batch'])) : 4
 const RETRY_BATCH = 2                 // retry rounds run even quieter than the main pass
-const MAX_RETRY_ROUNDS = A.maxRetries != null ? Math.max(0, Number(A.maxRetries)) : 2
+const MAX_RETRY_ROUNDS = A['maxRetries'] != null ? Math.max(0, Number(A['maxRetries'])) : 2
 const BUDGET_FLOOR = 40_000           // stop spawning agents below this many remaining tokens
 
 // ---- schemas ----
@@ -194,8 +212,25 @@ const CROSSCHECK_SCHEMA = {
   },
 }
 
+// What each schema'd agent hands back when it returns at all. `agent()` resolves to `null` when the
+// agent was skipped or died, so every read below goes through `Typedef | null`. The shapes are the
+// schemas' — model output, so the guards that re-check a field at runtime stay where they are.
+/**
+ * @typedef {{ title: string, file: string, line: number, severity: string, description: string, fix: string, whereChecked: string }} RawFinding
+ * @typedef {{ findings: RawFinding[] }} FindingsResult
+ * @typedef {{ refuted: boolean, premiseSupported: boolean, reasoning: string, severity: string }} VerdictResult
+ * @typedef {{ baseRef: string, sizeBucket: 'small' | 'medium' | 'large', lenses: string[], changedFiles: string[], notes: string }} ScoutResult
+ * @typedef {{ indexed: boolean, notes: string }} WarmupResult
+ * @typedef {{ ok: boolean, fileCount: number, files: string[] }} CrosscheckResult
+ * @typedef {{ clusters: number[][] }} ClustersResult
+ * @typedef {RawFinding & { lens: string, sources: string[] }} LensFinding  a finding tagged with the lens(es) that raised it
+ */
+
+/** @param {unknown} f @returns {f is string} a non-blank path from a model-returned file list */
+const isPath = f => typeof f === 'string' && f.trim() !== ''
+
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
-const isEscalated = f => f.lens !== 'complexity' && (f.severity === 'critical' || f.severity === 'high')
+const isEscalated = (/** @type {{ lens?: string, severity: string }} */ f) => f.lens !== 'complexity' && (f.severity === 'critical' || f.severity === 'high')
 
 // The craft release that produced a run. Recorded on the run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
@@ -206,16 +241,25 @@ const CRAFT_VERSION = '0.22.0' // x-release-please-version
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings
+/** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
+/**
+ * @param {unknown} findings
+ * @returns {Record<Severity, number>}
+ */
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
-    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[/** @type {Severity} */ (f.severity)] += 1
   }
   return by
 }
 
+/**
+ * @param {unknown} findings
+ * @returns {{ total: number, bySeverity: Record<Severity, number> }}
+ */
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
@@ -239,6 +283,7 @@ const LOGRUN_SCHEMA = {
   },
 }
 
+/** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
 // Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
@@ -256,6 +301,11 @@ function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
+/**
+ * @param {string | undefined} craftRoot
+ * @param {string} [version]
+ * @param {string} [repo]
+ */
 function loggerPrelude(craftRoot, version = '', repo = '') {
   // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
   // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
@@ -342,6 +392,7 @@ CRAFT_LOGGER=""
   // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
   // candidate can be re-pointed into the reviewed repository. Handing over the path that was
   // actually checked closes that window and costs nothing.
+  /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
   craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
@@ -376,11 +427,12 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String(record?.craftVersion ?? '')
+  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -421,6 +473,13 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
+// engine passes them on as they are.
+/**
+ * @param {unknown} record
+ * @param {{ phase?: string }} [opts]
+ * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
+ */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
@@ -433,13 +492,18 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
+/**
+ * @param {unknown} res harness result of the logger agent (model output), or a quiet call's `{ __threw }`
+ * @returns {{ ok: boolean, reason: string }}
+ */
 function logRunOutcome(res) {
+  const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
   // marker that fires on a landed write is one people stop reading. But it must not vanish either —
   // the caller gets `ok: true` with a reason to surface.
-  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
-  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+  if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
+  return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
 // For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
@@ -447,12 +511,17 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
+/**
+ * @template P, O, R
+ * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
+ * @returns {(prompt: P, opts: O) => Promise<R | { __threw: string }>}
+ */
 function quietly(call) {
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
     } catch (e) {
-      return { __threw: String((e && e.message) || e) }
+      return { __threw: String((e && /** @type {{ message?: unknown }} */ (e).message) || e) }
     }
   }
 }
@@ -461,6 +530,7 @@ function quietly(call) {
 // A lost record NEVER fails the run: killing a review over a bookkeeping write would teach everyone
 // to ignore the very marker this exists to raise. It is reported instead — in the notRun notes a
 // human actually reads, because an empty store is otherwise indistinguishable from "never run".
+/** @type {string[]} */
 const telemetryLost = []
 // "lost" is asserted per line, not stamped on every line: the record landing while its run DIRECTORY
 // was refused is a different fact, and calling it a lost record is the same conflation the other
@@ -473,6 +543,7 @@ const telemetryNotes = () => telemetryLost.map(l => (
 
 const agentQuietly = quietly(agent)
 
+/** @param {Record<string, unknown>} record */
 async function logRun(record) {
   const res = await agentQuietly(
     logRunPrompt({ record, craftRoot: craftRootArg }),
@@ -491,9 +562,11 @@ async function logRun(record) {
 
 }
 // adversarial-review uses lowercase severities internally; the store schema is capitalized.
-const capSeverity = f => ({ ...f, severity: f.severity ? f.severity[0].toUpperCase() + f.severity.slice(1) : f.severity })
+/** @template {{ severity: string }} F @param {F} f */
+const capSeverity = f => ({ ...f, severity: f.severity ? f.severity.charAt(0).toUpperCase() + f.severity.slice(1) : f.severity })
 
 // ---- lens catalog ----
+/** @type {Record<string, string>} */
 const LENS_BRIEF = {
   correctness: 'logic and spec conformance: does the change do what it is supposed to? Wrong behavior behind correct-looking code, off-by-one, inverted conditions, missed requirements, broken invariants.',
   security: 'security: injection, authz/authn gaps, tenant isolation breaks, secrets in code, unsafe deserialization, path traversal, SSRF, untrusted input reaching sinks.',
@@ -505,6 +578,7 @@ const LENS_BRIEF = {
 }
 const ALL_LENSES = Object.keys(LENS_BRIEF)
 
+/** @param {string} lens */
 function finderPrompt(lens) {
   const base = diffBase ? `\`${diffBase}\`` : 'resolve it yourself: merge-base with origin/main, then main, then HEAD~1; target uncommitted changes if the tree is dirty'
   if (lens === 'complexity') {
@@ -550,6 +624,12 @@ Return {findings: []-shaped JSON}.`
 // no longer promises an outcome it does not produce.
 // Advisory by default, blocking when the pass judged NOTHING — the two are genuinely different: a
 // gap in a panel is a weakened judgement, an empty pass is no judgement at all.
+/**
+ * @param {string} tag
+ * @param {unknown[] | number | null | undefined} unfinished
+ * @param {{ total?: number }} [opts]
+ * @returns {{ label: string, note: string, incomplete: boolean }[]}
+ */
 function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
   const count = Array.isArray(unfinished) ? unfinished.length : Number(unfinished) || 0
   if (count <= 0) return []
@@ -569,15 +649,42 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
 // Runs `jobs` in batches of `batch`, retrying whatever produced no result in quieter rounds of
 // `retryBatch`, and stops spawning below the budget floor. Returns the jobs that never produced a
 // result. Each job: {prompt, label, schema, effort, onResult, onMissing?}.
+/**
+ * @typedef {object} ThrottledJob
+ * @property {string} prompt
+ * @property {string} label
+ * @property {object} [schema]
+ * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} [effort]
+ * @property {(v: unknown) => void} onResult  `v` is the agent's answer (model output), never null
+ * @property {() => void} [onMissing]
+ */
+/**
+ * @typedef {object} ThrottledDeps
+ * @property {(prompt: string, opts: { label: string, phase: string, schema?: object | undefined, effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined }) => Promise<unknown>} agent
+ * @property {(fns: Array<() => Promise<unknown>>) => Promise<unknown[]>} parallel
+ * @property {(msg: string) => void} log
+ * @property {(label: string, note: string, incomplete: boolean) => void} markNotRun
+ * @property {number} batch
+ * @property {number} retryBatch
+ * @property {number} maxRetryRounds
+ * @property {{ total: number | null, remaining: () => number }} budget  `total` is null when no token target was set
+ * @property {number} budgetFloor
+ */
+/**
+ * @param {ThrottledDeps} deps
+ * @returns {(jobs: ThrottledJob[], tag: string, phaseTitle: string, opts?: { reportUnjudged?: boolean }) => Promise<ThrottledJob[]>}
+ */
 function makeThrottledRunner(deps) {
   const { agent, parallel, log, markNotRun, batch: BATCH, retryBatch, maxRetryRounds, budget, budgetFloor } = deps
   return async function runThrottled(jobs, tag, phaseTitle, { reportUnjudged = true } = {}) {
     let pending = jobs
     let done = 0
+    /** @type {ThrottledJob[] | null} */
     let unfinished = null
     for (let round = 0; round <= maxRetryRounds && pending.length && !unfinished; round++) {
       const size = round === 0 ? BATCH : retryBatch
       if (round > 0) log(`${tag} retry round ${round}: ${pending.length} failed calls, batches of ${size}`)
+      /** @type {ThrottledJob[]} */
       const failed = []
       for (let i = 0; i < pending.length; i += size) {
         if (budget.total && budget.remaining() < budgetFloor) {
@@ -590,7 +697,7 @@ function makeThrottledRunner(deps) {
         const res = await parallel(slice.map(j => () =>
           agent(j.prompt, { label: (round ? `retry${round}:` : '') + j.label, phase: phaseTitle, schema: j.schema, effort: j.effort })))
         res.forEach((v, k) => {
-          if (v) { slice[k].onResult(v); done++ } else failed.push(slice[k])
+          if (v) { /** @type {ThrottledJob} */ (slice[k]).onResult(v); done++ } else failed.push(/** @type {ThrottledJob} */ (slice[k]))
         })
         log(`${tag}: ${done}/${jobs.length} calls done`)
       }
@@ -654,11 +761,13 @@ const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
 
 const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
 
+/** @param {unknown} f */
 function isInertUncovered(f) {
-  const base = String(f).split('/').pop().toLowerCase()
-  return INERT_EXT.test(f) || INERT_NAMES.has(base) || GENERATED_PATH.test(f) || GENERATED_FILE.test(f)
+  const base = /** @type {string} */ (String(f).split('/').pop()).toLowerCase()
+  return INERT_EXT.test(String(f)) || INERT_NAMES.has(base) || GENERATED_PATH.test(String(f)) || GENERATED_FILE.test(String(f))
 }
 
+/** @param {unknown[]} files */
 function materialUncovered(files) {
   return files.filter(f => !isInertUncovered(f))
 }
@@ -668,6 +777,7 @@ function materialUncovered(files) {
 // statement from "files went unreviewed", and it must not be dressed up as a coverage hole. A
 // marker that fires on every README-only change stops being read, which destroys the value of the
 // marker on the diffs that do hide unreviewed code.
+/** @param {number} fileCount */
 function nothingToReviewMessage(fileCount) {
   return `NOTHING NEEDED REVIEWING — all ${fileCount} changed file(s) are documentation, assets, lockfiles or generated output; none carries reviewable code. No lens ran because none had anything to look at.`
 }
@@ -684,7 +794,7 @@ function nothingToReviewMessage(fileCount) {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A.repo) {
+if (A['repo']) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
     nested: !!viaArg, via: viaArg || null,
@@ -696,14 +806,14 @@ if (A.repo) {
   })
   return [
     `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`adversarial-review\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
     ``,
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`adversarial-review\` there.`,
   ].join('\n')
 }
 
 phase('Prep')
-const [scout, warmup] = await parallel([
+const [scoutRaw, warmupRaw] = await parallel([
   () => agent(
     `You are scouting a diff to plan an adversarial review. Use shell + read only — do NOT review yet.
 1. Resolve the diff base. ${diffBase ? `Use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
@@ -723,14 +833,16 @@ const [scout, warmup] = await parallel([
     { label: 'index-warmup', schema: WARMUP_SCHEMA, effort: 'low' },
   ),
 ])
+const scout = /** @type {ScoutResult | null} */ (scoutRaw)
+const warmup = /** @type {WarmupResult | null} */ (warmupRaw)
 
 const plan = {
   baseRef: scout?.baseRef ?? diffBase,
   sizeBucket: scout?.sizeBucket ?? 'medium',
-  lenses: (scout?.lenses?.length ? scout.lenses.filter(l => ALL_LENSES.includes(l)) : ALL_LENSES),
+  lenses: (scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => ALL_LENSES.includes(l)) : ALL_LENSES),
 }
 if (!(warmup?.indexed)) {
-  plan.lenses = plan.lenses.filter(l => l !== 'complexity')
+  plan.lenses = plan.lenses.filter((/** @type {string} */ l) => l !== 'complexity')
   log(`codebase-memory index unavailable (${warmup?.notes ?? 'warm-up died'}) -> complexity lens dropped`)
 }
 log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${scout?.notes ?? 'scout died, running all lenses'}`)
@@ -760,7 +872,9 @@ log(`Scout: ${plan.sizeBucket} diff -> lenses: ${plan.lenses.join(', ')} · ${sc
 //   (the fragility signal is kept) but advisory; only an unreviewed dimension downgrades. This is
 //   the same line `review.js` draws: dead lenses and skipped critics mark INCOMPLETE, individual
 //   unverified checks do not.
+/** @type {{ label: string, note: string, incomplete: boolean }[]} */
 const notRun = []
+/** @type {(label: string, note: string, incomplete?: boolean) => number} */
 const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note, incomplete })
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
@@ -770,7 +884,7 @@ const runThrottled = makeThrottledRunner({
   batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
   budget, budgetFloor: BUDGET_FLOOR,
 })
-const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(f => typeof f === 'string' && f.trim()) : null
+const changedFiles = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : null
 if (!scout || !changedFiles) {
   markNotRun('scout-dead', scout
     ? 'the scout returned no file list — the diff was never enumerated, so what the lenses saw is unverified'
@@ -812,22 +926,24 @@ if (!scout || !changedFiles) {
   // response, so the self-consistency arm is self-reported — a model that truncates the list AND
   // lowers its own count to match defeats it. What that arm actually rules out is the ordinary
   // failure (a list shortened while the count stays honest), not a coordinated one.
-  const cross = await agent(
+  const cross = /** @type {CrosscheckResult | null} */ (await agent(
     `You are cross-checking a diff's file list. Run shell only — do NOT review, summarise, or judge anything.
 1. Resolve the diff base YOURSELF — do not take it from anyone else. ${diffBase ? `The caller pinned it: use \`${diffBase}\`.` : 'Try in order: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
 2. Run \`git diff --name-only <base>\` and \`git diff --name-only <base> | wc -l\`.
 3. Return every path VERBATIM in \`files\` — no truncation, no globbing, no sorting, no elision — and the \`wc -l\` number in \`fileCount\`.
 4. Set ok=true ONLY if the git command succeeded and \`files\` holds every path it printed. If anything failed, or you had to shorten the list for any reason, set ok=false.`,
     { label: 'inert-crosscheck', phase: 'Prep', schema: CROSSCHECK_SCHEMA, model: 'haiku', effort: 'low' },
-  )
-  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter(f => typeof f === 'string' && f.trim()) : null
+  ))
+  const crossFiles = (cross?.ok && Array.isArray(cross.files)) ? cross.files.filter(isPath) : null
+  // Read only where `crossFiles` is set, and that implies a live `cross`.
+  const crossCount = cross?.fileCount
   const agrees = !!crossFiles
-    && crossFiles.length === cross.fileCount
+    && crossFiles.length === crossCount
     && crossFiles.length === changedFiles.length
     && !materialUncovered(crossFiles).length
   if (!agrees) {
     const why = !crossFiles ? 'the cross-check never returned a usable list'
-      : crossFiles.length !== cross.fileCount ? `the cross-check list is incomplete (${crossFiles.length} paths vs ${cross.fileCount} reported by git)`
+      : crossFiles.length !== crossCount ? `the cross-check list is incomplete (${crossFiles.length} paths vs ${crossCount} reported by git)`
         : crossFiles.length !== changedFiles.length ? `git reports ${crossFiles.length} changed file(s), the scout reported ${changedFiles.length}`
           : `git's list contains reviewable code the scout did not report: ${materialUncovered(crossFiles).join(', ')}`
     const msg = `NOT REVIEWED — the scout said every changed file was inert (docs/assets/lockfiles/generated), but ${why}. The scout's file list is the only thing that green rested on, so it is not granted: no lens ran, and this is not an approval. Re-run, checking the diff base.`
@@ -857,29 +973,44 @@ if (!scout || !changedFiles) {
 
 // ================= Review: throttled finder lenses =================
 phase('Review')
+/** @type {Map<string, FindingsResult | null>} */
 const lensResults = new Map()
 const deadLensJobs = await runThrottled(
-  plan.lenses.map(lens => ({
+  plan.lenses.map((/** @type {string} */ lens) => ({
     prompt: finderPrompt(lens),
     label: `review:${lens}`,
     schema: FINDINGS,
     effort: 'medium',
-    onResult: r => lensResults.set(lens, r),
+    onResult: (/** @type {unknown} */ r) => lensResults.set(lens, /** @type {FindingsResult | null} */ (r)),
   })),
   'Review', 'Review', { reportUnjudged: false },
 )
-const deadLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
-if (deadLenses.length) {
-  log(`WARNING: finder lens(es) returned nothing: ${deadLenses.join(', ')}`)
+const diedLenses = deadLensJobs.map(j => j.label.replace(/^.*review:/, ''))
+if (diedLenses.length) {
+  log(`WARNING: finder lens(es) returned nothing: ${diedLenses.join(', ')}`)
   // One entry PER dead lens: `lens:correctness` is what aggregates across runs into
   // "3× lens:correctness", which is the whole point of ranking `notRun`.
-  for (const l of deadLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
+  for (const l of diedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens never returned — that dimension went unreviewed`)
 }
+// A result is model output: the schema is enforced by the tool, but a lens that came back without a
+// findings array is a lens that did not review, not one that found nothing — and must not crash the run.
+// It is dead for every consumer of `deadLenses` (the all-dead check, the critic's prompt, the returned
+// scout), not only for `notRun`.
+const malformedLenses = plan.lenses.filter((/** @type {string} */ lens) => {
+  const r = lensResults.get(lens)
+  return r != null && !Array.isArray(r.findings)
+})
+if (malformedLenses.length) {
+  log(`WARNING: finder lens(es) answered without a findings array: ${malformedLenses.join(', ')}`)
+  for (const l of malformedLenses) markNotRun(`lens:${l}`, `the ${l} finder lens returned no findings array — that dimension went unreviewed`)
+}
+/** @type {string[]} */
+const deadLenses = [...new Set([...diedLenses, ...malformedLenses])]
 if (plan.lenses.length && deadLenses.length === plan.lenses.length) markNotRun('all-lenses-dead', 'EVERY finder lens died — no lens looked at this diff at all')
 
-const all = plan.lenses.flatMap(lens => {
+const all = plan.lenses.flatMap((/** @type {string} */ lens) => {
   const r = lensResults.get(lens)
-  return r ? r.findings.map(x => ({ ...x, lens })) : []
+  return r && Array.isArray(r.findings) ? r.findings.map(x => ({ ...x, lens })) : []
 })
 
 // ---- dedup, tier 1 (mechanical): neighbor line-buckets + title-token similarity ----
@@ -887,7 +1018,8 @@ const all = plan.lenses.flatMap(lens => {
 // AND similar titles — proximity alone never merges, so two distinct issues in one window
 // survive as two findings. Under-merge costs one cheap verify agent; over-merge silently
 // loses a finding — stay conservative.
-const normTokens = t => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, ' ').split(' ').filter(w => w.length > 2))
+const normTokens = (/** @type {unknown} */ t) => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, ' ').split(' ').filter(w => w.length > 2))
+/** @param {unknown} a @param {unknown} b */
 function titleSimilar(a, b) {
   const tokensA = normTokens(a), B = normTokens(b)
   if (!tokensA.size || !B.size) return false
@@ -895,7 +1027,9 @@ function titleSimilar(a, b) {
   for (const w of tokensA) if (B.has(w)) inter++
   return inter / (tokensA.size + B.size - inter) > 0.5
 }
+/** @type {Map<string, LensFinding[]>} */
 const buckets = new Map()   // `${file}:${bucket}` -> entries in that bucket
+/** @type {LensFinding[]} */
 const merged = []
 for (const f of all) {
   const b = Math.floor(f.line / 10)
@@ -908,7 +1042,7 @@ for (const f of all) {
   }
   if (hit) {
     if (!hit.sources.includes(f.lens)) hit.sources.push(f.lens)
-    if (SEV_RANK[f.severity] < SEV_RANK[hit.severity]) {
+    if (SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (f.severity)] < SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (hit.severity)]) {
       Object.assign(hit, { title: f.title, line: f.line, severity: f.severity, description: f.description, fix: f.fix, lens: f.lens })
     }
     continue
@@ -916,10 +1050,11 @@ for (const f of all) {
   const entry = { ...f, sources: [f.lens] }
   merged.push(entry)
   const key = `${f.file}:${b}`
-  if (!buckets.has(key)) buckets.set(key, [])
-  buckets.get(key).push(entry)
+  const bucket = buckets.get(key)
+  if (bucket) bucket.push(entry)
+  else buckets.set(key, [entry])
 }
-let kept = merged.sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity])
+let kept = merged.sort((a, b) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (a.severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (b.severity)])
 log(`Review: ${all.length} raw findings -> ${kept.length} after mechanical dedup`)
 
 // ---- dedup, tier 2 (semantic, thresholded): one haiku clusterer for cross-vocabulary duplicates ----
@@ -941,30 +1076,36 @@ if (kept.length > DEDUP_THRESHOLD && (!budget.total || budget.remaining() > BUDG
       },
     },
   }
-  const clusterer = await agent(
+  const clusterer = /** @type {ClustersResult | null} */ (await agent(
     `You are deduplicating review findings. Below is a numbered list. Return clusters of indices that describe THE SAME underlying defect — same root cause, one fix would resolve all of them — even when phrased in different vocabulary or cited at nearby-but-different lines (e.g. a check-site vs a write-site of one race).
 Merge ONLY when confident the fix is literally the same change. Two different problems in the same function are NOT a cluster. When in doubt, do not merge. Return {"clusters": []} if there are no duplicates.
 
 FINDINGS:
 ${kept.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (lenses: ${f.sources.join(',')}) — ${f.description}`).join('\n')}`,
     { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low' },
-  )
+  ))
+  /** @type {Set<number>} */
   const drop = new Set()
-  for (const cluster of (clusterer?.clusters ?? [])) {
-    const idxs = [...new Set(cluster)]
+  // Only ever called with an index the filter below has bounded to `kept`.
+  const at = (/** @type {number} */ i) => /** @type {LensFinding} */ (kept[i])
+  // Model output: a live clusterer whose `clusters` is not an array merged nothing — say so, never throw.
+  const clusters = Array.isArray(clusterer?.clusters) ? clusterer.clusters : []
+  if (clusterer && !Array.isArray(clusterer.clusters)) log('WARNING: semantic dedup returned clusters that are not an array — no semantic merge applied')
+  for (const cluster of clusters) {
+    const idxs = [...new Set(Array.isArray(cluster) ? cluster : [])]
       .filter(i => Number.isInteger(i) && i >= 0 && i < kept.length && !drop.has(i))
-      .sort((x, y) => SEV_RANK[kept[x].severity] - SEV_RANK[kept[y].severity])
+      .sort((x, y) => SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(x).severity)] - SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (at(y).severity)])
     if (idxs.length < 2) continue
-    const head = kept[idxs[0]]
+    const head = at(/** @type {number} */ (idxs[0]))
     for (const i of idxs.slice(1)) {
-      const dup = kept[i]
+      const dup = at(i)
       for (const s of dup.sources) if (!head.sources.includes(s)) head.sources.push(s)
       head.description += `\n[merged duplicate] ${dup.title} @ ${dup.file}:${dup.line}: ${dup.description}`
       drop.add(i)
     }
   }
   if (drop.size) {
-    kept = kept.filter((f, i) => !drop.has(i))
+    kept = kept.filter((_f, i) => !drop.has(i))
     log(`Semantic dedup: merged ${drop.size} duplicate(s) -> ${kept.length} findings`)
   } else {
     log('Semantic dedup: no cross-vocabulary duplicates found')
@@ -986,6 +1127,7 @@ Use ToolSearch to load the codebase-memory MCP tools. Check ALL THREE dimensions
 3. severity — calibrate real impact: is the function on a hot / caller-reachable path (trace_path), or dead-end cold code?
 Return refuted=true if ANY dimension fails; default to refuted=true when uncertain.
 Also set premiseSupported: true when you re-read the metric values yourself and they back the claim, false when the numbers came only from the finding's own description. Unsupported is NOT disproven — it demotes the finding without marking it refuted.`
+/** @type {[string, string][]} */
 const PANEL_LENSES = [
   ['code', 'Verify ONLY the factual claim against the code as written. Read the code yourself; refute if the description misstates it.'],
   ['exploit', 'Try to construct a concrete end-to-end exploit/trigger scenario. Refute if no realistic path exists.'],
@@ -995,21 +1137,29 @@ const PANEL_LENSES = [
 // Builds verify jobs for a set of findings, writing votes into `sink[idx]`.
 // Single combined verifier (effort low) for medium/low; 3-lens panel (effort high)
 // for critical/high; metric-aware single verifier for complexity findings.
+/**
+ * @param {LensFinding[]} findings
+ * @param {unknown[][]} sink  per-finding raw votes, one slot per finding
+ */
 function buildVerifyJobs(findings, sink) {
+  /** @type {Parameters<typeof runThrottled>[0]} */
   const jobs = []
+  // `sink` is built as one array per finding, so `idx` from `findings.forEach` always has a slot.
+  const slot = (/** @type {number} */ idx) => /** @type {unknown[]} */ (sink[idx])
   findings.forEach((f, idx) => {
     const ctx = `FINDING [${f.severity}] ${f.title} @ ${f.file}:${f.line}\n` +
       `Independently reported by lenses: ${(f.sources || [f.lens]).join(', ')}\n${f.description}\nProposed fix: ${f.fix}\n` +
       `Off-site evidence claimed: ${f.whereChecked || '(none — the finding claims to be self-contained at the cited line)'}`
+    /** @type {(lens: string, instr: string, effort: 'low' | 'high', tagged: boolean) => number} */
     const push = (lens, instr, effort, tagged) => jobs.push({
       prompt: `${instr}\n\n${ctx}`,
       label: `verify${tagged ? `[${lens}]` : ''}:${f.file}:${f.line}`,
       schema: VERDICT,
       effort,
-      onResult: v => sink[idx].push({ lens, ...v }),
+      onResult: (/** @type {unknown} */ v) => slot(idx).push({ lens, .../** @type {VerdictResult | null} */ (v) }),
       // A check that never returned leaves a placeholder, so the judge can SEE the panel is short.
       // Without it a 3-lens panel that lost one member is indistinguishable from a 2-lens panel.
-      onMissing: () => sink[idx].push({ lens, missing: true }),
+      onMissing: () => slot(idx).push({ lens, missing: true }),
     })
     if (f.lens === 'complexity') push('metric', COMBINED_METRIC_INSTR, 'low', true)
     else if (isEscalated(f)) for (const [lens, instr] of PANEL_LENSES) push(lens, instr, 'high', true)
@@ -1026,13 +1176,26 @@ function buildVerifyJobs(findings, sink) {
 // missing `premiseSupported` as non-supporting, and an `undefined` severity survives into the median
 // where `SEV_RANK[undefined]` makes the comparator NaN and the confirmed finding can come out with no
 // severity at all — which `baseVerdict` reads as neither critical nor high, i.e. Approve.
+/**
+ * @param {unknown} v  an agent-returned verdict object of unknown shape (model output)
+ * @param {Record<string, number>} SEV_RANK
+ * @returns {v is Vote}
+ */
 function usableVote(v, SEV_RANK) {
-  return !!v && typeof v === 'object'
-    && typeof v.refuted === 'boolean'
-    && typeof v.premiseSupported === 'boolean'
-    && (v.severity === 'not-an-issue' || SEV_RANK[v.severity] != null)
+  if (!v || typeof v !== 'object') return false
+  const o = /** @type {{ refuted?: unknown, premiseSupported?: unknown, severity?: unknown }} */ (v)
+  return typeof o.refuted === 'boolean'
+    && typeof o.premiseSupported === 'boolean'
+    && (o.severity === 'not-an-issue' || SEV_RANK[/** @type {string} */ (o.severity)] != null)
 }
 
+/**
+ * The findings come back as they went in — the caller's own type — with the judge's verdict fields added.
+ * @template {{ severity: string }} F
+ * @param {F[]} findings
+ * @param {Array<unknown[] | undefined>} sink  per-finding raw votes (model output, possibly malformed or `{ missing: true }`)
+ * @param {Record<string, number>} SEV_RANK
+ */
 function judgeVotes(findings, sink, SEV_RANK) {
 
   // Severity is the THIRD decision axis, and the one that produces the verdict: `baseVerdict` reads
@@ -1041,27 +1204,33 @@ function judgeVotes(findings, sink, SEV_RANK) {
   // dead lens turned Block into Approve while both other axes agreed and nothing was flagged.
   // The median is taken over the FULL panel: a panel of three whose members voted [high, low] and
   // lost one has median index 1 of TWO, i.e. the milder — absence pulling severity down.
-  const ranks = Object.keys(SEV_RANK).sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
-  const MOST = ranks[0]
-  const LEAST = ranks[ranks.length - 1]
+  /** @type {(sev: string) => number} */
+  const rankOf = sev => /** @type {number} */ (SEV_RANK[sev])
+  const ranks = Object.keys(SEV_RANK).sort((a, b) => rankOf(a) - rankOf(b))
+  const MOST = /** @type {string} */ (ranks[0])
+  const LEAST = /** @type {string} */ (ranks[ranks.length - 1])
   // Which side of the verdict this severity falls on. Comparing TIERS, not severities, keeps the
   // marker narrow: critical vs high both mean Block, and flagging that as undecided would fire on
   // runs where the absence changed nothing — a false INCOMPLETE is no safer here than a false clean.
-  const tierOf = sev => (SEV_RANK[sev] <= SEV_RANK.high ? 'block' : sev === 'medium' ? 'warning' : 'approve')
+  /** @type {(sev: string) => 'block' | 'warning' | 'approve'} */
+  const tierOf = sev => (rankOf(sev) <= rankOf('high') ? 'block' : sev === 'medium' ? 'warning' : 'approve')
+  /** @type {(f: F, votes: Vote[], missing: number, pad: string) => string} */
   const calibrateWith = (f, votes, missing, pad) => {
     const sevs = votes.filter(v => !v.refuted && v.severity !== 'not-an-issue')
       .map(v => v.severity)
       .concat(Array.from({ length: missing }, () => pad))
-      .sort((a, b) => SEV_RANK[a] - SEV_RANK[b])
-    return sevs.length ? sevs[Math.floor(sevs.length / 2)] : f.severity
+      .sort((a, b) => rankOf(a) - rankOf(b))
+    return sevs.length ? /** @type {string} */ (sevs[Math.floor(sevs.length / 2)]) : f.severity
   }
   // The absent votes padded with what the FINDER claimed — a neutral stand-in, where their silence
   // was not. Only used once the two extremes agree that the verdict cannot swing either way.
+  /** @type {(f: F, votes: Vote[], missing: number) => string} */
   const calibrate = (f, votes, missing) => calibrateWith(f, votes, missing, f.severity)
   const judged = findings.map((f, idx) => {
     // Malformed votes become absences, so the two-assignment machinery below decides them rather than
     // letting an unreadable object count as a non-refuting, non-supporting, severity-less confirmation.
-    const all = (sink[idx] || []).map(v => (v && !v.missing && usableVote(v, SEV_RANK)) ? v : { lens: v && v.lens, missing: true })
+    /** @type {Array<Vote | { lens?: unknown, missing: true }>} */
+    const all = (sink[idx] || []).map(v => (usableVote(v, SEV_RANK) && !v.missing) ? v : { lens: v && /** @type {{ lens?: unknown }} */ (v).lens, missing: true })
     // A missing vote must not decide — but "missing" is not the same as "undecidable". Ask what the
     // absent votes COULD have changed, and only fall back when they could have changed the answer.
     // Both traps are real and both were measured on this engine:
@@ -1073,7 +1242,7 @@ function judgeVotes(findings, sink, SEV_RANK) {
     //     finding out of `confirmed`, and the verdict is built from `confirmed` alone. A silent
     //     Approve, in place of the Block that two independent lenses had earned.
     const missing = all.filter(v => v.missing).length
-    const votes = all.filter(v => !v.missing)
+    const votes = /** @type {Vote[]} */ (all.filter(v => !v.missing))
     const refutes = votes.filter(v => v.refuted).length
     // The two extreme assignments of the absent votes. They agree → the absence changes nothing and
     // the answer stands; they disagree → the absent vote is the deciding one, and nobody cast it.
@@ -1123,8 +1292,10 @@ function judgeVotes(findings, sink, SEV_RANK) {
   }
 }
 // <<< craft-inline
+/** @template {LensFinding} F @param {F[]} findings @param {Parameters<typeof judgeVotes>[1]} sink */
 const judge = (findings, sink) => judgeVotes(findings, sink, SEV_RANK)
 
+/** @type {unknown[][]} */
 const votes = kept.map(() => [])
 const verifyJobs = buildVerifyJobs(kept, votes)
 log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept.filter(isEscalated).length} escalated to 3-lens panel), throttled to ${BATCH} concurrent`)
@@ -1132,7 +1303,12 @@ log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept
 const unverifiedJobs = await runThrottled(verifyJobs, 'Verify', 'Verify')
 if (unverifiedJobs.length) log(`WARNING: ${unverifiedJobs.length} checks got no verdict after retries`)
 
-let { confirmed, refuted, suspected } = judge(kept, votes)
+const judged = judge(kept, votes)
+let { confirmed, refuted } = judged
+// Wider than the judge's own output: coverage gaps left unverified at the budget floor join this list
+// as they are, with no panel and none of the judge's per-finding flags.
+/** @type {Array<(typeof judged.suspected)[number] | (LensFinding & { confirmed: false, votes: never[] })>} */
+let suspected = judged.suspected
 log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${suspected.length} suspected (no verdict)`)
 // A finding nobody decided must reach the VERDICT, not only the Suspected list. Suspected downgrades
 // nothing — `baseVerdict` is computed from `confirmed` alone — so a run in which every escalated
@@ -1145,7 +1321,7 @@ log(`Verify done: ${confirmed.length} confirmed, ${refuted.length} refuted, ${su
 // here: a complexity finding is excluded by lens although the lens emits `high` and gets a single
 // verifier, and a `medium` finding is excluded by severity although one verifier can calibrate it to
 // `critical`. The judge computes the reachable tier instead.
-const undecidedEscalated = [...confirmed, ...refuted, ...suspected].filter(f => f.undecidedByAbsence && f.couldHaveBlocked)
+const undecidedEscalated = [...confirmed, ...refuted, ...judged.suspected].filter(f => f.undecidedByAbsence && f.couldHaveBlocked)
 if (undecidedEscalated.length) {
   markNotRun('escalated-findings-undecided', `${undecidedEscalated.length} critical/high finding(s) lost the panel vote that would have decided them — this run cannot say whether it should have blocked`)
 }
@@ -1159,10 +1335,10 @@ CONFIRMED findings (do not repeat them): ${JSON.stringify(confirmed.map(f => `${
 REFUTED claims (do NOT re-report these — they were adversarially disproven): ${JSON.stringify(refuted.map(f => `${f.title} @ ${f.file}:${f.line}`))}
 Dead lenses this run (their dimension is UNCOVERED — look there first): ${JSON.stringify(deadLenses)}
 If coverage is complete, return {"findings": []}.`
-let critic = await agent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' })
+let critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
 if (!critic) {
   log('Coverage critic failed, retrying once')
-  critic = await agent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' })
+  critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
 }
 if (!critic) {
   // Without this the critic's silence is indistinguishable from "coverage is complete": `?? []`
@@ -1171,11 +1347,19 @@ if (!critic) {
   markNotRun('coverage-critic-dead', 'the coverage critic died twice — no completeness check ran, so blind spots in this review are unknown')
 }
 
+// A live critic whose `findings` is not an array checked nothing we can read — that is not-run under
+// its own label, never a silent "coverage is complete" and never a crash.
+if (critic && !Array.isArray(critic.findings)) {
+  log('WARNING: coverage critic answered without a findings array — completeness was never checked')
+  markNotRun('coverage-critic-malformed', 'the coverage critic answered without a findings array — no usable completeness check ran, so blind spots in this review are unknown')
+}
 // Critic findings do not bypass verification — they ride the same throttled pipeline.
-const gaps = (critic?.findings ?? []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
+/** @type {LensFinding[]} */
+const gaps = (critic && Array.isArray(critic.findings) ? critic.findings : []).map(f => ({ ...f, lens: 'coverage', sources: ['coverage'] }))
 let refutedGaps = 0
 if (gaps.length && (!budget.total || budget.remaining() > BUDGET_FLOOR)) {
   log(`Coverage critic raised ${gaps.length} gap(s) -> verifying through the same pipeline`)
+  /** @type {unknown[][]} */
   const gapVotes = gaps.map(() => [])
   // Opts out of the runner's advisory entry and marks its own BLOCKING one, for the reason the
   // else-branch below spells out: a coverage gap is the critic's claim that something went
@@ -1228,9 +1412,9 @@ await logRun({
   nested: !!viaArg,
   via: viaArg || null,
   verdict,
-  findings: summarizeFindings(confirmed.concat(suspected).map(capSeverity)),
+  findings: summarizeFindings([...confirmed, ...suspected].map(capSeverity)),
   scout: { size: plan.sizeBucket, lenses: plan.lenses, indexed: !!(warmup?.indexed), batch: BATCH },
-  dimensions: plan.lenses.map(l => {
+  dimensions: plan.lenses.map((/** @type {string} */ l) => {
     const s = summarizeFindings(confirmed.filter(f => (f.sources || []).includes(l)).map(capSeverity))
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
   }),

