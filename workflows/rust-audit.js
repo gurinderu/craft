@@ -26,11 +26,11 @@ export const meta = {
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
- * @returns {{ options: Record<string, any>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
-  /** @type {Record<string, any>} */
+  /** @type {Record<string, unknown>} */
   const out = {}
   let pairs = 0
   /** @type {string[]} */
@@ -80,10 +80,10 @@ function parseOptions(text) {
  *
  * @param {unknown} args
  * @param {(msg: string) => void} [warn]
- * @returns {Record<string, any>}
+ * @returns {Record<string, unknown>}
  */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, any>} */ (args)
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -321,8 +321,10 @@ function worstVerdict(verdicts) {
 // `filter(Boolean)` drops nothing, and every dead verifier is silently counted as a refutation.
 // Wrapping through here keeps the null a null all the way to the tally.
 /**
- * @param {any} c candidate (model output)
- * @param {any} v verifier verdict (model output)
+ * @template C, V
+ * @param {C} c candidate (model output)
+ * @param {V} v verifier verdict (model output); null or undefined when the verifier died
+ * @returns {{ c: C, v: NonNullable<V> } | null}
  */
 function wrapVerdict(c, v) {
   return v == null ? null : { c, v }
@@ -345,12 +347,20 @@ const VERIFY_MIN_JUDGED = 0.5
 // died (resolved-null, kept null by wrapVerdict; or threw, which parallel() turns into null).
 /**
  * @typedef {{ candidates: number, judged: number, confirmed: number, refuted: number, died: number }} VerifyTally
- * @param {any} candidates
- * @param {any} verdicts
+ * @typedef {{ title: string, location?: string, detail?: string }} Candidate  a detector's finding, as the engine's schema shapes it
+ * @typedef {{ confirmedUnused?: unknown, evidence?: unknown, removal?: unknown }} UnusedVerdictShape  a verifier's answer (model output), fields unchecked
+ */
+/**
+ * @template C
+ * @template {UnusedVerdictShape} V
+ * @param {C[]} candidates
+ * @param {Array<{ c: C, v: V } | null>} verdicts
  */
 function tallyVerification(candidates, verdicts) {
   const list = Array.isArray(candidates) ? candidates : []
-  const alive = (Array.isArray(verdicts) ? verdicts : []).filter(Boolean)
+  /** @type {Array<{ c: C, v: V }>} */
+  const alive = []
+  for (const x of (Array.isArray(verdicts) ? verdicts : [])) if (x) alive.push(x)
   const confirmedItems = alive.filter(x => x && x.v && x.v.confirmedUnused)
   const judged = alive.length
   const died = list.length - judged
@@ -378,8 +388,10 @@ function verificationIncomplete(t) {
 // The whole `unused-crates` dimension result, verdict included, derived from the candidates and the
 // settled verifier results. `_verification` is the internal tally the run record projects.
 /**
- * @param {any} candidates
- * @param {any} verdicts
+ * @template {Candidate} C
+ * @template {UnusedVerdictShape} V
+ * @param {C[]} candidates
+ * @param {Array<{ c: C, v: V } | null>} verdicts
  */
 function unusedCratesResult(candidates, verdicts) {
   const t = tallyVerification(candidates, verdicts)
@@ -728,12 +740,12 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
-/** @param {{ record?: any, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String(record?.craftVersion ?? '')
+  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -774,9 +786,12 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
+// engine passes them on as they are.
 /**
- * @param {any} record
+ * @param {unknown} record
  * @param {{ phase?: string }} [opts]
+ * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
@@ -790,14 +805,18 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
-/** @param {any} res harness result of the logger agent (model output) */
+/**
+ * @param {unknown} res harness result of the logger agent (model output), or a quiet call's `{ __threw }`
+ * @returns {{ ok: boolean, reason: string }}
+ */
 function logRunOutcome(res) {
+  const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
   // marker that fires on a landed write is one people stop reading. But it must not vanish either —
   // the caller gets `ok: true` with a reason to surface.
-  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
-  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+  if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
+  return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
 // For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
@@ -805,12 +824,12 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
-/** @param {(prompt: any, opts: any) => Promise<any>} call a harness agent callback */
+/**
+ * @template P, O, R
+ * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
+ * @returns {(prompt: P, opts: O) => Promise<R | { __threw: string }>}
+ */
 function quietly(call) {
-  /**
-   * @param {any} prompt
-   * @param {any} opts
-   */
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
@@ -1104,14 +1123,17 @@ function reviewResult(dimension, report) {
 // that located the live failure at a consumer — so the caller fails loud instead of skipping the
 // review, and the record distinguishes a name that would not resolve from a run that died.
 /**
- * @param {(name: string, args: any) => Promise<any>} workflow
+ * @param {(name: string, args: unknown) => Promise<unknown>} workflow
  * @param {string} name
- * @param {any} args
+ * @param {unknown} args
  * @param {(msg: string) => void} [warn]
+ * @returns {Promise<unknown>} the nested run's result — `null` when it died
  */
 async function nestedWorkflow(workflow, name, args, warn = () => {}) {
-  /** @param {any} e */
-  const unresolved = e => /no workflow with that name/i.test(String((e && e.message) || e))
+  /** @param {unknown} e @returns {unknown} the refusal's message, or the thrown value itself */
+  const messageOf = e => (e && /** @type {{ message?: unknown }} */ (e).message) || e
+  /** @param {unknown} e */
+  const unresolved = e => /no workflow with that name/i.test(String(messageOf(e)))
   try {
     return await workflow(`craft:${name}`, args)
   } catch (e) {
@@ -1121,7 +1143,7 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
       return await workflow(name, args)
     } catch (e2) {
       if (unresolved(e2)) {
-        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${(/** @type {any} */ (e2) && /** @type {any} */ (e2).message) || e2})`)
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${String(messageOf(e2))})`)
       }
       throw e2
     }

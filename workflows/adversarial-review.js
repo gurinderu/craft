@@ -25,11 +25,11 @@ export const meta = {
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
- * @returns {{ options: Record<string, any>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
-  /** @type {Record<string, any>} */
+  /** @type {Record<string, unknown>} */
   const out = {}
   let pairs = 0
   /** @type {string[]} */
@@ -79,10 +79,10 @@ function parseOptions(text) {
  *
  * @param {unknown} args
  * @param {(msg: string) => void} [warn]
- * @returns {Record<string, any>}
+ * @returns {Record<string, unknown>}
  */
 function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, any>} */ (args)
+  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
   // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
@@ -427,12 +427,12 @@ fi
 // whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
 // passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
 // repository the run never looked at — a lie in the one field the store is keyed by.
-/** @param {{ record?: any, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String(record?.craftVersion ?? '')
+  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -473,9 +473,12 @@ ${JSON.stringify(record, null, 2)}`
 // Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
 // but a full review record carries every finding plus the ledger, and the cheap model is where the
 // silent truncation came from. Size the model to the payload.
+// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
+// engine passes them on as they are.
 /**
- * @param {any} record
+ * @param {unknown} record
  * @param {{ phase?: string }} [opts]
+ * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
 function logRunDispatch(record, { phase = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
@@ -489,14 +492,18 @@ function logRunDispatch(record, { phase = '' } = {}) {
   }
 }
 
-/** @param {any} res harness result of the logger agent (model output) */
+/**
+ * @param {unknown} res harness result of the logger agent (model output), or a quiet call's `{ __threw }`
+ * @returns {{ ok: boolean, reason: string }}
+ */
 function logRunOutcome(res) {
+  const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
   // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
   // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
   // marker that fires on a landed write is one people stop reading. But it must not vanish either —
   // the caller gets `ok: true` with a reason to surface.
-  if (res && res.ok === true) return { ok: true, reason: String((res.error || '')).trim() }
-  return { ok: false, reason: (res && (res.__threw || res.error)) || 'the logger agent returned no result' }
+  if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
+  return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
 // For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
@@ -504,12 +511,12 @@ function logRunOutcome(res) {
 // produces review content, so a throw there should stop the run. These must not: the record is
 // written AFTER the report already exists in memory, so losing it to a bookkeeping write would
 // throw away the whole run's product.
-/** @param {(prompt: any, opts: any) => Promise<any>} call a harness agent callback */
+/**
+ * @template P, O, R
+ * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
+ * @returns {(prompt: P, opts: O) => Promise<R | { __threw: string }>}
+ */
 function quietly(call) {
-  /**
-   * @param {any} prompt
-   * @param {any} opts
-   */
   return async (prompt, opts) => {
     try {
       return await call(prompt, opts)
@@ -648,13 +655,13 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
  * @property {string} label
  * @property {object} [schema]
  * @property {'low' | 'medium' | 'high' | 'xhigh' | 'max'} [effort]
- * @property {(v: any) => void} onResult
+ * @property {(v: unknown) => void} onResult  `v` is the agent's answer (model output), never null
  * @property {() => void} [onMissing]
  */
 /**
  * @typedef {object} ThrottledDeps
- * @property {(prompt: string, opts: { label: string, phase: string, schema?: object | undefined, effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined }) => Promise<any>} agent
- * @property {(fns: Array<() => Promise<any>>) => Promise<any[]>} parallel
+ * @property {(prompt: string, opts: { label: string, phase: string, schema?: object | undefined, effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined }) => Promise<unknown>} agent
+ * @property {(fns: Array<() => Promise<unknown>>) => Promise<unknown[]>} parallel
  * @property {(msg: string) => void} log
  * @property {(label: string, note: string, incomplete: boolean) => void} markNotRun
  * @property {number} batch
@@ -1156,20 +1163,23 @@ function buildVerifyJobs(findings, sink) {
 // where `SEV_RANK[undefined]` makes the comparator NaN and the confirmed finding can come out with no
 // severity at all — which `baseVerdict` reads as neither critical nor high, i.e. Approve.
 /**
- * @param {any} v  an agent-returned verdict object of unknown shape (model output)
+ * @param {unknown} v  an agent-returned verdict object of unknown shape (model output)
  * @param {Record<string, number>} SEV_RANK
  * @returns {v is Vote}
  */
 function usableVote(v, SEV_RANK) {
-  return !!v && typeof v === 'object'
-    && typeof v.refuted === 'boolean'
-    && typeof v.premiseSupported === 'boolean'
-    && (v.severity === 'not-an-issue' || SEV_RANK[/** @type {string} */ (v.severity)] != null)
+  if (!v || typeof v !== 'object') return false
+  const o = /** @type {{ refuted?: unknown, premiseSupported?: unknown, severity?: unknown }} */ (v)
+  return typeof o.refuted === 'boolean'
+    && typeof o.premiseSupported === 'boolean'
+    && (o.severity === 'not-an-issue' || SEV_RANK[/** @type {string} */ (o.severity)] != null)
 }
 
 /**
- * @param {Finding[]} findings
- * @param {Array<any[] | undefined>} sink  per-finding raw votes (model output, possibly malformed or `{ missing: true }`)
+ * The findings come back as they went in — the caller's own type — with the judge's verdict fields added.
+ * @template {{ severity: string }} F
+ * @param {F[]} findings
+ * @param {Array<unknown[] | undefined>} sink  per-finding raw votes (model output, possibly malformed or `{ missing: true }`)
  * @param {Record<string, number>} SEV_RANK
  */
 function judgeVotes(findings, sink, SEV_RANK) {
@@ -1190,7 +1200,7 @@ function judgeVotes(findings, sink, SEV_RANK) {
   // runs where the absence changed nothing — a false INCOMPLETE is no safer here than a false clean.
   /** @type {(sev: string) => 'block' | 'warning' | 'approve'} */
   const tierOf = sev => (rankOf(sev) <= rankOf('high') ? 'block' : sev === 'medium' ? 'warning' : 'approve')
-  /** @type {(f: Finding, votes: Vote[], missing: number, pad: string) => string} */
+  /** @type {(f: F, votes: Vote[], missing: number, pad: string) => string} */
   const calibrateWith = (f, votes, missing, pad) => {
     const sevs = votes.filter(v => !v.refuted && v.severity !== 'not-an-issue')
       .map(v => v.severity)
@@ -1200,13 +1210,13 @@ function judgeVotes(findings, sink, SEV_RANK) {
   }
   // The absent votes padded with what the FINDER claimed — a neutral stand-in, where their silence
   // was not. Only used once the two extremes agree that the verdict cannot swing either way.
-  /** @type {(f: Finding, votes: Vote[], missing: number) => string} */
+  /** @type {(f: F, votes: Vote[], missing: number) => string} */
   const calibrate = (f, votes, missing) => calibrateWith(f, votes, missing, f.severity)
   const judged = findings.map((f, idx) => {
     // Malformed votes become absences, so the two-assignment machinery below decides them rather than
     // letting an unreadable object count as a non-refuting, non-supporting, severity-less confirmation.
-    /** @type {Array<Vote | { lens?: string, missing: true }>} */
-    const all = (sink[idx] || []).map(v => (v && !v.missing && usableVote(v, SEV_RANK)) ? v : { lens: v && v.lens, missing: true })
+    /** @type {Array<Vote | { lens?: unknown, missing: true }>} */
+    const all = (sink[idx] || []).map(v => (usableVote(v, SEV_RANK) && !v.missing) ? v : { lens: v && /** @type {{ lens?: unknown }} */ (v).lens, missing: true })
     // A missing vote must not decide — but "missing" is not the same as "undecidable". Ask what the
     // absent votes COULD have changed, and only fall back when they could have changed the answer.
     // Both traps are real and both were measured on this engine:
@@ -1268,7 +1278,7 @@ function judgeVotes(findings, sink, SEV_RANK) {
   }
 }
 // <<< craft-inline
-/** @param {Parameters<typeof judgeVotes>[0]} findings @param {Parameters<typeof judgeVotes>[1]} sink */
+/** @template {LensFinding} F @param {F[]} findings @param {Parameters<typeof judgeVotes>[1]} sink */
 const judge = (findings, sink) => judgeVotes(findings, sink, SEV_RANK)
 
 /** @type {unknown[][]} */
