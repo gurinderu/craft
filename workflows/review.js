@@ -725,10 +725,15 @@ const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
 // An unrecognised name is REFUSED LOUDLY rather than dropped: `optional=perf` that quietly buys
 // nothing, on a run whose whole point was to buy something, is the exact silence this section exists
 // to prevent — and the run would then report the lens as skipped while the caller believed otherwise.
+/** The values that buy no optional lens, and those that buy the whole set (compared as `===` would). */
+/** @type {unknown[]} */
+const OPTIONAL_NONE = [undefined, null, '', false, 'false', 'none']
+/** @type {unknown[]} */
+const OPTIONAL_ALL = [true, 'true', 'all']
 /** @param {unknown} raw */
 function parseOptionalRequest(raw) {
-  if (raw === undefined || raw === null || raw === '' || raw === false || raw === 'false' || raw === 'none') return { lenses: [], unknown: [] }
-  if (raw === true || raw === 'true' || raw === 'all') return { lenses: [...OPTIONAL_LENSES], unknown: [] }
+  if (OPTIONAL_NONE.includes(raw)) return { lenses: [], unknown: [] }
+  if (OPTIONAL_ALL.includes(raw)) return { lenses: [...OPTIONAL_LENSES], unknown: [] }
   const names = (Array.isArray(raw) ? /** @type {unknown[]} */ (raw) : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
   return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
 }
@@ -2972,27 +2977,7 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
     // harness slot to produce nothing.
     const spentOut = budget.belowFloor()
     if (res === DEADLINE_HIT) {
-      // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
-      // told apart from a live agent taking too long, and feeding that into the window would let slow
-      // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
-      // THE BUDGET, NOT WHAT THIS ATTEMPT WAITED, and the log says which. With no clock there is no
-      // honest per-attempt figure — an earlier version printed one and it was wrong by most of the
-      // deadline on a second attempt. A number nobody computed is worse than a coarser number that
-      // is true, because the transcript is the only carrier this run's clock is ever measured from
-      // and a reader calibrates deadlines against what it says.
-      // Sub-minute budgets print as seconds rather than rounding up to "1min": `deadlineMs=30000` is
-      // a documented diagnostic value, and a log calling it "0min" or "1min" hides the very setting
-      // whose effects the reader is trying to see.
-      const ms = budget.total()
-      const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min budget` : `${Math.max(1, Math.round(ms / 1000))}s budget`
-      // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
-      // is armed ONCE, for the whole budget, when the budget is created — so its firing IS the budget
-      // running out, and one budget shared by the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
-      // is unreachable under that arithmetic, so it is gone rather than left as reassuring dead text.
-      // The re-dispatch survives for the case it was always really for: the FAST death, which spends
-      // almost none of the budget. A hang is evidence about the request; a fast death is evidence
-      // about reachability, and only the second is worth asking twice.
-      log(`⏱️ agent '${o.label || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
+      logDeadlineFire(o, budget)
       return null
     }
     if (res !== null && res !== undefined) {
@@ -3001,34 +2986,69 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
       if (breaker) breaker.recordLive()
       return res
     }
-    if (attempt >= AGENT_TRIES) return null
-    // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
-    if (spentOut) {
-      // Says how much was left and what it was measured against, rather than the flat "nothing left"
-      // that used to be printed over a remainder that was merely below the floor. The transcript is
-      // the only carrier this run's clock is ever measured from, and "spent" and "below the floor"
-      // are different events that a future reader has to be able to tell apart.
-      log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(budget.total()) / 1000)}s floor left of its ${Math.round(budget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
-      return null
-    }
-    // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
-    // its own retry ladder on an unreachable API, and the re-dispatch below spends a second ladder
-    // inside the same verification window slot. On a one-off failure that is worth the clock; once
-    // half of the recent windowed dispatches are coming back empty it is not, and the breaker's
-    // window is what says which this is.
-    //
-    // The log says exactly what the breaker counted and nothing more. Only a FIRST attempt reaches
-    // this line (the line above returns on the last one), so the window holds one observation per
-    // dispatched unit of work — never per harness call. A message phrased as "the Nth death in a
-    // row" claimed both a consecutive run the window does not track and a count of dispatches it
-    // does not hold: with one re-dispatch per death, an outage of N observed deaths has already
-    // cost up to 2N−(suppressed) harness dispatches.
-    if (breaker && !breaker.deathAllowsRedispatch()) {
-      log(`⛔ agent '${opts.label || '?'}' returned no result — ${breaker.deaths()} of the last ${breaker.observed()} windowed verification dispatches returned nothing, so this one is NOT re-dispatched (the re-dispatch is for a one-off failure, and at this rate it is not one); treated as a dead agent, reported as unverified exactly like every other death`)
-      return null
-    }
-    log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
+    if (!redispatchAfterDeath(attempt, spentOut, budget, breaker, opts)) return null
   }
+}
+
+/** A deadline fire, logged against the budget it spent. @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} budget */
+function logDeadlineFire(o, budget) {
+  // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
+  // told apart from a live agent taking too long, and feeding that into the window would let slow
+  // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
+  // THE BUDGET, NOT WHAT THIS ATTEMPT WAITED, and the log says which. With no clock there is no
+  // honest per-attempt figure — an earlier version printed one and it was wrong by most of the
+  // deadline on a second attempt. A number nobody computed is worse than a coarser number that
+  // is true, because the transcript is the only carrier this run's clock is ever measured from
+  // and a reader calibrates deadlines against what it says.
+  // Sub-minute budgets print as seconds rather than rounding up to "1min": `deadlineMs=30000` is
+  // a documented diagnostic value, and a log calling it "0min" or "1min" hides the very setting
+  // whose effects the reader is trying to see.
+  const ms = budget.total()
+  const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min budget` : `${Math.max(1, Math.round(ms / 1000))}s budget`
+  // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
+  // is armed ONCE, for the whole budget, when the budget is created — so its firing IS the budget
+  // running out, and one budget shared by the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
+  // is unreachable under that arithmetic, so it is gone rather than left as reassuring dead text.
+  // The re-dispatch survives for the case it was always really for: the FAST death, which spends
+  // almost none of the budget. A hang is evidence about the request; a fast death is evidence
+  // about reachability, and only the second is worth asking twice.
+  log(`⏱️ agent '${o.label || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
+}
+
+/**
+ * After an attempt that came back empty: whether to re-dispatch (true) or treat the agent as dead (false).
+ * @param {number} attempt @param {boolean} spentOut @param {ReturnType<typeof makeDeadlineBudget>} budget
+ * @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {boolean}
+ */
+function redispatchAfterDeath(attempt, spentOut, budget, breaker, opts) {
+  if (attempt >= AGENT_TRIES) return false
+  // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
+  if (spentOut) {
+    // Says how much was left and what it was measured against, rather than the flat "nothing left"
+    // that used to be printed over a remainder that was merely below the floor. The transcript is
+    // the only carrier this run's clock is ever measured from, and "spent" and "below the floor"
+    // are different events that a future reader has to be able to tell apart.
+    log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(budget.total()) / 1000)}s floor left of its ${Math.round(budget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
+    return false
+  }
+  // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
+  // its own retry ladder on an unreachable API, and the re-dispatch below spends a second ladder
+  // inside the same verification window slot. On a one-off failure that is worth the clock; once
+  // half of the recent windowed dispatches are coming back empty it is not, and the breaker's
+  // window is what says which this is.
+  //
+  // The log says exactly what the breaker counted and nothing more. Only a FIRST attempt reaches
+  // this line (the line above returns on the last one), so the window holds one observation per
+  // dispatched unit of work — never per harness call. A message phrased as "the Nth death in a
+  // row" claimed both a consecutive run the window does not track and a count of dispatches it
+  // does not hold: with one re-dispatch per death, an outage of N observed deaths has already
+  // cost up to 2N−(suppressed) harness dispatches.
+  if (breaker && !breaker.deathAllowsRedispatch()) {
+    log(`⛔ agent '${opts.label || '?'}' returned no result — ${breaker.deaths()} of the last ${breaker.observed()} windowed verification dispatches returned nothing, so this one is NOT re-dispatched (the re-dispatch is for a one-off failure, and at this rate it is not one); treated as a dead agent, reported as unverified exactly like every other death`)
+    return false
+  }
+  log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
+  return true
 }
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
@@ -4488,7 +4508,7 @@ if (uncoveredFiles.length) log(`Outside all active profiles (not reviewed): ${un
 function scoutPrompt(profile) {
   return `You are scouting a ${profile.lang} diff to plan an elastic review. Use shell + read only — do NOT review yet.${pathArg ? `\n\nSCOPE: review ONLY the crate/dir at \`${flattenField(pathArg)}\`. Pass \`-- ${shq(pathArg)}\` to every \`git diff\` command below.` : ''}
 
-Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}. Consider only this profile's files (${profile.diffGlobs.join(' ')}).
+Diff base: ${lensBaseLabel()}. Consider only this profile's files (${profile.diffGlobs.join(' ')}).
 1. Inspect \`git diff --stat ${lensBase ? `${shq(lensBase)}...HEAD` : 'HEAD'} -- ${profile.diffGlobs.join(' ')}\`. Set sizeBucket:
    small = a few files / < ~80 changed lines; large = many files / > ~400 lines or a public-API-heavy change; medium otherwise.
 2. lenses: choose from ${JSON.stringify(profile.lenses)}.
@@ -4513,12 +4533,12 @@ function negativeSpacePrompt(priorSummary, profile, plan) {
   const intent = plan?.intent ?? intentArg
   return `You are the **negative-space** review lens for a ${profile.lang} change. Unlike the other lenses, your job is NOT to review the changed lines — it is to find the bug the diff ENABLES in code it did NOT touch. ${profile.navSkill ? `Load the ${profile.navSkill} skill for whole-repo search; use` : 'Use'} Grep/Glob across the ENTIRE tree, not just the diff.
 
-Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}.
+Diff base: ${lensBaseLabel()}.
 ${intent ? `INTENT (what the change should do): ${intent}` : ''}
 ${plan?.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — an invariant the author claims here may be broken by the UNCHANGED code you inventory below):\n"""\n${plan.spec}\n"""` : ''}
 
 METHOD — follow in order:
-1. Inventory the NEW surface the diff introduces. Read the FULL diff: \`git diff ${lensBase ? `--merge-base ${shq(lensBase)}` : 'HEAD'}\`. List every new: ${profile.lang === 'Nix' ? 'flake output / module option / package attr / overlay / renamed binding' : 'enum variant / status value / DB column / table / migration / public fn / route / struct field'}. ALSO list any UNCHANGED definition the diff now references or relies on for the first time.
+1. Inventory the NEW surface the diff introduces. Read the FULL diff: \`git diff ${lensDiffRange()}\`. List every new: ${profile.lang === 'Nix' ? 'flake output / module option / package attr / overlay / renamed binding' : 'enum variant / status value / DB column / table / migration / public fn / route / struct field'}. ALSO list any UNCHANGED definition the diff now references or relies on for the first time.
 2. For EACH item, Grep the UNCHANGED tree for existing code that reads, references, ${profile.lang === 'Nix' ? 'imports, or overrides' : 'lists, updates, deletes, cascades, serializes, orders, or authorizes'} that shape. Ask: does this pre-existing path violate an invariant the change assumes?
 3. Report each concrete violation ANCHORED TO THE UNCHANGED file:line that is actually wrong, not the diff line. That anchor is real — cite it precisely so it can be verified.
 
@@ -4530,34 +4550,74 @@ ${priorSummary}
 Return {lens: "negative-space", findings: [...]} using the shared finding schema. Set \`ruleId\` to the matching ${profile.rubricSkill} rules.md ID or "" if none fits. Observability: the workflow records this run — do NOT write your own record.`
 }
 
+/** The diff base as the lens prompts name it. */
+function lensBaseLabel() {
+  return lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'
+}
+
+/** The `git diff` range argument the lens prompts hand the agent. */
+function lensDiffRange() {
+  return lensBase ? `--merge-base ${shq(lensBase)}` : 'HEAD'
+}
+
+/** @param {Slice | null} slice @param {Profile} profile */
+function lensPathspec(slice, profile) {
+  return slice ? slice.files.map(pathspecLiteral).filter(Boolean).map(shq).join(' ') : profile.diffGlobs.join(' ')
+}
+
+/** @param {string} lens */
+function strictMaintainabilityLine(lens) {
+  return strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''
+}
+
+/** @param {Slice | null} slice */
+function sliceBlock(slice) {
+  return slice ? `YOUR SLICE: \`${slice.key}\` — ${slice.files.length} changed file(s) of a larger diff. Sibling lenses hold the rest, and overlapping findings are de-duplicated downstream.
+This bounds WHAT YOU JUDGE, never what you may READ: trace definitions, uses and consumers anywhere in the repository, and pin every off-site premise in \`whereChecked\` exactly as usual. A defect whose evidence sits outside your slice is still yours to report if it is CAUSED by a line in your slice — say so in \`why\`. A defect located in another slice is not yours; do not report it.
+EFFICIENCY: pull your slice's diff ONCE, in one command. Do not re-run broad searches over the whole tree — every turn re-reads everything already in your context, so a wide grep is paid for again on each turn that follows it.` : ''
+}
+
+/** The re-review framing of a lens prompt, empty on a first round. */
+function reReviewBlock() {
+  return priorRound ? (fullRescan
+  ? `RE-REVIEW (full re-scan): review the WHOLE diff (base ${flattenField(lensBase)}...HEAD), not just the latest fixes — an earlier round may have missed a defect in code it did not touch. Prior findings are adjudicated separately and any you re-surface are de-duplicated downstream, so spend your effort on defects that are NOT already obviously known.`
+  : `RE-REVIEW: you are reviewing ONLY the fix commits since the prior round (base ${flattenField(lensBase)}). Prior findings are adjudicated separately — do not re-report them; surface only NEW defects the fixes introduced.`) : ''
+}
+
+/** @param {Plan} plan */
+function lensPlanLines(plan) {
+  return `${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
+${plan.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n"""\n${plan.spec}\n"""` : ''}
+${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}`
+}
+
+/** @param {Profile} profile @param {string} lens @param {Plan} plan */
+function mutantsLine(profile, lens, plan) {
+  return profile.id === 'rust' && lens === 'tests' && (plan.sizeBucket === 'medium' || plan.sizeBucket === 'large') ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to surface contracts no test would catch a regression on; skip silently if absent.' : ''
+}
+
 /** @param {string} lens @param {string} priorSummary @param {Profile} profile @param {Plan} plan @param {Slice | null} [slice] */
 function lensPrompt(lens, priorSummary, profile, plan, slice = null) {
   if (lens === 'negative-space') return negativeSpacePrompt(priorSummary, profile, plan)
   // The pathspec the lens reviews. A slice replaces the profile's globs with its own files — that
   // is the entire mechanism: the agent pulls what it is responsible for instead of the whole diff,
   // and the per-turn re-read it pays for the rest of its life shrinks by the same factor.
-  const pathspec = slice ? slice.files.map(pathspecLiteral).filter(Boolean).map(shq).join(' ') : profile.diffGlobs.join(' ')
+  const pathspec = lensPathspec(slice, profile)
   return `You are the **${lens}** review lens for a ${profile.lang} diff. Review ONLY this slice; ignore everything else (other lenses cover it). Load the ${profile.rubricSkill} skill for the rubric${profile.navSkill ? ` and the ${profile.navSkill} skill for context expansion` : ''}.
 
 SLICE: ${profile.lensBrief[lens] || lens}
-${strict && lens === 'maintainability' ? '\nSTRICT MODE: apply the maintainability bar as a *presumption of block* — each maintainability issue is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.\n' : ''}
-Diff base: ${lensBase ? `\`${flattenField(lensBase)}\`` : 'uncommitted changes / most recent commit'}. Review with \`git diff ${lensBase ? `--merge-base ${shq(lensBase)}` : 'HEAD'} -- ${pathspec}\`.
-${slice ? `YOUR SLICE: \`${slice.key}\` — ${slice.files.length} changed file(s) of a larger diff. Sibling lenses hold the rest, and overlapping findings are de-duplicated downstream.
-This bounds WHAT YOU JUDGE, never what you may READ: trace definitions, uses and consumers anywhere in the repository, and pin every off-site premise in \`whereChecked\` exactly as usual. A defect whose evidence sits outside your slice is still yours to report if it is CAUSED by a line in your slice — say so in \`why\`. A defect located in another slice is not yours; do not report it.
-EFFICIENCY: pull your slice's diff ONCE, in one command. Do not re-run broad searches over the whole tree — every turn re-reads everything already in your context, so a wide grep is paid for again on each turn that follows it.` : ''}
-${priorRound ? (fullRescan
-  ? `RE-REVIEW (full re-scan): review the WHOLE diff (base ${flattenField(lensBase)}...HEAD), not just the latest fixes — an earlier round may have missed a defect in code it did not touch. Prior findings are adjudicated separately and any you re-surface are de-duplicated downstream, so spend your effort on defects that are NOT already obviously known.`
-  : `RE-REVIEW: you are reviewing ONLY the fix commits since the prior round (base ${flattenField(lensBase)}). Prior findings are adjudicated separately — do not re-report them; surface only NEW defects the fixes introduced.`) : ''}
-${plan.intent ? `INTENT (what the change should do): ${plan.intent}` : ''}
-${plan.spec ? `STATED SPEC / AUTHOR CLAIMS (verbatim PR/commit description — treat as the spec; the intent lens must check EACH claim against the code, and any lens may use it):\n"""\n${plan.spec}\n"""` : ''}
-${plan.churn?.length ? `HOT FILES (scrutinize harder): ${plan.churn.join(', ')}` : ''}
+${strictMaintainabilityLine(lens)}
+Diff base: ${lensBaseLabel()}. Review with \`git diff ${lensDiffRange()} -- ${pathspec}\`.
+${sliceBlock(slice)}
+${reReviewBlock()}
+${lensPlanLines(plan)}
 
 CONTEXT EXPANSION (required): for each finding, trace definitions / uses / consumers of the changed symbols (Grep/Glob${profile.navSkill ? ' + LSP' : ''}) before judging — do not read the diff in isolation. If a finding depends on code outside the diff, say so in \`why\`.
 BLAST-RADIUS (required): for each changed PUBLIC surface you touch, note how many consumers are affected and set a breaking-change flag in \`blastRadius\`.
 CONFIDENCE: report everything you suspect, located. Do NOT self-censor borderline findings — verification happens downstream. Each finding needs file:line (use file:"" line:0 only when truly not locatable).
 WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Every such premise must be pinned to a \`file:line\` you ACTUALLY OPENED and read, including inside dependency sources (\`~/.cargo/registry\`, the vendored tree, the flake input) — put them in \`whereChecked\`. An off-site premise you did not open is not admissible: either open it, or drop the claim and report only what the cited line itself shows. Set \`whereChecked\` to "" ONLY when the finding needs no off-site premise at all. Do not restate the cited defect line there — it adds nothing.
 RULE ID (required field): set \`ruleId\` to the matching catalog ID from the ${profile.rubricSkill} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.
-${profile.id === 'rust' && lens === 'tests' && (plan.sizeBucket === 'medium' || plan.sizeBucket === 'large') ? 'If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to surface contracts no test would catch a regression on; skip silently if absent.' : ''}
+${mutantsLine(profile, lens, plan)}
 ALREADY-FOUND (do not repeat; look for what these MISSED):
 ${priorSummary}
 
@@ -4576,16 +4636,13 @@ function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   const pf = promptFields(f)
   const src = sanitizeAttack(f['source'])
   const why = sanitizeAttack(f['why'])
-  const exclusionCatalog = profile?.fpRules
-    ? `\nEXCLUSION CATALOG: your rejection is itself a claim and carries the same burden of proof as the finding. Load the ${profile.rubricSkill} skill's ${profile.fpRules} and, when one of its precedents fires, name the ID in \`reason\` (e.g. "refuted per FP-006: proven-Some unwrap"). Run the TRACE each rule demands — "looks guarded" does not fire the invariant-protected rule; following the invariant to its source and showing it dominates the sink on every path does. Two of them (FP-002 operator-controlled input, FP-005 operator-only panic surface) are severity DOWNGRADES, not refutations: the claim still holds, only the attacker's access is missing — say so in \`reason\` and leave refuted=false. The file also lists the KEEP-* non-reasons, dismissals that sound decisive and have repeatedly killed real defects (soundness in a public API no current caller reaches, a logic bug in safe Rust, a panic unwinding through an unsafe region). If nothing in the catalog fits, judge on the merits — never force a bad fit to justify a drop.\n`
-    : ''
-  const head = isTool
-    ? `You are verifier #${idx + 1} for a TOOL-REPORTED code review finding (source: ${src}). Deterministic tool output outranks your judgement — you may refute it ONLY by re-running the tool, never on reasoning alone.`
-    : `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain whether the technical claim holds — only let real findings through.`
+  const exclusionCatalog = exclusionCatalogText(profile)
+  const head = verifyHead(isTool, idx, src)
+  const at = `${pf.file || '?'}:${f['line'] || 0}`
   return `${head}
 
 FINDING: [${pf.severity}] ${pf.title}
-  at ${pf.file || '?'}:${f['line'] || 0}
+  at ${at}
   why: ${why}
   source: ${src}${f['ruleId'] ? ` · rule ${pf.ruleId}` : ''}
   off-site evidence claimed: ${f['whereChecked'] ? pf.whereChecked : '(none — the finding claims to be self-contained at the cited line)'}
@@ -4595,12 +4652,26 @@ MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix
 REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream.
 
 ${exclusionCatalog}Open the cited file and check:
-1. citedLineMatches: does ${pf.file || '?'}:${f['line'] || 0} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
+1. citedLineMatches: does ${at} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
 2. reachable: is this code reachable in production, or is it test/example/fixture-only code? (Test-only → reachable=false. This does NOT refute the finding — it only calibrates severity downstream.) REACHABILITY IS ABOUT THE ROUTE, not just the destination: if the claim is "reachable from untrusted input", check that the ROUTE runs from the real entry point — the parser, the handler, the deserializer, the public API — on attacker-supplied data. Reaching the state by CONSTRUCTING the object directly (a builder, \`new\`, a test fixture, an internal constructor) bypasses exactly the validation the question is about, and proves nothing about untrusted-input reachability. That trap catches careful reviewers, so check it explicitly rather than assuming the route was the obvious one.
 3. refuted: is the technical claim itself false? (${isTool ? 'Tool-decided as above.' : 'Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.'})
 4. premiseSupported: identify the finding's LOAD-BEARING premise — the one claim that, if false, makes the finding evaporate. If it lives outside the cited line (the dependency behaves this way, this is reachable from untrusted input, no caller guards it, the sibling does X), OPEN the \`whereChecked\` location and check it actually shows that. premiseSupported=false when the premise is off-site and \`whereChecked\` is empty, points somewhere that does not show it, or merely restates the cited line. premiseSupported=true when the finding is genuinely self-contained at the cited line, or the off-site evidence checks out. Do NOT set refuted=true just because a premise is uncited — unsupported is not disproven; that is what this field is for, and it demotes the finding downstream instead of killing it.
 
 Return {refuted, citedLineMatches, reachable, premiseSupported, reason}.`
+}
+
+/** The exclusion-catalog paragraph of a verify prompt, empty for a profile without one. @param {Profile} profile */
+function exclusionCatalogText(profile) {
+  return profile?.fpRules
+    ? `\nEXCLUSION CATALOG: your rejection is itself a claim and carries the same burden of proof as the finding. Load the ${profile.rubricSkill} skill's ${profile.fpRules} and, when one of its precedents fires, name the ID in \`reason\` (e.g. "refuted per FP-006: proven-Some unwrap"). Run the TRACE each rule demands — "looks guarded" does not fire the invariant-protected rule; following the invariant to its source and showing it dominates the sink on every path does. Two of them (FP-002 operator-controlled input, FP-005 operator-only panic surface) are severity DOWNGRADES, not refutations: the claim still holds, only the attacker's access is missing — say so in \`reason\` and leave refuted=false. The file also lists the KEEP-* non-reasons, dismissals that sound decisive and have repeatedly killed real defects (soundness in a public API no current caller reaches, a logic bug in safe Rust, a panic unwinding through an unsafe region). If nothing in the catalog fits, judge on the merits — never force a bad fit to justify a drop.\n`
+    : ''
+}
+
+/** @param {boolean} isTool @param {number} idx @param {string} src */
+function verifyHead(isTool, idx, src) {
+  return isTool
+    ? `You are verifier #${idx + 1} for a TOOL-REPORTED code review finding (source: ${src}). Deterministic tool output outranks your judgement — you may refute it ONLY by re-running the tool, never on reasoning alone.`
+    : `You are skeptic #${idx + 1} trying to REFUTE a code review finding. Default to refuted=true when uncertain whether the technical claim holds — only let real findings through.`
 }
 
 // Cross-lens dedup BEFORE verification. key() above is exact (file:line:title), so two lenses
