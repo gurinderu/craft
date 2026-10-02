@@ -1588,6 +1588,7 @@ await logRun(auditRecord)
 // for death. Interpolating it turns a dead synthesizer into the literal four-character string "null",
 // which reads as a successful audit with an empty body — and that is exactly the run where the
 // telemetry marker is also empty, so nothing at all says the synthesis died.
-// Without a schema a live agent returns its final text, so anything but a non-empty string is a death.
-if (typeof report !== 'string' || !report) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
+// Without a schema a live agent returns its final text, so anything but a non-blank string is a death:
+// a whitespace-only answer is no report either (realm @nick/craft, #136).
+if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
 return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}`
