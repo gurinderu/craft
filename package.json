@@ -11,6 +11,7 @@
     "check:evals": "node lib/check-evals.mjs",
     "check:types": "npm --prefix opencode/plugin run typecheck",
     "check:types:lib": "opencode/plugin/node_modules/.bin/tsc -p lib/tsconfig.json",
+    "check:types:workflows": "node lib/check-workflow-types.mjs",
     "check:opencode-frontmatter": "python3 opencode/scripts/check-frontmatter.py agent opencode/agents/*.md && python3 opencode/scripts/check-frontmatter.py command opencode/commands/*.md"
   },
   "devDependencies": {

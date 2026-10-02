@@ -133,16 +133,16 @@ const A = normalizeArgs(args, log)
 // later — a loud drop undone in silence, which is worse than either behaviour alone.
 const argv = A
 
-const pr = argv.pr ? String(argv.pr) : ''
-const report = argv.report ? String(argv.report) : ''
-const base = argv.base ? String(argv.base) : ''
-const priorLedger = Array.isArray(argv.priorLedger) ? argv.priorLedger : []
+const pr = argv['pr'] ? String(argv['pr']) : ''
+const report = argv['report'] ? String(argv['report']) : ''
+const base = argv['base'] ? String(argv['base']) : ''
+const priorLedger = Array.isArray(argv['priorLedger']) ? argv['priorLedger'] : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // this engine has no `repo` argument (see the refusal above) and always triages the checkout the
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the triaged repo — where the script is not. Pass craftRoot then.
-const craftRootArg = argv.craftRoot ? String(argv.craftRoot) : ''
+const craftRootArg = argv['craftRoot'] ? String(argv['craftRoot']) : ''
 
 const RAW_SCHEMA = {
   type: 'object',
@@ -554,9 +554,11 @@ function telemetryLostSection(lost) {
 // A lost record NEVER fails the triage: killing it over a bookkeeping write would teach everyone to
 // ignore the very marker this exists to raise. It is reported instead, at the head of the plan a
 // human actually reads — an empty store is otherwise indistinguishable from "never run".
+/** @type {string[]} */
 const telemetryLost = []
 const agentQuietly = quietly(agent)
 
+/** @param {any} record */
 async function logRun(record) {
   const res = await agentQuietly(
     logRunPrompt({ record, craftRoot: craftRootArg }),
@@ -586,7 +588,7 @@ async function logRun(record) {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A.repo) {
+if (A['repo']) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'triage-findings',
     nested: false, via: null,
@@ -598,7 +600,7 @@ if (A.repo) {
   })
   return [
     `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A.repo)}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
     ``,
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`triage-findings\` there.`,
   ].join('\n')
@@ -630,10 +632,11 @@ const gatherResults = await parallel(gatherTasks)   // order preserved → align
 const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
 if (notRunSources.length) log(`WARNING: source(s) that produced nothing: ${notRunSources.join(', ')} — the triage covers fewer sources than asked.`)
 const gathered = gatherResults.filter(Boolean)
-const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
+const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(/** @param {any} f */ f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 
 // stable composite id; reused for dedup, ledger, and idempotent re-runs
+/** @param {any} f */
 const idOf = f => `${f.source}::${f.location || 'no-loc'}::${f.title}`
 const priorById = new Map(priorLedger.map(e => [e.stable_id, e]))
 
@@ -743,7 +746,7 @@ if (ledger !== validations) {
   const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
   if (unjudged.size) {
     const seen = new Set()
-    ledger = ledger.map(e => {
+    ledger = ledger.map(/** @param {any} e */ e => {
       const v = e && unjudged.get(e.stable_id)
       if (!v) return e
       seen.add(e.stable_id)
