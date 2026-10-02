@@ -20,3 +20,12 @@ declare function log(message: string): void
 declare function workflow(nameOrRef: string | { scriptPath: string }, args?: unknown): Promise<any>
 /** `total` is null when no token target was set; `remaining()` is then Infinity. */
 declare const budget: { total: number | null, spent(): number, remaining(): number }
+// Beyond the eight: the timers review.js relies on (the sandbox exposes them); nothing else of Node.
+declare function setTimeout(callback: () => void, ms?: number): unknown
+declare function clearTimeout(handle: unknown): void
+// Used by lib/lens-scope.mjs (decodeGitPath), which is inlined into review.js and so runs in the
+// sandbox. The tool's reference promises "standard JS built-ins" and does not name these two web APIs:
+// declared here so the check reads the code as written, NOT as a claim the sandbox provides them
+// (realm @nick/craft, node #135).
+declare class TextEncoder { encode(input?: string): Uint8Array }
+declare class TextDecoder { constructor(label?: string, options?: { fatal?: boolean }); decode(input?: Uint8Array): string }
