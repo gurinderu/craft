@@ -583,7 +583,7 @@ function stripInternal(obj) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude logRunPrompt logRunDispatch logRunOutcome quietly
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
@@ -722,6 +722,19 @@ fi
 `
 }
 
+// The craft version a record or checkpoint payload claims, as text ('' when it claims none).
+/** @param {unknown} payload @returns {string} */
+function payloadVersion(payload) {
+  return String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
+}
+
+// The logger flags both prompts share: `--dir`, `--rejoin` and the shell-expanded session id, each
+// independent of the others (see logRunPrompt below), with the trailing space the command line needs.
+/** @param {string} dir @param {boolean} rejoin @returns {string} */
+function runDirFlags(dir, rejoin) {
+  return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+}
+
 // The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
 // readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
 // review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
@@ -747,7 +760,7 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // The version comes off the RECORD rather than from a parameter of its own: it is already there,
   // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
   // the record claims to be — which would file a record describing a run some other build made.
-  const version = String((record && typeof record === 'object' ? /** @type {{ craftVersion?: unknown }} */ (record).craftVersion : undefined) ?? '')
+  const version = payloadVersion(record)
   // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
   // runs, never composed by the model — the whole point (see the header note on the payload-copy
   // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
@@ -762,7 +775,7 @@ function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', di
   // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
   // rejoin search outright in that case (see its `target` comment), because the single candidate a
   // garbled sibling finds is its neighbour's LIVE directory.
-  const flags = `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+  const flags = runDirFlags(dir, rejoin)
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
