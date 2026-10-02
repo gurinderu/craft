@@ -137,7 +137,7 @@ const pr = argv['pr'] ? String(argv['pr']) : ''
 const report = argv['report'] ? String(argv['report']) : ''
 const base = argv['base'] ? String(argv['base']) : ''
 /** @type {unknown[]} */
-const priorLedger = Array.isArray(argv['priorLedger']) ? argv['priorLedger'] : []
+const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // this engine has no `repo` argument (see the refusal above) and always triages the checkout the
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
