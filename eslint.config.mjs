@@ -13,7 +13,7 @@ import tseslint from 'typescript-eslint'
 // its own type check builds — lib/tsconfig.json or opencode/plugin/tsconfig.json — so a rule sees the
 // same types tsc does (JSDoc types in .mjs, though not a JSDoc cast: the parser drops its parentheses).
 // typescript-eslint loads `typescript` from the root node_modules, hence the root devDependency pinned
-// to the same version as opencode/plugin's; the two pins move together. Only the rules of
+// to the same version as opencode/plugin's; the two pins move together (lib/typescript-pin.test.mjs fails when they part). Only the rules of
 // recommended-type-checked that report nothing on today's tree are on, so the gate stays zero-warning.
 // Left off, by what they report (all of lib and opencode/plugin, tests included): the no-unsafe-*
 // family (~1,970 hits: in lib, untyped JSON and journal values read as `any`; in the plugin, the
