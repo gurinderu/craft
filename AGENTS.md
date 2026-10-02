@@ -119,7 +119,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 |---|---|
 | Unit tests | `npm test` (`vitest run`; files in `vitest.config.mjs`) |
 | Lint (zero-warning, identical to CI) | `npm run lint` — read the raw exit code |
-| Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci --prefix opencode/plugin` once) |
+| Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci` and `npm ci --prefix opencode/plugin`: the plugin's tests import `vitest` from the root) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Typecheck the engines' own code `workflows/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`) | `npm run check:types:workflows` (same prerequisites) |
 | Syntax-check workflow scripts; byte-compare inlined regions; inlined code is strictly typed | `node lib/check-workflows.mjs` (needs `npm ci --prefix opencode/plugin` for tsc; `--fix` regenerates the regions) |
@@ -146,7 +146,7 @@ There is no formatter and no pre-commit hook: run every row above before pushing
 ## Code conventions
 - **Meaning lives in the realm, code references it**: a comment carrying rationale, discarded alternatives or the shape of an integration is a node; in code — "(realm `@nick/craft`, node #N)", for the discarded too ("not cached: #N"). Mechanics — in words in place. Having cited a node, check it says that; it diverged — fix the node. This repo is public (MIT, marketplace): references belong in `lib/` and `workflows/` code, not in `README.md`, `MAP.md` or skill bodies.
 - **A skill's or agent's `description` is delivery, not decoration**: a skill loads by its description, so a rule living only in the body never fires. Change a skill's behaviour — re-read its `description` in the same move.
-- **No runtime dependencies**: what ships rests on the Node standard library and `node --test`; the root `package.json` is `private` with devDependencies only (realm `@nick/craft`, #124).
+- **No runtime dependencies**: what ships rests on the Node standard library; the root `package.json` is `private` with devDependencies only — the test runner (Vitest, realm `@nick/craft`, #140) included (#124).
 - `eqeqeq` is `{ null: 'ignore' }` on purpose: `x != null` means "neither null nor undefined"; do not "fix" it to `!==`.
 - **Testing discipline**: unit tests cover `lib/**` and `opencode/plugin/**`; workflow scripts are exercised through `lib/engine-harness.mjs`, skill bodies only by static checkers. No coverage threshold. Logic that must be executed and sits in `workflows/*.js` is extracted into `lib/` and inlined back (realm `@nick/craft`, #120).
 - **Gotchas do not live here**: they are rule nodes on the realm steps they constrain — #119–#126 for the gate, the two deliveries, inlined regions and run records; reference them here and in code.
