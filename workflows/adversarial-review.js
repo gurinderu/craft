@@ -240,7 +240,7 @@ const isEscalated = (/** @type {{ lens?: string, severity: string }} */ f) => f.
 const CRAFT_VERSION = '0.22.0' // x-release-please-version
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
-// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings refuteRate
 /** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
@@ -263,6 +263,19 @@ function countBySeverity(findings) {
 function summarizeFindings(findings) {
   const bySeverity = countBySeverity(findings)
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
+}
+
+// Fraction of the judged candidates that were refuted: refuted / candidates, 2-dp, 0 when nothing was
+// judged. review and adversarial-review record it. Not (candidates - confirmed) / candidates: review's
+// `confirmed` excludes a "suspected" tier that is NOT refuted. rust-audit's unused-crates records
+// null rather than 0 when nothing was judged, and computes that in lib/audit-verification.mjs.
+/**
+ * @param {number} refuted
+ * @param {number} candidates
+ * @returns {number}
+ */
+function refuteRate(refuted, candidates) {
+  return candidates ? Math.round((refuted / candidates) * 100) / 100 : 0
 }
 // <<< craft-inline
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -1418,7 +1431,7 @@ await logRun({
     const s = summarizeFindings(confirmed.filter(f => (f.sources || []).includes(l)).map(capSeverity))
     return { dimension: l, verdict: '', findingCount: s.total, bySeverity: s.bySeverity }
   }),
-  verification: { candidates, confirmed: confirmed.length, refuteRate: candidates ? Math.round((refutedTotal / candidates) * 100) / 100 : 0 },
+  verification: { candidates, confirmed: confirmed.length, refuteRate: refuteRate(refutedTotal, candidates) },
   notRun: notRunLabels(),
   outputTokens: budget.spent(),
 })
