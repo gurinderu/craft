@@ -1,0 +1,26 @@
+# Reality — what a claim is checked against
+The realm is the model of the work, the repo is part of its embodiment; this file names the third thing — what the work becomes when it runs, and how to look at it. A claim is settled by its canonical carrier, never by the source that was supposed to produce it; tests are a rung of evidence, not a carrier.
+
+| Claim class | Canonical carrier | How to observe | Who |
+|---|---|---|---|
+| "the released plugin behaves this way for a consumer" | the installed plugin in a consuming repo | install from the marketplace and exercise it there; falsifier — the skill/agent/workflow is missing from the consumer's session or behaves otherwise | user |
+| "the manifests are valid" | the manifests as the official validator reads them | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` | agent |
+| "this skill/agent is well-formed and its `craft:` refs resolve" | the checker's verdict over `skills/`, `agents/`, `workflows/` | `node lib/check-skills.mjs` | agent |
+| "this workflow script still parses in the sandbox" | the script compiled inside the sandbox wrapper | `node lib/check-workflows.mjs` | agent |
+| "the two deliveries of a review agent reach the same required content" | the requirement keys each side's body reaches, per group of the checker's `REQUIREMENTS` registry | `node lib/check-delivery-parity.mjs` | agent |
+| "the helper logic is correct" | the test run — with the fix reverted, the test must fail | `node --test 'lib/**/*.test.mjs' 'opencode/**/*.test.mjs'` | agent |
+| "the engine does X on a run" (logic inside `workflows/*.js`) | the engine executed in the harness | `runEngine(name, {args, script})` from `lib/engine-harness.mjs` in a test; a string match on the script catches a deletion, not a defect | agent |
+| "the code is lint-clean" | ESLint over the linted scope | `npm run lint` — read the raw exit code, not a wrapper's summary | agent |
+| "the OpenCode plugin type-checks" | `tsc --noEmit --strict` over `opencode/plugin/*.ts` | `npm run check:types` (after `npm ci --prefix opencode/plugin`) | agent |
+| "the eval corpus is well-formed" | the checker's verdict | `node lib/check-evals.mjs` | agent |
+| "trunk actually contains this" | `origin/main` at the forge, never a local ref | `gh api repos/gurinderu/craft/commits/main --jq .sha` | agent |
+| "a session hook fires on its event and stays quiet otherwise" | the command stored in `.claude/settings.json`, fed a payload | `jq -r '<path>.command' .claude/settings.json`, then pipe `{tool_input:{command},tool_response:{stdout}}` into `sh -c` with it; falsifier — fires on `echo git push`, or prints invalid JSON | agent |
+| "a role agent's own bridge comes up" | the bridge doctor's probe of `.claude/agents/*.md` | `node ~/.iskron-bridge/iskron-bridge.mjs doctor` from the repo root; falsifier — any `НАДО:` line in the subagents section | agent |
+
+**A gate attests to form, not to behaviour.** A green suite proves the thing compiles, parses and matches its fixture — never that a function is called with what you think. Close a behavioural claim by executing it with before/after shown: revert the change, watch the test fail, restore it. Logic in a file that cannot be imported (`workflows/*.js`) is extracted into `lib/` so it can be executed.
+
+**Ceiling**:
+- "this skill triggers on this prompt" — the triggering evals are a local harness that needs a live model and are excluded from CI (`evals/README.md`); a green CI says nothing about triggering. The ceiling is a local eval run.
+- "the review engine produces good findings" — a judgment over someone else's code; no carrier in this repo decides it. Closed only by the owner's reading of a real run's `run-record`.
+
+**The table grows by use.** A session that learned a carrier the table lacks (an unnamed carrier, an observation reachable or not — then under *Ceiling*, a wrong command here) writes the row then, before closing the work that taught it. Only what observation needs goes here; dated measurements and history are realm nodes.
