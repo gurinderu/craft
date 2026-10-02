@@ -49,6 +49,9 @@ export default [
       'opencode/plugin/node_modules/**',
     ],
   },
+  // No inline `eslint-disable`: the complexity bars admit no exception (realm @nick/craft, #155), and no
+  // other rule is waived in place either — as the engines' lint already refuses it (lib/engine-lint.mjs).
+  { linterOptions: { noInlineConfig: true } },
   js.configs.recommended,
   {
     files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js', '.dependency-cruiser.mjs'],
