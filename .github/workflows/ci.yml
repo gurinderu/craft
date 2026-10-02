@@ -75,8 +75,8 @@ jobs:
       - name: Check evals corpus
         run: node lib/check-evals.mjs
       # Unused files, exports and dependencies across lib/, workflows/ and the opencode plugin
-      # (knip.config.js). The engines' craft-inline fences count as imports, so an inlined export
-      # is used. Production mode drops tests and checks what the shipped entries reach, so an
+      # (knip.config.js). An inlined export counts as used only where an engine references it outside
+      # its source's own craft-inline regions: listed in a fence but never called is dead. Production mode drops tests and checks what the shipped entries reach, so an
       # export only a test uses is dead here. The default mode, tests included, is kept beside it:
       # only it sees devDependencies and what the tests import (an unused or unlisted package).
       - name: Check unused code, shipped entries (knip --production)

@@ -1435,7 +1435,7 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
-// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier alreadyCarried ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross TRACKED_MARK markTrackedUnverified
+// >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne shouldRedTeam carriedKey findCarrier ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross TRACKED_MARK markTrackedUnverified
 // Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
 // next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
 // flattenField, so one runaway agent response cannot balloon either path.
@@ -1634,19 +1634,6 @@ function findCarrier(f, priors, fallbackMatch) {
     if (key && pk) return key === pk
     return typeof fallbackMatch === 'function' ? !!fallbackMatch(f, p) : false
   }) || null
-}
-
-// True when `f` (a finding the lenses just discovered) is already tracked by one of `priors`.
-/**
- * @template {Finding} F
- * @template {Finding} P
- * @param {F} f
- * @param {P[] | null | undefined} priors
- * @param {FallbackMatch<F, P>} [fallbackMatch]
- * @returns {boolean}
- */
-function alreadyCarried(f, priors, fallbackMatch) {
-  return !!findCarrier(f, priors, fallbackMatch)
 }
 
 // How many absorbed reports are named individually on one host before the rest collapse to a count.
@@ -2840,7 +2827,7 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
 
 // ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
 // Mirrors: countBySeverity, summarizeFindings, reviewVerdict, titleShingle,
-// fingerprint, shingleOverlap, matchesPrior, DISPOSITION_FROM_TRIAGE, dispositionFromTriage,
+// fingerprint, shingleOverlap, matchesPrior,
 // rereviewVerdict. (selectPriorRound is NOT mirrored: round selection, ancestry and record loading
 // now happen in `craft-log-run.mjs prior-round`, so no mirror is needed — a haiku still runs the
 // command and carries the bytes back, but it decides nothing.)
@@ -3583,7 +3570,7 @@ function key(f) {
   return `${(f['file'] || '').toLowerCase()}:${f['line'] || 0}:${(f['title'] || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
 }
 
-// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior DISPOSITION_FROM_TRIAGE dispositionFromTriage rereviewVerdict reReviewMemory branchFromAbbrevRef ENGINE_REVISION FP_BASIS_SINCE fpBasisOf fpBasisEstablished sameFpBasis basisVerdictFromRevisions
+// >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior rereviewVerdict reReviewMemory branchFromAbbrevRef ENGINE_REVISION FP_BASIS_SINCE fpBasisOf fpBasisEstablished sameFpBasis basisVerdictFromRevisions
 // Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
 // for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 /**
@@ -3674,18 +3661,6 @@ function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
   if ((cur?.ruleId || '') !== (prior?.ruleId || '')) return false
   if ((cur?.symbol || '') && (prior?.symbol || '') && /** @type {FindingKey} */ (cur).symbol !== /** @type {FindingKey} */ (prior).symbol) return false
   return shingleOverlap(cur?.title, prior?.title) >= threshold
-}
-
-// A ledger disposition sourced from a human triage decision. accept/needs-decision/conflict stay
-// `open` (still to be adjudicated or fixed); only reject/defer carry a settled disposition.
-const DISPOSITION_FROM_TRIAGE = { reject: 'rejected', defer: 'deferred', accept: 'open', 'needs-decision': 'open', conflict: 'open' }
-
-/**
- * @param {unknown} v
- * @returns {string}
- */
-function dispositionFromTriage(v) {
-  return Object.prototype.hasOwnProperty.call(DISPOSITION_FROM_TRIAGE, /** @type {PropertyKey} */ (v)) ? DISPOSITION_FROM_TRIAGE[/** @type {TriageVerdict} */ (v)] : 'open'
 }
 
 // Re-review verdict: reviewVerdict over the findings that still matter this round. resolved and
