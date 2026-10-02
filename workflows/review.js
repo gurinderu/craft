@@ -5643,6 +5643,110 @@ function logScoutPlan(profile, scout, plan) {
 }
 
 // ================= Per-profile pipeline: scout → gate → lenses → verify → critic =================
+/** The single dispatch point's record of what ran, for the optional and surface-gate tallies. @param {string} lens */
+function noteLensDispatched(lens) {
+  // The single dispatch point for every lens on every path. Recording here — not at plan time — is
+  // what makes the report and the run record physically unable to disagree with what happened.
+  if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
+  // realm @nick/craft #102: mirrors the line above — a surface-gated lens that actually ran in ANY
+  // profile is subtracted from the reported/recorded "dropped" set by surfaceGateTally().
+  if (SURFACE_GATED_LENSES[lens]) surfaceGateDispatched.add(lens)
+}
+
+/** The preflight pass and its declared-probe audit, both logged. @param {Profile} profile */
+async function runPreflight(profile) {
+// Cheap and first: resolve the runner, the compile blockers and what CI already covers, so the gate
+// spends its time on signals rather than on discovering its own environment. Best-effort by design —
+// a preflight that dies just leaves the gate to work it out the old way.
+const preflight = await ragent(preflightPrompt(profile, { baseRef }),
+  // 5min, not the phase default. Three numbers set it, and the deadline must clear ALL of them:
+  //  · the prompt declares a 3min ceiling, and a deadline at twice that makes the budget advisory —
+  //    nothing then stops a pass that ignores the ceiling. 5min stays under 2x and keeps it real.
+  //  · the measured cost of an earlier version of this pass was 207s, ALREADY past three minutes.
+  //  · the clock starts at DISPATCH, not at execution, so it covers queue wait PLUS the run.
+  // A deadline between those last two (210000 did exactly this) times out work that would have
+  // landed. Losing preflight is survivable — the gate re-establishes everything itself, the slow
+  // way — so the bound is set above the measured cost rather than tight against it.
+  // THE COST ARGUMENT THAT USED TO STAND HERE IS NO LONGER TRUE, and the constant survives it.
+  // It read: a miss costs TWO dispatches, because `ragent` abandoned the wait and re-dispatched
+  // with a fresh deadline, so a hung pass burned up to 10min. The deadline is now ONE budget
+  // shared by the attempts, and a deadline fire spends it by definition — so a miss costs one
+  // dispatch and at most these 5 minutes, and the second attempt exists only for the fast death
+  // that leaves budget behind. 300000 is therefore now a straightforwardly bounded 5min ceiling,
+  // not a 10min one accepted as a trade.
+  { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
+// The declared-probe audit. Named in the log and carried into the record so a breach of the
+// "ask each source once" rule is a fact of the run rather than a matter of the prompt's manners.
+const probeViolations = auditPreflightProbes(preflight)
+if (probeViolations.length) {
+  log(`⚠️ [${profile.id}] PREFLIGHT PROBE BUDGET BREACHED (${probeViolations.length}): ${probeViolations.join(' · ')}`)
+}
+if (preflight) {
+  log(preflightLine(profile, preflight))
+} else {
+  // Never silent: no preflight line at all would read as "this run had no preflight step".
+  log(`⚠️ [${profile.id}] Preflight unavailable (failed or passed its deadline) — the gate establishes the environment itself, and its provenance says so.`)
+  // DELIBERATELY NOT `notRun`, unlike a dead scout. `notRun` drives the INCOMPLETE verdict and
+  // means "a review step did not happen; re-run it". A dead scout satisfies that: the plan
+  // degrades to the conservative fallback and the scouted intent is genuinely lost. A dead
+  // preflight loses no coverage — every fact it resolves is re-established by the gate, and
+  // preflightBrief() tells the gate to do exactly that. It costs time, not signal. Marking such a
+  // run INCOMPLETE would flag a pure performance fallback as an unfinished review and dilute the
+  // marker for the cases that mean it. The loss stays visible where it belongs: this log line and
+  // `preflight.status: 'unavailable'` in the run record.
+}
+return { preflight, probeViolations }
+}
+
+/** @param {Profile} profile @param {Preflight} preflight */
+function preflightLine(profile, preflight) {
+  return `[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
+    + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
+    + ` · CI covers ${preflight.ciCovers?.length ? preflight.ciCovers.join(', ') : 'nothing'}`
+    + `${preflight.missingTools?.length ? ` · missing: ${preflight.missingTools.join(', ')}` : ''}`
+    + `${preflightIsPartial(preflight) ? ' · ⚠️ PARTIAL — see notes' : ''}`
+}
+
+/** @param {GateAnswer | null} gate */
+function gateFields(gate) {
+  return {
+    gateStatus: gate?.status ?? 'unknown',
+    gateProvenance: gate?.provenance ?? 'gate not established',
+    failedChecks: gate?.failedChecks ?? [],
+    // Red, real, and NOT this diff's doing. Kept out of failedChecks so it cannot stop the review, and
+    // out of notes so it cannot be quietly lost: it prints on every verdict, including a green one.
+    carriedChecks: gate?.carriedChecks ?? [],
+  }
+}
+
+/** @param {GateAnswer | null} gate */
+function gateSeedFindings(gate) {
+  return (gate?.seedFindings ?? []).map((/** @type {Finding} */ f) => ({ ...f, source: f['source'] || 'tool' }))
+}
+
+/** @param {Profile} profile @param {string} gateStatus @param {string} gateProvenance @param {string[]} failedChecks @param {string[]} carriedChecks */
+function logGate(profile, gateStatus, gateProvenance, failedChecks, carriedChecks) {
+  log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}${carriedChecks.length ? ` · ${carriedChecks.length} pre-existing (carried, not blocking)` : ''}`)
+}
+
+/** @param {string} gateProvenance @param {Preflight | null} preflight */
+function toolProvenanceFor(gateProvenance, preflight) {
+  // What a VERIFIER needs to run a tool, as opposed to what the RECORD needs to explain the gate.
+  // Kept separate so the preflight's runner prefix never leaks into the persisted provenance string.
+  return [
+    gateProvenance,
+    preflight?.runner ? `run every tool as \`${flattenField(preflight.runner).trim()} <cmd>\` — bare invocations die in missing system libraries` : '',
+    preflight?.blockers?.length ? `CANNOT compile here: ${preflight.blockers.map(flattenField).join('; ')} — a tool needing a build is unrunnable, say so rather than reporting its error as evidence` : '',
+  ].filter(Boolean).join(' · ')
+}
+
+/** The preflight as the plan checkpoint records it. @param {Preflight | null} preflight @param {string[]} probeViolations */
+function preflightCheckpoint(preflight, probeViolations) {
+  return preflight
+    ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes, probeViolations }
+    : { status: 'unavailable' }
+}
+
 /** @param {Profile} profile */
 async function reviewProfile(profile) {
   // ---- Scout ----
@@ -5694,12 +5798,7 @@ async function reviewProfile(profile) {
   const answeredFindings = (/** @type {unknown} */ r) => r != null && Array.isArray(/** @type {{ findings?: unknown }} */ (r).findings)
   /** @param {string} lens @param {string} prompt @param {string} phaseName @param {string} labelSuffix @param {Slice | null} [slice] */
   async function dispatchLens(lens, prompt, phaseName, labelSuffix, slice = null) {
-    // The single dispatch point for every lens on every path. Recording here — not at plan time — is
-    // what makes the report and the run record physically unable to disagree with what happened.
-    if (OPTIONAL_LENSES.includes(lens)) optionalDispatched.add(lens)
-    // realm @nick/craft #102: mirrors the line above — a surface-gated lens that actually ran in ANY
-    // profile is subtracted from the reported/recorded "dropped" set by surfaceGateTally().
-    if (SURFACE_GATED_LENSES[lens]) surfaceGateDispatched.add(lens)
+    noteLensDispatched(lens)
     const opts = { label: `lens:${profile.id}:${lens}${labelSuffix}`, phase: phaseName, schema: FINDINGS_SCHEMA, model: plan.lensModel }
     const runGeneric = async () => {
       try {
@@ -5722,90 +5821,43 @@ async function reviewProfile(profile) {
       if (answeredFindings(fallback)) noteReviewerAgentFallback(profile)
       return fallback
     } catch (e) {
-      const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
-      // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
-      // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
-      // as "died without an error" — and any sibling slice could overwrite it.
-      if (!isAgentTypeMissing(msg, profile.reviewerAgent)) {
-        // Recorded first, so a generic run that also returns nothing still reports this error (a generic
-        // throw overwrites it with its own). Not memoized: a real unregistered type in unknown wording
-        // costs one failed agent dispatch per lens — the price of not guessing at the text (#116).
-        lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160))
-        if (!/not found/i.test(msg)) return null
-        const fallback = await runGeneric()
-        if (answeredFindings(fallback)) { lensFailures.delete(dispatchKey(lens, slice)); noteReviewerAgentNotFound(profile, msg.slice(0, 160)) }
-        return fallback
-      }
-      reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
-      log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
-      return await runGeneric()
+      return reviewerAgentThrew(e, lens, slice, runGeneric)
     }
   }
 
+  // The reviewer-agent dispatch threw: an unregistered agent type routes this and every later lens to
+  // the generic subagent; any other error is this dispatch's failure, retried generically only when it reads /not found/.
+  /** @param {unknown} e @param {string} lens @param {Slice | null} slice @param {() => Promise<FindingsAnswer | null>} runGeneric */
+  async function reviewerAgentThrew(e, lens, slice, runGeneric) {
+    const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
+    // dispatchKey, like the other write to this map. Keyed by bare name the real error message was
+    // looked up under a key nobody uses, so a sliced dispatch that died WITH a reason was reported
+    // as "died without an error" — and any sibling slice could overwrite it.
+    if (!isAgentTypeMissing(msg, profile.reviewerAgent)) {
+      // Recorded first, so a generic run that also returns nothing still reports this error (a generic
+      // throw overwrites it with its own). Not memoized: a real unregistered type in unknown wording
+      // costs one failed agent dispatch per lens — the price of not guessing at the text (#116).
+      lensFailures.set(dispatchKey(lens, slice), msg.slice(0, 160))
+      if (!/not found/i.test(msg)) return null
+      const fallback = await runGeneric()
+      if (answeredFindings(fallback)) { lensFailures.delete(dispatchKey(lens, slice)); noteReviewerAgentNotFound(profile, msg.slice(0, 160)) }
+      return fallback
+    }
+    reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
+    log(`⚠️ [${profile.id}] agent type '${profile.reviewerAgent}' not registered here — routing remaining lenses to the generic subagent`)
+    return await runGeneric()
+  }
+
   // ---- Preflight ----
-  // Cheap and first: resolve the runner, the compile blockers and what CI already covers, so the gate
-  // spends its time on signals rather than on discovering its own environment. Best-effort by design —
-  // a preflight that dies just leaves the gate to work it out the old way.
-  const preflight = await ragent(preflightPrompt(profile, { baseRef }),
-    // 5min, not the phase default. Three numbers set it, and the deadline must clear ALL of them:
-    //  · the prompt declares a 3min ceiling, and a deadline at twice that makes the budget advisory —
-    //    nothing then stops a pass that ignores the ceiling. 5min stays under 2x and keeps it real.
-    //  · the measured cost of an earlier version of this pass was 207s, ALREADY past three minutes.
-    //  · the clock starts at DISPATCH, not at execution, so it covers queue wait PLUS the run.
-    // A deadline between those last two (210000 did exactly this) times out work that would have
-    // landed. Losing preflight is survivable — the gate re-establishes everything itself, the slow
-    // way — so the bound is set above the measured cost rather than tight against it.
-    // THE COST ARGUMENT THAT USED TO STAND HERE IS NO LONGER TRUE, and the constant survives it.
-    // It read: a miss costs TWO dispatches, because `ragent` abandoned the wait and re-dispatched
-    // with a fresh deadline, so a hung pass burned up to 10min. The deadline is now ONE budget
-    // shared by the attempts, and a deadline fire spends it by definition — so a miss costs one
-    // dispatch and at most these 5 minutes, and the second attempt exists only for the fast death
-    // that leaves budget behind. 300000 is therefore now a straightforwardly bounded 5min ceiling,
-    // not a 10min one accepted as a trade.
-    { label: `preflight:${profile.id}`, schema: PREFLIGHT_SCHEMA, phase: 'Gate', model: 'haiku', effort: 'low', deadlineMs: 300000 })
-  // The declared-probe audit. Named in the log and carried into the record so a breach of the
-  // "ask each source once" rule is a fact of the run rather than a matter of the prompt's manners.
-  const probeViolations = auditPreflightProbes(preflight)
-  if (probeViolations.length) {
-    log(`⚠️ [${profile.id}] PREFLIGHT PROBE BUDGET BREACHED (${probeViolations.length}): ${probeViolations.join(' · ')}`)
-  }
-  if (preflight) {
-    log(`[${profile.id}] Preflight: runner ${preflight.runner ? `\`${preflight.runner.trim()}\`` : '(none)'}`
-      + ` · ${preflight.blockers?.length ? `${preflight.blockers.length} compile blocker(s)` : 'no compile blockers'}`
-      + ` · CI covers ${preflight.ciCovers?.length ? preflight.ciCovers.join(', ') : 'nothing'}`
-      + `${preflight.missingTools?.length ? ` · missing: ${preflight.missingTools.join(', ')}` : ''}`
-      + `${preflightIsPartial(preflight) ? ' · ⚠️ PARTIAL — see notes' : ''}`)
-  } else {
-    // Never silent: no preflight line at all would read as "this run had no preflight step".
-    log(`⚠️ [${profile.id}] Preflight unavailable (failed or passed its deadline) — the gate establishes the environment itself, and its provenance says so.`)
-    // DELIBERATELY NOT `notRun`, unlike a dead scout. `notRun` drives the INCOMPLETE verdict and
-    // means "a review step did not happen; re-run it". A dead scout satisfies that: the plan
-    // degrades to the conservative fallback and the scouted intent is genuinely lost. A dead
-    // preflight loses no coverage — every fact it resolves is re-established by the gate, and
-    // preflightBrief() tells the gate to do exactly that. It costs time, not signal. Marking such a
-    // run INCOMPLETE would flag a pure performance fallback as an unfinished review and dilute the
-    // marker for the cases that mean it. The loss stays visible where it belongs: this log line and
-    // `preflight.status: 'unavailable'` in the run record.
-  }
+  const { preflight, probeViolations } = await runPreflight(profile)
 
   // ---- Gate ----
   const gate = await ragent(profile.gate({ baseRef, isLibrary: plan.isLibrary, securitySensitive: plan.securitySensitive, preflight }),
     { label: `gate:${profile.id}`, schema: GATE_SCHEMA, phase: 'Gate', effort: 'medium' })
-  const gateStatus = gate?.status ?? 'unknown'
-  const gateProvenance = gate?.provenance ?? 'gate not established'
-  const failedChecks = gate?.failedChecks ?? []
-  // Red, real, and NOT this diff's doing. Kept out of failedChecks so it cannot stop the review, and
-  // out of notes so it cannot be quietly lost: it prints on every verdict, including a green one.
-  const carriedChecks = gate?.carriedChecks ?? []
-  const seedFindings = (gate?.seedFindings ?? []).map((/** @type {Finding} */ f) => ({ ...f, source: f['source'] || 'tool' }))
-  log(`[${profile.id}] Gate: ${gateStatus} — ${gateProvenance}${failedChecks.length ? ` · failed: ${failedChecks.join(', ')}` : ''}${carriedChecks.length ? ` · ${carriedChecks.length} pre-existing (carried, not blocking)` : ''}`)
-  // What a VERIFIER needs to run a tool, as opposed to what the RECORD needs to explain the gate.
-  // Kept separate so the preflight's runner prefix never leaks into the persisted provenance string.
-  const toolProvenance = [
-    gateProvenance,
-    preflight?.runner ? `run every tool as \`${flattenField(preflight.runner).trim()} <cmd>\` — bare invocations die in missing system libraries` : '',
-    preflight?.blockers?.length ? `CANNOT compile here: ${preflight.blockers.map(flattenField).join('; ')} — a tool needing a build is unrunnable, say so rather than reporting its error as evidence` : '',
-  ].filter(Boolean).join(' · ')
+  const { gateStatus, gateProvenance, failedChecks, carriedChecks } = gateFields(gate)
+  const seedFindings = gateSeedFindings(gate)
+  logGate(profile, gateStatus, gateProvenance, failedChecks, carriedChecks)
+  const toolProvenance = toolProvenanceFor(gateProvenance, preflight)
   // First checkpoint: from here on, a run that dies still says what was planned and whether the tree
   // was green. Everything before this point is cheap to redo; everything after it is not.
   // `head` is the RUN'S HEAD, the same value the final record carries, and the diff base rides under
@@ -5825,9 +5877,7 @@ async function reviewProfile(profile) {
     gate: { status: gateStatus, provenance: gateProvenance, failedChecks, carriedChecks, seeds: seedFindings.length },
     // `status` so a reader of the record can tell a preflight that ran and found nothing from one
     // that never answered — a bare `null` collapsed both into the same, more permissive, reading.
-    preflight: preflight
-      ? { status: preflightIsPartial(preflight) ? 'partial' : 'ok', runner: preflight.runner, blockers: preflight.blockers, missingTools: preflight.missingTools, ciCovers: preflight.ciCovers, notes: preflight.notes, probeViolations }
-      : { status: 'unavailable' },
+    preflight: preflightCheckpoint(preflight, probeViolations),
   }, 'Gate')
   if (gateStatus === 'fail') {
     return { profile, plan, surfaceDropped, optionalScope, ranLenses: /** @type {string[]} */ ([]), lensRounds: [], gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: [...scoutNotRun], criticNotes: '', probeViolations }
@@ -5839,14 +5889,19 @@ async function reviewProfile(profile) {
   // would fail with "agent type '<x>' not found" before the memo is set. One cheap probe collapses
   // that opening wave to a single attempt. Best-effort: only a thrown /not found/ marks it missing;
   // a result, a null, or an unrelated error leaves the per-lens fallback to decide.
-  if (profile.reviewerAgent && !reviewerAgentMissing) {
-    try {
-      await agent('Reply with the single word: OK.', { label: `probe:${profile.id}`, phase: 'Gate', model: 'haiku', effort: 'low', agentType: profile.reviewerAgent })
-    } catch (e) {
-      const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
-      if (isAgentTypeMissing(msg, profile.reviewerAgent)) {
-        reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
-        log(`[${profile.id}] reviewer agent '${profile.reviewerAgent}' not registered — all lenses will use the generic subagent`)
+  await probeReviewerAgent()
+
+  // The probe: only a thrown /not found/ marks the reviewer agent missing.
+  async function probeReviewerAgent() {
+    if (profile.reviewerAgent && !reviewerAgentMissing) {
+      try {
+        await agent('Reply with the single word: OK.', { label: `probe:${profile.id}`, phase: 'Gate', model: 'haiku', effort: 'low', agentType: profile.reviewerAgent })
+      } catch (e) {
+        const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
+        if (isAgentTypeMissing(msg, profile.reviewerAgent)) {
+          reviewerAgentMissing = true; noteReviewerAgentMissing(profile, msg)
+          log(`[${profile.id}] reviewer agent '${profile.reviewerAgent}' not registered — all lenses will use the generic subagent`)
+        }
       }
     }
   }
