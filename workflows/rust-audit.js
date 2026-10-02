@@ -161,13 +161,18 @@ function normalizeArgs(args, warn = () => {}) {
 // <<< craft-inline
 const A = normalizeArgs(args, log)
 
-const baseArg = A['base'] ? String(A['base']) : ''
+/** A text argument: its string form when given (truthy), else ''. @param {string} key @returns {string} */
+function textArg(key) {
+  return A[key] ? String(A[key]) : ''
+}
+
+const baseArg = textArg('base')
 const runMutants = !!A['mutants']
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. This engine has NO
 // `repo` argument — see the refusal below; it audits the checkout the session runs in, always. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
-const craftRootArg = A['craftRoot'] ? String(A['craftRoot']) : ''
+const craftRootArg = textArg('craftRoot')
 
 const CRATE_ITEM = {
   type: 'object',
@@ -1024,35 +1029,49 @@ async function safeAgent(prompt, opts = {}) {
   try {
     const res = await agent(prompt, opts)
     if (res != null) return res
-    // null: try generic once; don't memoize (may be transient). Counted only when the generic run
-    // ANSWERED: the section says what entered the audit without the rubric, and a dispatch that died on
-    // both paths is a dead dimension (NOT RUN), the same outcome as one that threw.
-    const fallback = await agent(prompt, generic)
-    // Falsy, not just null: dimResult reads any falsy result as a dead dimension.
-    if (fallback) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
-    return fallback
+    return await genericAfterNull(prompt, generic, at)
   } catch (e) {
-    const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
-    // A "not found" that does not name the agent type may still be the harness's way of saying it —
-    // its live wording is unobserved (#116) — so the dimension keeps its coverage on the generic
-    // subagent, said softly (no install line), and is not memoized: a real unregistered type in unknown
-    // wording costs one failed agent dispatch per dimension — the price of not guessing at the text.
-    if (!isAgentTypeMissing(msg, at)) {
-      if (!/not found/i.test(msg)) throw e
-      const fallback = await agent(prompt, generic)
-      // Dead on both paths: the agent's error is the only one there is, so it is rethrown for the
-      // dimension's NOT RUN line rather than lost to an anonymous "no result".
-      if (!fallback) throw e
-      agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
-      return fallback
-    }
-    agentTypeMissing.set(at, msg)
-    log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
+    return await genericAfterThrow(e, prompt, generic, at)
+  }
+}
+/**
+ * null: try generic once; don't memoize (may be transient). Counted only when the generic run
+ * ANSWERED: the section says what entered the audit without the rubric, and a dispatch that died on
+ * both paths is a dead dimension (NOT RUN), the same outcome as one that threw.
+ * @param {string} prompt @param {AgentOptions} generic @param {string} at @returns {Promise<unknown>}
+ */
+async function genericAfterNull(prompt, generic, at) {
+  const fallback = await agent(prompt, generic)
+  // Falsy, not just null: dimResult reads any falsy result as a dead dimension.
+  if (fallback) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
+  return fallback
+}
+/**
+ * The agent type's dispatch threw: fall back to the generic subagent when the error says the type is
+ * missing (memoized) or says "not found" in words that may mean it (not memoized); rethrow otherwise.
+ * @param {unknown} e @param {string} prompt @param {AgentOptions} generic @param {string} at @returns {Promise<unknown>}
+ */
+async function genericAfterThrow(e, prompt, generic, at) {
+  const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
+  // A "not found" that does not name the agent type may still be the harness's way of saying it —
+  // its live wording is unobserved (#116) — so the dimension keeps its coverage on the generic
+  // subagent, said softly (no install line), and is not memoized: a real unregistered type in unknown
+  // wording costs one failed agent dispatch per dimension — the price of not guessing at the text.
+  if (!isAgentTypeMissing(msg, at)) {
+    if (!/not found/i.test(msg)) throw e
     const fallback = await agent(prompt, generic)
-    // Dead on the generic path too: the dimension is NOT RUN, and its line names the agent's error.
+    // Dead on both paths: the agent's error is the only one there is, so it is rethrown for the
+    // dimension's NOT RUN line rather than lost to an anonymous "no result".
     if (!fallback) throw e
+    agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
     return fallback
   }
+  agentTypeMissing.set(at, msg)
+  log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
+  const fallback = await agent(prompt, generic)
+  // Dead on the generic path too: the dimension is NOT RUN, and its line names the agent's error.
+  if (!fallback) throw e
+  return fallback
 }
 const agentSection = () => agentUnavailableSection(
   [...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
@@ -1079,7 +1098,8 @@ const agentFallbackCounts = () => {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A['repo']) {
+/** Files the refusal's record and returns its verdict. @param {unknown} repo @returns {Promise<string>} */
+async function refuseRepo(repo) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'rust-audit',
     nested: false, via: null,
@@ -1091,19 +1111,26 @@ if (A['repo']) {
   })
   return [
     `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(repo)}\` was given, but \`rust-audit\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
     ``,
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`rust-audit\` there.`,
   ].join('\n')
+}
+
+if (A['repo']) return await refuseRepo(A['repo'])
+
+/** The scout's step 1: the given base, or the fallbacks to try. @returns {string} */
+function baseInstruction() {
+  return baseArg
+    ? `Use \`${baseArg}\` as the base ref.`
+    : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`.'
 }
 
 phase('Scout')
 const scout = /** @type {ScoutResult | null} */ (await agent(
   `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
 
-1. Determine the diff base. ${baseArg
-    ? `Use \`${baseArg}\` as the base ref.`
-    : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`.'}
+1. Determine the diff base. ${baseInstruction()}
 2. hasDiff = true if \`git diff --name-only <base>...HEAD\` lists any \`.rs\` file, OR \`git status --porcelain\` shows uncommitted \`.rs\` changes.
 3. hasUnsafe = true if \`grep -rnE "\\bunsafe\\b" --include=*.rs .\` finds any match (a rough check is fine; ignore obvious comment-only hits if cheap to do).
 4. baseRef = the ref you actually used (empty string if none resolved).
@@ -1114,10 +1141,27 @@ const scout = /** @type {ScoutResult | null} */ (await agent(
   // Scout is pure mechanics (git refs + grep) — run it cheap: Haiku at low effort.
   { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
 ))
-// scout is null if the agent was skipped or died — fall back to safe defaults rather than crash.
-const baseRef = scout?.baseRef ?? ''
-const hasUnsafe = scout?.hasUnsafe ?? true // fail-safe: run Miri when detection didn't resolve
-const repoRoot = typeof scout?.repoRoot === 'string' ? scout.repoRoot.trim() : ''
+/**
+ * What the audit reads from the scout. scout is null if the agent was skipped or died — fall back to
+ * safe defaults rather than crash.
+ * @param {ScoutResult | null} s
+ * @returns {{ baseRef: string, hasUnsafe: boolean, repoRoot: string, crates: CrateItem[], changedCrates: CrateItem[], edges: EdgeItem[], notes: string }}
+ */
+function scoutFacts(s) {
+  const noNotes = 'scout produced no result — assuming unsafe present, no base ref'
+  // fail-safe: run Miri when detection didn't resolve
+  if (!s) return { baseRef: '', hasUnsafe: true, repoRoot: '', crates: [], changedCrates: [], edges: [], notes: noNotes }
+  return {
+    baseRef: s.baseRef ?? '',
+    hasUnsafe: s.hasUnsafe ?? true,
+    repoRoot: typeof s.repoRoot === 'string' ? s.repoRoot.trim() : '',
+    crates: Array.isArray(s.crates) ? s.crates : [],
+    changedCrates: Array.isArray(s.changedCrates) ? s.changedCrates : [],
+    edges: Array.isArray(s.edges) ? s.edges : [],
+    notes: s.notes ?? noNotes,
+  }
+}
+const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scoutNotes } = scoutFacts(scout)
 // A crate directory must reach the nested `review` as a REPO-RELATIVE pathspec. Asking the scout for
 // one is not enough: `cargo metadata` prints `manifest_path` absolute, so a scout that copies it out
 // hands back absolute crate directories — and `review` now REFUSES an absolute `path` (it cannot
@@ -1153,19 +1197,18 @@ function crateScope(p) {
     if (segs[0] === '..') return null
     return segs.join('/') || '.'
   }
+  return absoluteScope(raw)
+}
+// An absolute crate path made relative to the repo root, or null when it does not resolve inside it.
+/** @param {string} raw @returns {string | null} */
+function absoluteScope(raw) {
   const r = pathSegments(repoRoot)
   const abs = pathSegments(raw)
   if (!repoRoot || !r.length || abs.length < r.length) return null
   for (let i = 0; i < r.length; i++) if (abs[i] !== r[i]) return null
   return abs.slice(r.length).join('/') || '.'
 }
-/** @type {CrateItem[]} */
-const crates = Array.isArray(scout?.crates) ? scout.crates : []
-/** @type {CrateItem[]} */
-const changedCrates = Array.isArray(scout?.changedCrates) ? scout.changedCrates : []
-/** @type {EdgeItem[]} */
-const edges = Array.isArray(scout?.edges) ? scout.edges : []
-log(scout?.notes ?? 'scout produced no result — assuming unsafe present, no base ref')
+log(scoutNotes)
 
 phase('Audit')
 
@@ -1193,6 +1236,27 @@ function verdictLine(report) {
   return null
 }
 
+/** @param {string | null} line @param {boolean} incomplete @returns {string} */
+function reviewVerdict(line, incomplete) {
+  if (line == null) return 'Warning'
+  if (/⛔|Block/.test(line)) return 'Block'
+  if (/⚠️|Warning/.test(line)) return 'Warning'
+  if (incomplete) return 'Warning'
+  return /✅|Approve/.test(line) ? 'Approve' : 'Warning'
+}
+
+// The summary reads the SAME `incomplete` flag as the verdict, so the two can never diverge on
+// it: a `⛔ Block (INCOMPLETE)` is a Block AND carries the partial-coverage clause, never a bare
+// "uncovered" that would report one dimension as both a Block and a mere absence of coverage.
+/** @param {string | null} line @param {string} verdict @param {boolean} incomplete @returns {string} */
+function reviewSummary(line, verdict, incomplete) {
+  if (line == null) return 'Deep review verdict could not be read — this dimension is unverified, not clean.'
+  if (verdict === 'Block') return `Deep review returned a BLOCK — blocking findings below${incomplete ? '; coverage was also partial, so there may be more' : ''}.`
+  return incomplete
+    ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
+    : 'Elastic deep review — see findings below.'
+}
+
 /**
  * @param {string} dimension
  * @param {unknown} report
@@ -1211,21 +1275,8 @@ function reviewResult(dimension, report) {
   // cannot un-find a finding that was already made, so it must not be downgraded to Warning. Only an
   // otherwise-green verdict is voided by incompleteness, because an Approve is a claim about what was
   // NOT found and holds only over what was actually looked at. Anything unreadable is Warning.
-  const verdict = line == null ? 'Warning'
-    : /⛔|Block/.test(line) ? 'Block'
-      : /⚠️|Warning/.test(line) ? 'Warning'
-        : incomplete ? 'Warning'
-          : /✅|Approve/.test(line) ? 'Approve' : 'Warning'
-  // The summary reads the SAME `incomplete` flag as the verdict above, so the two can never diverge on
-  // it: a `⛔ Block (INCOMPLETE)` is a Block AND carries the partial-coverage clause, never a bare
-  // "uncovered" that would report one dimension as both a Block and a mere absence of coverage.
-  const summary = line == null
-    ? 'Deep review verdict could not be read — this dimension is unverified, not clean.'
-    : verdict === 'Block'
-      ? `Deep review returned a BLOCK — blocking findings below${incomplete ? '; coverage was also partial, so there may be more' : ''}.`
-      : incomplete
-        ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
-        : 'Elastic deep review — see findings below.'
+  const verdict = reviewVerdict(line, incomplete)
+  const summary = reviewSummary(line, verdict, incomplete)
   return {
     dimension,
     verdict,
@@ -1350,68 +1401,76 @@ const dispatched = []
 
 // Review dimension — per-crate fan-out (feature A). changedCrates → diff-scoped; no base → all
 // crates; 0 or 1 crate → today's single whole-workspace review.
-const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
-if (reviewCrates.length > 1) {
-  for (const c of reviewCrates) {
-    const scope = crateScope(c.path)
-    if (scope == null) {
-      // Dispatching it unscoped would review the WHOLE workspace under this crate's label — the
-      // failure this family exists to end. A null thunk lands in the NOT-RUN bookkeeping, which is
-      // what an unmeasured crate actually is.
-      log(`⚠️ crate ${c.name}: path=${String(c.path)} could not be made repo-relative (repoRoot=${repoRoot || 'unresolved'}) — its per-crate review is NOT RUN rather than silently widened to the whole workspace`)
-      tasks.push(() => null)
+/** Queues the review dimension: one nested review per crate, or one for the whole workspace. */
+function pushReviewDims() {
+  const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
+  if (reviewCrates.length > 1) {
+    for (const c of reviewCrates) {
+      const scope = crateScope(c.path)
+      if (scope == null) {
+        // Dispatching it unscoped would review the WHOLE workspace under this crate's label — the
+        // failure this family exists to end. A null thunk lands in the NOT-RUN bookkeeping, which is
+        // what an unmeasured crate actually is.
+        log(`⚠️ crate ${c.name}: path=${String(c.path)} could not be made repo-relative (repoRoot=${repoRoot || 'unresolved'}) — its per-crate review is NOT RUN rather than silently widened to the whole workspace`)
+        tasks.push(() => null)
+        dispatched.push(`review:${c.name}`)
+        continue
+      }
+      tasks.push(() => dispatchDim(`review:${c.name}`,
+        nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+          // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
+          // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
+          // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
+          .then(/** @param {unknown} report */ report => report == null ? null : reviewResult(`review:${c.name}`, report)),
+        // A swallowed throw is a name that would not resolve OR a run that died; keep the
+        // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
+        // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
+        // reviewResult's synthetic summary carries no `Evidence:` marker; gating it would demote every
+        // honest zero-finding review.
+        { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
+          threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
       dispatched.push(`review:${c.name}`)
-      continue
     }
-    tasks.push(() => dispatchDim(`review:${c.name}`,
-      nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
-        // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
-        // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
-        // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
-        .then(/** @param {unknown} report */ report => report == null ? null : reviewResult(`review:${c.name}`, report)),
-      // A swallowed throw is a name that would not resolve OR a run that died; keep the
-      // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
-      // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
-      // reviewResult's synthetic summary carries no `Evidence:` marker; gating it would demote every
-      // honest zero-finding review.
+  } else {
+    // Without craftRoot the child resolves its logger from CLAUDE_PLUGIN_ROOT alone and, in a checkout
+    // launch, cannot log at all — every nested record lost while the parent's lands.
+    tasks.push(() => dispatchDim('review',
+      nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
+                                                  : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+        // As at the per-crate site: report==null is a dead nested engine — resolve to null before
+        // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
+        .then(/** @param {unknown} report */ report => report == null ? null : reviewResult('review', report)),
+      // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
+      // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
-        threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
-    dispatched.push(`review:${c.name}`)
+        threw: msg => `review failed: ${msg}`, evidenceGate: false }))
+    dispatched.push('review')
   }
-} else {
-  // Without craftRoot the child resolves its logger from CLAUDE_PLUGIN_ROOT alone and, in a checkout
-  // launch, cannot log at all — every nested record lost while the parent's lands.
-  tasks.push(() => dispatchDim('review',
-    nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
-                                                : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
-      // As at the per-crate site: report==null is a dead nested engine — resolve to null before
-      // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
-      .then(/** @param {unknown} report */ report => report == null ? null : reviewResult('review', report)),
-    // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
-    // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
-    { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
-      threw: msg => `review failed: ${msg}`, evidenceGate: false }))
-  dispatched.push('review')
 }
+pushReviewDims()
 
 // Contracts dimension (feature B) — one focused review per TOUCHED intra-workspace edge. An edge
 // is touched when its caller or callee is a changed crate; with no base, every edge is touched.
-const changedNames = new Set(changedCrates.map(c => c.name))
-const touchedEdges = edges.filter(e => !baseRef || changedNames.has(e.from) || changedNames.has(e.to))
-if (touchedEdges.length) {
-  // The agent `label` uses an ASCII `->` (display-safe); the `dimension` and the matching
-  // `dispatched` entry use the Unicode `→` (U+2192). Keep those two in sync — the NOT-RUN
-  // bookkeeping compares `dispatched` against `dimension`; do NOT "unify" them to the label's `->`.
-  for (const e of touchedEdges) {
-    tasks.push(() => dispatchDim(`contract:${e.from}→${e.to}`, /** @type {Promise<FindingsResult | null>} */ (safeAgent(
-      `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
-      { label: `contract:${e.from}->${e.to}`, agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
-    ))))
-    dispatched.push(`contract:${e.from}→${e.to}`)
+/** Queues one contract review per touched edge, or says why there are none. */
+function pushContractDims() {
+  const changedNames = new Set(changedCrates.map(c => c.name))
+  const touchedEdges = edges.filter(e => !baseRef || changedNames.has(e.from) || changedNames.has(e.to))
+  if (touchedEdges.length) {
+    // The agent `label` uses an ASCII `->` (display-safe); the `dimension` and the matching
+    // `dispatched` entry use the Unicode `→` (U+2192). Keep those two in sync — the NOT-RUN
+    // bookkeeping compares `dispatched` against `dimension`; do NOT "unify" them to the label's `->`.
+    for (const e of touchedEdges) {
+      tasks.push(() => dispatchDim(`contract:${e.from}→${e.to}`, /** @type {Promise<FindingsResult | null>} */ (safeAgent(
+        `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+        { label: `contract:${e.from}->${e.to}`, agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
+      ))))
+      dispatched.push(`contract:${e.from}→${e.to}`)
+    }
+  } else {
+    log('No intra-workspace dependency edges to review — skipping the contracts dimension.')
   }
-} else {
-  log('No intra-workspace dependency edges to review — skipping the contracts dimension.')
 }
+pushContractDims()
 
 // Crate-decomposition dimension (feature C) — whole-project; runs even on a single crate.
 tasks.push(() => dispatchDim('crate-decomposition', /** @type {Promise<FindingsResult | null>} */ (agent(
@@ -1432,15 +1491,19 @@ tasks.push(() => dispatchDim('security', /** @type {Promise<FindingsResult | nul
 ))))
 dispatched.push('security')
 
-if (hasUnsafe) {
-  tasks.push(() => dispatchDim('miri', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
-    `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found), or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
-    { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
-  ))))
-  dispatched.push('miri')
-} else {
-  log('No unsafe code detected — skipping Miri.')
+/** Queues Miri when the workspace has unsafe code, or says it is skipped. */
+function pushMiriDim() {
+  if (hasUnsafe) {
+    tasks.push(() => dispatchDim('miri', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
+      `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found), or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+      { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
+    ))))
+    dispatched.push('miri')
+  } else {
+    log('No unsafe code detected — skipping Miri.')
+  }
 }
+pushMiriDim()
 
 // ---- Whole-project tool dimensions (D–G). Each runs its tools, interprets, and degrades
 // gracefully: a missing tool/toolchain is a SKIP, never a hard failure — but a skip reports
@@ -1515,8 +1578,12 @@ Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; defa
 })()))
 dispatched.push('unused-crates')
 
+/** The tests-cov brief's mutation-testing clause: run it only when asked. @returns {string} */
+function mutantsInstruction() {
+  return runMutants ? ' Run `cargo mutants --timeout 60`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'
+}
 tasks.push(() => dispatchDim('tests-cov', /** @type {Promise<FindingsResult | null>} */ (agent(
-  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${runMutants ? ' Run \`cargo mutants --timeout 60\`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
+  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${mutantsInstruction()} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ))))
 dispatched.push('tests-cov')
@@ -1557,9 +1624,15 @@ const noEvidence = results.filter(r => /^\s*INCOMPLETE \(no evidence/i.test(Stri
 // would lose the `(INCOMPLETE)` suffix, filing a partially-covered audit as clean. This is the one
 // soft reading worstVerdict (/INCOMPLETE/) and auditVerdict already use. (realm @nick/craft, node #53)
 const incompleteDimensions = [...notRun, ...results.filter(r => /^\s*INCOMPLETE/i.test(String(r.verdict || ''))).map(r => r.dimension)]
-if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
-if (couldNotRun.length) log(`Tooling absent, nothing checked: ${couldNotRun.join(', ')} — flagged COULD NOT RUN in the report.`)
-if (noEvidence.length) log(`Reported a green but showed no Evidence: ${noEvidence.join(', ')} — flagged NO EVIDENCE (verdict not trusted) in the report.`)
+/** Logs each kind of dimension that did not answer for its coverage. */
+function logGaps() {
+  if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
+  if (couldNotRun.length) log(`Tooling absent, nothing checked: ${couldNotRun.join(', ')} — flagged COULD NOT RUN in the report.`)
+  if (noEvidence.length) log(`Reported a green but showed no Evidence: ${noEvidence.join(', ')} — flagged NO EVIDENCE (verdict not trusted) in the report.`)
+}
+logGaps()
+/** @param {string[]} names @returns {string} */
+const listOrNone = names => names.length ? names.join(', ') : 'none'
 
 const stripped = results.map(stripInternal)
 
@@ -1574,9 +1647,9 @@ const report = await agent(
 5. A **"Crate boundaries"** note: summarise the \`crate-decomposition\` extract/merge recommendations (driver + boundary), if any.
 6. If a \`review:*\` dimension's summary names a **gate provenance** (CI vs local), surface it in one line under the verdict.
 
-NOT RUN (no result — agent failed or was skipped): ${notRun.length ? notRun.join(', ') : 'none'}
-COULD NOT RUN (agent reported back, but its tooling was absent so nothing was checked — treat as uncovered, never as a pass): ${couldNotRun.length ? couldNotRun.join(', ') : 'none'}
-NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not trusted — the tool may have run; treat as uncovered, never as a pass, but do NOT assert its tooling was absent): ${noEvidence.length ? noEvidence.join(', ') : 'none'}
+NOT RUN (no result — agent failed or was skipped): ${listOrNone(notRun)}
+COULD NOT RUN (agent reported back, but its tooling was absent so nothing was checked — treat as uncovered, never as a pass): ${listOrNone(couldNotRun)}
+NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not trusted — the tool may have run; treat as uncovered, never as a pass, but do NOT assert its tooling was absent): ${listOrNone(noEvidence)}
 
 RESULTS:
 ${JSON.stringify(stripped, null, 2)}`,
@@ -1585,6 +1658,19 @@ ${JSON.stringify(stripped, null, 2)}`,
 )
 
 const uc = results.find(r => r.dimension === 'unused-crates')
+/** The unused-crates verification as the record stores it, or null when that dimension did not verify. @param {DimResult | undefined} u */
+function verificationRecord(u) {
+  if (!u || !u._verification) return null
+  const v = u._verification
+  return {
+    candidates: v.candidates,
+    confirmed: v.confirmed,
+    refuted: v.refuted ?? null,
+    died: v.died ?? null,
+    judged: v.judged ?? null,
+    refuteRate: v.refuteRate ?? null,
+  }
+}
 const auditRecord = {
   schemaVersion: 1,
   runtime: 'claude-code',
@@ -1608,16 +1694,7 @@ const auditRecord = {
   // along so a reader can see the two apart; `refuteRate` keeps its name and its 0..1 range, so an
   // older reader keeps working (analyze-runs skips a non-number, which is what an unjudged run now
   // stores instead of a fabricated 0).
-  verification: uc && uc._verification
-    ? {
-      candidates: uc._verification.candidates,
-      confirmed: uc._verification.confirmed,
-      refuted: uc._verification.refuted ?? null,
-      died: uc._verification.died ?? null,
-      judged: uc._verification.judged ?? null,
-      refuteRate: uc._verification.refuteRate ?? null,
-    }
-    : null,
+  verification: verificationRecord(uc),
   notRun,
   couldNotRun,
   noEvidence,
