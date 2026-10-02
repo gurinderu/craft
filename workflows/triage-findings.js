@@ -167,9 +167,14 @@ const A = normalizeArgs(args, log)
 // later — a loud drop undone in silence, which is worse than either behaviour alone.
 const argv = A
 
-const pr = argv['pr'] ? String(argv['pr']) : ''
-const report = argv['report'] ? String(argv['report']) : ''
-const base = argv['base'] ? String(argv['base']) : ''
+/** A text argument: its string form when given (truthy), else ''. @param {string} key @returns {string} */
+function textArg(key) {
+  return argv[key] ? String(argv[key]) : ''
+}
+
+const pr = textArg('pr')
+const report = textArg('report')
+const base = textArg('base')
 /** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
@@ -177,7 +182,7 @@ const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} *
 // session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the triaged repo — where the script is not. Pass craftRoot then.
-const craftRootArg = argv['craftRoot'] ? String(argv['craftRoot']) : ''
+const craftRootArg = textArg('craftRoot')
 
 const RAW_SCHEMA = {
   type: 'object',
@@ -656,7 +661,8 @@ async function logRun(record) {
 // `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
 // all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
 // up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A['repo']) {
+/** Files the refusal's record and returns its verdict. @param {unknown} repo @returns {Promise<string>} */
+async function refuseRepo(repo) {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'triage-findings',
     nested: false, via: null,
@@ -668,35 +674,47 @@ if (A['repo']) {
   })
   return [
     `## Verdict`,
-    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(A['repo'])}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+    `\u26a0\ufe0f INCOMPLETE — \`repo=${String(repo)}\` was given, but \`triage-findings\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
     ``,
     `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`triage-findings\` there.`,
   ].join('\n')
 }
+
+if (A['repo']) return await refuseRepo(A['repo'])
 
 phase('Gather')
 if (!pr && !report) {
   throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a rust-audit report).')
 }
 
-/** @type {Array<() => Promise<RawResult | null>>} */
-const gatherTasks = []
-const requestedLocators = []   // parallel to gatherTasks; drives NOT-RUN bookkeeping for the run record
-if (report) {
-  requestedLocators.push('report')
-  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
-    `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
-    { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
-  )))
-}
-if (pr) {
-  requestedLocators.push('pr')
-  gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
-    `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
-    { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
-  )))
+/**
+ * One gather task per requested source, and the source each stands for, in the same order: the
+ * locators drive NOT-RUN bookkeeping for the run record.
+ * @returns {{ gatherTasks: Array<() => Promise<RawResult | null>>, requestedLocators: string[] }}
+ */
+function gatherPlan() {
+  /** @type {Array<() => Promise<RawResult | null>>} */
+  const gatherTasks = []
+  /** @type {string[]} */
+  const requestedLocators = []
+  if (report) {
+    requestedLocators.push('report')
+    gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
+      `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
+      { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
+    )))
+  }
+  if (pr) {
+    requestedLocators.push('pr')
+    gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
+      `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
+      { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
+    )))
+  }
+  return { gatherTasks, requestedLocators }
 }
 
+const { gatherTasks, requestedLocators } = gatherPlan()
 const gatherResults = await parallel(gatherTasks)   // order preserved → align with requestedLocators
 const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
 if (notRunSources.length) log(`WARNING: source(s) that produced nothing: ${notRunSources.join(', ')} — the triage covers fewer sources than asked.`)
@@ -709,13 +727,18 @@ log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 /** @param {SourcedFinding} f */
 const idOf = f => `${f.source}::${f.location || 'no-loc'}::${f.title}`
 // The prior ledger arrives in args, so an entry is read only as far as it is an object, its fields as text.
-/** @type {Map<string, LedgerEntry>} */
-const priorById = new Map()
-for (const e of priorLedger) {
-  if (!e || typeof e !== 'object') continue
-  const x = /** @type {Record<string, unknown>} */ (e)
-  priorById.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? '') })
+/** @param {unknown[]} entries @returns {Map<string, LedgerEntry>} */
+function ledgerById(entries) {
+  /** @type {Map<string, LedgerEntry>} */
+  const byId = new Map()
+  for (const e of entries) {
+    if (!e || typeof e !== 'object') continue
+    const x = /** @type {Record<string, unknown>} */ (e)
+    byId.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? '') })
+  }
+  return byId
 }
+const priorById = ledgerById(priorLedger)
 
 // ---- Validate ------------------------------------------------------------
 phase('Validate')
@@ -730,7 +753,8 @@ const UNJUDGED_MARKER = 'NOT JUDGED'
 
 /** @type {string[]} */
 const deadValidations = []
-const validations = (await parallel(raw.map(f => /** @returns {Promise<Validation>} */ () => {
+/** One finding's verdict: carried from the prior ledger when settled there, else judged by an agent. @param {SourcedFinding} f @returns {Promise<Validation>} */
+function validateOne(f) {
   const id = idOf(f)
   const prior = priorById.get(id)
   // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
@@ -779,7 +803,8 @@ Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     deadValidations.push(id)
     return { stable_id: id, verdict: 'needs-decision', reason: `${UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code`, fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
   })
-}))).filter(v => !!v)
+}
+const validations = (await parallel(raw.map(f => () => validateOne(f)))).filter(v => !!v)
 
 const accepted = validations.filter(v => v.verdict === 'accept')
 log(`Validated ${validations.length}: ${accepted.length} accept, ${validations.length - accepted.length} other.`)
@@ -811,31 +836,34 @@ ${JSON.stringify(validations, null, 2)}`,
 // ---- Observability: persist a run record (best-effort) -------------------
 // Prefer the plan's ledger (it carries the cross-finding `conflict` disposition); fall back to the
 // solo validations when the Plan phase produced nothing.
-/** @type {LedgerEntry[]} */
-let ledger = (plan && Array.isArray(plan.ledger)) ? plan.ledger : validations
-
-// The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
-// summarising model paraphrases a one-line free-text reason as a matter of course, and the marker
-// is the ONLY thing that tells the next run this finding was never judged: lose it and the finding
-// reads as settled forever — exactly the bug this marker exists to prevent, returning silently on
-// run three. So the script re-injects it deterministically. `validations` is the local record of
-// what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
-// re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
-if (plan && ledger !== validations) {   // `ledger !== validations` already implies a plan; `plan &&` says so to the checker
+/**
+ * The ledger the record tallies, set back on the plan when the marker had to be re-injected.
+ * @param {TriagePlan | null} plan @returns {LedgerEntry[]}
+ */
+function finalLedger(plan) {
+  if (!plan || !Array.isArray(plan.ledger)) return validations
+  // The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
+  // summarising model paraphrases a one-line free-text reason as a matter of course, and the marker
+  // is the ONLY thing that tells the next run this finding was never judged: lose it and the finding
+  // reads as settled forever — exactly the bug this marker exists to prevent, returning silently on
+  // run three. So the script re-injects it deterministically. `validations` is the local record of
+  // what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
+  // re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
   const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
-  if (unjudged.size) {
-    /** @type {Set<string>} */
-    const seen = new Set()
-    ledger = ledger.map(e => {
-      const v = e && unjudged.get(e.stable_id)
-      if (!v) return e
-      seen.add(e.stable_id)
-      return String(e.reason || '').includes(UNJUDGED_MARKER) ? e : { ...e, verdict: v.verdict, reason: v.reason }
-    })
-    for (const [id, v] of unjudged) if (!seen.has(id)) ledger.push({ stable_id: id, verdict: v.verdict, reason: v.reason })
-    plan.ledger = ledger
-  }
+  if (!unjudged.size) return plan.ledger
+  /** @type {Set<string>} */
+  const seen = new Set()
+  const ledger = plan.ledger.map(e => {
+    const v = e && unjudged.get(e.stable_id)
+    if (!v) return e
+    seen.add(e.stable_id)
+    return String(e.reason || '').includes(UNJUDGED_MARKER) ? e : { ...e, verdict: v.verdict, reason: v.reason }
+  })
+  for (const [id, v] of unjudged) if (!seen.has(id)) ledger.push({ stable_id: id, verdict: v.verdict, reason: v.reason })
+  plan.ledger = ledger
+  return ledger
 }
+const ledger = finalLedger(plan)
 await logRun({
   schemaVersion: 1,
   runtime: 'claude-code',
@@ -858,22 +886,26 @@ await logRun({
 
 if (!plan) return `${telemetryLostSection(telemetryLost)}Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.`
 
-// What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
-// agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
-// it is indistinguishable from one that covered everything.
-const incomplete = notRunSources.map(src => `source \`${src}\` produced nothing — its findings are NOT in this plan`)
-  .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan`] : [])
-if (incomplete.length) {
-  const banner = ['> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:', ...incomplete.map(l => `> - ${l}`), ''].join('\n')
-  plan.plan_markdown = `${banner}\n${plan.plan_markdown ?? ''}`
-  plan.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${plan.summary ?? ''}`
-  plan.notRun = incomplete
+/** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} plan @returns {TriagePlan} */
+function bannered(plan) {
+  // What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
+  // agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
+  // it is indistinguishable from one that covered everything.
+  const incomplete = notRunSources.map(src => `source \`${src}\` produced nothing — its findings are NOT in this plan`)
+    .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan`] : [])
+  if (incomplete.length) {
+    const banner = ['> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:', ...incomplete.map(l => `> - ${l}`), ''].join('\n')
+    plan.plan_markdown = `${banner}\n${plan.plan_markdown ?? ''}`
+    plan.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${plan.summary ?? ''}`
+    plan.notRun = incomplete
+  }
+  // A write that did not land leads the plan: a reader about to look this triage up in the store has
+  // to learn here that it may not be there.
+  const lostBanner = telemetryLostSection(telemetryLost)
+  if (lostBanner) {
+    plan.plan_markdown = `${lostBanner}${plan.plan_markdown ?? ''}`
+    plan.telemetryLost = telemetryLost.slice()
+  }
+  return plan
 }
-// A write that did not land leads the plan: a reader about to look this triage up in the store has
-// to learn here that it may not be there.
-const lostBanner = telemetryLostSection(telemetryLost)
-if (lostBanner) {
-  plan.plan_markdown = `${lostBanner}${plan.plan_markdown ?? ''}`
-  plan.telemetryLost = telemetryLost.slice()
-}
-return plan
+return bannered(plan)
