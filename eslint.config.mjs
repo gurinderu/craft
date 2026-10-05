@@ -47,6 +47,11 @@ export default [
       '**/node_modules/**',
       'workflows/**',
       'opencode/plugin/node_modules/**',
+      // Stryker's leftovers (gitignored): a run that ends red leaves its per-worker setup files in the root,
+      // and its in-place backup of lib/ sits in .stryker-tmp/ — neither is source, both trip a wider lint.
+      'stryker-setup-*.js',
+      '.stryker-tmp/**',
+      'reports/**',
     ],
   },
   // No inline `eslint-disable`: the complexity bars admit no exception (realm @nick/craft, #155), and no

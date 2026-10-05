@@ -17,10 +17,13 @@
     "check:dead:production": "knip --no-progress --production",
     "check:dup": "node lib/check-dup.mjs",
     "check:dup:baseline": "jscpd --update-baseline",
-    "check:deps": "depcruise --config .dependency-cruiser.mjs lib opencode/plugin"
+    "check:deps": "depcruise --config .dependency-cruiser.mjs lib opencode/plugin",
+    "test:mutation": "stryker run"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "22.20.5",
     "dependency-cruiser": "18.5.0",
     "eslint": "^9.39.0",

@@ -3,3 +3,6 @@
 node_modules/
 .wft-*/
 .claude/worktrees/
+.stryker-tmp/
+reports/mutation/
+stryker-setup-*.js
