@@ -201,7 +201,7 @@ others (higher recall than one broad pass):
 | intent | does the change do what the brief/spec says? | `specs` |
 
 The workflow runs additional context-dependent lenses the scout selects — `reconciler` (controller
-idempotency) and `negative-space` (breakage the diff enables in unchanged code); `workflows/review.js`
+correctness; loads the language-agnostic `distributed-races` skill) and `negative-space` (breakage the diff enables in unchanged code); `workflows/review.js`
 is the authoritative lens set.
 
 **The optional pass — off by default.** Three lenses are not part of the standard fan-out, because
