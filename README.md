@@ -21,7 +21,7 @@ cross-linking is the collection's cohesion.
 | skill | `craft:rust-architecture` | Hexagonal (ports & adapters) — domain core, ports as traits, adapters, dependency inversion, domain modeling, module layout |
 | skill | `craft:rust-architecture-review` | Architecture-audit rubric — whole-project dependency graph, severity-tiered checklist (cycles, layer leaks, god modules) AND over-engineering, Healthy/Concerns/At-risk rating |
 | skill | `craft:rust-idioms` | Idiomatic Rust — naming conventions, native constructs, clippy/rustfmt, rustdoc conventions, and an anti-pattern catalog (Good/Bad) |
-| skill | `craft:rust-unsafe` | Unsafe done soundly — the five superpowers, `// SAFETY:` discipline, UB, raw pointers, FFI, `#[repr]`, Miri |
+| skill | `craft:rust-unsafe` | Unsafe done soundly — five legal operations, `// SAFETY:` discipline, UB, raw pointers, FFI, `#[repr]`, Miri |
 | skill | `craft:rust-ecosystem` | Crates & Cargo — choosing deps, features/workspaces, edition/MSRV, project layout, publishing (semver, docs, interop) |
 | skill | `craft:rust-review` | Code-review rubric — cargo gate, severity checklist, public-API design pass (Rust API Guidelines), Approve/Warning/Block verdict; requesting a craft review (agent dispatch + crafted brief); the Rust "what proves what" verification table |
 | skill | `craft:rust-web` | Web services with axum/tokio/tower/sqlx — routing, extractors, state, errors, db pool, middleware, shutdown, auth (JWT/argon2), OpenAPI (utoipa) |
