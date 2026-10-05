@@ -107,6 +107,17 @@ jobs:
       # dropped with a warning (lib/check-dup.test.mjs pins the pattern to the fence regexes).
       - name: Check duplicated code (jscpd)
         run: npm run check:dup
+      # The mutation floor (lib/mutation-floor.json, the weekly Stryker run's `thresholds.break`) may only
+      # rise and its `mutate` only widen: on a pull request the file is compared with the base's, and
+      # stryker.config.mjs must apply it (lib/check-mutation-floor.mjs). The checkout
+      # holds only the merge commit, so the base is fetched first; a base that cannot be read fails the step.
+      - name: Check the mutation floor does not fall
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node lib/check-mutation-floor.mjs --base "$BASE_SHA"
       # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
       # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.
       - name: Validate plugin manifests
@@ -169,3 +180,44 @@ jobs:
           --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs
           --config p/security-audit --config p/secrets --config p/default
           lib opencode/plugin workflows
+
+  # How quality moved between the PR's base and head — complexity, lint and type errors, tests, Knip,
+  # import cycles — written to the job summary as a signal for review, never a gate (realm @nick/craft,
+  # #147): the `test` job keeps its own zeros. This job always ends green after writing the summary; an
+  # install or a metric that failed is reported there as "failed to measure", not hidden behind
+  # continue-on-error. No PR comment, so no permission beyond reading the code.
+  quality-delta:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: head
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # One step that never fails: install and measuring errors go into the summary, then exit 0.
+      # The measuring code is head's (lib/quality-delta.mjs); each side is measured with its own tooling.
+      - name: Measure base and head, write the quality delta to the job summary
+        run: |
+          set +e
+          for side in base head; do
+            for prefix in . opencode/plugin; do
+              if ! npm ci --prefix "$side/$prefix" > install.log 2>&1; then
+                echo "> **$side**: \`npm ci --prefix $prefix\` failed; metrics needing it show as failed to measure." >> "$GITHUB_STEP_SUMMARY"
+                tail -n 20 install.log
+              fi
+            done
+          done
+          if ! node head/lib/quality-delta.mjs --base base --head head > quality-delta.md 2> quality-delta.err; then
+            { echo '### Quality delta: the measuring tool itself failed (not blocking)'; echo '```'; tail -n 20 quality-delta.err; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat quality-delta.md >> "$GITHUB_STEP_SUMMARY"
+          cat quality-delta.md quality-delta.err
+          exit 0
