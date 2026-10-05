@@ -20,7 +20,7 @@ safe API, and prove every invariant in writing. Mechanics in the sub-files.
 ## What `unsafe` does and doesn't do
 
 It does **not** disable the borrow checker, type checking, or lifetimes inside the block. It
-unlocks exactly **five additional operations** — and nothing else:
+unlocks exactly **five superpowers** — and nothing else:
 
 1. Dereference a raw pointer (`*const T` / `*mut T`)
 2. Call an `unsafe fn` / unsafe method
