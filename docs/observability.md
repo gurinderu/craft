@@ -214,9 +214,8 @@ jq 'select(.verdict | test("Block"))' ~/.craft/runs/index.jsonl
 jq -s '[.[] | select(.name=="rust-audit") | .verification | select(.!=null)]' ~/.craft/runs/*-workflow-rust-audit.json
 ```
 
-Design rationale and accepted limitations were written up in a design spec that has since been
-removed along with the rest of `docs/superpowers/`; recover it from git history if you need it
-(`git log --diff-filter=D -- docs/superpowers/`). What still binds is on this page.
+Design rationale and accepted limitations were written up in a removed design spec. The current
+constraints are recorded on this page.
 
 ## Out of scope (v1)
 
@@ -275,4 +274,3 @@ enrich both records with `enrich-cost --run-dir <the workflow run's transcript d
 Known gap: `enrich-cost` sums `agent-*.jsonl` transcripts in the workflow run directory. Claude Code
 2.1.286 on Linux was observed to write only `agent-*.meta.json` and `journal.jsonl` there, so no record
 can be enriched on that harness yet, and every pair reads `no real cost`.
-
