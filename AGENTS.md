@@ -3,31 +3,31 @@
 'Nature — source': 'agreed: owner'
 'Realm': '@nick/craft (r209)'
 'Realm — source': 'derived'
-'Focus holon': '#1 "craft contour"'
+'Focus holon': '#1 «Контур craft»'
 'Focus holon — source': 'derived'
 'Repository': 'github.com/gurinderu/craft'
 'Repository — source': 'derived'
-'Agent role': '#3 "craft engineer" — adhikarin, contour steward; inbox iskron_orient(realm="r209", focus="#3")'
+'Agent role': '#3 «Инженер craft» — adhikarin, contour steward; inbox iskron_orient(realm="r209", focus="#3")'
 'Agent role — source': 'derived'
-'Owner role': '#2 "craft owner" — svatantra, address for posed_to beyond the mandate'
+'Owner role': '#2 «Владелец craft» — svatantra, address for posed_to beyond the mandate'
 'Owner role — source': 'derived'
 'Stack': 'Node.js 22 (CI pin), ESM JavaScript, no runtime dependencies; skills and agents are Markdown with YAML frontmatter'
 'Stack — source': 'derived'
 'Gate': ''
 'Gate — source': 'not agreed — case #1'
-'Consumers': 'Users installing craft from .claude-plugin/marketplace.json; they learn of breakage through its effects in their repositories'
+'Consumers': 'Anyone who installs craft from .claude-plugin/marketplace.json; they learn of breakage only by its effects — a skill that never triggers, a review that silently drops a check, an agent advising on code it never read'
 'Consumers — source': 'agreed: owner'
-'Breakage cost': 'External and silent: craft runs in repositories it cannot see, and a degraded check looks clean'
+'Breakage cost': 'External and silent: craft runs in repositories it never sees, and none of its failures fail loudly — a degraded check reads as a clean one'
 'Breakage cost — source': 'agreed: owner'
 'Reality': 'Root REALITY.md; read before making behavioral claims'
 'Reality — source': 'derived'
 'Layout': 'One AGENTS.md; code map in the Project structure section and MAP.md; gotchas live in graph rules on the steps they constrain'
 'Layout — source': 'derived'
 'Cross-project memory': 'Craft-owned facts stay in this repository or @nick/craft; no personal graph; facts owned elsewhere stay session-local; memory directories are forbidden'
-'Cross-project memory — source': 'agreed: owner'
+'Cross-project memory — source': 'agreed: owner — diverges from the skill default (personal realm), raised in case №1'
 'Feedback reflection': 'yes — at merge and session close'
 'Feedback reflection — source': 'derived: template default'
-'Agreement': 'Case #1 on holon #1, "Align craft to contract 18"; open slots are recorded in the case'
+'Agreement': 'Case №1 on holon #1 «Выравнивание craft под контракт 18»; open slots are its slot: … lines'
 'Agreement — source': 'derived'
 ---
 # `craft`
@@ -48,7 +48,7 @@ State lives in the **repo** or in the **realm** — nowhere else. The harness's 
 ## Session lifecycle
 One line per rule; the full norm of case work and the ledger is in the `iskron` skill.
 - **The realm is the work, git is how we got here.** SHAs, branches, PR numbers, "merged" never enter the realm (bodies, names, attributes); provenance goes in a write's `reasoning`. In a case log they are written freely.
-- **Session start** — read the "Start" section of the `iskron` entry before acting; readiness means the realm and role are named and the greeting was delivered. Stand only for watch duty (the word `watch`, `start`, a seat address from the window, or a frame), using one `iskron_stand`. `start <realm> <role> <case №N>` enters that case; the first message restates the brief. A subagent uses its own satellite bridge (`iskron_stand` with `satellite_of`, then `join` and `leave` on that bridge); it must not write to the realm through the launcher's bridge. A subagent without its own bridge says so on the first line of its result and does not write to the realm. Use addresses from the cover; identify the owner by their role's sequence number, not `me`.
+- **Session start** — read the "Start" section of the `iskron` entry before acting; readiness means the realm and role are named and the greeting was delivered. Stand only for watch duty (the word «вахта», `start`, a seat address from the window, or a frame), using one `iskron_stand`. `start <realm> <role> <case №N>` enters that case; the first message restates the brief. A subagent uses its own satellite bridge (`iskron_stand` with `satellite_of`, then `join` and `leave` on that bridge); it must not write to the realm through the launcher's bridge. A subagent without its own bridge says so on the first line of its result and does not write to the realm. Use addresses from the cover; identify the owner by their role's sequence number, not `me`.
 - **Starting work: realm, then project, then code.** (1) realm reconnaissance (`entry`): what is recorded about the site of the change, open vimarshas, what was decided and rejected, what is recorded about the external surfaces; (2) the integration field (`integrity`, section below); (3) design (`design`), then code. Skip only on an explicit "just work" or another named protocol — the reconnaissance debt goes to reconcile; human silence is not permission. Work that bypasses the realm is an agent's worst failure.
 - **A decision goes into the realm the moment it is made**, wherever it came from (chat, socket, agents agreeing): epistemic no higher than `anumita`, ontic `anagata`, volitive `chanda`/`adhimoksha`; who decided and what counts as execution. A changed situation — the same, at once.
 - **Describe work before it begins.** Record one-off work in a case: the brief, its restatement, and an `assignment: …` line from the person who assigned it; the doer closes that line under the same key with the outcome. If work arrives without a case, open one (`open_room` on the subject's node or `iskron_case(action="talk", about=<subject>)`) before making external changes. Record the transitions it changes in the realm (as design modes, or as a transformation for larger work), along with decisions. A vimarsha is a substantive question or obligation; a kriya is a repeatable transition. Ask what it consumes and produces on the next run; if there is no answer, it is a one-off task.
@@ -61,12 +61,12 @@ One line per rule; the full norm of case work and the ledger is in the `iskron` 
   - **Reconcile** (`reconcile`): nodes against code, code against the realm, discarded options recorded and referenceable; the remainder as vimarshas.
   - **Feedback reflection**: at merge and session close, reflect on the method and record actionable lessons in the graph after checking for duplicates.
   - **Vocabulary pass**: borrowed words (ticket, backlog, sprint, epic, story, done, blocker, committed) in the text and nodes you land — name each to the human and ask what it is called in this project; never substitute on your own.
-- **A design is not ready until its decisions, risks and lifecycle are in the realm**, whatever skill elicited it. Without the owner, record decisions and risks, and leave the transformation's telos for confirmation.
+- **A design is not ready until its decisions, risks and lifecycle are in the realm**, whatever skill elicited it; a design/spec file from another suite is intaken in the same session. Without the owner: decisions and risks — now, the transformation — with its telos awaiting confirmation.
 - **Execution suites lead execution** (planning, TDD, debugging, review); the realm carries memory and design. Decisions and risks born in execution go into the realm before the session ends.
 - **A claim you made is not a claim you accept.** A behavioural claim is closed by a cold `verifier`: the brief is the claim, the carrier and the falsifier from `REALITY.md`; wait for the verdict. No role available — observe the carrier yourself, never the source.
 - **Hook merge**: entries from different suites coexist in the hooks file — add alongside, never overwrite someone else's.
 - Start, push, merge and memory-write hooks are wired in `.claude/settings.json`, one line each, plus a pre-push branch-freshness probe.
-- **Keep this file honest.** The contract number is the first word of the `iskronify` skill description, present in every session's context: compare it with the stamp below without loading anything. Higher than the stamp, or the sources moved after its date (`git log -1 --format=%cd -- .github/workflows/ci.yml .claude-plugin/ lib/ package.json`) — propose an `iskronify` run as the first move (launching is the human's or the case's word; silence — propose again; on watch without a window, having asked colleagues, the run is executed by the "Who runs it" rule of `iskronify`: the `designer` role, or yourself without subagents or the role). A line of this file diverges from the skill — say so aloud (in a case to the setter, otherwise to the human): the stamp is lower — the skill is right; equal — a template defect, feedback to the skill delivery's steward (`feedback` skill).
+- **Keep this file honest.** The contract number is the first word of the `iskronify` skill description, present in every session's context: compare it with the stamp below without loading anything. Higher than the stamp, or the sources moved after its date (`git log -1 --format=%cd -- .github/workflows/ci.yml .claude-plugin/ lib/ package.json`) — run `iskronify` as the first move, in a clean tree and a work branch, by its "Who runs it" rule: the `designer` role; without subagents or the role — yourself. The cover's slots are the YAML frontmatter; update them from the realm, the code and agents' answers in the alignment case without waiting for the human — to the human only the unresolved principled remainder; a new question about a slot is a word and a `slot: …` line in the alignment case, not a node. A line of this file diverges from the skill — say so aloud (in a case to the setter, otherwise to the human): the stamp is lower — the skill is right; equal — a template defect, feedback to the skill delivery's steward (`feedback` skill).
 - **Keep the toolchain fresh**: updates are on by default — take them as the channel delivers them. A channel without auto-update (an unpacked copy) — check the version before the session, or move.
 
 ### Stage self-check
@@ -149,7 +149,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | Static analysis, semgrep public rule sets (CI job `semgrep`, image pinned there; the rules come from the registry per run, so not reproducible) | `semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0 --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs --config p/security-audit --config p/secrets --config p/default lib opencode/plugin workflows` |
 | Quality delta between two checkouts — complexity, lint/type errors, tests, Knip, import cycles; a signal for review, not a gate (CI job `quality-delta`, PRs only, writes the job summary and always passes) | `node lib/quality-delta.mjs --base <checkout> --head <checkout>` — Markdown on stdout; each checkout needs its own `npm ci` and `npm ci --prefix opencode/plugin` (e.g. a `git worktree add <dir> origin/main`) |
 
-There is no formatter and no pre-commit hook: run every row above before pushing (the audit and semgrep rows only with network; offline they are CI's to run); CI runs the same steps (two jobs: `test`, and `semgrep` for the semgrep row); the quality-delta row is a signal, not a gate — it never has to pass. Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs); `npm run test:mutation` runs Stryker over `lib/` (`stryker.config.mjs`; in place, so it rewrites `lib/` while it runs — nothing else alongside), and the weekly `mutation` workflow (`.github/workflows/mutation.yml`, also by hand) runs it on CI and keeps the report as an artifact; below the floor (row above) the run turns red and is reported in one open issue (a new one, or a comment on the one already open) — it blocks nothing. What each gate does not cover — realm `@nick/craft`, #121.
+There is no formatter and no pre-commit hook: run every row above before pushing (the audit and semgrep rows only with network; offline they are CI's to run); CI runs the same steps (three jobs: `test`, `semgrep` for the semgrep row, and `quality-delta`, PRs only, for the quality-delta row); the quality-delta row is a signal, not a gate — it never has to pass. Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs); `npm run test:mutation` runs Stryker over `lib/` (`stryker.config.mjs`; in place, so it rewrites `lib/` while it runs — nothing else alongside), and the weekly `mutation` workflow (`.github/workflows/mutation.yml`, also by hand) runs it on CI and keeps the report as an artifact; below the floor (row above) the run turns red and is reported in one open issue (a new one, or a comment on the one already open) — it blocks nothing. What each gate does not cover — realm `@nick/craft`, #121.
 
 ## Project structure
 - `skills/` — 32 skills, one directory each with a `SKILL.md`.
@@ -198,7 +198,7 @@ There is no formatter and no pre-commit hook: run every row above before pushing
 - **No co-author trailer and no "Generated with Claude Code"** — neither on commits nor in PR bodies.
 - **Gate before push**: every row of "Commands" (the audit row needs the network — offline it is CI's); there is no pre-commit hook and no single gate call yet (cover, "Gate").
 - **Push, review, then PR**: push the branch so the reviewer can read `origin/<branch>`; open the PR once the cold review's verdict is in and its findings are worked (above). A branch whose review is done does not live without a PR.
-- **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (one job, `test`; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
+- **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (three jobs: `test` and `semgrep` gate; `quality-delta` always ends green and is read, not waited on; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
 
 *(iskronify: contract 19, stamp 2026-10-05 — rerun when the installed iskronify description names a higher contract or when the sources this file was derived from move after this date.)*

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Before acting, read the Start section of the iskron door. Realm @nick/craft (r209), focus holon #1, agent role #3, owner role #2 (AGENTS.md frontmatter). Standing only on watch (the word vahta, start, a seat address from the window, a frame), with one iskron_stand; `start <realm> <role> <case №N>` enters that case. A subagent has its own satellite bridge (iskron_stand with satellite_of; join and leave on it) and never writes to the realm through the launcher bridge.\"}}'"
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Before acting, read the Start section of the iskron door. Realm @nick/craft (r209), focus holon #1, agent role #3, owner role #2 (AGENTS.md frontmatter). Standing only on watch (the word «вахта», start, a seat address from the window, a frame), with one iskron_stand; `start <realm> <role> <case №N>` enters that case. A subagent has its own satellite bridge (iskron_stand with satellite_of; join and leave on it) and never writes to the realm through the launcher bridge.\"}}'"
           }
         ]
       }
