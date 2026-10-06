@@ -27,8 +27,8 @@ tooling → `rust-testing`.
 
 Prove each fix with the matching command from the `rust-review` "Proving a claim — what proves
 what" table — do not re-derive it here, cite it (`rust-review` SKILL.md, the "Proving a claim —
-what proves what" section). The three completeness checks are in `SKILL.md` → *When a fix is done*;
-their Rust mechanics:
+what proves what" section). The completeness checks are in `SKILL.md` → *When a fix is done*;
+Rust mechanics for three of them:
 
 - **Every facet.** A profile-divergent bug (`SAF-007`) has two: re-run the case under `cargo test`
   (dev, `overflow-checks` on) **and** under the shipping profile (`cargo test --release`, or a
