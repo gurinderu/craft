@@ -21,6 +21,7 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 `⫲` marks a step that **fans out across subagents** (→ "Parallelism via subagents").
 
 ```
+0. Recall    — `memory` recall(topic, scope) for every path the findings touch     (→ below)
 1. Gather  ⫲ — collect findings from both sources, one subagent per source in parallel:
                • craft: a rust-reviewer verdict / a rust-audit report
                • GitHub: gh pr view / gh api → inline thread comments     (→ github.md)
@@ -63,6 +64,25 @@ location during triage, else route to `needs-decision` — never drop them silen
 
 `reject` → `rejected` and `defer` → `deferred` are also written back to the **review ledger** so
 the next re-review carries them forward (→ "Writing dispositions to the review ledger").
+
+## Project memory — recall before, record after
+
+The review ledger is per branch and machine-local; the *reason* a finding was dismissed is a fact
+about the project that should outlive the branch. The `memory` skill keeps it (whatever backend
+the project has; it prints `memory backend: …` once).
+
+- **Before triage (step 0)** — `recall(<finding keywords>, <path>)` for every touched path. A
+  matching **active** decision is known context: a finding it already answers is triaged with that
+  reason cited (and its id), not re-litigated — unless the code the decision relied on has changed,
+  in which case say so and supersede the decision instead of applying it.
+- **On a disposition** — `record-decision` with title = the finding's title, scope = its file path
+  (the component, or `.`, for a locationless finding), body = the reason, links = PR / thread /
+  commit. Triggered by triage `reject`, triage `defer`, and a finding kept but `justified` in the
+  PR body. A `needs-decision` becomes `record-question` (body = what decision is needed, from
+  whom); when it is decided, the decision supersedes the question.
+- **Subagents** (triage, fix) lack the memory tools: the launcher recalls and puts the matching
+  records, verbatim with ids, into each brief; their reject/defer verdicts come back in the result
+  and the launcher records them. Known limit, not a gap to route around.
 
 ## Fix the property, not the example (step 5)
 
@@ -152,7 +172,7 @@ Where craft's fix loop fans out across subagents:
 
 - **Gather (1)** — independent sources → one subagent per source.
 - **Triage (3)** — each finding judged independently → one subagent per finding (the core
-  fan-out). The dedup/conflict/order step afterwards needs all results together, so it does
+  fan-out); each brief carries the recalled records for that finding's path (step 0). The dedup/conflict/order step afterwards needs all results together, so it does
   **not** parallelise.
 - **Fix (5)** — the plan is grouped by file so **independent groups run concurrently**, one
   subagent per group; worktree isolation only when groups could touch shared files. Within a
