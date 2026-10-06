@@ -98,7 +98,7 @@ provisioner, a queue consumer with retries, or a sync daemon.
   backfill, or a code path that treats "absent" correctly. Treating "absent" as "nothing to
   protect" or "already done" is usually wrong.
 - **Where**: the CRD schema before and after, the migration or backfill code, and the
-  `Option`/default handling of each new field.
+  optional/default handling of each new field.
 - **Finding**: "absent means safe to release / safe to skip" on an object that predates the field.
   Name the field, and say what the old object looks like to the new code.
 

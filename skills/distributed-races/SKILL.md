@@ -1,7 +1,7 @@
 ---
 name: distributed-races
 description: >-
-  Correctness of controllers, reconcile loops and retry loops in any language — the questions a review must answer about state that other actors read and write concurrently: self-triggering status writes, what wakes the loop at the deadline it promises, another controller acting on a stale cache, permissions for new API verbs, protection released on spec change instead of end of use, objects created before the change, idempotent create/patch, cleanup on delete. Use when reviewing or writing a Kubernetes operator/controller, a reconcile or requeue path, a finalizer, a watch, an admission webhook, or any converge-to-desired-state loop. Language-agnostic. Triggers: reconcile, controller, operator, requeue, finalizer, watch, informer, observedGeneration, eventual consistency, race between controllers.
+  Correctness of controllers, reconcile loops and retry loops in any language — the questions a review must answer about state that other actors read and write concurrently: self-triggering status writes, what wakes the loop at the deadline it promises, another controller acting on a stale cache, permissions for new API verbs, protection released on spec change instead of end of use, objects created before the change, idempotent create/patch, cleanup on delete. Use when reviewing or writing a Kubernetes operator/controller, a reconcile or requeue path, a finalizer, a watch, an admission webhook, or any converge-to-desired-state loop. Language-agnostic. Triggers: reconcile, controller, operator, requeue, finalizer, watch, informer, observedGeneration, eventual consistency, race between controllers. Not for in-process data races, locks or async tasks (rust-concurrency), nor file watchers or MVC controllers.
 ---
 
 # Distributed races — controller and reconcile-loop correctness
@@ -34,7 +34,7 @@ fix shape for every class are in [catalogue.md](catalogue.md).
 |---|---|---|
 | R1 | Self-triggering write | For EVERY write to the primary in a pass (the driver/error path's status/conditions on holds and errors included): does it change a field every pass (`lastTransitionTime`), and does the primary's own watch (no predicate/generation filter) re-enqueue it sooner than the requeue the code relies on? Is it skipped when nothing changed? |
 | R2 | Wake source | For every outcome the requeue/error policy can return (await-change included), what event or timer guarantees a pass by the deadline the code promises? |
-| R3 | Foreign stale cache | Not our own stale read (R12). For EACH object another controller owns that a release/delete/label removal depends on: name that controller and its observed-generation gate (`status.observedGeneration`, KubeVirt `status.desiredGeneration` vs `metadata.generation`). Can it still act (recreate a child from the OLD template) after we decided from its "absent/finished" state? Wait until it catches up. |
+| R3 | Foreign stale cache | Not our own stale read (R12). For EACH object another controller owns that a release/delete/label removal depends on: name that controller and its observed-generation gate (`status.observedGeneration`, an applied/desired generation pair, e.g. `status.observedGeneration` vs `metadata.generation`). Can it still act (recreate a child from the OLD template) after we decided from its "absent/finished" state? Wait until it catches up. |
 | R4 | Permissions | Is every API verb and resource the diff newly calls granted in the shipped Role/ClusterRole/chart/IAM policy? |
 | R5 | Protection lifetime | Is a finalizer/label/lock/hold released on a change of **intent** (spec) when the consumer outlives the spec and the release must wait for **end of use**? |
 | R6 | Migration window | Objects created before this change lack a field/label/status the new logic relies on — what does the new code do with them? |
@@ -65,6 +65,6 @@ Read that source; the diff alone cannot answer them.
 
 ## Relation to other skills
 
-The language-specific idioms (client libraries, typed errors, watch APIs) live in the language
-skills — for Rust, `rust-cloud-native` and the `REC-*` rules in `rust-review`. Durability windows
+R7–R12 are also catalogued for Rust diffs as `REC-001`…`REC-006` in `rust-review`'s rules.md
+(the rule IDs a Rust review files findings under). Durability windows
 between two writes of one pass are the `failure-windows` lens of the review workflow.
