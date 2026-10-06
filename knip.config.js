@@ -84,6 +84,8 @@ export default {
         'lib/mutation-issue.mjs!',
         // The gate's own checkers (CI workflow, package.json scripts).
         'lib/check-*.mjs!',
+        // The gate as one call (`npm run gate`, CI's test job): run, not imported.
+        'lib/gate.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
         // reads only outside production mode, so its import is not followed there.
         'lib/lint-prerequisites.mjs!',
