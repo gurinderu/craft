@@ -20,110 +20,24 @@ jobs:
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
         run: npm ci --prefix opencode/plugin
-      # Lint reaches the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, and
-      # knip.config.js (it imports lib/inline-regions.mjs and decides what the dead-code gate sees), and
-      # .dependency-cruiser.mjs (it decides what the shipped-imports step below sees), with
-      # typescript-eslint's type-aware rules over each tsconfig's program (so it needs the plugin
-      # deps above). workflows/*.js cannot be parsed by ESLint for the same reason `node --check`
-      # cannot read them — the syntax-check and engine typecheck steps below are their gates.
-      # Keep this command identical to package.json's "lint".
-      - name: Lint
-        run: npx eslint lib opencode/plugin knip.config.js .dependency-cruiser.mjs --max-warnings 0
-      # tsc over opencode/plugin/*.ts and every opencode/plugin/*.mjs, tests included (config in
-      # opencode/plugin/tsconfig.json: checkJs at the same maximum strictness as lib/tsconfig.json).
-      # This is the only gate that compiles the TypeScript at all; before it existed a syntax error
-      # there shipped green. Its Node typings are the plugin's own pinned @types/node, not Node 22.
-      # It type-checks only — no emit — and does not cover the .md agents/commands beside it.
-      - name: Typecheck opencode plugin
-        run: npm run check:types
-      # tsc --checkJs at maximum strictness (strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes
-      # and the rest; lib/tsconfig.json) over every lib/**/*.mjs, tests included, so a new module is strict at once.
-      # The compiler is the opencode plugin's pinned tsc (needs `npm ci --prefix opencode/plugin` above);
-      # the Node typings are the root's @types/node 22.x, matching the Node this code runs on — the
-      # plugin's newer typings would let post-22 APIs through. Types come from JSDoc; nothing shipped changes.
-      - name: Typecheck lib (checkJs)
-        run: npm run check:types:lib
-      # The engines' own code (workflows/*.js) at the same strictness: each script wrapped as the sandbox
-      # runs it, its craft-inline regions swapped for imports of the lib modules they come from, the
-      # sandbox globals declared in lib/workflow-sandbox.d.ts; errors reported at their workflows/ line.
-      # On the same program, typescript-eslint's no-unsafe-* family holds each engine to zero (needs the
-      # root deps; a missing ESLint fails the step).
-      - name: Typecheck workflow engines (checkJs)
-        run: npm run check:types:workflows
-      # run-record helpers are the only unit-tested code (workflows inline verbatim copies of them).
-      - name: Unit tests
-        run: npm test
-      # Workflow scripts can't be `node --check`'d directly (top-level export+await+return); this
-      # reproduces the sandbox wrapper and compile-checks each one. It also regenerates every fenced
-      # `craft-inline` region from lib/ and fails on any drift in the pasted-in helper copies.
-      - name: Syntax-check workflow scripts
-        run: node lib/check-workflows.mjs
-      # Validate skill/agent frontmatter and that every internal craft:<slug> reference resolves.
-      - name: Check skills & agents
-        run: node lib/check-skills.mjs
-      # Compares the SET OF OUTCOMES each review agent's two deliveries (agents/ vs opencode/agents/)
-      # can report, mapped from the rubric's words — not the two bodies in full, which can still
-      # diverge in guidance and detail with this gate green.
-      - name: Check delivery parity
-        run: node lib/check-delivery-parity.mjs
-      # The opencode delivery's agents/commands answer to a different frontmatter contract than the
-      # Claude Code ones above (no `name`, no pinned `model`, `mode: subagent`, `hidden: true`,
-      # `tools` a map with write/edit false), so it gets its own checker rather than a widened one.
-      # Shape only — it says nothing about whether an agent's description makes it trigger.
-      - name: Check opencode agent/command frontmatter
-        run: npm run check:opencode-frontmatter
-      # Static shape-check of the skill-triggering eval corpus (evals/evals.json): well-formed cases,
-      # every referenced skill exists. The model-based triggering evals themselves are a local
-      # harness (need a live model) — see evals/README.md — and are intentionally NOT run in CI.
-      - name: Check evals corpus
-        run: node lib/check-evals.mjs
-      # What the shipped Node entries (lib/shipped-entries.mjs) reach through their imports: no test file
-      # and no npm package beyond the plugin's @opencode-ai/* (.dependency-cruiser.mjs). Both fail only in a
-      # consumer's repo, where no devDependency is installed; Knip, tsc and the unit tests let them through.
-      # lib/dependency-cruiser-config.test.mjs plants each.
-      - name: Check what shipped entries import (dependency-cruiser)
-        run: npm run check:deps
-      # Unused files, exports and dependencies across lib/, workflows/ and the opencode plugin
-      # (knip.config.js). An inlined export counts as used only where an engine references it outside
-      # its source's own craft-inline regions: listed in a fence but never called is dead. Production mode drops tests and checks what the shipped entries reach, so an
-      # export only a test uses is dead here. The default mode, tests included, is kept beside it:
-      # only it sees devDependencies and what the tests import (an unused or unlisted package).
-      - name: Check unused code, shipped entries (knip --production)
-        run: npm run check:dead:production
-      - name: Check unused code and dependencies, tests included (knip)
-        run: npm run check:dead
-      # Copied code outside the craft-inline mechanism (lib/check-dup.mjs running jscpd on .jscpd.json):
-      # lib/, opencode/plugin/ and workflows/*.js, tests excluded (fixture boilerplate), each fenced region
-      # skipped — its copy is byte-compared by the syntax-check step above, which is why a fence-shaped
-      # line in a scanned file other than workflows/*.js fails this step. A new clone is read from
-      # jscpd's report; a non-zero exit with none (a missing platform package, a config error) fails as
-      # jscpd failing, not as a copy. Exact clones of at least 50 tokens and 5 lines.
-      # Copies present on adoption are in .jscpd-baseline.json; a clone not in it fails. Its count is held
-      # to lib/dup-ceiling.json, which may only fall: a regenerated baseline that absorbed a new copy
-      # fails, and so does one still listing a copy no longer found. Fingerprints cover a clone's whole
-      # extent, so an edit in or beside a baselined copy reads as a new clone: `npm run check:dup:baseline`
-      # regenerates it, the count unchanged. `maxSize` 10mb (review.js is past half the 1mb default) and
-      # `failOnEmpty` turn off two silent skips; one remains — an ignorePattern jscpd cannot compile is
-      # dropped with a warning (lib/check-dup.test.mjs pins the pattern to the fence regexes).
-      - name: Check duplicated code (jscpd)
-        run: npm run check:dup
-      # The mutation floor (lib/mutation-floor.json, the weekly Stryker run's `thresholds.break`) may only
-      # rise and its `mutate` only widen: on a pull request the file is compared with the base's, and
-      # stryker.config.mjs must apply it (lib/check-mutation-floor.mjs). The checkout
-      # holds only the merge commit, so the base is fetched first; a base that cannot be read fails the step.
-      - name: Check the mutation floor does not fall
-        if: github.event_name == 'pull_request'
+      # The gate as one call (lib/gate.mjs): lint, the three typechecks, the unit tests, the workflow,
+      # skill, delivery-parity, OpenCode-frontmatter and eval checkers, dependency-cruiser, both Knip runs,
+      # jscpd, the mutation floor and the plugin manifest validator — the same command an agent runs before
+      # pushing, so a check dropped from it is dropped from both at once, and lib/gate-steps.test.mjs fails
+      # when a check package.json, lib/check-*.mjs, this job or AGENTS.md "Commands" names is not in it.
+      # Every step runs, a failed one included, and the log names each one's result. On a pull request the
+      # checkout holds only the merge commit, so the base is fetched for the mutation floor to compare with
+      # (a base that cannot be read fails that step); on a push it compares with origin/main.
+      - name: Gate (npm run gate)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          node lib/check-mutation-floor.mjs --base "$BASE_SHA"
-      # Official schema-authoritative validator: marketplace + plugin manifest, --strict so stray or
-      # misspelled fields become errors. Complements the custom frontmatter/cross-ref check above.
-      - name: Validate plugin manifests
-        run: |
-          npm install -g @anthropic-ai/claude-code
-          claude plugin validate . --strict
+          if [ -n "$BASE_SHA" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            npm run gate -- --base "$BASE_SHA"
+          else
+            npm run gate
+          fi
       # The OpenCode plugin's dependencies are the only ones a consumer installs (craft itself ships
       # none), so a known high-severity advisory in its LOCKED production closure fails the build.
       # Last in the job, so a red audit never hides the other checks' verdict on the diff.
