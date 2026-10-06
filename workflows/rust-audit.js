@@ -1224,13 +1224,15 @@ const agentSection = () => agentUnavailableSection(
   ].filter(x => !agentTypeMissing.has(x.agent)).concat(
     nestedAgentNotes.flatMap(n => n.emptied.map(x => ({ ...x, what: `lens dispatch(es) of the nested review ${n.dimension}` })))),
 )
-// The record, in the shape both engines write: this audit's own misses and fallbacks plus each nested review's.
+// The record, in the shape both engines write: this audit's OWN misses and fallbacks only. Each nested
+// review files its own record (`nested`, `via: 'rust-audit'`) carrying its fact, and analyze-runs counts
+// every record alike, so folding the nested fact in here counted one unavailable agent twice; the
+// nested fact stays in this audit's report section above.
 const agentRecord = () => agentUnavailableRecord(
-  [...agentTypeMissing.keys(), ...nestedAgentNotes.flatMap(n => n.missing.map(x => x.agent))],
+  agentTypeMissing.keys(),
   [
     ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count })),
     ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count })),
-    ...nestedAgentNotes.flatMap(n => n.emptied),
   ],
 )
 
