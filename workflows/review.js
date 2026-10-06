@@ -3207,10 +3207,13 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 /** @type {{ id: string, agent: string, error: string }[]} */
 const reviewerAgentUnavailable = []
 // The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
-// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection
+// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection agentUnavailableRecord
 // Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
 // or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
-// operator to the wrong fix.
+// operator to the wrong fix. Observed from the session's Agent tool for an unregistered type:
+// "Agent type 'craft:rust-reviewer' not found. Available agents: …" (realm @nick/craft #152); what the
+// workflow sandbox's agent() throws for it is not yet observed, so a "not found" this does not match
+// still falls back softly in both engines rather than killing the work.
 /** @param {unknown} msg @param {string} [agent] */
 function isAgentTypeMissing(msg, agent) {
   const m = String(msg ?? '')
@@ -3221,8 +3224,8 @@ function isAgentTypeMissing(msg, agent) {
 // registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
 // `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
 // came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
-// threw a "not found" isAgentTypeMissing does not recognise (the harness's wording for an unregistered
-// type is unobserved, #116) — said softly, without the install line, the error quoted. Empty string
+// threw a "not found" isAgentTypeMissing does not recognise (the sandbox's wording for an unregistered
+// type is not yet observed, #152) — said softly, without the install line, the error quoted. Empty string
 // when there is nothing to say.
 /**
  * @param {{ agent: string, what: string, error?: string }[]} missing
@@ -3242,6 +3245,23 @@ function agentUnavailableSection(missing, emptied) {
   const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
 }
+
+// The fact's ONE shape on a run record, whichever engine files it (realm @nick/craft #151):
+// `agentUnavailable` — the agent types the engine learned are not registered, each once, sorted;
+// `agentFallbacks` — per agent type, the dispatches the generic subagent answered in its place.
+// Keyed by agent type in both engines: a profile id names the review engine's own grouping, which
+// an audit dimension does not have.
+/**
+ * @param {Iterable<string>} missing
+ * @param {{ agent: string, count: number }[]} fallbacks
+ * @returns {{ agentUnavailable: string[], agentFallbacks: Record<string, number> }}
+ */
+function agentUnavailableRecord(missing, fallbacks) {
+  /** @type {Record<string, number>} */
+  const agentFallbacks = {}
+  for (const x of fallbacks) if (x.count > 0) agentFallbacks[x.agent] = (agentFallbacks[x.agent] || 0) + x.count
+  return { agentUnavailable: [...new Set(missing)].sort(), agentFallbacks }
+}
 // <<< craft-inline
 /** @param {Profile} profile @param {unknown} error */
 function noteReviewerAgentMissing(profile, error) {
@@ -3255,7 +3275,7 @@ const reviewerAgentFallbacks = {}
 /** @type {Record<string, string>} */
 const reviewerAgentNames = {}           // profile id -> its reviewer agent type, for the report line
 // Lens dispatches whose reviewer agent threw a "not found" isAgentTypeMissing does not recognise and the
-// generic subagent then answered: the harness's wording for an unregistered type is unobserved (#116),
+// generic subagent then answered: the sandbox's wording for an unregistered type is not yet observed (#152),
 // so the lens keeps its coverage rather than dying on a guess about the text. Also in the record count.
 /** @type {Record<string, { count: number, error: string }>} */
 const reviewerAgentNotFound = {}
@@ -3295,7 +3315,7 @@ function out(reportText) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude payloadVersion runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt makeRunLogger telemetryLossNoter
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt makeRunLogger telemetryLossNoter
 // Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
@@ -3437,6 +3457,17 @@ function payloadVersion(payload) {
   return String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
 }
 
+// The engine's revision a SECOND time, on the command line the engine composes itself (realm
+// @nick/craft, node #114). It decides which fingerprint basis a later round reads this run under, and
+// the payload it also rides in is re-emitted by the logger agent — so craft-log-run files it only when
+// the two copies agree; one altered copy files an unknown basis, never a wrong one. Emitted only for a
+// payload that stamps an integer revision: an engine that stamps no basis sends no flag.
+/** @param {unknown} payload @returns {string} */
+function engineRevisionFlag(payload) {
+  const rev = payload && typeof payload === 'object' ? /** @type {{ workflowEngineRevision?: unknown }} */ (payload).workflowEngineRevision : undefined
+  return Number.isInteger(rev) ? `--engine-revision ${rev} ` : ''
+}
+
 // The logger flags both prompts share: `--dir`, `--rejoin` and the shell-expanded session id, each
 // independent of the others (see logRunPrompt below), with the trailing space the command line needs.
 /** @param {string} dir @param {boolean} rejoin @returns {string} */
@@ -3494,7 +3525,7 @@ ${loggerPrelude(craftRoot, version, repo)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/
 cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
 …RECORD below, byte for byte…
 CRAFT_RECORD_EOF
-cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
+cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${engineRevisionFlag(record)}${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
 \`\`\`
 
 The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit, and — reading the working copy with git — branch and head, whose values in the record below are only a fallback for what git cannot resolve), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
@@ -3580,7 +3611,7 @@ function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir 
   // See the matching note in logRunPrompt above: shell-expanded, never model-composed, and `:+`
   // degrades an unset/empty session id to no flag rather than to the literal string "".
   // Independent of `--dir`, for the reason spelled out in `logRunPrompt` above.
-  const flags = `--phase ${shq(phase)} ${runDirFlags(dir, rejoin)}`
+  const flags = `--phase ${shq(phase)} ${engineRevisionFlag(payload)}${runDirFlags(dir, rejoin)}`
   return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
 Run exactly this, then return the runDir the script prints:
@@ -6445,8 +6476,9 @@ function reviewRecord(extra) {
     lensScope: fullRescan ? 'full' : 'delta',
     strict,
     fullEvery,
-    reviewerAgentUnavailable: reviewerAgentUnavailable.map(x => x.id),
-    reviewerAgentFallbacks: { ...reviewerAgentFallbacks },
+    // One name and one shape with rust-audit, keyed by agent type (lib/agent-fallback.mjs, realm @nick/craft #151).
+    ...agentUnavailableRecord(reviewerAgentUnavailable.map(x => x.agent),
+      Object.entries(reviewerAgentFallbacks).map(([id, count]) => ({ agent: reviewerAgentNames[id] || id, count }))),
     // Against which base and path the diff was taken, which lenses the critic added on top of the plan,
     // and a digest of the caller's intent text (it feeds the intent lens) — all of which change what a
     // round costs without being memory (lib/round-pairs.mjs, realm @nick/craft #97).
