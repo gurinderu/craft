@@ -281,5 +281,38 @@
       "Selects rust-cloud-native, NOT distributed-races — Kubernetes deployment concerns without a reconcile loop.",
       "Does not walk the controller-race catalogue."
     ]
+  },
+  {
+    "skills": ["compatibility"],
+    "query": "Review this change: the Helm chart renames `controller.syncInterval` to `controller.resync.interval`, the CRD drops the v1alpha1 version, and the CLI flag --dry renames to --dry-run. Will existing installs and scripts break on upgrade?",
+    "expected_behavior": [
+      "Selects compatibility for the backward-compatibility questions.",
+      "Asks what happens to values files still setting the old key (C6), to clients and stored objects on the version no longer served (C9), and to scripts passing the old flag (C5).",
+      "Diffs the surfaces against the last released tag to tell a regression from a standing state (C13)."
+    ]
+  },
+  {
+    "skills": ["compatibility"],
+    "query": "Our Go service renames the JSON field `user_id` to `userId` in the event payload it writes to Kafka; the consumer now reads both keys. Is this safe during a rolling deploy?",
+    "expected_behavior": [
+      "Selects compatibility even though the code is Go — the skill is language-agnostic.",
+      "Calls out that reading both keys covers only new-reads-old (C3) while old consumers cannot read what new producers write (C2), and asks about events already in the log (C1)."
+    ]
+  },
+  {
+    "skills": ["refactoring"],
+    "query": "Rename this private helper function and split the 400-line module into three files; nothing outside the crate uses it.",
+    "expected_behavior": [
+      "Selects refactoring, NOT compatibility — an internal rename with no outside consumer has no compatibility contract.",
+      "The word 'rename' must not pull the compatibility skill."
+    ]
+  },
+  {
+    "skills": ["rust-ecosystem"],
+    "query": "Run cargo semver-checks before I publish the next minor version of my library crate to crates.io.",
+    "expected_behavior": [
+      "Selects rust-ecosystem, NOT compatibility — crate-level semver publishing is owned by the ecosystem skill.",
+      "Does not walk the compatibility catalogue."
+    ]
   }
 ]

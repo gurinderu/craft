@@ -195,7 +195,7 @@ others (higher recall than one broad pass):
 | errors | Result-vs-panic, dropped errors, typed-vs-anyhow | `rust-errors` |
 | concurrency | blocking-in-async, lock-across-await, deadlock, Send/Sync | `rust-concurrency` |
 | invariants | domain lifecycle/scope rules, derived/effective quantities, eligibility checks that **diverge from an existing sibling gate** (a new capacity/permission predicate dropping a fail-closed dimension), and the **mirror walk** on two-sided contracts (below) | `rust-architecture`, `rust-fintech` |
-| compat | serialization / persistence / rolling-deploy compatibility — a changed serde/JSONB/wire representation vs data written by other code versions (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration) | `rust-ecosystem` |
+| compat | backward compatibility of every contract another version reads, calls or deploys against — serde/JSONB/wire data (rename with no `alias`, `alias` that only covers new-reads-old, unbackfilled migration), CLI/config/env/Helm surface and defaults, CRD/API versions, IDL, rollout order, renamed exports, regression vs last release; reads the language-agnostic `compatibility` catalogue | `compatibility`, `rust-ecosystem` |
 | maintainability | structural simplification (code judo), file-size growth, spaghetti branching, needless optionality/casts | `refactoring`, `rust-idioms` |
 | tests | test *quality* not just presence; missing regression/error-path tests | `rust-testing` |
 | intent | does the change do what the brief/spec says? | `specs` |
