@@ -3204,10 +3204,13 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 /** @type {{ id: string, agent: string, error: string }[]} */
 const reviewerAgentUnavailable = []
 // The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
-// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection
+// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection agentUnavailableRecord
 // Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
 // or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
-// operator to the wrong fix.
+// operator to the wrong fix. Observed from the session's Agent tool for an unregistered type:
+// "Agent type 'craft:rust-reviewer' not found. Available agents: …" (realm @nick/craft #152); what the
+// workflow sandbox's agent() throws for it is not yet observed, so a "not found" this does not match
+// still falls back softly in both engines rather than killing the work.
 /** @param {unknown} msg @param {string} [agent] */
 function isAgentTypeMissing(msg, agent) {
   const m = String(msg ?? '')
@@ -3218,8 +3221,8 @@ function isAgentTypeMissing(msg, agent) {
 // registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
 // `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
 // came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
-// threw a "not found" isAgentTypeMissing does not recognise (the harness's wording for an unregistered
-// type is unobserved, #116) — said softly, without the install line, the error quoted. Empty string
+// threw a "not found" isAgentTypeMissing does not recognise (the sandbox's wording for an unregistered
+// type is not yet observed, #152) — said softly, without the install line, the error quoted. Empty string
 // when there is nothing to say.
 /**
  * @param {{ agent: string, what: string, error?: string }[]} missing
@@ -3239,6 +3242,23 @@ function agentUnavailableSection(missing, emptied) {
   const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
 }
+
+// The fact's ONE shape on a run record, whichever engine files it (realm @nick/craft #151):
+// `agentUnavailable` — the agent types the engine learned are not registered, each once, sorted;
+// `agentFallbacks` — per agent type, the dispatches the generic subagent answered in its place.
+// Keyed by agent type in both engines: a profile id names the review engine's own grouping, which
+// an audit dimension does not have.
+/**
+ * @param {Iterable<string>} missing
+ * @param {{ agent: string, count: number }[]} fallbacks
+ * @returns {{ agentUnavailable: string[], agentFallbacks: Record<string, number> }}
+ */
+function agentUnavailableRecord(missing, fallbacks) {
+  /** @type {Record<string, number>} */
+  const agentFallbacks = {}
+  for (const x of fallbacks) if (x.count > 0) agentFallbacks[x.agent] = (agentFallbacks[x.agent] || 0) + x.count
+  return { agentUnavailable: [...new Set(missing)].sort(), agentFallbacks }
+}
 // <<< craft-inline
 /** @param {Profile} profile @param {unknown} error */
 function noteReviewerAgentMissing(profile, error) {
@@ -3252,7 +3272,7 @@ const reviewerAgentFallbacks = {}
 /** @type {Record<string, string>} */
 const reviewerAgentNames = {}           // profile id -> its reviewer agent type, for the report line
 // Lens dispatches whose reviewer agent threw a "not found" isAgentTypeMissing does not recognise and the
-// generic subagent then answered: the harness's wording for an unregistered type is unobserved (#116),
+// generic subagent then answered: the sandbox's wording for an unregistered type is not yet observed (#152),
 // so the lens keeps its coverage rather than dying on a guess about the text. Also in the record count.
 /** @type {Record<string, { count: number, error: string }>} */
 const reviewerAgentNotFound = {}
@@ -6436,8 +6456,9 @@ function reviewRecord(extra) {
     lensScope: fullRescan ? 'full' : 'delta',
     strict,
     fullEvery,
-    reviewerAgentUnavailable: reviewerAgentUnavailable.map(x => x.id),
-    reviewerAgentFallbacks: { ...reviewerAgentFallbacks },
+    // One name and one shape with rust-audit, keyed by agent type (lib/agent-fallback.mjs, realm @nick/craft #151).
+    ...agentUnavailableRecord(reviewerAgentUnavailable.map(x => x.agent),
+      Object.entries(reviewerAgentFallbacks).map(([id, count]) => ({ agent: reviewerAgentNames[id] || id, count }))),
     // Against which base and path the diff was taken, which lenses the critic added on top of the plan,
     // and a digest of the caller's intent text (it feeds the intent lens) — all of which change what a
     // round costs without being memory (lib/round-pairs.mjs, realm @nick/craft #97).
