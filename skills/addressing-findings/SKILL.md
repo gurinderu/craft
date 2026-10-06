@@ -29,11 +29,13 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                accept / reject / defer / needs-decision / conflict (+ reasoning)
 4. Order     — accepted only: blocking → simple → complex; group by file to cut churn
                (the grouping is what makes step 5 parallelisable — independent groups)
-5. Fix     ⫲ — independent file-groups fixed concurrently, one subagent per group
+5. Fix     ⫲ — list every place the violated property lives, then patch them  (→ below)
+               independent file-groups fixed concurrently, one subagent per group
                (worktree isolation when groups could touch shared files). Within a
                group, serial. "How to fix" → topic skills; a bug → regression test
                first, RED→GREEN                                                (→ rust.md)
-6. Verify    — per fix: every facet · your own check · sibling sweep          (→ below, rust.md)
+6. Verify    — per fix: every facet · your own check · sibling sweep ·
+               falsify per element · bounds reached                           (→ below, rust.md)
 7. Re-review ⫲ — re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &
@@ -62,9 +64,17 @@ location during triage, else route to `needs-decision` — never drop them silen
 `reject` → `rejected` and `defer` → `deferred` are also written back to the **review ledger** so
 the next re-review carries them forward (→ "Writing dispositions to the review ledger").
 
+## Fix the property, not the example (step 5)
+
+A finding names one instance; the defect is the property that instance violates. Before patching,
+find every place that property lives **by code structure** — the shape of the call, the field, the
+guard — not by the name in the finding: a name match misses the wrapper under another name and
+breaks on the next rename. Write the list down, then patch every entry. Fixing only the named place
+lets the same property fail next door, in the spot the reviewer did not point at.
+
 ## When a fix is done (step 6)
 
-The proof table in `rust-review` says how to prove *a* claim. These three checks say when the fix
+The proof table in `rust-review` says how to prove *a* claim. These checks say when the fix
 itself is finished. Each exists because a fix that passed the obvious check still shipped broken.
 
 **Every facet, not the loudest one.** A bug with more than one observable effect — a panic *and*
@@ -84,6 +94,18 @@ green suite written by whoever wrote the fix proves the two agree, not that the 
 adjacent method, the other call site, the mirror path (`rust-review` → *The mirror walk*). A fix
 can close the one reported instance and leave an identical sibling untouched, invisible to the one
 case that was tested. Findings in the same file/pattern group can be swept together in one pass.
+
+**Falsify per element.** A green test after the fix proves the tests agree with the fix, not that
+they guard it. A fix touching N places is proven by breaking each place separately and seeing N
+red tests, each naming the place it broke. One break per loop proves one element, not the loop. A
+falsifier that stays green is not yet evidence the test is strong — it may be a weak falsifier
+(the break still lands on the guarded side, or is caught for an unrelated reason); say which.
+
+**Bounds the fix introduces.** Coverage built from past bugs cannot see limits the fix itself
+adds — a limit, timeout, size, depth, retry count. For each one, write a case where it is reached,
+built by the failure mechanism (a route that exits and comes back, not one that stays inside).
+On exhaustion the code must refuse, not continue on the unfinished state: a bound that fails open
+is not a bound.
 
 Fixed-and-verified findings become `closed` in the review ledger (above); a sibling found during
 the sweep is a **new** finding — give it its own stable id rather than folding it into the one
