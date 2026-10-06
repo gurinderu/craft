@@ -7,7 +7,7 @@ description: >-
 # Rust Security
 
 The security pass over a Rust project: vet what you depend on, measure your unsafe surface, and
-scan code for dangerous patterns. The `rust-security-scanner` agent runs this and reports; this
+scan code for dangerous patterns. The `craft:rust-security-scanner` agent runs this and reports; this
 skill is the rubric. Tool usage and config are in [tools.md](tools.md).
 
 ## When to Use
@@ -94,7 +94,7 @@ decrypted plaintext) without the `secrecy` wrapper.
 - Reviewing the *diff's* code for correctness + safety smells → `rust-review` (this skill is the
   tooling/supply-chain layer; they share the verdict vocabulary).
 - *Soundness* of your own `unsafe` (invariants, UB) → `rust-unsafe`; verify it with the
-  `rust-miri` agent.
+  `craft:rust-miri` agent.
 - Dependency *freshness/unused* (not security) → `rust-ecosystem`.
 - *Fuzzing* parsers / deserializers / any untrusted-input surface for panics and crashes
   (`cargo-fuzz`) → `rust-testing`.
