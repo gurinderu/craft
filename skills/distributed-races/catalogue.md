@@ -16,11 +16,15 @@ provisioner, a queue consumer with retries, or a sync daemon.
 - **Question**: does this pass write the primary object's own status, conditions, annotations or
   labels? Does that write produce a watch event on the primary that re-enqueues it, earlier than
   the requeue interval the code relies on? Is the write skipped when nothing changed?
-- **Answer needed**: the list of writes to the primary in one pass. For each write, whether the
-  watch filters it out (a generation-change predicate ignores status-only updates; annotation and
-  label writes usually pass through), and whether the write is guarded by `desired != current`.
-- **Where**: the watch / `owns` / predicate setup of the controller, and every patch of the primary
-  in the pass.
+- **Answer needed**: the list of EVERY write to the primary in one pass, on every path. That
+  includes the status/condition the generic driver or error path writes on every pass, on holds
+  and errors too, not only the writes the diff adds. For each write: does it change a field every
+  pass (`lastTransitionTime`, a "last checked" time, a message carrying a timestamp or counter)?
+  Does the primary's own watch pass it through and re-enqueue before the requeue the code relies
+  on? A watch with no predicate or generation filter passes every write. Is the write guarded by
+  `desired != current`?
+- **Where**: the watch / `owns` / predicate setup of the controller, every patch of the primary
+  in the pass, and the shared status/error writer that wraps the pass.
 - **Finding**: a write that always changes something (a timestamp, a counter, a "last checked"
   field) re-enqueues the object immediately. Every backoff, deadline or `requeue_after` the code
   promises then becomes a hot loop. The fix is to guard the write on a real change, or to keep
@@ -46,9 +50,14 @@ provisioner, a queue consumer with retries, or a sync daemon.
 - **Question**: a release, delete or reuse is decided from the state of an object that ANOTHER
   controller owns (its status, its finalizer, its child). Can that controller still act on an
   older view and recreate, re-bind or re-use what we just released?
-- **Answer needed**: how the other controller marks what it has acted on (observedGeneration vs
-  generation, a desired/applied generation pair, a resourceVersion it echoes). The decision is
-  safe only once that marker shows the other controller has seen the state we rely on.
+- **Not this class**: our OWN cache being stale is R12. R3 is about the other controller's view.
+- **Answer needed**: for EACH object another controller owns that the decision depends on
+  (release, delete, label or finalizer removal), name that controller and find its
+  observed-generation gate: `status.observedGeneration` vs `metadata.generation`, KubeVirt's
+  `status.desiredGeneration`, an applied/desired pair, or a resourceVersion it echoes. Then ask
+  whether it can still act, for example recreate a child from the OLD template, after we decided
+  from its "absent/finished" state. The decision is safe only once its observed generation has
+  caught up with the generation we rely on.
 - **Where**: the other controller's source (same repo, vendored, or upstream such as KubeVirt or
   cert-manager) and the status fields it publishes.
 - **Finding**: "X is gone / not ready / terminating, so we release Y" while X's controller has not

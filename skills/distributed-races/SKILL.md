@@ -19,6 +19,7 @@ from evidence is a finding to raise as open, not a pass.
 1. MAP     — name the primary object, every secondary/child it writes, every object it READS that
              another controller owns, and the requeue/error outcomes the pass can return.
 2. ASK     — run each class below against that map. Skip a class only by saying why it cannot apply.
+             Apply each class to EVERY instance in the diff, not to the first convenient one.
 3. SOURCE  — answer from the carrier named in "where", not from comments or the PR text.
 4. REPORT  — a finding names the interleaving or the request order that produces the bad state,
              and says what it does NOT establish (live behaviour, actual data loss).
@@ -31,9 +32,9 @@ fix shape for every class are in [catalogue.md](catalogue.md).
 
 | # | Class | The question |
 |---|---|---|
-| R1 | Self-triggering write | Does this pass write the primary's own status/conditions/annotations, and does that write fire the primary's own watch and re-enqueue it sooner than the requeue the code relies on? Is the write skipped when nothing changed? |
+| R1 | Self-triggering write | For EVERY write to the primary in a pass (the driver/error path's status/conditions on holds and errors included): does it change a field every pass (`lastTransitionTime`), and does the primary's own watch (no predicate/generation filter) re-enqueue it sooner than the requeue the code relies on? Is it skipped when nothing changed? |
 | R2 | Wake source | For every outcome the requeue/error policy can return (await-change included), what event or timer guarantees a pass by the deadline the code promises? |
-| R3 | Foreign stale cache | A release/delete decided from an object another controller owns — can that controller act on a stale view (its observed/desired generation vs `generation`) and recreate or re-use what we released? |
+| R3 | Foreign stale cache | Not our own stale read (R12). For EACH object another controller owns that a release/delete/label removal depends on: name that controller and its observed-generation gate (`status.observedGeneration`, KubeVirt `status.desiredGeneration` vs `metadata.generation`). Can it still act (recreate a child from the OLD template) after we decided from its "absent/finished" state? Wait until it catches up. |
 | R4 | Permissions | Is every API verb and resource the diff newly calls granted in the shipped Role/ClusterRole/chart/IAM policy? |
 | R5 | Protection lifetime | Is a finalizer/label/lock/hold released on a change of **intent** (spec) when the consumer outlives the spec and the release must wait for **end of use**? |
 | R6 | Migration window | Objects created before this change lack a field/label/status the new logic relies on — what does the new code do with them? |
