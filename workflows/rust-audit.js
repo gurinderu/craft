@@ -1071,10 +1071,14 @@ function agentUnavailableSection(missing, emptied) {
   const hard = Array.isArray(missing) ? missing : []
   const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
   if (!hard.length && !soft.length) return ''
+  // One bullet is one line: the harness's error carries newlines ("…not found.\nAvailable agents: …"), and
+  // readAgentUnavailableSection stops at the first line that is not a bullet, dropping every later entry.
+  /** @param {unknown} e */
+  const quote = e => String(e).replace(/\s+/g, ' ').trim().slice(0, 160)
   const lines = [
-    ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} went to the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${String(x.error).slice(0, 160)})` : ''}`),
+    ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} went to the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${quote(x.error)})` : ''}`),
     ...soft.map(x => x.error
-      ? `- \`${x.agent}\` failed with "${String(x.error).slice(0, 160)}" on ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent in wording this engine does not recognise, or a missing model or tool).`
+      ? `- \`${x.agent}\` failed with "${quote(x.error)}" on ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent in wording this engine does not recognise, or a missing model or tool).`
       : `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
   ]
   const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
