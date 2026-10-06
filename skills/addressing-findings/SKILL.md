@@ -43,7 +43,7 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 ```
 
 **Scaling:** small batch → steps 2–4 inline. Large batch (a fat `rust-audit` report, a
-many-comment PR) → dispatch the `triage-findings` workflow, apply its plan, then run the
+many-comment PR) → dispatch the `craft:triage-findings` workflow, apply its plan, then run the
 re-review loop.
 
 ## Triage outcomes
@@ -122,7 +122,7 @@ visible). Schema details → [schema.md](schema.md).
 
 ## Writing dispositions to the review ledger
 
-Distinct from the triage ledger above: the **review ledger** is the `review` workflow's per-run
+Distinct from the triage ledger above: the **review ledger** is the `craft:review` workflow's per-run
 record — `~/.craft/runs/<ts>-workflow-review.json`, keyed by `project + branch`, holding a `ledger`
 array keyed by each finding's `fp`. The triage ledger (above) is *your* artifact keyed by
 `stable_id`; the review ledger is the *engine's* artifact keyed by `fp` — do not conflate them.
@@ -144,7 +144,7 @@ After **Triage (step 3)** and again after **Verify (step 6)**, write disposition
    otherwise by `file` + `ruleId` + a title match. If no entry matches, skip that finding silently.
 4. **Why:** this is exactly what lets the next round-aware re-review's *adjudicate track* **carry**
    dismissed (`rejected` / `justified`) findings forward instead of re-raising them, and treat
-   `closed` ones as resolved (→ Re-review, step 7; the round-aware `review` workflow).
+   `closed` ones as resolved (→ Re-review, step 7; the round-aware `craft:review` workflow).
 
 ## Parallelism via subagents
 

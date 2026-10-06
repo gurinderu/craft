@@ -52,7 +52,7 @@ difference at a time.
 Non-determinism is almost always **shared state, ordering, or timing**:
 
 - Concurrency: a data race or missing synchronization. Run under **Miri** (`cargo +nightly miri
-  test`, detects data races — the `rust-miri` agent) and consider `loom` for exhaustive
+  test`, detects data races — the `craft:rust-miri` agent) and consider `loom` for exhaustive
   interleaving testing of lock-free code (→ `rust-concurrency`).
 - Test-order dependence: a test leaking global/file/DB state. Run with `--shuffle` (nightly:
   `cargo +nightly test -- -Z unstable-options --shuffle`) or run each test in isolation; `cargo

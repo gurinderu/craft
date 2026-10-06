@@ -7,10 +7,10 @@ description: >-
 # Nix Review
 
 The rubric for reviewing Nix changes: run the mechanical gate first, then read the diff against
-the severity checklist, then issue a verdict. This is the knowledge; the `nix-reviewer` agent
+the severity checklist, then issue a verdict. This is the knowledge; the `craft:nix-reviewer` agent
 applies it to an actual diff and reports back.
 
-**The review entry point is the `nix-review` workflow** (`workflows/nix-review.js`): it
+**The review entry point is the `craft:nix-review` workflow** (`workflows/nix-review.js`): it
 scout-scales depth to the diff, fans out the lenses below, grounds findings in tool output, and
 adversarially verifies each one. This skill is the rubric the workflow and the `nix-reviewer`
 lens worker apply.
