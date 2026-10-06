@@ -1031,10 +1031,13 @@ const logRun = makeRunLogger({
 // What fell back is also SAID — in the report and on the record — with the same match and wording as the
 // review engine (lib/agent-fallback.mjs, realm @nick/craft #116): a weaker audit must not read as a
 // normal one.
-// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection
+// >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection agentUnavailableRecord readAgentUnavailableSection readAgentUnavailableLine
 // Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
 // or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
-// operator to the wrong fix.
+// operator to the wrong fix. Observed from the session's Agent tool for an unregistered type:
+// "Agent type 'craft:rust-reviewer' not found. Available agents: …" (realm @nick/craft #152); what the
+// workflow sandbox's agent() throws for it is not yet observed, so a "not found" this does not match
+// still falls back softly in both engines rather than killing the work.
 /** @param {unknown} msg @param {string} [agent] */
 function isAgentTypeMissing(msg, agent) {
   const m = String(msg ?? '')
@@ -1045,8 +1048,8 @@ function isAgentTypeMissing(msg, agent) {
 // registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
 // `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
 // came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
-// threw a "not found" isAgentTypeMissing does not recognise (the harness's wording for an unregistered
-// type is unobserved, #116) — said softly, without the install line, the error quoted. Empty string
+// threw a "not found" isAgentTypeMissing does not recognise (the sandbox's wording for an unregistered
+// type is not yet observed, #152) — said softly, without the install line, the error quoted. Empty string
 // when there is nothing to say.
 /**
  * @param {{ agent: string, what: string, error?: string }[]} missing
@@ -1065,6 +1068,62 @@ function agentUnavailableSection(missing, emptied) {
   ]
   const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
+}
+
+// The fact's ONE shape on a run record, whichever engine files it (realm @nick/craft #151):
+// `agentUnavailable` — the agent types the engine learned are not registered, each once, sorted;
+// `agentFallbacks` — per agent type, the dispatches the generic subagent answered in its place.
+// Keyed by agent type in both engines: a profile id names the review engine's own grouping, which
+// an audit dimension does not have.
+/**
+ * @param {Iterable<string>} missing
+ * @param {{ agent: string, count: number }[]} fallbacks
+ * @returns {{ agentUnavailable: string[], agentFallbacks: Record<string, number> }}
+ */
+function agentUnavailableRecord(missing, fallbacks) {
+  /** @type {Record<string, number>} */
+  const agentFallbacks = {}
+  for (const x of fallbacks) if (x.count > 0) agentFallbacks[x.agent] = (agentFallbacks[x.agent] || 0) + x.count
+  return { agentUnavailable: [...new Set(missing)].sort(), agentFallbacks }
+}
+
+// The section above, read back out of a report. An engine that nests a review receives only the
+// nested report, so this is how it learns what the nested run fell back on (realm @nick/craft #153).
+// It is the inverse of agentUnavailableSection and lives beside it, so the wording and its reader
+// change in one place. A bullet it cannot read fails toward "unavailable": it is returned as missing,
+// the bullet itself as the error, rather than dropped.
+/**
+ * @param {unknown} report
+ * @returns {{ missing: { agent: string, error: string }[], emptied: { agent: string, count: number, error?: string }[] }}
+ */
+function readAgentUnavailableSection(report) {
+  /** @type {{ agent: string, error: string }[]} */
+  const missing = []
+  /** @type {{ agent: string, count: number, error?: string }[]} */
+  const emptied = []
+  const text = String(report ?? '')
+  const head = text.indexOf('## ⚠️ Reviewer agent unavailable\n')
+  if (head < 0) return { missing, emptied }
+  for (const line of text.slice(head).split('\n').slice(1)) {
+    if (!line.startsWith('- ')) break
+    const got = readAgentUnavailableLine(line)
+    if ('count' in got) emptied.push(got)
+    else missing.push(got)
+  }
+  return { missing, emptied }
+}
+
+// One bullet of the section: a soft fallback carries `count`, an unregistered agent does not. A bullet
+// in wording this does not know is an unregistered agent, the bullet itself (bounded) as the error.
+/** @param {string} line @returns {{ agent: string, error: string } | { agent: string, count: number, error?: string }} */
+function readAgentUnavailableLine(line) {
+  const hard = /^- `([^`]+)` is not registered in this session, .*? not broken\.(?: \((.*)\))?$/.exec(line)
+  if (hard) return { agent: String(hard[1]), error: hard[2] || '' }
+  const threw = /^- `([^`]+)` failed with "(.*)" on (\d+) /.exec(line)
+  if (threw) return { agent: String(threw[1]), count: Number(threw[3]), error: threw[2] || '' }
+  const empty = /^- `([^`]+)` returned nothing for (\d+) /.exec(line)
+  if (empty) return { agent: String(empty[1]), count: Number(empty[2]) }
+  return { agent: /`([^`]+)`/.exec(line)?.[1] || 'a craft agent', error: line.slice(2, 162) }
 }
 // <<< craft-inline
 /** @type {Map<string, string>} */
@@ -1111,7 +1170,7 @@ async function genericAfterNull(prompt, generic, at) {
 async function genericAfterThrow(e, prompt, generic, at) {
   const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
   // A "not found" that does not name the agent type may still be the harness's way of saying it —
-  // its live wording is unobserved (#116) — so the dimension keeps its coverage on the generic
+  // the sandbox's wording is not yet observed (#152) — so the dimension keeps its coverage on the generic
   // subagent, said softly (no install line), and is not memoized: a real unregistered type in unknown
   // wording costs one failed agent dispatch per dimension — the price of not guessing at the text.
   if (!isAgentTypeMissing(msg, at)) {
@@ -1130,20 +1189,35 @@ async function genericAfterThrow(e, prompt, generic, at) {
   if (!fallback) throw e
   return fallback
 }
+// What each nested review said in its own section (realm @nick/craft #153): the audit receives only the
+// nested report, so it reads the section back (readAgentUnavailableSection) and names the dimension.
+/** @type {{ dimension: string, missing: { agent: string, error: string }[], emptied: { agent: string, count: number, error?: string }[] }[]} */
+const nestedAgentNotes = []
+/** @param {string} dimension @param {unknown} report */
+function noteNestedAgents(dimension, report) {
+  const got = readAgentUnavailableSection(report)
+  if (got.missing.length || got.emptied.length) nestedAgentNotes.push({ dimension, ...got })
+}
 const agentSection = () => agentUnavailableSection(
-  [...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
+  [
+    ...[...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
+    ...nestedAgentNotes.flatMap(n => n.missing.map(x => ({ agent: x.agent, what: `the lenses of the nested review ${n.dimension}`, error: x.error }))),
+  ],
   [
     ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count, what: 'dimension dispatch(es)' })),
     ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
-  ].filter(x => !agentTypeMissing.has(x.agent)),
+  ].filter(x => !agentTypeMissing.has(x.agent)).concat(
+    nestedAgentNotes.flatMap(n => n.emptied.map(x => ({ ...x, what: `lens dispatch(es) of the nested review ${n.dimension}` })))),
 )
-// The record counts both kinds of answered fallback per agent type.
-const agentFallbackCounts = () => {
-  /** @type {Record<string, number>} */
-  const out = { ...agentTypeEmptied }
-  for (const [a, x] of agentTypeNotFound) out[a] = (out[a] || 0) + x.count
-  return out
-}
+// The record, in the shape both engines write: this audit's own misses and fallbacks plus each nested review's.
+const agentRecord = () => agentUnavailableRecord(
+  [...agentTypeMissing.keys(), ...nestedAgentNotes.flatMap(n => n.missing.map(x => x.agent))],
+  [
+    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count })),
+    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count })),
+    ...nestedAgentNotes.flatMap(n => n.emptied),
+  ],
+)
 
 // `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
 // session sits. Accepting it silently is the failure this family exists to end — the caller names
@@ -1472,7 +1546,7 @@ function pushReviewDims() {
           // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
           // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
           // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
-          .then(/** @param {unknown} report */ report => report == null ? null : reviewResult(`review:${c.name}`, report)),
+          .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); return reviewResult(`review:${c.name}`, report) }),
         // A swallowed throw is a name that would not resolve OR a run that died; keep the
         // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
         // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
@@ -1490,7 +1564,7 @@ function pushReviewDims() {
                                                   : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
         // As at the per-crate site: report==null is a dead nested engine — resolve to null before
         // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
-        .then(/** @param {unknown} report */ report => report == null ? null : reviewResult('review', report)),
+        .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); return reviewResult('review', report) }),
       // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
       // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
@@ -1750,9 +1824,9 @@ const auditRecord = {
   couldNotRun,
   noEvidence,
   // Agent types that were not registered (so their dimensions ran on the generic subagent) and
-  // dispatches that came back empty and went generic — realm @nick/craft #116.
-  agentUnavailable: [...agentTypeMissing.keys()].sort(),
-  agentFallbacks: agentFallbackCounts(),
+  // dispatches that came back empty and went generic, the nested reviews' included — realm
+  // @nick/craft #116, #151, #153.
+  ...agentRecord(),
   outputTokens: budget.spent(),
 }
 await logRun(auditRecord)
