@@ -20,6 +20,7 @@ request flows**, and **how to run it**, before you touch anything.
 
 ```
 1. ORIENT   — README, docs/, CONTRIBUTING, the build/run commands. How is it meant to be used?
+               Plus what was already decided about the part you'll touch: `memory` recall.
 2. SHAPE    — top-level layout: where's the entry point, the modules, the tests, the config?
 3. ENTRY    — find main()/lib root and the public surface; that's the spine.
 4. TRACE    — pick ONE real flow (a request, a command, a job) and follow it end to end.

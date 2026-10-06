@@ -26,6 +26,9 @@ patching. Count the strikes — it's what stops you thrashing at attempt seven.
 | 2 | maybe the wrong method | try a different approach, same layer |
 | 3 | the approach itself is wrong | escalate — question the design, not the line |
 
+A bug that took the third strike taught something the code does not say — once the root cause is
+known, keep it with `memory` record-lesson (scope = the module, body = cause and the trap).
+
 Escalating means handing the problem to the skill that owns that design decision:
 
 - `E0382`/`E0597` still failing after clone/borrow churn → the ownership *model* is wrong → `rust-ownership`

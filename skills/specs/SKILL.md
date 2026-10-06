@@ -46,6 +46,8 @@ changes, the acceptance test goes red. This is **Specification by Example** / **
    development (can we build it?), testing (how could it break?). Even solo, walk all three —
    the testing lens is where missing scenarios surface.
 4. **Write each example as Given/When/Then.**
+5. **Keep what the examples settled or left open.** A rule nobody can answer yet →
+   `memory` record-question; the answer, when it comes → record-decision superseding it.
 
 ## Anatomy of a scenario
 
