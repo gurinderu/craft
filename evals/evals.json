@@ -314,5 +314,46 @@
       "Selects rust-ecosystem, NOT compatibility — crate-level semver publishing is owned by the ecosystem skill.",
       "Does not walk the compatibility catalogue."
     ]
+  },
+  {
+    "skills": [
+      "memory"
+    ],
+    "query": "We decided not to fix the unwrap finding in src/parse.rs because the input is validated upstream — remember that decision so the next review doesn't raise it again.",
+    "expected_behavior": [
+      "Selects memory and runs record-decision with title = the finding, scope = src/parse.rs, body = the reason.",
+      "Prints one line `memory backend: X (why)` before writing, choosing the backend by the fixed order.",
+      "Writes one record, not an append to a shared log."
+    ]
+  },
+  {
+    "skills": [
+      "memory"
+    ],
+    "query": "Before I touch src/billing/, what did we already decide or leave open about that code?",
+    "expected_behavior": [
+      "Selects memory and runs recall with scope src/billing/.",
+      "Returns only matching active records, not the whole store; superseded or withdrawn records stay hidden."
+    ]
+  },
+  {
+    "skills": [
+      "rust-performance"
+    ],
+    "query": "My Rust service's memory usage keeps growing under load — how do I find what's holding the allocations?",
+    "expected_behavior": [
+      "Selects rust-performance, NOT memory — memory usage is a runtime concern, not project memory.",
+      "The word 'memory' must not pull the memory skill."
+    ]
+  },
+  {
+    "skills": [
+      "addressing-findings"
+    ],
+    "query": "Mark the rejected findings from the last review run in the review ledger so the re-review carries them forward.",
+    "expected_behavior": [
+      "Selects addressing-findings for the review-ledger dispositions — craft's machine memory is not the memory skill's.",
+      "May additionally record the rejections as decisions through memory, but the ledger write itself stays in addressing-findings."
+    ]
   }
 ]
