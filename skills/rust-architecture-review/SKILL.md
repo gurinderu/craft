@@ -6,7 +6,7 @@ description: >-
 
 # Rust Architecture Review
 
-The rubric for auditing a Rust project's **whole-graph structure** — not a diff. Build the dependency graph, judge it against the severity tiers, then issue a health rating. This is the knowledge; the `rust-architecture-reviewer` agent applies it to an actual codebase and reports back. The design vocabulary it leans on (ports, adapters, domain core, the criticism of cargo-culting) lives in the `rust-architecture` skill.
+The rubric for auditing a Rust project's **whole-graph structure** — not a diff. Build the dependency graph, judge it against the severity tiers, then issue a health rating. This is the knowledge; the `craft:rust-architecture-reviewer` agent applies it to an actual codebase and reports back. The design vocabulary it leans on (ports, adapters, domain core, the criticism of cargo-culting) lives in the `rust-architecture` skill.
 
 ## When to Use
 

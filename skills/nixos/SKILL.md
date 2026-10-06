@@ -269,6 +269,6 @@ Home Manager handles per-user dotfiles and programs on both platforms — see
   `nixosSystem { modules = […]; }`.
 - Derivations, overlays, `callPackage`, `mkDerivation`, overrides → `nix-packaging`.
 - Dev shells, `direnv`, per-project toolchains → `nix-dev-env`.
-- The `nix-review` workflow consumes the modules rules from this skill when reviewing
+- The `craft:nix-review` workflow consumes the modules rules from this skill when reviewing
   NixOS configuration changes: option types, `lib.mkIf` discipline, and the
   secrets-not-in-store rule are its primary checklist items for module diffs.

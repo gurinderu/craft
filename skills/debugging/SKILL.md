@@ -43,7 +43,7 @@ Escalating means handing the problem to the skill that owns that design decision
   `RUST_BACKTRACE=1` for the panic path. Remove `dbg!`/`eprintln!` before committing; keep
   `tracing` (→ `rust-cloud-native`).
 - **Heisenbugs** — non-determinism is shared state / ordering / timing: run under **Miri** (data
-  races — the `rust-miri` agent) or `loom`; `cargo nextest`'s process isolation surfaces
+  races — the `craft:rust-miri` agent) or `loom`; `cargo nextest`'s process isolation surfaces
   test-order leaks; inject the clock with `tokio::time::pause` (→ `rust-concurrency`).
 - **Heavy tools** — `rust-gdb`/`rust-lldb`, and `rr` for deterministic record/replay of rare
   failures.
@@ -53,7 +53,7 @@ Escalating means handing the problem to the skill that owns that design decision
 - Full technique detail → [techniques.md](techniques.md).
 - Confirming the fix — the Rust "what proves what" commands → `rust-review`.
 - A panic-where-a-`Result`-belonged / error-design issue → `rust-errors`.
-- Intermittent / ordering / data-race bugs → `rust-concurrency` (and Miri via the `rust-miri`
+- Intermittent / ordering / data-race bugs → `rust-concurrency` (and Miri via the `craft:rust-miri`
   agent).
 - "Slow", not "wrong" → `rust-performance` (profile, don't guess).
 - Symptom-patching (e.g. `unwrap_or_default()` to hide a `None`) is a finding in → `rust-review`.

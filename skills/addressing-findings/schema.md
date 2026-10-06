@@ -48,7 +48,7 @@ re-review loop can tell a recurring finding from a new one.
 
 ## Review-ledger record
 
-A **different** artifact from the triage ledger above — the shared contract between the `review`
+A **different** artifact from the triage ledger above — the shared contract between the `craft:review`
 workflow and this fix loop. The triage ledger is this skill's, keyed by `stable_id`; the
 review-ledger record is the engine's per-run JSON, keyed by `fp`. Don't conflate them.
 

@@ -6,9 +6,9 @@ description: >-
 
 # Rust Review
 
-The rubric for reviewing Rust changes: run the mechanical gate first, then read the diff against the severity checklist, then issue a verdict. This is the knowledge; the `rust-reviewer` agent applies it to an actual diff and reports back.
+The rubric for reviewing Rust changes: run the mechanical gate first, then read the diff against the severity checklist, then issue a verdict. This is the knowledge; the `craft:rust-reviewer` agent applies it to an actual diff and reports back.
 
-**The review entry point is the `rust-review` workflow** (`workflows/rust-review.js`): it scout-scales
+**The review entry point is the `craft:rust-review` workflow** (`workflows/rust-review.js`): it scout-scales
 depth to the diff, fans out the lenses below, grounds findings in tool output, and adversarially
 verifies each one. This skill is the rubric the workflow and the `rust-reviewer` lens worker apply.
 
@@ -21,7 +21,7 @@ verifies each one. This skill is the rubric the workflow and the `rust-reviewer`
 ### Pre-PR gate
 
 Self-review runs **before** the PR opens, not after. Before `gh pr create` on a Rust change, run
-the `rust-review` (or generic `review`) workflow on the branch diff, then close the loop —
+the `craft:rust-review` (or generic `craft:review`) workflow on the branch diff, then close the loop —
 triage the findings (`triage-findings`), fix them (`addressing-findings`), and re-review until the
 verdict is **Approve** (or **Warning** with each remaining item justified in the PR body). Only
 then open the PR. A one-shot review whose findings never loop back into fixes is not a gate; the
@@ -165,7 +165,7 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 
 ### Maintainability bar — presumption of block (strict mode)
 
-By default the maintainability items above are **MEDIUM** (warn, may merge). When the review is dispatched in **strict mode** (the `rust-review` workflow's `strict` flag, or an explicit "harsh maintainability review" request), they invert to a **presumption of block**: each is treated as a blocker *unless the author has clearly justified it in the diff or brief*. In strict mode, Approve additionally requires:
+By default the maintainability items above are **MEDIUM** (warn, may merge). When the review is dispatched in **strict mode** (the `craft:rust-review` workflow's `strict` flag, or an explicit "harsh maintainability review" request), they invert to a **presumption of block**: each is treated as a blocker *unless the author has clearly justified it in the diff or brief*. In strict mode, Approve additionally requires:
 
 - no structural regression (a previously cohesive module didn't become more coupled or harder to scan);
 - no obvious simplification missed (the code-judo check above came up empty);
@@ -376,7 +376,7 @@ In craft, dispatch the agents with that brief:
 - **`rust-security-scanner`** — security-sensitive changes (deps, `unsafe`, input handling) → `rust-security` verdict.
 - **`rust-miri`** — when the change touches `unsafe` (→ `rust-unsafe`).
 
-**Acting on the verdict** — working a set of findings to green (triage accept/reject/defer/needs-decision, order blocking → simple → complex, fix, verify, re-review, close the loop on GitHub) is its own discipline → `addressing-findings`; for a large batch it dispatches the `triage-findings` workflow.
+**Acting on the verdict** — working a set of findings to green (triage accept/reject/defer/needs-decision, order blocking → simple → complex, fix, verify, re-review, close the loop on GitHub) is its own discipline → `addressing-findings`; for a large batch it dispatches the `craft:triage-findings` workflow.
 
 ## Proving a claim — what proves what
 

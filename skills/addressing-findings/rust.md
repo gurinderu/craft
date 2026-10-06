@@ -48,7 +48,7 @@ no memory of the prior round):
 - `craft:rust-reviewer` — the gate + the rubric.
 - `craft:rust-security-scanner` — when the change touched deps / `unsafe` / input handling.
 - `craft:rust-miri` — when the change touched `unsafe`.
-- or re-run the `rust-audit` workflow for all of them at once.
+- or re-run the `craft:rust-audit` workflow for all of them at once.
 
 Feed the new findings back into the loop. The triage ledger (keyed by `stable_id`) dedups
 recurring findings from genuinely new ones, so "loop until green" terminates on progress, not
