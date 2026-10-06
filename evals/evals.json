@@ -248,5 +248,38 @@
       "Wires up the cucumber crate and step definitions.",
       "'Gherkin' must not route this to specs, which only owns writing the scenarios."
     ]
+  },
+  {
+    "skills": ["distributed-races"],
+    "query": "Review this Kubernetes operator change: the reconcile now holds a finalizer until the VMI terminates, with a 10-minute teardown deadline and requeue on await_change. Could another controller or a missing wake-up break it?",
+    "expected_behavior": [
+      "Selects distributed-races for the controller-correctness questions.",
+      "Asks what event or timer wakes the pass at the promised deadline (R2), whether status writes self-trigger (R1), and whether another controller acts on a stale view (R3).",
+      "Reads the watch setup, requeue policy and RBAC manifest rather than judging the diff in isolation."
+    ]
+  },
+  {
+    "skills": ["distributed-races"],
+    "query": "Our Go controller-runtime reconciler releases a dependency label when the spec drops the reference. Is there a race with the consumer or with objects created before this change?",
+    "expected_behavior": [
+      "Selects distributed-races even though the code is Go, not Rust — the skill is language-agnostic.",
+      "Raises protection released on change of intent instead of end of use (R5) and the migration window for pre-existing objects (R6)."
+    ]
+  },
+  {
+    "skills": ["rust-concurrency"],
+    "query": "I have a race condition between two tokio tasks sharing an Arc<Mutex<HashMap>> — one holds the lock across an .await. How do I fix it?",
+    "expected_behavior": [
+      "Selects rust-concurrency, NOT distributed-races — an in-process data race between tasks is not a controller/reconcile-loop race.",
+      "The word 'race' must not pull the distributed-races skill."
+    ]
+  },
+  {
+    "skills": ["rust-cloud-native"],
+    "query": "Add a readiness probe and graceful SIGTERM shutdown to my tonic gRPC service running in Kubernetes.",
+    "expected_behavior": [
+      "Selects rust-cloud-native, NOT distributed-races — Kubernetes deployment concerns without a reconcile loop.",
+      "Does not walk the controller-race catalogue."
+    ]
   }
 ]

@@ -48,12 +48,12 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **INV-003** | MEDIUM | Raw value used where a documented derived/`effective_*` quantity is required | `rust-architecture` |
 | **INV-004** | HIGH | One field mutated/scrubbed but a sibling field the same invariant governs left stale/inconsistent | `rust-architecture` |
 | **INV-005** | HIGH | Enforcement asymmetry — an invariant guarded at one site but not at its mirror (client↔server, send↔receive, offered↔accepted, one-param↔all-params). The asymmetry is the finding; no crash required. A guard present in the last released tag and gone at HEAD is a regression — say so | `rust-architecture`, `rust-web` |
-| **REC-001** | HIGH | create and update/apply paths diverge on desired state (fields/metadata dropped on one arm) | `rust-cloud-native` |
-| **REC-002** | HIGH | progress / observed-generation / Ready recorded despite a secondary step that can fail — partial failure strands state | `rust-cloud-native` |
-| **REC-003** | HIGH | child/external resource created with no cleanup on delete/disable (missing owner-reference or finalizer) | `rust-cloud-native` |
-| **REC-004** | MEDIUM | status/condition never cleared when its subject is gone, or written unconditionally (no `desired != current` guard) | `rust-cloud-native` |
-| **REC-005** | MEDIUM | disabled feature still issues API calls, or its error aborts the primary reconcile | `rust-cloud-native` |
-| **REC-006** | MEDIUM | non-idempotent apply — create/patch off a stale read, no 404/409 race tolerance | `rust-cloud-native` |
+| **REC-001** | HIGH | create and update/apply paths diverge on desired state (fields/metadata dropped on one arm) | `distributed-races` (R7) |
+| **REC-002** | HIGH | progress / observed-generation / Ready recorded despite a secondary step that can fail — partial failure strands state | `distributed-races` (R8) |
+| **REC-003** | HIGH | child/external resource created with no cleanup on delete/disable (missing owner-reference or finalizer) | `distributed-races` (R9) |
+| **REC-004** | MEDIUM | status/condition never cleared when its subject is gone, or written unconditionally (no `desired != current` guard) | `distributed-races` (R10) |
+| **REC-005** | MEDIUM | disabled feature still issues API calls, or its error aborts the primary reconcile | `distributed-races` (R11) |
+| **REC-006** | MEDIUM | non-idempotent apply — create/patch off a stale read, no 404/409 race tolerance | `distributed-races` (R12) |
 | **TST-001** | HIGH | New error path or branch with no test | `rust-testing` |
 | **TST-002** | HIGH | Bug fix landed without a regression test reproducing it | `rust-testing` |
 | **TST-003** | MEDIUM | Weak assertion — test passes whether or not the behavior holds (no `.never()`, asserts nothing meaningful) | `rust-testing` |
