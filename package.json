@@ -5,6 +5,7 @@
   "description": "Dev-only tooling for the craft plugin repo. craft itself ships no runtime dependencies.",
   "scripts": {
     "test": "vitest run",
+    "gate": "node lib/gate.mjs",
     "lint": "eslint lib opencode/plugin knip.config.js .dependency-cruiser.mjs --max-warnings 0",
     "check:workflows": "node lib/check-workflows.mjs",
     "check:skills": "node lib/check-skills.mjs",

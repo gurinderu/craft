@@ -13,8 +13,8 @@
 'Роль владельца — источник': 'выведено'
 'Стек': 'Node.js 22 (CI pin), ESM JavaScript, no runtime dependencies; skills and agents are Markdown with YAML frontmatter'
 'Стек — источник': 'выведено'
-'Гейт': ''
-'Гейт — источник': 'не согласовано — дело №1'
+'Гейт': 'npm run gate'
+'Гейт — источник': 'выведено'
 'Потребители': 'Anyone who installs craft from .claude-plugin/marketplace.json; they learn of breakage only by its effects — a skill that never triggers, a review that silently drops a check, an agent advising on code it never read'
 'Потребители — источник': 'согласовано: владелец'
 'Цена поломки': 'External and silent: craft runs in repositories it never sees, and none of its failures fail loudly — a degraded check reads as a clean one'
@@ -131,6 +131,8 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 **No `HANDOVER.md` is created**: branch state already has homes — `git branch`/`log` and the open PR's body (from the case lines), node modes, the transformation seed; a hand-written file is the only one of them that goes stale silently. Forge unreachable — progress is read from modes and the seed.
 
 ## Commands
+The gate is one call: `npm run gate` (`lib/gate.mjs`; needs `npm ci` and `npm ci --prefix opencode/plugin`) runs every offline row below — each step runs even after one fails, each prints its result, the exit is non-zero when any failed; `npm run gate -- --base <ref>` names the mutation floor's base (default `origin/main` when it resolves). CI's `test` job calls the same command; `lib/gate-steps.test.mjs` fails when a check named in `package.json`, `lib/check-*.mjs`, CI's `test` job or this table is neither a step nor excluded with its reason. The rows are what it runs, for running one alone.
+
 | What | Command |
 |---|---|
 | Unit tests | `npm test` (`vitest run`; files in `vitest.config.mjs`) |
@@ -152,7 +154,7 @@ The carrier table is in `REALITY.md` at the root, read on occasion. Before sayin
 | Static analysis, semgrep public rule sets (CI job `semgrep`, image pinned there; the rules come from the registry per run, so not reproducible) | `semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0 --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs --config p/security-audit --config p/secrets --config p/default lib opencode/plugin workflows` |
 | Quality delta between two checkouts — complexity, lint/type errors, tests, Knip, import cycles; a signal for review, not a gate (CI job `quality-delta`, PRs only, writes the job summary and always passes) | `node lib/quality-delta.mjs --base <checkout> --head <checkout>` — Markdown on stdout; each checkout needs its own `npm ci` and `npm ci --prefix opencode/plugin` (e.g. a `git worktree add <dir> origin/main`) |
 
-There is no formatter and no pre-commit hook: run every row above before pushing (the audit and semgrep rows only with network; offline they are CI's to run); CI runs the same steps (three jobs: `test`, `semgrep` for the semgrep row, and `quality-delta`, PRs only, for the quality-delta row); the quality-delta row is a signal, not a gate — it never has to pass. Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs); `npm run test:mutation` runs Stryker over `lib/` (`stryker.config.mjs`; in place, so it rewrites `lib/` while it runs — nothing else alongside), and the weekly `mutation` workflow (`.github/workflows/mutation.yml`, also by hand) runs it on CI and keeps the report as an artifact; below the floor (row above) the run turns red and is reported in one open issue (a new one, or a comment on the one already open) — it blocks nothing. What each gate does not cover — realm `@nick/craft`, #121.
+There is no formatter and no pre-commit hook: run `npm run gate` before pushing; the audit and semgrep rows are not in it (network; offline they are CI's to run: the audit as its own steps of the `test` job, semgrep as its own job); CI runs the same gate (three jobs: `test`, `semgrep` for the semgrep row, and `quality-delta`, PRs only, for the quality-delta row); the quality-delta row is a signal, not a gate — it never has to pass. Not a gate: `node lib/analyze-runs.mjs` reads the run store (`--round-pairs` for re-review cost pairs); `npm run test:mutation` runs Stryker over `lib/` (`stryker.config.mjs`; in place, so it rewrites `lib/` while it runs — nothing else alongside), and the weekly `mutation` workflow (`.github/workflows/mutation.yml`, also by hand) runs it on CI and keeps the report as an artifact; below the floor (row above) the run turns red and is reported in one open issue (a new one, or a comment on the one already open) — it blocks nothing. What each gate does not cover — realm `@nick/craft`, #121.
 
 ## Project structure
 - `skills/` — 35 skills, one directory each with a `SKILL.md`.
@@ -199,9 +201,9 @@ There is no formatter and no pre-commit hook: run every row above before pushing
 - **Forge**: GitHub (`git@github.com:gurinderu/craft.git`); CLI `gh`. Observe with `gh pr checks <n> --watch`, `gh pr view <n>`; trunk as the forge sees it — `gh api repos/gurinderu/craft/commits/main --jq .sha`. Never treat a local ref as current — `git fetch origin main` first.
 - **Conventional commits** (`feat:`/`fix:`/`chore:`/`refactor:`/`docs:`/`test:`) — release-please parses them, so the prefix carries the version; branches `feat/…`, `fix/…`, `chore/…`; PR titles in the same format.
 - **No co-author trailer and no "Generated with Claude Code"** — neither on commits nor in PR bodies.
-- **Gate before push**: every row of "Commands" (the audit row needs the network — offline it is CI's); there is no pre-commit hook and no single gate call yet (cover, "Gate").
+- **Gate before push**: `npm run gate` — read its raw exit code (the audit and semgrep rows need the network — offline they are CI's); there is no pre-commit hook.
 - **Push, review, then PR**: push the branch so the reviewer can read `origin/<branch>`; open the PR once the cold review's verdict is in and its findings are worked (above). A branch whose review is done does not live without a PR.
-- **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (three jobs: `test` and `semgrep` gate; `quality-delta` always ends green and is read, not waited on; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
+- **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (three jobs: `test` — `npm run gate` plus the shipped-dependency audit — and `semgrep` gate; `quality-delta` always ends green and is read, not waited on; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
 
 *(iskronify: contract 19, stamp 2026-10-06 — rerun when the installed iskronify description names a higher contract or when the sources this file was derived from move after this date.)*
