@@ -173,6 +173,14 @@ const runMutants = !!A['mutants']
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
+// What every nested review inherits from this run: craftRoot (the logger's home) and the project's
+// recalled prior decisions, handed through as given — the review engine reads and checks them.
+function nestedReviewArgs() {
+  return {
+    ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
+    ...(A['priorDecisions'] != null ? { priorDecisions: A['priorDecisions'] } : {}),
+  }
+}
 
 const CRATE_ITEM = {
   type: 'object',
@@ -1553,7 +1561,7 @@ function pushReviewDims() {
         continue
       }
       tasks.push(() => dispatchDim(`review:${c.name}`,
-        nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+        nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
           // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
           // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
           // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
@@ -1571,8 +1579,8 @@ function pushReviewDims() {
     // Without craftRoot the child resolves its logger from CLAUDE_PLUGIN_ROOT alone and, in a checkout
     // launch, cannot log at all — every nested record lost while the parent's lands.
     tasks.push(() => dispatchDim('review',
-      nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
-                                                  : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+      nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }
+                                                  : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
         // As at the per-crate site: report==null is a dead nested engine — resolve to null before
         // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
         .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); return reviewResult('review', report) }),

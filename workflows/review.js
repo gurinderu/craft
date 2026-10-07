@@ -264,14 +264,17 @@ function decisionText(v) {
 }
 
 /**
- * The decision's fields as strings, trimmed; `body` and `date` (the memory record's names) stand in
- * for `reason` and `when`.
+ * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
+ * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
+ * http(s) URL in `links` for `link`.
  * @param {Record<string, unknown>} o @returns {PriorDecision}
  */
 function decisionFields(o) {
   /** @param {string} k @param {string} [alt] */
   const f = (k, alt = '') => decisionText(o[k]) || decisionText(o[alt])
-  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who'), when: f('when', 'date'), link: f('link'), commit: f('commit') }
+  const links = Array.isArray(o['links']) ? o['links'] : []
+  const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
+  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit') }
 }
 
 /**
@@ -290,6 +293,7 @@ function decisionAnchorProblem(d) {
  * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
  */
 function decisionProblem(o, d) {
+  if (o['kind'] != null && decisionText(o['kind']) !== 'decision') return ` is a ${JSON.stringify(o['kind'])} record, not a decision`
   if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
   if (!d.id || !d.title || !d.reason) return ' lacks an id, a title or a reason'
   const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof PriorDecision} */ (k)].length > max)
