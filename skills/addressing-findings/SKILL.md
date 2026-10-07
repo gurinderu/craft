@@ -190,11 +190,12 @@ Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what
 
 ## The author's rejections on the PR
 
-Before the loop works the findings, what the author already rejected on the PR — a reply that
-opens with "not a bug" / "by design" / "won't fix" …, or a thread resolved with the code untouched
-— is recorded as decisions with the author, the comment URL and the commit. Conservative: only a
-thread whose first comment is a craft finding, and whose last word rejects it. The rule, the `gh`
-query and the script → [pr-rejections.md](pr-rejections.md).
+Before the loop works the findings, what was already rejected on the PR — a reply that opens with
+"not a bug" / "by design" / "won't fix" … — is recorded as decisions with the author, the comment
+URL and the commit. Conservative: only a thread whose first comment is a craft finding, whose last
+word is that explicit reply, from the PR author or an owner, member or collaborator of the
+repository; a thread resolved without a reply is never a rejection. The rule, the `gh` query and
+the script → [pr-rejections.md](pr-rejections.md).
 
 ## Closing the loop on GitHub
 

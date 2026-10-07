@@ -1,9 +1,9 @@
 # The author's rejections, from the PR's threads
 
 Run at the start of the fix loop (step 0, before recall) and again before every re-review
-(step 7). It turns what the author already said on the PR — "not a bug", "by design", a thread
-resolved with the code untouched — into `memory` `record-decision`s, so the next review sets those
-findings aside instead of raising them again. It reads; it never posts or resolves anything.
+(step 7). It turns what was already said on the PR — a reply opening with "not a bug", "by
+design" … — into `memory` `record-decision`s, so the next review sets those findings aside instead
+of raising them again. It reads; it never posts or resolves anything.
 
 ## The rule — conservative on purpose
 
@@ -13,16 +13,18 @@ A thread yields a decision **only** when all of these hold:
    `[Severity] title`, last line the `<!-- craft-finding -->` marker. A thread without the marker
    (a human's comment, another bot's, a craft comment from before the marker existed) is never
    recorded: it cannot be tied to a specific finding.
-2. **Its last word rejects the finding**, from someone other than the account that posted it:
-   - a reply that **opens** with `not a bug`, `not an issue`, `by design`, `won't fix` / `wontfix`
-     / `will not fix`, `works as intended` / `working as intended` / `as intended`, `intentional`
-     or `false positive` (optionally after `this is` / `it's` / `that's`) — case-insensitive; the
-     reply is the reason, verbatim;
-   - or **no reply at all**, the thread resolved by someone other than the poster and **not
-     outdated** (the code at the finding is unchanged) — resolved without a change.
-   A rejection followed by any later comment, a phrase mid-sentence ("this was not a bug before the
-   refactor, fixed"), or "fixed in …" is not a rejection.
-3. **It can be anchored**: a path and the commit the finding was posted on.
+2. **Its last word is a reply that rejects the finding**: it **opens** with `not a bug`, `not an
+   issue`, `by design`, `won't fix` / `wontfix` / `will not fix`, `works as intended` / `working as
+   intended` / `as intended`, `intentional` or `false positive` (optionally after `this is` /
+   `it's` / `that's`) — case-insensitive; the reply is the reason, verbatim. A rejection followed
+   by any later comment, a phrase mid-sentence ("this was not a bug before the refactor, fixed"),
+   or "fixed in …" is not a rejection. **No reply is no rejection** — a thread resolved silently
+   may have been fixed outside the hunk.
+3. **The replier may reject**: the PR author, or GitHub's `authorAssociation` of the reply is
+   `OWNER`, `MEMBER` or `COLLABORATOR`. craft posts its comments under your own `gh` account, so in
+   a self-review loop the poster is the PR author and their own reply counts. Anyone else's
+   rejection is not recorded; the script names each and counts them.
+4. **It can be anchored**: a path and the commit the finding was posted on.
 
 Every craft-finding thread that does not qualify is listed with why; nothing is guessed.
 
@@ -39,14 +41,15 @@ gh api graphql --paginate --slurp -f query='
   query($owner:String!, $name:String!, $pr:Int!, $endCursor:String) {
     repository(owner:$owner, name:$name) {
       pullRequest(number:$pr) {
+        author { login }
         reviewThreads(first:100, after:$endCursor) {
           pageInfo { hasNextPage endCursor }
           totalCount
           nodes {
-            isResolved isOutdated path resolvedBy { login }
+            path
             comments(first:50) {
               totalCount
-              nodes { author { login } body url createdAt originalCommit { oid } }
+              nodes { author { login } authorAssociation body url createdAt originalCommit { oid } }
             }
           }
         }
