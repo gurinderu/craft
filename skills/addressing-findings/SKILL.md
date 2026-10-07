@@ -39,7 +39,7 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
 7. Re-review ⫲ — PR-thread rejections recorded again, active decisions recalled and passed
-               to the review workflow as `priorDecisions` (→ `memory`, "Before a review");
+               to the review workflow as `priorDecisions`, an object argument (→ `memory`, "Before a review");
                re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &

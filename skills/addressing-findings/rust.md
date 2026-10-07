@@ -49,7 +49,7 @@ no memory of the prior round):
 - `craft:rust-security-scanner` — when the change touched deps / `unsafe` / input handling.
 - `craft:rust-miri` — when the change touched `unsafe`.
 - or re-run the `craft:rust-audit` workflow for all of them at once — with the recalled active
-  decisions as `priorDecisions` (→ `memory`, "Before a review"); it hands them to its nested
+  decisions as `priorDecisions`, an object argument (→ `memory`, "Before a review"); it hands them to its nested
   reviews.
 
 Feed the new findings back into the loop. The triage ledger (keyed by `stable_id`) dedups

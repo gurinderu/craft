@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions=<JSON array of the active decision records of the project, recalled by the memory skill for the paths of the diff> sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -57,7 +57,7 @@ export const meta = {
 // through every `typeof args === 'object'` guard, so every option reverted to its default and the
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
-// >>> craft-inline lib/workflow-args.mjs applyOption parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
+// >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
 // One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
 // name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
 // module-level helper is copied into the engines' inlined regions only when it is, and the fence's
@@ -100,9 +100,13 @@ function applyOption(m, out, ignored) {
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
+// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
+// split into options nobody wrote (`comment=true`, `repo=…`).
+const OBJECT_ONLY_OPTIONS = ['priorDecisions']
+
 /**
  * @param {string} text
- * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
@@ -118,12 +122,16 @@ function parseOptions(text) {
     // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
+    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
+    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
+    const key = String(m[2] ?? m[7])
+    if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
     pairs += applyOption(m, out, ignored)
   }
   const tail = text.slice(cursor).trim()
   if (tail) ignored.push(...tail.split(/\s+/))
-  return { options: out, pairs, ignored }
+  return { options: out, pairs, ignored, cut: '' }
 }
 
 // normalizeArgs' branch for a string that starts with `{`.
@@ -154,7 +162,8 @@ function normalizeJsonArgs(text, warn) {
  * @returns {Record<string, unknown>}
  */
 function normalizeKeyValueArgs(text, warn) {
-  const { options, pairs, ignored } = parseOptions(text)
+  const { options, pairs, ignored, cut } = parseOptions(text)
+  if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
     // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
     // and testing "is any value not true" threw away every string made only of boolean options —
@@ -342,10 +351,10 @@ const DECISION_TITLE_OVERLAP = 0.6
  */
 function parsePriorDecisions(raw) {
   if (raw == null || raw === '') return { decisions: [], refused: [] }
-  let list = raw
-  if (typeof raw === 'string') {
-    try { list = JSON.parse(raw) } catch { return { decisions: [], refused: ['priorDecisions is a string that is not JSON — no decision applied'] } }
-  }
+  // Only a list inside an object argument: in the key=value form a value cannot be delimited, and a
+  // JSON string invites that form, so any string is refused (lib/workflow-args.mjs OBJECT_ONLY_OPTIONS).
+  if (typeof raw === 'string') return { decisions: [], refused: ['priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied'] }
+  const list = raw
   if (!Array.isArray(list)) return { decisions: [], refused: ['priorDecisions is not a list — no decision applied'] }
   /** @type {PriorDecision[]} */
   const decisions = []

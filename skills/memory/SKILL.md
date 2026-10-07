@@ -128,10 +128,13 @@ Every session that launches a craft review workflow (`review`, `rust-review`, `n
 
 1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
    only (`kind: decision`), **active** only.
-2. Pass them to the workflow as the argument `priorDecisions`: a JSON array of the records in the
-   shape above, as recalled — `id`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links`
-   — nothing rewritten, nothing summarised. No match, or backend `none` → omit the argument (say
-   so in one line); the review runs exactly as without it.
+2. Pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
+   `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
+   `id`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links` — nothing rewritten, nothing
+   summarised. Never as a string: a `key=value` line cannot delimit the value (a reason holding
+   `comment=true` would become an option), so the engine refuses any string and applies nothing.
+   No match, or backend `none` → omit the argument (say so in one line); the review runs exactly
+   as without it.
 3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
    before** with the decision's reason, author, date and link, outside the verdict. It is raised
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
