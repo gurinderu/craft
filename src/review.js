@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, and the report names the source (an empty list skips the recall). To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision and question records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision and question records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -332,8 +332,8 @@ const PRIOR_DECISIONS_MAX = 100
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
- * The `priorDecisions` argument, checked. Absent → nothing applied, no refusal (the engine recalls instead:
- * lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
+ * The `priorDecisions` argument (or a recall's answer), checked. Absent → nothing of it applied, no refusal
+ * (the engine's own recall still runs: lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
@@ -393,7 +393,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory skippedMemory launcherRecallMemory acceptedMemory memoryLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory skippedMemory mergeById withPassed mergeRecall acceptedMemory countedRecords launcherLine memoryLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -438,7 +438,12 @@ Scope: ${scope}
 Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
 }
 
-/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string, questions?: number }} MemorySource */
+/**
+ * Where the decisions came from: `recalled` by this engine, `launcher` — recalled by the engine that
+ * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records accepted,
+ * `added` those of them the recall did not already hold.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number }} MemorySource
+ */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
@@ -469,7 +474,7 @@ function readMemoryRecall(raw, cut) {
   const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
   const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
   const list = r['decisions']
-  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}` } }
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
@@ -480,14 +485,16 @@ function readMemoryRecall(raw, cut) {
 }
 
 /**
- * The source before any recall: passed by the launcher (any value, an empty list included), or not yet recalled.
- * @param {unknown} raw the priorDecisions argument @param {number} [count] the decisions accepted; the list length by default
+ * The source before any recall: not yet recalled, with the launcher's accepted records counted; or, when
+ * the launching engine already recalled (`_recalled`), its outcome — `note` is why it found none.
+ * @param {number} passed the launcher's records accepted @param {boolean} [recalled] @param {unknown} [note]
  * @returns {MemorySource}
  */
-function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
-  return raw == null || raw === ''
-    ? { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
-    : { source: 'passed', count, why: 'passed by the launcher' }
+function initialMemory(passed, recalled = false, note = '') {
+  if (recalled) return { source: 'launcher', count: passed, why: recallText(note) }
+  /** @type {MemorySource} */
+  const m = { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
+  return passed ? { ...m, passed } : m
 }
 
 /**
@@ -499,41 +506,85 @@ function skippedMemory(m, why) {
 }
 
 /**
- * An empty list a launching audit forwarded after its own recall found none (or died), with that
- * outcome as `note` (the `_memory` argument): named as the audit's recall, so the nested report does
- * not read "passed by the launcher (0)" beside the audit's "none — <why>". Anything else is left as it is.
- * @param {MemorySource} m @param {string} note @returns {MemorySource}
+ * The recalled records with the launcher's appended, one per id: a passed record whose id the recall
+ * already holds is dropped — the recalled one is the store's current state. A record without an id is
+ * kept, for the reader to refuse by name.
+ * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number }}
  */
-function launcherRecallMemory(m, note) {
-  const why = recallText(note)
-  return why && m.source === 'passed' && m.count === 0 ? { ...m, why: `recalled by the launching audit — none (${why})` } : m
+function mergeById(recalled, passed) {
+  /** @param {T} x */
+  const idOf = x => (x && typeof x === 'object' ? recallText(/** @type {Record<string, unknown>} */ (x)['id']) : '')
+  const held = new Set(recalled.map(idOf).filter(Boolean))
+  const added = passed.filter(x => !held.has(idOf(x)))
+  return { merged: [...recalled, ...added], added: added.length }
 }
 
 /**
- * A recalled source once parsePriorDecisions read its list: the count is the records it accepted, the
- * questions among them counted apart; the refused are named in their own section.
+ * The source with the launcher's part: nothing when it passed no record.
+ * @param {MemorySource} m @param {number} passed @param {number} added @returns {MemorySource}
+ */
+function withPassed(m, passed, added) {
+  return passed ? { ...m, passed, added } : m
+}
+
+/**
+ * The recall's answer read by `parse` (parsePriorDecisions) and merged with the launcher's records,
+ * already read: the decisions to apply, every refusal, the recall's own refusals apart (to log), and the source.
+ * @template {{ id: string, kind?: string }} D
+ * @param {{ decisions: unknown[], memory: MemorySource }} r @param {{ decisions: D[], refused: string[] }} passedIn
+ * @param {(raw: unknown) => { decisions: D[], refused: string[] }} parse
+ * @returns {{ prior: { decisions: D[], refused: string[] }, recalledRefused: string[], memory: MemorySource }}
+ */
+function mergeRecall(r, passedIn, parse) {
+  const recalled = parse(r.decisions)
+  const { merged, added } = mergeById(recalled.decisions, passedIn.decisions)
+  return {
+    prior: { decisions: merged, refused: [...passedIn.refused, ...recalled.refused] },
+    recalledRefused: recalled.refused,
+    memory: withPassed(acceptedMemory(r.memory, recalled.decisions), passedIn.decisions.length, added),
+  }
+}
+
+/**
+ * A recalled source (by this engine or the launching one) once parsePriorDecisions read its list: the
+ * count is the records it accepted, the questions among them counted apart; the refused are named in their own section.
  * @param {MemorySource} m @param {Array<{ kind?: string }>} accepted @returns {MemorySource}
  */
 function acceptedMemory(m, accepted) {
-  if (m.source !== 'recalled') return m
+  if (m.source === 'none') return m
   const questions = accepted.filter(d => d.kind === 'question').length
   /** @type {MemorySource} */
   const out = { source: m.source, count: accepted.length, why: m.why }
   return questions ? { ...out, questions } : out
 }
 
+/** `N decision(s) and M open question(s)` of a source. @param {MemorySource} m @returns {string} */
+function countedRecords(m) {
+  const q = m.questions || 0
+  return `${m.count - q} decision(s)${q ? ` and ${q} open question(s)` : ''}`
+}
+
 /**
+ * The line of a review the launching audit recalled for: what it applied, or why that recall found
+ * none (and what the audit's own launcher passed). @param {MemorySource} m @returns {string}
+ */
+function launcherLine(m) {
+  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}` : 'none'}`
+  return `memory: recalled by the launching audit — none (${m.why})${m.count ? `; applied ${m.count} passed by its launcher` : ''}`
+}
+
+/**
+ * One line, both parts: what the recall gave, then what the launcher added.
  * @param {MemorySource} m @param {boolean} [forwarded] the list went unparsed to nested reviews (rust-audit):
  * the count is what recall returned, not what was accepted @returns {string}
  */
 function memoryLine(m, forwarded = false) {
-  if (m.source === 'passed') return m.why === 'passed by the launcher' ? `memory: passed by the launcher (${m.count})` : `memory: ${m.why}`
-  if (m.source !== 'recalled') return `memory: none — ${m.why}`
-  const q = m.questions || 0
-  const counted = `${m.count - q} decision(s)${q ? ` and ${q} open question(s)` : ''}`
+  if (m.source === 'launcher') return launcherLine(m)
+  const plus = m.passed ? `; plus ${m.passed} passed by the launcher${m.source === 'recalled' ? ` (${m.added ?? m.passed} new)` : ''}` : ''
+  if (m.source !== 'recalled') return `memory: none — ${m.why}${plus}`
   return forwarded
-    ? `memory: returned ${counted} from ${m.why}; each nested review reports how many it applied`
-    : `memory: recalled ${counted} from ${m.why}`
+    ? `memory: returned ${countedRecords(m)} from ${m.why}${plus}; each nested review reports how many it applied`
+    : `memory: recalled ${countedRecords(m)} from ${m.why}${plus}`
 }
 
 /** The report section naming the source. @param {MemorySource} m @param {boolean} [forwarded] @returns {string} */
@@ -554,7 +605,7 @@ async function recallDecisions(ask, paths, base) {
     raw = await ask(memoryRecallPrompt(paths, base))
   } catch (e) {
     const msg = recallText(e instanceof Error ? e.message : String(e))
-    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
+    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` } }
   }
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
@@ -926,12 +977,14 @@ const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION, repoAr
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
 const viaArg = argString('_via')   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
-// The project's recorded rejections, passed by the launcher. Absent → this engine recalls them itself
+// The project's recorded rejections, passed by the launcher: they ADD to what this engine recalls itself
 // once the diff's paths are known (recallMemory). Malformed → nothing of it applied, and every report says what was refused.
 let priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
-// Where the decisions came from; every report names it. `_memory` is set by a parent workflow
-// (rust-audit) that recalled once and found none: the empty list it passes is named as that outcome.
-let memory = launcherRecallMemory(initialMemory(A['priorDecisions'], priorDecisionsIn.decisions.length), argString('_memory'))
+// Set by a parent workflow (rust-audit) that already recalled for this run and forwards the merged
+// list: no recall here. `_memory` is that recall's outcome when it found none.
+const recalledByLauncher = A['_recalled'] === true
+// Where the decisions came from; every report names it.
+let memory = acceptedMemory(initialMemory(priorDecisionsIn.decisions.length, recalledByLauncher, argString('_memory')), priorDecisionsIn.decisions)
 for (const r of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${r}`)
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
@@ -4366,15 +4419,16 @@ async function noProfileExit() {
 // An unknown language pin first: it stops the run before any profile is activated.
 const languageStop = unknownLangs.length ? await unknownPinExit() : await coverageExit()
 if (languageStop !== null) return languageStop
-// No priorDecisions passed: ONE read-only agent recalls them through the craft:memory skill for the
-// diff's paths (realm @nick/craft, node #203); its answer is parsed like a passed list. After the
-// coverage exits: a diff with nothing to review or no profile spends no recall agent.
+// ONE read-only agent recalls the decisions through the craft:memory skill for the diff's paths (realm
+// @nick/craft, node #203); its answer is parsed like a passed list and the passed records merge into it.
+// After the coverage exits: a diff with nothing to review or no profile spends no recall agent.
 async function recallMemory() {
-  if (memory.source !== 'none' || !changedFiles.length) return
+  if (recalledByLauncher || !changedFiles.length) return
   const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
-  priorDecisionsIn = parsePriorDecisions(r.decisions)
-  memory = acceptedMemory(r.memory, priorDecisionsIn.decisions)
-  for (const x of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${x}`)
+  const m = mergeRecall(r, priorDecisionsIn, parsePriorDecisions)
+  priorDecisionsIn = m.prior
+  memory = m.memory
+  for (const x of m.recalledRefused) log(`⚠️ priorDecisions: ${x}`)
 }
 await recallMemory()
 function logActiveProfiles() {

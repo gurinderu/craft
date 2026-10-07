@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision and question records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; refusals come back as priorDecisionsNotApplied. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, and the source comes back as memory {source, count, why} (an empty list skips the recall). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision and question records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; refusals come back as priorDecisionsNotApplied. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing), and the source comes back as memory {source, count, why, passed?, added?}. It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -227,8 +227,8 @@ const PRIOR_DECISIONS_MAX = 100
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
- * The `priorDecisions` argument, checked. Absent → nothing applied, no refusal (the engine recalls instead:
- * lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
+ * The `priorDecisions` argument (or a recall's answer), checked. Absent → nothing of it applied, no refusal
+ * (the engine's own recall still runs: lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
@@ -331,7 +331,12 @@ Scope: ${scope}
 Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
 }
 
-/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string, questions?: number }} MemorySource */
+/**
+ * Where the decisions came from: `recalled` by this engine, `launcher` — recalled by the engine that
+ * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records accepted,
+ * `added` those of them the recall did not already hold.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number }} MemorySource
+ */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
@@ -362,7 +367,7 @@ function readMemoryRecall(raw, cut) {
   const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
   const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
   const list = r['decisions']
-  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}` } }
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
@@ -373,14 +378,16 @@ function readMemoryRecall(raw, cut) {
 }
 
 /**
- * The source before any recall: passed by the launcher (any value, an empty list included), or not yet recalled.
- * @param {unknown} raw the priorDecisions argument @param {number} [count] the decisions accepted; the list length by default
+ * The source before any recall: not yet recalled, with the launcher's accepted records counted; or, when
+ * the launching engine already recalled (`_recalled`), its outcome — `note` is why it found none.
+ * @param {number} passed the launcher's records accepted @param {boolean} [recalled] @param {unknown} [note]
  * @returns {MemorySource}
  */
-function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
-  return raw == null || raw === ''
-    ? { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
-    : { source: 'passed', count, why: 'passed by the launcher' }
+function initialMemory(passed, recalled = false, note = '') {
+  if (recalled) return { source: 'launcher', count: passed, why: recallText(note) }
+  /** @type {MemorySource} */
+  const m = { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
+  return passed ? { ...m, passed } : m
 }
 
 /**
@@ -392,12 +399,52 @@ function skippedMemory(m, why) {
 }
 
 /**
- * A recalled source once parsePriorDecisions read its list: the count is the records it accepted, the
- * questions among them counted apart; the refused are named in their own section.
+ * The recalled records with the launcher's appended, one per id: a passed record whose id the recall
+ * already holds is dropped — the recalled one is the store's current state. A record without an id is
+ * kept, for the reader to refuse by name.
+ * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number }}
+ */
+function mergeById(recalled, passed) {
+  /** @param {T} x */
+  const idOf = x => (x && typeof x === 'object' ? recallText(/** @type {Record<string, unknown>} */ (x)['id']) : '')
+  const held = new Set(recalled.map(idOf).filter(Boolean))
+  const added = passed.filter(x => !held.has(idOf(x)))
+  return { merged: [...recalled, ...added], added: added.length }
+}
+
+/**
+ * The source with the launcher's part: nothing when it passed no record.
+ * @param {MemorySource} m @param {number} passed @param {number} added @returns {MemorySource}
+ */
+function withPassed(m, passed, added) {
+  return passed ? { ...m, passed, added } : m
+}
+
+/**
+ * The recall's answer read by `parse` (parsePriorDecisions) and merged with the launcher's records,
+ * already read: the decisions to apply, every refusal, the recall's own refusals apart (to log), and the source.
+ * @template {{ id: string, kind?: string }} D
+ * @param {{ decisions: unknown[], memory: MemorySource }} r @param {{ decisions: D[], refused: string[] }} passedIn
+ * @param {(raw: unknown) => { decisions: D[], refused: string[] }} parse
+ * @returns {{ prior: { decisions: D[], refused: string[] }, recalledRefused: string[], memory: MemorySource }}
+ */
+function mergeRecall(r, passedIn, parse) {
+  const recalled = parse(r.decisions)
+  const { merged, added } = mergeById(recalled.decisions, passedIn.decisions)
+  return {
+    prior: { decisions: merged, refused: [...passedIn.refused, ...recalled.refused] },
+    recalledRefused: recalled.refused,
+    memory: withPassed(acceptedMemory(r.memory, recalled.decisions), passedIn.decisions.length, added),
+  }
+}
+
+/**
+ * A recalled source (by this engine or the launching one) once parsePriorDecisions read its list: the
+ * count is the records it accepted, the questions among them counted apart; the refused are named in their own section.
  * @param {MemorySource} m @param {Array<{ kind?: string }>} accepted @returns {MemorySource}
  */
 function acceptedMemory(m, accepted) {
-  if (m.source !== 'recalled') return m
+  if (m.source === 'none') return m
   const questions = accepted.filter(d => d.kind === 'question').length
   /** @type {MemorySource} */
   const out = { source: m.source, count: accepted.length, why: m.why }
@@ -417,13 +464,14 @@ async function recallDecisions(ask, paths, base) {
     raw = await ask(memoryRecallPrompt(paths, base))
   } catch (e) {
     const msg = recallText(e instanceof Error ? e.message : String(e))
-    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
+    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` } }
   }
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 let priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
 for (const r of priorDecisionsIn.refused) log(`WARNING: priorDecisions: ${r}`)
-let memory = initialMemory(A['priorDecisions'], priorDecisionsIn.decisions.length)
+const recalledByLauncher = A['_recalled'] === true
+let memory = acceptedMemory(initialMemory(priorDecisionsIn.decisions.length, recalledByLauncher, A['_memory']), priorDecisionsIn.decisions)
 /** What a returned object adds: the memory source, and what of priorDecisions was not applied. */
 const priorRefusedResult = () => ({
   memory,
@@ -1126,16 +1174,17 @@ async function coverageGuard(scout) {
 const early = await coverageGuard(scout)
 if (early) return early
 async function recallMemory() {
-  if (memory.source !== 'none') return
+  if (recalledByLauncher) return
   if (budget.total && budget.remaining() < BUDGET_FLOOR) {
-    memory = { source: 'none', count: 0, why: `recall did not run — budget below the floor (~${Math.round(budget.remaining() / 1000)}k left)` }
+    memory = withPassed({ source: 'none', count: 0, why: `recall did not run — budget below the floor (~${Math.round(budget.remaining() / 1000)}k left)` }, priorDecisionsIn.decisions.length, priorDecisionsIn.decisions.length)
     return
   }
   const paths = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : []
   const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
-  priorDecisionsIn = parsePriorDecisions(r.decisions)
-  memory = acceptedMemory(r.memory, priorDecisionsIn.decisions)
-  for (const x of priorDecisionsIn.refused) log(`WARNING: priorDecisions: ${x}`)
+  const m = mergeRecall(r, priorDecisionsIn, parsePriorDecisions)
+  priorDecisionsIn = m.prior
+  memory = m.memory
+  for (const x of m.recalledRefused) log(`WARNING: priorDecisions: ${x}`)
 }
 await recallMemory()
 

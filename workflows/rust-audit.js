@@ -1,7 +1,7 @@
 export const meta = {
   name: 'rust-audit',
   description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, once, hands them to the nested reviews and names the source (an empty list skips the recall). Pass {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill, once, and hands them to the nested reviews, which do not recall again; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing), and the report names both parts. Pass {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
@@ -179,7 +179,12 @@ Scope: ${scope}
 Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
 }
 
-/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string, questions?: number }} MemorySource */
+/**
+ * Where the decisions came from: `recalled` by this engine, `launcher` — recalled by the engine that
+ * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records accepted,
+ * `added` those of them the recall did not already hold.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number }} MemorySource
+ */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
@@ -210,7 +215,7 @@ function readMemoryRecall(raw, cut) {
   const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
   const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
   const list = r['decisions']
-  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}` } }
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
@@ -221,28 +226,67 @@ function readMemoryRecall(raw, cut) {
 }
 
 /**
- * The source before any recall: passed by the launcher (any value, an empty list included), or not yet recalled.
- * @param {unknown} raw the priorDecisions argument @param {number} [count] the decisions accepted; the list length by default
+ * The source before any recall: not yet recalled, with the launcher's accepted records counted; or, when
+ * the launching engine already recalled (`_recalled`), its outcome — `note` is why it found none.
+ * @param {number} passed the launcher's records accepted @param {boolean} [recalled] @param {unknown} [note]
  * @returns {MemorySource}
  */
-function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
-  return raw == null || raw === ''
-    ? { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
-    : { source: 'passed', count, why: 'passed by the launcher' }
+function initialMemory(passed, recalled = false, note = '') {
+  if (recalled) return { source: 'launcher', count: passed, why: recallText(note) }
+  /** @type {MemorySource} */
+  const m = { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
+  return passed ? { ...m, passed } : m
 }
 
 /**
+ * The recalled records with the launcher's appended, one per id: a passed record whose id the recall
+ * already holds is dropped — the recalled one is the store's current state. A record without an id is
+ * kept, for the reader to refuse by name.
+ * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number }}
+ */
+function mergeById(recalled, passed) {
+  /** @param {T} x */
+  const idOf = x => (x && typeof x === 'object' ? recallText(/** @type {Record<string, unknown>} */ (x)['id']) : '')
+  const held = new Set(recalled.map(idOf).filter(Boolean))
+  const added = passed.filter(x => !held.has(idOf(x)))
+  return { merged: [...recalled, ...added], added: added.length }
+}
+
+/**
+ * The source with the launcher's part: nothing when it passed no record.
+ * @param {MemorySource} m @param {number} passed @param {number} added @returns {MemorySource}
+ */
+function withPassed(m, passed, added) {
+  return passed ? { ...m, passed, added } : m
+}
+
+/** `N decision(s) and M open question(s)` of a source. @param {MemorySource} m @returns {string} */
+function countedRecords(m) {
+  const q = m.questions || 0
+  return `${m.count - q} decision(s)${q ? ` and ${q} open question(s)` : ''}`
+}
+
+/**
+ * The line of a review the launching audit recalled for: what it applied, or why that recall found
+ * none (and what the audit's own launcher passed). @param {MemorySource} m @returns {string}
+ */
+function launcherLine(m) {
+  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}` : 'none'}`
+  return `memory: recalled by the launching audit — none (${m.why})${m.count ? `; applied ${m.count} passed by its launcher` : ''}`
+}
+
+/**
+ * One line, both parts: what the recall gave, then what the launcher added.
  * @param {MemorySource} m @param {boolean} [forwarded] the list went unparsed to nested reviews (rust-audit):
  * the count is what recall returned, not what was accepted @returns {string}
  */
 function memoryLine(m, forwarded = false) {
-  if (m.source === 'passed') return m.why === 'passed by the launcher' ? `memory: passed by the launcher (${m.count})` : `memory: ${m.why}`
-  if (m.source !== 'recalled') return `memory: none — ${m.why}`
-  const q = m.questions || 0
-  const counted = `${m.count - q} decision(s)${q ? ` and ${q} open question(s)` : ''}`
+  if (m.source === 'launcher') return launcherLine(m)
+  const plus = m.passed ? `; plus ${m.passed} passed by the launcher${m.source === 'recalled' ? ` (${m.added ?? m.passed} new)` : ''}` : ''
+  if (m.source !== 'recalled') return `memory: none — ${m.why}${plus}`
   return forwarded
-    ? `memory: returned ${counted} from ${m.why}; each nested review reports how many it applied`
-    : `memory: recalled ${counted} from ${m.why}`
+    ? `memory: returned ${countedRecords(m)} from ${m.why}${plus}; each nested review reports how many it applied`
+    : `memory: recalled ${countedRecords(m)} from ${m.why}${plus}`
 }
 
 /** The report section naming the source. @param {MemorySource} m @param {boolean} [forwarded] @returns {string} */
@@ -263,17 +307,23 @@ async function recallDecisions(ask, paths, base) {
     raw = await ask(memoryRecallPrompt(paths, base))
   } catch (e) {
     const msg = recallText(e instanceof Error ? e.message : String(e))
-    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
+    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` } }
   }
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
-let nestedPriorDecisions = A['priorDecisions']
-let memory = initialMemory(nestedPriorDecisions)
-let nestedMemoryNote = ''
+/** @type {unknown} */
+const passedDecisions = A['priorDecisions']
+const passedList = Array.isArray(passedDecisions) ? /** @type {unknown[]} */ (passedDecisions) : []
+const recalledByLauncher = A['_recalled'] === true
+/** @type {unknown} */
+let nestedPriorDecisions = passedDecisions
+let memory = initialMemory(passedList.length, recalledByLauncher, A['_memory'])
+let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
 function nestedReviewArgs() {
   return {
     ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
     ...(nestedPriorDecisions != null ? { priorDecisions: nestedPriorDecisions } : {}),
+    ...(memory.source !== 'none' || nestedMemoryNote ? { _recalled: true } : {}),
     ...(nestedMemoryNote ? { _memory: nestedMemoryNote } : {}),
   }
 }
@@ -988,12 +1038,19 @@ function scoutFacts(s) {
   }
 }
 const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scoutNotes } = scoutFacts(scout)
-if (memory.source === 'none') {
+async function recallOnce() {
+  if (recalledByLauncher) return
   const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
-  memory = r.memory
-  nestedPriorDecisions = r.decisions
-  if (r.memory.source === 'none') nestedMemoryNote = r.memory.why
+  const { merged, added } = mergeById(r.decisions, passedList)
+  memory = withPassed(r.memory, passedList.length, added)
+  nestedPriorDecisions = merged
+  if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
+  if (passedDecisions != null && passedDecisions !== '' && !Array.isArray(passedDecisions)) {
+    log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
+    memory = { ...memory, why: `${memory.why}; the launcher's priorDecisions was not a list — not applied` }
+  }
 }
+await recallOnce()
 const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
 /** @param {unknown} p */
 function pathSegments(p) {
