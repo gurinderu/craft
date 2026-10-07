@@ -12,11 +12,6 @@ export const meta = {
 // anywhere saying the base was gone — the exact failure this shared parser exists to end, surviving
 // in the two engines the record-filing roster does not name.
 // >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
-// One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
-// name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
-// module-level helper is copied into the engines' inlined regions only when it is, and the fence's
-// sibling check only knows about EXPORTS — a private helper reaches every engine as a ReferenceError
-// on first use, with the gate green.
 /**
  * @param {RegExpExecArray} m
  * @param {Record<string, unknown>} out
@@ -32,12 +27,6 @@ function applyOption(m, out, ignored) {
     return 1
   }
   const key = /** @type {string} */ (m[2])
-  // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
-  // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
-  // the logger agent is handed. The args string is model-composed, so this is the same threat shape
-  // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
-  // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
-  // legitimate option names, so they are refused by name and reported.
   if (banned(key)) { ignored.push(key); return 0 }
   const quoted = m[4] ?? m[5]
   if (quoted !== undefined) { out[key] = quoted; return 1 }
@@ -49,15 +38,8 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
-// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
 const OBJECT_ONLY_OPTIONS = ['priorDecisions']
 
-// Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
-// A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
-// otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
-// invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
-// or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
  * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
@@ -72,12 +54,8 @@ function parseOptions(text) {
   let m
   let cursor = 0
   while ((m = pair.exec(text)) !== null) {
-    // Anything skipped over between matches is prose, not an option: collect it so the caller can say
-    // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
-    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
-    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
     const key = String(m[2] ?? m[7])
     if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
@@ -88,7 +66,6 @@ function parseOptions(text) {
   return { options: out, pairs, ignored, cut: '' }
 }
 
-// normalizeArgs' branch for a string that starts with `{`.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -109,7 +86,6 @@ function normalizeJsonArgs(text, warn) {
   }
 }
 
-// normalizeArgs' last branch: a non-empty string that is not JSON, read as `key=value` options.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -119,19 +95,12 @@ function normalizeKeyValueArgs(text, warn) {
   const { options, pairs, ignored, cut } = parseOptions(text)
   if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
-    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
-    // and testing "is any value not true" threw away every string made only of boolean options —
-    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
-    // requested mutation pass would silently not run.
     warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
     if (ignored.length) {
       warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
     }
     return options
   }
-  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
-  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
-  // verdict that reads exactly like a requested one.
   warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
   return {}
 }
@@ -151,8 +120,6 @@ function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
-  // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
-  // below: `[1,2,3]` and `"a sentence"` would otherwise become flags named after their own contents.
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -165,19 +132,6 @@ function normalizeArgs(args, warn = () => {}) {
 // The delegation resolves the child under whichever name this registry carries — the fence's own
 // comment states the rule and the fallback's single trigger.
 // >>> craft-inline lib/nested-workflow.mjs nestedWorkflow
-// Launches a nested workflow under the name that resolves where this engine actually runs. In the
-// installed plugin the registry lists engines under the plugin prefix, and a launch by the bare
-// name refuses to resolve — observed live: the review pins ran zero agents, and rust-audit's two
-// nested reviews died inside its fan-out (realm @nick/craft, node #83). In a checkout of this repo
-// the same engines are registered bare. So: the qualified name first, the bare one as fallback.
-// The fallback fires ONLY on the sandbox's name-resolution refusal — `workflow()` THROWS on an
-// unknown name (documented contract), and the refusal observed live reads `no workflow with that
-// name` — never on the nested run itself failing: relaunching a failed review under the second
-// spelling would run the whole review twice. A `null` return is a nested engine that died, not a
-// missing name — no fallback there either. And when NEITHER spelling resolves, the throw names
-// both attempts AND carries the last refusal verbatim — its `Available:` listing is the diagnosis
-// that located the live failure at a consumer — so the caller fails loud instead of skipping the
-// review, and the record distinguishes a name that would not resolve from a run that died.
 /**
  * @param {(name: string, args: unknown) => Promise<unknown>} workflow
  * @param {string} name

@@ -58,11 +58,6 @@ export const meta = {
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
 // >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
-// One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
-// name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
-// module-level helper is copied into the engines' inlined regions only when it is, and the fence's
-// sibling check only knows about EXPORTS — a private helper reaches every engine as a ReferenceError
-// on first use, with the gate green.
 /**
  * @param {RegExpExecArray} m
  * @param {Record<string, unknown>} out
@@ -78,12 +73,6 @@ function applyOption(m, out, ignored) {
     return 1
   }
   const key = /** @type {string} */ (m[2])
-  // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
-  // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
-  // the logger agent is handed. The args string is model-composed, so this is the same threat shape
-  // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
-  // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
-  // legitimate option names, so they are refused by name and reported.
   if (banned(key)) { ignored.push(key); return 0 }
   const quoted = m[4] ?? m[5]
   if (quoted !== undefined) { out[key] = quoted; return 1 }
@@ -95,15 +84,8 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
-// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
 const OBJECT_ONLY_OPTIONS = ['priorDecisions']
 
-// Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
-// A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
-// otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
-// invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
-// or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
  * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
@@ -118,12 +100,8 @@ function parseOptions(text) {
   let m
   let cursor = 0
   while ((m = pair.exec(text)) !== null) {
-    // Anything skipped over between matches is prose, not an option: collect it so the caller can say
-    // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
-    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
-    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
     const key = String(m[2] ?? m[7])
     if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
@@ -134,7 +112,6 @@ function parseOptions(text) {
   return { options: out, pairs, ignored, cut: '' }
 }
 
-// normalizeArgs' branch for a string that starts with `{`.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -155,7 +132,6 @@ function normalizeJsonArgs(text, warn) {
   }
 }
 
-// normalizeArgs' last branch: a non-empty string that is not JSON, read as `key=value` options.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -165,19 +141,12 @@ function normalizeKeyValueArgs(text, warn) {
   const { options, pairs, ignored, cut } = parseOptions(text)
   if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
-    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
-    // and testing "is any value not true" threw away every string made only of boolean options —
-    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
-    // requested mutation pass would silently not run.
     warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
     if (ignored.length) {
       warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
     }
     return options
   }
-  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
-  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
-  // verdict that reads exactly like a requested one.
   warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
   return {}
 }
@@ -197,8 +166,6 @@ function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
-  // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
-  // below: `[1,2,3]` and `"a sentence"` would otherwise become flags named after their own contents.
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -262,8 +229,6 @@ const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDe
 // The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft, node #177 — the
 // memory skill's record shape). Pasted in by the craft-inline gate; the rules and why live in the module.
 // >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX decisionScopeParts decisionText decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
-// Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut
-// mid-sentence would mark a finding with a rationale nobody wrote.
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
@@ -303,8 +268,6 @@ function decisionProblem(o, d) {
   return decisionAnchorProblem(d)
 }
 
-// A scope is a repo-relative path of these characters only; the shell line quotes it, and the check
-// keeps anything a quote could mishandle out of it.
 const SAFE_SCOPE = /^[A-Za-z0-9._@+/ -]+$/
 
 /** Whether `s` holds a control character (a newline among them). @param {string} s */
@@ -340,11 +303,8 @@ function readPriorDecision(raw, i) {
 }
 // <<< craft-inline
 // >>> craft-inline lib/prior-decisions.mjs PRIOR_DECISIONS_MAX DECISION_TITLE_OVERLAP parsePriorDecisions titleWords decisionAnswers reraisedBySeverity priorDecisionsRefusedSection
-// The most decisions one run applies; the rest are refused by name and their findings raised normally.
 const PRIOR_DECISIONS_MAX = 100
 
-// A decision answers a finding when the finding's file sits inside the decision's scope AND their
-// titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
@@ -355,8 +315,6 @@ const DECISION_TITLE_OVERLAP = 0.6
  */
 function parsePriorDecisions(raw) {
   if (raw == null || raw === '') return { decisions: [], refused: [] }
-  // Only a list inside an object argument: in the key=value form a value cannot be delimited, and a
-  // JSON string invites that form, so any string is refused (lib/workflow-args.mjs OBJECT_ONLY_OPTIONS; realm @nick/craft, node #183).
   if (typeof raw === 'string') return { decisions: [], refused: ['priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied'] }
   const list = raw
   if (!Array.isArray(list)) return { decisions: [], refused: ['priorDecisions is not a list — no decision applied'] }
@@ -367,8 +325,6 @@ function parsePriorDecisions(raw) {
   list.slice(0, PRIOR_DECISIONS_MAX).forEach((item, i) => {
     const d = readPriorDecision(item, i)
     if (typeof d === 'string') refused.push(d)
-    // The scope check answers by id: two decisions under one id could lend one's unchanged scope to
-    // the other, so the second is refused.
     else if (decisions.some(x => x.id === d.id)) refused.push(`decision #${i} (${d.id}) repeats an id already given — not applied`)
     else decisions.push(d)
   })
@@ -442,7 +398,6 @@ function scopeCheckScript(decisions) {
   return decisions.map(d => `if git cat-file -e ${q(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`).join('\n')
 }
 
-// What the scope-check agent returns: the ids it saw print status 0, and those it saw print `missing`.
 const SCOPE_CHECK_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['unchanged', 'missing', 'reason'],
   properties: {
@@ -484,8 +439,6 @@ async function runScopeCheck(toCheck, checkScopes, notes) {
   if (!toCheck.length) return { toCheck, unchanged, missing }
   const ids = readScopeCheck(await checkScopes(toCheck))
   if (ids == null) notes.push(`the scope-check agent died or answered unreadably — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`)
-  // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
-  // a finding below Critical/High and carry a commit, which is exactly what was checked.
   for (const id of ids?.unchanged || []) unchanged.add(id)
   for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
   return { toCheck, unchanged, missing }
@@ -585,7 +538,6 @@ async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'w
 
 // The PR comment body for a Confirmed finding, with the marker a later session reads back.
 // >>> craft-inline lib/finding-comment.mjs FINDING_COMMENT_MARKER commentLine findingCommentBody
-// An HTML comment: invisible on the PR page, present in the body the API returns.
 const FINDING_COMMENT_MARKER = '<!-- craft-finding -->'
 
 /** @param {unknown} v */
@@ -603,12 +555,6 @@ function findingCommentBody(f) {
 // <<< craft-inline
 
 // >>> craft-inline lib/path-segments.mjs pathSegments
-// A path as normalized SEGMENTS, for containment decided segment by segment rather than on a raw
-// string prefix: `/r/./crates/../crates/core` is inside `/r`, and `/r-evil` is not. Both separators
-// split, empty and `.` segments vanish, and an interior `..` pops its parent. A `..` with nothing left
-// to pop is KEPT as a literal segment, so a path that climbs out stays visibly out — a caller refuses
-// it (`segs[0] === '..'`) or it fails to match a root, never reads as inside. No disk and no Node API
-// (the engines inline this into the sandbox): symlinks and case-insensitive filesystems are not seen.
 /** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
@@ -723,12 +669,6 @@ continues on the remaining signals with status=unknown — an incomplete gate be
 // await + return). The module's header carries why the audit is a DECLARATION audit and what that
 // does and does not close.
 // >>> craft-inline lib/preflight-probes.mjs PROBE_BUDGETS probeDeclarationBlock auditPreflightProbes readProbeEntry probeCallCount probeBudgetProblems
-// The per-source budget. A source is named by the QUESTION it answers, not by the command that
-// answers it: two spellings of "which checks are green for this SHA" are one source, which is the
-// whole point — the old failure mode was three routes to one answer, each looking like a fresh
-// question. `max: 0` means the route is forbidden outright: it exists, it resolves the same
-// question, and the prompt bans it because it resolves by BRANCH (empty on a review worktree) or
-// hands back a PR whose head has moved.
 const PROBE_BUDGETS = {
   'ci-check-runs': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/check-runs' },
   'ci-commit-status': { max: 1, what: 'gh api repos/{owner}/{repo}/commits/$SHA/status' },
@@ -742,9 +682,6 @@ const PROBE_BUDGETS = {
   'runner-discover': { max: 2, what: 'the ls/test sweep for the dev-shell markers (.envrc, flake.nix, shell.nix, .direnv/)' },
 }
 
-// The block appended to the preflight prompt. It is generated from PROBE_BUDGETS rather than written
-// out beside it: a budget the prompt does not name is a budget the agent is judged against without
-// being told, which turns the audit into a trap instead of a contract.
 function probeDeclarationBlock() {
   const rows = Object.entries(PROBE_BUDGETS).map(([id, b]) => b.max === 0
     ? `   - \`${id}\`: FORBIDDEN (${b.what}) — declaring calls > 0 here is a violation, not a note`
@@ -754,12 +691,6 @@ ${rows.join('\n')}
    Use these ids EXACTLY; an id not on this list is itself reported as a violation, so a repeat cannot be relabelled into a fresh question. A source you did not consult is simply absent (do not declare it with \`calls: 0\`), and \`calls\` is a whole number ≥ 0 on every entry — a missing, non-integer or negative count is itself a violation. \`probes\` can NEVER be empty and is never emptied by a partial result: it reports what you ALREADY did, so running out of time shortens the list, it does not erase it — an empty list is reported as a violation, not read as a disciplined run. THE ENGINE AUDITS THIS: an over-budget or forbidden or unrecognized source is named in the run's log and carried into its record. Declaring fewer calls than you made is a false report, which is worse than an over-budget honest one.`
 }
 
-// Violations of the declared budget, as human-readable lines. Empty array = clean.
-//
-// CONTRACT, stated so nobody upgrades it: this audits the DECLARATION, not the shell. A preflight
-// that asks one source three times and declares one call passes here. What the audit buys is that
-// the honest path and the disciplined path are now the same path, and that a breach has to be
-// either declared or actively misreported — where before it was neither visible nor recorded.
 /** @param {{ probes?: unknown } | null | undefined} pf  the preflight agent's structured answer (model output)
  * @returns {string[]} */
 function auditPreflightProbes(pf) {
@@ -767,18 +698,10 @@ function auditPreflightProbes(pf) {
   const out = []
   const probes = Array.isArray(pf.probes) ? pf.probes : null
   if (!probes) {
-    // Absent is a violation of its own: `probes` is required by the schema, so a missing list means
-    // the answer did not come through the contract at all — and silence must not read as clean,
-    // which is the exact shape of every observability defect this engine has shipped.
     out.push('preflight declared no `probes` list — the per-source budget could not be audited')
     return out
   }
   if (probes.length === 0) {
-    // The same defect one layer in, and it was the CHEAPEST answer available: an empty array is a
-    // present list, so every check below ran over nothing and found nothing. A preflight that spent
-    // 48 invocations and declared `[]` then filed exactly what a disciplined one files. It is a
-    // violation unconditionally — including under `partial: true`, because `probes` reports what was
-    // ALREADY done, so running out of time shortens the list and never empties it.
     out.push('preflight declared an EMPTY `probes` list — a preflight consults something by definition, and an empty declaration is not a clean one (a partial run still reports what it did)')
     return out
   }
@@ -787,35 +710,24 @@ function auditPreflightProbes(pf) {
   for (const entry of probes) {
     const read = readProbeEntry(entry)
     if (typeof read === 'string') { out.push(read); continue }
-    // Two entries for one id are the repeat this exists to catch, split across rows. Summed, never
-    // taken as the larger: splitting 3 calls into 2+1 would otherwise read as within a budget of 2.
     seen.set(read.id, (seen.get(read.id) ?? 0) + read.calls)
   }
   out.push(...probeBudgetProblems(seen))
   return out
 }
 
-// One declared probe entry read as a source id and a whole, non-negative call count — or the violation
-// line that says why it cannot be counted.
 /** @param {unknown} entry @returns {{ id: string, calls: number } | string} */
 function readProbeEntry(entry) {
-  // Model output: an entry may be anything, so its two fields are read as unknown.
   const p = entry && typeof entry === 'object' ? /** @type {{ source?: unknown, calls?: unknown }} */ (entry) : null
   const id = String((p && p.source) || '').trim()
   if (!id) return 'a `probes` entry has no `source`'
   if (!Object.prototype.hasOwnProperty.call(PROBE_BUDGETS, id)) {
     return `unrecognized probe source \`${id}\` — not one of the declared ids, so its budget is unknown`
   }
-  // Every way a count can fail to be a count is named, because each one used to coerce to zero and
-  // land the entry inside its budget: an omitted `calls` via `?? 0`, a non-numeric one via `NaN`
-  // and the `Number.isFinite` guard below, and a negative one by SUBTRACTING from the total — so
-  // `[{blocker-probe:9},{blocker-probe:-8}]` read as 1 call against a budget of 4. A bad count is
-  // now a violation of its own AND is excluded from the sum, so it can neither hide nor offset.
   const calls = probeCallCount(id, p ? p.calls : undefined)
   return typeof calls === 'string' ? calls : { id, calls }
 }
 
-// A declared `calls` value as a whole, non-negative count, or the violation line naming why it is not one.
 /** @param {string} id @param {unknown} raw @returns {number | string} */
 function probeCallCount(id, raw) {
   if (raw == null) {
@@ -831,7 +743,6 @@ function probeCallCount(id, raw) {
   return calls
 }
 
-// The summed calls per source against its budget: a forbidden source used at all, or any over its max.
 /** @param {Map<string, number>} seen @returns {string[]} */
 function probeBudgetProblems(seen) {
   const out = []
@@ -1049,25 +960,15 @@ const CONDITIONAL_LENSES = ['failure-windows']
 const SURFACE_GATED_LENSES = { 'negative-space': 'crossBoundarySymbol', 'compat': 'wireForm', 'invariants': 'invariantType' }
 
 // >>> craft-inline lib/contract-paths.mjs NON_CONTRACT_DIRS PROSE_EXT isChartDir CONTRACT_PATH_CLASSES contractPathClass isContractOrSchemaPath
-// Directories whose files are test inputs, not the contract they imitate: a CRD or a migration under
-// `tests/` or `fixtures/` is what a test feeds itself. A segment match, case-insensitive, at any depth.
 const NON_CONTRACT_DIRS = new Set(['test', 'tests', '__tests__', 'testdata', 'fixtures', '__fixtures__', '__snapshots__'])
 
-// Prose is never the contract, wherever it sits. Judged by extension, NOT by a `docs/` directory:
-// generated API specs commonly live there (`docs/swagger.yaml`), and those are the contract.
 const PROSE_EXT = /\.(md|mdx|markdown|rst|adoc|txt)$/i
 
-// A directory that holds Helm charts: `charts/`, `chart/` or `helm/`. A `values*.yaml` counts only at the
-// repo root (a single-chart repository) or under one — elsewhere it is far more often some other tool's.
 /** @param {string} d @returns {boolean} */
 function isChartDir(d) {
   return /^(charts?|helm)$/i.test(d)
 }
 
-// The contract classes, each a predicate over the path's directory segments and its basename, named
-// so a test can pin each one (skills/compatibility/catalogue.md, C5–C12). `package.json` is NOT a
-// class: its public names (`bin`, `exports`) change in a minority of its edits — dependency bumps are
-// the common case — and a path cannot tell the two apart, so the scout's reading stands there.
 /** @type {{ name: string, test: (p: { dirs: string[], base: string }) => boolean }[]} */
 const CONTRACT_PATH_CLASSES = [
   { name: 'contracts-crate', test: p => p.dirs.some((s, i) => s === 'crates' && /^(contracts|.*-contracts)$/.test(p.dirs[i + 1] ?? '')) },
@@ -1085,7 +986,6 @@ const CONTRACT_PATH_CLASSES = [
   { name: 'plugin-manifest', test: p => p.dirs[p.dirs.length - 1] === '.claude-plugin' && /\.json$/i.test(p.base) },
 ]
 
-// The contract class a changed path belongs to, or '' when it is none — prose and test inputs first.
 /** @param {unknown} f @returns {string} */
 function contractPathClass(f) {
   const segs = pathSegments(f || '')
@@ -1095,8 +995,6 @@ function contractPathClass(f) {
   return CONTRACT_PATH_CLASSES.find(c => c.test({ dirs, base }))?.name ?? ''
 }
 
-// A changed file on a contract path is a CERTAIN cross-boundary signal the scout can miss. The gate
-// reads this to FORCE the two surfaces it implies ON — never off, so it can only ever ADD a lens back.
 /** @param {unknown} f @returns {boolean} */
 function isContractOrSchemaPath(f) {
   return contractPathClass(f) !== ''
@@ -1218,8 +1116,6 @@ const results = []
 // The merge and the record's `gate` / `surfaceGate` fields live in lib/profile-merge.mjs (tested
 // there) and are pasted in by the craft-inline gate.
 // >>> craft-inline lib/profile-merge.mjs failedProfiles mergeGateStatus profilesRanLenses gateRecord passedProfiles savedSurfaceDrops surfaceGateRecord optionalTallyFrom
-// The profiles whose mechanical gate is red. One rule, shared by the early Block exit and the
-// recorded gate status, so the run that aborted and the record that says it aborted cannot disagree.
 /**
  * @param {ProfileResult[]} results
  * @returns {ProfileResult[]}
@@ -1228,8 +1124,6 @@ function failedProfiles(results) {
   return results.filter(r => r.gateStatus === 'fail')
 }
 
-// Worst-of across profiles: any red gate blocks the whole review (findings can't be trusted on a
-// broken tree); green only when every profile is green; anything else is unknown.
 /**
  * @param {ProfileResult[]} results
  * @returns {'fail'|'pass'|'unknown'}
@@ -1239,13 +1133,6 @@ function mergeGateStatus(results) {
   return results.every(r => r.gateStatus === 'pass') ? 'pass' : 'unknown'
 }
 
-// TRUE when any profile reached its lens phase and got at least one lens agent back (realm
-// @nick/craft #107). Not derived from `ranLenses` alone: that counts a lens only when it returned on
-// EVERY slice, so a profile that lost one slice per lens would read as never having reached its
-// lenses. `lensRounds[].returned` counts answers per round; `ranLenses` stays as the second source
-// because a lens recovered by resurrection is marked returned there but not in the round counts.
-// A gate-failed profile carries neither, contributing nothing. A profile whose every lens agent
-// died still reads false — an under-count of its saving, never an over-claim.
 /**
  * @param {ProfileResult[]} results
  * @returns {boolean}
@@ -1254,7 +1141,6 @@ function profilesRanLenses(results) {
   return results.some(r => (r.ranLenses || []).length > 0 || (r.lensRounds || []).some(x => x.returned > 0))
 }
 
-// The record's `gate` field: merged status, per-profile provenance, and red-but-not-ours checks.
 /**
  * @param {ProfileResult[]} results
  * @returns {{status: string, provenance: string, carriedChecks: string[]}}
@@ -1267,9 +1153,6 @@ function gateRecord(results) {
   }
 }
 
-// The profiles that got PAST their mechanical gate. What a red profile planned — surface-gate
-// drops, optional scope — was never in play: it aborts before any lens can run, so nothing it
-// planned is a saving or a purchase the run declined.
 /**
  * @param {ProfileResult[]} results
  * @returns {ProfileResult[]}
@@ -1278,10 +1161,6 @@ function passedProfiles(results) {
   return results.filter(r => r.gateStatus !== 'fail')
 }
 
-// The run-level surface-gate saving (realm @nick/craft #102): the lenses the gate dropped in some
-// profile that got PAST its mechanical gate, minus any lens that was dispatched in another profile.
-// A gate-failed profile's drops are not savings — none of its lenses could have run — so counting
-// them on a mixed run would over-claim. Each profile result carries its own `surfaceDropped`.
 /**
  * @param {ProfileResult[]} results
  * @param {Iterable<string>} dispatched
@@ -1293,8 +1172,6 @@ function savedSurfaceDrops(results, dispatched) {
   return [...dropped].filter(l => !ran.has(l)).sort()
 }
 
-// The record's `surfaceGate` field: the saving above, the dispatched set, the critic-named lenses
-// that are still in the saving (a named lens that ran somewhere is not a gap), and `lensesRan`.
 /**
  * @param {ProfileResult[]} results
  * @param {{dispatched: Iterable<string>, namedByCritic: Iterable<string>}} opts
@@ -1311,13 +1188,6 @@ function surfaceGateRecord(results, { dispatched, namedByCritic }) {
   }
 }
 
-// The record's and the report's optional-pass tally (realm @nick/craft #109): the optional lenses in
-// scope (`optionalScope`, in profile order then roster order, each named once), split by whether they were
-// dispatched anywhere. A profile past its gate contributes its whole scope. A red profile contributes
-// only what the caller REQUESTED: an unrequested lens there was never a purchase the run declined,
-// but a requested one was asked for and not delivered, and must still read as not looked at.
-// Derived, never accumulated: the plan is not final when a profile is planned (the completeness
-// critic composes lenses later), so only the dispatch point says what ran.
 /**
  * @param {ProfileResult[]} results
  * @param {Iterable<string>} dispatched
@@ -1438,21 +1308,11 @@ PROFILES['nix'] = {
 // rather than read: that argument is exactly what keeps them extractable.
 
 // >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote verdictSuffix telemetryLostSection
-// The human-readable roster of what the engine can review, named in every coverage message so a
-// caller reading "nothing was reviewed" also learns what would have been.
 /** @param {Record<string, {lang: string}>} profiles */
 function supportedLangLabel(profiles) {
   return Object.values(profiles).map(p => p.lang).join('/')
 }
 
-// A pin naming an id that does not exist used to be dropped by `filter(Boolean)` — silently — and
-// the run then fell into "no language matched" and returned a green Approve over an unreviewed
-// diff. Split the pin into known/unknown instead and let the caller refuse to proceed.
-// `requested` arrives from workflow args and is NOT trusted to be an array: a scalar `languages:
-// 'rust'` and a JSON-decoded string are both known argument-transport shapes here. Normalise first —
-// the old `includes` form tolerated a string by accident, and calling `.filter` on one threw a
-// TypeError that aborted the whole review. Degrade toward running the review, never toward crashing:
-// an unusable shape (empty list, object, number) is treated as "no pin at all".
 /**
  * @param {Record<string, unknown>} profiles
  * @param {unknown} requested
@@ -1465,10 +1325,6 @@ function resolveProfilePin(profiles, requested) {
     .map(id => id.trim().toLowerCase())
     .filter(Boolean)
   if (!list.length) return { pinned: null, unknown: [] }
-  // DEDUPE. Lowercasing collapses `['rust','Rust']` to the same id twice; the pre-normalisation code
-  // hid that by accident (`profiles['Rust']` was undefined and got dropped). A duplicated pin makes
-  // the pin fallback build `active` with the same profile twice, so the whole lens pipeline runs
-  // twice and the report reads "no findings across rust+rust".
   const uniq = [...new Set(list)]
   return { pinned: uniq.filter(id => !!profiles[id]), unknown: uniq.filter(id => !profiles[id]) }
 }
@@ -1492,40 +1348,22 @@ function noLanguageMessage(profiles, fileCount, materialCount = fileCount) {
   return `NOTHING WAS REVIEWED — none of the ${fileCount} changed file(s) match a supported language profile (this engine reviews ${supportedLangLabel(profiles)} only), and ${materialCount} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.`
 }
 
-// A diff that came back with NO files at all. Reachable legitimately — an already-merged branch, a
-// `path` scope matching nothing — and also when detection half-failed, which is why this stays
-// INCOMPLETE rather than green. But it is not a coverage hole: describing it with
-// noLanguageMessage(0, 0) produced "none of the 0 changed file(s) … and 0 of them went unreviewed",
-// a hole of size zero, which is self-contradictory and teaches readers to ignore the marker.
 function noChangedFilesMessage() {
   return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
 }
 
-// Which unreviewed files actually lower the claim. Derived from the path alone and deliberately
-// conservative: when in doubt a file is MATERIAL. A false "material" costs one honest INCOMPLETE
-// marker; a false "inert" costs a silent overclaim, which is the bug this whole section exists to
-// prevent. Three narrow exemptions only — prose/asset extensions, lockfiles matched by their real
-// names, and artifacts whose path makes it unambiguous that a generator wrote them.
 const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
 
 const INERT_NAMES = new Set([
   'license', 'licence', 'notice', 'codeowners', '.gitignore', '.gitattributes',
-  // Inert `.txt` files by NAME, not by extension. A blanket `.txt` rule was the lockfile bug again
-  // in another costume: `CMakeLists.txt`, `requirements.txt`, `conanfile.txt` and `Dependencies.txt`
-  // are build-system and dependency SOURCE, and a diff of nothing but those took the green
-  // "nothing needed reviewing" return. When in doubt, material.
   'license.txt', 'licence.txt', 'notice.txt', 'copying.txt', 'authors.txt', 'contributors.txt',
   'changelog.txt', 'changes.txt', 'readme.txt', 'robots.txt', 'humans.txt', 'todo.txt', 'notes.txt',
-  // Lockfiles, by the names they actually have. Matching a *shape* like `*lock.*` swallowed source
-  // code — `db/lock.sql`, `src/lock.rs`, `internal/spin-lock.go` — and silently exempted it.
   'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock',
   'cargo.lock', 'flake.lock', 'poetry.lock', 'pdm.lock', 'uv.lock', 'pipfile.lock', 'gemfile.lock',
   'composer.lock', 'go.sum', 'deno.lock', 'mix.lock', 'pubspec.lock', 'podfile.lock', 'packages.lock.json',
   'gradle.lockfile', 'cabal.project.freeze', 'conan.lock', 'herd.lock',
 ])
 
-// Generated artifacts. Only where the PATH itself is unambiguous — a generator-stamped suffix or a
-// directory whose whole purpose is generated output. A hand-written file never lives here.
 const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
 
 const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
@@ -1541,24 +1379,6 @@ function materialUncovered(files) {
   return files.filter(f => !isInertUncovered(f))
 }
 
-// A THIRD class, between "inert" and "a coverage hole in the reviewed code".
-//
-// The INCOMPLETE marker on an otherwise-green verdict exists to say: reviewable CODE went
-// unreviewed. Once "material" was made to mean "anything that is not docs/assets/lockfiles", the
-// marker started firing on ordinary PRs — `src/lib.rs` plus `.github/workflows/ci.yml` produced
-// `⚠️ Approve (INCOMPLETE)`, and rust-audit downgraded the whole audit to Warning off the leading
-// ⚠️. That is the failure this code's own comments warn about, relocated from docs to config: a
-// marker that fires on nearly every PR stops being read, and then the overclaim it guards against
-// comes back as a habit.
-//
-// So: project CONFIGURATION and BUILD RECIPES that no language lens ever claimed to read — CI
-// workflow files, linter/tool config, container and task-runner recipes, editor/dotfile config —
-// are reported in the "Not reviewed" section (nothing is hidden) but do NOT put the verdict into
-// INCOMPLETE. They are not the reviewed program's source, and the review never claimed them.
-// Everything else stays a real gap: `.py`, `.go`, `.sh`, `.sql`, `.proto`, `.ts` and friends are
-// executable or schema SOURCE that can carry a defect, so they keep firing the marker. The list is
-// a narrow, explicit allowlist by name/extension — an unrecognised path is still a coverage gap,
-// preserving the "when in doubt, material" rule.
 const ANCILLARY_NAMES = new Set([
   'dockerfile', 'containerfile', 'justfile', 'makefile', 'gnumakefile', 'procfile', 'vagrantfile',
   'deny.toml', 'rustfmt.toml', 'clippy.toml', 'rust-toolchain.toml', 'rust-toolchain',
@@ -1575,23 +1395,11 @@ function isAncillaryConfig(f) {
   return ANCILLARY_NAMES.has(base) || ANCILLARY_PATH.test(p) || /\.dockerfile$/i.test(base)
 }
 
-// The files whose absence from the review actually voids a green verdict: material, and not mere
-// project configuration. This — not `materialUncovered` — drives the INCOMPLETE marker on a run
-// that DID review code.
 /** @param {unknown[]} files */
 function coverageGapFiles(files) {
   return materialUncovered(files).filter(f => !isAncillaryConfig(f))
 }
 
-// THE coverage decision, taken from the change set alone and BEFORE any language pin can populate
-// `active`. Pure, so it is testable through the pinned path — testing the guards in isolation from
-// the pin is exactly how they stayed dead code for a release while every internal caller pinned.
-//   'empty'             — the diff resolved to no files at all: INCOMPLETE, never a green Approve.
-//   'nothing-to-review' — files, but all inert (docs/assets/lockfiles/generated): honest green.
-//   'no-profile'        — reviewable material, and neither detection nor a pin yields a profile.
-//   'review'            — go ahead, with `active`.
-// A pin only takes effect in the last step: it says WHICH profile reviews the material, never that
-// material exists.
 /**
  * @template {{lang: string}} P
  * @param {{profiles: Record<string, P>, changedFiles: unknown, detectedActive: unknown, pinnedLangs: unknown}} args
@@ -1609,11 +1417,6 @@ function resolveCoverage({ profiles, changedFiles, detectedActive, pinnedLangs }
   return { outcome: 'review', active, material }
 }
 
-// The other half of the no-profile case: a diff whose changed files are ALL inert (prose, assets,
-// lockfiles, generated output). Nothing was reviewed AND nothing needed reviewing — a different
-// statement from "files went unreviewed", and it must not be dressed up as a coverage hole. A
-// marker that fires on every README-only change stops being read, which destroys the value of the
-// marker on the diffs that do hide unreviewed code.
 /** @param {number} fileCount */
 function nothingToReviewMessage(fileCount) {
   return `NOTHING NEEDED REVIEWING — all ${fileCount} changed file(s) are documentation, assets, lockfiles or generated output; none carries reviewable code. No lens ran because none had anything to look at.`
@@ -1625,10 +1428,6 @@ function uncoveredNotRunNote(material) {
   return `${material.length} changed file(s) matched no language profile and were NOT reviewed (${shown}${material.length > 5 ? `, +${material.length - 5} more` : ''})`
 }
 
-// The verdict suffix names its cause: a genuine not-run (a scout/lens/critic died, scope dropped,
-// or the floor premise was revoked) is INCOMPLETE — re-running helps; a coverage hole (changed files
-// no profile covers) is PARTIAL COVERAGE — a re-run will not fix it. Both mean "not a clean verdict";
-// analyze-runs must treat both as non-clean (see its isIncomplete).
 /** @param {{notRun?: unknown[], coverageNotes?: unknown[], floorPremiseHeld?: boolean}} [opts] */
 function verdictSuffix({ notRun = [], coverageNotes = [], floorPremiseHeld = true } = {}) {
   if (notRun.length || !floorPremiseHeld) return ' (INCOMPLETE)'
@@ -1636,35 +1435,10 @@ function verdictSuffix({ notRun = [], coverageNotes = [], floorPremiseHeld = tru
   return ''
 }
 
-// ---- telemetry honesty ----
-// A run record is written by an agent shelling out to lib/craft-log-run.mjs, so the write can fail
-// while the review itself is perfectly healthy: a craftRoot that has moved, a dead logger agent, a
-// damaged store. Losing it used to be pure silence, and silence in the store is read as "this review
-// was never run" — the permissive default wearing the face of a fact.
-// The recorded decision is that this NEVER fails the run (a three-hour review killed by a bookkeeping
-// write teaches everyone to ignore the marker); it is reported instead. Returns '' for a healthy run,
-// so the marker cannot appear where nothing was lost — a marker that fires on healthy runs is one
-// people stop reading, which is the same defect wearing the opposite sign.
-// The body speaks about the WRITE, never about the run: it goes on every exit, including those whose
-// verdict says nothing was reviewed (dead base resolution, unknown language pin, empty diff), where
-// reassurance that "the review ran" would contradict the verdict itself. And it says "could not be
-// confirmed", not "did not land": two of the three ways an entry gets here — an abandoned deadline
-// (the logger agent is NOT cancelled and may still write) and a malformed reply — are compatible with
-// a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
-// It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
-// embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
-// Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
-// agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
-// structure — a heading, a verdict line — above the verdict the engine actually computed.
 /** @param {unknown} lost */
 function telemetryLostSection(lost) {
   const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
-  // A record that LANDED while its run directory did not is a different fact from a record nobody
-  // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the
-  // list of things readers skip. The two are counted separately and the heading follows whichever is
-  // actually true — the section is still one section, because both mean the store is not the whole
-  // story for this run.
   const landed = lines.filter(l => /^the run directory \(the record itself landed\)/.test(String(l)))
   const unconfirmed = lines.length - landed.length
   const head = unconfirmed
@@ -1924,32 +1698,13 @@ const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', I
 // imported. Never edit inside the fence: change lib/review-adjudicate.mjs and regenerate with
 // `node lib/check-workflows.mjs --fix`.
 // >>> craft-inline lib/review-adjudicate.mjs ATTACK_MAX sanitizeAttack baseWhy isHighSeverity classifyRedTeam adjudicateOne adjudicateResolved adjudicateCannotTell adjudicateRegressed shouldRedTeam carriedKey findCarrier ABSORBED_MAX ABSORB_FILE_MAX ABSORB_TITLE_MAX clampField noteAbsorbed absorbedSite absorbInto splitAbsorbed withoutAbsorbed absorbedPromptBlock partitionAbsorbed absorbAcross TRACKED_MARK markTrackedUnverified
-// Cap for any model-authored string that is persisted into the ledger, re-interpolated into a
-// next-round prompt, or rendered in the report. Shared by sanitizeAttack and (in the workflow)
-// flattenField, so one runaway agent response cannot balloon either path.
 const ATTACK_MAX = 500
 
-// Model "attack"/"note" text is persisted into the ledger `why`, re-interpolated into next-round
-// prompts, and rendered in the report — cap it and strip newline/markdown structure so runaway or
-// injected output cannot restyle the report or compound across re-review rounds.
 /**
  * @param {unknown} text
  * @returns {string}
  */
 function sanitizeAttack(text) {
-  // Also break the baseWhy marker DELIMITER: collapse the ` — ` that precedes a `fix incomplete` /
-  // `REGRESSED after fix` / `UNVERIFIED` / `still-open` marker word to a plain space, and likewise
-  // the ` — ` before the absorb mark (`also reported at`) and its overflow counter. The words
-  // survive (no content loss) but the exact ` — <marker> ` shape baseWhy / splitAbsorbed parse is
-  // gone — so a model-authored attack, note or TITLE that echoes a marker can neither re-introduce
-  // a parseable marker that accretes a stale fragment each round, nor forge an "also reported at"
-  // site that would render a fabricated file:line in the report and consume an ABSORBED_MAX slot.
-  // ` (reopened: ` is collapsed for the same reason: baseWhy strips it when it lands at the end.
-  // The overflow counter's own `(+` is broken too, for BOTH its spellings — ` — (+N more report(s)`
-  // as noteAbsorbed persists it, and `(+N further report(s) at this site` as absorbedPromptBlock
-  // renders it. Collapsing only the leading ` — ` left the phrase itself intact, so a model-authored
-  // file/title carrying it still rendered a convincing "further reports" fragment INSIDE a prompt
-  // block line (no forged list item — the newline is already gone — but a forged sentence).
   const flat = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/[#`*_[\]<>|]/g, '')
     .replace(/ — (?=fix incomplete|REGRESSED after fix|UNVERIFIED|still-open|also reported at|\(\+\d+ (?:more|further) report)/gi, ' ')
     .replace(/ \(reopened: /gi, ' (reopened ')
@@ -1957,15 +1712,6 @@ function sanitizeAttack(text) {
   return flat.length > ATTACK_MAX ? `${flat.slice(0, ATTACK_MAX)}…` : flat
 }
 
-// A still-open/regressed prior re-enters the next round's ledger with a suffix appended to `why`.
-// Strip any PRIOR suffix first so stale attacks do not accrete and bias future adjudications (the
-// adjudicator and red-team derive the invariant from `why`). Honest invariant: `why` carries the
-// original rationale plus at most the LATEST attack. We strip on the LAST marker only (so a rationale
-// that legitimately QUOTES a marker phrase is not truncated). Attack/note text cannot re-introduce a
-// parseable marker: sanitizeAttack now breaks the ` — <marker>: ` delimiter (collapses the em-dash),
-// so the ONLY markers in `why` are the real per-round appends plus any in the original (unsanitized)
-// rationale. The LAST-marker split then both PREVENTS accretion (each round strips the prior append
-// before re-appending — `why` is stable round-over-round) AND preserves a rationale that quotes a marker.
 /**
  * @param {unknown} why
  * @returns {string}
@@ -1983,18 +1729,12 @@ function baseWhy(why) {
   return last === -1 ? s : s.slice(0, last)
 }
 
-// Case-insensitive Critical/High gate. LEDGER_ITEM.severity has no enum (deliberately — clamping it
-// would fail the whole prior-round ledger load and silently degrade re-review to a first pass), so a
-// drifted `critical`/`CRITICAL` value must still trip the red-team gate. Exact-match `=== 'Critical'`
-// would silently skip red-team on such a prior.
 /**
  * @param {unknown} sev
  * @returns {boolean}
  */
 function isHighSeverity(sev) { return ['critical', 'high'].includes(String(sev ?? '').trim().toLowerCase()) }
 
-// Pure red-team verdict handling for a "resolved" Critical/High prior. Returns the possibly-
-// adjusted adjudication plus degradation flags; the caller does the logging/counting.
 /**
  * @template {Verdict} V
  * @param {Finding} f
@@ -2011,8 +1751,6 @@ function classifyRedTeam(f, adj, rt) {
   return { adj, died: false, overturned: false, invalid: false }
 }
 
-// Pure per-finding dispatch: map a finding + its adjudication result (r may be null) to a track
-// and a ledger-ready entry. Caller pushes entry onto adjudicated[track] and does logging.
 /**
  * `entry` is `f` re-stamped (line, why, disposition, note), so it is returned as the caller's own type.
  * @template {Finding} F
@@ -2026,17 +1764,11 @@ function adjudicateOne(f, r) {
   if (r == null) return { track: 'stillOpen', adjudicatorDied: true, entry: { ...located, why: `${baseWhy(f.why)} — still-open (adjudicator did not run — agent died; kept still-open by default)` } }
   const status = r.status || 'still-open'
   if (status === 'resolved') return adjudicateResolved(f, located, r, attack)
-  // An adjudication that could not reach a conclusion is NOT a fix. Route it to still-open — the
-  // same direction a dead adjudicator takes — and mark `why` so a reader of the report can see the
-  // item was carried without verification rather than confirmed still broken.
   if (status === 'cannot-tell') return adjudicateCannotTell(f, located, r)
   if (status === 'regressed') return adjudicateRegressed(f, located, r)
-  // still-open, and every status the schema does not know: an unrecognised verdict is an UNKNOWN,
-  // and an unknown must never land on the resolved track.
   return { track: 'stillOpen', entry: attack ? { ...located, why: `${baseWhy(f.why)} — fix incomplete: ${attack}` } : located }
 }
 
-// A `resolved` verdict: closed — unless it also carries an attack, which contradicts it and demotes it.
 /**
  * @template {Finding} F
  * @param {F} f
@@ -2074,11 +1806,6 @@ function adjudicateRegressed(f, located, r) {
   return { track: 'regressed', entry: { ...located, why: note ? `${baseWhy(f.why)} — REGRESSED after fix: ${note}` : `${baseWhy(f.why)} — REGRESSED after fix (no detail returned by adjudicator)` } }
 }
 
-// Whether a "resolved" verdict is worth an independent red-team pass. A resolved verdict that
-// ALREADY carries an attack is self-contradictory — adjudicateOne demotes it — so red-teaming it
-// wastes an opus call and lets the red-team overwrite the adjudicator's own attack. Only a genuinely
-// clean resolved (no attack) gets red-teamed. Emptiness is judged on the SANITIZED attack so a
-// markdown-only "attack" counts as none.
 /**
  * @param {Verdict | null | undefined} r
  * @returns {boolean}
@@ -2087,9 +1814,6 @@ function shouldRedTeam(r) {
   return r?.status === 'resolved' && !sanitizeAttack(r.attack)
 }
 
-// The coarse identity used to decide whether a lens finding is ALREADY on the adjudicate track:
-// file + ruleId, case- and whitespace-normalised. Empty when either half is missing — a finding
-// with no ruleId cannot be keyed this way, and the caller falls back to the exact matcher.
 /**
  * @param {Finding | null | undefined} f
  * @returns {string}
@@ -2100,47 +1824,6 @@ function carriedKey(f) {
   return file && ruleId ? `${file}\u0000${ruleId}` : ''
 }
 
-// The prior a freshly-discovered finding is ALREADY tracked by, or null. `priors` is the still-live
-// adjudicate track (still-open / regressed / carried / retired).
-//
-// WHY FILE+RULEID AND NOT A TITLE MATCH. On a full re-scan the lenses see the whole diff and
-// re-invent every prior as a fresh finding. The old test — matchesPrior, which requires file and
-// ruleId to match AND the titles to overlap by 0.6 — recognised 2 of 59 such re-discoveries on a
-// measured branch, because two agents describing the same defect rarely reuse each other's words.
-// The other 57 were appended to the ledger alongside the prior they duplicate. Every carried
-// finding costs one adjudicator call next round, so the ledger — and the bill — grew round over
-// round. Dropping the title threshold entirely is what stops the accretion.
-//
-// THE COST, AND WHERE IT IS PAID. file+ruleId is coarser than the old test, so two GENUINELY
-// DISTINCT defects that share a file and a rule collapse into one ledger entry. That would be a
-// silent loss — a prior does not have to be PRUNED to vanish, it vanishes the round it RESOLVES,
-// and `adjudicated.resolved` is deliberately not written to the next ledger. Within a round the
-// collapse is already safe (the caller never dedups against the resolved track), but a finding
-// absorbed in round N whose host resolves in round N+1 would be unrecorded and untracked — and on
-// an incremental round its site is out of the lens base, so nothing re-discovers it.
-//
-// So absorption is not free and not silent: the absorbed finding LANDS — as a clause on the host's
-// `why` (absorbInto), which is a persisted ledger field. The clause is written INTO the base
-// rationale, ahead of the per-round markers, so baseWhy's marker-stripping cannot take it away
-// again, and it renders in the round's report.
-//
-// AND IT IS DELIVERED, NOT MERELY STORED. `why` is interpolated into the adjudicate and red-team
-// prompts through sanitizeAttack, which caps at ATTACK_MAX — and the clauses sit at the END of the
-// rationale, so on any realistic (paragraph-length) rationale they were cut off before the model
-// ever saw them. They therefore travel OUTSIDE that field: splitAbsorbed lifts them off the `why`,
-// withoutAbsorbed is what gets interpolated, and absorbedPromptBlock renders each site on its own
-// line with the sentence that says what it means for the verdict. Only then is it true that the
-// host cannot leave the ledger without an adjudicator that was TOLD a second defect was reported here.
-//
-// `fallbackMatch` (the workflow passes matchesPrior) is used only when the finding or the prior has
-// no usable file+ruleId key: without a ruleId the coarse key would collapse everything in a file.
-//
-// FIRST MATCH WINS, AND THE ORDER IS THE CALLER'S CONTRACT. Several priors can share a file+ruleId;
-// `.find` takes the earliest. The workflow builds `livePriors` as
-// [...stillOpen, ...regressed, ...carried, ...retired] — retired LAST on purpose, so a host that
-// reaches the next ledger is preferred over one that is leaving it (partitionAbsorbed would
-// otherwise keep the finding at a retired host that a live host could have absorbed). That
-// preference is positional, not enforced here; a caller reordering that array changes it.
 /**
  * @template {Finding} F
  * @template {Finding} P
@@ -2158,26 +1841,12 @@ function findCarrier(f, priors, fallbackMatch) {
   }) || null
 }
 
-// How many absorbed reports are named individually on one host before the rest collapse to a count.
-// Not a prune: past the cap the host still says a further N reports landed here, so "this site holds
-// more than one defect" survives — only the extra file:line/title detail is traded for a bounded
-// `why`, which is re-interpolated into every subsequent prompt and rendered in the report.
 const ABSORBED_MAX = 3
 
-// The absorbed finding's landing place: the host's BASE `why`, extended by one bounded clause.
-// Re-absorbing the identical report is a no-op, so a defect the lenses re-discover every round does
-// not grow the string round over round. The clause shape is deliberately unlike the ` — <marker>: `
-// shape baseWhy parses, so it is never mistaken for a per-round append and stripped.
-// Per-part caps for an absorbed clause. ATTACK_MAX (500) is the cap for a rationale-sized field; a
-// path and a finding title are not that, and at up to 3 clauses a host's `why` — already the bulk of
-// the transport payload — could grow by ~3 KB on these two fields alone. A path needs ~120 and a
-// title ~160; past that the part is elided, which costs recognisability, not the site itself.
 const ABSORB_FILE_MAX = 120
 
 const ABSORB_TITLE_MAX = 160
 
-// sanitizeAttack, then a tighter cap. Shares the sanitiser so the marker-collapsing (and therefore
-// the forgery defence) applies to every part of a clause.
 /**
  * @param {unknown} text
  * @param {number} max
@@ -2204,17 +1873,11 @@ function noteAbsorbed(baseText, f) {
   return `${m ? base.replace(overflow, '') : base} — (+${m ? Number(m[1]) + 1 : 1} more report(s) at this site)`
 }
 
-// An absorbed finding's site as a clause names it: `file:line: title`, each part clamped, with `?`,
-// 0 and `untitled` standing in for a missing one.
 /** @param {Finding | null | undefined} f @returns {string} */
 function absorbedSite(f) {
   return `${clampField(f?.file, ABSORB_FILE_MAX) || '?'}:${Number(f?.line) || 0}: ${clampField(f?.title, ABSORB_TITLE_MAX) || 'untitled'}`
 }
 
-// Record `f` on its host's `why`. baseWhy is a PREFIX function (every rule it applies strips a
-// TRAILING marker), so the base can be extended and this round's marker suffix re-attached
-// unchanged — which is what keeps the clause alive across rounds: next round's baseWhy strips the
-// marker and keeps everything the clause sits in.
 /**
  * @param {unknown} hostWhy
  * @param {Finding | null | undefined} f
@@ -2226,20 +1889,6 @@ function absorbInto(hostWhy, f) {
   return noteAbsorbed(base, f) + s.slice(base.length)
 }
 
-// Lift the absorbed clauses back OFF a host's `why`. Returns the rationale as it stood before any
-// absorption (`base`), the individually-named sites, and the overflow count. Parsing is done on
-// baseWhy(why) so a per-round marker suffix — which may itself contain the mark's words — cannot be
-// mistaken for a clause.
-//
-// WHAT THIS DOES NOT DEFEND AGAINST, STATED PLAINLY. sanitizeAttack breaks the mark's shape in every
-// part that passes THROUGH it — attacks, notes, and the file/title of a clause. It does not run over
-// a fresh lens finding's `why`: that comes straight from the lens schema and reaches this parser
-// unsanitized the moment the finding becomes a host. So a rationale that literally contains
-// ` — also reported at nowhere.rs:1: fabricated` splits wrong in BOTH directions: withoutAbsorbed
-// hands the adjudicator a TRUNCATED rationale, and absorbedPromptBlock renders the fabricated site
-// as a real absorbed report. It needs the exact em-dash phrasing, so it is unlikely — but it is not
-// prevented, and the delimiter is textual, so no amount of sanitising downstream can prevent it.
-// (This is the same honesty baseWhy's own comment keeps about a rationale that QUOTES a marker.)
 /**
  * @param {unknown} why
  * @returns {{ base: string, sites: string[], more: number }}
@@ -2254,10 +1903,6 @@ function splitAbsorbed(why) {
   return { base: /** @type {string} */ (parts[0]), sites: parts.slice(1).map(s => s.trim()).filter(Boolean), more }
 }
 
-// The `why` as it should be interpolated into a prompt: the rationale plus this round's marker
-// suffix, with the absorbed clauses removed — they are delivered separately (absorbedPromptBlock)
-// because this field is passed through sanitizeAttack's ATTACK_MAX cap and a trailing clause on a
-// paragraph-length rationale is simply cut off.
 /**
  * @param {unknown} why
  * @returns {string}
@@ -2267,10 +1912,6 @@ function withoutAbsorbed(why) {
   return splitAbsorbed(s).base + s.slice(baseWhy(s).length)
 }
 
-// The prompt lines that DELIVER the absorbed reports to an adjudicator or red-teamer: outside the
-// capped `why` field, one site per line, and — the half a bare list leaves out — a sentence saying
-// what their presence means for the verdict. Empty string when nothing was absorbed, so the caller
-// can interpolate it unconditionally.
 /**
  * @param {unknown} why
  * @returns {string}
@@ -2283,20 +1924,6 @@ function absorbedPromptBlock(why) {
   return `\nALSO REPORTED AT THIS SITE (further defects later rounds raised at the same file+rule; they are tracked ONLY through this finding and leave the ledger when it does):\n${lines.join('\n')}\nThey are part of what you are adjudicating: "resolved" requires that every one of them is gone too. If any of them still stands, return "still-open" and cite it in \`attack\`.\n`
 }
 
-// Split freshly-discovered findings into the ones that stay and the ones absorbed into a still-live
-// prior, and say how each host's `why` must change. Pure: hosts are not mutated — the caller applies
-// `updates`.
-//
-// A RETIRED host absorbs NOTHING. It is not persisted, so a clause written on it would not survive
-// the round: the report would exist in no report and no ledger. And the granularities do not even
-// line up — retirement is judged at REGION granularity ("was the enclosing symbol touched"), while a
-// carrier matches on file+ruleId, so a genuinely new defect elsewhere in the same file under the
-// same rule, in code that DID move, would be dropped by a host whose own region did not. That is the
-// exact loss class this design set out to close. Keeping the finding costs nothing: the retired
-// prior is leaving the ledger anyway, so there is no double-listing to avoid.
-// `seed` carries absorptions ALREADY decided for these same hosts by an earlier call (see
-// absorbAcross): the returned `updates` is cumulative, seeded entries included, and a host present
-// in it extends THAT text rather than its own un-absorbed `why`.
 /**
  * @template {Finding} F
  * @template {Finding} P
@@ -2325,18 +1952,6 @@ function partitionAbsorbed(findings, livePriors, retired, fallbackMatch, seed) {
   return { kept, absorbed, keptAtRetired, updates }
 }
 
-// Absorb SEVERAL finding lists (the workflow's confirmed and suspected tracks) against ONE shared
-// set of hosts, and say — once — how every host's `why` must change.
-//
-// WHY THIS EXISTS RATHER THAN TWO CALLS. The tracks share hosts: `livePriors` is matched on
-// file+ruleId, and the confirmed/suspected split is orthogonal to that key, so a host absorbing from
-// both is ordinary. Two INDEPENDENT calls each compute their clause from the same un-absorbed
-// `host.why`, and applying their `updates` afterwards is a lost update — the second map's value
-// overwrites the first's and the confirmed track's absorbed report lands in no track at all: not
-// kept as a finding, not on the host, not in the ledger. Here each list is threaded into the next
-// through the seed, so the clauses accumulate.
-//
-// Pure, like partitionAbsorbed: hosts are not mutated. The caller applies `updates` once.
 /**
  * @template {Finding} F
  * @template {Finding} P
@@ -2364,73 +1979,8 @@ function absorbAcross(lists, livePriors, retired, fallbackMatch) {
   }
 }
 
-// ---- the unverified tier at the absorption door -------------------------------------------------
-//
-// ABSORPTION IS FOR JUDGED FINDINGS ONLY. Absorbing a finding writes it onto the host prior's `why`,
-// and absorbedPromptBlock then tells the next round's adjudicator, in so many words, that "resolved"
-// requires every absorbed report to be gone too. For a CONFIRMED or SUSPECTED report that is right:
-// a verifier looked at it. For an UNVERIFIED one it is exactly the substitution the tier was
-// introduced to end — nothing checked that report against the code, and it would nevertheless hold
-// a prior open and feed the re-review verdict. A dead verifier's Critical and High travel this road,
-// not only the Low/Info nobody paid for.
-//
-// So an unverified finding is NOT absorbed. It stays in its own list, where the report shows it under
-// the tier that says nothing checked it, and it gates nothing. The double-listing this avoided is
-// answered by a NOTE on the finding itself instead of a clause on the host: the reader learns the
-// site is already tracked without the host inheriting an unchecked obligation.
 const TRACKED_MARK = ' — (this site is already tracked by a still-live prior finding; NOT absorbed into it: nothing checked this report against the code, so it may not hold that prior open)'
 
-// THE MARK IS FOR THE REPORT, NOT FOR THE LEDGER. It is recomputed from this round's live priors
-// every round, so a persisted copy can only be a stale duplicate — and a false one once the prior it
-// names resolves. The caller strips it at the ledger door (`toLedgerEntry`).
-//
-// THE SECOND ROW. Leading the unverified out of absorption made each one its OWN ledger row BESIDE
-// the prior it matches, so a site that stays unverified round after round gains a row per round —
-// and the previous round's unverified row becomes the "still-live prior" the next mark points at.
-// `ledgerDupOfUnverifiedPrior` marks the findings whose row the caller may drop, and the host's tier
-// is what decides: an UNVERIFIED host is equally unchecked, gates nothing, and stays in the ledger
-// as long as the site does. A JUDGED host is not eligible — it can RESOLVE next round and leave the
-// ledger, and a dropped row against it would lose the site silently.
-//
-// AND THE DROPPED ROW IS NOT A DROPPED FINDING. The carrier key is file+ruleId, which is coarser
-// than a SITE: a genuinely distinct defect on another line of the same file under the same rule
-// matches the same host, and dropping its row with nothing written anywhere would lose it outright —
-// neither the line, nor the title, nor the rationale would reach the next ledger. That is the exact
-// loss class partitionAbsorbed's comment describes for a retired host. So a collapse writes the site
-// onto the host, as absorption does, through the SAME bounded clause (`absorbInto`) — returned as
-// `updates` for the caller to apply, never mutated here.
-//
-// AND THE BOUND IS GLOBAL, WHICH IS THE HONEST LIMIT OF THAT SENTENCE. `noteAbsorbed` names at most
-// ABSORBED_MAX (3) sites on a host, for all rounds together, and trades every later one for the
-// overflow counter. So the fourth and further collapsed sites at one file+rule reach the next ledger
-// as a COUNT, not as a line and a title — the loss class above is closed for the first three and
-// softened, not closed, past them. It is softened rather than open because the site is still in the
-// round's report, the counter still says a further N defects landed here, and the lenses re-raise
-// the site next round. Raising the cap is not free: this clause is re-interpolated into every
-// subsequent prompt (see ABSORBED_MAX).
-//
-// WHY THAT IS NOT THE OBLIGATION ABSORPTION WAS REFUSED. Absorption's clause is dangerous because
-// the host is JUDGED: absorbedPromptBlock hands it to the next adjudicator as "resolved requires
-// every absorbed report to be gone too", so an unchecked report would hold a judged prior open. An
-// UNVERIFIED host is never adjudicated at all — the caller routes a prior carrying the tier straight
-// into the next round's unverified track instead of the adjudicate track — so no prompt block is
-// ever built from it and there is no verdict for the clause to lean on. The clause is a RECORD on a
-// row that is being carried anyway, which is the middle the asymmetry leaves open.
-//
-// THE CARRIER IS CHOSEN BY TIER HERE, NOT BY LIST ORDER. findCarrier is a `.find` over a key
-// (file+ruleId) that is deliberately coarser than a site, so one site can hold BOTH a judged live
-// prior and a carried unverified one. Taking whichever the caller happened to list first made the
-// collapse above depend on that order: with the judged prior first, no row was collapsed and the
-// site gained a second unchecked ledger row every round — the accretion this tier exists to end.
-// So the unverified hosts are tried FIRST, as their own carrier set, and the full list is only the
-// fallback. That is not the same as reordering the caller's array: reordering would also make
-// ABSORPTION prefer an unverified host, and a collapse onto a JUDGED host stays forbidden either
-// way (see `ledgerDupOfUnverifiedPrior` above) — a judged host can resolve and leave the ledger,
-// taking the collapsed site with it. Retired unverified priors are excluded from the preferred set
-// for the same reason they are no host at all: they do not reach the next ledger, and letting one
-// win the preference would leave the finding neither collapsed nor even marked.
-//
-// Pure: returns new finding objects and an `updates` map; neither the findings nor the hosts are mutated.
 /**
  * @template {Finding} F
  * @template {Finding} P
@@ -2443,11 +1993,6 @@ const TRACKED_MARK = ' — (this site is already tracked by a still-live prior f
 function markTrackedUnverified(findings, livePriors, retired, fallbackMatch) {
   /** @param {P} h */
   const isRetired = h => (retired instanceof Set ? retired.has(h) : !!(retired || []).includes(h))
-  // A retired prior is no host here, so it is removed from the search rather than tested after it:
-  // left in, it SHADOWS a live host at the same file+ruleId (`.find` takes the earliest) and the
-  // finding ends up neither collapsed nor even marked, which is order-dependence of the same kind.
-  // This is unlike partitionAbsorbed, where landing on a retired host is a reported outcome
-  // (keptAtRetired); here there is nothing to report — the finding is kept either way.
   const hosts = (livePriors || []).filter(h => !isRetired(h))
   const unverifiedHosts = hosts.filter(h => String(h?.tier ?? '') === 'unverified')
   let marked = 0
@@ -2526,59 +2071,12 @@ function isCommitish(s) {
 }
 
 // >>> craft-inline lib/review-coverage.mjs CANON_SEVERITY canonicalSeverity PRIOR_SUMMARY_MAX_CHARS PRIOR_SUMMARY_TITLE_MAX priorFoundSummary
-// Canonicalize a ledger severity ONCE at the prior-round load boundary. LEDGER_ITEM.severity has no
-// enum, so a drifted `critical`/`CRITICAL` reaches the load: the case-insensitive gates (isHighSeverity)
-// still fire on it, but every VERDICT/COUNT function (countBySeverity, reviewVerdict/finalVerdict/
-// rereviewVerdict, and the strict re-review escalation) matches severity by EXACT case and would
-// silently bucket it as 0 Critical/0 High — a fail-open that clears a still-broken Critical fix.
-// Mapping known values to canonical case here (and passing an unknown value through, trimmed — never
-// dropping it) means EVERY downstream comparison sees canonical severity for priors.
 /** @type {Record<string, string>} */
 const CANON_SEVERITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
 
 /** @param {unknown} sev */
 function canonicalSeverity(sev) { return CANON_SEVERITY[String(sev ?? '').trim().toLowerCase()] || String(sev ?? '').trim() }
 
-// ---- The ALREADY-FOUND block of a lens prompt ----
-//
-// WHY THIS IS BOUNDED. The lens prompt was one line per pooled finding, unbounded. Measured with
-// `runEngine` over a scripted large Rust run (132 pooled findings, 14 lenses — the roster AS IT
-// WAS MEASURED, before `ownership` retired and three lenses moved behind the optional pass; the
-// test's fixture names today's, and the assertions are RATIOS, not these constants): round 1 lens prompts
-// averaged 3672 chars — the documented size — while ROUND 2 averaged 17069, and the whole 4.6x was
-// this block. The cost is not the one-time prompt: a lens agent in a long loop re-reads its entire
-// context on every tick, so a 13K-char block bought once is paid for on every tick of every lens of
-// every later round. On the measured 179-agent run the lens agents read 128.7M cached tokens against
-// 0.47M of output; the engine is not generating, it is re-reading.
-//
-// WHAT THIS CANNOT LOSE, and why. The block is not evidence — it is a de-duplication HINT ("do not
-// repeat these; look for what they MISSED"). Nothing downstream depends on a lens having seen it:
-// the pool's own `seen` set drops exact repeats, a dedup agent groups same-defect findings before
-// verification, and prior findings are adjudicated on their own track. So an entry that falls off
-// this list can cost a lens some wasted effort on a duplicate; it cannot delete a finding.
-// The ordering is what makes that cheap: severity first, so the list LEADS with the worst tiers and
-// whatever falls off is the cheapest thing still on it. What it does NOT do is keep the whole high
-// tier, and an earlier version of this comment claimed it did — false on the very run it cited.
-// EXECUTED against this function on the measured run's shape (215 findings: 10 Critical, 40 High,
-// 47 Medium, 118 Low/Info, real title and path lengths): 28 rows survive and 187 are withheld —
-// 10 Critical and 18 High listed, 22 High and all 47 Medium withheld, output 3197 chars. At ~105
-// chars a row a 3000-char cap holds roughly 28 rows, so the cap sits BELOW the high tier on any pool
-// where Critical and High together pass about thirty; a pool of 60 Criticals is cut to 28 the same
-// way. So the honest statement is: severity decides the ORDER, the character cap decides HOW MANY,
-// and beyond ~28 rows entries are withheld regardless of tier. That is acceptable only because of
-// the paragraph above — nothing downstream depends on a lens having seen an entry; it is not
-// acceptable as "the high tier is safe", and it must not be written that way again.
-// A per-tier budget (Critical/High uncapped, Low/Info under a cap) was considered and REJECTED: a
-// full non-Low tier on that run is ~97 rows ≈ 10K chars, which is the unboundedness this replaces,
-// so it would need a high-tier cap anyway and would only move the number at which the same cut
-// happens. Keeping the cap and narrowing the claim is the smaller lie-free change.
-// KEEP THE SIZE IN PROPORTION. ~225K chars saved ≈ 56K tokens, re-read over ~40 ticks ≈ 2.3M tokens
-// against the 128.7M the lens agents actually read — about 1.8%. Real, and no larger than that;
-// nothing here should be read as a fix for the re-reading cost.
-//
-// AND IT SAYS SO. A silent cut would read to the model as "there were only N already-found" — the
-// same failure the rollup cap avoids by stating its count. The overflow line names how many are
-// withheld, so a partial list is visible as partial.
 const PRIOR_SUMMARY_MAX_CHARS = 3000
 
 const PRIOR_SUMMARY_TITLE_MAX = 120
@@ -2591,13 +2089,8 @@ const PRIOR_SUMMARY_TITLE_MAX = 120
 function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax = PRIOR_SUMMARY_TITLE_MAX } = {}) {
   const items = /** @type {PriorFinding[]} */ (Array.isArray(pool) ? pool : [])
   if (!items.length) return 'none yet'
-  // Local, not a module const: this function is pasted into workflows/review.js by the craft-inline
-  // gate, which copies only the symbols its fence header names — a helper const outside the body
-  // would arrive there undefined.
   /** @type {Record<string, number>} */
   const rank = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
-  // Model-authored titles land in a prompt here: a newline in one would forge extra ALREADY-FOUND
-  // rows, so flatten before clamping (same reason flattenField exists on the verify track).
   /** @param {PriorFinding} f */
   const line = f => `${String(f?.file ?? '').replace(/[\r\n]+/g, ' ').trim() || '?'}:${f?.line || 0} ${String(f?.title ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, titleMax)}`.trimEnd()
   const ordered = items
@@ -2607,7 +2100,6 @@ function priorFoundSummary(pool, { maxChars = PRIOR_SUMMARY_MAX_CHARS, titleMax 
   const kept = []
   let used = 0
   for (const l of ordered) {
-    // Always keep the first line: a cap smaller than one entry must still say something concrete.
     if (kept.length && used + l.length + 1 > maxChars) break
     kept.push(l)
     used += l.length + 1
@@ -2671,12 +2163,6 @@ function repoDirective() {
 
 // ---- re-dispatch breaker (verification only) ----
 // >>> craft-inline lib/agent-retry.mjs DEATH_WINDOW_DISPATCHES DEATHS_IN_WINDOW_TO_OPEN positiveInt makeDeathBreaker
-// The window is six observed outcomes and the breaker opens at three deaths inside it. Chosen to err
-// toward KEEPING the retry: one or two deaths out of six are plausible on a healthy day (and the
-// first two deaths of any outage still pay the double price, so the breaker can never suppress a
-// retry that a single stray null would have wanted), while half of the recent dispatches returning
-// nothing is not a day on which a second ladder is worth its wall clock. Nothing recorded separates
-// 2 from 3; 3 is the conservative side of that ignorance.
 const DEATH_WINDOW_DISPATCHES = 6
 
 const DEATHS_IN_WINDOW_TO_OPEN = 3
@@ -2691,16 +2177,10 @@ function positiveInt(value, fallback) {
   return Number.isFinite(n) && n >= 1 ? n : fallback
 }
 
-// A counter, shared across the concurrently dispatched agents OF ONE verification pass on purpose.
-// The verification window keeps ~24 agents in flight, so the deaths of an outage arrive interleaved
-// — a per-agent view would see one death each and never see the outage at all. It is an INSTANCE,
-// not a module-level variable: a pass gets its own, so a window left half-full by one profile's
-// verification cannot decide anything for the next profile's, whose reachability it never observed.
 /** @param {{ window?: number, toOpen?: number }} [opts] */
 function makeDeathBreaker(opts = {}) {
   const windowLen = positiveInt(opts.window, DEATH_WINDOW_DISPATCHES)
   const toOpen = Math.min(windowLen, positiveInt(opts.toOpen, Math.min(windowLen, DEATHS_IN_WINDOW_TO_OPEN)))
-  // The last `windowLen` observed outcomes, oldest first; true = the dispatch returned nothing.
   /** @type {boolean[]} */
   const recent = []
   /** @param {boolean} isDeath */
@@ -2710,19 +2190,13 @@ function makeDeathBreaker(opts = {}) {
   }
   const deaths = () => recent.reduce((n, isDeath) => n + (isDeath ? 1 : 0), 0)
   return {
-    // Record a dead first attempt and answer whether re-dispatching it is still worth the clock.
-    // One call, not two, because the order matters: THIS death counts toward the window, so the
-    // death that fills it is the first one that does not buy a second ladder.
     deathAllowsRedispatch() {
       observe(true)
       return deaths() < toOpen
     },
-    // A live answer is evidence the API is reachable, and it enters the window as one observation —
-    // it does not erase the outage behind it. Recovery is what slides the deaths out.
     recordLive() {
       observe(false)
     },
-    // What the log needs to say WHICH dispatch this is, honestly: deaths out of outcomes observed.
     deaths,
     observed() {
       return recent.length
@@ -2750,12 +2224,6 @@ function makeDeathBreaker(opts = {}) {
 // craft-inline gate. The measurement that motivates it — lenses at 73.6% of a run, the whole diff
 // pulled by every lens on every round — lives there, with the risk it does not solve.
 // >>> craft-inline lib/lens-scope.mjs utf8Bytes utf8Text utf8Feed utf8Start utf8Lead utf8FirstRange decodeGitPath gitPathChunk MAX_SHARED_PER_SLICE SHARED_SUFFIXES GROUP_DEPTH isShared groupKey splitDeep commonPrefixLength mergedKey uniqueKey sliceDiff partitionOwned groupFilesByKey largestGroupFirst mergeNearestGroups pickMerge mergeCandidate closerMerge sliceableLens WHOLE_DIFF_LENSES LENS_WINDOW_AGENTS pathspecLiteral
-// UTF-8 by hand. The Workflow sandbox has no TextEncoder or TextDecoder — a probe workflow saw both
-// undefined (realm @nick/craft, #135) — and decodeGitPath runs there, inlined into review.js. These
-// follow the platform objects: a lone surrogate encodes as U+FFFD, and decoding replaces each maximal
-// invalid subpart with U+FFFD as the WHATWG UTF-8 decoder does (pinned against TextDecoder by a
-// differential test). One deliberate difference: a leading BOM is kept, as `ignoreBOM: true` keeps it —
-// a path is not a document, and a file whose name starts with U+FEFF must decode to that name.
 /** @param {string} text @returns {number[]} */
 function utf8Bytes(text) {
   /** @type {number[]} */
@@ -2781,7 +2249,6 @@ function utf8Text(bytes) {
   return st.out
 }
 
-// One byte into the decoder; returns how many bytes it consumed (0: read this byte again as a fresh start).
 /**
  * @typedef {{ out: string, cp: number, need: number, seen: number, lower: number, upper: number }} Utf8State
  */
@@ -2789,7 +2256,6 @@ function utf8Text(bytes) {
 function utf8Feed(st, b) {
   if (st.need === 0) { utf8Start(st, b); return 1 }
   if (b < st.lower || b > st.upper) {
-    // The sequence so far is one replacement; this byte is read again as a fresh start.
     st.cp = st.need = st.seen = 0; st.lower = 0x80; st.upper = 0xbf
     st.out += '�'
     return 0
@@ -2801,7 +2267,6 @@ function utf8Feed(st, b) {
   return 1
 }
 
-// A byte read with no sequence open: ASCII, the lead of a 2-4 byte sequence, or a replacement.
 /** @param {Utf8State} st @param {number} b */
 function utf8Start(st, b) {
   if (b <= 0x7f) { st.out += String.fromCharCode(b); return }
@@ -2810,9 +2275,6 @@ function utf8Start(st, b) {
   else st.out += '�'
 }
 
-// The sequence a lead byte opens — its length, its payload bits, and the range its first continuation
-// byte must fall in (narrowed after E0, ED, F0 and F4 to refuse overlongs, surrogates and > U+10FFFF) —
-// or null when the byte cannot lead one.
 /** @param {number} b @returns {{ need: number, cp: number, lower: number, upper: number } | null} */
 function utf8Lead(b) {
   const range = utf8FirstRange(b)
@@ -2827,28 +2289,10 @@ function utf8FirstRange(b) {
   return { lower: b === 0xe0 ? 0xa0 : b === 0xf0 ? 0x90 : 0x80, upper: b === 0xed ? 0x9f : b === 0xf4 ? 0x8f : 0xbf }
 }
 
-// A path as a LITERAL git pathspec. Shell-quoting alone is not enough and the gap is silent: git
-// reads a pathspec as wildmatch, so a real file named `f[1].rs` does not match itself; a leading `:`
-// is read as pathspec magic; and `git diff --name-only` C-quotes paths holding spaces or non-ASCII,
-// so the name that comes back is `"dir/a b.rs"`, quotes included, which then matches nothing.
-// Every one of those hands the lens a SMALLER diff than it believes it has, with no error — the
-// file is simply never reviewed. That risk arrives with slicing, because the file list stops being
-// advisory (the glob covered everything) and becomes the authoritative scope.
 /** @param {unknown} file */
 function decodeGitPath(file) {
   const raw = String(file ?? '')
   if (!(raw.length > 1 && raw.startsWith('"') && raw.endsWith('"'))) return raw
-  // Undo git's own C-quoting. The escapes are git's, not JavaScript's: with `core.quotePath` at its
-  // default a non-ASCII name comes back as `"caf\303\251.rs"` — OCTAL BYTES, one escape per byte
-  // of UTF-8. But quoting also happens for a plain SPACE, and with `core.quotePath=false` the
-  // non-ASCII part of such a name arrives as RAW UTF-8 inside the quotes. So the body is a mix of
-  // escapes and literal text, and it has to be re-encoded as bytes rather than read as characters:
-  // pushing `charCodeAt` into a byte array truncated `中` (U+4E2D) to 0x2D, which is `-`. That did
-  // not produce a missing file, it produced a DIFFERENT and possibly existing one.
-  //
-  // BY CODE POINT, not by UTF-16 code unit. Indexing a string hands back a lone surrogate for
-  // anything outside the BMP, and encoding half a pair yields U+FFFD twice — so an emoji became
-  // `\uFFFD\uFFFD` and the name matched nothing.
   const body = [...raw.slice(1, -1)]
   /** @type {number[]} */
   const bytes = []
@@ -2857,47 +2301,26 @@ function decodeGitPath(file) {
     bytes.push(...out)
     i += skip
   }
-  // A body that decodes to nothing falls back to the original text rather than vanishing.
   return utf8Text(bytes) || raw
 }
 
-// The bytes the character at `i` of a C-quoted body stands for, and how many characters after it the
-// escape consumed.
 /** @param {string[]} body @param {number} i @returns {{ out: number[], skip: number }} */
 function gitPathChunk(body, i) {
   if (body[i] !== '\\') return { out: utf8Bytes(/** @type {string} */ (body[i])), skip: 0 }
   /** @type {Record<string, number>} */
   const SIMPLE = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
   const c = body[i + 1]
-  // A TRAILING backslash is not an escape at all; keep it, rather than consuming the character
-  // after the end of the string and pushing a NUL into the path.
   if (c === undefined) return { out: utf8Bytes('\\'), skip: 0 }
   if (Object.prototype.hasOwnProperty.call(SIMPLE, c)) return { out: [/** @type {number} */ (SIMPLE[c])], skip: 1 }
-  // Octal, always three digits as git emits them. A two-digit tail is NOT one, and swallowing the
-  // backslash there turned `a\30.rs` into `a30.rs` — again a valid name for other code.
   const octal = body.slice(i + 1, i + 4).join('')
   if (/^[0-7]{3}$/.test(octal)) return { out: [parseInt(octal, 8)], skip: 3 }
-  // Anything else git did not write: the backslash is emitted here and the character follows on
-  // the next iteration, so both survive.
   return { out: utf8Bytes('\\'), skip: 0 }
 }
 
-// How many shared files may ride along in EVERY slice. Unbounded, this works against the very cost
-// the partition exists to cut: a tree with a chart directory or a fixture tree can carry more
-// changed manifests than source files, and each slice would pull all of them, paid ×slices ×rounds.
-// Shallowest-first, so the repository-root manifest — the one a slice most often has to check its
-// code against — is the one that survives the cap.
 const MAX_SHARED_PER_SLICE = 8
 
-// Files whose relation to everything else is the point — a manifest, a lockfile, a schema — are
-// pulled into EVERY slice rather than assigned to one. They are small and they are what the rest of
-// the diff is checked against; a slice that cannot see the manifest cannot tell that a shipped CRD
-// is missing the field the code writes, which is one of the findings the baseline run reported.
 const SHARED_SUFFIXES = ['.lock', '.yml', '.yaml', '.toml', '.json']
 
-// The directory depth a group is keyed on. Two is the working compromise measured against the
-// baseline tree: depth 1 collapses everything under `bin/` or `crates/` into one slice and buys
-// nothing, while depth 3+ splits a module from its own tests.
 const GROUP_DEPTH = 2
 
 /** @param {string} file */
@@ -2914,10 +2337,6 @@ function groupKey(file, depth = GROUP_DEPTH) {
   return parts.length <= depth ? (parts.slice(0, -1).join('/') || '.') : parts.slice(0, depth).join('/')
 }
 
-// Split one oversized group by descending into deeper directories until it fits, or until going
-// deeper stops separating anything. Without this the top-level grouping is decorative on the shape
-// real diffs actually have: on the measured tree, depth 2 put 36 of 53 files in one slice, leaving
-// the multiplicand almost untouched — the work looks partitioned and is not.
 /**
  * @typedef {{ key: string, files: string[] }} Group
  */
@@ -2937,10 +2356,6 @@ function splitDeep(group, cap, depth) {
     if (bucket) bucket.push(f)
     else byKey.set(k, [f])
   }
-  // A level that separates NOTHING is not a reason to stop — it is a shared prefix to walk through.
-  // Every file of the measured 36-file module sits under `.../src`, so stopping at the first
-  // undivided level returned the group untouched and the partition was decorative. Descend instead;
-  // the depth bound and the "no path is that deep" check below are what terminate this.
   if (byKey.size <= 1) {
     const deeper = splitDeep(group, cap, depth + 1)
     return deeper.length > 1 ? deeper : [group]
@@ -2948,9 +2363,6 @@ function splitDeep(group, cap, depth) {
   return [...byKey.entries()].flatMap(([key, files]) => splitDeep({ key, files }, cap, depth + 1))
 }
 
-// How many leading path segments two group keys share. The unit is the SEGMENT, not the character:
-// `bin/service-a` and `bin/service-admin` share one directory, while a character measure would
-// score them as nearly identical and merge them ahead of true siblings.
 /**
  * @param {string} a
  * @param {string} b
@@ -2963,10 +2375,6 @@ function commonPrefixLength(a, b) {
   return n
 }
 
-// A merged key names the shared ancestor when there is one, and lists both otherwise. The key is
-// what the lens prompt shows the agent and what the log line carries, so a key that says
-// the module's own directory tells a reader what the slice IS, where a concatenation of four
-// unrelated paths tells them only that a merge happened.
 /**
  * @param {string} a
  * @param {string} b
@@ -2976,9 +2384,6 @@ function mergedKey(a, b) {
   return n > 0 ? String(a).split('/').slice(0, n).join('/') : `${a} + ${b}`
 }
 
-// Two merges can land on the same ancestor and produce two slices with one name. The key is what a
-// lens prompt shows and what the log line carries, so identical names make two different slices
-// indistinguishable in the transcript — and the transcript is where a run is diagnosed.
 /**
  * @param {string} key
  * @param {Group[]} groups
@@ -3013,9 +2418,6 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   const byKey = groupFilesByKey(owned)
   if (byKey.size <= 1) return []
 
-  // The cap defaults to an EVEN SHARE across the allowed slices, so the ceiling follows the diff
-  // instead of being a constant that is either meaningless on a small change or useless on a large
-  // one. Ceil, so a diff that divides evenly is not split one slice further than asked.
   const cap = maxFilesPerSlice > 0 ? maxFilesPerSlice : Math.max(1, Math.ceil(owned.length / maxSlices))
   const groups = mergeNearestGroups([...byKey.entries()]
     .flatMap(([key, fs]) => splitDeep({ key, files: fs }, cap, GROUP_DEPTH + 1))
@@ -3025,35 +2427,17 @@ function sliceDiff(files, { minFiles = 12, maxSlices = 6, maxFilesPerSlice = 0, 
   return groups.map(g => ({ key: g.key, files: [...g.files, ...shared] }))
 }
 
-// The changed files split into the ones that ride along in every slice and the ones partitioned.
 /**
  * @param {string[]} all
  * @param {((f: string) => boolean) | null} owns
  * @returns {{ shared: string[], owned: string[] }}
  */
 function partitionOwned(all, owns) {
-  // `owns` is the PROFILE's question — which of the changed files this language reviews — and it is
-  // asked here rather than by the caller filtering first. Filtering first was the obvious wiring and
-  // it is wrong: the rust profile matches `*.rs`, so the manifest and the lockfile would be gone
-  // before this function saw them, and no slice could be given the file its code must agree with.
-  // The baseline run's shipped-CRD finding is exactly the one that dies that way.
-  // SHARED WINS OVER OWNED, and getting this backwards made the header comment above a lie for
-  // every real caller. The rust profile's `detect` matches `Cargo.toml`, the nix profile's matches
-  // `flake.lock` — so asking "is it shared AND not owned" put each profile's own manifest into ONE
-  // slice, exactly the file every other slice has to check its code against. It also produced a
-  // degenerate code-free slice holding nothing but manifests, costing one agent per lens per round
-  // to review no code at all. A manifest is shared BECAUSE of what it is, not because the profile
-  // happens not to claim it.
   /** @type {(f: string) => boolean} */
   const isOwned = typeof owns === 'function' ? owns : f => !isShared(f)
   const sharedAll = all.filter(isShared)
     .sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))
   const shared = sharedAll.slice(0, MAX_SHARED_PER_SLICE)
-  // A shared file the cap DROPPED, which this profile also owns, must not vanish from the review
-  // altogether: before slicing the profile's glob pulled it into every lens. The cap decides how
-  // many files ride in EVERY slice, never whether a file is reviewed at all — so an evicted owned
-  // file rejoins the partition and lands in exactly one slice. Dropping it outright would be the
-  // partition itself losing code, which is worse than anything the model's file list can do.
   const evicted = sharedAll.slice(MAX_SHARED_PER_SLICE).filter(isOwned)
   return { shared, owned: all.filter(f => isOwned(f) && !isShared(f)).concat(evicted) }
 }
@@ -3076,13 +2460,6 @@ function largestGroupFirst(a, b) {
   return b.files.length - a.files.length || a.key.localeCompare(b.key)
 }
 
-// Merging is AGGLOMERATIVE BY NEAREST SIBLING, not by taking whatever fell off the end of a sorted
-// list. Sweeping the tail into one bag was the obvious version and it destroyed the very property
-// the partition exists for: on the measured tree it tore a module's own submodule away from it and
-// dropped that submodule in a 21-file drawer with four unrelated crates — so the slice that had to
-// judge a change was the one slice that could not see what the change must agree with.
-// Cohesion is the whole mechanism, so when two groups must become one they are the two that are
-// already closest in the tree, and size breaks the tie so the merge lands on the small ones.
 /**
  * @param {Group[]} start
  * @param {number} maxSlices
@@ -3101,13 +2478,6 @@ function mergeNearestGroups(start, maxSlices, cap) {
   return groups
 }
 
-// THE CAP OUTRANKS KINSHIP, and this ordering is the whole correctness of the merge. Nearest-
-// sibling alone re-merged exactly what the deep split had just separated — the four children of
-// one module are each other's closest relatives, so they collapsed straight back into the
-// 36-file slice, and the partition ended where it started. So a merge that would exceed the cap
-// is not considered at all while any merge under it exists; only when nothing fits does the
-// smallest available merge win, because at that point some slice must grow and the least bad
-// choice is the smallest one.
 /**
  * @param {Group[]} groups
  * @param {number} cap
@@ -3125,7 +2495,6 @@ function pickMerge(groups, cap) {
       if (cand.size <= cap && closerMerge(cand, best)) best = cand
     }
   }
-  // With maxSlices >= 1 and groups.length > maxSlices there are always >= 2 groups, so a pair exists.
   return /** @type {{ i: number, j: number, shared: number, size: number }} */ (best || fallback)
 }
 
@@ -3139,7 +2508,6 @@ function mergeCandidate(groups, i, j) {
   return { i, j, shared: commonPrefixLength(gi.key, gj.key), size: gi.files.length + gj.files.length }
 }
 
-// Whether `cand` beats `best`: more shared path segments, then the smaller merge.
 /**
  * @param {{ shared: number, size: number }} cand
  * @param {{ shared: number, size: number } | null} best
@@ -3176,32 +2544,11 @@ function sliceableLens(lens) {
  */
 const WHOLE_DIFF_LENSES = ['negative-space', 'intent', 'compat', 'invariants', 'failure-windows']
 
-// How many lens agents may be in flight at once. Slicing multiplies the round-1 wave by the slice
-// count — a dozen lenses over six slices is ~70 dispatches into what used to be a wave of a dozen —
-// and an unwindowed wave of that size is the exact shape verification was windowed for: agents
-// queue, the deadline clocks from DISPATCH rather than from execution, and it fires on healthy
-// agents that simply waited. Larger than the verification window because a lens is one agent where
-// a verification entry can be three, and because a lens legitimately runs for tens of minutes.
 const LENS_WINDOW_AGENTS = 16
 
-// An ALREADY-DECODED path as a literal git pathspec. This does not decode, and that is the whole
-// of its contract: decoding happens at the source (`decodeGitPath`), so by the time a name reaches
-// here it is a real filename. Decoding a second time is not idempotent for the one class of name
-// this machinery exists for — a file literally called `"q"` comes back from git as `"\"q\""`,
-// decodes correctly to `"q"`, and a second pass strips the quotes that are part of the name,
-// handing git `:(literal)q`. Then the file is reviewed by nobody, and if a file `q` exists the
-// pathspec silently points at a DIFFERENT one. The same "smaller diff than the lens believes"
-// failure as before, inverted: the decoder used to not fire when it should, and would now fire
-// when it should not.
-//
-// What it does do is stop git reading the name as a pattern: wildmatch is the default, so a real
-// file named `f[1].rs` does not match itself, and a leading `:` is pathspec magic.
 /** @param {unknown} file */
 function pathspecLiteral(file) {
   const f = String(file ?? '')
-  // An empty name is not a pathspec, it is the absence of one. Emitting `:(literal)` for it would
-  // hand git `fatal: empty string is not a valid pathspec` and fail the whole SLICE's diff, not one
-  // file — so the caller drops it.
   return f ? `:(literal)${f}` : ''
 }
 // <<< craft-inline
@@ -3211,8 +2558,6 @@ function pathspecLiteral(file) {
 // craft-inline gate. The rationale for a shared budget — and why the thresholds themselves must NOT
 // move — lives there.
 // >>> craft-inline lib/agent-deadline.mjs deadlineSpan deadlineArm makeDeadlineBudget
-// The budget and its floor as numbers: a non-finite or non-positive budget is 0 (already spent), and
-// the floor is clamped into [0, budget].
 /** @param {number} totalMs @param {number} floorMs @returns {{ capped: number, floor: number }} */
 function deadlineSpan(totalMs, floorMs) {
   const total = Number(totalMs)
@@ -3220,8 +2565,6 @@ function deadlineSpan(totalMs, floorMs) {
   return { capped, floor: Math.max(0, Math.min(capped, Number(floorMs) || 0)) }
 }
 
-// Arms a timer and returns the call that disarms it: the injected scheduler pair when both are given,
-// the host's setTimeout/clearTimeout otherwise.
 /**
  * @template H
  * @param {((fn: () => void, ms: number) => H) | undefined} schedule
@@ -3234,15 +2577,6 @@ function deadlineArm(schedule, cancel) {
     : (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t) }
 }
 
-// One wall-clock budget, armed once and shared by however many attempts race against it.
-//
-// `totalMs` is the whole budget; `floorMs` is how much of its tail is too little for another attempt
-// to be launched into — a re-dispatch there would fire the deadline before the agent could answer,
-// costing a harness slot to produce nothing. `schedule` is injected so a test can fire the timers
-// deterministically instead of sleeping; the engine passes nothing and gets `setTimeout`.
-//
-// Returns `expired` and `belowFloor` as QUESTIONS rather than numbers on purpose: with no clock
-// there is no honest "remaining", and a function that invented one would be read as a measurement.
 /**
  * `schedule` and `cancel` come as a pair: a handle is only ever cancelled by the scheduler that issued
  * it, so its type `H` is the scheduler's own and stays opaque here.
@@ -3258,15 +2592,10 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule, cancel } = {}) {
   let belowFloor = capped === 0 || floor >= capped
   /** @type {((v: typeof DEADLINE_HIT) => void) | null} */
   let resolveHit = null
-  // Each armed timer is kept as the call that disarms it, so the handle's type never leaves the pair
-  // that made it.
   const arm = deadlineArm(schedule, cancel)
   /** @type {Array<() => void>} */
   const timers = []
 
-  // The single promise every attempt races. It is created once, so a second attempt inherits
-  // whatever is left of the first one's wait rather than starting a fresh one — no subtraction, no
-  // clock, and nothing to get wrong when the host's timers drift.
   /** @type {Promise<typeof DEADLINE_HIT>} */
   const hit = capped === 0
     ? Promise.resolve(DEADLINE_HIT)
@@ -3274,23 +2603,14 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule, cancel } = {}) {
 
   if (capped > 0) {
     timers.push(arm(() => { expired = true; belowFloor = true; if (resolveHit) resolveHit(DEADLINE_HIT) }, capped))
-    // Armed at the point where the REMAINING budget drops to the floor, so "below the floor" is a
-    // moment the host tells us about rather than a subtraction we perform.
     if (floor > 0 && floor < capped) timers.push(arm(() => { belowFloor = true }, capped - floor))
   }
 
   return {
     hit,
-    // Whether the shared deadline has already fired. An attempt started now would race a promise
-    // that is already resolved and return immediately.
     expired: () => expired,
-    // Whether what is left is too short for another attempt to be worth dispatching. Always true
-    // once the budget has fired, so a caller that asks only this one question is still correct.
     belowFloor: () => belowFloor,
     total: () => capped,
-    // Clears the armed timers. Without it a pending timer holds the run open for the whole deadline
-    // after the agent has already answered — invisible while a throw killed the run outright, and a
-    // real leak once the caller swallows that throw.
     dispose: () => { for (const disarm of timers) disarm() },
   }
 }
@@ -3521,10 +2841,6 @@ function reviewVerdict(confirmed) {
   return 'Approve'
 }
 
-// Fraction of the judged candidates that were refuted: refuted / candidates, 2-dp, 0 when nothing was
-// judged. review and adversarial-review record it. Not (candidates - confirmed) / candidates: review's
-// `confirmed` excludes a "suspected" tier that is NOT refuted. rust-audit's unused-crates records
-// null rather than 0 when nothing was judged, and computes that in lib/audit-verification.mjs.
 /**
  * @param {number} refuted
  * @param {number} candidates
@@ -3609,25 +2925,12 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 const reviewerAgentUnavailable = []
 // The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
 // >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection agentUnavailableRecord
-// Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
-// or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
-// operator to the wrong fix. Observed from the session's Agent tool for an unregistered type:
-// "Agent type 'craft:rust-reviewer' not found. Available agents: …" (realm @nick/craft #152); what the
-// workflow sandbox's agent() throws for it is not yet observed, so a "not found" this does not match
-// still falls back softly in both engines rather than killing the work.
 /** @param {unknown} msg @param {string} [agent] */
 function isAgentTypeMissing(msg, agent) {
   const m = String(msg ?? '')
   return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
 }
 
-// The report section. `missing`: [{ agent, what, error }] — an agent type the engine learned is not
-// registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
-// `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
-// came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
-// threw a "not found" isAgentTypeMissing does not recognise (the sandbox's wording for an unregistered
-// type is not yet observed, #152) — said softly, without the install line, the error quoted. Empty string
-// when there is nothing to say.
 /**
  * @param {{ agent: string, what: string, error?: string }[]} missing
  * @param {{ agent: string, count: number, what: string, error?: string }[]} emptied
@@ -3637,8 +2940,6 @@ function agentUnavailableSection(missing, emptied) {
   const hard = Array.isArray(missing) ? missing : []
   const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
   if (!hard.length && !soft.length) return ''
-  // One bullet is one line: the harness's error carries newlines ("…not found.\nAvailable agents: …"), and
-  // readAgentUnavailableSection stops at the first line that is not a bullet, dropping every later entry.
   /** @param {unknown} e */
   const quote = e => String(e).replace(/\s+/g, ' ').trim().slice(0, 160)
   const lines = [
@@ -3651,11 +2952,6 @@ function agentUnavailableSection(missing, emptied) {
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
 }
 
-// The fact's ONE shape on a run record, whichever engine files it (realm @nick/craft #151):
-// `agentUnavailable` — the agent types the engine learned are not registered, each once, sorted;
-// `agentFallbacks` — per agent type, the dispatches the generic subagent answered in its place.
-// Keyed by agent type in both engines: a profile id names the review engine's own grouping, which
-// an audit dimension does not have.
 /**
  * @param {Iterable<string>} missing
  * @param {{ agent: string, count: number }[]} fallbacks
@@ -3721,90 +3017,22 @@ function out(reportText) {
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
 // >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt makeRunLogger telemetryLossNoter
-// Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['ok'],
   properties: {
     ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
-    // The description is what the model steers this field by, so it has to name the WARNING case too:
-    // reading "empty otherwise" it returns '' on a landed-but-degraded run, and the engine's
-    // telemetry-loss branch — the whole reason the field is populated on success — never fires.
     error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
 
-// Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
-// AFTER the cd points at the REVIEWED repo, where the script is not — that lost every record to a
-// silent "Cannot find module". Resolve the logger to an absolute path FIRST, into a variable, and
-// only then change directory. `craftRoot` is passed when the engine is launched by scriptPath from
-// a checkout (CLAUDE_PLUGIN_ROOT is unset then); as an installed plugin the env var is set for us.
-// The `:-.` fallback is GONE, and that is a security fix, not tidying. It resolved before the `cd`,
-// so `.` was the logger agent's starting directory — which, in the deployment this plugin is built
-// for, is the repository under REVIEW. A reviewed repository shipping its own `lib/craft-log-run.mjs`
-// would then be executed with the user's privileges by a workflow whose whole premise is that the
-// reviewed repo is untrusted. Extraction would have carried that from one engine to four.
-// It is emitted FIRST, before any staging: `${VAR:?}` is a hard abort in a non-interactive shell, so
-// after the `cat` it killed the block before `rm -f` and left the whole record in TMPDIR — on exactly
-// the path this loud failure was added for.
-// A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
-// noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
 /**
  * @param {string | undefined} craftRoot
  * @param {string} [version]
  * @param {string} [repo]
  */
 function loggerPrelude(craftRoot, version = '', repo = '') {
-  // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
-  // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
-  // before the absoluteness check and before the refusal, so a review launched with `craftRoot=.`
-  // emitted `CRAFT_LOGGER='.'/lib/craft-log-run.mjs` and then `cd <reviewed repo> && node
-  // "$CRAFT_LOGGER"` — the removed `:-.` hole restored verbatim, bypassing the version pin and the
-  // loud refusal too. `craftRoot` arrives in the model-composed args string, so it is exactly as
-  // untrusted as the `--dir` this project already refuses.
-  //
-  // Three properties now hold for every candidate without exception:
-  //   ABSOLUTE — `[ -f ]` is evaluated in the logger agent's cwd while `node` runs AFTER the cd into
-  //     the reviewed repository, so any relative path resolves THERE. Refused outright rather than
-  //     normalized: guessing what the caller meant is how this class keeps coming back.
-  //   PRESENT — a path that names no file is not a logger.
-  //   ORDERED — explicit root, then the environment, then this engine's own installed copy. The
-  //     search is a fallback, never an override: written the other way round it overwrote a good
-  //     path with whatever the cache held, so a launch from a checkout logged through another build.
-  //
-  // The search is version-pinned to what this engine is stamped with (a record filed by another
-  // build's script misdescribes which engine ran, and gets counted), looks only under the user's own
-  // plugin cache, honours $CLAUDE_CONFIG_DIR because a session configured that way keeps its plugins
-  // elsewhere, and never looks at the reviewed repository at all. That cache layout belongs to the
-  // harness, not to craft (realm @nick/craft, node #48 — observed, not documented), so a miss is
-  // ordinary: not found means the refusal below, never a guess.
-  // ONE predicate, applied to every candidate, and applied BEFORE it is accepted rather than to the
-  // winner afterwards. Written as a terminal check on the winner, an explicit craftRoot naming the
-  // repo killed the whole command instead of being rejected in favour of the next candidate — which
-  // is craft reviewing its own checkout, the mode this repo mandates for itself.
-  //
-  // A candidate qualifies only if it is ABSOLUTE (`[ -f ]` runs in the agent's cwd while `node` runs
-  // after the cd, so a relative path resolves in the reviewed repository), PRESENT, and OUTSIDE the
-  // directory the command is about to cd into. The last is checked on the FULLY resolved path:
-  // symlinks are followed to their target — a link whose FILE points into the repo passed for one
-  // commit because only the directory went through `pwd -P` — and both sides are normalized, so a
-  // `..` climb and a symlinked parent collapse to the same comparison. The `case` patterns are
-  // quoted and slash-anchored, so a sibling that merely shares a prefix (`/x/repo-evil` beside
-  // `/x/repo`) is NOT inside — the collision this project already met once in `insideStore`.
-  // EVERY exit from this predicate that is not a clean, fully resolved, outside-the-repo path is a
-  // REFUSAL. Three of them used to fall through to acceptance, and one was reachable: exhausting the
-  // hop bound left the loop with the path still a symlink, the comparison then tested an unresolved
-  // string, nothing matched, and the candidate was accepted — a 21-link chain ending inside the
-  // reviewed repository executed its script. A bound that fails open is not a bound; it is a longer
-  // attack.
-  //
-  // Two of the three refusals are belt-and-braces and are labelled as such rather than dressed up as
-  // covered: with `CRAFT_REPO` empty the `case` pattern degenerates to `/*`, which matches every
-  // absolute path and refuses anyway; and `pwd -P` can only fail on a directory with no `x` bit,
-  // where `[ -f ]` has already failed one line earlier. Removing either guard changes no observable
-  // behaviour, so no test distinguishes them — stated here instead of implied by a test that would
-  // pass either way.
   const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
 craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
   case "$1" in /*) ;; *) return 1 ;; esac
@@ -3836,11 +3064,6 @@ craft_usable() {   # a line that is exactly '}' at column 0 would end the extrac
  }
 CRAFT_LOGGER=""
 `
-  // The RESOLVED path is what gets used, not the candidate string that was validated. Between the
-  // check and `node "$CRAFT_LOGGER"` sit the mktemp, the whole heredoc of a record that can be
-  // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
-  // candidate can be re-pointed into the reviewed repository. Handing over the path that was
-  // actually checked closes that window and costs nothing.
   /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
@@ -3856,70 +3079,25 @@ fi
 `
 }
 
-// The craft version a record or checkpoint payload claims, as text ('' when it claims none).
 /** @param {unknown} payload @returns {string} */
 function payloadVersion(payload) {
   return String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
 }
 
-// The engine's revision a SECOND time, on the command line the engine composes itself (realm
-// @nick/craft, node #114). It decides which fingerprint basis a later round reads this run under, and
-// the payload it also rides in is re-emitted by the logger agent — so craft-log-run files it only when
-// the two copies agree; one altered copy files an unknown basis, never a wrong one. Emitted only for a
-// payload that stamps an integer revision: an engine that stamps no basis sends no flag.
 /** @param {unknown} payload @returns {string} */
 function engineRevisionFlag(payload) {
   const rev = payload && typeof payload === 'object' ? /** @type {{ workflowEngineRevision?: unknown }} */ (payload).workflowEngineRevision : undefined
   return Number.isInteger(rev) ? `--engine-revision ${rev} ` : ''
 }
 
-// The logger flags both prompts share: `--dir`, `--rejoin` and the shell-expanded session id, each
-// independent of the others (see logRunPrompt below), with the trailing space the command line needs.
 /** @param {string} dir @param {boolean} rejoin @returns {string} */
 function runDirFlags(dir, rejoin) {
   return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
 }
 
-// The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
-// readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
-// review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
-// THE STAGING FILE IS PER-RUN, AND THAT IS LOAD-BEARING. It used to be the fixed `/tmp/craft-rec.json`
-// in one engine; extracting the prompt propagated that path to all four, which is three new ways to
-// be wrong at once. (a) `cat >` follows a symlink, so any other local uid can pre-create that name
-// pointing at a file this user owns and have the next run truncate it — an arbitrary-overwrite
-// primitive on a shared or CI box, and `/tmp`'s sticky bit does not stop CREATING an entry. (b) The
-// record holds every finding title, path and quoted snippet from the reviewed repo, and a default
-// umask leaves it world-readable, never removed. (c) A fixed name carries no run id, while craft's
-// own fan-out puts several runs in flight — rust-audit dispatches one nested review per changed crate
-// through `parallel` — so between one agent's `cat >` and its own redirect another can overwrite the
-// file: run A files run B's record under A's identity, the script succeeds, the readback verifies,
-// `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
-// created without following anything. The exit code is carried past the cleanup so a failed write
-// still reports as one.
-// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
-// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
-// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
-// repository the run never looked at — a lie in the one field the store is keyed by.
 /** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
-  // The version comes off the RECORD rather than from a parameter of its own: it is already there,
-  // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
-  // the record claims to be — which would file a record describing a run some other build made.
   const version = payloadVersion(record)
-  // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
-  // runs, never composed by the model — the whole point (see the header note on the payload-copy
-  // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
-  // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
-  // logger receiving the literal string "" and treating it as a real (empty) session id.
-  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
-  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
-  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
-  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
-  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
-  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
-  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
-  // rejoin search outright in that case (see its `target` comment), because the single candidate a
-  // garbled sibling finds is its neighbour's LIVE directory.
   const flags = runDirFlags(dir, rejoin)
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
@@ -3943,11 +3121,6 @@ RECORD:
 ${JSON.stringify(record, null, 2)}`
 }
 
-// Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
-// but a full review record carries every finding plus the ledger, and the cheap model is where the
-// silent truncation came from. Size the model to the payload.
-// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
-// engine passes them on as they are.
 /**
  * @param {unknown} record
  * @param {{ phase?: string }} [opts]
@@ -3971,19 +3144,10 @@ function logRunDispatch(record, { phase = '' } = {}) {
  */
 function logRunOutcome(res) {
   const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
-  // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
-  // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
-  // marker that fires on a landed write is one people stop reading. But it must not vanish either —
-  // the caller gets `ok: true` with a reason to surface.
   if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
   return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
-// For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
-// checkpoints, the prior-round read. They are bookkeeping — every other agent in these engines
-// produces review content, so a throw there should stop the run. These must not: the record is
-// written AFTER the report already exists in memory, so losing it to a bookkeeping write would
-// throw away the whole run's product.
 /**
  * @template P, O, R
  * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
@@ -3999,23 +3163,9 @@ function quietly(call) {
   }
 }
 
-// A dead logger agent and a failed script are the same outcome — no record on disk — so both are
-// reported. `ok !== true` rather than `!ok`: a malformed result is a write we cannot vouch for.
-// The checkpoint prompt was a hand-copy of the record one, and copies drift the moment a fix lands
-// on the original: the fixed staging path, the prelude ordering and the exit-code carry each had to
-// be applied twice, and each time the second copy was the one nearly missed. Same builder, one
-// difference — the checkpoint carries a phase and asks for the runDir back.
 /** @param {{ payload?: unknown, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
 function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
-  // DERIVED from the payload, never passed alongside it. As a plumbing argument with a silent ''
-  // default it was forgettable, and it was duly forgotten at one of three call sites — deleting it
-  // there left every gate green while that engine's checkpoints went back to refusing exactly as
-  // before the fix, with finalize and prior-round succeeding beside them. A checkpoint describes the
-  // same run as the record, so the version belongs on the payload anyway.
   const version = payloadVersion(payload)
-  // See the matching note in logRunPrompt above: shell-expanded, never model-composed, and `:+`
-  // degrades an unset/empty session id to no flag rather than to the literal string "".
-  // Independent of `--dir`, for the reason spelled out in `logRunPrompt` above.
   const flags = `--phase ${shq(phase)} ${engineRevisionFlag(payload)}${runDirFlags(dir, rejoin)}`
   return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
@@ -4035,14 +3185,6 @@ PAYLOAD:
 ${JSON.stringify(payload, null, 2)}`
 }
 
-// The run-record writer each engine binds as its `logRun` — one body for all four. What differs
-// between engines is BOUND, not copied: the agent call (review's retries underneath `quietly`, the
-// others' plain `agent`), the phase the write is dispatched under, where the logger writes (`target`,
-// read at each call: review finalizes into a `runDir` that only exists once a checkpoint has run),
-// what is stamped onto every record (`prepare`: review's fingerprint basis), and how a loss is noted
-// (review's one noteTelemetryLoss for every bookkeeping write; telemetryLossNoter for the others).
-// A lost record NEVER fails the run: it is noted, and the engine renders the note where a human reads.
-// The returned function must still be bound to the NAME `logRun` in the engine — see the header.
 /**
  * @template O
  * @param {object} o
@@ -4058,14 +3200,10 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const record = prepare(recordIn)
     const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
-    // The record landed and the script still had something to say — a run directory refused or left
-    // behind. Not a lost record, so it must not read as one, but not silence either.
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
   }
 }
 
-// The loss note of the engines that keep no other bookkeeping writes: every loss is kept for the
-// report, and logged — a landed record under its own prefix, never as a lost one.
 /**
  * @param {string[]} lost
  * @param {(line: string) => void} say
@@ -4082,69 +3220,18 @@ function telemetryLossNoter(lost, say) {
 // The ledger's own survival path. Same reason as the region above: the sandbox cannot import, so the
 // shard cutter is fenced in from lib/ledger-shards.mjs, where it is linted and unit-tested.
 // >>> craft-inline lib/ledger-shards.mjs LEDGER_SHARD_MAX_BYTES LEDGER_SHARD_PHASE LEDGER_SHARD_MAX_SHARDS LEDGER_COPY_REFUSAL_ENTRIES LEDGER_COPY_SAFETY_ROWS LEDGER_TOMBSTONE_MAX payloadBytes shardLedger packLedgerGroups tombstoneRound pruneTombstones newestTombstonePerFp tombstoneBudget
-// At most this many bytes of JSON per shard. Two ceilings bound it from above and one need from
-// below. Above: `logRunDispatch` treats 24KB as the point where a payload stops being safe for the
-// cheap model, and the payloads that failed were 196KB and larger — so a shard must be a small
-// multiple below the first number, not a fraction of the second. Below: a single entry can reach
-// ~1KB (`why` alone is capped at 500 characters), and a shard that fits only two or three entries
-// turns a 170-entry ledger into 60 agent calls. 14KB sits between: ~15-20 entries per shard once
-// the measure counts the prompt form (fewer than the compact measure suggested), ~6-12
-// calls for the largest ledger measured, and every call an order of magnitude under the size at
-// which the copy has ever been observed to go wrong.
 const LEDGER_SHARD_MAX_BYTES = 14336
 
-// The phase-name prefix; each shard's phase is `ledger-01`, `ledger-02`, … so `writeCheckpoint`'s
-// own sequence numbering and `readCheckpoints`'s lexical sort both keep them in order.
 const LEDGER_SHARD_PHASE = 'ledger'
 
-// A hard cap on the number of agent calls this device is allowed to cost. A ledger past this bound
-// is carried up to the bound and the overflow is DROPPED — but `total` still declares the full
-// count, so the drop arrives at the next round as a truncated ledger (loud), never as a short one
-// (silent). Chosen so the bound cannot bite in practice (20 × 14KB ≈ 280KB, well past the largest
-// ledger ever measured) while still existing: unbounded, a pathological round would spend its whole
-// budget on bookkeeping.
 const LEDGER_SHARD_MAX_SHARDS = 20
 
-// The single-call copy the FINAL record rides through has an OBSERVED ceiling: a logger once REFUSED
-// a ~170-entry ledger outright rather than risk truncating it in one tool call (the same measurement
-// the LEDGER_SHARD_MAX_BYTES note records; workflows/review.js documents the same refusal at its
-// finalize step). That refusal is on the WHOLE persisted ledger — every live row PLUS every tombstone,
-// copied together — so it, not the far looser shard budget, is the border that actually bounds the
-// carried tombstone set. (The shard budget is ~300 rows: LEDGER_SHARD_MAX_SHARDS × ~15 rows/shard. It
-// never bites first, so a cap derived from it left the memory free to cross the copy-refusal border on
-// tombstones-plus-live and invert into a per-round full rescan — the very failure the cap must prevent.)
 const LEDGER_COPY_REFUSAL_ENTRIES = 170
 
-// Hold the combined ledger this far under the refusal point, so a live-finding count the assembler
-// could not foresee — or that drifts up between assembly and the final copy — cannot tip it over.
 const LEDGER_COPY_SAFETY_ROWS = 20
 
-// The most tombstones the carry-forward keeps when a round has NO live findings — equivalently, the
-// ceiling the WHOLE combined ledger (tombstones + live) is held under. DERIVED from the copy-refusal
-// border, not the shard budget: the single-call copy refuses on the combined ledger, so that is the
-// quantity to bound. At assembly time the caller passes `tombstoneBudget(liveCount)`, which spends this
-// ceiling on the live rows first and gives tombstones only the remainder, so tombstones + live stay
-// under the border with the safety margin intact. This static value is only the no-live-rows limit that
-// budget is clamped to (and the default for direct pruneTombstones callers, which pass no live count).
 const LEDGER_TOMBSTONE_MAX = LEDGER_COPY_REFUSAL_ENTRIES - LEDGER_COPY_SAFETY_ROWS
 
-// Cut a ledger into checkpoint payload fragments. Returns [] for an empty ledger — there is nothing
-// to persist and an empty shard would claim a round had no findings.
-//
-// An entry larger than `max` on its own gets a shard to itself rather than being split or dropped:
-// splitting an entry produces two half-findings that normalize into two plausible-looking wrong
-// ones, and dropping it loses a finding to save bytes.
-// MEASURE WHAT IS ACTUALLY COPIED, not the compact form. The checkpoint payload reaches the agent
-// as `JSON.stringify(payload, null, 2)` (lib/run-logging.mjs), so an entry sitting in `ledgerItems`
-// is pretty-printed at depth two: every one of its own lines gains four spaces. Compact bytes
-// therefore understate the real payload by 1.2x on long `why` fields and up to 1.7x on short
-// entries carrying a `sources` array — a nested array under pretty-print spreads one line per
-// element. Three independent measurements agree on the understatement and DISAGREE on whether any
-// shape crosses the 24KB line at which the write path stops trusting the cheap model: sweeps put
-// short entries with three sources at 24859B (over it) and at 22426B (under it, ratio 1.57), and a
-// cold read reported 14265B compact becoming 17314B. So the ratio is established and the crossing
-// is fixture-dependent — no run has been observed crossing it. The bound itself does not move; it
-// never had to. The measure was simply not measuring the thing that is paid for.
 /**
  * @param {unknown} item
  * @returns {number}
@@ -4152,7 +3239,6 @@ const LEDGER_TOMBSTONE_MAX = LEDGER_COPY_REFUSAL_ENTRIES - LEDGER_COPY_SAFETY_RO
 function payloadBytes(item) {
   const pretty = JSON.stringify(item, null, 2)
   if (typeof pretty !== 'string') return 2
-  // +4 per line for the two levels of nesting, +2 for the separating comma and newline.
   return pretty.length + pretty.split('\n').length * 4 + 2
 }
 
@@ -4166,22 +3252,15 @@ function shardLedger(ledger, { max = LEDGER_SHARD_MAX_BYTES, maxShards = LEDGER_
   if (!items.length) return []
   const groups = packLedgerGroups(items, max, maxShards)
   return groups.map((group, i) => ({
-    // One key, one object: a checkpoint payload is merged into the record by `finalizeRun`, so a
-    // bare `ledger` key here would collide with the record's own field.
     ledgerShard: {
       index: i + 1,
       of: groups.length,
-      // The ROUND's entry count, not this shard's and not the count actually shipped. It is the
-      // authoritative number the reader compares against, and the only reason a dropped overflow or
-      // a missing shard is detectable at all.
       total: items.length,
     },
     ledgerItems: group,
   }))
 }
 
-// Items packed in order into groups of at most `max` payload bytes (an item larger than that alone in
-// its own), at most `maxShards` groups; what does not fit is left out here and declared by the caller.
 /**
  * @param {unknown[]} items
  * @param {number} max
@@ -4205,9 +3284,6 @@ function packLedgerGroups(items, max, maxShards) {
   return groups
 }
 
-// The round a tombstone closed in, read from its `why` marker ("resolved in round N" / "dismissed
-// in round N"), with the stored `round` field as a fallback and 0 as the floor. Used only to order
-// tombstones by age for dedup and eviction — the regression message reads the same marker itself.
 /**
  * @typedef {{ fp?: unknown, why?: unknown, round?: unknown }} Tombstone
  */
@@ -4222,18 +3298,6 @@ function tombstoneRound(t) {
   return Number.isFinite(r) ? r : 0
 }
 
-// Bound the carried tombstone set. Two bounds, in order:
-//   1. DEDUP by fingerprint, keeping the NEWEST per fp. A recidivist defect (resolved, regresses,
-//      resolved again) otherwise writes a fresh same-fp tombstone every cycle; the read side already
-//      collapses same-fp tombstones on lookup, so a second stored row was only ever dead weight.
-//   2. CAP at `max` rows, evicting the OLDEST rounds first. `max` defaults to LEDGER_TOMBSTONE_MAX,
-//      but the ledger assembler passes `tombstoneBudget(liveCount)` so the bound is on the COMBINED
-//      ledger (tombstones + live) against the copy-refusal border — the quantity the single-call copy
-//      actually refuses on — not on tombstones in isolation. Evicting the oldest is the right
-//      direction: a defect that returns tends to return soon, so the most recent rounds are the ones
-//      a fresh finding is most likely to match.
-// Tombstones without an `fp` are never merged (they have no identity to merge on) and are kept as-is,
-// still subject to the count cap. Insertion order is otherwise preserved below the cap.
 /**
  * @param {unknown} tombstones
  * @param {{ max?: number }} [opts]
@@ -4244,9 +3308,6 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
   const items = Array.isArray(tombstones) ? tombstones : []
   const deduped = newestTombstonePerFp(items)
   if (deduped.length <= max) return deduped
-  // Decorate–sort–undecorate (Schwartzian): tombstoneRound parses a regex on every call, so calling it
-  // inside the comparator re-parses each row O(n log n) times. Compute it once per row, sort on the
-  // cached value (newest round first), drop the wrapper. Order-preserving: same key, and sort is stable.
   return deduped
     .map(row => ({ row, r: tombstoneRound(row) }))
     .sort((a, b) => b.r - a.r)
@@ -4254,8 +3315,6 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
     .map(d => d.row)
 }
 
-// Bound 1 of pruneTombstones: the newest tombstone per fingerprint (a later one wins a tie), in first-seen
-// order, then the fingerprint-less ones as they came; non-objects dropped.
 /** @param {Tombstone[]} items @returns {Tombstone[]} */
 function newestTombstonePerFp(items) {
   /** @type {Map<unknown, Tombstone>} */
@@ -4271,12 +3330,6 @@ function newestTombstonePerFp(items) {
   return [...newestByFp.values(), ...noFp]
 }
 
-// The tombstone budget for THIS ledger assembly: the combined-ledger ceiling (LEDGER_TOMBSTONE_MAX)
-// minus the live rows already claiming it, floored at 0. Passed to pruneTombstones as `max`, it makes
-// the COMBINED ledger — not tombstones in isolation — the bounded quantity, which is what the single-
-// call copy of the final record refuses on. When live findings alone already fill the ceiling the
-// budget is 0: tombstones cannot rescue a ledger the live rows have pushed over, and adding them would
-// only deepen the overflow that inverts the memory into a per-round full rescan.
 /**
  * @param {unknown} liveCount
  * @param {{ ceiling?: number }} [opts]
@@ -4384,8 +3437,6 @@ function key(f) {
 }
 
 // >>> craft-inline lib/run-record.mjs titleShingle normalizeSymbol fingerprint shingleOverlap matchesPrior rereviewVerdict reReviewMemory branchFromAbbrevRef ENGINE_REVISION FP_BASIS_SINCE fpBasisOf fpBasisEstablished sameFpBasis basisVerdictFromRevisions
-// Normalized, word-order-independent word-set of a finding title. Used inside the fingerprint and
-// for fuzzy cross-round matching so a lightly reworded title still matches its prior-round twin.
 /**
  * @param {unknown} title
  * @returns {string}
@@ -4401,37 +3452,17 @@ function titleShingle(title) {
     .join(' ')
 }
 
-// The enclosing symbol, folded to one key across the ways two lens agents spell the same one:
-// case (`Foo::Bar` vs `foo::bar`), the `fn `/`impl ` keyword, and generic parameters (`parse<T>`).
-// Kept deliberately small — it absorbs decoration noise, not structure: a rename is still a
-// different symbol, which is the acceptable, rare identity loss the fingerprint is built to take.
 /**
  * @param {unknown} symbol
  * @returns {string}
  */
 function normalizeSymbol(symbol) {
   let s = String(symbol || '').toLowerCase().replace(/\b(?:fn|impl)\s+/g, '')
-  // Strip generics INNERMOST-first, looping until stable. A single /<[^>]*>/g pass stops its class at
-  // the first `>`, so a NESTED generic like `Vec<Map<K,V>>` would keep the inner and trailing `>`
-  // (`vec>`) and defeat the fold. `<[^<>]*>` matches only a bracket pair with no bracket inside — an
-  // innermost generic — and repeating it collapses arbitrary nesting away, leaving no stray symbol.
   let prev
   do { prev = s; s = s.replace(/<[^<>]*>/g, '') } while (s !== prev)
   return s.trim()
 }
 
-// Line-tolerant finding identity. A finding with a ruleId (a catalog rule) gets an EXACT, title-free
-// identity: file + normalizeSymbol(symbol) + ruleId. The title is deliberately dropped there — it is
-// natural language two agents rarely word the same, so anchoring identity on it left the fingerprint
-// uncomparable across rounds (matchesPrior on the old title basis recognised 2 of 59 re-discoveries),
-// and the ruleId already IS the normalized, lens-scoped claim (source/lens are therefore not in the
-// key — adding lens would only manufacture false negatives when the same defect resurfaces under
-// another lens). A finding with NO ruleId has no such stable identity, so it keeps the title in its
-// basis: without it every ad-hoc finding at one file collapses to a single file-only hash, and a
-// cross-lens/journal dedup keyed on this (dedupJournalFindings) would merge distinct defects. The
-// tombstone/recidivism check only ever keys ruleId findings, so it never sees the title-bearing form.
-// djb2 (not crypto) — the sandbox has no crypto and bans Math.random, and we only need a stable,
-// collision-resistant-enough key, computed identically in the lib and in the workflow mirror.
 /**
  * @param {FindingKey | null | undefined} f
  * @returns {string}
@@ -4462,9 +3493,6 @@ function shingleOverlap(a, b) {
   return inter / Math.max(sa.size, sb.size)
 }
 
-// True when `cur` (a freshly located finding) is the same defect as `prior` (from the ledger).
-// file + ruleId must match exactly; a symbol mismatch only disqualifies when BOTH carry one (a
-// finding can move symbols across a fix, so an absent symbol is not a veto); titles must overlap.
 /**
  * @param {FindingKey | null | undefined} cur
  * @param {FindingKey | null | undefined} prior
@@ -4483,8 +3511,6 @@ function matchesPrior(cur, prior, { threshold = 0.6 } = {}) {
   return shingleOverlap(cur?.title, prior?.title) >= threshold
 }
 
-// Re-review verdict: reviewVerdict over the findings that still matter this round. resolved and
-// carried (rejected/justified) findings are excluded by the caller, so they never reach here.
 /**
  * @param {{ stillOpen?: unknown[], regressed?: unknown[], neu?: unknown[] }} [findings]
  * @returns {string}
@@ -4493,13 +3519,6 @@ function rereviewVerdict({ stillOpen = [], regressed = [], neu = [] } = {}) {
   return reviewVerdict([...stillOpen, ...regressed, ...neu])
 }
 
-// Whether re-review memory engaged this run, and — for the one silent-degradation case — a
-// user-facing note. `priorReason` is the prior-round lookup's non-found reason (empty/undefined when a
-// prior round WAS found and the run chained). A DETACHED HEAD makes findPriorRound return 'no-branch',
-// so the run silently becomes round 1 with no chaining and the operator gets no signal why; the note
-// is what makes that visible. Only 'no-branch' earns a note: a genuine first review on a branch
-// (no-candidate-rows, an ancestry rejection after a rebase, …) is normal, not a footgun, and stays
-// noteless, or the note fires on every first review and stops being read.
 /**
  * @param {string | null | undefined} priorReason
  * @returns {{ chained: boolean, reason: string | null, note: string | null }}
@@ -4513,13 +3532,6 @@ function reReviewMemory(priorReason) {
   return { chained, reason, note }
 }
 
-// `git rev-parse --abbrev-ref HEAD` prints the literal string `HEAD` on a detached HEAD, which is
-// NOT a branch name. Map it to '' so a detached run files no branch: findPriorRound/selectPriorRounds
-// then report `no-branch` and the run does not chain review rounds — filing "HEAD" as a branch would
-// pool every unrelated detached context under one shared key. A real branch name (and '' when git
-// could not resolve one) passes through unchanged. The one place this rule lives: gitIdentity
-// (lib/craft-log-run.mjs) and the review engine's detect capture (workflows/review.js) both route
-// their branch value through here (realm @nick/craft #104).
 /**
  * @param {string} ref
  * @returns {string}
@@ -4528,23 +3540,10 @@ function branchFromAbbrevRef(ref) {
   return ref === 'HEAD' ? '' : ref
 }
 
-// The current engine revision (the log above says what each one means). Inlined into the review engine
-// with the fingerprint-basis table below, so the side that computes fingerprints decides their basis.
 const ENGINE_REVISION = 4
 
-// The FINGERPRINT BASIS is a separate question from the engine revision, and it is answered here,
-// not by comparing revisions: the revision is also the telemetry label the analyzer slices on, and a
-// telemetry-only bump must not make the re-review memory treat every prior round as incomparable —
-// that drops each in-flight loop's tombstones and skips its recidivism check (realm @nick/craft #108).
-// Each entry is the engine revision at which a basis BEGAN; a revision's basis is the latest entry at
-// or below it. Add an entry — not a bump of ENGINE_REVISION alone — whenever `fingerprint()` changes
-// what a recorded `fp` means.
-//   1 — the title-anchored basis (file + symbol + ruleId + title shingle).
-//   3 — the ruleId-anchored basis (see revision 3 above).
 const FP_BASIS_SINCE = [1, 3]
 
-// The basis a record stamped with `rev` fingerprinted under; null when `rev` is not a revision
-// (a legacy record with no field) — such a record is never comparable.
 /**
  * @param {unknown} rev
  * @returns {number | null}
@@ -4554,10 +3553,6 @@ function fpBasisOf(rev) {
   return Math.max(...FP_BASIS_SINCE.filter(b => b <= /** @type {number} */ (rev)))
 }
 
-// Whether the basis `priorRev` fingerprinted under can be established at all: a revision this engine
-// knows — not missing (a legacy record), not newer than this engine (a table it does not have). The
-// complement is not "the basis changed" but "nobody can say", and the engine reports it as lost
-// re-review memory rather than an expected reset (realm @nick/craft #110).
 /**
  * @param {unknown} priorRev
  * @param {number} [currentRev]
@@ -4567,9 +3562,6 @@ function fpBasisEstablished(priorRev, currentRev = ENGINE_REVISION) {
   return Number.isInteger(priorRev) && /** @type {number} */ (priorRev) >= 1 && /** @type {number} */ (priorRev) <= currentRev
 }
 
-// Whether fingerprints recorded under `priorRev` may be compared to ones computed now. A prior
-// revision NEWER than this engine's is never comparable: it may have begun a basis this engine's
-// table does not know (a downgrade, or two installs writing one store), and the guard fails closed.
 /**
  * @param {unknown} priorRev
  * @param {number} [currentRev]
@@ -4581,11 +3573,6 @@ function sameFpBasis(priorRev, currentRev = ENGINE_REVISION) {
   return prior !== null && prior === fpBasisOf(currentRev)
 }
 
-// The basis verdict from the RAW revisions a prior round's fingerprints were minted under (one for a
-// finished record, one per checkpoint for a recovered round), decided against `currentRev` — the
-// caller's own revision and table. Known only when every revision is established and all map to ONE
-// basis; then comparable when that basis is the caller's. Inlined into the review engine, which
-// computes the fingerprints and so is the side that decides (realm @nick/craft #111).
 /**
  * @param {unknown} revs
  * @param {number} [currentRev]
@@ -5462,23 +4449,8 @@ const CULL_MODEL = 'sonnet'
 // Pure helpers, tested as a real module in lib/review-waves.mjs and pasted back here by the
 // craft-inline gate, because this script cannot be imported (top-level export + await + return).
 // >>> craft-inline lib/review-waves.mjs VERIFY_WINDOW_AGENTS verifyWeight weightedWindow
-// How many AGENTS verification keeps in flight at once. Chosen so the queue term of the Verify
-// deadline stays small: ~24 agents over an execution p90 of ~360s is well under 15min of waiting,
-// which is what makes a 30min dispatch-clock deadline mean "stuck" rather than "popular".
-//
-// It bounds DISPATCH, not occupancy, and the size of the gap has changed. It used to be a factor of
-// two: `ragent` re-dispatched after a deadline fire, and the abandoned agent kept its harness
-// concurrency slot until it was reaped, so a window could transiently sit at ~48. The deadline is
-// now ONE budget shared by the attempts, and a fire spends it by definition — so a deadline fire no
-// longer re-dispatches at all, and that doubling is gone.
-// What remains is the FAST death, which spends almost none of the budget and does re-dispatch: an
-// abandoned slot there is still held, so occupancy can exceed this number, but by the deaths in
-// flight rather than by a clean doubling. The number stays a dispatch bound, not an occupancy one.
 const VERIFY_WINDOW_AGENTS = 24
 
-// Worst-case agent count for one verification thunk, so the window can only ever come in under budget,
-// never over. A batch thunk is one agent; a High/Critical opens with a cull + the authoritative
-// vote and, if they split, buys the remaining n1-1 culls — 1 + max(1, verifyVotes) in total.
 /**
  * @param {{severity?: string}} f
  * @param {{verifyVotes?: unknown} | null | undefined} plan
@@ -5489,21 +4461,6 @@ function verifyWeight(f, plan) {
   return isHigh ? 1 + Math.max(1, Number(plan?.verifyVotes) || 1) : 1
 }
 
-// Run an ordered list of {run, weight} entries keeping at most `maxWeight` weight in flight, with
-// NO barrier: as each entry settles, the next one that fits is dispatched immediately. Waves (a
-// barrier per batch) gave the same in-flight cap but made every batch wait for its slowest member —
-// ~9 barriers on a large run, against verification agents measured up to 811s.
-//
-// ORDER IS THE INVARIANT. The caller concatenates the results and slices them apart positionally,
-// so a verdict must land at its entry's index. Entries settle out of order here, so results are
-// assigned BY INDEX (`out[i]`), never by arrival. The returned array always has exactly
-// `entries.length` slots, in input order.
-//
-// `runOne(entry.run, i)` is injected so this stays pure and testable — the workflow passes a runner
-// that hands the thunk to the sandbox's parallel(), which turns a throwing thunk into null. Anything
-// runOne rejects with is recorded as null rather than tearing down the whole dispatch.
-//
-// An entry heavier than the whole budget still runs: it waits for an empty window, then goes alone.
 /**
  * @template R, T
  * @param {{run: R, weight?: unknown}[]} entries
@@ -5520,7 +4477,6 @@ async function weightedWindow(entries, maxWeight, runOne) {
     const pump = () => {
       while (next < entries.length) {
         const w = Math.max(1, Number(/** @type {{weight?: unknown}} */ (entries[next]).weight) || 1)
-        // `inflight > 0 &&`: an over-budget entry is never starved, it just never shares the window.
         if (inflight > 0 && inflight + w > cap) break
         const i = next++
         inflight += w
@@ -5575,13 +4531,9 @@ function verifyTier(f) {
 // Pure helpers, tested as a real module in lib/verify-economy.mjs and pasted back here by the
 // craft-inline gate; the order discipline that makes this legitimate lives there.
 // >>> craft-inline lib/verify-economy.mjs BLOCKING_SEVERITIES securesBlock makeVerdictFloor verdictNeutralNow floorSkipReason
-// The severities whose confirmation alone forces Block, per `reviewVerdict` in lib/run-record.mjs.
-// Kept as data next to the rule it mirrors: if that rule ever gains a severity, the skip below is
-// wrong in the direction of skipping too much, and this is the one line to change.
 /** @type {readonly (string | undefined)[]} */
 const BLOCKING_SEVERITIES = ['Critical', 'High']
 
-// Does this JUDGED finding, by itself, already fix the verdict at Block?
 /**
  * @typedef {{ tier?: string, severity?: string, title?: string, file?: string, line?: number }} JudgedFinding
  * @typedef {{ record: (f: JudgedFinding | null | undefined) => boolean, secured: () => boolean, securedBy: () => JudgedFinding | null }} VerdictFloor
@@ -5591,37 +4543,25 @@ function securesBlock(f) {
   return !!f && f.tier === 'confirmed' && BLOCKING_SEVERITIES.includes(f.severity)
 }
 
-// A monotonic record of "the verdict is already Block, on evidence". Shared across concurrently
-// dispatched verification entries on purpose — the same reason the death breaker is shared: the
-// individual panel and the batch groups are in flight together, so a per-entry view would never see
-// the confirmation another entry brought back.
 /** @returns {VerdictFloor} */
 function makeVerdictFloor() {
   /** @type {JudgedFinding | null} */
   let by = null
   return {
-    // Feed every settled verdict through here, judged or not. Returns whether THIS one raised the
-    // floor, which is what a caller logs.
     record(f) {
       if (by !== null || !securesBlock(f)) return false
       by = /** @type {JudgedFinding} */ (f)
       return true
     },
-    // Answers about what has ALREADY come back. Never predicts.
     secured() {
       return by !== null
     },
-    // The finding that raised it, so a skip can name its own justification instead of asserting one.
     securedBy() {
       return by
     },
   }
 }
 
-// Can a verifier for this finding still move the verdict, given what is already confirmed?
-// Medium and nothing else: Critical/High decide the verdict themselves and are never skipped, and
-// Low/Info never reach here — `verifyTier` has already routed them to the skip tier for a reason
-// that does not depend on the floor.
 /**
  * @param {JudgedFinding | null | undefined} f
  * @param {VerdictFloor | null | undefined} floor
@@ -5630,9 +4570,6 @@ function verdictNeutralNow(f, floor) {
   return !!f && f.severity === 'Medium' && !!floor && floor.secured()
 }
 
-// Why a Medium went unverified, in the finding's own `why`. It names the evidence — the confirmed
-// finding that fixed the verdict — because "we did not check this" is only legitimate when the
-// reader can see what made the check pointless.
 /** @param {VerdictFloor | null | undefined} floor */
 function floorSkipReason(floor) {
   const by = floor && floor.securedBy()
