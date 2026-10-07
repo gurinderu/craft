@@ -62,8 +62,14 @@ Path/shape: `~/.craft/runs/<ts>-workflow-review.json`, keyed by `project + branc
   severity, tier,
   disposition,  // open | closed | rejected | justified | deferred
   source, ruleId, title, why,
+  deferral,     // optional, engine-written: { id, reason, who, when, link, commit } of the question
+                // that set a `deferred` row aside — never written or edited by this fix loop
 }
 ```
+
+A `deferred` row is carried across rounds only while it has a `deferral`. A row this fix loop marks
+`deferred` has none: the next round checks it like any open finding, and the engine sets it aside
+again when it recalls the open question recorded for it (→ SKILL.md, "Project memory").
 
 **Two writer roles.** The `review` engine writes the findings + `tier` (and may auto-set `closed`
 when it later confirms a fix); this fix-loop skill writes the human-sourced dispositions
