@@ -12,7 +12,11 @@ A thread yields a decision **only** when all of these hold:
 1. **Its first comment is a craft finding**: the body the review engine posts — first line
    `[Severity] title`, last line the `<!-- craft-finding -->` marker. A thread without the marker
    (a human's comment, another bot's, a craft comment from before the marker existed) is never
-   recorded: it cannot be tied to a specific finding.
+   recorded: it cannot be tied to a specific finding. **And its author is a maintainer**: the first
+   comment's `authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`. craft posts under the `gh`
+   account of the human running it, who maintains the repo; anyone else — the PR author included —
+   can paste the marker, so a marked comment from any other association is a forged finding: named
+   with why and counted, never recorded.
 2. **Its last word is a reply that rejects the finding**: it **opens** with `not a bug`, `not an
    issue`, `by design`, `won't fix` / `wontfix` / `will not fix`, `works as intended` / `working as
    intended` / `as intended`, `intentional` or `false positive` (optionally after `this is` /
