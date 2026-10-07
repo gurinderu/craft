@@ -24,13 +24,16 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 
 The directory is the one the harness names in the session's instructions (in Claude Code,
 `~/.claude/projects/<project-slug>/memory/`, with `MEMORY.md` as its index). An agent that does not
-have the index in context — a workflow's agent, a subagent — derives the directory itself: the
-slug is its own working directory (`pwd`) with every character that is not an ASCII letter or
-digit replaced by `-` (observed: `/home/ubuntu/projects/my/craft` → `-home-ubuntu-projects-my-craft`,
-`/.claude/` → `--claude-`). This is an observed convention, not a documented one: list
-`~/.claude/projects/` and take the directory whose name equals that slug; if none does, say
-`none — harness memory directory for <cwd> not found under ~/.claude/projects/` and never guess a
-near match. Use the harness's format, not a craft one:
+have the index in context — a workflow's agent, a subagent — derives the directory itself. The
+harness keys project memory by the repository's **main checkout**, never a worktree or a
+subdirectory (a worktree session gets its own `~/.claude/projects/` entry, but without
+`memory/`). The root is `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`
+(the same from any worktree or subdirectory), `pwd` only outside a git repo; the slug is that
+root with every character that is not an ASCII letter or digit replaced by `-` (observed:
+`/home/ubuntu/projects/my/craft` → `-home-ubuntu-projects-my-craft`). This is an observed
+convention, not a documented one: `~/.claude/projects/<slug>/memory/` must exist; if it does
+not, say `none — harness memory directory <path>/memory not found` and never guess a near
+match. Use the harness's format, not a craft one:
 
 - **One file per record**, `<id>.md`:
 

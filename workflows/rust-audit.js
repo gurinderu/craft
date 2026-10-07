@@ -184,7 +184,7 @@ function memoryRecallPrompt(paths, base) {
   return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
 1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
-2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, where <slug> is your own working directory (\`pwd\`, after any cd this review requires) with every character that is not an ASCII letter or digit replaced by \`-\` (observed: \`/home/ubuntu/projects/my/craft\` → \`-home-ubuntu-projects-my-craft\`; \`/.claude/\` → \`--claude-\`) — an observed convention (realm @nick/craft, node #201); list \`~/.claude/projects/\` and take the directory whose name equals that slug; read MEMORY.md, then only the matching files; none equals it: say \`none — harness memory directory for <cwd> not found under ~/.claude/projects/\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (observed: \`/home/ubuntu/projects/my/craft\` → \`-home-ubuntu-projects-my-craft\`) — an observed convention (realm @nick/craft, node #209); \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
 Return {backend, why, decisions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); stale is [] when none.`
@@ -232,15 +232,21 @@ function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
     : { source: 'passed', count, why: 'passed by the launcher' }
 }
 
-/** @param {MemorySource} m @returns {string} */
-function memoryLine(m) {
+/**
+ * @param {MemorySource} m @param {boolean} [forwarded] the list went unparsed to nested reviews (rust-audit):
+ * the count is what recall returned, not what was accepted @returns {string}
+ */
+function memoryLine(m, forwarded = false) {
   if (m.source === 'passed') return `memory: passed by the launcher (${m.count})`
-  return m.source === 'recalled' ? `memory: recalled ${m.count} decision(s) from ${m.why}` : `memory: none — ${m.why}`
+  if (m.source !== 'recalled') return `memory: none — ${m.why}`
+  return forwarded
+    ? `memory: returned ${m.count} decision(s) from ${m.why}; each nested review reports how many it applied`
+    : `memory: recalled ${m.count} decision(s) from ${m.why}`
 }
 
-/** The report section naming the source. @param {MemorySource} m @returns {string} */
-function memorySection(m) {
-  return `\n\n## Memory\n- ${memoryLine(m)}\n`
+/** The report section naming the source. @param {MemorySource} m @param {boolean} [forwarded] @returns {string} */
+function memorySection(m, forwarded = false) {
+  return `\n\n## Memory\n- ${memoryLine(m, forwarded)}\n`
 }
 
 /**
@@ -1674,5 +1680,5 @@ await logRun(auditRecord)
 // telemetry marker is also empty, so nothing at all says the synthesis died.
 // Without a schema a live agent returns its final text, so anything but a non-blank string is a death:
 // a whitespace-only answer is no report either (realm @nick/craft, #136).
-if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory)}`
-return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory)}`
+if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`

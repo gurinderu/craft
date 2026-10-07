@@ -88,7 +88,8 @@ reason names the rule.
    yourself; the record shape is then only what you hand it.
 3. **The harness's project memory — the default.** In Claude Code: the project memory directory
    the harness names in this session's instructions; an agent without it in context (a workflow's
-   agent, a subagent) derives it from its own working directory — path rule in
+   agent, a subagent) derives it from the repository's main checkout root, never a worktree or
+   subdirectory — path rule in
    [backends.md](backends.md). Written without asking (it is private to the
    user and tied to this project). A refused write — a `PreToolUse` guard, a permission denial,
    the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
