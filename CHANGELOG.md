@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/gurinderu/craft/compare/v0.23.1...v0.24.0) (2026-10-07)
+
+
+### Features
+
+* **review:** review engines recall remembered decisions themselves on any launch ([#158](https://github.com/gurinderu/craft/issues/158)) ([ec8f602](https://github.com/gurinderu/craft/commit/ec8f602178c806b0e4b61db2879e09b57d397935))
+
 ## [0.23.1](https://github.com/gurinderu/craft/compare/v0.23.0...v0.23.1) (2026-10-07)
 
 
