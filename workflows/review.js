@@ -531,6 +531,25 @@ async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'w
 }
 // <<< craft-inline
 
+// The PR comment body for a Confirmed finding, with the marker a later session reads back.
+// >>> craft-inline lib/finding-comment.mjs FINDING_COMMENT_MARKER commentLine findingCommentBody
+// An HTML comment: invisible on the PR page, present in the body the API returns.
+const FINDING_COMMENT_MARKER = '<!-- craft-finding -->'
+
+/** @param {unknown} v */
+function commentLine(v) {
+  return String(v ?? '').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The comment body for one finding: `[Severity] title`, the reason and the fix, the marker.
+ * @param {{ severity?: unknown, title?: unknown, why?: unknown, fix?: unknown }} f @returns {string}
+ */
+function findingCommentBody(f) {
+  return `[${commentLine(f.severity)}] ${commentLine(f.title)}\n\n${String(f.why ?? '').trim()} — ${String(f.fix ?? '').trim()}\n\n${FINDING_COMMENT_MARKER}`
+}
+// <<< craft-inline
+
 // >>> craft-inline lib/path-segments.mjs pathSegments
 // A path as normalized SEGMENTS, for containment decided segment by segment rather than on a raw
 // string prefix: `/r/./crates/../crates/core` is inside `/r`, and `/r-evil` is not. Both separators
@@ -7395,8 +7414,8 @@ async function postPrComments() {
   if (postComments && confirmed.length) {
     const posted = await ragent(
       `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, post nothing and say so in \`reason\` — never fail.
-For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
-${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}
+For each finding with a real file:line, add a review comment anchored to that file:line whose body is the finding's \`body\` VERBATIM — its first line and its last line (an HTML comment) are how a later session ties a reply to the finding. Findings:
+${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, body: findingCommentBody(f) })), null, 2)}
 Return {posted: <how many comments you actually created>, reason: <one line: the PR you posted to, or why nothing was posted>}.`,
       { label: 'pr-comments', phase: 'Synthesize', effort: 'low', schema: PR_COMMENTS_SCHEMA },
     )
