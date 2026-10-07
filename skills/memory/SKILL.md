@@ -145,15 +145,18 @@ the skill is unavailable, the backend order above), and the report names the sou
    and questions (`kind: decision`, `kind: question`), **active** only; never lessons.
 2. Pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
-   `id`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links` — nothing rewritten, nothing
-   summarised. Never as a string: a `key=value` line cannot delimit the value (a reason holding
+   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links` — nothing rewritten,
+   nothing summarised; `kind` on every record, or a question passed without it is read by its id
+   (`question-…`), and anything else as a decision. Never as a string: a `key=value` line cannot delimit the value (a reason holding
    `comment=true` would become an option), so the engine refuses any string and applies nothing.
    No match, or backend `none` → pass an empty list (say so in one line): it skips the engine's
    own recall, and the review sets nothing aside.
 3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
    before** with the decision's reason, author, date and link, outside the verdict; one an open
    question answers, under **Known and deferred** with what would answer it, the author, date and
-   link, also outside the verdict (the review ledger keeps it `deferred`). Either is raised
+   link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
+   like a rejection). A question without a `commit` records no deferral: it sets nothing aside
+   and labels nothing. Either is raised
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
    since its `commit`, when the decision has no `commit`, or when the repository does not know that
    `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).

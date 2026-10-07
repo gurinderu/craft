@@ -228,7 +228,7 @@ let scopeDetail = ''
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
 // The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft, node #177 — the
 // memory skill's record shape). Pasted in by the craft-inline gate; the rules and why live in the module.
-// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX PRIOR_RECORD_KINDS decisionScopeParts decisionText decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
+// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX PRIOR_RECORD_KINDS decisionScopeParts decisionText recordKind decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
 const PRIOR_RECORD_KINDS = ['decision', 'question']
@@ -244,9 +244,20 @@ function decisionText(v) {
 }
 
 /**
+ * A record's kind, lower-cased; a record without one is a `question` when its id carries the memory
+ * skill's `question-` prefix (id = `<kind>-<hash>`), a `decision` otherwise — a launcher that leaves
+ * `kind` out of a passed question must not turn its deferral into a rejection.
+ * @param {Record<string, unknown>} o @returns {string}
+ */
+function recordKind(o) {
+  if (o['kind'] != null) return decisionText(o['kind']).toLowerCase()
+  return /^question-/i.test(decisionText(o['id'])) ? 'question' : 'decision'
+}
+
+/**
  * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
  * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
- * http(s) URL in `links` for `link`. `kind` is `question` only when the record says so.
+ * http(s) URL in `links` for `link`. `kind` is `question` only when recordKind reads one.
  * @param {Record<string, unknown>} o @returns {PriorDecision}
  */
 function decisionFields(o) {
@@ -254,7 +265,7 @@ function decisionFields(o) {
   const f = (k, alt = '') => decisionText(o[k]) || decisionText(o[alt])
   const links = Array.isArray(o['links']) ? o['links'] : []
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
-  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: f('kind') === 'question' ? 'question' : 'decision' }
+  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision' }
 }
 
 /**
@@ -262,7 +273,7 @@ function decisionFields(o) {
  * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
  */
 function decisionProblem(o, d) {
-  if (o['kind'] != null && !PRIOR_RECORD_KINDS.includes(decisionText(o['kind']))) return ` is a ${JSON.stringify(o['kind'])} record, not a decision or a question`
+  if (!PRIOR_RECORD_KINDS.includes(recordKind(o))) return ` is a ${JSON.stringify(o['kind'])} record, not a decision or a question`
   if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
   if (!d.id || !d.title || !d.reason) return ' lacks an id, a title or a reason'
   const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof PriorDecision} */ (k)].length > max)
@@ -612,10 +623,20 @@ async function runScopeCheck(toCheck, checkScopes, notes) {
   return { toCheck, unchanged, missing }
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-apply.mjs priorKindLabel priorDecisionMark commitMissingReason reraiseReason reraisedNote splitByDecisions priorRejectedSection applyPriorDecisions
+// >>> craft-inline lib/prior-decision-apply.mjs priorKindLabel recordsDeferral priorDecisionMark commitMissingReason reraiseReason reraisedNote splitByDecisions priorRejectedSection applyPriorDecisions
 /** What a record is called in a note: `decision` or `question`. @param {PriorDecision} d @returns {string} */
 function priorKindLabel(d) {
   return d.kind === 'question' ? 'question' : 'decision'
+}
+
+/**
+ * Whether a record can set a finding aside at all: every decision does; a question only when it records
+ * a deferral — a commit, which addressing-findings writes for a deferred finding. A question without
+ * one (a needs-decision question) is context, not a deferral: its finding is raised normally, unlabelled.
+ * @param {PriorDecision} d
+ */
+function recordsDeferral(d) {
+  return d.kind !== 'question' || !!d.commit
 }
 
 /** The mark a set-aside finding carries. @param {PriorDecision} d */
@@ -694,15 +715,18 @@ function priorRejectedSection(setAside) {
  * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
  * the decisions whose commit the repo does not know, for the report's Prior decisions not applied.
  * @template {DecidableFinding} F
- * @param {Record<string, F[]>} tiers @param {PriorDecision[]} decisions
+ * @param {Record<string, F[]>} tiers @param {PriorDecision[]} given  questions without a commit are dropped (recordsDeferral)
  * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
  * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<SetAside<F>>, reraised: number, notes: string[], refused: string[] }>}
  */
-async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'why') {
+async function applyPriorDecisions(tiers, given, checkScopes, noteField = 'why') {
   /** @type {Array<SetAside<F>>} */
   let setAside = []
   /** @type {string[]} */
   const notes = []
+  const context = given.length - given.filter(recordsDeferral).length
+  if (context) notes.push(`${context} open question(s) record no commit, so no deferral — context only, set nothing aside`)
+  const decisions = given.filter(recordsDeferral)
   if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
   const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(Object.values(tiers).flat(), decisions), checkScopes, notes)
   const refused = toCheck.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`)
@@ -6067,9 +6091,9 @@ let suspected = results.flatMap(r => r['suspected'])
 let unverified = results.flatMap(r => r['unverified'] || [])
 
 // ---- Adjudicate track (re-review only) ----
-// For each prior-round finding, decide its fate this round. rejected/justified are carried (not
-// re-raised) unless the code around them changed; open/deferred/confirmed priors get a targeted
-// "is it still here?" check against the current tree.
+// For each prior-round finding, decide its fate this round. Settled priors (isSettledPrior) are carried
+// (not re-raised) unless the code around them changed; open/confirmed priors, and a Critical/High
+// deferred one, get a targeted "is it still here?" check against the current tree.
 // `retired` is the carried track's EXIT: a dismissed prior whose carry-check reported the code
 // around it unchanged has had its one confirmation and leaves the ledger. It still lives here for
 // the rest of THIS round — it suppresses a lens re-discovery (below) and renders in the report's
@@ -6099,6 +6123,17 @@ function carryUnverifiedPriors(priorUnverified, priorRound) {
     })))
   }
 }
+// THE ONE RULE for a settled prior — the carry track's entry. A dismissal (rejected/justified) is the
+// author's; a `deferred` row is a finding set aside as Known and deferred (realm @nick/craft, node #204),
+// settled for the chain exactly like a dismissal so it stays out of the verdict whether or not this
+// round's recall brings its question back — except Critical/High, which no prior record sets aside.
+/** @param {Finding} f */
+function isSettledPrior(f) {
+  const d = f['disposition']
+  return d === 'rejected' || d === 'justified' || (d === 'deferred' && !reraisedBySeverity(f['severity']))
+}
+/** Carried deferred priors, for the Known and deferred section. */
+const carriedDeferred = () => adjudicated.carried.filter(f => f['disposition'] === 'deferred').map(f => ({ ...f, priorKind: 'question' }))
 // The adjudicate track, on a re-review with a prior ledger.
 async function adjudicatePriors() {
   if (priorRound?.['ledger']?.length) {
@@ -6129,14 +6164,14 @@ async function adjudicatePriors() {
     const priorUnverified = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') === 'unverified')
     carryUnverifiedPriors(priorUnverified, priorRound)
     const priorLedger = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') !== 'unverified')
-    const settled = priorLedger.filter((/** @type {Finding} */ f) => f['disposition'] === 'rejected' || f['disposition'] === 'justified')
-    const toCheck = priorLedger.filter((/** @type {Finding} */ f) => !(f['disposition'] === 'rejected' || f['disposition'] === 'justified'))
+    const settled = priorLedger.filter(isSettledPrior)
+    const toCheck = priorLedger.filter((/** @type {Finding} */ f) => !isSettledPrior(f))
 
     // Settled priors: carried unless the code around them changed since the prior round.
     const carriedResults = (await parallel(settled.map((/** @type {Finding} */ f) => () => {
       const pf = promptFields(f)
       return ragent(
-        `A prior review finding was dismissed by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
+        `A prior review finding was set aside by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
 FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f['line']} (symbol ${pf.symbol}), rule ${pf.ruleId}.
 Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} -- ${shq(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
         { label: `carry:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
@@ -6175,6 +6210,9 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
       const { f, changed } = c
       if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
       else if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
+      // A deferred prior is an open question, not a dismissal: unchanged, it stays carried (and deferred)
+      // until it is answered, instead of retiring after one confirmation.
+      else if (f['disposition'] === 'deferred') adjudicated.carried.push(f)
       else adjudicated.retired.push(f)
     }
     for (const c of carriedResults) applyCarry(c)
@@ -6584,7 +6622,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
 6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
 6b. \`## Unverified (not checked)\` — the UNVERIFIED JSON below, same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into New, Still open or Carried, never call them confirmed, and do not re-rank or upgrade their severity. They change nothing about the verdict. Omit the section if empty.
-7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
+7. \`## 🔽 Carried\` — settled priors (rejected/justified/deferred) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${incompleteClause}
@@ -6902,4 +6940,4 @@ function floorPremiseSection() {
 
 // Appended, not asked of the synthesis model: a finding set aside by a prior decision must reach the
 // reader with that decision, whatever the model chose to render.
-return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection(priorRejected) + scopeSection())
+return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + scopeSection())

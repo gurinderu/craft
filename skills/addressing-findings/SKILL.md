@@ -40,7 +40,8 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
 7. Re-review ⫲ — PR-thread rejections recorded again, active decisions and questions recalled and passed
-               to the review workflow as `priorDecisions`, an object argument (→ `memory`, "Before a review");
+               to the review workflow as `priorDecisions`, an object argument, each with its `kind`
+               (→ `memory`, "Before a review");
                re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &
@@ -106,7 +107,8 @@ the project has; it prints `memory backend: …` once).
   It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
   the same finding (same file, overlapping title) in the review ledgers of at least two different
   branches of this project; the same branch reviewed twice is not a recurrence, another project's
-  runs never count. `--store <dir>` reads another store (default `~/.craft/runs`), `--project
+  runs never count, and only findings that were real do — a row rejected as wrong, a refuted one or a
+  dismissed one is left out (the `note` says so). `--store <dir>` reads another store (default `~/.craft/runs`), `--project
   <dir>` another checkout. Its `note` names every bound it reached (the newest 500 runs read, 20
   groups listed) — repeat that line, never present a cut list as whole.
   Show each group (file, titles, branches, when last seen) and **ask the author, per group**,

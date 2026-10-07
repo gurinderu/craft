@@ -16,8 +16,8 @@ adversarially verifies each one. This skill is the rubric the workflow and the `
 lens worker apply.
 
 **Before launching it**, recall the project's active decisions and open questions for the diff's
-paths and pass them as `priorDecisions` in the object argument, never a string (→ `memory`, "Before
-a review"): a finding the project already rejected comes back under **Rejected before** with who,
+paths and pass them as `priorDecisions` in the object argument, never a string, each record with
+its `kind` (→ `memory`, "Before a review"): a finding the project already rejected comes back under **Rejected before** with who,
 when and why, and one it deferred under **Known and deferred**, instead of being raised as new.
 
 ## When to Use

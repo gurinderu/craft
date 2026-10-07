@@ -141,9 +141,20 @@ function decisionText(v) {
 }
 
 /**
+ * A record's kind, lower-cased; a record without one is a `question` when its id carries the memory
+ * skill's `question-` prefix (id = `<kind>-<hash>`), a `decision` otherwise — a launcher that leaves
+ * `kind` out of a passed question must not turn its deferral into a rejection.
+ * @param {Record<string, unknown>} o @returns {string}
+ */
+function recordKind(o) {
+  if (o['kind'] != null) return decisionText(o['kind']).toLowerCase()
+  return /^question-/i.test(decisionText(o['id'])) ? 'question' : 'decision'
+}
+
+/**
  * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
  * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
- * http(s) URL in `links` for `link`. `kind` is `question` only when the record says so.
+ * http(s) URL in `links` for `link`. `kind` is `question` only when recordKind reads one.
  * @param {Record<string, unknown>} o @returns {PriorDecision}
  */
 function decisionFields(o) {
@@ -151,7 +162,7 @@ function decisionFields(o) {
   const f = (k, alt = '') => decisionText(o[k]) || decisionText(o[alt])
   const links = Array.isArray(o['links']) ? o['links'] : []
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
-  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: f('kind') === 'question' ? 'question' : 'decision' }
+  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision' }
 }
 
 /**
@@ -159,7 +170,7 @@ function decisionFields(o) {
  * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
  */
 function decisionProblem(o, d) {
-  if (o['kind'] != null && !PRIOR_RECORD_KINDS.includes(decisionText(o['kind']))) return ` is a ${JSON.stringify(o['kind'])} record, not a decision or a question`
+  if (!PRIOR_RECORD_KINDS.includes(recordKind(o))) return ` is a ${JSON.stringify(o['kind'])} record, not a decision or a question`
   if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
   if (!d.id || !d.title || !d.reason) return ' lacks an id, a title or a reason'
   const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof PriorDecision} */ (k)].length > max)
@@ -1591,6 +1602,16 @@ function priorKindLabel(d) {
   return d.kind === 'question' ? 'question' : 'decision'
 }
 
+/**
+ * Whether a record can set a finding aside at all: every decision does; a question only when it records
+ * a deferral — a commit, which addressing-findings writes for a deferred finding. A question without
+ * one (a needs-decision question) is context, not a deferral: its finding is raised normally, unlabelled.
+ * @param {PriorDecision} d
+ */
+function recordsDeferral(d) {
+  return d.kind !== 'question' || !!d.commit
+}
+
 /** The mark a set-aside finding carries. @param {PriorDecision} d */
 function priorDecisionMark(d) {
   const head = d.kind === 'question' ? 'KNOWN AND DEFERRED' : 'REJECTED BEFORE'
@@ -1653,15 +1674,18 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
  * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
  * the decisions whose commit the repo does not know, for the report's Prior decisions not applied.
  * @template {DecidableFinding} F
- * @param {Record<string, F[]>} tiers @param {PriorDecision[]} decisions
+ * @param {Record<string, F[]>} tiers @param {PriorDecision[]} given  questions without a commit are dropped (recordsDeferral)
  * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
  * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<SetAside<F>>, reraised: number, notes: string[], refused: string[] }>}
  */
-async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'why') {
+async function applyPriorDecisions(tiers, given, checkScopes, noteField = 'why') {
   /** @type {Array<SetAside<F>>} */
   let setAside = []
   /** @type {string[]} */
   const notes = []
+  const context = given.length - given.filter(recordsDeferral).length
+  if (context) notes.push(`${context} open question(s) record no commit, so no deferral — context only, set nothing aside`)
+  const decisions = given.filter(recordsDeferral)
   if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
   const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(Object.values(tiers).flat(), decisions), checkScopes, notes)
   const refused = toCheck.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`)
