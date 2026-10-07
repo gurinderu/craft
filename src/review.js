@@ -531,10 +531,11 @@ function skippedMemory(m, why) {
 }
 
 /**
- * The recalled records with the launcher's appended, one per id: a passed record whose id a READABLE
- * recalled record already holds is dropped — the recalled one is the store's current state. A malformed
- * recalled record claims no id, so the passed one stands and the reader refuses the recalled one by name
- * (realm @nick/craft, node #218). A record without an id is kept, for the reader to refuse by name.
+ * The recalled records with the launcher's appended, one per id: a passed record whose id a WELL-FORMED
+ * recalled record already holds is dropped — the recalled one is the store's current state, a status
+ * other than active included (it is then applied by neither copy). A malformed recalled record claims no
+ * id, so the passed one stands and the reader refuses the recalled one by name (realm @nick/craft, node
+ * #218). A record without an id is kept, for the reader to refuse by name.
  * `addedAt` is each added record's index in the passed list.
  * @template T @param {T[]} recalled @param {T[]} passed @param {(x: T) => boolean} [readable]
  * @returns {{ merged: T[], addedAt: number[] }}
@@ -575,15 +576,17 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
 }
 
 /**
- * The recall's records merged with the launcher's list (mergeById, a recalled record readable by
- * `parse` kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
+ * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
+ * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
  * what a launching audit forwards as `_memoryParts`, so it adds up to the list.
  * @template {{ id: string, kind?: string }} D
  * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse
  * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number } }}
  */
 function mergeAndRead(recalled, passed, parse) {
-  const { merged, addedAt } = mergeById(recalled, passed, x => parse([x]).decisions.length > 0)
+  /** @param {unknown} x */
+  const wellFormed = x => parse([x && typeof x === 'object' && !Array.isArray(x) ? { ...x, status: null } : x]).decisions.length > 0
+  const { merged, addedAt } = mergeById(recalled, passed, wellFormed)
   return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt) }
 }
 
