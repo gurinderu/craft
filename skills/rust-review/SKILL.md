@@ -12,6 +12,11 @@ The rubric for reviewing Rust changes: run the mechanical gate first, then read 
 depth to the diff, fans out the lenses below, grounds findings in tool output, and adversarially
 verifies each one. This skill is the rubric the workflow and the `rust-reviewer` lens worker apply.
 
+**Before launching it**, recall the project's active decisions for the diff's paths and pass them
+as `priorDecisions` in the object argument, never a string (→ `memory`, "Before a review"): a
+finding the project already rejected comes back under **Rejected before** with who, when and why,
+instead of being raised as new.
+
 ## When to Use
 
 - Reviewing a diff / PR of Rust code

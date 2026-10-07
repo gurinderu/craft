@@ -7,11 +7,14 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 
 - **Its own instructions first.** When the server ships a skill, a prompt or tool descriptions
   saying how to write (which item type, which fields, which modes, where to anchor), follow them
-  and hand it the record's content — title, body, scope, kind, links. Do not force the fields
+  and hand it the record's content — title, body, scope, kind, author, commit, links. Do not force the fields
   below onto a store that has its own discipline.
 - **Without instructions**, the plain mapping: one item per record; the item's name = `title`;
-  its text = `body`; `kind`, `scope`, `status`, `id` as tags, attributes or observations,
+  its text = `body`; `kind`, `scope`, `status`, `id`, `author`, `commit` as tags, attributes or observations,
   whichever the tool accepts; `links` as relations when the tool has them, else as text.
+- **Recall returns the record shape**: whatever the server stores, a recalled record handed on
+  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `author`
+  and `commit` included when the item carries them.
 - **Search, don't list**: `recall` calls the server's search with the topic keywords and the scope,
   then filters the hits by `scope` and `status` — never a full listing.
 - **Supersede** by the server's own means (a status field, a supersede relation, a mode); if it has
@@ -33,6 +36,8 @@ The directory is the one the harness names in the session's instructions (in Cla
     craft_kind: decision
     craft_scope: src/parse.rs
     craft_status: active
+    craft_author: alice
+    craft_commit: 33d0240d4fe0
     modified: 2026-10-06
   ---
 
@@ -48,6 +53,10 @@ The directory is the one the harness names in the session's instructions (in Cla
   files stay, `craft_status` updated) so the always-loaded index carries only live facts.
 - **Recall**: the index is already in context — match scope and keywords there, then read only
   the matching files; for history, `grep -l "craft_scope: <path>"` over the directory.
+  Handed on (a subagent's brief, a review's `priorDecisions`) as the SKILL.md shape: `name` → `id`,
+  `craft_kind` → `kind`, the title from `description` without its `<kind>: ` prefix, `craft_scope`
+  → `scope`, `craft_status` → `status`, `modified` → `date`, `craft_author` → `author`,
+  `craft_commit` → `commit`, the body, and the `Links:` lines → `links`.
 - **Refused write** (a `PreToolUse` guard exiting non-zero, a permission denial, an index line or
   instruction saying "do not write here") → the backend is unavailable: do not retry, do not route
   around the guard; go to the next rule.
@@ -64,6 +73,8 @@ title: <title>
 scope: src/parse.rs
 status: active
 date: 2026-10-06
+author: alice
+commit: 33d0240d4fe0
 links:
   - https://github.com/org/repo/pull/42
 ---

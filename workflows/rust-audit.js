@@ -1,7 +1,7 @@
 export const meta = {
   name: 'rust-audit',
   description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository).',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews; {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository).',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
@@ -18,7 +18,7 @@ export const meta = {
 // through every `typeof args === 'object'` guard, so every option reverted to its default and the
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
-// >>> craft-inline lib/workflow-args.mjs applyOption parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
+// >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
 // One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
 // name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
 // module-level helper is copied into the engines' inlined regions only when it is, and the fence's
@@ -56,6 +56,10 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
+// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
+// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
+const OBJECT_ONLY_OPTIONS = ['priorDecisions']
+
 // Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
 // A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
@@ -63,7 +67,7 @@ function applyOption(m, out, ignored) {
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
- * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
@@ -79,12 +83,16 @@ function parseOptions(text) {
     // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
+    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
+    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
+    const key = String(m[2] ?? m[7])
+    if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
     pairs += applyOption(m, out, ignored)
   }
   const tail = text.slice(cursor).trim()
   if (tail) ignored.push(...tail.split(/\s+/))
-  return { options: out, pairs, ignored }
+  return { options: out, pairs, ignored, cut: '' }
 }
 
 // normalizeArgs' branch for a string that starts with `{`.
@@ -115,7 +123,8 @@ function normalizeJsonArgs(text, warn) {
  * @returns {Record<string, unknown>}
  */
 function normalizeKeyValueArgs(text, warn) {
-  const { options, pairs, ignored } = parseOptions(text)
+  const { options, pairs, ignored, cut } = parseOptions(text)
+  if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
     // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
     // and testing "is any value not true" threw away every string made only of boolean options —
@@ -173,6 +182,14 @@ const runMutants = !!A['mutants']
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
+// What every nested review inherits from this run: craftRoot (the logger's home) and the project's
+// recalled prior decisions, handed through as given — the review engine reads and checks them.
+function nestedReviewArgs() {
+  return {
+    ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
+    ...(A['priorDecisions'] != null ? { priorDecisions: A['priorDecisions'] } : {}),
+  }
+}
 
 const CRATE_ITEM = {
   type: 'object',
@@ -285,7 +302,7 @@ const UNUSED_VERDICT_SCHEMA = {
  * @typedef {{ candidates: number, confirmed: number, refuted: number, died: number, judged: number,
  *   refuteRate: number | null }} VerificationStats
  * @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence?: string,
- *   _verification?: VerificationStats }} DimResult
+ *   _verification?: VerificationStats, _priorDecisions?: string }} DimResult
  */
 
 // The craft release that produced a run. Recorded on the run record and index line so an
@@ -1419,13 +1436,51 @@ function reviewResult(dimension, report) {
   // NOT found and holds only over what was actually looked at. Anything unreadable is Warning.
   const verdict = reviewVerdict(line, incomplete)
   const summary = reviewSummary(line, verdict, incomplete)
+  const kept = liftPriorDecisionSections(String(report || 'no report'))
   return {
     dimension,
     verdict,
     summary,
-    findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
+    findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: kept.rest.slice(0, 4000) }],
+    ...(kept.lifted ? { _priorDecisions: kept.lifted } : {}),
   }
 }
+
+// The nested reviews' prior-decision sections, lifted before the bound in reviewResult and appended
+// whole to the audit — they sit at the report's tail, where the bound cuts.
+// >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISION_HEADINGS liftPriorDecisionSections nestedPriorDecisionsSection
+const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Prior decisions not applied']
+
+/**
+ * The report without its prior-decision sections, and those sections, each from its heading to the
+ * next `## ` heading or the end.
+ * @param {string} report @returns {{ rest: string, lifted: string }}
+ */
+function liftPriorDecisionSections(report) {
+  const lines = report.split('\n')
+  /** @type {string[]} */
+  const rest = []
+  /** @type {string[]} */
+  const lifted = []
+  let inside = false
+  for (const line of lines) {
+    if (line.startsWith('## ')) inside = PRIOR_DECISION_HEADINGS.includes(line.trim())
+    ;(inside ? lifted : rest).push(line)
+  }
+  return { rest: rest.join('\n'), lifted: lifted.join('\n').trim() }
+}
+
+/**
+ * The outer report's section carrying every nested review's lifted text under its dimension; '' when
+ * none had any.
+ * @param {Array<{ dimension: string, text: string }>} lifted @returns {string}
+ */
+function nestedPriorDecisionsSection(lifted) {
+  const given = lifted.filter(l => l.text)
+  if (!given.length) return ''
+  return `\n\n## Prior decisions in the nested reviews (verbatim)\n${given.map(l => `### ${l.dimension}\n${l.text}`).join('\n\n')}\n`
+}
+// <<< craft-inline
 
 // The nested review launches below resolve the child under whichever name this registry carries —
 // the fence's own comment states the rule and the fallback's single trigger.
@@ -1559,7 +1614,7 @@ function pushReviewDims() {
         continue
       }
       tasks.push(() => dispatchDim(`review:${c.name}`,
-        nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+        nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
           // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
           // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
           // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
@@ -1577,8 +1632,8 @@ function pushReviewDims() {
     // Without craftRoot the child resolves its logger from CLAUDE_PLUGIN_ROOT alone and, in a checkout
     // launch, cannot log at all — every nested record lost while the parent's lands.
     tasks.push(() => dispatchDim('review',
-      nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }
-                                                  : { languages: ['rust'], _via: 'rust-audit', ...(craftRootArg ? { craftRoot: craftRootArg } : {}) }, log)
+      nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }
+                                                  : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
         // As at the per-crate site: report==null is a dead nested engine — resolve to null before
         // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
         .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); return reviewResult('review', report) }),
@@ -1856,5 +1911,5 @@ await logRun(auditRecord)
 // telemetry marker is also empty, so nothing at all says the synthesis died.
 // Without a schema a live agent returns its final text, so anything but a non-blank string is a death:
 // a whitespace-only answer is no report either (realm @nick/craft, #136).
-if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
-return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}`
+if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}`
