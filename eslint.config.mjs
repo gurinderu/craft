@@ -9,8 +9,8 @@ import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 // Lint scope: the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, knip.config.js and
 // .dependency-cruiser.mjs (both decide what a gate sees; tsc checks their JSDoc types — a test imports the
 // first, lib/tsconfig.json names the second, which a wildcard would skip as a dot-file).
-//   - workflows/*.js are NOT linted as files and cannot be: they carry top-level export + await + return
-//     and only parse inside the Workflow sandbox wrapper — the same reason `node --check` cannot
+//   - the engines (src/*.js, generated into workflows/*.js) are NOT linted as files and cannot be: they
+//     carry top-level export + await + return and only parse inside the Workflow sandbox wrapper — the same reason `node --check` cannot
 //     read them. `node lib/check-workflows.mjs` compiles them, and `npm run check:types:workflows`
 //     type-checks them wrapped as the sandbox runs them; those are their gates.
 //   - opencode/plugin/*.ts are type-checked by `npm run check:types` (tsc, opencode/plugin/tsconfig.json);
@@ -46,6 +46,7 @@ export default [
     ignores: [
       '**/node_modules/**',
       'workflows/**',
+      'src/**',
       'opencode/plugin/node_modules/**',
       // Stryker's leftovers (gitignored): a run that ends red leaves its per-worker setup files in the root,
       // and its in-place backup of lib/ sits in .stryker-tmp/ — neither is source, both trip a wider lint.

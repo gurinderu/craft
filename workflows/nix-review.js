@@ -5,13 +5,6 @@ export const meta = {
   phases: [{ title: 'Review', detail: 'delegates to the review engine pinned to the nix profile' }],
 }
 
-// ---- args ----
-// The thin pin normalizes too, and it MUST: it hands the child a real object, so a string arg
-// dropped here reaches `review` as a valid-looking shape that its own normalizer cannot warn about.
-// A caller typing `base=v0.17.0` would get a confident verdict over the working tree with no line
-// anywhere saying the base was gone — the exact failure this shared parser exists to end, surviving
-// in the two engines the record-filing roster does not name.
-// >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
 /**
  * @param {RegExpExecArray} m
  * @param {Record<string, unknown>} out
@@ -127,11 +120,7 @@ function normalizeArgs(args, warn = () => {}) {
   if (text.startsWith('{')) return normalizeJsonArgs(text, warn)
   return normalizeKeyValueArgs(text, warn)
 }
-// <<< craft-inline
 
-// The delegation resolves the child under whichever name this registry carries — the fence's own
-// comment states the rule and the fallback's single trigger.
-// >>> craft-inline lib/nested-workflow.mjs nestedWorkflow
 /**
  * @param {(name: string, args: unknown) => Promise<unknown>} workflow
  * @param {string} name
@@ -159,8 +148,5 @@ async function nestedWorkflow(workflow, name, args, warn = () => {}) {
     }
   }
 }
-// <<< craft-inline
 
-// Thin pin over the generic engine (review.js holds the engine + PROFILES registry). Invoked only as
-// a root (humans/agents), so it never nests (workflow() nesting is one level only).
 return await nestedWorkflow(workflow, 'review', { ...normalizeArgs(args, log), languages: ['nix'] }, log)

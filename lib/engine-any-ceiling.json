@@ -1,8 +1,8 @@
 {
-  "workflows/adversarial-review.js": 0,
-  "workflows/nix-review.js": 0,
-  "workflows/review.js": 0,
-  "workflows/rust-audit.js": 0,
-  "workflows/rust-review.js": 0,
-  "workflows/triage-findings.js": 0
+  "src/adversarial-review.js": 0,
+  "src/nix-review.js": 0,
+  "src/review.js": 0,
+  "src/rust-audit.js": 0,
+  "src/rust-review.js": 0,
+  "src/triage-findings.js": 0
 }

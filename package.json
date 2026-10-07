@@ -7,6 +7,8 @@
     "test": "vitest run",
     "gate": "node lib/gate.mjs",
     "lint": "eslint lib opencode/plugin knip.config.js .dependency-cruiser.mjs --max-warnings 0",
+    "build:engines": "node lib/build-engines.mjs",
+    "check:engines": "node lib/build-engines.mjs --check",
     "check:workflows": "node lib/check-workflows.mjs",
     "check:workflow-size": "node lib/check-workflow-size.mjs",
     "check:skills": "node lib/check-skills.mjs",

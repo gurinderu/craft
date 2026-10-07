@@ -9,6 +9,17 @@ export const meta = {
   ],
 }
 
+// Locator args (not payload): pr (GitHub PR number), report (path to a rust-audit report or saved
+// verdict), base (ref to pin validation against), priorLedger (array of prior {stable_id, verdict,
+// reason} for idempotent re-runs). At least one of pr/report must be given.
+// `args` may arrive as a parsed object or as a JSON string depending on the harness — normalize.
+// ---- args ----
+// Three plausible spellings arrive here — a real object, a JSON string, and the `key=value` form the
+// skill's own invocation line advertises — and only the first used to work. The other two fell
+// through every `typeof args === 'object'` guard, so every option reverted to its default and the
+// run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
+// nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
+// >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
 /**
  * @param {RegExpExecArray} m
  * @param {Record<string, unknown>} out
@@ -124,8 +135,12 @@ function normalizeArgs(args, warn = () => {}) {
   if (text.startsWith('{')) return normalizeJsonArgs(text, warn)
   return normalizeKeyValueArgs(text, warn)
 }
+// <<< craft-inline
 const A = normalizeArgs(args, log)
 
+// One arg path, not two. The second one used to re-parse the raw string after normalizeArgs had
+// already refused it, so a value reported as "ALL options ignored" was quietly reinstated a line
+// later — a loud drop undone in silence, which is worse than either behaviour alone.
 const argv = A
 
 /** A text argument: its string form when given (truthy), else ''. @param {string} key @returns {string} */
@@ -138,6 +153,11 @@ const report = textArg('report')
 const base = textArg('base')
 /** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
+// Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
+// this engine has no `repo` argument (see the refusal above) and always triages the checkout the
+// session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
+// set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
+// against the triaged repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
 
 const RAW_SCHEMA = {
@@ -202,16 +222,26 @@ const PLAN_SCHEMA = {
   },
 }
 
+// The shapes the three schemas above promise. `agent()` returns them only when it ran: a skipped
+// or dead agent yields `null`, so every call site casts to `T | null` and handles the null.
 /** @typedef {{ severity: string, title: string, location: string, detail: string, proposed_fix: string, thread_id: string }} RawFinding */
 /** @typedef {{ source: string, findings: RawFinding[] }} RawResult */
 /** @typedef {RawFinding & { source: string }} SourcedFinding */
 /** @typedef {{ stable_id: string, verdict: string, reason: string, fix_pointer: string, premise_checked: string }} Validation */
 /** @typedef {{ stable_id: string, verdict: string, reason: string }} LedgerEntry */
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
+// What this script adds to the plan before returning it — not part of PLAN_SCHEMA.
 /** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[] }} TriagePlan */
 
+// The craft release that produced a run. Recorded on the run record and index line so an
+// aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
+// has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
+// fails the build if it drifts. Kept OUTSIDE the craft-inline fence below, whose contents are
+// byte-compared against lib/run-record.mjs.
 const CRAFT_VERSION = '0.23.1' // x-release-please-version
 
+// ---- run-record helpers (VERBATIM mirror of lib/run-record.mjs — the sandbox can't import; keep in sync) ----
+// >>> craft-inline lib/run-record.mjs SEVERITIES countBySeverity summarizeFindings tallyVerdicts repoRefusal
 /** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
 
@@ -269,6 +299,11 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
     ].join('\n'),
   }
 }
+// <<< craft-inline
+// ---- the one write path (shared with every other record-filing engine) ----
+// The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
+// does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -448,6 +483,9 @@ function telemetryLossNoter(lost, say) {
     say(landed ? `⚠️ telemetry: ${why}` : `⚠️ telemetry lost: ${what} — ${why}`)
   }
 }
+// <<< craft-inline
+// The banner that leads the plan when a write did not land — the same one review.js uses.
+// >>> craft-inline lib/review-coverage.mjs telemetryLostSection
 /** @param {unknown} lost */
 function telemetryLostSection(lost) {
   const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
@@ -465,19 +503,36 @@ function telemetryLostSection(lost) {
     ``,
   ].join('\n')
 }
+// <<< craft-inline
 
+// A lost record NEVER fails the triage: killing it over a bookkeeping write would teach everyone to
+// ignore the very marker this exists to raise. It is reported instead, at the head of the plan a
+// human actually reads — an empty store is otherwise indistinguishable from "never run".
 /** @type {string[]} */
 const telemetryLost = []
+// The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note.
 const logRun = makeRunLogger({
   call: quietly(agent), phase: 'Plan', target: () => ({ craftRoot: craftRootArg }),
   noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 
+// ---- Gather --------------------------------------------------------------
+// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
+// session sits. Accepting it silently is the failure this family exists to end — the caller names
+// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
+// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
+// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
+// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
+// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
+// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
+// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
+// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
 if (A['repo']) {
   const refused = repoRefusal({ engine: 'triage-findings', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
   await logRun(refused.record)
   return refused.report
 }
+
 
 phase('Gather')
 if (!pr && !report) {
@@ -520,8 +575,10 @@ const gathered = gatherResults.filter(g => !!g)
 const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)
 
+// stable composite id; reused for dedup, ledger, and idempotent re-runs
 /** @param {SourcedFinding} f */
 const idOf = f => `${f.source}::${f.location || 'no-loc'}::${f.title}`
+// The prior ledger arrives in args, so an entry is read only as far as it is an object, its fields as text.
 /** @param {unknown[]} entries @returns {Map<string, LedgerEntry>} */
 function ledgerById(entries) {
   /** @type {Map<string, LedgerEntry>} */
@@ -535,11 +592,15 @@ function ledgerById(entries) {
 }
 const priorById = ledgerById(priorLedger)
 
+// ---- Validate ------------------------------------------------------------
 phase('Validate')
 const pin = base
   ? `Validate against ref \`${base}\` (the ref the findings were generated against), not the live working tree.`
   : 'Validate against the currently checked-out tree.'
 
+// The sentinel that marks a `needs-decision` nothing actually judged. It rides in the ledger entry's
+// `reason` (a carry-forward prefixes that reason, so `includes` is the test, not equality) and it
+// is what keeps such an entry OUT of the carry-forward set on the next run.
 const UNJUDGED_MARKER = 'NOT JUDGED'
 
 /** @type {string[]} */
@@ -548,8 +609,20 @@ const deadValidations = []
 function validateOne(f) {
   const id = idOf(f)
   const prior = priorById.get(id)
+  // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
+  // re-validated (the code may have changed since); `conflict` is a cross-finding judgement, so it
+  // is re-derived fresh in the Plan phase rather than carried as a stale solo verdict.
+  // ...but a finding whose validator DIED is not settled — nothing judged it. Its stand-in verdict
+  // is `needs-decision` (the vocabulary downstream already understands), so without this it would
+  // be carried forward as settled on the next run: no agent re-opens it, `deadValidations` stays
+  // empty, and run two emits no INCOMPLETE banner and no notRun entry over a finding no agent ever
+  // read. The marker in the reason is what distinguishes it — a fifth verdict would have to be
+  // taught to VALIDATION_SCHEMA, PLAN_SCHEMA, the plan prompt and tallyVerdicts, all of which
+  // enumerate the four, and a ledger entry the tally does not know is silently uncounted.
   const neverJudged = prior && String(prior.reason || '').includes(UNJUDGED_MARKER)
   if (prior && !neverJudged && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
+    // Carried verdicts skip the agent, so they carry no fresh premise check — say so rather than
+    // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
   }
   return /** @type {Promise<Validation | null>} */ (agent(
@@ -574,6 +647,10 @@ stable_id MUST be exactly: ${id}
 Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     { label: `validate:${(f.location || f.title).slice(0, 40)}`, phase: 'Validate', schema: VALIDATION_SCHEMA },
   )).then(v => {
+    // A dead validator used to be dropped by `filter(Boolean)`, which removed the finding from the
+    // plan AND from the ledger: a Critical whose judge died did not appear as unjudged, it appeared
+    // as nothing. It is unjudged, so it becomes the verdict that already means "a human must look
+    // at this" — the one downstream vocabulary (carry-forward, prompt, ledger) already understands.
     if (v) return v
     deadValidations.push(id)
     return { stable_id: id, verdict: 'needs-decision', reason: `${UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code`, fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
@@ -585,7 +662,9 @@ const accepted = validations.filter(v => v.verdict === 'accept')
 log(`Validated ${validations.length}: ${accepted.length} accept, ${validations.length - accepted.length} other.`)
 if (deadValidations.length) log(`WARNING: ${deadValidations.length} validator(s) died -> carried as needs-decision (unjudged), not dropped.`)
 
+// ---- Plan ----------------------------------------------------------------
 phase('Plan')
+// Re-attach each accepted validation's raw finding so the planner has location/detail.
 const rawById = new Map(raw.map(f => [idOf(f), f]))
 const acceptedEnriched = accepted.map(v => ({ ...v, finding: rawById.get(v.stable_id) || null }))
 
@@ -606,12 +685,22 @@ ${JSON.stringify(validations, null, 2)}`,
   { label: 'plan', phase: 'Plan', schema: PLAN_SCHEMA },
 ))
 
+// ---- Observability: persist a run record (best-effort) -------------------
+// Prefer the plan's ledger (it carries the cross-finding `conflict` disposition); fall back to the
+// solo validations when the Plan phase produced nothing.
 /**
  * The ledger the record tallies, set back on the plan when the marker had to be re-injected.
  * @param {TriagePlan | null} plan @returns {LedgerEntry[]}
  */
 function finalLedger(plan) {
   if (!plan || !Array.isArray(plan.ledger)) return validations
+  // The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
+  // summarising model paraphrases a one-line free-text reason as a matter of course, and the marker
+  // is the ONLY thing that tells the next run this finding was never judged: lose it and the finding
+  // reads as settled forever — exactly the bug this marker exists to prevent, returning silently on
+  // run three. So the script re-injects it deterministically. `validations` is the local record of
+  // what each finding's verdict actually was, so a marked reason is restored (and a dropped entry
+  // re-added) regardless of what the agent returned. The prompt instruction stays as belt and braces.
   const unjudged = new Map(validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER)).map(v => [v.stable_id, v]))
   if (!unjudged.size) return plan.ledger
   /** @type {Set<string>} */
@@ -639,6 +728,10 @@ await logRun({
   via: null,
   sources: gathered.map(g => ({ source: g.source, count: Array.isArray(g.findings) ? g.findings.length : 0 })),
   triage: { gathered: raw.length, validated: validations.length, ...tallyVerdicts(ledger) },
+  // Bare, aggregatable labels — NOT the human sentences below. `lib/analyze-runs.mjs` ranks
+  // `notRun` by exact string to surface fragility that REPEATS across runs, and a note embedding a
+  // count ("3 finding(s) were never judged") is unique per run: it fills the ranking with count-1
+  // rows and sinks the real repeats. The sentences belong to the banner, which a person reads once.
   notRun: notRunSources.map(src => `gather:${src}`)
     .concat(deadValidations.length ? ['findings-unjudged'] : []),
 })
@@ -647,6 +740,9 @@ if (!plan) return `${telemetryLostSection(telemetryLost)}Triage failed: the Plan
 
 /** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} plan @returns {TriagePlan} */
 function bannered(plan) {
+  // What did not run has to reach the READER of the plan, not just the run record. A dead `gather:pr`
+  // agent means the plan covers fewer sources than were asked for, and a plan that says nothing about
+  // it is indistinguishable from one that covered everything.
   const incomplete = notRunSources.map(src => `source \`${src}\` produced nothing — its findings are NOT in this plan`)
     .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan`] : [])
   if (incomplete.length) {
@@ -655,6 +751,8 @@ function bannered(plan) {
     plan.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${plan.summary ?? ''}`
     plan.notRun = incomplete
   }
+  // A write that did not land leads the plan: a reader about to look this triage up in the store has
+  // to learn here that it may not be there.
   const lostBanner = telemetryLostSection(telemetryLost)
   if (lostBanner) {
     plan.plan_markdown = `${lostBanner}${plan.plan_markdown ?? ''}`
