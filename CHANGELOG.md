@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.0](https://github.com/gurinderu/craft/compare/v0.23.1...v0.24.0) (2026-10-07)
+
+
+### Features
+
+* **memory:** deferred findings become open questions; lessons offered from recurring findings ([#162](https://github.com/gurinderu/craft/issues/162)) ([7ba1452](https://github.com/gurinderu/craft/commit/7ba145249acbfe4d034c3ee71db9823aa4e2da0b))
+* **review:** review engines recall remembered decisions themselves on any launch ([#158](https://github.com/gurinderu/craft/issues/158)) ([ec8f602](https://github.com/gurinderu/craft/commit/ec8f602178c806b0e4b61db2879e09b57d397935))
+
 ## [0.23.1](https://github.com/gurinderu/craft/compare/v0.23.0...v0.23.1) (2026-10-07)
 
 
