@@ -29,8 +29,8 @@ harness keys project memory by the repository's **main checkout**, never a workt
 subdirectory (a worktree session gets its own `~/.claude/projects/` entry, but without
 `memory/`). The root is `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`
 (the same from any worktree or subdirectory), `pwd` only outside a git repo; the slug is that
-root with every character that is not an ASCII letter or digit replaced by `-` (observed:
-`/home/ubuntu/projects/my/craft` → `-home-ubuntu-projects-my-craft`). This is an observed
+root with every character that is not an ASCII letter or digit replaced by `-` (for example
+`/home/alice/src/app` → `-home-alice-src-app`). This is an observed
 convention, not a documented one: `~/.claude/projects/<slug>/memory/` must exist; if it does
 not, say `none — harness memory directory <path>/memory not found` and never guess a near
 match. Use the harness's format, not a craft one:

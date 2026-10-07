@@ -369,7 +369,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail readMemoryRecall initialMemory acceptedMemory memoryLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail readMemoryRecall initialMemory skippedMemory launcherRecallMemory acceptedMemory memoryLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -404,7 +404,7 @@ function memoryRecallPrompt(paths, base) {
   return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
 1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
-2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (observed: \`/home/ubuntu/projects/my/craft\` → \`-home-ubuntu-projects-my-craft\`) — an observed convention (realm @nick/craft, node #209); \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
 Return {backend, why, decisions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); stale is [] when none.`
@@ -453,6 +453,25 @@ function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
 }
 
 /**
+ * The source at an exit that ends the run before its recall step: not yet recalled → why it never will be.
+ * @param {MemorySource} m @param {string} why @returns {MemorySource}
+ */
+function skippedMemory(m, why) {
+  return m.source === 'none' ? { ...m, why: `not recalled — ${why}` } : m
+}
+
+/**
+ * An empty list a launching audit forwarded after its own recall found none (or died), with that
+ * outcome as `note` (the `_memory` argument): named as the audit's recall, so the nested report does
+ * not read "passed by the launcher (0)" beside the audit's "none — <why>". Anything else is left as it is.
+ * @param {MemorySource} m @param {string} note @returns {MemorySource}
+ */
+function launcherRecallMemory(m, note) {
+  const why = recallText(note)
+  return why && m.source === 'passed' && m.count === 0 ? { ...m, why: `recalled by the launching audit — none (${why})` } : m
+}
+
+/**
  * A recalled source once parsePriorDecisions read its list: the count is the records it accepted; the
  * refused are named in their own section. @param {MemorySource} m @param {number} accepted @returns {MemorySource}
  */
@@ -465,7 +484,7 @@ function acceptedMemory(m, accepted) {
  * the count is what recall returned, not what was accepted @returns {string}
  */
 function memoryLine(m, forwarded = false) {
-  if (m.source === 'passed') return `memory: passed by the launcher (${m.count})`
+  if (m.source === 'passed') return m.why === 'passed by the launcher' ? `memory: passed by the launcher (${m.count})` : `memory: ${m.why}`
   if (m.source !== 'recalled') return `memory: none — ${m.why}`
   return forwarded
     ? `memory: returned ${m.count} decision(s) from ${m.why}; each nested review reports how many it applied`
@@ -751,8 +770,9 @@ const strict = !!A['strict']   // harsh maintainability mode: confirmed maintain
 // The project's recorded rejections, passed by the launcher. Absent → this engine recalls them itself
 // once the diff's paths are known (recallMemory). Malformed → nothing of it applied, and every report says what was refused.
 let priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
-// Where the decisions came from; every report names it.
-let memory = initialMemory(A['priorDecisions'], priorDecisionsIn.decisions.length)
+// Where the decisions came from; every report names it. `_memory` is set by a parent workflow
+// (rust-audit) that recalled once and found none: the empty list it passes is named as that outcome.
+let memory = launcherRecallMemory(initialMemory(A['priorDecisions'], priorDecisionsIn.decisions.length), argString('_memory'))
 for (const r of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${r}`)
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
@@ -3840,17 +3860,6 @@ function detectedChange(detected) {
 }
 const { baseRef, changedFiles, spec, branch, head } = detectedChange(detected)
 
-// No priorDecisions passed: ONE read-only agent recalls them through the craft:memory skill for the
-// diff's paths (realm @nick/craft, node #203); its answer is parsed like a passed list.
-async function recallMemory() {
-  if (memory.source !== 'none' || !changedFiles.length) return
-  const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
-  priorDecisionsIn = parsePriorDecisions(r.decisions)
-  memory = acceptedMemory(r.memory, priorDecisionsIn.decisions.length)
-  for (const x of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${x}`)
-}
-await recallMemory()
-
 // Round detection: find the newest prior `review` run for this branch, and accept it as the prior
 // round ONLY if its head is an ANCESTOR of the current HEAD (a rebase/force-push makes a stale run
 // non-ancestor → treat as a fresh first review). `fresh` skips the whole mechanism.
@@ -4132,6 +4141,8 @@ const coverage = resolveCoverage({ profiles: PROFILES, changedFiles, detectedAct
 const active = coverage.active
 // The coverage decision's early exits: an empty diff, nothing reviewable, or no profile for what changed.
 async function coverageExit() {
+  if (coverage.outcome === 'no-profile') memory = skippedMemory(memory, 'no language profile for the changed files')
+  else if (coverage.outcome !== 'review') memory = skippedMemory(memory, 'nothing to review')
   if (coverage.outcome === 'empty') return emptyDiffExit()
   if (coverage.outcome === 'nothing-to-review') return nothingToReviewExit()
   if (coverage.outcome === 'no-profile') return noProfileExit()
@@ -4180,6 +4191,17 @@ async function noProfileExit() {
 // An unknown language pin first: it stops the run before any profile is activated.
 const languageStop = unknownLangs.length ? await unknownPinExit() : await coverageExit()
 if (languageStop !== null) return languageStop
+// No priorDecisions passed: ONE read-only agent recalls them through the craft:memory skill for the
+// diff's paths (realm @nick/craft, node #203); its answer is parsed like a passed list. After the
+// coverage exits: a diff with nothing to review or no profile spends no recall agent.
+async function recallMemory() {
+  if (memory.source !== 'none' || !changedFiles.length) return
+  const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
+  priorDecisionsIn = parsePriorDecisions(r.decisions)
+  memory = acceptedMemory(r.memory, priorDecisionsIn.decisions.length)
+  for (const x of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${x}`)
+}
+await recallMemory()
 function logActiveProfiles() {
   log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 }
