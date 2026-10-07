@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, and the report names the source (an empty list skips the recall). To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -308,8 +308,8 @@ const PRIOR_DECISIONS_MAX = 100
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
- * The `priorDecisions` argument, checked. Absent → nothing, silently: that is every run before this
- * existed. Anything else that is not a list of decisions → nothing applied, each problem named.
+ * The `priorDecisions` argument, checked. Absent → nothing applied, no refusal (the engine recalls instead:
+ * lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
@@ -367,6 +367,151 @@ function reraisedBySeverity(sev) {
 function priorDecisionsRefusedSection(refused) {
   if (!refused.length) return ''
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
+}
+// <<< craft-inline
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail readMemoryRecall initialMemory skippedMemory launcherRecallMemory acceptedMemory memoryLine memorySection recallDecisions
+const RECALL_PATHS_MAX = 60
+
+const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
+
+const MEMORY_RECALL_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['backend', 'why', 'decisions'],
+  properties: {
+    backend: { type: 'string', description: 'the memory backend recall used, or none' },
+    why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
+    decisions: {
+      type: 'array', description: 'the matching active decision records, verbatim',
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
+    },
+    stale: {
+      type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
+      items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } } },
+    },
+  },
+}
+
+/**
+ * The recall agent's prompt: the skill first, its backend order when the skill is unavailable.
+ * @param {string[]} paths the diff's changed paths; none → the agent lists them from the base
+ * @param {string} base @returns {string}
+ */
+function memoryRecallPrompt(paths, base) {
+  const listed = paths.slice(0, RECALL_PATHS_MAX)
+  const cut = paths.length - listed.length
+  const scope = listed.length
+    ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
+    : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
+  return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
+Scope: ${scope}
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
+4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
+Return {backend, why, decisions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); stale is [] when none.`
+}
+
+/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string }} MemorySource */
+/** @param {unknown} v @returns {string} */
+const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
+
+/** The stale decisions the agent left out, as one line's tail. @param {unknown} list @returns {string} */
+function staleTail(list) {
+  const named = (Array.isArray(list) ? list : []).flatMap(x => {
+    const r = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' ? x : {})
+    const id = recallText(r['id'])
+    return id ? [`${id} (${recallText(r['why']) || 'no reason given'})`] : []
+  })
+  return named.length ? `; stale, left out: ${named.join(', ')}` : ''
+}
+
+/**
+ * What the recall agent returned, read: the decisions to hand to parsePriorDecisions (a list, possibly
+ * empty) and the source to report. A dead or off-shape answer applies nothing and is named.
+ * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
+ */
+function readMemoryRecall(raw, cut) {
+  const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
+  const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
+  const list = r['decisions']
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  const backend = recallText(r['backend']) || 'an unnamed backend'
+  const why = recallText(r['why']) || 'no reason given'
+  const stale = staleTail(r['stale'])
+  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${stale}${tail}` } }
+}
+
+/**
+ * The source before any recall: passed by the launcher (any value, an empty list included), or not yet recalled.
+ * @param {unknown} raw the priorDecisions argument @param {number} [count] the decisions accepted; the list length by default
+ * @returns {MemorySource}
+ */
+function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
+  return raw == null || raw === ''
+    ? { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
+    : { source: 'passed', count, why: 'passed by the launcher' }
+}
+
+/**
+ * The source at an exit that ends the run before its recall step: not yet recalled → why it never will be.
+ * @param {MemorySource} m @param {string} why @returns {MemorySource}
+ */
+function skippedMemory(m, why) {
+  return m.source === 'none' ? { ...m, why: `not recalled — ${why}` } : m
+}
+
+/**
+ * An empty list a launching audit forwarded after its own recall found none (or died), with that
+ * outcome as `note` (the `_memory` argument): named as the audit's recall, so the nested report does
+ * not read "passed by the launcher (0)" beside the audit's "none — <why>". Anything else is left as it is.
+ * @param {MemorySource} m @param {string} note @returns {MemorySource}
+ */
+function launcherRecallMemory(m, note) {
+  const why = recallText(note)
+  return why && m.source === 'passed' && m.count === 0 ? { ...m, why: `recalled by the launching audit — none (${why})` } : m
+}
+
+/**
+ * A recalled source once parsePriorDecisions read its list: the count is the records it accepted; the
+ * refused are named in their own section. @param {MemorySource} m @param {number} accepted @returns {MemorySource}
+ */
+function acceptedMemory(m, accepted) {
+  return m.source === 'recalled' ? { ...m, count: accepted } : m
+}
+
+/**
+ * @param {MemorySource} m @param {boolean} [forwarded] the list went unparsed to nested reviews (rust-audit):
+ * the count is what recall returned, not what was accepted @returns {string}
+ */
+function memoryLine(m, forwarded = false) {
+  if (m.source === 'passed') return m.why === 'passed by the launcher' ? `memory: passed by the launcher (${m.count})` : `memory: ${m.why}`
+  if (m.source !== 'recalled') return `memory: none — ${m.why}`
+  return forwarded
+    ? `memory: returned ${m.count} decision(s) from ${m.why}; each nested review reports how many it applied`
+    : `memory: recalled ${m.count} decision(s) from ${m.why}`
+}
+
+/** The report section naming the source. @param {MemorySource} m @param {boolean} [forwarded] @returns {string} */
+function memorySection(m, forwarded = false) {
+  return `\n\n## Memory\n- ${memoryLine(m, forwarded)}\n`
+}
+
+/**
+ * Runs the one recall agent through `ask` (the engine's agent call, schema MEMORY_RECALL_SCHEMA). A
+ * refused dispatch (the budget wall) is named and applies nothing: the run meets the same wall on its
+ * next dispatch, as it would have without a recall.
+ * @param {(prompt: string) => Promise<unknown>} ask @param {string[]} paths @param {string} base
+ * @returns {Promise<{ decisions: unknown[], memory: MemorySource }>}
+ */
+async function recallDecisions(ask, paths, base) {
+  let raw
+  try {
+    raw = await ask(memoryRecallPrompt(paths, base))
+  } catch (e) {
+    const msg = recallText(e instanceof Error ? e.message : String(e))
+    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
+  }
+  return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
 // >>> craft-inline lib/prior-decision-scope.mjs decisionsToCheck scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck runScopeCheck
@@ -622,9 +767,12 @@ const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION, repoAr
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
 const viaArg = argString('_via')   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
-// The project's recorded rejections, recalled by the launching session for the diff's paths. Absent
-// → the run is today's run. Malformed → nothing of it applied, and every report says what was refused.
-const priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
+// The project's recorded rejections, passed by the launcher. Absent → this engine recalls them itself
+// once the diff's paths are known (recallMemory). Malformed → nothing of it applied, and every report says what was refused.
+let priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
+// Where the decisions came from; every report names it. `_memory` is set by a parent workflow
+// (rust-audit) that recalled once and found none: the empty list it passes is named as that outcome.
+let memory = launcherRecallMemory(initialMemory(A['priorDecisions'], priorDecisionsIn.decisions.length), argString('_memory'))
 for (const r of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${r}`)
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
@@ -3010,7 +3158,7 @@ const reviewerAgentSection = () => agentUnavailableSection(
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 /** @param {string} reportText */
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
+  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -3993,6 +4141,8 @@ const coverage = resolveCoverage({ profiles: PROFILES, changedFiles, detectedAct
 const active = coverage.active
 // The coverage decision's early exits: an empty diff, nothing reviewable, or no profile for what changed.
 async function coverageExit() {
+  if (coverage.outcome === 'no-profile') memory = skippedMemory(memory, 'no language profile for the changed files')
+  else if (coverage.outcome !== 'review') memory = skippedMemory(memory, 'nothing to review')
   if (coverage.outcome === 'empty') return emptyDiffExit()
   if (coverage.outcome === 'nothing-to-review') return nothingToReviewExit()
   if (coverage.outcome === 'no-profile') return noProfileExit()
@@ -4041,6 +4191,17 @@ async function noProfileExit() {
 // An unknown language pin first: it stops the run before any profile is activated.
 const languageStop = unknownLangs.length ? await unknownPinExit() : await coverageExit()
 if (languageStop !== null) return languageStop
+// No priorDecisions passed: ONE read-only agent recalls them through the craft:memory skill for the
+// diff's paths (realm @nick/craft, node #203); its answer is parsed like a passed list. After the
+// coverage exits: a diff with nothing to review or no profile spends no recall agent.
+async function recallMemory() {
+  if (memory.source !== 'none' || !changedFiles.length) return
+  const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
+  priorDecisionsIn = parsePriorDecisions(r.decisions)
+  memory = acceptedMemory(r.memory, priorDecisionsIn.decisions.length)
+  for (const x of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${x}`)
+}
+await recallMemory()
 function logActiveProfiles() {
   log(`Active profiles: ${active.map(p => p.id).join(', ')}${pinnedLangs ? ` (pinned: ${pinnedLangs.join(',')})` : ''} · base ${baseRef || 'HEAD'}`)
 }
