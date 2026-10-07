@@ -2322,8 +2322,8 @@ function findingLine(f) {
 }
 
 /**
- * How record `d` stands to finding `f`: `anchored` (file, line within the window, lens), `title` (no
- * comparable anchor, the title rule holds), `disputed` (a candidate for the judge), '' (none).
+ * How record `d` stands to finding `f`: `anchored` (file, line within the window, lens), `title` (the
+ * title rule holds where the anchor does not), `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'title' | 'disputed' | ''}
  */
 function matchClass(f, d) {
@@ -2331,6 +2331,7 @@ function matchClass(f, d) {
   const { near, same, comparable } = anchorOf(f, d)
   if (!comparable) return decisionAnswers(f, d) ? 'title' : ''
   if (near && same) return 'anchored'
+  if (decisionAnswers(f, d)) return 'title'
   return near || same || titleOverlap(f.title, d.title) >= MATCH_CANDIDATE_OVERLAP ? 'disputed' : ''
 }
 
