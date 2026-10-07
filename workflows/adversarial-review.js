@@ -1675,7 +1675,7 @@ const refutedGaps = gapped.refutedGaps
 // The same rules as review (the module carries them): a matching finding below critical/high whose
 // decision's scope is unchanged since the recorded commit leaves the verdict and is returned under
 // `rejectedBefore`, marked in its description; anything else is raised again with the decision named.
-// >>> craft-inline lib/prior-decisions.mjs decisionScopeParts decisionText decisionFields decisionAnchorProblem decisionProblem readPriorDecision titleWords reraisedBySeverity PRIOR_DECISIONS_MAX DECISION_FIELD_MAX DECISION_TITLE_OVERLAP parsePriorDecisions decisionAnswers decisionsToCheck priorDecisionMark reraiseReason splitByDecisions scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck applyPriorDecisions
+// >>> craft-inline lib/prior-decisions.mjs decisionScopeParts decisionText decisionFields decisionAnchorProblem decisionProblem readPriorDecision titleWords reraisedBySeverity PRIOR_DECISIONS_MAX DECISION_FIELD_MAX DECISION_TITLE_OVERLAP parsePriorDecisions decisionAnswers
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
 function decisionScopeParts(p) {
   return p.split(/[\\/]+/).filter(s => s && s !== '.')
@@ -1803,7 +1803,8 @@ function decisionAnswers(f, d) {
   for (const w of a) if (b.has(w)) shared++
   return shared / Math.max(a.size, b.size) >= DECISION_TITLE_OVERLAP
 }
-
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-apply.mjs decisionsToCheck priorDecisionMark reraiseReason splitByDecisions scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck applyPriorDecisions
 /**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
  * could set aside (not Critical/High) and that recorded a commit to compare against.

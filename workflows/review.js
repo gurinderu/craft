@@ -252,7 +252,7 @@ let scopeDetail = ''
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
 // The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft — the
 // memory skill's record shape). Pasted in by the craft-inline gate; the rules and why live in the module.
-// >>> craft-inline lib/prior-decisions.mjs decisionScopeParts decisionText decisionFields decisionAnchorProblem decisionProblem readPriorDecision titleWords reraisedBySeverity PRIOR_DECISIONS_MAX DECISION_FIELD_MAX DECISION_TITLE_OVERLAP parsePriorDecisions decisionAnswers decisionsToCheck priorDecisionMark reraiseReason splitByDecisions scopeCheckScript priorDecisionsRefusedSection priorRejectedSection SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck applyPriorDecisions
+// >>> craft-inline lib/prior-decisions.mjs decisionScopeParts decisionText decisionFields decisionAnchorProblem decisionProblem readPriorDecision titleWords reraisedBySeverity PRIOR_DECISIONS_MAX DECISION_FIELD_MAX DECISION_TITLE_OVERLAP parsePriorDecisions decisionAnswers priorDecisionsRefusedSection
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
 function decisionScopeParts(p) {
   return p.split(/[\\/]+/).filter(s => s && s !== '.')
@@ -382,6 +382,16 @@ function decisionAnswers(f, d) {
 }
 
 /**
+ * The report section naming what of `priorDecisions` was not applied; empty when everything was.
+ * @param {string[]} refused @returns {string}
+ */
+function priorDecisionsRefusedSection(refused) {
+  if (!refused.length) return ''
+  return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-apply.mjs decisionsToCheck priorDecisionMark reraiseReason splitByDecisions scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck applyPriorDecisions priorRejectedSection
+/**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
  * could set aside (not Critical/High) and that recorded a commit to compare against.
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions @returns {PriorDecision[]}
@@ -449,25 +459,6 @@ function scopeCheckScript(decisions) {
   return decisions.map(d => `git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?`).join('\n')
 }
 
-/**
- * The report section naming what of `priorDecisions` was not applied; empty when everything was.
- * @param {string[]} refused @returns {string}
- */
-function priorDecisionsRefusedSection(refused) {
-  if (!refused.length) return ''
-  return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
-}
-
-/**
- * The report section listing the findings set aside by a prior decision, each with its mark.
- * @param {DecidableFinding[]} setAside @returns {string}
- */
-function priorRejectedSection(setAside) {
-  if (!setAside.length) return ''
-  return `\n\n## Rejected before (set aside — not in the verdict)\n`
-    + setAside.map(f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${String(f.why ?? '')}`).join('\n')
-}
-
 // What the scope-check agent returns: the ids it saw print status 0.
 const SCOPE_CHECK_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['unchanged', 'reason'],
@@ -528,6 +519,16 @@ async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'w
   }
   notes.push(`${decisions.length} decision(s) given, ${setAside.length} finding(s) set aside as rejected before, ${reraised} raised again`)
   return { tiers: out, setAside, reraised, notes }
+}
+
+/**
+ * The report section listing the findings set aside by a prior decision, each with its mark.
+ * @param {DecidableFinding[]} setAside @returns {string}
+ */
+function priorRejectedSection(setAside) {
+  if (!setAside.length) return ''
+  return `\n\n## Rejected before (set aside — not in the verdict)\n`
+    + setAside.map(f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${String(f.why ?? '')}`).join('\n')
 }
 // <<< craft-inline
 
