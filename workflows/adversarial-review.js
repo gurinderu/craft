@@ -56,7 +56,7 @@ function applyOption(m, out, ignored) {
 }
 
 // Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`).
+// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
 const OBJECT_ONLY_OPTIONS = ['priorDecisions']
 
 // Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
@@ -253,7 +253,7 @@ function readPriorDecision(raw, i) {
 const PRIOR_DECISIONS_MAX = 100
 
 // A decision answers a finding when the finding's file sits inside the decision's scope AND their
-// titles share at least this share of words (of the longer one).
+// titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
@@ -265,7 +265,7 @@ const DECISION_TITLE_OVERLAP = 0.6
 function parsePriorDecisions(raw) {
   if (raw == null || raw === '') return { decisions: [], refused: [] }
   // Only a list inside an object argument: in the key=value form a value cannot be delimited, and a
-  // JSON string invites that form, so any string is refused (lib/workflow-args.mjs OBJECT_ONLY_OPTIONS).
+  // JSON string invites that form, so any string is refused (lib/workflow-args.mjs OBJECT_ONLY_OPTIONS; realm @nick/craft, node #183).
   if (typeof raw === 'string') return { decisions: [], refused: ['priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied'] }
   const list = raw
   if (!Array.isArray(list)) return { decisions: [], refused: ['priorDecisions is not a list — no decision applied'] }
@@ -308,7 +308,7 @@ function decisionAnswers(f, d) {
   return shared / Math.max(a.size, b.size) >= DECISION_TITLE_OVERLAP
 }
 
-/** @param {unknown} sev */
+/** Critical/High are always raised again (realm @nick/craft, node #187). @param {unknown} sev */
 function reraisedBySeverity(sev) {
   return /^(critical|high)$/i.test(String(sev ?? '').trim())
 }
@@ -1901,7 +1901,8 @@ function readScopeCheck(ans) {
 }
 
 /**
- * Runs the scope check for `toCheck` (never with none): the ids observed unchanged, and those whose
+ * Runs the scope check for `toCheck` (never with none; a commit-based check, an unknown commit raises
+ * the finding and is reported — realm @nick/craft, node #184): the ids observed unchanged, and those whose
  * commit the repo does not know. A dead or unreadable answer shows nothing unchanged (said in `notes`).
  * @param {PriorDecision[]} toCheck @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string[]} notes
  * @returns {Promise<{ toCheck: PriorDecision[], unchanged: Set<string>, missing: Set<string> }>}
@@ -1925,7 +1926,7 @@ function priorDecisionMark(d) {
   return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (decision ${d.id})`
 }
 
-/** Why a decision did not apply when the repo does not know its commit. @param {PriorDecision} d */
+/** Why a decision did not apply when the repo does not know its commit (realm @nick/craft, node #184). @param {PriorDecision} d */
 function commitMissingReason(d) {
   return `commit ${d.commit} not found in this repo — raised normally`
 }

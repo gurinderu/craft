@@ -57,7 +57,7 @@ function applyOption(m, out, ignored) {
 }
 
 // Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`).
+// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
 const OBJECT_ONLY_OPTIONS = ['priorDecisions']
 
 // Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
