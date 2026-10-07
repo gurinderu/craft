@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions as priorDecisions (an empty list when none; absent, the report says memory was not applied). To post findings on a PR pass comment — never post findings by hand: only the engine\'s comments carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -308,8 +308,8 @@ const PRIOR_DECISIONS_MAX = 100
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
- * The `priorDecisions` argument, checked. Absent → nothing, silently: that is every run before this
- * existed. Anything else that is not a list of decisions → nothing applied, each problem named.
+ * The `priorDecisions` argument, checked. Absent → nothing applied, no refusal (the report names the
+ * absence: priorDecisionsAbsentSection). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
@@ -367,6 +367,19 @@ function reraisedBySeverity(sev) {
 function priorDecisionsRefusedSection(refused) {
   if (!refused.length) return ''
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISIONS_ABSENT priorDecisionsAbsent priorDecisionsAbsentSection
+const PRIOR_DECISIONS_ABSENT = 'no remembered decisions were passed (priorDecisions absent), so project memory was not applied — before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions as {priorDecisions: [...]} (an empty list when it finds none)'
+
+/** @param {unknown} raw @returns {boolean} */
+function priorDecisionsAbsent(raw) {
+  return raw == null || raw === ''
+}
+
+/** The report section naming an absent priorDecisions; '' when it was given. @param {unknown} raw @returns {string} */
+function priorDecisionsAbsentSection(raw) {
+  return priorDecisionsAbsent(raw) ? `\n\n## Prior decisions not passed\n- ⚠️ ${PRIOR_DECISIONS_ABSENT}\n` : ''
 }
 // <<< craft-inline
 // >>> craft-inline lib/prior-decision-scope.mjs decisionsToCheck scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck runScopeCheck
@@ -3010,7 +3023,7 @@ const reviewerAgentSection = () => agentUnavailableSection(
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 /** @param {string} reportText */
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
+  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}${priorDecisionsAbsentSection(A['priorDecisions'])}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----

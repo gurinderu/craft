@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; refusals come back as priorDecisionsNotApplied.',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; refusals come back as priorDecisionsNotApplied; absent, priorDecisionsAbsent says memory was not applied. Before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions as priorDecisions (an empty list when none). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -217,8 +217,8 @@ const PRIOR_DECISIONS_MAX = 100
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
- * The `priorDecisions` argument, checked. Absent → nothing, silently: that is every run before this
- * existed. Anything else that is not a list of decisions → nothing applied, each problem named.
+ * The `priorDecisions` argument, checked. Absent → nothing applied, no refusal (the report names the
+ * absence: priorDecisionsAbsentSection). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
@@ -278,10 +278,21 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
+// >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISIONS_ABSENT priorDecisionsAbsent
+const PRIOR_DECISIONS_ABSENT = 'no remembered decisions were passed (priorDecisions absent), so project memory was not applied — before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions as {priorDecisions: [...]} (an empty list when it finds none)'
+
+/** @param {unknown} raw @returns {boolean} */
+function priorDecisionsAbsent(raw) {
+  return raw == null || raw === ''
+}
+// <<< craft-inline
 const priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
 for (const r of priorDecisionsIn.refused) log(`WARNING: priorDecisions: ${r}`)
-/** What a returned object adds when some of priorDecisions was not applied — nothing otherwise. */
-const priorRefusedResult = () => (priorDecisionsIn.refused.length ? { priorDecisionsNotApplied: priorDecisionsIn.refused } : {})
+/** What a returned object adds when some of priorDecisions was not applied, or none was passed — nothing otherwise. */
+const priorRefusedResult = () => ({
+  ...(priorDecisionsIn.refused.length ? { priorDecisionsNotApplied: priorDecisionsIn.refused } : {}),
+  ...(priorDecisionsAbsent(A['priorDecisions']) ? { priorDecisionsAbsent: PRIOR_DECISIONS_ABSENT } : {}),
+})
 /** @param {string} key @returns {string} the argument as a string, '' when absent or falsy */
 const stringArg = key => A[key] ? String(A[key]) : ''
 
