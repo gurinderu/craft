@@ -49,8 +49,10 @@ aside, and it sets a finding aside only while the code in `scope` is unchanged s
 decision without a `commit` is still recorded, but a review raises its finding again every time.
 The title is the finding's title as the review printed it; `line` and `lens` are the finding's
 anchor. The review rewords titles every round, so the engine matches a record to a finding by its
-file inside `scope`, its line (within 15) and its lens; a near miss goes to a judge, and a record
-without `line` and `lens` (an older one) is matched by its title words alone. A line counts only
+file inside `scope`, its line and its lens: within 3 lines and the same lens it matches outright;
+a near miss (within 15 lines, the same lens, or shared title words) goes to a judge, an older record
+without `line` and `lens` included. Only when the judge gives no verdict does a near-verbatim title
+match on its own. A line counts only
 when `scope` is the finding's own file: under a directory or `.` scope only the lens and the title
 words count, so give the file as scope whenever the finding has one.
 

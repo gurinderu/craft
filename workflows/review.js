@@ -1064,6 +1064,8 @@ async function recallDecisions(ask, paths, base) {
 }
 const MATCH_LINE_WINDOW = 15
 
+const MATCH_SURE_WINDOW = 3
+
 const MATCH_CANDIDATE_OVERLAP = 0.3
 
 const MATCH_JUDGE_PAIRS_MAX = 40
@@ -1076,7 +1078,7 @@ const CUT_NAMED_MAX = 10
 
 const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
 
-const MATCHED_BY_TITLE = 'matched by title words'
+const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
 /** Lower-cased lens names of a value, split on commas. @param {unknown} v @returns {string[]} */
 function lensWords(v) {
@@ -1096,23 +1098,21 @@ function findingLine(f) {
 }
 
 /**
- * How record `d` stands to finding `f`: `anchored` (file, line within the window, lens), `title` (the
- * title rule holds where the anchor does not), `disputed` (a candidate for the judge), '' (none).
- * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'title' | 'disputed' | ''}
+ * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens),
+ * `disputed` (a candidate for the judge), '' (none).
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
 function matchClass(f, d) {
   if (!inDecisionScope(f.file, d.scope)) return ''
-  const { near, same, comparable } = anchorOf(f, d)
-  if (!comparable) return decisionAnswers(f, d) ? 'title' : ''
-  if (near && same) return 'anchored'
-  if (decisionAnswers(f, d)) return 'title'
+  const { near, sure, same } = anchorOf(f, d)
+  if (sure && same) return 'anchored'
   return near || same || titleOverlap(f.title, d.title) >= MATCH_CANDIDATE_OVERLAP ? 'disputed' : ''
 }
 
 /**
- * How the record's anchor meets the finding's: line within the window, a shared lens, and whether either
- * side could be compared at all. @param {DecidableFinding} f @param {PriorDecision} d
- * @returns {{ near: boolean, same: boolean, comparable: boolean }}
+ * How the record's anchor meets the finding's: line within the candidate window (`near`) and the sure
+ * one (`sure`), a shared lens (`same`). @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ near: boolean, sure: boolean, same: boolean }}
  */
 function anchorOf(f, d) {
   const line = findingLine(f)
@@ -1120,11 +1120,8 @@ function anchorOf(f, d) {
   const lenses = findingLenses(f)
   const byLine = !!d.line && line > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
   const byLens = own.length > 0 && lenses.size > 0
-  return {
-    near: byLine && Math.abs(line - Number(d.line)) <= MATCH_LINE_WINDOW,
-    same: byLens && own.some(l => lenses.has(l)),
-    comparable: byLine || byLens,
-  }
+  const gap = byLine ? Math.abs(line - Number(d.line)) : Infinity
+  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)) }
 }
 
 /**
@@ -1144,7 +1141,7 @@ function triedOrder(ds) {
 }
 
 /**
- * One finding against the records in tried order: the first sure match, and the disputed candidates
+ * One finding against the records in tried order: the first anchored match, and the disputed candidates
  * tried before it (the judge decides whether one of them answers it first).
  * @param {DecidableFinding} f @param {PriorDecision[]} ordered @returns {{ sure?: PriorMatch, disputed: PriorDecision[] }}
  */
@@ -1153,16 +1150,31 @@ function findingPlan(f, ordered) {
   const disputed = []
   for (const d of ordered) {
     const c = matchClass(f, d)
-    if (c === 'anchored' || c === 'title') return { sure: { d, how: c === 'anchored' ? MATCHED_BY_ANCHOR : MATCHED_BY_TITLE }, disputed }
+    if (c === 'anchored') return { sure: { d, how: MATCHED_BY_ANCHOR }, disputed }
     if (c === 'disputed') disputed.push(d)
   }
   return { disputed }
 }
 
-/** The answer each finding gets without a judge: its first sure match. @param {PriorDecision[]} ds @returns {(f: DecidableFinding) => PriorMatch | undefined} */
+/**
+ * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
+ * order, a candidate judged the same; one without a verdict whose title answers the finding (#187);
+ * else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
+ * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
+ */
+function resolvePlan(f, plan, judged) {
+  for (const d of plan.disputed) {
+    const v = judged?.get(d)
+    if (v?.same) return { d, how: `matched by judge: ${v.why}` }
+    if (!v && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
+  }
+  return plan.sure
+}
+
+/** The answer each finding gets without a judge: anchored, else the title rule. @param {PriorDecision[]} ds @returns {(f: DecidableFinding) => PriorMatch | undefined} */
 function sureMatchOf(ds) {
   const ordered = triedOrder(ds)
-  return f => findingPlan(f, ordered).sure
+  return f => resolvePlan(f, findingPlan(f, ordered), undefined)
 }
 
 /** One line of model or record text, cut at `max`. @param {unknown} v @param {number} [max] */
@@ -1241,7 +1253,7 @@ function readJudge(raw, n) {
 function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched, their findings raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them, the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -1256,18 +1268,18 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched, their findings raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them, the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched, their findings raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them, the rest raised normally`)
   return v
 }
 
 /**
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
  * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
- * pairs go in pairRank order.
+ * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone.
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -1283,7 +1295,7 @@ async function matchFindings(findings, decisions, judge) {
   const refused = []
   const sent = pairs.slice(0, MATCH_JUDGE_PAIRS_MAX)
   if (pairs.length > sent.length) refused.push(cutPairsNote(pairs.slice(sent.length)))
-  const verdicts = sent.length ? await askJudge(sent, judge, refused) : new Map()
+  const verdicts = sent.length && judge ? await askJudge(sent, judge, refused) : new Map()
   /** @type {Map<DecidableFinding, Map<PriorDecision, { same: boolean, why: string }>>} */
   const byFinding = new Map()
   sent.forEach((p, i) => {
@@ -1294,9 +1306,7 @@ async function matchFindings(findings, decisions, judge) {
   /** @param {DecidableFinding} f @returns {PriorMatch | undefined} */
   const matchOf = f => {
     const p = plans.get(f)
-    const judged = byFinding.get(f)
-    const d = judged && p?.disputed.find(x => judged.get(x)?.same)
-    return d && judged ? { d, how: `matched by judge: ${judged.get(d)?.why}` } : p?.sure
+    return p && resolvePlan(f, p, byFinding.get(f))
   }
   return { matchOf, notes, refused }
 }
