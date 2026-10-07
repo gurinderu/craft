@@ -29,7 +29,7 @@
 'Фидбэк-рефлексия — источник': 'выведено: умолчание шаблона'
 'Interop с workflow-набором': 'нет — коэрсивного набора нет (superpowers отсутствует в кэше плагинов)'
 'Interop с workflow-набором — источник': 'выведено'
-'Согласование': 'Case №1 on holon #1 «Выравнивание craft под контракт 18»; open slots are its slot: … lines'
+'Согласование': 'пусто'
 'Согласование — источник': 'выведено'
 ---
 # `craft`
@@ -141,7 +141,7 @@ The gate is one call: `npm run gate` (`lib/gate.mjs`; needs `npm ci` and `npm ci
 | Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci` and `npm ci --prefix opencode/plugin`: the plugin's tests import `vitest` from the root) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | The shipped engines `workflows/*.js` are a fresh build of their sources `src/*.js` (`lib/build-engines.mjs`: every whole-line `//` comment but a directive dropped, the `craft-inline` fences with them, JSDoc kept; refused when tsc parses the result to another program) | `npm run check:engines` (needs `npm ci --prefix opencode/plugin` for tsc); after any edit in `src/`, `npm run build:engines` regenerates `workflows/` — never edit `workflows/` by hand |
-| Typecheck the engines' own code `src/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`), plus typescript-eslint's `no-unsafe-*` rules at zero on the same program | `npm run check:types:workflows` (same prerequisites) |
+| Typecheck the engines' own code `src/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`), plus typescript-eslint's `no-unsafe-*` rules at zero on the same program and each engine's `any` count (spelled and implicit) held to `lib/engine-any-ceiling.json` | `npm run check:types:workflows` (same prerequisites) |
 | Syntax-check the shipped workflow scripts (`workflows/`), their `CRAFT_VERSION` stamps and launch names; byte-compare the inlined regions in `src/` (a region is its `lib/` source without whole-line `//` comments, directives kept); inlined code is strictly typed | `node lib/check-workflows.mjs` (needs `npm ci --prefix opencode/plugin` for tsc; `--fix` regenerates the regions in `src/`, then `npm run build:engines`) |
 | Every workflow script is at most 500 KiB (512000 bytes), under the 512 KiB the harness registers | `npm run check:workflow-size` |
 | Skills and agents (frontmatter + `craft:<slug>` refs) | `node lib/check-skills.mjs` |
@@ -210,4 +210,4 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (three jobs: `test` — `npm run gate` plus the shipped-dependency audit — and `semgrep` gate; `quality-delta` always ends green and is read, not waited on; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
 
-*(iskronify: contract 19, stamp 2026-10-06 — rerun when the installed iskronify description names a higher contract or when the sources this file was derived from move after this date.)*
+*(iskronify: contract 19, stamp 2026-10-07 — rerun when the installed iskronify description names a higher contract or when the sources this file was derived from move after this date.)*
