@@ -324,6 +324,8 @@ function priorDecisionsRefusedSection(refused) {
 // <<< craft-inline
 const priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
 for (const r of priorDecisionsIn.refused) log(`WARNING: priorDecisions: ${r}`)
+/** What a returned object adds when some of priorDecisions was not applied — nothing otherwise. */
+const priorRefusedResult = () => (priorDecisionsIn.refused.length ? { priorDecisionsNotApplied: priorDecisionsIn.refused } : {})
 /** @param {string} key @returns {string} the argument as a string, '' when absent or falsy */
 const stringArg = key => A[key] ? String(A[key]) : ''
 
@@ -1126,7 +1128,7 @@ function nothingToReviewMessage(fileCount) {
 if (A['repo']) {
   const refused = repoRefusal({ engine: 'adversarial-review', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: budget.spent(), via: viaArg })
   await logRun(refused.record)
-  return refused.report
+  return refused.report + priorDecisionsRefusedSection(priorDecisionsIn.refused)
 }
 
 /** @returns {string} the scout's instruction for resolving the diff base */
@@ -1241,7 +1243,7 @@ async function fileEarlyExit(verdict, labels) {
 async function incompleteExit(verdict, label, msg) {
   log(`INCOMPLETE — ${msg}`)
   await fileEarlyExit(verdict, [label])
-  return { verdict, confirmed: [], suspected: [], notRun: [msg].concat(telemetryNotes()), scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+  return { verdict, confirmed: [], suspected: [], notRun: [msg].concat(telemetryNotes()), scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] }, ...priorRefusedResult() }
 }
 
 /** @returns {string} the cross-check's instruction for resolving the diff base */
@@ -1304,7 +1306,7 @@ async function inertExit(changedFiles) {
   const msg = nothingToReviewMessage(changedFiles.length)
   log(msg)
   await fileEarlyExit('Approve', [])
-  return { verdict: 'Approve', confirmed: [], suspected: [], notRun: telemetryNotes(), summary: msg, scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] } }
+  return { verdict: 'Approve', confirmed: [], suspected: [], notRun: telemetryNotes(), summary: msg, scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] }, ...priorRefusedResult() }
 }
 
 /**
@@ -2013,7 +2015,7 @@ suspected = /** @type {typeof suspected} */ (prior.tiers['suspected'])
 function priorDecisionsResult() {
   return {
     ...(prior.setAside.length ? { rejectedBefore: prior.setAside.map(({ votes: _v, ...f }) => f) } : {}),
-    ...(priorDecisionsIn.refused.length ? { priorDecisionsNotApplied: priorDecisionsIn.refused } : {}),
+    ...priorRefusedResult(),
   }
 }
 
