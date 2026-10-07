@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/gurinderu/craft/compare/v0.23.0...v0.23.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **workflows:** keep every workflow script under the harness's 512 KiB limit ([#156](https://github.com/gurinderu/craft/issues/156)) ([ffaf2ec](https://github.com/gurinderu/craft/commit/ffaf2ecece47306c6aa230213a2e17d234122694))
+
 ## [0.23.0](https://github.com/gurinderu/craft/compare/v0.22.0...v0.23.0) (2026-10-07)
 
 
