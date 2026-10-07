@@ -15,7 +15,7 @@ project already has; it never invents one. craft's machine memory — the run st
 
 | Verb | Input | Effect |
 |---|---|---|
-| `recall(topic, scope)` | keywords, a path or component | the **matching active** records only (below) |
+| `recall(topic, scope)` | keywords, a path or component | the **matching active** records (below); for a review, also a short list of the matching inactive ones' ids, only to block them |
 | `record-decision` | title, scope, body (the reason), author, commit, links | one `decision` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
@@ -129,7 +129,11 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
    memory files, the harness index `MEMORY.md`) — never load the whole store into
    context.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
-   history; a superseded record shown on request carries its successor's id.
+   history; a superseded record shown on request carries its successor's id. A review engine's
+   recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`
+   list of `{id, storeId, kind, title, scope, status}` — read only, never applied: the engine holds
+   back any record handed to it that one of them names (by `id`, the store's own id, or kind + title
+   + scope) and says so once.
 5. **A recalled decision is context, not a verdict.** Check it still holds against the code as it
    is now: the reason was "the input is always validated upstream" and the validation is gone →
    say so, and supersede the decision instead of applying it. Recall inside a review engine is
@@ -144,7 +148,7 @@ A craft review workflow (`review`, `rust-review`, `nix-review`, `adversarial-rev
 itself**: one read-only agent runs this recall (or, if the skill is unavailable, the backend order
 above) on every launch. Passing `priorDecisions` never replaces that recall — the passed records
 are **added** to the recalled ones (one per `id`; on a clash the recalled record wins, being the
-store's current state), and the report's `memory:` line names both parts (`adversarial-review`:
+store's current state; a passed record the store withdrew or superseded is held back and named), and the report's `memory:` line names both parts (`adversarial-review`:
 its `memory` field). A session recalls for its own work as below; it passes records only when it
 holds some the store may not — rejections just read from PR threads, say — and never relies on
 passing to stand in for the engine's recall.
