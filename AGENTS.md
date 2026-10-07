@@ -140,7 +140,8 @@ The gate is one call: `npm run gate` (`lib/gate.mjs`; needs `npm ci` and `npm ci
 | Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci` and `npm ci --prefix opencode/plugin`: the plugin's tests import `vitest` from the root) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Typecheck the engines' own code `workflows/*.js` at the same strictness (sandbox globals in `lib/workflow-sandbox.d.ts`), plus typescript-eslint's `no-unsafe-*` rules at zero on the same program | `npm run check:types:workflows` (same prerequisites) |
-| Syntax-check workflow scripts; byte-compare inlined regions; inlined code is strictly typed | `node lib/check-workflows.mjs` (needs `npm ci --prefix opencode/plugin` for tsc; `--fix` regenerates the regions) |
+| Syntax-check workflow scripts; byte-compare inlined regions (a region is its `lib/` source without whole-line `//` comments, directives kept); inlined code is strictly typed | `node lib/check-workflows.mjs` (needs `npm ci --prefix opencode/plugin` for tsc; `--fix` regenerates the regions) |
+| Every workflow script is at most 500 KiB (512000 bytes), under the 512 KiB the harness registers | `npm run check:workflow-size` |
 | Skills and agents (frontmatter + `craft:<slug>` refs) | `node lib/check-skills.mjs` |
 | Delivery parity of review agents | `node lib/check-delivery-parity.mjs` |
 | OpenCode agent/command frontmatter | `npm run check:opencode-frontmatter` |

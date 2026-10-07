@@ -20,11 +20,6 @@ export const meta = {
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
 // >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
-// One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
-// name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
-// module-level helper is copied into the engines' inlined regions only when it is, and the fence's
-// sibling check only knows about EXPORTS — a private helper reaches every engine as a ReferenceError
-// on first use, with the gate green.
 /**
  * @param {RegExpExecArray} m
  * @param {Record<string, unknown>} out
@@ -40,12 +35,6 @@ function applyOption(m, out, ignored) {
     return 1
   }
   const key = /** @type {string} */ (m[2])
-  // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
-  // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
-  // the logger agent is handed. The args string is model-composed, so this is the same threat shape
-  // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
-  // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
-  // legitimate option names, so they are refused by name and reported.
   if (banned(key)) { ignored.push(key); return 0 }
   const quoted = m[4] ?? m[5]
   if (quoted !== undefined) { out[key] = quoted; return 1 }
@@ -57,15 +46,8 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
-// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
 const OBJECT_ONLY_OPTIONS = ['priorDecisions']
 
-// Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
-// A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
-// otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
-// invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
-// or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
  * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
@@ -80,12 +62,8 @@ function parseOptions(text) {
   let m
   let cursor = 0
   while ((m = pair.exec(text)) !== null) {
-    // Anything skipped over between matches is prose, not an option: collect it so the caller can say
-    // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
-    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
-    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
     const key = String(m[2] ?? m[7])
     if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
@@ -96,7 +74,6 @@ function parseOptions(text) {
   return { options: out, pairs, ignored, cut: '' }
 }
 
-// normalizeArgs' branch for a string that starts with `{`.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -117,7 +94,6 @@ function normalizeJsonArgs(text, warn) {
   }
 }
 
-// normalizeArgs' last branch: a non-empty string that is not JSON, read as `key=value` options.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -127,19 +103,12 @@ function normalizeKeyValueArgs(text, warn) {
   const { options, pairs, ignored, cut } = parseOptions(text)
   if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
-    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
-    // and testing "is any value not true" threw away every string made only of boolean options —
-    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
-    // requested mutation pass would silently not run.
     warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
     if (ignored.length) {
       warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
     }
     return options
   }
-  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
-  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
-  // verdict that reads exactly like a requested one.
   warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
   return {}
 }
@@ -159,8 +128,6 @@ function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
-  // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
-  // below: `[1,2,3]` and `"a sentence"` would otherwise become flags named after their own contents.
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -299,8 +266,6 @@ function summarizeFindings(findings) {
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
-// Triage produces per-finding dispositions, not a severity verdict. Tally a ledger/validation list
-// (each entry `{verdict}`) into the fixed disposition buckets; unknown/malformed verdicts are dropped.
 /**
  * @param {unknown} entries
  * @returns {Record<TriageVerdict, number>}
@@ -313,11 +278,6 @@ function tallyVerdicts(entries) {
   return t
 }
 
-// The refusal of a `repo` argument by an engine whose agents run git/cargo wherever the session sits:
-// accepting it silently reads THIS checkout and reports a normal-looking verdict for the wrong code.
-// The engine files `record` through its logRun — a repeated wrong dispatch has to reach the `notRun`
-// fragility ranking — and returns `report`, before anything has run. One helper for every engine that
-// refuses, so the record and the advice cannot drift between them.
 /**
  * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number, via?: string }} o
  *   `via`: the parent workflow that dispatched this run, '' when it was not nested
@@ -328,8 +288,6 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
       schemaVersion: 1, runtime: 'claude-code', craftVersion, kind: 'workflow', name: engine,
       nested: !!via, via: via || null,
       verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
-      // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
-      // make every repetition of this same misuse its own count-1 row.
       notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
       outputTokens,
     },
@@ -346,16 +304,12 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
 // >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
-// Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['ok'],
   properties: {
     ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
-    // The description is what the model steers this field by, so it has to name the WARNING case too:
-    // reading "empty otherwise" it returns '' on a landed-but-degraded run, and the engine's
-    // telemetry-loss branch — the whole reason the field is populated on success — never fires.
     error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
@@ -363,76 +317,12 @@ const LOGRUN_SCHEMA = {
 /** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
-// Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
-// AFTER the cd points at the REVIEWED repo, where the script is not — that lost every record to a
-// silent "Cannot find module". Resolve the logger to an absolute path FIRST, into a variable, and
-// only then change directory. `craftRoot` is passed when the engine is launched by scriptPath from
-// a checkout (CLAUDE_PLUGIN_ROOT is unset then); as an installed plugin the env var is set for us.
-// The `:-.` fallback is GONE, and that is a security fix, not tidying. It resolved before the `cd`,
-// so `.` was the logger agent's starting directory — which, in the deployment this plugin is built
-// for, is the repository under REVIEW. A reviewed repository shipping its own `lib/craft-log-run.mjs`
-// would then be executed with the user's privileges by a workflow whose whole premise is that the
-// reviewed repo is untrusted. Extraction would have carried that from one engine to four.
-// It is emitted FIRST, before any staging: `${VAR:?}` is a hard abort in a non-interactive shell, so
-// after the `cat` it killed the block before `rm -f` and left the whole record in TMPDIR — on exactly
-// the path this loud failure was added for.
-// A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
-// noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
 /**
  * @param {string | undefined} craftRoot
  * @param {string} [version]
  * @param {string} [repo]
  */
 function loggerPrelude(craftRoot, version = '', repo = '') {
-  // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
-  // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
-  // before the absoluteness check and before the refusal, so a review launched with `craftRoot=.`
-  // emitted `CRAFT_LOGGER='.'/lib/craft-log-run.mjs` and then `cd <reviewed repo> && node
-  // "$CRAFT_LOGGER"` — the removed `:-.` hole restored verbatim, bypassing the version pin and the
-  // loud refusal too. `craftRoot` arrives in the model-composed args string, so it is exactly as
-  // untrusted as the `--dir` this project already refuses.
-  //
-  // Three properties now hold for every candidate without exception:
-  //   ABSOLUTE — `[ -f ]` is evaluated in the logger agent's cwd while `node` runs AFTER the cd into
-  //     the reviewed repository, so any relative path resolves THERE. Refused outright rather than
-  //     normalized: guessing what the caller meant is how this class keeps coming back.
-  //   PRESENT — a path that names no file is not a logger.
-  //   ORDERED — explicit root, then the environment, then this engine's own installed copy. The
-  //     search is a fallback, never an override: written the other way round it overwrote a good
-  //     path with whatever the cache held, so a launch from a checkout logged through another build.
-  //
-  // The search is version-pinned to what this engine is stamped with (a record filed by another
-  // build's script misdescribes which engine ran, and gets counted), looks only under the user's own
-  // plugin cache, honours $CLAUDE_CONFIG_DIR because a session configured that way keeps its plugins
-  // elsewhere, and never looks at the reviewed repository at all. That cache layout belongs to the
-  // harness, not to craft (realm @nick/craft, node #48 — observed, not documented), so a miss is
-  // ordinary: not found means the refusal below, never a guess.
-  // ONE predicate, applied to every candidate, and applied BEFORE it is accepted rather than to the
-  // winner afterwards. Written as a terminal check on the winner, an explicit craftRoot naming the
-  // repo killed the whole command instead of being rejected in favour of the next candidate — which
-  // is craft reviewing its own checkout, the mode this repo mandates for itself.
-  //
-  // A candidate qualifies only if it is ABSOLUTE (`[ -f ]` runs in the agent's cwd while `node` runs
-  // after the cd, so a relative path resolves in the reviewed repository), PRESENT, and OUTSIDE the
-  // directory the command is about to cd into. The last is checked on the FULLY resolved path:
-  // symlinks are followed to their target — a link whose FILE points into the repo passed for one
-  // commit because only the directory went through `pwd -P` — and both sides are normalized, so a
-  // `..` climb and a symlinked parent collapse to the same comparison. The `case` patterns are
-  // quoted and slash-anchored, so a sibling that merely shares a prefix (`/x/repo-evil` beside
-  // `/x/repo`) is NOT inside — the collision this project already met once in `insideStore`.
-  // EVERY exit from this predicate that is not a clean, fully resolved, outside-the-repo path is a
-  // REFUSAL. Three of them used to fall through to acceptance, and one was reachable: exhausting the
-  // hop bound left the loop with the path still a symlink, the comparison then tested an unresolved
-  // string, nothing matched, and the candidate was accepted — a 21-link chain ending inside the
-  // reviewed repository executed its script. A bound that fails open is not a bound; it is a longer
-  // attack.
-  //
-  // Two of the three refusals are belt-and-braces and are labelled as such rather than dressed up as
-  // covered: with `CRAFT_REPO` empty the `case` pattern degenerates to `/*`, which matches every
-  // absolute path and refuses anyway; and `pwd -P` can only fail on a directory with no `x` bit,
-  // where `[ -f ]` has already failed one line earlier. Removing either guard changes no observable
-  // behaviour, so no test distinguishes them — stated here instead of implied by a test that would
-  // pass either way.
   const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
 craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
   case "$1" in /*) ;; *) return 1 ;; esac
@@ -464,11 +354,6 @@ craft_usable() {   # a line that is exactly '}' at column 0 would end the extrac
  }
 CRAFT_LOGGER=""
 `
-  // The RESOLVED path is what gets used, not the candidate string that was validated. Between the
-  // check and `node "$CRAFT_LOGGER"` sit the mktemp, the whole heredoc of a record that can be
-  // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
-  // candidate can be re-pointed into the reviewed repository. Handing over the path that was
-  // actually checked closes that window and costs nothing.
   /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
@@ -484,70 +369,25 @@ fi
 `
 }
 
-// The craft version a record or checkpoint payload claims, as text ('' when it claims none).
 /** @param {unknown} payload @returns {string} */
 function payloadVersion(payload) {
   return String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
 }
 
-// The engine's revision a SECOND time, on the command line the engine composes itself (realm
-// @nick/craft, node #114). It decides which fingerprint basis a later round reads this run under, and
-// the payload it also rides in is re-emitted by the logger agent — so craft-log-run files it only when
-// the two copies agree; one altered copy files an unknown basis, never a wrong one. Emitted only for a
-// payload that stamps an integer revision: an engine that stamps no basis sends no flag.
 /** @param {unknown} payload @returns {string} */
 function engineRevisionFlag(payload) {
   const rev = payload && typeof payload === 'object' ? /** @type {{ workflowEngineRevision?: unknown }} */ (payload).workflowEngineRevision : undefined
   return Number.isInteger(rev) ? `--engine-revision ${rev} ` : ''
 }
 
-// The logger flags both prompts share: `--dir`, `--rejoin` and the shell-expanded session id, each
-// independent of the others (see logRunPrompt below), with the trailing space the command line needs.
 /** @param {string} dir @param {boolean} rejoin @returns {string} */
 function runDirFlags(dir, rejoin) {
   return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
 }
 
-// The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
-// readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
-// review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
-// THE STAGING FILE IS PER-RUN, AND THAT IS LOAD-BEARING. It used to be the fixed `/tmp/craft-rec.json`
-// in one engine; extracting the prompt propagated that path to all four, which is three new ways to
-// be wrong at once. (a) `cat >` follows a symlink, so any other local uid can pre-create that name
-// pointing at a file this user owns and have the next run truncate it — an arbitrary-overwrite
-// primitive on a shared or CI box, and `/tmp`'s sticky bit does not stop CREATING an entry. (b) The
-// record holds every finding title, path and quoted snippet from the reviewed repo, and a default
-// umask leaves it world-readable, never removed. (c) A fixed name carries no run id, while craft's
-// own fan-out puts several runs in flight — rust-audit dispatches one nested review per changed crate
-// through `parallel` — so between one agent's `cat >` and its own redirect another can overwrite the
-// file: run A files run B's record under A's identity, the script succeeds, the readback verifies,
-// `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
-// created without following anything. The exit code is carried past the cleanup so a failed write
-// still reports as one.
-// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
-// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
-// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
-// repository the run never looked at — a lie in the one field the store is keyed by.
 /** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
-  // The version comes off the RECORD rather than from a parameter of its own: it is already there,
-  // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
-  // the record claims to be — which would file a record describing a run some other build made.
   const version = payloadVersion(record)
-  // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
-  // runs, never composed by the model — the whole point (see the header note on the payload-copy
-  // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
-  // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
-  // logger receiving the literal string "" and treating it as a real (empty) session id.
-  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
-  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
-  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
-  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
-  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
-  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
-  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
-  // rejoin search outright in that case (see its `target` comment), because the single candidate a
-  // garbled sibling finds is its neighbour's LIVE directory.
   const flags = runDirFlags(dir, rejoin)
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
@@ -571,11 +411,6 @@ RECORD:
 ${JSON.stringify(record, null, 2)}`
 }
 
-// Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
-// but a full review record carries every finding plus the ledger, and the cheap model is where the
-// silent truncation came from. Size the model to the payload.
-// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
-// engine passes them on as they are.
 /**
  * @param {unknown} record
  * @param {{ phase?: string }} [opts]
@@ -599,19 +434,10 @@ function logRunDispatch(record, { phase = '' } = {}) {
  */
 function logRunOutcome(res) {
   const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
-  // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
-  // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
-  // marker that fires on a landed write is one people stop reading. But it must not vanish either —
-  // the caller gets `ok: true` with a reason to surface.
   if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
   return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
-// For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
-// checkpoints, the prior-round read. They are bookkeeping — every other agent in these engines
-// produces review content, so a throw there should stop the run. These must not: the record is
-// written AFTER the report already exists in memory, so losing it to a bookkeeping write would
-// throw away the whole run's product.
 /**
  * @template P, O, R
  * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
@@ -627,14 +453,6 @@ function quietly(call) {
   }
 }
 
-// The run-record writer each engine binds as its `logRun` — one body for all four. What differs
-// between engines is BOUND, not copied: the agent call (review's retries underneath `quietly`, the
-// others' plain `agent`), the phase the write is dispatched under, where the logger writes (`target`,
-// read at each call: review finalizes into a `runDir` that only exists once a checkpoint has run),
-// what is stamped onto every record (`prepare`: review's fingerprint basis), and how a loss is noted
-// (review's one noteTelemetryLoss for every bookkeeping write; telemetryLossNoter for the others).
-// A lost record NEVER fails the run: it is noted, and the engine renders the note where a human reads.
-// The returned function must still be bound to the NAME `logRun` in the engine — see the header.
 /**
  * @template O
  * @param {object} o
@@ -650,14 +468,10 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const record = prepare(recordIn)
     const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
-    // The record landed and the script still had something to say — a run directory refused or left
-    // behind. Not a lost record, so it must not read as one, but not silence either.
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
   }
 }
 
-// The loss note of the engines that keep no other bookkeeping writes: every loss is kept for the
-// report, and logged — a landed record under its own prefix, never as a lost one.
 /**
  * @param {string[]} lost
  * @param {(line: string) => void} say
@@ -672,35 +486,10 @@ function telemetryLossNoter(lost, say) {
 // <<< craft-inline
 // The banner that leads the plan when a write did not land — the same one review.js uses.
 // >>> craft-inline lib/review-coverage.mjs telemetryLostSection
-// ---- telemetry honesty ----
-// A run record is written by an agent shelling out to lib/craft-log-run.mjs, so the write can fail
-// while the review itself is perfectly healthy: a craftRoot that has moved, a dead logger agent, a
-// damaged store. Losing it used to be pure silence, and silence in the store is read as "this review
-// was never run" — the permissive default wearing the face of a fact.
-// The recorded decision is that this NEVER fails the run (a three-hour review killed by a bookkeeping
-// write teaches everyone to ignore the marker); it is reported instead. Returns '' for a healthy run,
-// so the marker cannot appear where nothing was lost — a marker that fires on healthy runs is one
-// people stop reading, which is the same defect wearing the opposite sign.
-// The body speaks about the WRITE, never about the run: it goes on every exit, including those whose
-// verdict says nothing was reviewed (dead base resolution, unknown language pin, empty diff), where
-// reassurance that "the review ran" would contradict the verdict itself. And it says "could not be
-// confirmed", not "did not land": two of the three ways an entry gets here — an abandoned deadline
-// (the logger agent is NOT cancelled and may still write) and a malformed reply — are compatible with
-// a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
-// It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
-// embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
-// Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
-// agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
-// structure — a heading, a verdict line — above the verdict the engine actually computed.
 /** @param {unknown} lost */
 function telemetryLostSection(lost) {
   const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
-  // A record that LANDED while its run directory did not is a different fact from a record nobody
-  // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the
-  // list of things readers skip. The two are counted separately and the heading follows whichever is
-  // actually true — the section is still one section, because both mean the store is not the whole
-  // story for this run.
   const landed = lines.filter(l => /^the run directory \(the record itself landed\)/.test(String(l)))
   const unconfirmed = lines.length - landed.length
   const head = unconfirmed
