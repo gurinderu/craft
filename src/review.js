@@ -1115,7 +1115,7 @@ async function recallDecisions(ask, paths, base) {
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_TITLE lensWords findingLenses findingLine matchClass anchorOf triedOrder findingPlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_TITLE lensWords findingLenses findingLine matchClass anchorOf pairRank triedOrder findingPlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_CANDIDATE_OVERLAP = 0.3
@@ -1171,13 +1171,23 @@ function anchorOf(f, d) {
   const line = findingLine(f)
   const own = lensWords(d.lens)
   const lenses = findingLenses(f)
-  const byLine = !!d.line && line > 0
+  const byLine = !!d.line && line > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
   const byLens = own.length > 0 && lenses.size > 0
   return {
     near: byLine && Math.abs(line - Number(d.line)) <= MATCH_LINE_WINDOW,
     same: byLens && own.some(l => lenses.has(l)),
     comparable: byLine || byLens,
   }
+}
+
+/**
+ * A disputed pair's rank under the judge's bound, lowest first: settable findings before Critical/High,
+ * and within each a near line before a shared lens before title words alone.
+ * @param {DisputedPair} p @returns {number}
+ */
+function pairRank(p) {
+  const { near, same } = anchorOf(p.f, p.d)
+  return (reraisedBySeverity(p.f.severity) ? 3 : 0) + (near ? 0 : same ? 1 : 2)
 }
 
 /** The records in the order they are tried: those overriding another first. @param {PriorDecision[]} ds @returns {PriorDecision[]} */
@@ -1309,8 +1319,8 @@ async function askJudge(sent, judge, refused) {
 
 /**
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
- * before it is judged the same. `judge` runs once, only when a disputed pair exists; the pairs of
- * findings a record can set aside (below Critical/High) go first under the bound.
+ * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
+ * pairs go in pairRank order.
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -1319,7 +1329,7 @@ async function matchFindings(findings, decisions, judge) {
   const ordered = triedOrder(decisions)
   const plans = new Map(findings.map(f => [f, findingPlan(f, ordered)]))
   const all = [...plans].flatMap(([f, p]) => p.disputed.map(d => ({ f, d })))
-  const pairs = [...all.filter(p => !reraisedBySeverity(p.f.severity)), ...all.filter(p => reraisedBySeverity(p.f.severity))]
+  const pairs = all.map(p => ({ p, r: pairRank(p) })).sort((a, b) => a.r - b.r).map(x => x.p)
   /** @type {string[]} */
   const notes = []
   /** @type {string[]} */

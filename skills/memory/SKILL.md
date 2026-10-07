@@ -50,7 +50,9 @@ decision without a `commit` is still recorded, but a review raises its finding a
 The title is the finding's title as the review printed it; `line` and `lens` are the finding's
 anchor. The review rewords titles every round, so the engine matches a record to a finding by its
 file inside `scope`, its line (within 15) and its lens; a near miss goes to a judge, and a record
-without `line` and `lens` (an older one) is matched by its title words alone.
+without `line` and `lens` (an older one) is matched by its title words alone. A line counts only
+when `scope` is the finding's own file: under a directory or `.` scope only the lens and the title
+words count, so give the file as scope whenever the finding has one.
 
 **A deferred finding is an open question, not a decision**: valid, but not answered now. It is a
 `question` record with the same anchors — title = the finding's title, scope = its file, body = what
