@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.23.0](https://github.com/gurinderu/craft/compare/v0.22.0...v0.23.0) (2026-10-07)
+
+
+### Features
+
+* **ci:** quality delta between a PR's base and head in the job summary ([#136](https://github.com/gurinderu/craft/issues/136)) ([fcdf184](https://github.com/gurinderu/craft/commit/fcdf184ceedec07641476f6ea502ade015964e39))
+* **ci:** weekly Stryker mutation run over lib/ with a ratcheted floor ([#138](https://github.com/gurinderu/craft/issues/138)) ([286686a](https://github.com/gurinderu/craft/commit/286686afa27ba938ea917d2d50934b79871c107b))
+* **gate:** every lib module at maximum type strictness; harden run-store readers ([#116](https://github.com/gurinderu/craft/issues/116)) ([2a5a418](https://github.com/gurinderu/craft/commit/2a5a41897905ba8e5c6224dc5da62ae233cb3785))
+* **gate:** hold the inlined lib modules to maximum type strictness ([#115](https://github.com/gurinderu/craft/issues/115)) ([ac60751](https://github.com/gurinderu/craft/commit/ac60751a607b153d5e6caee8d2b4e3c1fe2c460f))
+* **gate:** the engines read model output as unknown, pass closed agent options, and cannot reach the clock ([#122](https://github.com/gurinderu/craft/issues/122)) ([4ad720b](https://github.com/gurinderu/craft/commit/4ad720b1227a1d5720c8f4c49e40fd9250731560))
+* **gate:** the engines' own code under maximum type strictness ([#119](https://github.com/gurinderu/craft/issues/119)) ([c2bf4f2](https://github.com/gurinderu/craft/commit/c2bf4f27112ee6ec376dcd7a78e9613993f4e3c6))
+* **gate:** the OpenCode plugin's .mjs, tests included, under maximum type strictness ([#120](https://github.com/gurinderu/craft/issues/120)) ([0659840](https://github.com/gurinderu/craft/commit/0659840d4d900b449eae398eeb3f2e9a6ba5fbff))
+* **gate:** the tests under maximum type strictness ([#118](https://github.com/gurinderu/craft/issues/118)) ([cb8db6f](https://github.com/gurinderu/craft/commit/cb8db6fabce2f8273ae7a1148b52d161d6fcb78b))
+* **gate:** type-check lib/*.mjs with tsc --checkJs ([#113](https://github.com/gurinderu/craft/issues/113)) ([6632a8a](https://github.com/gurinderu/craft/commit/6632a8a1947bca926a972155d91b06018cc956ea))
+* **gate:** typescript-eslint type-aware rules in lint and on the engines ([#126](https://github.com/gurinderu/craft/issues/126)) ([11e54e8](https://github.com/gurinderu/craft/commit/11e54e8ae31c2bf28708c804f7a47acb13142d82))
+* **review:** a changed public contract path forces the compat lens on ([#152](https://github.com/gurinderu/craft/issues/152)) ([d4f5940](https://github.com/gurinderu/craft/commit/d4f5940889be8531687ccef085b237c76fed41f2))
+* **review:** review remembers rejected findings — prior decisions from project memory, PR-thread rejections recorded ([#155](https://github.com/gurinderu/craft/issues/155)) ([62e6563](https://github.com/gurinderu/craft/commit/62e6563535aa17922f6e9518479e4e6033ec37fd))
+* **skills:** addressing-findings fixes the property, falsifies per element, covers introduced bounds ([#145](https://github.com/gurinderu/craft/issues/145)) ([5033a80](https://github.com/gurinderu/craft/commit/5033a80f9e5dac9f68a067b492e338e5412cac49))
+* **skills:** compatibility — language-agnostic backward-compatibility catalogue read by the compat lens ([#147](https://github.com/gurinderu/craft/issues/147)) ([edf8822](https://github.com/gurinderu/craft/commit/edf88222164f18335abdcabec7fcd138f8339636))
+* **skills:** distributed-races — language-agnostic race catalogue read by the reconciler lens ([#144](https://github.com/gurinderu/craft/issues/144)) ([c22b3db](https://github.com/gurinderu/craft/commit/c22b3db14e12d521926b49702d83aa337f6fba76))
+* **skills:** memory — abstract project memory for decisions, lessons and open questions ([#151](https://github.com/gurinderu/craft/issues/151)) ([48f8f33](https://github.com/gurinderu/craft/commit/48f8f33fee11e8e535355600111b74567d9b8ff8))
+
+
+### Bug Fixes
+
+* **audit:** say in the report and record when a craft agent was unavailable ([#111](https://github.com/gurinderu/craft/issues/111)) ([0885377](https://github.com/gurinderu/craft/commit/08853773c49edda29082f651dc364e60c51055a9))
+* **audit:** treat a whitespace-only synthesis answer as no report ([#130](https://github.com/gurinderu/craft/issues/130)) ([0062f65](https://github.com/gurinderu/craft/commit/0062f656cc1ef2ef891d535a40657af26f561bce))
+* **engines:** one record shape for an unavailable craft agent; audit carries the nested review's section ([#148](https://github.com/gurinderu/craft/issues/148)) ([2c013a5](https://github.com/gurinderu/craft/commit/2c013a5335d2aed9b607d6bb103ce5ec4df3ded0))
+* **gate:** count any carried inside a type; refuse globalThis and host escapes in the engines ([#125](https://github.com/gurinderu/craft/issues/125)) ([dfb4b81](https://github.com/gurinderu/craft/commit/dfb4b81cba2d10c91e4bb5f6a38aa68232e1f4dc))
+* **gate:** directives read from tsc's parse; tests for the gate tooling's survivors ([#140](https://github.com/gurinderu/craft/issues/140)) ([bed93c9](https://github.com/gurinderu/craft/commit/bed93c9a72629c0893c48199e4994c6c2b0bc4fd))
+* **gate:** every launch names the plugin-prefixed id; check-workflows and check-skills refuse a bare one ([#150](https://github.com/gurinderu/craft/issues/150)) ([f5b429e](https://github.com/gurinderu/craft/commit/f5b429e0135d9afeb31454fa08942d964338a15c))
+* **log-run:** a checkpoint file holding valid JSON that is not an object ([2a5a418](https://github.com/gurinderu/craft/commit/2a5a41897905ba8e5c6224dc5da62ae233cb3785))
+* **logging:** the engine revision reaches the record without passing through model output ([#149](https://github.com/gurinderu/craft/issues/149)) ([3b173ef](https://github.com/gurinderu/craft/commit/3b173ef230f2bfa48c6d3918a720e8073e7585a6))
+* post-merge review — no double count of nested fallbacks, one-line errors, fail-closed launch inventory, explicit agent keys ([#154](https://github.com/gurinderu/craft/issues/154)) ([55aae76](https://github.com/gurinderu/craft/commit/55aae764fb3c6df88b9618614b2846eaa323ae5d))
+* **review:** decode git paths without TextEncoder/TextDecoder, which the Workflow sandbox lacks ([#121](https://github.com/gurinderu/craft/issues/121)) ([55c3e17](https://github.com/gurinderu/craft/commit/55c3e17a6eba3ecaf1f4ec80d4e3398891c1785f))
+* **run-record:** one stored-record type and one cost rule for every reader ([#117](https://github.com/gurinderu/craft/issues/117)) ([6ab4820](https://github.com/gurinderu/craft/commit/6ab482091233299938f20c8ad3c5433b5a6f48be))
+
 ## [0.22.0](https://github.com/gurinderu/craft/compare/v0.21.0...v0.22.0) (2026-10-01)
 
 
