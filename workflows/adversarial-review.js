@@ -206,6 +206,28 @@ function memoryRecordId(kind, title, scope) {
 }
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
+const DECISION_LENS_MAX = 80
+
+/**
+ * A record's `line`: a non-negative integer, or a string of digits; 0 when absent (0 is "no line", as
+ * in a finding); -1 when malformed. @param {unknown} v @returns {number}
+ */
+function recordLine(v) {
+  if (v == null || v === '') return 0
+  if (typeof v === 'number') return Number.isInteger(v) && v >= 0 && v < 1e9 ? v : -1
+  return typeof v === 'string' && /^\s*\d{1,9}\s*$/.test(v) ? Number(v) : -1
+}
+
+/** What is wrong with a record's anchor (`line`, `lens`); '' when nothing is. @param {Record<string, unknown>} o @returns {string} */
+function anchorFieldProblem(o) {
+  if (recordLine(o['line']) < 0) return `: line ${JSON.stringify(o['line'])} is not a line number`
+  const lens = o['lens']
+  if (lens == null) return ''
+  if (typeof lens !== 'string') return `: lens ${JSON.stringify(lens)} is not a string`
+  if (lens.trim().length > DECISION_LENS_MAX) return `: lens is ${lens.trim().length} chars, over the ${DECISION_LENS_MAX}-char ceiling`
+  return hasControlChar(lens) ? ': lens contains a control character' : ''
+}
+
 const PRIOR_RECORD_KINDS = ['decision', 'question']
 
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
@@ -281,7 +303,19 @@ function decisionFields(o) {
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
   const derived = derivedRecordId(o)
   const stores = linkedIds(links, /^store:\s*(\S+)$/i)
-  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(stores.length ? { stores } : {}), ...(derived ? { derived: /** @type {const} */ (true) } : {}) }
+  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(stores.length ? { stores } : {}), ...(derived ? { derived: /** @type {const} */ (true) } : {}), ...recordAnchor(o) }
+}
+
+/**
+ * The record's anchor and overrides, each present only when given: `line` above 0, `lens` non-empty,
+ * `overrides` the ids of a list of strings. @param {Record<string, unknown>} o
+ * @returns {{ line?: number, lens?: string, overrides?: string[] }}
+ */
+function recordAnchor(o) {
+  const line = recordLine(o['line'])
+  const lens = decisionText(o['lens'])
+  const overrides = Array.isArray(o['overrides']) ? o['overrides'].map(decisionText).filter(Boolean) : []
+  return { ...(line > 0 ? { line } : {}), ...(lens ? { lens } : {}), ...(overrides.length ? { overrides } : {}) }
 }
 
 /**
@@ -306,7 +340,7 @@ function decisionProblem(o, d) {
   if (missing) return missing
   const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (k)].length > max)
   if (over) return `: ${over[0]} is ${d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (over[0])].length} chars, over the ${over[1]}-char ceiling`
-  return decisionAnchorProblem(d)
+  return anchorFieldProblem(o) || decisionAnchorProblem(d)
 }
 
 const SAFE_SCOPE = /^[A-Za-z0-9._@+/ -]+$/
@@ -403,19 +437,30 @@ function titleWords(t) {
 }
 
 /**
- * Whether `d` answers finding `f`: the file inside the scope, and the titles overlapping enough.
+ * Whether `d` answers finding `f` by the title rule alone: the file inside the scope, and the titles
+ * overlapping enough. The engines apply it to a record or a finding without a comparable anchor
+ * (lib/prior-decision-match.mjs; realm @nick/craft, node #230).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
  */
 function decisionAnswers(f, d) {
-  const file = decisionScopeParts(String(f.file ?? ''))
-  const scope = decisionScopeParts(d.scope)
-  if (!file.length || scope.length > file.length || scope.some((s, i) => s !== file[i])) return false
-  const a = titleWords(f.title)
-  const b = titleWords(d.title)
-  if (!a.size || !b.size) return false
+  return inDecisionScope(f.file, d.scope) && titleOverlap(f.title, d.title) >= DECISION_TITLE_OVERLAP
+}
+
+/** Whether `file` sits inside `scope` (by path segments; `.` covers the repo). @param {unknown} file @param {string} scope */
+function inDecisionScope(file, scope) {
+  const parts = decisionScopeParts(String(file ?? ''))
+  const within = decisionScopeParts(scope)
+  return parts.length > 0 && within.length <= parts.length && within.every((s, i) => s === parts[i])
+}
+
+/** The share of words two titles share, of the longer one; 0 when either has none. @param {unknown} x @param {unknown} y @returns {number} */
+function titleOverlap(x, y) {
+  const a = titleWords(x)
+  const b = titleWords(y)
+  if (!a.size || !b.size) return 0
   let shared = 0
   for (const w of a) if (b.has(w)) shared++
-  return shared / Math.max(a.size, b.size) >= DECISION_TITLE_OVERLAP
+  return shared / Math.max(a.size, b.size)
 }
 
 /** Critical/High are always raised again (realm @nick/craft, node #187). @param {unknown} sev */
@@ -433,7 +478,9 @@ function priorDecisionsRefusedSection(refused) {
 }
 const RECALL_PATHS_MAX = 60
 
-const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
+const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit', 'lens']
+
+const RECORD_OTHER_FIELDS = { line: { type: 'integer' }, deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } }
 
 const MEMORY_RECALL_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['backend', 'why', 'decisions'],
@@ -442,11 +489,11 @@ const MEMORY_RECALL_SCHEMA = {
     why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
     decisions: {
       type: 'array', description: 'the matching active decision records, verbatim',
-      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } } },
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), ...RECORD_OTHER_FIELDS } },
     },
     questions: {
       type: 'array', description: 'the matching active question records (open questions, deferred findings among them), verbatim',
-      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } } },
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), ...RECORD_OTHER_FIELDS } },
     },
     stale: {
       type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
@@ -476,7 +523,7 @@ Scope: ${scope}
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
+Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, links (line and lens only when the record carries them; nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
 }
 
 /**
@@ -712,13 +759,14 @@ function passedAliases(x) {
  * Otherwise it is held back: `… not applied: held by <id> (active, <date>) (<why>)` when a successor is
  * not older, else `… not applied: <status> in memory (<why>)`.
  * @param {unknown[]} passed @param {InactiveRecord[]} inactive @param {number[]} [only] @param {Successor[]} [successors]
- * @returns {{ at: Set<number>, refused: string[], overrides: string[], freed: string[] }}
+ * `over` maps each such passed record's index to the ids of the successors it overrides.
+ * @returns {{ at: Set<number>, refused: string[], overrides: string[], freed: string[], over: Map<number, string[]> }}
  */
 function blockedPassed(passed, inactive, only = passed.map((_, i) => i), successors = []) {
   /** @type {Set<number>} */
   const at = new Set()
-  /** @type {{ refused: string[], overrides: string[], freed: string[] }} */
-  const out = { refused: [], overrides: [], freed: [] }
+  /** @type {{ refused: string[], overrides: string[], freed: string[], over: Map<number, string[]> }} */
+  const out = { refused: [], overrides: [], freed: [], over: new Map() }
   for (const i of only) {
     const ids = passedAliases(passed[i])
     const hits = inactive.filter(e => e.ids.some(id => ids.includes(id)))
@@ -733,6 +781,7 @@ function blockedPassed(passed, inactive, only = passed.map((_, i) => i), success
     }
     out.overrides.push(`${label} applied over ${v.over}: newer`)
     if (over.length) out.freed.push(...ids)
+    if (over.length) out.over.set(i, over.map(s => s.id))
   }
   return { at, ...out }
 }
@@ -765,6 +814,11 @@ function withoutLinksTo(x, freed) {
   if (!Array.isArray(o['links'])) return x
   const links = o['links'].filter(l => !supersededIds([l]).some(id => freed.has(id)))
   return links.length === o['links'].length ? x : { ...o, links }
+}
+
+/** The record with `overrides` naming the successors it overrides; itself when none. @param {unknown} x @param {string[] | undefined} ids @returns {unknown} */
+function withOverrides(x, ids) {
+  return ids?.length && x && typeof x === 'object' && !Array.isArray(x) ? { ...x, overrides: ids } : x
 }
 
 /**
@@ -829,7 +883,7 @@ function mergeAndRead(recalled, passed, parse, inactive = []) {
   const block = blockedPassed(passed, inactive, fresh, successorRecords(recalled, x => parse([x]).decisions.length > 0))
   const addedAt = fresh.filter(i => !block.at.has(i))
   const freed = new Set(block.freed)
-  const merged = [...(freed.size ? recalled.map(x => withoutLinksTo(x, freed)) : recalled), ...addedAt.map(i => passed[i])]
+  const merged = [...(freed.size ? recalled.map(x => withoutLinksTo(x, freed)) : recalled), ...addedAt.map(i => withOverrides(passed[i], block.over.get(i)))]
   return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused, overrides: block.overrides }
 }
 
@@ -2033,16 +2087,245 @@ confirmed = gapped.found
 suspected = gapped.doubtful
 const refutedGaps = gapped.refutedGaps
 
+const MATCH_LINE_WINDOW = 15
+
+const MATCH_CANDIDATE_OVERLAP = 0.3
+
+const MATCH_JUDGE_PAIRS_MAX = 40
+
+const MATCH_WHY_MAX = 200
+
+const MATCH_BODY_MAX = 800
+
+const CUT_NAMED_MAX = 10
+
+const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
+
+const MATCHED_BY_TITLE = 'matched by title words'
+
+/** Lower-cased lens names of a value, split on commas. @param {unknown} v @returns {string[]} */
+function lensWords(v) {
+  return typeof v === 'string' ? v.toLowerCase().split(/[,;|]/).map(s => s.trim()).filter(Boolean) : []
+}
+
+/** The lenses a finding names: its `lens`, each of its `sources`, its `source`. @param {DecidableFinding} f @returns {Set<string>} */
+function findingLenses(f) {
+  const sources = Array.isArray(f['sources']) ? /** @type {unknown[]} */ (f['sources']) : []
+  return new Set([f['lens'], ...sources, f['source']].flatMap(lensWords))
+}
+
+/** A finding's line when it is a positive integer, else 0. @param {DecidableFinding} f @returns {number} */
+function findingLine(f) {
+  const n = Number(f['line'])
+  return Number.isInteger(n) && n > 0 ? n : 0
+}
+
+/**
+ * How record `d` stands to finding `f`: `anchored` (file, line within the window, lens), `title` (no
+ * comparable anchor, the title rule holds), `disputed` (a candidate for the judge), '' (none).
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'title' | 'disputed' | ''}
+ */
+function matchClass(f, d) {
+  if (!inDecisionScope(f.file, d.scope)) return ''
+  const { near, same, comparable } = anchorOf(f, d)
+  if (!comparable) return decisionAnswers(f, d) ? 'title' : ''
+  if (near && same) return 'anchored'
+  return near || same || titleOverlap(f.title, d.title) >= MATCH_CANDIDATE_OVERLAP ? 'disputed' : ''
+}
+
+/**
+ * How the record's anchor meets the finding's: line within the window, a shared lens, and whether either
+ * side could be compared at all. @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ near: boolean, same: boolean, comparable: boolean }}
+ */
+function anchorOf(f, d) {
+  const line = findingLine(f)
+  const own = lensWords(d.lens)
+  const lenses = findingLenses(f)
+  const byLine = !!d.line && line > 0
+  const byLens = own.length > 0 && lenses.size > 0
+  return {
+    near: byLine && Math.abs(line - Number(d.line)) <= MATCH_LINE_WINDOW,
+    same: byLens && own.some(l => lenses.has(l)),
+    comparable: byLine || byLens,
+  }
+}
+
+/** The records in the order they are tried: those overriding another first. @param {PriorDecision[]} ds @returns {PriorDecision[]} */
+function triedOrder(ds) {
+  const first = ds.filter(d => d.overrides?.length)
+  return first.length ? [...first, ...ds.filter(d => !d.overrides?.length)] : ds
+}
+
+/**
+ * One finding against the records in tried order: the first sure match, and the disputed candidates
+ * tried before it (the judge decides whether one of them answers it first).
+ * @param {DecidableFinding} f @param {PriorDecision[]} ordered @returns {{ sure?: PriorMatch, disputed: PriorDecision[] }}
+ */
+function findingPlan(f, ordered) {
+  /** @type {PriorDecision[]} */
+  const disputed = []
+  for (const d of ordered) {
+    const c = matchClass(f, d)
+    if (c === 'anchored' || c === 'title') return { sure: { d, how: c === 'anchored' ? MATCHED_BY_ANCHOR : MATCHED_BY_TITLE }, disputed }
+    if (c === 'disputed') disputed.push(d)
+  }
+  return { disputed }
+}
+
+/** The answer each finding gets without a judge: its first sure match. @param {PriorDecision[]} ds @returns {(f: DecidableFinding) => PriorMatch | undefined} */
+function sureMatchOf(ds) {
+  const ordered = triedOrder(ds)
+  return f => findingPlan(f, ordered).sure
+}
+
+/** One line of model or record text, cut at `max`. @param {unknown} v @param {number} [max] */
+function clipLine(v, max = MATCH_WHY_MAX) {
+  const s = String(v ?? '').replace(/\s+/g, ' ').trim()
+  return s.length > max ? `${s.slice(0, max)}…` : s
+}
+
+const MATCH_JUDGE_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['verdicts'],
+  properties: {
+    verdicts: {
+      type: 'array', description: 'one entry per pair',
+      items: {
+        type: 'object', additionalProperties: false, required: ['pair', 'same', 'why'],
+        properties: {
+          pair: { type: 'integer', description: 'the PAIR number' },
+          same: { type: 'boolean', description: 'true only when the record and the finding are about the same defect' },
+          why: { type: 'string', description: 'one line: what makes them the same or different' },
+        },
+      },
+    },
+  },
+}
+
+/** One pair as the judge reads it. @param {DisputedPair} p @param {number} i @returns {string} */
+function judgePair(p, i) {
+  const { d, f } = p
+  const lenses = [...findingLenses(f)].join(', ')
+  return `--- PAIR ${i} ---
+RECORD (${d.kind} ${d.id}, from an earlier round): ${clipLine(d.title)}
+  scope ${d.scope}${d.line ? `, line ${d.line}` : ''}${d.lens ? `, lens ${clipLine(d.lens)}` : ''}
+  reason: ${clipLine(d.reason, MATCH_BODY_MAX)}
+FINDING (this round): ${clipLine(f.title)}
+  ${clipLine(f.file)}:${findingLine(f)}${lenses ? `, lens ${clipLine(lenses)}` : ''}
+  body: ${clipLine(f['why'] ?? f['description'], MATCH_BODY_MAX)}`
+}
+
+/** The judge's prompt. @param {DisputedPair[]} pairs @returns {string} */
+function judgePrompt(pairs) {
+  return `Decide, for each pair below, whether a remembered record (a decision or a deferred question on a review finding) and a finding of this review round are about the SAME defect. The reviewer rewords every finding each round, so judge the substance, not the words: the same missing guard, unchecked case or wrong behaviour at the same site is the same defect in new wording, even a few lines off; a different defect near the same code, or the same kind of defect at another site, is not. Judge from the text given; read nothing else and change nothing.
+${pairs.map(judgePair).join('\n')}
+Return {verdicts: [one {pair, same, why} per pair]}: pair is the PAIR number, same is true only when they are the same defect, why is one line naming what makes them the same or different.`
+}
+
+/**
+ * One verdict as the judge returned it, or null when it is off-shape or its pair is outside 0..n-1.
+ * @param {unknown} v @param {number} n @returns {{ i: number, same: boolean, why: string } | null}
+ */
+function judgeVerdict(v, n) {
+  const o = /** @type {Record<string, unknown>} */ (v && typeof v === 'object' ? v : {})
+  const i = o['pair']
+  const same = o['same']
+  if (typeof i !== 'number' || !Number.isInteger(i) || i < 0 || i >= n || typeof same !== 'boolean') return null
+  return { i, same, why: clipLine(o['why']) || 'no reason given' }
+}
+
+/**
+ * The judge's verdicts by pair index, or null when the answer is absent or carries no verdict list.
+ * A verdict off-shape, out of range or repeating a pair is ignored. @param {unknown} raw @param {number} n
+ * @returns {Map<number, { same: boolean, why: string }> | null}
+ */
+function readJudge(raw, n) {
+  const list = raw && typeof raw === 'object' ? /** @type {Record<string, unknown>} */ (raw)['verdicts'] : null
+  if (!Array.isArray(list)) return null
+  /** @type {Map<number, { same: boolean, why: string }>} */
+  const out = new Map()
+  for (const v of list) {
+    const r = judgeVerdict(v, n)
+    if (r && !out.has(r.i)) out.set(r.i, { same: r.same, why: r.why })
+  }
+  return out
+}
+
+/** The refusal naming the pairs past the bound. @param {DisputedPair[]} cut @returns {string} */
+function cutPairsNote(cut) {
+  const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
+  const more = cut.length - named.length
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched, their findings raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+}
+
+/**
+ * Runs the judge over `sent` (never empty): the verdicts by pair index; a missing judge, a throw or an
+ * unreadable answer yields none, said once in `refused`. @param {DisputedPair[]} sent
+ * @param {((prompt: string) => Promise<unknown>) | undefined} judge @param {string[]} refused
+ * @returns {Promise<Map<number, { same: boolean, why: string }>>}
+ */
+async function askJudge(sent, judge, refused) {
+  /** @type {unknown} */
+  let raw = null
+  try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
+  const v = readJudge(raw, sent.length)
+  if (!v) {
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched, their findings raised normally`)
+    return new Map()
+  }
+  const unjudged = sent.length - v.size
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched, their findings raised normally`)
+  return v
+}
+
+/**
+ * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
+ * before it is judged the same. `judge` runs once, only when a disputed pair exists; the pairs of
+ * findings a record can set aside (below Critical/High) go first under the bound.
+ * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
+ * @param {((prompt: string) => Promise<unknown>) | undefined} judge
+ * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
+ */
+async function matchFindings(findings, decisions, judge) {
+  const ordered = triedOrder(decisions)
+  const plans = new Map(findings.map(f => [f, findingPlan(f, ordered)]))
+  const all = [...plans].flatMap(([f, p]) => p.disputed.map(d => ({ f, d })))
+  const pairs = [...all.filter(p => !reraisedBySeverity(p.f.severity)), ...all.filter(p => reraisedBySeverity(p.f.severity))]
+  /** @type {string[]} */
+  const notes = []
+  /** @type {string[]} */
+  const refused = []
+  const sent = pairs.slice(0, MATCH_JUDGE_PAIRS_MAX)
+  if (pairs.length > sent.length) refused.push(cutPairsNote(pairs.slice(sent.length)))
+  const verdicts = sent.length ? await askJudge(sent, judge, refused) : new Map()
+  /** @type {Map<DecidableFinding, Map<PriorDecision, { same: boolean, why: string }>>} */
+  const byFinding = new Map()
+  sent.forEach((p, i) => {
+    const v = verdicts.get(i)
+    if (v) byFinding.set(p.f, (byFinding.get(p.f) ?? new Map()).set(p.d, v))
+  })
+  if (sent.length && verdicts.size) notes.push(`match judge: ${verdicts.size} disputed pair(s) judged, ${[...verdicts.values()].filter(v => v.same).length} the same`)
+  /** @param {DecidableFinding} f @returns {PriorMatch | undefined} */
+  const matchOf = f => {
+    const p = plans.get(f)
+    const judged = byFinding.get(f)
+    const d = judged && p?.disputed.find(x => judged.get(x)?.same)
+    return d && judged ? { d, how: `matched by judge: ${judged.get(d)?.why}` } : p?.sure
+  }
+  return { matchOf, notes, refused }
+}
 /**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
- * could set aside (not Critical/High) and that recorded a commit to compare against.
- * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions @returns {PriorDecision[]}
+ * could set aside (not Critical/High) and that recorded a commit to compare against. `matchOf` is the
+ * match the split runs on (lib/prior-decision-match.mjs); by default, the sure matches alone.
+ * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
+ * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf] @returns {PriorDecision[]}
  */
-function decisionsToCheck(findings, decisions) {
+function decisionsToCheck(findings, decisions, matchOf = sureMatchOf(decisions)) {
   const out = new Set(/** @type {PriorDecision[]} */ ([]))
   for (const f of findings) {
     if (reraisedBySeverity(f.severity)) continue
-    const d = decisions.find(x => decisionAnswers(f, x))
+    const d = matchOf(f)?.d
     if (d && d.commit) out.add(d)
   }
   return [...out]
@@ -2195,22 +2478,24 @@ function reraisedNote(d, why) {
  * @template {DecidableFinding} F
  * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
  * @param {Set<string>} [missing]  ids whose commit the repo does not know
+ * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf]  the record answering a finding (default: the sure matches)
  * @returns {{ kept: F[], setAside: Array<SetAside<F>>, reraised: number }}
  */
-function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set()) {
+function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set(), matchOf = sureMatchOf(decisions)) {
   /** @type {F[]} */
   const kept = []
   /** @type {Array<SetAside<F>>} */
   const setAside = []
   let reraised = 0
   for (const f of findings) {
-    const d = decisions.find(x => decisionAnswers(f, x))
-    if (!d) { kept.push(f); continue }
+    const m = matchOf(f)
+    if (!m) { kept.push(f); continue }
+    const d = m.d
     const why = reraiseReason(f, d, unchanged, missing)
     const note = `${String(f[noteField] ?? '')} · `
     if (!why) {
       const deferral = d.kind === 'question' ? { deferral: deferralOf(d) } : {}
-      setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, priorKind: d.kind, ...deferral, [noteField]: note + priorDecisionMark(d) })
+      setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, priorKind: d.kind, priorMatch: m.how, ...deferral, [noteField]: note + priorDecisionMark(d) })
       continue
     }
     reraised++
@@ -2223,12 +2508,15 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
  * Applies the decisions to every tier of an engine's findings. `checkScopes` runs the scope check for
  * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
  * the decisions whose commit the repo does not know, for the report's Prior decisions not applied.
+ * `judge` is the one match judge (lib/prior-decision-match.mjs), called with its prompt only when a
+ * disputed record–finding pair exists; what it could not decide is named in `refused`.
  * @template {DecidableFinding} F
  * @param {Record<string, F[]>} tiers @param {PriorDecision[]} given  questions that record no deferral are dropped (matchesFindings)
  * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
+ * @param {(prompt: string) => Promise<unknown>} [judge]
  * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<SetAside<F>>, reraised: number, notes: string[], refused: string[] }>}
  */
-async function applyPriorDecisions(tiers, given, checkScopes, noteField = 'why') {
+async function applyPriorDecisions(tiers, given, checkScopes, noteField = 'why', judge = undefined) {
   /** @type {Array<SetAside<F>>} */
   let setAside = []
   /** @type {string[]} */
@@ -2242,14 +2530,17 @@ async function applyPriorDecisions(tiers, given, checkScopes, noteField = 'why')
   if (superseded.length) notes.push(`${superseded.length} record(s) superseded by another given record — not applied: ${superseded.map(d => d.id).join(', ')}`)
   const decisions = given.filter(d => matchesFindings(d) && !isReplaced(d))
   if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
-  const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(Object.values(tiers).flat(), decisions), checkScopes, notes)
-  const refused = decisions.filter(d => !recordsDeferral(d)).map(d => `question ${d.id}: records a deferral but no commit, so an unchanged scope cannot be established — raised normally`)
-    .concat(toCheck.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`))
+  const all = Object.values(tiers).flat()
+  const matched = await matchFindings(all, decisions, judge)
+  notes.push(...matched.notes)
+  const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(all, decisions, matched.matchOf), checkScopes, notes)
+  const refused = matched.refused.concat(decisions.filter(d => !recordsDeferral(d)).map(d => `question ${d.id}: records a deferral but no commit, so an unchanged scope cannot be established — raised normally`)
+    .concat(toCheck.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`)))
   let reraised = 0
   /** @type {Record<string, F[]>} */
   const out = {}
   for (const [tier, list] of Object.entries(tiers)) {
-    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing)
+    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing, matched.matchOf)
     out[tier] = r.kept
     setAside = setAside.concat(r.setAside)
     reraised += r.reraised
@@ -2265,6 +2556,7 @@ const prior = await applyPriorDecisions(
   priorDecisionsIn.decisions,
   toCheck => agent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Coverage', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
   'description',
+  prompt => agent(prompt, { label: 'decision-match', phase: 'Coverage', schema: MATCH_JUDGE_SCHEMA, effort: 'low' }),
 )
 for (const n of prior.notes) log(`priorDecisions: ${n}`)
 priorDecisionsIn.refused.push(...prior.refused)
