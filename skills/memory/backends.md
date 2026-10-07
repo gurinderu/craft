@@ -25,11 +25,12 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 The directory is the one the harness names in the session's instructions (in Claude Code,
 `~/.claude/projects/<project-slug>/memory/`, with `MEMORY.md` as its index). An agent that does not
 have the index in context — a workflow's agent, a subagent — derives the directory itself: the
-slug is its own working directory (`pwd`) with every `/` replaced by `-` (observed:
-`/home/ubuntu/projects/my/craft` → `-home-ubuntu-projects-my-craft`; a `.` was observed to become
-`-` too). This is an observed convention, not a documented one: if that directory does not exist,
-say `none — harness memory directory <path> not found` and never guess another. Use the harness's
-format, not a craft one:
+slug is its own working directory (`pwd`) with every character that is not an ASCII letter or
+digit replaced by `-` (observed: `/home/ubuntu/projects/my/craft` → `-home-ubuntu-projects-my-craft`,
+`/.claude/` → `--claude-`). This is an observed convention, not a documented one: list
+`~/.claude/projects/` and take the directory whose name equals that slug; if none does, say
+`none — harness memory directory for <cwd> not found under ~/.claude/projects/` and never guess a
+near match. Use the harness's format, not a craft one:
 
 - **One file per record**, `<id>.md`:
 
