@@ -302,7 +302,7 @@ const UNUSED_VERDICT_SCHEMA = {
  * @typedef {{ candidates: number, confirmed: number, refuted: number, died: number, judged: number,
  *   refuteRate: number | null }} VerificationStats
  * @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence?: string,
- *   _verification?: VerificationStats }} DimResult
+ *   _verification?: VerificationStats, _priorDecisions?: string }} DimResult
  */
 
 // The craft release that produced a run. Recorded on the run record and index line so an
@@ -1430,13 +1430,51 @@ function reviewResult(dimension, report) {
   // NOT found and holds only over what was actually looked at. Anything unreadable is Warning.
   const verdict = reviewVerdict(line, incomplete)
   const summary = reviewSummary(line, verdict, incomplete)
+  const kept = liftPriorDecisionSections(String(report || 'no report'))
   return {
     dimension,
     verdict,
     summary,
-    findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: String(report || 'no report').slice(0, 4000) }],
+    findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: kept.rest.slice(0, 4000) }],
+    ...(kept.lifted ? { _priorDecisions: kept.lifted } : {}),
   }
 }
+
+// The nested reviews' prior-decision sections, lifted before the bound in reviewResult and appended
+// whole to the audit — they sit at the report's tail, where the bound cuts.
+// >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISION_HEADINGS liftPriorDecisionSections nestedPriorDecisionsSection
+const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Prior decisions not applied']
+
+/**
+ * The report without its prior-decision sections, and those sections, each from its heading to the
+ * next `## ` heading or the end.
+ * @param {string} report @returns {{ rest: string, lifted: string }}
+ */
+function liftPriorDecisionSections(report) {
+  const lines = report.split('\n')
+  /** @type {string[]} */
+  const rest = []
+  /** @type {string[]} */
+  const lifted = []
+  let inside = false
+  for (const line of lines) {
+    if (line.startsWith('## ')) inside = PRIOR_DECISION_HEADINGS.includes(line.trim())
+    ;(inside ? lifted : rest).push(line)
+  }
+  return { rest: rest.join('\n'), lifted: lifted.join('\n').trim() }
+}
+
+/**
+ * The outer report's section carrying every nested review's lifted text under its dimension; '' when
+ * none had any.
+ * @param {Array<{ dimension: string, text: string }>} lifted @returns {string}
+ */
+function nestedPriorDecisionsSection(lifted) {
+  const given = lifted.filter(l => l.text)
+  if (!given.length) return ''
+  return `\n\n## Prior decisions in the nested reviews (verbatim)\n${given.map(l => `### ${l.dimension}\n${l.text}`).join('\n\n')}\n`
+}
+// <<< craft-inline
 
 // The nested review launches below resolve the child under whichever name this registry carries —
 // the fence's own comment states the rule and the fallback's single trigger.
@@ -1867,5 +1905,5 @@ await logRun(auditRecord)
 // telemetry marker is also empty, so nothing at all says the synthesis died.
 // Without a schema a live agent returns its final text, so anything but a non-blank string is a death:
 // a whitespace-only answer is no report either (realm @nick/craft, #136).
-if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.`
-return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}`
+if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}`
