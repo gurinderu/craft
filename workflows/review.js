@@ -34,7 +34,7 @@ export const meta = {
  * optional properties exactly.
  * @typedef {{ runner: string, blockers: string[], missingTools: string[], ciCovers: string[], probes: Array<{ source: string, calls: number }>, partial: boolean, notes: string }} PreflightAnswer  PREFLIGHT_SCHEMA
  * @typedef {{ severity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info', title: string, file: string, line: number, why: string, whereChecked: string, fix: string, blastRadius: string, source: string, ruleId: string, fp?: string, symbol?: string, tier?: string, disposition?: string }} FindingAnswer  FINDING_ITEM
- * @typedef {{ fp: string, file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, sources?: string[], ruleId: string, title: string, why: string, whyRef?: { record: string, fp: string } }} LedgerAnswer  LEDGER_ITEM
+ * @typedef {{ fp: string, file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, sources?: string[], ruleId: string, title: string, why: string, whyRef?: { record: string, fp: string }, deferral?: { id: string, reason: string, who: string, when: string, link: string, commit: string } }} LedgerAnswer  LEDGER_ITEM
  * @typedef {{ found: boolean, round: number, head: string, ledger: LedgerAnswer[], ledgerCount: number, reason: string, priorFindings: number, journalSourced: boolean, sameFpBasis?: boolean, fpBasisKnown?: boolean, priorFpRevisions?: number[], priorFpRevisionsCheck?: string }} PriorRoundAnswer  PRIOR_ROUND_SCHEMA
  * @typedef {{ baseRef: string, files: string[], spec: string, branch: string, head: string, notes: string }} DetectAnswer  DETECT_SCHEMA
  * @typedef {{ sizeBucket: 'small' | 'medium' | 'large', lenses: string[], isLibrary: boolean, securitySensitive: boolean, intent: string, churn: string[], notes: string, surfaces?: { crossBoundarySymbol?: boolean, wireForm?: boolean, invariantType?: boolean } }} ScoutAnswer  SCOUT_SCHEMA
@@ -581,6 +581,32 @@ async function runScopeCheck(toCheck, checkScopes, notes) {
   for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
   return { toCheck, unchanged, missing }
 }
+/**
+ * A question's deferral as a structured field on the ledger row: its id, reason, author, date, link and
+ * commit. A carried row is read by this field, never by the mark in its `why` — the between-round
+ * transport cuts every `why` at its cap, and the mark sits at the tail.
+ * @typedef {{ id: string, reason: string, who: string, when: string, link: string, commit: string }} Deferral
+ */
+/**
+ * The deferral a question record (a PriorDecision of kind `question`) sets on the finding it sets aside.
+ * @param {Deferral} d @returns {Deferral}
+ */
+function deferralOf(d) {
+  return { id: d.id, reason: d.reason, who: d.who, when: d.when, link: d.link, commit: d.commit }
+}
+
+/**
+ * The deferral a ledger row carries, every part a string; null when it carries none (a row marked
+ * `deferred` with no question record behind it).
+ * @param {unknown} v @returns {Deferral | null}
+ */
+function deferralOn(v) {
+  if (!v || typeof v !== 'object') return null
+  const o = /** @type {Record<string, unknown>} */ (v)
+  /** @param {string} k */
+  const s = k => (typeof o[k] === 'string' ? /** @type {string} */ (o[k]) : '')
+  return s('id') ? { id: s('id'), reason: s('reason'), who: s('who'), when: s('when'), link: s('link'), commit: s('commit') } : null
+}
 /** What a record is called in a note: `decision` or `question`. @param {PriorDecision} d @returns {string} */
 function priorKindLabel(d) {
   return d.kind === 'question' ? 'question' : 'decision'
@@ -607,31 +633,27 @@ function recordsDeferral(d) {
   return d.kind !== 'question' || (d.deferred && !!d.commit)
 }
 
-/** The question id the KNOWN AND DEFERRED mark on a carried row names; '' when it names none. @param {unknown} why */
-function deferredQuestionId(why) {
-  const all = [...String(why ?? '').matchAll(/\(question ([^\s)]+)\)/g)]
-  const last = all[all.length - 1]
-  return last ? String(last[1]) : ''
+/**
+ * Whether a carried deferral no longer holds: a record in hand (recalled or passed) names its question
+ * in a `supersedes:` / `answers:` link — the memory skill's own way to close a question. The question's
+ * ABSENCE never releases it (realm @nick/craft, node #204): absence has benign causes — a launcher
+ * forwarding decisions only, a recall answer without its optional `questions` list, a recall from
+ * another backend than the one the deferral was written to.
+ * @param {Deferral} deferral @param {PriorDecision[]} records
+ */
+function deferralReleased(deferral, records) {
+  return records.some(d => d.supersedes.includes(deferral.id))
 }
 
-/**
- * Whether a carried deferred prior's question no longer holds: a record in hand (recalled or passed)
- * names it in a `supersedes:` / `answers:` link — the memory skill's own way to close a question. The
- * question's ABSENCE never releases it (realm @nick/craft, node #204): absence has benign causes — a
- * launcher forwarding decisions only, a recall answer without its optional `questions` list, a recall
- * from another backend than the one the deferral was written to. A row whose mark names no question
- * is left as it is.
- * @param {unknown} why @param {PriorDecision[]} records
- */
-function deferralReleased(why, records) {
-  const id = deferredQuestionId(why)
-  return !!id && records.some(d => d.supersedes.includes(id))
+/** The KNOWN AND DEFERRED mark of a deferral. @param {Deferral} x */
+function deferralMark(x) {
+  return `KNOWN AND DEFERRED: ${x.reason} — ${x.who || 'author not recorded'}, ${x.when || 'date not recorded'}, ${x.link || 'no link'} (question ${x.id})`
 }
 
 /** The mark a set-aside finding carries. @param {PriorDecision} d */
 function priorDecisionMark(d) {
-  const head = d.kind === 'question' ? 'KNOWN AND DEFERRED' : 'REJECTED BEFORE'
-  return `${head}: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (${priorKindLabel(d)} ${d.id})`
+  if (d.kind === 'question') return deferralMark(deferralOf(d))
+  return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (${priorKindLabel(d)} ${d.id})`
 }
 
 /** Why a decision did not apply when the repo does not know its commit (realm @nick/craft, node #184). @param {PriorDecision} d */
@@ -678,7 +700,11 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
     if (!d) { kept.push(f); continue }
     const why = reraiseReason(f, d, unchanged, missing)
     const note = `${String(f[noteField] ?? '')} · `
-    if (!why) { setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, priorKind: d.kind, [noteField]: note + priorDecisionMark(d) }); continue }
+    if (!why) {
+      const deferral = d.kind === 'question' ? { deferral: deferralOf(d) } : {}
+      setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, priorKind: d.kind, ...deferral, [noteField]: note + priorDecisionMark(d) })
+      continue
+    }
     reraised++
     kept.push({ ...f, [noteField]: note + reraisedNote(d, why) })
   }
@@ -686,13 +712,31 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
 }
 
 /**
+ * A `why` without its KNOWN AND DEFERRED mark, whole or cut by the transport anywhere inside it.
+ * @param {string} why
+ */
+function whyWithoutDeferredMark(why) {
+  const head = ' · KNOWN AND DEFERRED'
+  const at = why.indexOf(head)
+  if (at >= 0) return why.slice(0, at)
+  for (let n = head.length - 1; n > 2; n--) if (why.endsWith(head.slice(0, n))) return why.slice(0, -n)
+  return why
+}
+
+/**
  * The report sections listing the findings set aside, each with its mark: those a decision answers
- * under Rejected before, those a deferred question answers under Known and deferred.
- * @param {Array<DecidableFinding & { priorKind?: string }>} setAside @returns {string}
+ * under Rejected before, those a deferred question answers under Known and deferred — the mark of a
+ * deferred one rendered from its structured deferral, so a `why` the transport cut loses none of it.
+ * @param {Array<DecidableFinding & { priorKind?: string, deferral?: unknown }>} setAside @returns {string}
  */
 function priorRejectedSection(setAside) {
-  /** @param {DecidableFinding} f */
-  const setAsideLine = f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${String(f.why ?? '')}`
+  /** @param {DecidableFinding & { deferral?: unknown }} f */
+  const note = f => {
+    const deferral = deferralOn(f.deferral)
+    return deferral ? `${whyWithoutDeferredMark(String(f.why ?? ''))} · ${deferralMark(deferral)}` : String(f.why ?? '')
+  }
+  /** @param {DecidableFinding & { deferral?: unknown }} f */
+  const setAsideLine = f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${note(f)}`
   const rejected = setAside.filter(f => f.priorKind !== 'question')
   const deferred = setAside.filter(f => f.priorKind === 'question')
   return (rejected.length ? `\n\n## Rejected before (set aside — not in the verdict)\n${rejected.map(setAsideLine).join('\n')}` : '')
@@ -1517,6 +1561,19 @@ const LEDGER_ITEM = {
       properties: {
         record: { type: 'string' },
         fp: { type: 'string' },
+      },
+    },
+    deferral: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'reason', 'who', 'when', 'link', 'commit'],
+      properties: {
+        id: { type: 'string' },
+        reason: { type: 'string' },
+        who: { type: 'string' },
+        when: { type: 'string' },
+        link: { type: 'string' },
+        commit: { type: 'string' },
       },
     },
   },
@@ -4807,9 +4864,14 @@ function carryUnverifiedPriors(priorUnverified, priorRound) {
 }
 /** @param {Finding} f */
 function deferralHeld(f) {
+  const deferral = deferralOn(f['deferral'])
+  if (!deferral) {
+    log(`Re-review: ${f['file']}:${f['line']} is marked deferred but carries no question's deferral — adjudicated like any prior`)
+    return false
+  }
   if (reraisedBySeverity(f['severity'])) return false
-  if (!deferralReleased(f['why'], priorDecisionsIn.decisions)) return true
-  log(`Re-review: the deferral on ${f['file']}:${f['line']} no longer holds — a record supersedes or answers its question — adjudicated like any prior`)
+  if (!deferralReleased(deferral, priorDecisionsIn.decisions)) return true
+  log(`Re-review: the deferral on ${f['file']}:${f['line']} no longer holds — a record supersedes or answers its question ${deferral.id} — adjudicated like any prior`)
   return false
 }
 /** @param {Finding} f */
@@ -5161,7 +5223,13 @@ const toLedgerEntry = (f, disposition, tier) => ({
   source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
   ...ledgerSources(f),
   ...ledgerWhyRef(f),
+  ...ledgerDeferral(f),
 })
+/** A ledger entry's `deferral`, present only on a finding a question set aside. @param {Finding} f */
+function ledgerDeferral(f) {
+  const deferral = deferralOn(f['deferral'])
+  return deferral ? { deferral } : {}
+}
 /** The leading fields of a ledger entry: its fingerprint and where it sits. @param {Finding} f */
 function ledgerLocation(f) {
   return { fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '' }

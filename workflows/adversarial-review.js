@@ -1608,6 +1608,19 @@ async function runScopeCheck(toCheck, checkScopes, notes) {
   for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
   return { toCheck, unchanged, missing }
 }
+/**
+ * A question's deferral as a structured field on the ledger row: its id, reason, author, date, link and
+ * commit. A carried row is read by this field, never by the mark in its `why` — the between-round
+ * transport cuts every `why` at its cap, and the mark sits at the tail.
+ * @typedef {{ id: string, reason: string, who: string, when: string, link: string, commit: string }} Deferral
+ */
+/**
+ * The deferral a question record (a PriorDecision of kind `question`) sets on the finding it sets aside.
+ * @param {Deferral} d @returns {Deferral}
+ */
+function deferralOf(d) {
+  return { id: d.id, reason: d.reason, who: d.who, when: d.when, link: d.link, commit: d.commit }
+}
 /** What a record is called in a note: `decision` or `question`. @param {PriorDecision} d @returns {string} */
 function priorKindLabel(d) {
   return d.kind === 'question' ? 'question' : 'decision'
@@ -1634,10 +1647,15 @@ function recordsDeferral(d) {
   return d.kind !== 'question' || (d.deferred && !!d.commit)
 }
 
+/** The KNOWN AND DEFERRED mark of a deferral. @param {Deferral} x */
+function deferralMark(x) {
+  return `KNOWN AND DEFERRED: ${x.reason} — ${x.who || 'author not recorded'}, ${x.when || 'date not recorded'}, ${x.link || 'no link'} (question ${x.id})`
+}
+
 /** The mark a set-aside finding carries. @param {PriorDecision} d */
 function priorDecisionMark(d) {
-  const head = d.kind === 'question' ? 'KNOWN AND DEFERRED' : 'REJECTED BEFORE'
-  return `${head}: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (${priorKindLabel(d)} ${d.id})`
+  if (d.kind === 'question') return deferralMark(deferralOf(d))
+  return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (${priorKindLabel(d)} ${d.id})`
 }
 
 /** Why a decision did not apply when the repo does not know its commit (realm @nick/craft, node #184). @param {PriorDecision} d */
@@ -1684,7 +1702,11 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
     if (!d) { kept.push(f); continue }
     const why = reraiseReason(f, d, unchanged, missing)
     const note = `${String(f[noteField] ?? '')} · `
-    if (!why) { setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, priorKind: d.kind, [noteField]: note + priorDecisionMark(d) }); continue }
+    if (!why) {
+      const deferral = d.kind === 'question' ? { deferral: deferralOf(d) } : {}
+      setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, priorKind: d.kind, ...deferral, [noteField]: note + priorDecisionMark(d) })
+      continue
+    }
     reraised++
     kept.push({ ...f, [noteField]: note + reraisedNote(d, why) })
   }
