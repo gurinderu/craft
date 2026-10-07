@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, record the author's PR-thread rejections of craft findings as project decisions, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, record the author's PR-thread rejections of craft findings as project decisions and deferred findings as open questions, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -22,7 +22,8 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 
 ```
 0. Recall    — the author's PR-thread rejections recorded first (→ pr-rejections.md),
-               then `memory` recall(topic, scope) for every path the findings touch (→ below)
+               then `memory` recall(topic, scope) for every path the findings touch (→ below),
+               then findings that recur across branches shown, a lesson offered per group (→ below)
 1. Gather  ⫲ — collect findings from both sources, one subagent per source in parallel:
                • craft: a rust-reviewer verdict / a rust-audit report
                • GitHub: gh pr view / gh api → inline thread comments     (→ github.md)
@@ -38,8 +39,9 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                first, RED→GREEN                                                (→ rust.md)
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
-7. Re-review ⫲ — PR-thread rejections recorded again, active decisions recalled and passed
-               to the review workflow as `priorDecisions`, an object argument (→ `memory`, "Before a review");
+7. Re-review ⫲ — PR-thread rejections recorded again, active decisions and questions recalled and passed
+               to the review workflow as `priorDecisions`, an object argument, each with its `kind`
+               (→ `memory`, "Before a review");
                re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &
@@ -58,7 +60,7 @@ Validate each finding against the code (pinned to the ref it was generated again
 |---|---|---|
 | `accept` | real, in scope | into the plan |
 | `reject` | wrong / not a real problem | ledger + drafted pushback |
-| `defer` | valid but out of scope now | ledger (stays deferred across runs) |
+| `defer` | valid but out of scope now | ledger (stays deferred across runs) + an open question in `memory` |
 | `needs-decision` | valid but needs a product/spec call, **or** has no resolvable location | → `specs` |
 | `conflict` | contradicts another finding | both surfaced for a human; never silently pick one |
 
@@ -77,13 +79,46 @@ the project has; it prints `memory backend: …` once).
 - **Before triage (step 0)** — `recall(<finding keywords>, <path>)` for every touched path. A
   matching **active** decision is known context: a finding it already answers is triaged with that
   reason cited (and its id), not re-litigated — unless the code the decision relied on has changed,
-  in which case say so and supersede the decision instead of applying it.
+  in which case say so and supersede the decision instead of applying it. A matching **active
+  question** on the finding's title means it was deferred before: cite it, and either keep it
+  deferred or answer it (a decision that supersedes it).
 - **On a disposition** — `record-decision` with title = the finding's title, scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, links =
-  PR / thread / commit. Triggered by triage `reject`, triage `defer`, and a finding kept but `justified` in the
-  PR body. A `needs-decision` becomes `record-question` (body = what decision is needed, from
-  whom); when it is decided, the decision supersedes the question.
+  PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
+  body.
+- **A deferral is an open question, not a decision** — triage `defer` becomes `record-question`
+  with title = the finding's title, scope = its file path, body = what would answer it (the event,
+  the change or the call that would settle it), author = who deferred, commit = `git rev-parse
+  HEAD` at triage, links = the PR and the comment URL, and `deferred: true` — the field that makes
+  the question a deferral (a question without it is context only and sets nothing aside). The next review lists that finding under
+  **Known and deferred** instead of raising it as new — until it turns Critical/High or its file
+  changes. A deferral recorded earlier as a decision stays a decision; when a question is answered,
+  the decision supersedes it.
+- A `needs-decision` becomes `record-question` too (body = what decision is needed, from whom);
+  when it is decided, the decision supersedes the question.
+- **Recurring findings — a lesson only on the author's yes (step 0, after recall).** A finding that
+  keeps coming back on different branches is a pattern, not a one-off. Read craft's run store for
+  the touched paths:
+
+  ```bash
+  node "<this skill's base directory>/../../lib/recurring-findings.mjs" --path <path> [--path <path> …]
+  ```
+
+  It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
+  the same finding (same file, overlapping title) in the review ledgers of at least two different
+  branches of this project; the same branch reviewed twice is not a recurrence, another project's
+  runs never count, and only findings verified real and not already settled do — a row rejected as
+  wrong, a refuted one, a justified or dismissed one, a deferred one (a known defect carried under
+  an open question) and one no verifier confirmed (unverified or suspected) are left out (the `note`
+  says so). `--store <dir>` reads another store (default `~/.craft/runs`), `--project
+  <dir>` another checkout. Its `note` names every bound it reached (the newest 500 runs read, 20
+  groups listed) — repeat that line, never present a cut list as whole.
+  Show each group (file, titles, branches, when last seen) and **ask the author, per group**,
+  whether to record a lesson. Yes → `record-lesson` with scope = the file, title = the pattern in one
+  line, body = the pattern and what avoids it (in the author's words), links = the runs or PRs.
+  No answer or no → write nothing. No run store, or no group → say so in one line
+  (`recurring findings: none — <the note>`) and continue.
 - **Subagents** (triage, fix) lack the memory tools: the launcher recalls and puts the matching
   records, verbatim with ids, into each brief; their reject/defer verdicts come back in the result
   and the launcher records them. Known limit, not a gap to route around.

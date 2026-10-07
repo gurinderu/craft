@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, and the report names the source (an empty list skips the recall). To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, and the report names the source (an empty list skips the recall). To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision and question records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -34,7 +34,7 @@ export const meta = {
  * optional properties exactly.
  * @typedef {{ runner: string, blockers: string[], missingTools: string[], ciCovers: string[], probes: Array<{ source: string, calls: number }>, partial: boolean, notes: string }} PreflightAnswer  PREFLIGHT_SCHEMA
  * @typedef {{ severity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info', title: string, file: string, line: number, why: string, whereChecked: string, fix: string, blastRadius: string, source: string, ruleId: string, fp?: string, symbol?: string, tier?: string, disposition?: string }} FindingAnswer  FINDING_ITEM
- * @typedef {{ fp: string, file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, sources?: string[], ruleId: string, title: string, why: string, whyRef?: { record: string, fp: string } }} LedgerAnswer  LEDGER_ITEM
+ * @typedef {{ fp: string, file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, sources?: string[], ruleId: string, title: string, why: string, whyRef?: { record: string, fp: string }, deferral?: { id: string, reason: string, who: string, when: string, link: string, commit: string } }} LedgerAnswer  LEDGER_ITEM
  * @typedef {{ found: boolean, round: number, head: string, ledger: LedgerAnswer[], ledgerCount: number, reason: string, priorFindings: number, journalSourced: boolean, sameFpBasis?: boolean, fpBasisKnown?: boolean, priorFpRevisions?: number[], priorFpRevisionsCheck?: string }} PriorRoundAnswer  PRIOR_ROUND_SCHEMA
  * @typedef {{ baseRef: string, files: string[], spec: string, branch: string, head: string, notes: string }} DetectAnswer  DETECT_SCHEMA
  * @typedef {{ sizeBucket: 'small' | 'medium' | 'large', lenses: string[], isLibrary: boolean, securitySensitive: boolean, intent: string, churn: string[], notes: string, surfaces?: { crossBoundarySymbol?: boolean, wireForm?: boolean, invariantType?: boolean } }} ScoutAnswer  SCOUT_SCHEMA
@@ -228,8 +228,10 @@ let scopeDetail = ''
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
 // The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft, node #177 — the
 // memory skill's record shape). Pasted in by the craft-inline gate; the rules and why live in the module.
-// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX decisionScopeParts decisionText decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
+// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX PRIOR_RECORD_KINDS decisionScopeParts decisionText recordKind supersededIds decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
+
+const PRIOR_RECORD_KINDS = ['decision', 'question']
 
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
 function decisionScopeParts(p) {
@@ -242,9 +244,31 @@ function decisionText(v) {
 }
 
 /**
+ * A record's kind, lower-cased; a record without one takes the kind its id prefix names, for every
+ * kind of the memory skill (id = `<kind>-<hash>`: `decision-`, `question-`, `lesson-`), and is a
+ * `decision` only when its id names none — a launcher that leaves `kind` out must not turn a deferral
+ * into a rejection, nor a lesson into a decision.
+ * @param {Record<string, unknown>} o @returns {string}
+ */
+function recordKind(o) {
+  if (o['kind'] != null) return decisionText(o['kind']).toLowerCase()
+  const m = /^(decision|question|lesson)-/i.exec(decisionText(o['id']))
+  return m ? String(m[1]).toLowerCase() : 'decision'
+}
+
+/** The ids a record's `supersedes: <id>` and `answers: <id>` links name. @param {unknown[]} links @returns {string[]} */
+function supersededIds(links) {
+  return links.flatMap(l => {
+    const m = /^(?:supersedes|answers):\s*(\S+)$/i.exec(decisionText(l))
+    return m ? [String(m[1])] : []
+  })
+}
+
+/**
  * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
  * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
- * http(s) URL in `links` for `link`.
+ * http(s) URL in `links` for `link`. `kind` is `question` only when recordKind reads one; `deferred` only
+ * a boolean `true`.
  * @param {Record<string, unknown>} o @returns {PriorDecision}
  */
 function decisionFields(o) {
@@ -252,7 +276,7 @@ function decisionFields(o) {
   const f = (k, alt = '') => decisionText(o[k]) || decisionText(o[alt])
   const links = Array.isArray(o['links']) ? o['links'] : []
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
-  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit') }
+  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links) }
 }
 
 /**
@@ -260,11 +284,11 @@ function decisionFields(o) {
  * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
  */
 function decisionProblem(o, d) {
-  if (o['kind'] != null && decisionText(o['kind']) !== 'decision') return ` is a ${JSON.stringify(o['kind'])} record, not a decision`
+  if (!PRIOR_RECORD_KINDS.includes(recordKind(o))) return ` is a ${JSON.stringify(recordKind(o))} record, not a decision or a question`
   if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
   if (!d.id || !d.title || !d.reason) return ' lacks an id, a title or a reason'
-  const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof PriorDecision} */ (k)].length > max)
-  if (over) return `: ${over[0]} is ${d[/** @type {keyof PriorDecision} */ (over[0])].length} chars, over the ${over[1]}-char ceiling`
+  const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (k)].length > max)
+  if (over) return `: ${over[0]} is ${d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (over[0])].length} chars, over the ${over[1]}-char ceiling`
   return decisionAnchorProblem(d)
 }
 
@@ -369,7 +393,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail readMemoryRecall initialMemory skippedMemory launcherRecallMemory acceptedMemory memoryLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory skippedMemory launcherRecallMemory acceptedMemory memoryLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -381,7 +405,11 @@ const MEMORY_RECALL_SCHEMA = {
     why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
     decisions: {
       type: 'array', description: 'the matching active decision records, verbatim',
-      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } } },
+    },
+    questions: {
+      type: 'array', description: 'the matching active question records (open questions, deferred findings among them), verbatim',
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } } },
     },
     stale: {
       type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
@@ -401,16 +429,16 @@ function memoryRecallPrompt(paths, base) {
   const scope = listed.length
     ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
     : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
-  return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
+  return `Recall the remembered decisions and open questions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
-1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
-2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); stale is [] when none.`
+Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
 }
 
-/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string }} MemorySource */
+/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string, questions?: number }} MemorySource */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
@@ -425,8 +453,16 @@ function staleTail(list) {
 }
 
 /**
- * What the recall agent returned, read: the decisions to hand to parsePriorDecisions (a list, possibly
- * empty) and the source to report. A dead or off-shape answer applies nothing and is named.
+ * The recalled questions, each tagged `kind: question` when it carries no kind (an object without one
+ * is still a question: it came back in that list). @param {unknown} list @returns {unknown[]}
+ */
+function recalledQuestions(list) {
+  return (Array.isArray(list) ? list : []).map(q => (q && typeof q === 'object' && !Array.isArray(q) && !('kind' in q) ? { ...q, kind: 'question' } : q))
+}
+
+/**
+ * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
+ * list, possibly empty) and the source to report. A dead or off-shape answer applies nothing and is named.
  * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
  */
 function readMemoryRecall(raw, cut) {
@@ -437,8 +473,10 @@ function readMemoryRecall(raw, cut) {
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
-  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${stale}${tail}` } }
+  const questions = recalledQuestions(r['questions'])
+  const all = [...list, ...questions]
+  if (!all.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: all, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -472,11 +510,16 @@ function launcherRecallMemory(m, note) {
 }
 
 /**
- * A recalled source once parsePriorDecisions read its list: the count is the records it accepted; the
- * refused are named in their own section. @param {MemorySource} m @param {number} accepted @returns {MemorySource}
+ * A recalled source once parsePriorDecisions read its list: the count is the records it accepted, the
+ * questions among them counted apart; the refused are named in their own section.
+ * @param {MemorySource} m @param {Array<{ kind?: string }>} accepted @returns {MemorySource}
  */
 function acceptedMemory(m, accepted) {
-  return m.source === 'recalled' ? { ...m, count: accepted } : m
+  if (m.source !== 'recalled') return m
+  const questions = accepted.filter(d => d.kind === 'question').length
+  /** @type {MemorySource} */
+  const out = { source: m.source, count: accepted.length, why: m.why }
+  return questions ? { ...out, questions } : out
 }
 
 /**
@@ -486,9 +529,11 @@ function acceptedMemory(m, accepted) {
 function memoryLine(m, forwarded = false) {
   if (m.source === 'passed') return m.why === 'passed by the launcher' ? `memory: passed by the launcher (${m.count})` : `memory: ${m.why}`
   if (m.source !== 'recalled') return `memory: none — ${m.why}`
+  const q = m.questions || 0
+  const counted = `${m.count - q} decision(s)${q ? ` and ${q} open question(s)` : ''}`
   return forwarded
-    ? `memory: returned ${m.count} decision(s) from ${m.why}; each nested review reports how many it applied`
-    : `memory: recalled ${m.count} decision(s) from ${m.why}`
+    ? `memory: returned ${counted} from ${m.why}; each nested review reports how many it applied`
+    : `memory: recalled ${counted} from ${m.why}`
 }
 
 /** The report section naming the source. @param {MemorySource} m @param {boolean} [forwarded] @returns {string} */
@@ -589,10 +634,82 @@ async function runScopeCheck(toCheck, checkScopes, notes) {
   return { toCheck, unchanged, missing }
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-apply.mjs priorDecisionMark commitMissingReason reraiseReason splitByDecisions priorRejectedSection applyPriorDecisions
+// >>> craft-inline lib/ledger-deferral.mjs deferralOf deferralOn
+/**
+ * A question's deferral as a structured field on the ledger row: its id, reason, author, date, link and
+ * commit. A carried row is read by this field, never by the mark in its `why` — the between-round
+ * transport cuts every `why` at its cap, and the mark sits at the tail.
+ * @typedef {{ id: string, reason: string, who: string, when: string, link: string, commit: string }} Deferral
+ */
+/**
+ * The deferral a question record (a PriorDecision of kind `question`) sets on the finding it sets aside.
+ * @param {Deferral} d @returns {Deferral}
+ */
+function deferralOf(d) {
+  return { id: d.id, reason: d.reason, who: d.who, when: d.when, link: d.link, commit: d.commit }
+}
+
+/**
+ * The deferral a ledger row carries, every part a string; null when it carries none (a row marked
+ * `deferred` with no question record behind it).
+ * @param {unknown} v @returns {Deferral | null}
+ */
+function deferralOn(v) {
+  if (!v || typeof v !== 'object') return null
+  const o = /** @type {Record<string, unknown>} */ (v)
+  /** @param {string} k */
+  const s = k => (typeof o[k] === 'string' ? /** @type {string} */ (o[k]) : '')
+  return s('id') ? { id: s('id'), reason: s('reason'), who: s('who'), when: s('when'), link: s('link'), commit: s('commit') } : null
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-apply.mjs priorKindLabel matchesFindings recordsDeferral deferralReleased deferralMark priorDecisionMark commitMissingReason reraiseReason reraisedNote splitByDecisions whyWithoutDeferredMark priorRejectedSection applyPriorDecisions
+/** What a record is called in a note: `decision` or `question`. @param {PriorDecision} d @returns {string} */
+function priorKindLabel(d) {
+  return d.kind === 'question' ? 'question' : 'decision'
+}
+
+/**
+ * Whether a record is a deferral or a decision — the records a finding is matched against. A question is
+ * a deferral only when it says so, `deferred: true` (addressing-findings writes it when the author
+ * defers; the memory skill's record shape documents it). A question without it (a needs-decision
+ * question) is context: its finding is raised normally, unlabelled.
+ * @param {PriorDecision} d
+ */
+function matchesFindings(d) {
+  return d.kind !== 'question' || d.deferred
+}
+
+/**
+ * Whether a record can set a finding aside: every decision; a question only when it records a deferral
+ * (`deferred: true`) AND a commit, which the scope check compares against. A deferral without a commit
+ * is still matched (matchesFindings) so its finding is raised again and named, never silently.
+ * @param {PriorDecision} d
+ */
+function recordsDeferral(d) {
+  return d.kind !== 'question' || (d.deferred && !!d.commit)
+}
+
+/**
+ * Whether a carried deferral no longer holds: a record in hand (recalled or passed) names its question
+ * in a `supersedes:` / `answers:` link — the memory skill's own way to close a question. The question's
+ * ABSENCE never releases it (realm @nick/craft, node #204): absence has benign causes — a launcher
+ * forwarding decisions only, a recall answer without its optional `questions` list, a recall from
+ * another backend than the one the deferral was written to.
+ * @param {Deferral} deferral @param {PriorDecision[]} records
+ */
+function deferralReleased(deferral, records) {
+  return records.some(d => d.supersedes.includes(deferral.id))
+}
+
+/** The KNOWN AND DEFERRED mark of a deferral. @param {Deferral} x */
+function deferralMark(x) {
+  return `KNOWN AND DEFERRED: ${x.reason} — ${x.who || 'author not recorded'}, ${x.when || 'date not recorded'}, ${x.link || 'no link'} (question ${x.id})`
+}
+
 /** The mark a set-aside finding carries. @param {PriorDecision} d */
 function priorDecisionMark(d) {
-  return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (decision ${d.id})`
+  if (d.kind === 'question') return deferralMark(deferralOf(d))
+  return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (${priorKindLabel(d)} ${d.id})`
 }
 
 /** Why a decision did not apply when the repo does not know its commit (realm @nick/craft, node #184). @param {PriorDecision} d */
@@ -606,11 +723,17 @@ function commitMissingReason(d) {
  * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Set<string>} [missing] @returns {string}
  */
 function reraiseReason(f, d, unchanged, missing = new Set()) {
-  if (reraisedBySeverity(f.severity)) return 'a Critical/High finding is never set aside by a prior decision'
-  if (!d.commit) return 'the decision records no commit, so an unchanged scope cannot be established'
+  if (reraisedBySeverity(f.severity)) return `a Critical/High finding is never set aside by a prior ${d.kind === 'question' ? 'deferred question' : 'decision'}`
+  if (!d.commit) return `the ${priorKindLabel(d)} records no commit, so an unchanged scope cannot be established`
   if (missing.has(d.id)) return commitMissingReason(d)
   if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${d.commit} (or that could not be checked)`
   return ''
+}
+
+/** The note a finding raised again despite record `d` carries. @param {PriorDecision} d @param {string} why */
+function reraisedNote(d, why) {
+  const before = d.kind === 'question' ? 'Deferred before' : 'Rejected before'
+  return `${before} (${priorKindLabel(d)} ${d.id}, ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}) — raised again: ${why}.`
 }
 
 /**
@@ -620,12 +743,12 @@ function reraiseReason(f, d, unchanged, missing = new Set()) {
  * @template {DecidableFinding} F
  * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
  * @param {Set<string>} [missing]  ids whose commit the repo does not know
- * @returns {{ kept: F[], setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number }}
+ * @returns {{ kept: F[], setAside: Array<SetAside<F>>, reraised: number }}
  */
 function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set()) {
   /** @type {F[]} */
   const kept = []
-  /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
+  /** @type {Array<SetAside<F>>} */
   const setAside = []
   let reraised = 0
   for (const f of findings) {
@@ -633,21 +756,47 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
     if (!d) { kept.push(f); continue }
     const why = reraiseReason(f, d, unchanged, missing)
     const note = `${String(f[noteField] ?? '')} · `
-    if (!why) { setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, [noteField]: note + priorDecisionMark(d) }); continue }
+    if (!why) {
+      const deferral = d.kind === 'question' ? { deferral: deferralOf(d) } : {}
+      setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, priorKind: d.kind, ...deferral, [noteField]: note + priorDecisionMark(d) })
+      continue
+    }
     reraised++
-    kept.push({ ...f, [noteField]: `${note}Rejected before (decision ${d.id}, ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}) — raised again: ${why}.` })
+    kept.push({ ...f, [noteField]: note + reraisedNote(d, why) })
   }
   return { kept, setAside, reraised }
 }
 
 /**
- * The report section listing the findings set aside by a prior decision, each with its mark.
- * @param {DecidableFinding[]} setAside @returns {string}
+ * A `why` without its KNOWN AND DEFERRED mark, whole or cut by the transport anywhere inside it.
+ * @param {string} why
+ */
+function whyWithoutDeferredMark(why) {
+  const head = ' · KNOWN AND DEFERRED'
+  const at = why.indexOf(head)
+  if (at >= 0) return why.slice(0, at)
+  for (let n = head.length - 1; n > 2; n--) if (why.endsWith(head.slice(0, n))) return why.slice(0, -n)
+  return why
+}
+
+/**
+ * The report sections listing the findings set aside, each with its mark: those a decision answers
+ * under Rejected before, those a deferred question answers under Known and deferred — the mark of a
+ * deferred one rendered from its structured deferral, so a `why` the transport cut loses none of it.
+ * @param {Array<DecidableFinding & { priorKind?: string, deferral?: unknown }>} setAside @returns {string}
  */
 function priorRejectedSection(setAside) {
-  if (!setAside.length) return ''
-  return `\n\n## Rejected before (set aside — not in the verdict)\n`
-    + setAside.map(f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${String(f.why ?? '')}`).join('\n')
+  /** @param {DecidableFinding & { deferral?: unknown }} f */
+  const note = f => {
+    const deferral = deferralOn(f.deferral)
+    return deferral ? `${whyWithoutDeferredMark(String(f.why ?? ''))} · ${deferralMark(deferral)}` : String(f.why ?? '')
+  }
+  /** @param {DecidableFinding & { deferral?: unknown }} f */
+  const setAsideLine = f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${note(f)}`
+  const rejected = setAside.filter(f => f.priorKind !== 'question')
+  const deferred = setAside.filter(f => f.priorKind === 'question')
+  return (rejected.length ? `\n\n## Rejected before (set aside — not in the verdict)\n${rejected.map(setAsideLine).join('\n')}` : '')
+    + (deferred.length ? `\n\n## Known and deferred (open question — not in the verdict)\n${deferred.map(setAsideLine).join('\n')}` : '')
 }
 
 /**
@@ -655,18 +804,25 @@ function priorRejectedSection(setAside) {
  * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
  * the decisions whose commit the repo does not know, for the report's Prior decisions not applied.
  * @template {DecidableFinding} F
- * @param {Record<string, F[]>} tiers @param {PriorDecision[]} decisions
+ * @param {Record<string, F[]>} tiers @param {PriorDecision[]} given  questions that record no deferral are dropped (matchesFindings)
  * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
- * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number, notes: string[], refused: string[] }>}
+ * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<SetAside<F>>, reraised: number, notes: string[], refused: string[] }>}
  */
-async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'why') {
-  /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
+async function applyPriorDecisions(tiers, given, checkScopes, noteField = 'why') {
+  /** @type {Array<SetAside<F>>} */
   let setAside = []
   /** @type {string[]} */
   const notes = []
+  const context = given.length - given.filter(matchesFindings).length
+  if (context) notes.push(`${context} open question(s) record no deferral — context only, set nothing aside`)
+  const replaced = new Set(given.flatMap(d => d.supersedes))
+  const superseded = given.filter(d => matchesFindings(d) && replaced.has(d.id))
+  if (superseded.length) notes.push(`${superseded.length} record(s) superseded by another given record — not applied: ${superseded.map(d => d.id).join(', ')}`)
+  const decisions = given.filter(d => matchesFindings(d) && !replaced.has(d.id))
   if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
   const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(Object.values(tiers).flat(), decisions), checkScopes, notes)
-  const refused = toCheck.filter(d => missing.has(d.id)).map(d => `decision ${d.id}: ${commitMissingReason(d)}`)
+  const refused = decisions.filter(d => !recordsDeferral(d)).map(d => `question ${d.id}: records a deferral but no commit, so an unchanged scope cannot be established — raised normally`)
+    .concat(toCheck.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`))
   let reraised = 0
   /** @type {Record<string, F[]>} */
   const out = {}
@@ -676,7 +832,10 @@ async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'w
     setAside = setAside.concat(r.setAside)
     reraised += r.reraised
   }
-  notes.push(`${decisions.length} decision(s) given, ${setAside.length} finding(s) set aside as rejected before, ${reraised} raised again`)
+  const questions = decisions.filter(d => d.kind === 'question').length
+  const deferred = setAside.filter(f => f.priorKind === 'question').length
+  notes.push(`${decisions.length - questions} decision(s) given, ${setAside.length - deferred} finding(s) set aside as rejected before, ${reraised} raised again`
+    + (questions ? `; ${questions} deferred question(s) given, ${deferred} finding(s) set aside as known and deferred` : ''))
   return { tiers: out, setAside, reraised, notes, refused }
 }
 // <<< craft-inline
@@ -1661,6 +1820,22 @@ const LEDGER_ITEM = {
       properties: {
         record: { type: 'string' },
         fp: { type: 'string' },
+      },
+    },
+    // Optional: present only on a `deferred` row a question set aside — the question's id, reason,
+    // author, date, link and commit (deferralOf). The carry track reads the deferral from here, never
+    // from the mark in `why`, which the transport cuts.
+    deferral: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['id', 'reason', 'who', 'when', 'link', 'commit'],
+      properties: {
+        id: { type: 'string' },
+        reason: { type: 'string' },
+        who: { type: 'string' },
+        when: { type: 'string' },
+        link: { type: 'string' },
+        commit: { type: 'string' },
       },
     },
   },
@@ -4198,7 +4373,7 @@ async function recallMemory() {
   if (memory.source !== 'none' || !changedFiles.length) return
   const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
   priorDecisionsIn = parsePriorDecisions(r.decisions)
-  memory = acceptedMemory(r.memory, priorDecisionsIn.decisions.length)
+  memory = acceptedMemory(r.memory, priorDecisionsIn.decisions)
   for (const x of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${x}`)
 }
 await recallMemory()
@@ -6025,9 +6200,9 @@ let suspected = results.flatMap(r => r['suspected'])
 let unverified = results.flatMap(r => r['unverified'] || [])
 
 // ---- Adjudicate track (re-review only) ----
-// For each prior-round finding, decide its fate this round. rejected/justified are carried (not
-// re-raised) unless the code around them changed; open/deferred/confirmed priors get a targeted
-// "is it still here?" check against the current tree.
+// For each prior-round finding, decide its fate this round. Settled priors (isSettledPrior) are carried
+// (not re-raised) unless the code around them changed; open/confirmed priors, and a Critical/High
+// deferred one, get a targeted "is it still here?" check against the current tree.
 // `retired` is the carried track's EXIT: a dismissed prior whose carry-check reported the code
 // around it unchanged has had its one confirmation and leaves the ledger. It still lives here for
 // the rest of THIS round — it suppresses a lens re-discovery (below) and renders in the report's
@@ -6057,6 +6232,33 @@ function carryUnverifiedPriors(priorUnverified, priorRound) {
     })))
   }
 }
+// THE ONE RULE for a settled prior — the carry track's entry. A dismissal (rejected/justified) is the
+// author's; a `deferred` row is a finding set aside as Known and deferred (realm @nick/craft, node #204),
+// settled for the chain like a dismissal so it stays out of the verdict — except Critical/High, which no
+// prior record sets aside, and except a deferral a record in hand (recalled or passed) releases by an
+// explicit `supersedes:` / `answers:` link to its question; its question's absence never releases it
+// (deferralReleased). The deferral is the row's structured `deferral` field; a `deferred` row without one
+// has no question behind it (none was written, or the write was refused), so nothing holds it.
+// Released, it is an ordinary prior: adjudicated, counted while its defect is present.
+/** @param {Finding} f */
+function deferralHeld(f) {
+  const deferral = deferralOn(f['deferral'])
+  if (!deferral) {
+    log(`Re-review: ${f['file']}:${f['line']} is marked deferred but carries no question's deferral — adjudicated like any prior`)
+    return false
+  }
+  if (reraisedBySeverity(f['severity'])) return false
+  if (!deferralReleased(deferral, priorDecisionsIn.decisions)) return true
+  log(`Re-review: the deferral on ${f['file']}:${f['line']} no longer holds — a record supersedes or answers its question ${deferral.id} — adjudicated like any prior`)
+  return false
+}
+/** @param {Finding} f */
+function isSettledPrior(f) {
+  const d = f['disposition']
+  return d === 'rejected' || d === 'justified' || (d === 'deferred' && deferralHeld(f))
+}
+/** Carried deferred priors, for the Known and deferred section. */
+const carriedDeferred = () => adjudicated.carried.filter(f => f['disposition'] === 'deferred').map(f => ({ ...f, priorKind: 'question' }))
 // The adjudicate track, on a re-review with a prior ledger.
 async function adjudicatePriors() {
   if (priorRound?.['ledger']?.length) {
@@ -6087,14 +6289,16 @@ async function adjudicatePriors() {
     const priorUnverified = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') === 'unverified')
     carryUnverifiedPriors(priorUnverified, priorRound)
     const priorLedger = priorLive.filter((/** @type {Finding} */ f) => String(f['tier'] || '') !== 'unverified')
-    const settled = priorLedger.filter((/** @type {Finding} */ f) => f['disposition'] === 'rejected' || f['disposition'] === 'justified')
-    const toCheck = priorLedger.filter((/** @type {Finding} */ f) => !(f['disposition'] === 'rejected' || f['disposition'] === 'justified'))
+    // Judged once per prior (a released deferral is logged): toCheck is the remainder, not a second pass.
+    const settled = priorLedger.filter(isSettledPrior)
+    /** @type {Finding[]} */
+    const toCheck = priorLedger.filter(f => !settled.includes(f))
 
     // Settled priors: carried unless the code around them changed since the prior round.
     const carriedResults = (await parallel(settled.map((/** @type {Finding} */ f) => () => {
       const pf = promptFields(f)
       return ragent(
-        `A prior review finding was dismissed by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
+        `A prior review finding was set aside by the author (disposition: ${f['disposition']}). Decide only whether the CODE AROUND IT CHANGED since commit ${flattenField(priorRound['head'])}. Shell + read only.
 FINDING: [${pf.severity}] ${pf.title} — at ${pf.file}:${f['line']} (symbol ${pf.symbol}), rule ${pf.ruleId}.
 Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} -- ${shq(f.file)}\` and judge whether the enclosing symbol/region was touched. Return {changed: <bool>, reason}.`,
         { label: `carry:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: CHANGED_SCHEMA, model: CULL_MODEL },
@@ -6132,7 +6336,14 @@ Run \`git diff ${priorRound.head ? `${shq(priorRound.head)}...HEAD` : 'HEAD'} --
     const applyCarry = c => {
       const { f, changed } = c
       if (changed === null) { carryDied++; log(`⚠️ carry-check for ${f.file}:${f.line} died — kept as carried by default`); adjudicated.carried.push(f) }
+      // A deferred prior is a known DEFECT, not a dismissal: its code changed, the question is whether the
+      // defect is still there — the adjudicator's (resolved → tombstone; still present → open, counted).
+      // Reopening it unseen reported a fixed defect as open.
+      else if (changed && f['disposition'] === 'deferred') toCheck.push(f)
       else if (changed) adjudicated.stillOpen.push({ ...f, why: `${baseWhy(f.why)} (reopened: dismissed as ${f.disposition}, but the code around it changed — re-verify the justification)` })
+      // Unchanged, a deferred prior stays carried (and deferred) until it is answered, instead of
+      // retiring after one confirmation.
+      else if (f['disposition'] === 'deferred') adjudicated.carried.push(f)
       else adjudicated.retired.push(f)
     }
     for (const c of carriedResults) applyCarry(c)
@@ -6455,8 +6666,12 @@ async function noFindingsExit() {
 // On a re-review the decisions reach the still-open and regressed priors as well: a fresh duplicate
 // of a live prior was absorbed into it (reconcileWithPriors), so the prior is where a rejected finding
 // sits, and it counts in the verdict unless it is set aside there.
-/** @type {Array<Finding & { priorTier: string, priorDecision: string }>} */
+// A finding an open question answers (a deferred one) takes the same path and is listed under Known and
+// deferred, persisted as `deferred` (priorDisposition).
+/** @type {Array<Finding & { priorTier: string, priorDecision: string, priorKind: 'decision' | 'question' }>} */
 let priorRejected = []
+/** The ledger disposition of a set-aside finding. @param {{ priorKind: string }} f */
+const priorDisposition = f => (f.priorKind === 'question' ? 'deferred' : 'rejected')
 // How many of `priorRejected` were live priors, not findings verified this round.
 let priorRejectedLive = 0
 async function setAsidePriorDecisions() {
@@ -6538,7 +6753,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
 6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
 6b. \`## Unverified (not checked)\` — the UNVERIFIED JSON below, same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into New, Still open or Carried, never call them confirmed, and do not re-rank or upgrade their severity. They change nothing about the verdict. Omit the section if empty.
-7. \`## 🔽 Carried\` — dismissed priors (rejected/justified) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
+7. \`## 🔽 Carried\` — settled priors (rejected/justified/deferred) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${incompleteClause}
@@ -6659,7 +6874,13 @@ const toLedgerEntry = (f, disposition, tier) => ({
   source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
   ...ledgerSources(f),
   ...ledgerWhyRef(f),
+  ...ledgerDeferral(f),
 })
+/** A ledger entry's `deferral`, present only on a finding a question set aside. @param {Finding} f */
+function ledgerDeferral(f) {
+  const deferral = deferralOn(f['deferral'])
+  return deferral ? { deferral } : {}
+}
 /** The leading fields of a ledger entry: its fingerprint and where it sits. @param {Finding} f */
 function ledgerLocation(f) {
   return { fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '' }
@@ -6740,9 +6961,9 @@ function assembleLedger() {
       // round marker, which is the round the REGRESSION / re-raised note reports.
       ...tombstones,
       ...adjudicated.carried.map(f => toLedgerEntry(f, f['disposition'])),
-      ...priorRejected.map(f => toLedgerEntry(f, 'rejected', f.priorTier)),
+      ...priorRejected.map(f => toLedgerEntry(f, priorDisposition(f), f.priorTier)),
     ]
-    : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected')).concat(priorRejected.map(f => toLedgerEntry(f, 'rejected', f.priorTier)))
+    : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected')).concat(priorRejected.map(f => toLedgerEntry(f, priorDisposition(f), f.priorTier)))
 }
 // THE LEDGER IS PERSISTED BEFORE THE RECORD IS ATTEMPTED, in bounded shards, one small checkpoint
 // per shard (lib/ledger-shards.mjs carries the measurement and the reasoning). The final record is
@@ -6856,4 +7077,4 @@ function floorPremiseSection() {
 
 // Appended, not asked of the synthesis model: a finding set aside by a prior decision must reach the
 // reader with that decision, whatever the model chose to render.
-return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection(priorRejected) + scopeSection())
+return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + scopeSection())
