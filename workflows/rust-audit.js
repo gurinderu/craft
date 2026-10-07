@@ -19,11 +19,6 @@ export const meta = {
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
 // >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
-// One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
-// name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
-// module-level helper is copied into the engines' inlined regions only when it is, and the fence's
-// sibling check only knows about EXPORTS — a private helper reaches every engine as a ReferenceError
-// on first use, with the gate green.
 /**
  * @param {RegExpExecArray} m
  * @param {Record<string, unknown>} out
@@ -39,12 +34,6 @@ function applyOption(m, out, ignored) {
     return 1
   }
   const key = /** @type {string} */ (m[2])
-  // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
-  // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
-  // the logger agent is handed. The args string is model-composed, so this is the same threat shape
-  // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
-  // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
-  // legitimate option names, so they are refused by name and reported.
   if (banned(key)) { ignored.push(key); return 0 }
   const quoted = m[4] ?? m[5]
   if (quoted !== undefined) { out[key] = quoted; return 1 }
@@ -56,15 +45,8 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
-// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
 const OBJECT_ONLY_OPTIONS = ['priorDecisions']
 
-// Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
-// A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
-// otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
-// invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
-// or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
  * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
@@ -79,12 +61,8 @@ function parseOptions(text) {
   let m
   let cursor = 0
   while ((m = pair.exec(text)) !== null) {
-    // Anything skipped over between matches is prose, not an option: collect it so the caller can say
-    // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
-    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
-    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
     const key = String(m[2] ?? m[7])
     if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
@@ -95,7 +73,6 @@ function parseOptions(text) {
   return { options: out, pairs, ignored, cut: '' }
 }
 
-// normalizeArgs' branch for a string that starts with `{`.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -116,7 +93,6 @@ function normalizeJsonArgs(text, warn) {
   }
 }
 
-// normalizeArgs' last branch: a non-empty string that is not JSON, read as `key=value` options.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -126,19 +102,12 @@ function normalizeKeyValueArgs(text, warn) {
   const { options, pairs, ignored, cut } = parseOptions(text)
   if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
-    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
-    // and testing "is any value not true" threw away every string made only of boolean options —
-    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
-    // requested mutation pass would silently not run.
     warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
     if (ignored.length) {
       warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
     }
     return options
   }
-  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
-  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
-  // verdict that reads exactly like a requested one.
   warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
   return {}
 }
@@ -158,8 +127,6 @@ function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
-  // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
-  // below: `[1,2,3]` and `"a sentence"` would otherwise become flags named after their own contents.
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -338,34 +305,19 @@ function summarizeFindings(findings) {
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
-// An UNRECOGNISED verdict must never default to the most permissive outcome: an aggregate that
-// turns `INCOMPLETE (no language profile)` back into `Approve` re-creates, one layer up, exactly the
-// overclaim the leaf verdicts were fixed to avoid. Anything that is not a verdict we can read as
-// green — INCOMPLETE included — aggregates to Warning.
 /**
  * @param {unknown} verdicts
  * @returns {string}
  */
 function worstVerdict(verdicts) {
   const vs = (Array.isArray(verdicts) ? verdicts : []).map(v => String(v || ''))
-  // ZERO verdicts is not unanimous green — it is the ABSENCE of any evidence: every dimension died,
-  // or nothing ran at all. Returning Approve here renders a total outage as a pass, the same
-  // overclaim in its purest form. An empty set aggregates to INCOMPLETE, which no consumer reads
-  // as green.
   if (!vs.length) return 'INCOMPLETE (no verdicts)'
   if (vs.some(v => /Block|At-risk|UB-found/i.test(v))) return 'Block'
   if (vs.some(v => /Warning|Concerns/i.test(v))) return 'Warning'
-  // Greenness is the ONE authority (GREEN_VERDICT), not a private substring: a verdict that is not a
-  // whole-string green — INCOMPLETE, or a canonical word with a trailing clause — aggregates to Warning.
   if (vs.some(v => /INCOMPLETE/i.test(v) || !GREEN_VERDICT.test(v))) return 'Warning'
   return 'Approve'
 }
 
-// The refusal of a `repo` argument by an engine whose agents run git/cargo wherever the session sits:
-// accepting it silently reads THIS checkout and reports a normal-looking verdict for the wrong code.
-// The engine files `record` through its logRun — a repeated wrong dispatch has to reach the `notRun`
-// fragility ranking — and returns `report`, before anything has run. One helper for every engine that
-// refuses, so the record and the advice cannot drift between them.
 /**
  * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number, via?: string }} o
  *   `via`: the parent workflow that dispatched this run, '' when it was not nested
@@ -376,8 +328,6 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
       schemaVersion: 1, runtime: 'claude-code', craftVersion, kind: 'workflow', name: engine,
       nested: !!via, via: via || null,
       verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
-      // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
-      // make every repetition of this same misuse its own count-1 row.
       notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
       outputTokens,
     },
@@ -396,15 +346,6 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // dying — and nothing in this sandbox can exercise them; lib/audit-verification.test.mjs does, and
 // the craft-inline gate pastes the tested source back in here.
 // >>> craft-inline lib/audit-verification.mjs wrapVerdict VERIFY_MIN_JUDGED tallyVerification verificationIncomplete unusedCratesResult unusedEvidence
-// A verifier that DIED and a verifier that REFUTED both leave a candidate unconfirmed, and folding
-// them together is the failure this module exists to prevent: a refutation is a judgement somebody
-// made, a death is a hole where no judgement happened.
-//
-// The load-bearing detail: `agent()` RESOLVES to null when the subagent dies on a terminal API
-// error or is skipped (it only throws on budget exhaustion) — the same contract `safeAgent` tests
-// with `if (res != null)`. So a bare `.then(v => ({ c, v }))` wraps a death into a TRUTHY object,
-// `filter(Boolean)` drops nothing, and every dead verifier is silently counted as a refutation.
-// Wrapping through here keeps the null a null all the way to the tally.
 /**
  * @template C, V
  * @param {C} c candidate (model output)
@@ -415,21 +356,8 @@ function wrapVerdict(c, v) {
   return v == null ? null : { c, v }
 }
 
-// Fraction of candidates that must have been JUDGED (confirmed or refuted) for the dimension to
-// claim it verified anything. Below it the surface is mostly unexamined and the dimension reports
-// INCOMPLETE rather than a green.
-//
-// Why a fraction rather than "any death at all": one flaky agent in a large fan-out is the ordinary
-// weather of this engine, and a marker that fires on every run stops being read. Why not the old
-// "only when EVERY verifier died": 3 deaths out of 4 is not one flaky agent, and the audit table
-// rendered that run as a green dimension over a surface nobody looked at. Half is the line: at or
-// above it a majority of the candidates carry a real judgement, below it the summary would be
-// speaking mostly about candidates nothing was established for.
 const VERIFY_MIN_JUDGED = 0.5
 
-// Split the settled verifier results into judgements and holes. `verdicts` is what `parallel()`
-// returns for the per-candidate thunks: `{ c, v }` for a verifier that answered, null for one that
-// died (resolved-null, kept null by wrapVerdict; or threw, which parallel() turns into null).
 /**
  * @typedef {{ candidates: number, judged: number, confirmed: number, refuted: number, died: number }} VerifyTally
  * @typedef {{ title: string, location?: string, detail?: string }} Candidate  a detector's finding, as the engine's schema shapes it
@@ -457,21 +385,15 @@ function tallyVerification(candidates, verdicts) {
     confirmedItems,
     confirmed: confirmedItems.length,
     refuted: judged - confirmedItems.length,
-    // Rate over what was actually JUDGED — never over the candidate count, which would charge the
-    // deaths to the detector as if they had been refutations. Null when nothing was judged: there
-    // is no rate, and 0 would read as "this lens refutes nothing".
     refuteRate: judged ? Math.round(((judged - confirmedItems.length) / judged) * 100) / 100 : null,
   }
 }
 
-// True when too few candidates were judged for the dimension's verdict to mean anything.
 /** @param {{ candidates: number, judged: number }} t */
 function verificationIncomplete(t) {
   return t.candidates > 0 && t.judged < Math.ceil(t.candidates * VERIFY_MIN_JUDGED)
 }
 
-// The whole `unused-crates` dimension result, verdict included, derived from the candidates and the
-// settled verifier results. `_verification` is the internal tally the run record projects.
 /**
  * @template {Candidate} C
  * @template {UnusedVerdictShape} V
@@ -495,10 +417,6 @@ function unusedCratesResult(candidates, verdicts) {
     return {
       dimension: 'unused-crates',
       verdict: 'INCOMPLETE (not run)',
-      // Say what WAS established before saying what was not. An INCOMPLETE that omits the confirmed
-      // hits reads as "nothing came of this", and a summary-only reader then misses a real finding
-      // that is sitting in `findings` right below. And no "most": at 9 judged of 20 the unjudged
-      // share is under half, so the word would be false — give the counts and let them speak.
       summary: t.judged
         ? `${t.candidates} candidate(s) flagged; ${t.judged} judged (${t.confirmed} verified unused, ${t.refuted} refuted), ${t.died} verifier(s) died. ${t.candidates - t.judged} candidate(s) are UNVERIFIED — neither confirmed nor cleared.`
         : `${t.candidates} candidate(s) flagged, but every verifier failed to return — none was confirmed OR refuted. The unused-crate surface is UNVERIFIED, not clean.`,
@@ -512,17 +430,11 @@ function unusedCratesResult(candidates, verdicts) {
     verdict: confirmed.length ? 'Warning' : 'Approve',
     summary: `${t.candidates} candidate(s) flagged; ${t.confirmed} verified unused after trying to refute each; ${t.refuted} refuted (kept).${diedNote}`,
     findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${t.candidates} candidate(s) flagged, ${t.refuted} refuted by verification.${diedNote}` }],
-    // This dimension's verdict is COMPUTED from the verification tally, not self-reported by an
-    // agent — the same shape as the nested `review` dimension, whose green the audit engine excludes
-    // from the evidence gate. Here the tally IS the work, so it is emitted as the dimension's own
-    // `Evidence:` line, and a genuinely-verified all-refuted Approve stays green instead of being
-    // demoted for a missing field it always had reason to carry (realm @nick/craft, node #53).
     evidence: unusedEvidence(t),
     _verification,
   }
 }
 
-// The verification work as an `Evidence:` line (invariant #53), read by demoteUnsupportedGreen.
 /** @param {VerifyTally} t */
 function unusedEvidence(t) {
   return `Evidence: ran the orphan/unused-dep detectors and verified each candidate — ${t.candidates} flagged, ${t.judged} judged (${t.confirmed} confirmed unused, ${t.refuted} refuted), ${t.died} verifier(s) died.`
@@ -535,57 +447,13 @@ function unusedEvidence(t) {
 // (the sandbox can't import); the craft-inline gate pastes the tested source back in here, and
 // lib/audit-evidence.test.mjs pins EVIDENCE_MARKER to the parity gate's EVIDENCE.field[0].
 // >>> craft-inline lib/audit-evidence.mjs EVIDENCE_MARKER EVIDENCE_LINE GREEN_VERDICT hasEvidence demoteUnsupportedGreen
-// The marker a review agent must emit before a passing verdict. Held IDENTICAL to the parity gate's
-// EVIDENCE.field[0] (lib/check-delivery-parity.mjs) by a tripwire in the test — the static half that
-// makes the rubrics carry the line and this runtime half that reads it must never disagree on what
-// the marker IS. No shipped code reads it (the reader anchors with EVIDENCE_LINE below): it is the
-// canon the tests pin writer and reader to, hence `@internal` — Knip's production run skips it.
 /** @internal */
 const EVIDENCE_MARKER = 'Evidence:'
 
-// The pattern hasEvidence anchors the marker with, at the first non-decoration column. EVIDENCE_MARKER
-// stays the canonical spelling WRITERS emit (the agent rubrics, EVIDENCE_RULE, the parity gate's
-// EVIDENCE.field[0]); the READER is deliberately more forgiving, because models vary the LABEL in ways
-// that do not change its meaning — case ('EVIDENCE:', 'evidence:') and a stray space before the colon
-// ('Evidence :') — the same realistic variance the decoration tolerance (node #38) answers on one axis,
-// left unaddressed on this one. Reader-tolerant-of-writer is safe; the reverse would demote honest work.
-// A test pins EVIDENCE_LINE.test(EVIDENCE_MARKER) so the canonical marker can never fall outside what the
-// reader accepts — the stitch that replaces the old direct `startsWith(EVIDENCE_MARKER)` reference and
-// keeps writer and reader agreeing on the canon. (realm @nick/craft, node #53)
 const EVIDENCE_LINE = /^evidence\s*:/i
 
-// The ONE definition of "is this verdict a green claim" — the single source of green, used by every
-// reader that must never disagree: normalizeDimensionVerdict() (workflows/rust-audit.js, which maps
-// any match to Approve), demoteUnsupportedGreen() below (which gates a match for evidence), AND
-// worstVerdict() (lib/run-record.mjs, the roll-up). The roll-up lives in a DIFFERENT closure-free
-// inline module and so cannot import this regex (no craft-inline source has an import); it carries a
-// byte-identical copy instead, pinned to this one by a tripwire in lib/run-record.test.mjs — the same
-// discipline as EVIDENCE_MARKER's stitch. In the assembled workflows/rust-audit.js there is exactly
-// ONE GREEN_VERDICT (this one, via the audit-evidence fence) and all three readers resolve to it.
-// It spans the three rubric vocabularies — Approve (review/security), Healthy (architecture), Clean
-// (miri) — AND the off-vocabulary greens agents still emit despite the schema enum ("Pass", "OK",
-// "no issues found", "all clear", "none found", …). Anchored whole-string, so "OK, but 2 blocking
-// findings" and "Approve — all clean" are NOT green (a trailing clause is not a bare green word).
-// Only a green is gated: a green verdict is the overclaim the evidence requirement exists to stop;
-// Warning/Block/At-risk/Concerns/UB-found and any INCOMPLETE already read as non-green downstream, so
-// demoting them would say nothing. (realm @nick/craft, node #53)
 const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|good|green|no ub( (detected|found))?|no (issues|findings|problems|defects)( (detected|found))?|none( found)?|nothing (found|to report)|all (clear|good))[\s.!—–-]*$/i
 
-// Whether some LINE of `text` begins with the marker and carries content after it. Line-anchored on
-// purpose (mirrors the rubric "emit one line beginning `Evidence:`"): a bare `indexOf` matched the
-// marker buried in a finding's prose ("no `Evidence:` of bounds") or in a quoted instruction, waving
-// a no-work green through. Leading and trailing markdown decoration is cosmetic and tolerated — the
-// SAME class the sibling verdict scanners already strip (VERDICT_LINE/INCOMPLETE_LINE: `[ \t>*_`#-]`)
-// — so `**Evidence:** …`, `- Evidence: …`, `> Evidence: …` and `` `Evidence:` … ``, the way models
-// actually label a markdown line, are read as the marker. Case and a stray space before the colon are
-// tolerated the SAME way (`EVIDENCE:`, `evidence:`, `Evidence :`), via EVIDENCE_LINE rather than an
-// exact `startsWith` — the same realistic model variance, on the axis decoration does not cover.
-// Anchoring only on the first NON-WHITESPACE column (round 2) rejected all of these and demoted honest
-// greens; anchoring on the first NON-decoration column reads them while still rejecting a marker buried
-// after real prose. Both empty readings the requirement names — marker absent, and a marker with only
-// decoration/whitespace after it (`**Evidence:**`) — still return false: cosmetic punctuation is not
-// work named. A non-empty sentence naming SOME work is all this proves; it does not prove the work
-// happened (the ceiling, node #53).
 /** @param {unknown} text  free-form agent text; null/undefined read as empty
  * @returns {boolean} */
 function hasEvidence(text) {
@@ -600,24 +468,11 @@ function hasEvidence(text) {
   return false
 }
 
-// Demote a self-reported green with no evidence to INCOMPLETE, preserving the claimed word so the
-// report says what was overclaimed. Greenness is decided by GREEN_VERDICT — the SAME test
-// normalizeDimensionVerdict() uses — so an off-vocabulary green ("Pass", "no issues found") is gated
-// exactly like the canonical "Approve", not waved through here to be normalized into a clean green a
-// step later (realm @nick/craft, node #53). Only a green is touched — a Warning/Block/INCOMPLETE is
-// returned unchanged, and the demoted string itself leads with `INCOMPLETE`, so it is idempotent and
-// falls into the existing rollup (couldNotRun → worstVerdict → auditVerdict) with no change to any of
-// them: an unsupported green becomes an INCOMPLETE dimension and, through the rollup, an INCOMPLETE audit.
 /** @template {{ verdict?: unknown, evidence?: unknown, summary?: unknown }} R
  * @param {R | null | undefined} r  a dimension result as returned by an agent
  * @returns {R | null | undefined} */
 function demoteUnsupportedGreen(r) {
   if (!r || !GREEN_VERDICT.test(String(r.verdict ?? ''))) return r
-  // `||`, not `??`: FINDINGS_SCHEMA makes `evidence` required, so an agent that put its Evidence line
-  // in the report BODY (as the rust-security-scanner / rust-miri rubrics instruct — a line, not "fill
-  // the field") leaves the STRUCTURED field present-but-empty (''). `??` would keep that '' and never
-  // consult the summary where the line may live, demoting honest work; '' is exactly the value the
-  // fallback exists to skip past. hasEvidence is line-anchored, so the line is found in either.
   if (hasEvidence(r.evidence || r.summary)) return r
   return { ...r, verdict: `INCOMPLETE (no evidence — claimed ${r.verdict})` }
 }
@@ -669,16 +524,12 @@ function stripInternal(obj) {
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
 // >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
-// Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['ok'],
   properties: {
     ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
-    // The description is what the model steers this field by, so it has to name the WARNING case too:
-    // reading "empty otherwise" it returns '' on a landed-but-degraded run, and the engine's
-    // telemetry-loss branch — the whole reason the field is populated on success — never fires.
     error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
@@ -686,76 +537,12 @@ const LOGRUN_SCHEMA = {
 /** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
-// Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
-// AFTER the cd points at the REVIEWED repo, where the script is not — that lost every record to a
-// silent "Cannot find module". Resolve the logger to an absolute path FIRST, into a variable, and
-// only then change directory. `craftRoot` is passed when the engine is launched by scriptPath from
-// a checkout (CLAUDE_PLUGIN_ROOT is unset then); as an installed plugin the env var is set for us.
-// The `:-.` fallback is GONE, and that is a security fix, not tidying. It resolved before the `cd`,
-// so `.` was the logger agent's starting directory — which, in the deployment this plugin is built
-// for, is the repository under REVIEW. A reviewed repository shipping its own `lib/craft-log-run.mjs`
-// would then be executed with the user's privileges by a workflow whose whole premise is that the
-// reviewed repo is untrusted. Extraction would have carried that from one engine to four.
-// It is emitted FIRST, before any staging: `${VAR:?}` is a hard abort in a non-interactive shell, so
-// after the `cat` it killed the block before `rm -f` and left the whole record in TMPDIR — on exactly
-// the path this loud failure was added for.
-// A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
-// noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
 /**
  * @param {string | undefined} craftRoot
  * @param {string} [version]
  * @param {string} [repo]
  */
 function loggerPrelude(craftRoot, version = '', repo = '') {
-  // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
-  // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
-  // before the absoluteness check and before the refusal, so a review launched with `craftRoot=.`
-  // emitted `CRAFT_LOGGER='.'/lib/craft-log-run.mjs` and then `cd <reviewed repo> && node
-  // "$CRAFT_LOGGER"` — the removed `:-.` hole restored verbatim, bypassing the version pin and the
-  // loud refusal too. `craftRoot` arrives in the model-composed args string, so it is exactly as
-  // untrusted as the `--dir` this project already refuses.
-  //
-  // Three properties now hold for every candidate without exception:
-  //   ABSOLUTE — `[ -f ]` is evaluated in the logger agent's cwd while `node` runs AFTER the cd into
-  //     the reviewed repository, so any relative path resolves THERE. Refused outright rather than
-  //     normalized: guessing what the caller meant is how this class keeps coming back.
-  //   PRESENT — a path that names no file is not a logger.
-  //   ORDERED — explicit root, then the environment, then this engine's own installed copy. The
-  //     search is a fallback, never an override: written the other way round it overwrote a good
-  //     path with whatever the cache held, so a launch from a checkout logged through another build.
-  //
-  // The search is version-pinned to what this engine is stamped with (a record filed by another
-  // build's script misdescribes which engine ran, and gets counted), looks only under the user's own
-  // plugin cache, honours $CLAUDE_CONFIG_DIR because a session configured that way keeps its plugins
-  // elsewhere, and never looks at the reviewed repository at all. That cache layout belongs to the
-  // harness, not to craft (realm @nick/craft, node #48 — observed, not documented), so a miss is
-  // ordinary: not found means the refusal below, never a guess.
-  // ONE predicate, applied to every candidate, and applied BEFORE it is accepted rather than to the
-  // winner afterwards. Written as a terminal check on the winner, an explicit craftRoot naming the
-  // repo killed the whole command instead of being rejected in favour of the next candidate — which
-  // is craft reviewing its own checkout, the mode this repo mandates for itself.
-  //
-  // A candidate qualifies only if it is ABSOLUTE (`[ -f ]` runs in the agent's cwd while `node` runs
-  // after the cd, so a relative path resolves in the reviewed repository), PRESENT, and OUTSIDE the
-  // directory the command is about to cd into. The last is checked on the FULLY resolved path:
-  // symlinks are followed to their target — a link whose FILE points into the repo passed for one
-  // commit because only the directory went through `pwd -P` — and both sides are normalized, so a
-  // `..` climb and a symlinked parent collapse to the same comparison. The `case` patterns are
-  // quoted and slash-anchored, so a sibling that merely shares a prefix (`/x/repo-evil` beside
-  // `/x/repo`) is NOT inside — the collision this project already met once in `insideStore`.
-  // EVERY exit from this predicate that is not a clean, fully resolved, outside-the-repo path is a
-  // REFUSAL. Three of them used to fall through to acceptance, and one was reachable: exhausting the
-  // hop bound left the loop with the path still a symlink, the comparison then tested an unresolved
-  // string, nothing matched, and the candidate was accepted — a 21-link chain ending inside the
-  // reviewed repository executed its script. A bound that fails open is not a bound; it is a longer
-  // attack.
-  //
-  // Two of the three refusals are belt-and-braces and are labelled as such rather than dressed up as
-  // covered: with `CRAFT_REPO` empty the `case` pattern degenerates to `/*`, which matches every
-  // absolute path and refuses anyway; and `pwd -P` can only fail on a directory with no `x` bit,
-  // where `[ -f ]` has already failed one line earlier. Removing either guard changes no observable
-  // behaviour, so no test distinguishes them — stated here instead of implied by a test that would
-  // pass either way.
   const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
 craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
   case "$1" in /*) ;; *) return 1 ;; esac
@@ -787,11 +574,6 @@ craft_usable() {   # a line that is exactly '}' at column 0 would end the extrac
  }
 CRAFT_LOGGER=""
 `
-  // The RESOLVED path is what gets used, not the candidate string that was validated. Between the
-  // check and `node "$CRAFT_LOGGER"` sit the mktemp, the whole heredoc of a record that can be
-  // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
-  // candidate can be re-pointed into the reviewed repository. Handing over the path that was
-  // actually checked closes that window and costs nothing.
   /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
@@ -807,70 +589,25 @@ fi
 `
 }
 
-// The craft version a record or checkpoint payload claims, as text ('' when it claims none).
 /** @param {unknown} payload @returns {string} */
 function payloadVersion(payload) {
   return String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
 }
 
-// The engine's revision a SECOND time, on the command line the engine composes itself (realm
-// @nick/craft, node #114). It decides which fingerprint basis a later round reads this run under, and
-// the payload it also rides in is re-emitted by the logger agent — so craft-log-run files it only when
-// the two copies agree; one altered copy files an unknown basis, never a wrong one. Emitted only for a
-// payload that stamps an integer revision: an engine that stamps no basis sends no flag.
 /** @param {unknown} payload @returns {string} */
 function engineRevisionFlag(payload) {
   const rev = payload && typeof payload === 'object' ? /** @type {{ workflowEngineRevision?: unknown }} */ (payload).workflowEngineRevision : undefined
   return Number.isInteger(rev) ? `--engine-revision ${rev} ` : ''
 }
 
-// The logger flags both prompts share: `--dir`, `--rejoin` and the shell-expanded session id, each
-// independent of the others (see logRunPrompt below), with the trailing space the command line needs.
 /** @param {string} dir @param {boolean} rejoin @returns {string} */
 function runDirFlags(dir, rejoin) {
   return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
 }
 
-// The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
-// readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
-// review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
-// THE STAGING FILE IS PER-RUN, AND THAT IS LOAD-BEARING. It used to be the fixed `/tmp/craft-rec.json`
-// in one engine; extracting the prompt propagated that path to all four, which is three new ways to
-// be wrong at once. (a) `cat >` follows a symlink, so any other local uid can pre-create that name
-// pointing at a file this user owns and have the next run truncate it — an arbitrary-overwrite
-// primitive on a shared or CI box, and `/tmp`'s sticky bit does not stop CREATING an entry. (b) The
-// record holds every finding title, path and quoted snippet from the reviewed repo, and a default
-// umask leaves it world-readable, never removed. (c) A fixed name carries no run id, while craft's
-// own fan-out puts several runs in flight — rust-audit dispatches one nested review per changed crate
-// through `parallel` — so between one agent's `cat >` and its own redirect another can overwrite the
-// file: run A files run B's record under A's identity, the script succeeds, the readback verifies,
-// `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
-// created without following anything. The exit code is carried past the cleanup so a failed write
-// still reports as one.
-// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
-// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
-// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
-// repository the run never looked at — a lie in the one field the store is keyed by.
 /** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
-  // The version comes off the RECORD rather than from a parameter of its own: it is already there,
-  // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
-  // the record claims to be — which would file a record describing a run some other build made.
   const version = payloadVersion(record)
-  // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
-  // runs, never composed by the model — the whole point (see the header note on the payload-copy
-  // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
-  // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
-  // logger receiving the literal string "" and treating it as a real (empty) session id.
-  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
-  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
-  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
-  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
-  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
-  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
-  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
-  // rejoin search outright in that case (see its `target` comment), because the single candidate a
-  // garbled sibling finds is its neighbour's LIVE directory.
   const flags = runDirFlags(dir, rejoin)
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
@@ -894,11 +631,6 @@ RECORD:
 ${JSON.stringify(record, null, 2)}`
 }
 
-// Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
-// but a full review record carries every finding plus the ledger, and the cheap model is where the
-// silent truncation came from. Size the model to the payload.
-// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
-// engine passes them on as they are.
 /**
  * @param {unknown} record
  * @param {{ phase?: string }} [opts]
@@ -922,19 +654,10 @@ function logRunDispatch(record, { phase = '' } = {}) {
  */
 function logRunOutcome(res) {
   const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
-  // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
-  // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
-  // marker that fires on a landed write is one people stop reading. But it must not vanish either —
-  // the caller gets `ok: true` with a reason to surface.
   if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
   return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
-// For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
-// checkpoints, the prior-round read. They are bookkeeping — every other agent in these engines
-// produces review content, so a throw there should stop the run. These must not: the record is
-// written AFTER the report already exists in memory, so losing it to a bookkeeping write would
-// throw away the whole run's product.
 /**
  * @template P, O, R
  * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
@@ -950,14 +673,6 @@ function quietly(call) {
   }
 }
 
-// The run-record writer each engine binds as its `logRun` — one body for all four. What differs
-// between engines is BOUND, not copied: the agent call (review's retries underneath `quietly`, the
-// others' plain `agent`), the phase the write is dispatched under, where the logger writes (`target`,
-// read at each call: review finalizes into a `runDir` that only exists once a checkpoint has run),
-// what is stamped onto every record (`prepare`: review's fingerprint basis), and how a loss is noted
-// (review's one noteTelemetryLoss for every bookkeeping write; telemetryLossNoter for the others).
-// A lost record NEVER fails the run: it is noted, and the engine renders the note where a human reads.
-// The returned function must still be bound to the NAME `logRun` in the engine — see the header.
 /**
  * @template O
  * @param {object} o
@@ -973,14 +688,10 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const record = prepare(recordIn)
     const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
-    // The record landed and the script still had something to say — a run directory refused or left
-    // behind. Not a lost record, so it must not read as one, but not silence either.
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
   }
 }
 
-// The loss note of the engines that keep no other bookkeeping writes: every loss is kept for the
-// report, and logged — a landed record under its own prefix, never as a lost one.
 /**
  * @param {string[]} lost
  * @param {(line: string) => void} say
@@ -995,35 +706,10 @@ function telemetryLossNoter(lost, say) {
 // <<< craft-inline
 // The banner that leads the report when a write did not land — the same one review.js uses.
 // >>> craft-inline lib/review-coverage.mjs telemetryLostSection
-// ---- telemetry honesty ----
-// A run record is written by an agent shelling out to lib/craft-log-run.mjs, so the write can fail
-// while the review itself is perfectly healthy: a craftRoot that has moved, a dead logger agent, a
-// damaged store. Losing it used to be pure silence, and silence in the store is read as "this review
-// was never run" — the permissive default wearing the face of a fact.
-// The recorded decision is that this NEVER fails the run (a three-hour review killed by a bookkeeping
-// write teaches everyone to ignore the marker); it is reported instead. Returns '' for a healthy run,
-// so the marker cannot appear where nothing was lost — a marker that fires on healthy runs is one
-// people stop reading, which is the same defect wearing the opposite sign.
-// The body speaks about the WRITE, never about the run: it goes on every exit, including those whose
-// verdict says nothing was reviewed (dead base resolution, unknown language pin, empty diff), where
-// reassurance that "the review ran" would contradict the verdict itself. And it says "could not be
-// confirmed", not "did not land": two of the three ways an entry gets here — an abandoned deadline
-// (the logger agent is NOT cancelled and may still write) and a malformed reply — are compatible with
-// a write that succeeded. Certainty we do not have is the same defect with the sign flipped.
-// It LEADS the report rather than trailing it: a consumer that truncates (rust-audit clips an
-// embedded review report to 4000 chars) would cut a tail marker off, leaving the silence intact.
-// Each line ends up at the head of a human-facing report, and its text is model-authored (a logger
-// agent quotes back what the script printed). Flattened and bounded so a reply cannot forge report
-// structure — a heading, a verdict line — above the verdict the engine actually computed.
 /** @param {unknown} lost */
 function telemetryLostSection(lost) {
   const lines = /** @type {unknown[]} */ (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
   if (!lines.length) return ''
-  // A record that LANDED while its run directory did not is a different fact from a record nobody
-  // can find, and counting it under "could not be confirmed" is how a banner earns its way onto the
-  // list of things readers skip. The two are counted separately and the heading follows whichever is
-  // actually true — the section is still one section, because both mean the store is not the whole
-  // story for this run.
   const landed = lines.filter(l => /^the run directory \(the record itself landed\)/.test(String(l)))
   const unconfirmed = lines.length - landed.length
   const head = unconfirmed
@@ -1060,25 +746,12 @@ const logRun = makeRunLogger({
 // review engine (lib/agent-fallback.mjs, realm @nick/craft #116): a weaker audit must not read as a
 // normal one.
 // >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection agentUnavailableRecord readAgentUnavailableSection readAgentUnavailableLine
-// Only an error about the AGENT TYPE counts: a missing model, a file or tool not found inside the agent,
-// or an HTTP 404 also say "not found", and an "install the plugin" line for those would send the
-// operator to the wrong fix. Observed from the session's Agent tool for an unregistered type:
-// "Agent type 'craft:rust-reviewer' not found. Available agents: …" (realm @nick/craft #152); what the
-// workflow sandbox's agent() throws for it is not yet observed, so a "not found" this does not match
-// still falls back softly in both engines rather than killing the work.
 /** @param {unknown} msg @param {string} [agent] */
 function isAgentTypeMissing(msg, agent) {
   const m = String(msg ?? '')
   return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
 }
 
-// The report section. `missing`: [{ agent, what, error }] — an agent type the engine learned is not
-// registered, and what ran without it ("every rust lens", "the audit dimensions that use it").
-// `emptied`: [{ agent, count, what, error? }] — dispatches the generic subagent answered after the agent
-// came back EMPTY (an unregistered agent on some runtimes, or a transient failure) or, with `error`,
-// threw a "not found" isAgentTypeMissing does not recognise (the sandbox's wording for an unregistered
-// type is not yet observed, #152) — said softly, without the install line, the error quoted. Empty string
-// when there is nothing to say.
 /**
  * @param {{ agent: string, what: string, error?: string }[]} missing
  * @param {{ agent: string, count: number, what: string, error?: string }[]} emptied
@@ -1088,8 +761,6 @@ function agentUnavailableSection(missing, emptied) {
   const hard = Array.isArray(missing) ? missing : []
   const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
   if (!hard.length && !soft.length) return ''
-  // One bullet is one line: the harness's error carries newlines ("…not found.\nAvailable agents: …"), and
-  // readAgentUnavailableSection stops at the first line that is not a bullet, dropping every later entry.
   /** @param {unknown} e */
   const quote = e => String(e).replace(/\s+/g, ' ').trim().slice(0, 160)
   const lines = [
@@ -1102,11 +773,6 @@ function agentUnavailableSection(missing, emptied) {
   return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
 }
 
-// The fact's ONE shape on a run record, whichever engine files it (realm @nick/craft #151):
-// `agentUnavailable` — the agent types the engine learned are not registered, each once, sorted;
-// `agentFallbacks` — per agent type, the dispatches the generic subagent answered in its place.
-// Keyed by agent type in both engines: a profile id names the review engine's own grouping, which
-// an audit dimension does not have.
 /**
  * @param {Iterable<string>} missing
  * @param {{ agent: string, count: number }[]} fallbacks
@@ -1119,11 +785,6 @@ function agentUnavailableRecord(missing, fallbacks) {
   return { agentUnavailable: [...new Set(missing)].sort(), agentFallbacks }
 }
 
-// The section above, read back out of a report. An engine that nests a review receives only the
-// nested report, so this is how it learns what the nested run fell back on (realm @nick/craft #153).
-// It is the inverse of agentUnavailableSection and lives beside it, so the wording and its reader
-// change in one place. A bullet it cannot read fails toward "unavailable": it is returned as missing,
-// the bullet itself as the error, rather than dropped.
 /**
  * @param {unknown} report
  * @returns {{ missing: { agent: string, error: string }[], emptied: { agent: string, count: number, error?: string }[] }}
@@ -1145,8 +806,6 @@ function readAgentUnavailableSection(report) {
   return { missing, emptied }
 }
 
-// One bullet of the section: a soft fallback carries `count`, an unregistered agent does not. A bullet
-// in wording this does not know is an unregistered agent, the bullet itself (bounded) as the error.
 /** @param {string} line @returns {{ agent: string, error: string } | { agent: string, count: number, error?: string }} */
 function readAgentUnavailableLine(line) {
   const hard = /^- `([^`]+)` is not registered in this session, .*? not broken\.(?: \((.*)\))?$/.exec(line)
@@ -1323,12 +982,6 @@ const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scout
 // spelling stays unrepairable — such a crate is reported NOT RUN rather than reviewed unscoped.
 const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
 // >>> craft-inline lib/path-segments.mjs pathSegments
-// A path as normalized SEGMENTS, for containment decided segment by segment rather than on a raw
-// string prefix: `/r/./crates/../crates/core` is inside `/r`, and `/r-evil` is not. Both separators
-// split, empty and `.` segments vanish, and an interior `..` pops its parent. A `..` with nothing left
-// to pop is KEPT as a literal segment, so a path that climbs out stays visibly out — a caller refuses
-// it (`segs[0] === '..'`) or it fails to match a root, never reads as inside. No disk and no Node API
-// (the engines inline this into the sandbox): symlinks and case-insensitive filesystems are not seen.
 /** @param {unknown} p */
 function pathSegments(p) {
   const segs = []
@@ -1485,19 +1138,6 @@ function nestedPriorDecisionsSection(lifted) {
 // The nested review launches below resolve the child under whichever name this registry carries —
 // the fence's own comment states the rule and the fallback's single trigger.
 // >>> craft-inline lib/nested-workflow.mjs nestedWorkflow
-// Launches a nested workflow under the name that resolves where this engine actually runs. In the
-// installed plugin the registry lists engines under the plugin prefix, and a launch by the bare
-// name refuses to resolve — observed live: the review pins ran zero agents, and rust-audit's two
-// nested reviews died inside its fan-out (realm @nick/craft, node #83). In a checkout of this repo
-// the same engines are registered bare. So: the qualified name first, the bare one as fallback.
-// The fallback fires ONLY on the sandbox's name-resolution refusal — `workflow()` THROWS on an
-// unknown name (documented contract), and the refusal observed live reads `no workflow with that
-// name` — never on the nested run itself failing: relaunching a failed review under the second
-// spelling would run the whole review twice. A `null` return is a nested engine that died, not a
-// missing name — no fallback there either. And when NEITHER spelling resolves, the throw names
-// both attempts AND carries the last refusal verbatim — its `Available:` listing is the diagnosis
-// that located the live failure at a consumer — so the caller fails loud instead of skipping the
-// review, and the record distinguishes a name that would not resolve from a run that died.
 /**
  * @param {(name: string, args: unknown) => Promise<unknown>} workflow
  * @param {string} name

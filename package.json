@@ -8,6 +8,7 @@
     "gate": "node lib/gate.mjs",
     "lint": "eslint lib opencode/plugin knip.config.js .dependency-cruiser.mjs --max-warnings 0",
     "check:workflows": "node lib/check-workflows.mjs",
+    "check:workflow-size": "node lib/check-workflow-size.mjs",
     "check:skills": "node lib/check-skills.mjs",
     "check:evals": "node lib/check-evals.mjs",
     "check:types": "npm --prefix opencode/plugin run typecheck",

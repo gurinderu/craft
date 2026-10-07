@@ -18,11 +18,6 @@ export const meta = {
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
 // >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
-// One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
-// name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
-// module-level helper is copied into the engines' inlined regions only when it is, and the fence's
-// sibling check only knows about EXPORTS — a private helper reaches every engine as a ReferenceError
-// on first use, with the gate green.
 /**
  * @param {RegExpExecArray} m
  * @param {Record<string, unknown>} out
@@ -38,12 +33,6 @@ function applyOption(m, out, ignored) {
     return 1
   }
   const key = /** @type {string} */ (m[2])
-  // `__proto__` is a live setter on a plain object: `__proto__={"craftRoot":"/evil"}` stores no own
-  // key and yet makes `A.craftRoot` read `/evil`, which is interpolated into the shell instructions
-  // the logger agent is handed. The args string is model-composed, so this is the same threat shape
-  // as a model-supplied path, reached by a quieter door. A null-prototype object does not fix it on
-  // its own — `Object.assign` back to a plain object re-triggers the setter — and these are never
-  // legitimate option names, so they are refused by name and reported.
   if (banned(key)) { ignored.push(key); return 0 }
   const quoted = m[4] ?? m[5]
   if (quoted !== undefined) { out[key] = quoted; return 1 }
@@ -55,15 +44,8 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
-// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
 const OBJECT_ONLY_OPTIONS = ['priorDecisions']
 
-// Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
-// A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
-// otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
-// invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
-// or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
  * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
@@ -78,12 +60,8 @@ function parseOptions(text) {
   let m
   let cursor = 0
   while ((m = pair.exec(text)) !== null) {
-    // Anything skipped over between matches is prose, not an option: collect it so the caller can say
-    // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
-    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
-    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
     const key = String(m[2] ?? m[7])
     if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
@@ -94,7 +72,6 @@ function parseOptions(text) {
   return { options: out, pairs, ignored, cut: '' }
 }
 
-// normalizeArgs' branch for a string that starts with `{`.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -115,7 +92,6 @@ function normalizeJsonArgs(text, warn) {
   }
 }
 
-// normalizeArgs' last branch: a non-empty string that is not JSON, read as `key=value` options.
 /**
  * @param {string} text
  * @param {(msg: string) => void} warn
@@ -125,19 +101,12 @@ function normalizeKeyValueArgs(text, warn) {
   const { options, pairs, ignored, cut } = parseOptions(text)
   if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
-    // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
-    // and testing "is any value not true" threw away every string made only of boolean options —
-    // `mutants=true` became {} with a warning saying the input was not understood, which is how a
-    // requested mutation pass would silently not run.
     warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
     if (ignored.length) {
       warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
     }
     return options
   }
-  // Reaching here means a non-empty string that is neither JSON nor a single recognizable pair. The
-  // loud path matters more than it looks: this is the branch a typo lands in, and defaults produce a
-  // verdict that reads exactly like a requested one.
   warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
   return {}
 }
@@ -157,8 +126,6 @@ function normalizeArgs(args, warn = () => {}) {
   if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
   if (typeof args !== 'string' || !args.trim()) return {}
   const text = args.trim()
-  // A JSON scalar or array is not an options object, and must not be mistaken for the key=value form
-  // below: `[1,2,3]` and `"a sentence"` would otherwise become flags named after their own contents.
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -171,8 +138,6 @@ const A = normalizeArgs(args, log)
 // The project's recalled prior decisions, read before anything can return, so a malformed argument
 // is named on every return path (the rules: lib/prior-decisions.mjs).
 // >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX decisionScopeParts decisionText decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
-// Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut
-// mid-sentence would mark a finding with a rationale nobody wrote.
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
@@ -212,8 +177,6 @@ function decisionProblem(o, d) {
   return decisionAnchorProblem(d)
 }
 
-// A scope is a repo-relative path of these characters only; the shell line quotes it, and the check
-// keeps anything a quote could mishandle out of it.
 const SAFE_SCOPE = /^[A-Za-z0-9._@+/ -]+$/
 
 /** Whether `s` holds a control character (a newline among them). @param {string} s */
@@ -249,11 +212,8 @@ function readPriorDecision(raw, i) {
 }
 // <<< craft-inline
 // >>> craft-inline lib/prior-decisions.mjs PRIOR_DECISIONS_MAX DECISION_TITLE_OVERLAP parsePriorDecisions titleWords decisionAnswers reraisedBySeverity priorDecisionsRefusedSection
-// The most decisions one run applies; the rest are refused by name and their findings raised normally.
 const PRIOR_DECISIONS_MAX = 100
 
-// A decision answers a finding when the finding's file sits inside the decision's scope AND their
-// titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
@@ -264,8 +224,6 @@ const DECISION_TITLE_OVERLAP = 0.6
  */
 function parsePriorDecisions(raw) {
   if (raw == null || raw === '') return { decisions: [], refused: [] }
-  // Only a list inside an object argument: in the key=value form a value cannot be delimited, and a
-  // JSON string invites that form, so any string is refused (lib/workflow-args.mjs OBJECT_ONLY_OPTIONS; realm @nick/craft, node #183).
   if (typeof raw === 'string') return { decisions: [], refused: ['priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied'] }
   const list = raw
   if (!Array.isArray(list)) return { decisions: [], refused: ['priorDecisions is not a list — no decision applied'] }
@@ -276,8 +234,6 @@ function parsePriorDecisions(raw) {
   list.slice(0, PRIOR_DECISIONS_MAX).forEach((item, i) => {
     const d = readPriorDecision(item, i)
     if (typeof d === 'string') refused.push(d)
-    // The scope check answers by id: two decisions under one id could lend one's unchanged scope to
-    // the other, so the second is refused.
     else if (decisions.some(x => x.id === d.id)) refused.push(`decision #${i} (${d.id}) repeats an id already given — not applied`)
     else decisions.push(d)
   })
@@ -472,10 +428,6 @@ function summarizeFindings(findings) {
   return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
 }
 
-// Fraction of the judged candidates that were refuted: refuted / candidates, 2-dp, 0 when nothing was
-// judged. review and adversarial-review record it. Not (candidates - confirmed) / candidates: review's
-// `confirmed` excludes a "suspected" tier that is NOT refuted. rust-audit's unused-crates records
-// null rather than 0 when nothing was judged, and computes that in lib/audit-verification.mjs.
 /**
  * @param {number} refuted
  * @param {number} candidates
@@ -485,11 +437,6 @@ function refuteRate(refuted, candidates) {
   return candidates ? Math.round((refuted / candidates) * 100) / 100 : 0
 }
 
-// The refusal of a `repo` argument by an engine whose agents run git/cargo wherever the session sits:
-// accepting it silently reads THIS checkout and reports a normal-looking verdict for the wrong code.
-// The engine files `record` through its logRun — a repeated wrong dispatch has to reach the `notRun`
-// fragility ranking — and returns `report`, before anything has run. One helper for every engine that
-// refuses, so the record and the advice cannot drift between them.
 /**
  * @param {{ engine: string, repo: string, craftVersion: string, outputTokens: number, via?: string }} o
  *   `via`: the parent workflow that dispatched this run, '' when it was not nested
@@ -500,8 +447,6 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
       schemaVersion: 1, runtime: 'claude-code', craftVersion, kind: 'workflow', name: engine,
       nested: !!via, via: via || null,
       verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
-      // The CLASS, not the caller's path: `notRun` is ranked by exact string, so a path here would
-      // make every repetition of this same misuse its own count-1 row.
       notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
       outputTokens,
     },
@@ -518,16 +463,12 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
 // >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
-// Asked of the logger agent so a failed write is ASSERTED, not inferred from a missing field.
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['ok'],
   properties: {
     ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
-    // The description is what the model steers this field by, so it has to name the WARNING case too:
-    // reading "empty otherwise" it returns '' on a landed-but-degraded run, and the engine's
-    // telemetry-loss branch — the whole reason the field is populated on success — never fires.
     error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
@@ -535,76 +476,12 @@ const LOGRUN_SCHEMA = {
 /** @param {unknown} s */
 function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
-// Every logger command runs as `cd <reviewed repo> && node <logger>`, so a `:-.` fallback resolved
-// AFTER the cd points at the REVIEWED repo, where the script is not — that lost every record to a
-// silent "Cannot find module". Resolve the logger to an absolute path FIRST, into a variable, and
-// only then change directory. `craftRoot` is passed when the engine is launched by scriptPath from
-// a checkout (CLAUDE_PLUGIN_ROOT is unset then); as an installed plugin the env var is set for us.
-// The `:-.` fallback is GONE, and that is a security fix, not tidying. It resolved before the `cd`,
-// so `.` was the logger agent's starting directory — which, in the deployment this plugin is built
-// for, is the repository under REVIEW. A reviewed repository shipping its own `lib/craft-log-run.mjs`
-// would then be executed with the user's privileges by a workflow whose whole premise is that the
-// reviewed repo is untrusted. Extraction would have carried that from one engine to four.
-// It is emitted FIRST, before any staging: `${VAR:?}` is a hard abort in a non-interactive shell, so
-// after the `cat` it killed the block before `rm -f` and left the whole record in TMPDIR — on exactly
-// the path this loud failure was added for.
-// A record that cannot be written is already a reported, non-fatal outcome (logRunOutcome →
-// noteTelemetryLoss → the report), so refusing to guess a path costs a marker, not a run.
 /**
  * @param {string | undefined} craftRoot
  * @param {string} [version]
  * @param {string} [repo]
  */
 function loggerPrelude(craftRoot, version = '', repo = '') {
-  // ONE pipeline for every way the logger can be located, and that uniformity is the fix rather than
-  // a tidy-up. Each source used to get its own treatment: an explicit `craftRoot` returned EARLY,
-  // before the absoluteness check and before the refusal, so a review launched with `craftRoot=.`
-  // emitted `CRAFT_LOGGER='.'/lib/craft-log-run.mjs` and then `cd <reviewed repo> && node
-  // "$CRAFT_LOGGER"` — the removed `:-.` hole restored verbatim, bypassing the version pin and the
-  // loud refusal too. `craftRoot` arrives in the model-composed args string, so it is exactly as
-  // untrusted as the `--dir` this project already refuses.
-  //
-  // Three properties now hold for every candidate without exception:
-  //   ABSOLUTE — `[ -f ]` is evaluated in the logger agent's cwd while `node` runs AFTER the cd into
-  //     the reviewed repository, so any relative path resolves THERE. Refused outright rather than
-  //     normalized: guessing what the caller meant is how this class keeps coming back.
-  //   PRESENT — a path that names no file is not a logger.
-  //   ORDERED — explicit root, then the environment, then this engine's own installed copy. The
-  //     search is a fallback, never an override: written the other way round it overwrote a good
-  //     path with whatever the cache held, so a launch from a checkout logged through another build.
-  //
-  // The search is version-pinned to what this engine is stamped with (a record filed by another
-  // build's script misdescribes which engine ran, and gets counted), looks only under the user's own
-  // plugin cache, honours $CLAUDE_CONFIG_DIR because a session configured that way keeps its plugins
-  // elsewhere, and never looks at the reviewed repository at all. That cache layout belongs to the
-  // harness, not to craft (realm @nick/craft, node #48 — observed, not documented), so a miss is
-  // ordinary: not found means the refusal below, never a guess.
-  // ONE predicate, applied to every candidate, and applied BEFORE it is accepted rather than to the
-  // winner afterwards. Written as a terminal check on the winner, an explicit craftRoot naming the
-  // repo killed the whole command instead of being rejected in favour of the next candidate — which
-  // is craft reviewing its own checkout, the mode this repo mandates for itself.
-  //
-  // A candidate qualifies only if it is ABSOLUTE (`[ -f ]` runs in the agent's cwd while `node` runs
-  // after the cd, so a relative path resolves in the reviewed repository), PRESENT, and OUTSIDE the
-  // directory the command is about to cd into. The last is checked on the FULLY resolved path:
-  // symlinks are followed to their target — a link whose FILE points into the repo passed for one
-  // commit because only the directory went through `pwd -P` — and both sides are normalized, so a
-  // `..` climb and a symlinked parent collapse to the same comparison. The `case` patterns are
-  // quoted and slash-anchored, so a sibling that merely shares a prefix (`/x/repo-evil` beside
-  // `/x/repo`) is NOT inside — the collision this project already met once in `insideStore`.
-  // EVERY exit from this predicate that is not a clean, fully resolved, outside-the-repo path is a
-  // REFUSAL. Three of them used to fall through to acceptance, and one was reachable: exhausting the
-  // hop bound left the loop with the path still a symlink, the comparison then tested an unresolved
-  // string, nothing matched, and the candidate was accepted — a 21-link chain ending inside the
-  // reviewed repository executed its script. A bound that fails open is not a bound; it is a longer
-  // attack.
-  //
-  // Two of the three refusals are belt-and-braces and are labelled as such rather than dressed up as
-  // covered: with `CRAFT_REPO` empty the `case` pattern degenerates to `/*`, which matches every
-  // absolute path and refuses anyway; and `pwd -P` can only fail on a directory with no `x` bit,
-  // where `[ -f ]` has already failed one line earlier. Removing either guard changes no observable
-  // behaviour, so no test distinguishes them — stated here instead of implied by a test that would
-  // pass either way.
   const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
 craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
   case "$1" in /*) ;; *) return 1 ;; esac
@@ -636,11 +513,6 @@ craft_usable() {   # a line that is exactly '}' at column 0 would end the extrac
  }
 CRAFT_LOGGER=""
 `
-  // The RESOLVED path is what gets used, not the candidate string that was validated. Between the
-  // check and `node "$CRAFT_LOGGER"` sit the mktemp, the whole heredoc of a record that can be
-  // hundreds of kilobytes, and the cd — a window in which a symlink component of the unresolved
-  // candidate can be re-pointed into the reviewed repository. Handing over the path that was
-  // actually checked closes that window and costs nothing.
   /** @param {string} expr */
   const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
   CRAFT_TRY=${expr}
@@ -656,70 +528,25 @@ fi
 `
 }
 
-// The craft version a record or checkpoint payload claims, as text ('' when it claims none).
 /** @param {unknown} payload @returns {string} */
 function payloadVersion(payload) {
   return String((payload && typeof payload === 'object' ? /** @type {{ craftVersion?: unknown }} */ (payload).craftVersion : undefined) ?? '')
 }
 
-// The engine's revision a SECOND time, on the command line the engine composes itself (realm
-// @nick/craft, node #114). It decides which fingerprint basis a later round reads this run under, and
-// the payload it also rides in is re-emitted by the logger agent — so craft-log-run files it only when
-// the two copies agree; one altered copy files an unknown basis, never a wrong one. Emitted only for a
-// payload that stamps an integer revision: an engine that stamps no basis sends no flag.
 /** @param {unknown} payload @returns {string} */
 function engineRevisionFlag(payload) {
   const rev = payload && typeof payload === 'object' ? /** @type {{ workflowEngineRevision?: unknown }} */ (payload).workflowEngineRevision : undefined
   return Number.isInteger(rev) ? `--engine-revision ${rev} ` : ''
 }
 
-// The logger flags both prompts share: `--dir`, `--rejoin` and the shell-expanded session id, each
-// independent of the others (see logRunPrompt below), with the trailing space the command line needs.
 /** @param {string} dir @param {boolean} rejoin @returns {string} */
 function runDirFlags(dir, rejoin) {
   return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
 }
 
-// The prompt that carries ONE record to disk. `command` is `write` (one-shot: detail file, verified
-// readback, index line) or `finalize` (the same, plus folding in this run's phase checkpoints —
-// review.js is the only engine that checkpoints). Nothing here asks the model to compute anything.
-// THE STAGING FILE IS PER-RUN, AND THAT IS LOAD-BEARING. It used to be the fixed `/tmp/craft-rec.json`
-// in one engine; extracting the prompt propagated that path to all four, which is three new ways to
-// be wrong at once. (a) `cat >` follows a symlink, so any other local uid can pre-create that name
-// pointing at a file this user owns and have the next run truncate it — an arbitrary-overwrite
-// primitive on a shared or CI box, and `/tmp`'s sticky bit does not stop CREATING an entry. (b) The
-// record holds every finding title, path and quoted snippet from the reviewed repo, and a default
-// umask leaves it world-readable, never removed. (c) A fixed name carries no run id, while craft's
-// own fan-out puts several runs in flight — rust-audit dispatches one nested review per changed crate
-// through `parallel` — so between one agent's `cat >` and its own redirect another can overwrite the
-// file: run A files run B's record under A's identity, the script succeeds, the readback verifies,
-// `{ok:true}` comes back and NOTHING reports a loss. `mktemp` answers all three: unique name, 0600,
-// created without following anything. The exit code is carried past the cleanup so a failed write
-// still reports as one.
-// `repo` steers the logger's `cd`, and THAT IS ALL IT STEERS. It is meaningful only for an engine
-// whose review agents are pointed at the same checkout (review.js does that with REPO_DIRECTIVE);
-// passed by an engine whose agents run in the session's cwd, it would file a record attributed to a
-// repository the run never looked at — a lie in the one field the store is keyed by.
 /** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
 function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
-  // The version comes off the RECORD rather than from a parameter of its own: it is already there,
-  // and taking it from anywhere else lets the copy the logger is looked up by drift from the version
-  // the record claims to be — which would file a record describing a run some other build made.
   const version = payloadVersion(record)
-  // `${CLAUDE_CODE_SESSION_ID:+--session "..."}` is shell-expanded INSIDE the script the logger agent
-  // runs, never composed by the model — the whole point (see the header note on the payload-copy
-  // incident this file already documents). `:+` is deliberate over `:-`: it fires only when the var
-  // is BOTH set and non-empty, so an unset session id degrades to no flag at all rather than the
-  // logger receiving the literal string "" and treating it as a real (empty) session id.
-  // `--dir` and `--rejoin` are INDEPENDENT, and the `!dir &&` that used to gate the second one was a
-  // silent contract break. review.js finalized with `{ dir: runDir, rejoin: checkpointFailed }`, so
-  // any run that had a runDir at all sent the directory and swallowed the rejoin — the CLI then read
-  // `rejoin: false` for a directory that may well have been ADOPTED by an earlier `--rejoin`
-  // checkpoint. What depends on the flag arriving is the OWNERSHIP proof: it is the engine's own
-  // statement that its `runDir` may have been adopted, and nothing downstream can reconstruct that
-  // from the directory alone. It is NOT a fallback for a refused `--dir` — `finalizeRun` refuses the
-  // rejoin search outright in that case (see its `target` comment), because the single candidate a
-  // garbled sibling finds is its neighbour's LIVE directory.
   const flags = runDirFlags(dir, rejoin)
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
@@ -743,11 +570,6 @@ RECORD:
 ${JSON.stringify(record, null, 2)}`
 }
 
-// Copying a large record verbatim is not a low-effort task: haiku is fine for a gate-failed stub,
-// but a full review record carries every finding plus the ledger, and the cheap model is where the
-// silent truncation came from. Size the model to the payload.
-// The options are typed as the sandbox's `agent()` takes them — `effort` a literal, not a string — so an
-// engine passes them on as they are.
 /**
  * @param {unknown} record
  * @param {{ phase?: string }} [opts]
@@ -771,19 +593,10 @@ function logRunDispatch(record, { phase = '' } = {}) {
  */
 function logRunOutcome(res) {
   const r = res && typeof res === 'object' ? /** @type {{ ok?: unknown, error?: unknown, __threw?: unknown }} */ (res) : null
-  // A WARNING is not a loss: the record IS on disk, and only the run DIRECTORY was refused or left
-  // behind. Reporting it as a lost record would send a reader hunting for a file that exists, and a
-  // marker that fires on a landed write is one people stop reading. But it must not vanish either —
-  // the caller gets `ok: true` with a reason to surface.
   if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
   return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
 }
 
-// For the agent calls whose FAILURE is not the caller's problem: the run record, the phase
-// checkpoints, the prior-round read. They are bookkeeping — every other agent in these engines
-// produces review content, so a throw there should stop the run. These must not: the record is
-// written AFTER the report already exists in memory, so losing it to a bookkeeping write would
-// throw away the whole run's product.
 /**
  * @template P, O, R
  * @param {(prompt: P, opts: O) => Promise<R>} call a harness agent callback
@@ -799,14 +612,6 @@ function quietly(call) {
   }
 }
 
-// The run-record writer each engine binds as its `logRun` — one body for all four. What differs
-// between engines is BOUND, not copied: the agent call (review's retries underneath `quietly`, the
-// others' plain `agent`), the phase the write is dispatched under, where the logger writes (`target`,
-// read at each call: review finalizes into a `runDir` that only exists once a checkpoint has run),
-// what is stamped onto every record (`prepare`: review's fingerprint basis), and how a loss is noted
-// (review's one noteTelemetryLoss for every bookkeeping write; telemetryLossNoter for the others).
-// A lost record NEVER fails the run: it is noted, and the engine renders the note where a human reads.
-// The returned function must still be bound to the NAME `logRun` in the engine — see the header.
 /**
  * @template O
  * @param {object} o
@@ -822,14 +627,10 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const record = prepare(recordIn)
     const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
-    // The record landed and the script still had something to say — a run directory refused or left
-    // behind. Not a lost record, so it must not read as one, but not silence either.
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
   }
 }
 
-// The loss note of the engines that keep no other bookkeeping writes: every loss is kept for the
-// report, and logged — a landed record under its own prefix, never as a lost one.
 /**
  * @param {string[]} lost
  * @param {(line: string) => void} say
@@ -921,16 +722,6 @@ Return {findings: []-shaped JSON}.`
 // The runner reports its own leftovers into `notRun`; callers that report them their own way (the
 // finder lenses, which mark one BLOCKING entry per dead dimension) pass `reportUnjudged: false`.
 // >>> craft-inline lib/throttled-runner.mjs unjudgedNotRun makeThrottledRunner
-// One not-run entry per throttled pass that ended with unfinished jobs — and NONE when the pass
-// finished, which is the whole discipline: a marker that fires on healthy runs is one people stop
-// reading.
-// It used to claim the unjudged findings "stay Suspected". That was FALSE for an escalated finding:
-// its panel members are separate jobs, so one dead lens leaves a 1-1 split that `judge` reads as a
-// refutation, and refuted findings are dropped from the report entirely. The premise is now enforced
-// at the judge instead of asserted here (a panel that lost a member decides nothing), and this note
-// no longer promises an outcome it does not produce.
-// Advisory by default, blocking when the pass judged NOTHING — the two are genuinely different: a
-// gap in a panel is a weakened judgement, an empty pass is no judgement at all.
 /**
  * @param {string} tag
  * @param {unknown[] | number | null | undefined} unfinished
@@ -941,8 +732,6 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
   const count = Array.isArray(unfinished) ? unfinished.length : Number(unfinished) || 0
   if (count <= 0) return []
   const key = String(tag || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'checks'
-  // A pass that judged NOTHING is not an advisory footnote: no finding in it was verified at all,
-  // and a verdict built on that is a verdict about nothing. It downgrades the run like a dead lens.
   const wholePass = total > 0 && count >= total
   return [{
     label: `${key}-checks-unjudged`,
@@ -953,9 +742,6 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
   }]
 }
 
-// Runs `jobs` in batches of `batch`, retrying whatever produced no result in quieter rounds of
-// `retryBatch`, and stops spawning below the budget floor. Returns the jobs that never produced a
-// result. Each job: {prompt, label, schema, effort, onResult, onMissing?}.
 /**
  * @typedef {object} ThrottledJob
  * @property {string} prompt
@@ -983,8 +769,6 @@ function unjudgedNotRun(tag, unfinished, { total = 0 } = {}) {
  */
 function makeThrottledRunner(deps) {
   const { agent, parallel, log, markNotRun, batch: BATCH, retryBatch, maxRetryRounds, budget, budgetFloor } = deps
-  // One round over `pending` in batches of `size`: the jobs that produced no result, and — when the
-  // budget guard stopped the round — every job left unfinished (null when it ran to the end).
   /**
    * @param {ThrottledJob[]} pending
    * @param {number} size
@@ -1020,13 +804,7 @@ function makeThrottledRunner(deps) {
    * @param {boolean} reportUnjudged
    */
   const settle = (unfinished, tag, total, reportUnjudged) => {
-    // A job that never produced a verdict must leave a TRACE where the verdict would have gone, not
-    // only a line in the run record. Its absence is what the judge has to see: a panel silently one
-    // vote short reads as a whole panel, and a 1-1 split then counts as a refutation.
     for (const j of unfinished) if (typeof j.onMissing === 'function') j.onMissing()
-    // `total` lets the entry tell a gap apart from a pass that judged nothing — including the pass
-    // stopped by the budget guard before it spawned its first agent, which returned an empty
-    // leftover list and therefore reported as clean.
     if (reportUnjudged) for (const e of unjudgedNotRun(tag, unfinished, { total })) markNotRun(e.label, e.note, e.incomplete)
   }
   return async function runThrottled(jobs, tag, phaseTitle, { reportUnjudged = true } = {}) {
@@ -1054,40 +832,22 @@ function makeThrottledRunner(deps) {
 // report; what it does share with review.js is the pair of guards that stop a run which looked at
 // nothing from returning a bare Approve.
 // >>> craft-inline lib/review-coverage.mjs noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered nothingToReviewMessage
-// A diff that came back with NO files at all. Reachable legitimately — an already-merged branch, a
-// `path` scope matching nothing — and also when detection half-failed, which is why this stays
-// INCOMPLETE rather than green. But it is not a coverage hole: describing it with
-// noLanguageMessage(0, 0) produced "none of the 0 changed file(s) … and 0 of them went unreviewed",
-// a hole of size zero, which is self-contradictory and teaches readers to ignore the marker.
 function noChangedFilesMessage() {
   return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
 }
 
-// Which unreviewed files actually lower the claim. Derived from the path alone and deliberately
-// conservative: when in doubt a file is MATERIAL. A false "material" costs one honest INCOMPLETE
-// marker; a false "inert" costs a silent overclaim, which is the bug this whole section exists to
-// prevent. Three narrow exemptions only — prose/asset extensions, lockfiles matched by their real
-// names, and artifacts whose path makes it unambiguous that a generator wrote them.
 const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
 
 const INERT_NAMES = new Set([
   'license', 'licence', 'notice', 'codeowners', '.gitignore', '.gitattributes',
-  // Inert `.txt` files by NAME, not by extension. A blanket `.txt` rule was the lockfile bug again
-  // in another costume: `CMakeLists.txt`, `requirements.txt`, `conanfile.txt` and `Dependencies.txt`
-  // are build-system and dependency SOURCE, and a diff of nothing but those took the green
-  // "nothing needed reviewing" return. When in doubt, material.
   'license.txt', 'licence.txt', 'notice.txt', 'copying.txt', 'authors.txt', 'contributors.txt',
   'changelog.txt', 'changes.txt', 'readme.txt', 'robots.txt', 'humans.txt', 'todo.txt', 'notes.txt',
-  // Lockfiles, by the names they actually have. Matching a *shape* like `*lock.*` swallowed source
-  // code — `db/lock.sql`, `src/lock.rs`, `internal/spin-lock.go` — and silently exempted it.
   'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock',
   'cargo.lock', 'flake.lock', 'poetry.lock', 'pdm.lock', 'uv.lock', 'pipfile.lock', 'gemfile.lock',
   'composer.lock', 'go.sum', 'deno.lock', 'mix.lock', 'pubspec.lock', 'podfile.lock', 'packages.lock.json',
   'gradle.lockfile', 'cabal.project.freeze', 'conan.lock', 'herd.lock',
 ])
 
-// Generated artifacts. Only where the PATH itself is unambiguous — a generator-stamped suffix or a
-// directory whose whole purpose is generated output. A hand-written file never lives here.
 const GENERATED_PATH = /(^|\/)(__generated__|generated|node_modules|vendor)\//i
 
 const GENERATED_FILE = /(\.snap|\.min\.(js|css|mjs|cjs)|\.pb\.(go|cc|h|rs|ts)|_pb2(_grpc)?\.py|\.gen\.(go|rs|ts)|\.generated\.[a-z0-9]+|\.g\.dart)$/i
@@ -1103,11 +863,6 @@ function materialUncovered(files) {
   return files.filter(f => !isInertUncovered(f))
 }
 
-// The other half of the no-profile case: a diff whose changed files are ALL inert (prose, assets,
-// lockfiles, generated output). Nothing was reviewed AND nothing needed reviewing — a different
-// statement from "files went unreviewed", and it must not be dressed up as a coverage hole. A
-// marker that fires on every README-only change stops being read, which destroys the value of the
-// marker on the diffs that do hide unreviewed code.
 /** @param {number} fileCount */
 function nothingToReviewMessage(fileCount) {
   return `NOTHING NEEDED REVIEWING — all ${fileCount} changed file(s) are documentation, assets, lockfiles or generated output; none carries reviewable code. No lens ran because none had anything to look at.`
@@ -1579,13 +1334,6 @@ function buildVerifyJobs(findings, sink) {
 }
 
 // >>> craft-inline lib/adversarial-judge.mjs usableVote judgeVotes
-// A verdict object we cannot read is not a verdict. `onResult` spreads whatever the agent returned
-// (`{...true}` and `{...{}}` both yield an object with none of the fields), and this engine already
-// records a live agent returning WITHOUT a schema-`required` field — so `required` in the schema is
-// not a guarantee. Unread fields would otherwise vote: a missing `refuted` counts as non-refuting, a
-// missing `premiseSupported` as non-supporting, and an `undefined` severity survives into the median
-// where `SEV_RANK[undefined]` makes the comparator NaN and the confirmed finding can come out with no
-// severity at all — which `baseVerdict` reads as neither critical nor high, i.e. Approve.
 /**
  * @param {unknown} v  an agent-returned verdict object of unknown shape (model output)
  * @param {Record<string, number>} SEV_RANK
@@ -1608,20 +1356,11 @@ function usableVote(v, SEV_RANK) {
  */
 function judgeVotes(findings, sink, SEV_RANK) {
 
-  // Severity is the THIRD decision axis, and the one that produces the verdict: `baseVerdict` reads
-  // Block from a confirmed critical/high, Warning from a medium, Approve otherwise. So the absent
-  // vote must be asked the same question here as on the other two — and it was not, which is how a
-  // dead lens turned Block into Approve while both other axes agreed and nothing was flagged.
-  // The median is taken over the FULL panel: a panel of three whose members voted [high, low] and
-  // lost one has median index 1 of TWO, i.e. the milder — absence pulling severity down.
   /** @type {(sev: string) => number} */
   const rankOf = sev => /** @type {number} */ (SEV_RANK[sev])
   const ranks = Object.keys(SEV_RANK).sort((a, b) => rankOf(a) - rankOf(b))
   const MOST = /** @type {string} */ (ranks[0])
   const LEAST = /** @type {string} */ (ranks[ranks.length - 1])
-  // Which side of the verdict this severity falls on. Comparing TIERS, not severities, keeps the
-  // marker narrow: critical vs high both mean Block, and flagging that as undecided would fire on
-  // runs where the absence changed nothing — a false INCOMPLETE is no safer here than a false clean.
   /** @type {(sev: string) => 'block' | 'warning' | 'approve'} */
   const tierOf = sev => (rankOf(sev) <= rankOf('high') ? 'block' : sev === 'medium' ? 'warning' : 'approve')
   /** @type {(f: F, votes: Vote[], missing: number, pad: string) => string} */
@@ -1632,44 +1371,18 @@ function judgeVotes(findings, sink, SEV_RANK) {
       .sort((a, b) => rankOf(a) - rankOf(b))
     return sevs.length ? /** @type {string} */ (sevs[Math.floor(sevs.length / 2)]) : f.severity
   }
-  // The absent votes padded with what the FINDER claimed — a neutral stand-in, where their silence
-  // was not. Only used once the two extremes agree that the verdict cannot swing either way.
   /** @type {(f: F, votes: Vote[], missing: number) => string} */
   const calibrate = (f, votes, missing) => calibrateWith(f, votes, missing, f.severity)
-  // Malformed votes become absences, so the two-assignment machinery below decides them rather than
-  // letting an unreadable object count as a non-refuting, non-supporting, severity-less confirmation.
   /** @type {(raw: unknown[] | undefined) => Array<Vote | { lens?: unknown, missing: true }>} */
   const readVotes = raw => (raw || []).map(v => (usableVote(v, SEV_RANK) && !v.missing) ? v : { lens: v && /** @type {{ lens?: unknown }} */ (v).lens, missing: true })
-  // A missing vote must not decide — but "missing" is not the same as "undecidable". Ask what the
-  // absent votes COULD have changed, and only fall back when they could have changed the answer.
-  // Both traps are real and both were measured on this engine:
-  //   [refute, confirm, confirm] confirms; losing one confirming lens made `refutes * 2 < votes`
-  //     false, so the SAME finding was filed as refuted — and refuted findings never reach the
-  //     report, they are fed forward as "adversarially disproven, do not re-report".
-  //   Demoting on ANY absence is the inverse trap: [confirm, confirm, missing] cannot change —
-  //     even a refuting third vote leaves 1*2 < 3 — so demoting it to Suspected drops a critical
-  //     finding out of `confirmed`, and the verdict is built from `confirmed` alone. A silent
-  //     Approve, in place of the Block that two independent lenses had earned.
   /** @type {(panel: number, votes: Vote[], missing: number) => { refuteUndecided: boolean, survives: boolean }} */
   const refuteAxis = (panel, votes, missing) => {
     const refutes = votes.filter(v => v.refuted).length
-    // The two extreme assignments of the absent votes. They agree → the absence changes nothing and
-    // the answer stands; they disagree → the absent vote is the deciding one, and nobody cast it.
     const survivesIfAbsentRefute = votes.length > 0 && (refutes + missing) * 2 < panel
     const survivesIfAbsentConfirm = votes.length > 0 && refutes * 2 < panel
     const refuteUndecided = survivesIfAbsentRefute !== survivesIfAbsentConfirm
     return { refuteUndecided, survives: !refuteUndecided && survivesIfAbsentRefute }
   }
-  // An off-site premise no verifier could pin to real code is UNSUPPORTED, not disproven. It costs
-  // the finding its Confirmed tier, but it must NOT be filed as refuted: the refuted list is fed
-  // back to the next round as "adversarially disproven — do not re-report", which would bury a
-  // possibly-real finding for the rest of the run over a missing citation.
-  // The SAME two-assignment question is asked here. Resolving the absence pessimistically on this
-  // axis ("assume the missing vote did not support") looks conservative and is not: it drops the
-  // finding out of `confirmed`, the verdict is built from `confirmed` alone, and the run prints a
-  // bare Approve — a missing vote deciding a critical finding, in the permissive direction, which
-  // is the whole defect. `premiseSupported` is a required verifier field and a 1-1 split on a
-  // 3-lens panel is an ordinary outcome, not a corner case.
   /** @type {(panel: number, votes: Vote[], missing: number, survives: boolean) => { premiseUndecided: boolean, premiseUnsupported: boolean }} */
   const premiseAxis = (panel, votes, missing, survives) => {
     const supported = votes.filter(v => v.premiseSupported).length
@@ -1681,18 +1394,10 @@ function judgeVotes(findings, sink, SEV_RANK) {
   /** @type {(f: F, votes: Vote[], missing: number, open: boolean) => boolean} */
   const severityAxisUndecided = (f, votes, missing, open) => open && missing > 0
     && tierOf(calibrateWith(f, votes, missing, MOST)) !== tierOf(calibrateWith(f, votes, missing, LEAST))
-  // `undecidedByAbsence` is the honest label for "nobody decided this": it is what a caller must
-  // surface in the VERDICT, because a finding parked in Suspected does not downgrade anything.
-  // What the run would have printed had the absent votes come back at their worst. The caller must
-  // gate its blocking entry on THIS, not on the finder's own label: the finder's severity and lens
-  // are what shaped the panel, not what the verdict would have been. A single verifier can calibrate
-  // a `medium` finding up to `critical`, and a `high` complexity finding gets one verifier and no
-  // panel — both are "nobody decided this, and deciding it would have blocked the run".
   /** @type {(f: F, votes: Vote[], missing: number, undecided: boolean) => { undecidedByAbsence: boolean, couldHaveBlocked: boolean }} */
   const absenceOutcome = (f, votes, missing, undecided) => {
     const undecidedByAbsence = missing > 0 && (undecided || votes.length === 0)
     const reachable = votes.length ? calibrateWith(f, votes, missing, MOST) : MOST
-    // Only meaningful on a finding nobody decided: on a decided one the answer is the answer.
     return { undecidedByAbsence, couldHaveBlocked: undecidedByAbsence && tierOf(reachable) === 'block' }
   }
   const judged = findings.map((f, idx) => {
@@ -1709,9 +1414,6 @@ function judgeVotes(findings, sink, SEV_RANK) {
   })
   return {
     confirmed: judged.filter(v => v.confirmed),
-    // `degraded` is excluded here for the same reason `premiseUnsupported` is: the refuted list is
-    // fed forward as "do NOT re-report — adversarially disproven", and a panel that never finished
-    // disproved nothing. It falls to Suspected, which is what the not-run note has always claimed.
     refuted: judged.filter(v => !v.confirmed && !v.premiseUnsupported && !v.undecidedByAbsence && v.votes.length > 0),
     suspected: judged.filter(v => v.undecidedByAbsence || v.votes.length === 0 || v.premiseUnsupported),
   }
@@ -1871,7 +1573,6 @@ function scopeCheckScript(decisions) {
   return decisions.map(d => `if git cat-file -e ${q(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`).join('\n')
 }
 
-// What the scope-check agent returns: the ids it saw print status 0, and those it saw print `missing`.
 const SCOPE_CHECK_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['unchanged', 'missing', 'reason'],
   properties: {
@@ -1913,8 +1614,6 @@ async function runScopeCheck(toCheck, checkScopes, notes) {
   if (!toCheck.length) return { toCheck, unchanged, missing }
   const ids = readScopeCheck(await checkScopes(toCheck))
   if (ids == null) notes.push(`the scope-check agent died or answered unreadably — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`)
-  // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
-  // a finding below Critical/High and carry a commit, which is exactly what was checked.
   for (const id of ids?.unchanged || []) unchanged.add(id)
   for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
   return { toCheck, unchanged, missing }
