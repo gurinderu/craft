@@ -123,8 +123,11 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 
 ## Before a review — `priorDecisions`
 
-Every session that launches a craft review workflow (`review`, `rust-review`, `nix-review`,
-`adversarial-review`, or `rust-audit`, which hands them to its nested reviews) does this first:
+A session that launches a craft review workflow (`review`, `rust-review`, `nix-review`,
+`adversarial-review`, or `rust-audit`, which hands them to its nested reviews) may do this first.
+Without `priorDecisions` the engine does it itself: one read-only agent runs this recall (or, if
+the skill is unavailable, the backend order above), and the report names the source on its
+`memory:` line (`adversarial-review`: its `memory` field).
 
 1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
    only (`kind: decision`), **active** only.
@@ -133,8 +136,8 @@ Every session that launches a craft review workflow (`review`, `rust-review`, `n
    `id`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links` — nothing rewritten, nothing
    summarised. Never as a string: a `key=value` line cannot delimit the value (a reason holding
    `comment=true` would become an option), so the engine refuses any string and applies nothing.
-   No match, or backend `none` → omit the argument (say so in one line); the review runs exactly
-   as without it.
+   No match, or backend `none` → pass an empty list (say so in one line): it skips the engine's
+   own recall, and the review sets nothing aside.
 3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
    before** with the decision's reason, author, date and link, outside the verdict. It is raised
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'rust-audit',
   description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews — before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions (an empty list when none; absent, the audit says memory was not applied); {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, once, hands them to the nested reviews and names the source (an empty list skips the recall). Pass {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
     { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
@@ -149,12 +149,103 @@ const runMutants = !!A['mutants']
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText readMemoryRecall initialMemory memoryLine memorySection recallDecisions
+const RECALL_PATHS_MAX = 60
+
+const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
+
+const MEMORY_RECALL_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['backend', 'why', 'decisions'],
+  properties: {
+    backend: { type: 'string', description: 'the memory backend recall used, or none' },
+    why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
+    decisions: {
+      type: 'array', description: 'the matching active decision records, verbatim',
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
+    },
+  },
+}
+
+/**
+ * The recall agent's prompt: the skill first, its backend order when the skill is unavailable.
+ * @param {string[]} paths the diff's changed paths; none → the agent lists them from the base
+ * @param {string} base @returns {string}
+ */
+function memoryRecallPrompt(paths, base) {
+  const listed = paths.slice(0, RECALL_PATHS_MAX)
+  const cut = paths.length - listed.length
+  const scope = listed.length
+    ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
+    : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
+  return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
+Scope: ${scope}
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness for this project; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
+Return {backend, why, decisions}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none).`
+}
+
+/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string }} MemorySource */
+/** @param {unknown} v @returns {string} */
+const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
+
+/**
+ * What the recall agent returned, read: the decisions to hand to parsePriorDecisions (a list, possibly
+ * empty) and the source to report. A dead or off-shape answer applies nothing and is named.
+ * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
+ */
+function readMemoryRecall(raw, cut) {
+  const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
+  const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
+  const list = r['decisions']
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  const backend = recallText(r['backend']) || 'an unnamed backend'
+  const why = recallText(r['why']) || 'no reason given'
+  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${tail}` } }
+  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${tail}` } }
+}
+
+/**
+ * The source before any recall: passed by the launcher (any value, an empty list included), or not yet recalled.
+ * @param {unknown} raw the priorDecisions argument @param {number} [count] the decisions accepted; the list length by default
+ * @returns {MemorySource}
+ */
+function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
+  return raw == null || raw === ''
+    ? { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
+    : { source: 'passed', count, why: 'passed by the launcher' }
+}
+
+/** @param {MemorySource} m @returns {string} */
+function memoryLine(m) {
+  if (m.source === 'passed') return `memory: passed by the launcher (${m.count})`
+  return m.source === 'recalled' ? `memory: recalled ${m.count} decision(s) from ${m.why}` : `memory: none — ${m.why}`
+}
+
+/** The report section naming the source. @param {MemorySource} m @returns {string} */
+function memorySection(m) {
+  return `\n\n## Memory\n- ${memoryLine(m)}\n`
+}
+
+/**
+ * Runs the one recall agent through `ask` (the engine's agent call, schema MEMORY_RECALL_SCHEMA).
+ * @param {(prompt: string) => Promise<unknown>} ask @param {string[]} paths @param {string} base
+ * @returns {Promise<{ decisions: unknown[], memory: MemorySource }>}
+ */
+async function recallDecisions(ask, paths, base) {
+  return readMemoryRecall(await ask(memoryRecallPrompt(paths, base)), Math.max(0, paths.length - RECALL_PATHS_MAX))
+}
+// <<< craft-inline
+// The project's prior decisions: as passed, or — absent — recalled once by this audit after the scout
+// (realm @nick/craft, node #203) and handed to every nested review, so none of them recalls again.
+let nestedPriorDecisions = A['priorDecisions']
+let memory = initialMemory(nestedPriorDecisions)
 // What every nested review inherits from this run: craftRoot (the logger's home) and the project's
-// recalled prior decisions, handed through as given — the review engine reads and checks them.
+// prior decisions, handed through as given — the review engine reads and checks them.
 function nestedReviewArgs() {
   return {
     ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
-    ...(A['priorDecisions'] != null ? { priorDecisions: A['priorDecisions'] } : {}),
+    ...(nestedPriorDecisions != null ? { priorDecisions: nestedPriorDecisions } : {}),
   }
 }
 
@@ -972,6 +1063,13 @@ function scoutFacts(s) {
   }
 }
 const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scoutNotes } = scoutFacts(scout)
+// The one recall of this audit (realm @nick/craft, node #203): the agent lists the diff's paths from
+// the base itself. Whatever it yields — an empty list included — goes to the nested reviews.
+if (memory.source === 'none') {
+  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
+  memory = r.memory
+  nestedPriorDecisions = r.decisions
+}
 // A crate directory must reach the nested `review` as a REPO-RELATIVE pathspec. Asking the scout for
 // one is not enough: `cargo metadata` prints `manifest_path` absolute, so a scout that copies it out
 // hands back absolute crate directories — and `review` now REFUSES an absolute `path` (it cannot
@@ -1101,7 +1199,7 @@ function reviewResult(dimension, report) {
 
 // The nested reviews' prior-decision sections, lifted before the bound in reviewResult and appended
 // whole to the audit — they sit at the report's tail, where the bound cuts.
-// >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISION_HEADINGS liftPriorDecisionSections nestedPriorDecisionsSection PRIOR_DECISIONS_ABSENT priorDecisionsAbsent priorDecisionsAbsentSection
+// >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISION_HEADINGS liftPriorDecisionSections nestedPriorDecisionsSection
 const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Prior decisions not applied']
 
 /**
@@ -1132,18 +1230,6 @@ function nestedPriorDecisionsSection(lifted) {
   const given = lifted.filter(l => l.text)
   if (!given.length) return ''
   return `\n\n## Prior decisions in the nested reviews (verbatim)\n${given.map(l => `### ${l.dimension}\n${l.text}`).join('\n\n')}\n`
-}
-
-const PRIOR_DECISIONS_ABSENT = 'no remembered decisions were passed (priorDecisions absent), so project memory was not applied — before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions as {priorDecisions: [...]} (an empty list when it finds none)'
-
-/** @param {unknown} raw @returns {boolean} */
-function priorDecisionsAbsent(raw) {
-  return raw == null || raw === ''
-}
-
-/** The report section naming an absent priorDecisions; '' when it was given. @param {unknown} raw @returns {string} */
-function priorDecisionsAbsentSection(raw) {
-  return priorDecisionsAbsent(raw) ? `\n\n## Prior decisions not passed\n- ⚠️ ${PRIOR_DECISIONS_ABSENT}\n` : ''
 }
 // <<< craft-inline
 
@@ -1563,5 +1649,5 @@ await logRun(auditRecord)
 // telemetry marker is also empty, so nothing at all says the synthesis died.
 // Without a schema a live agent returns its final text, so anything but a non-blank string is a death:
 // a whitespace-only answer is no report either (realm @nick/craft, #136).
-if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${priorDecisionsAbsentSection(A['priorDecisions'])}`
-return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${priorDecisionsAbsentSection(A['priorDecisions'])}`
+if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory)}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory)}`

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; refusals come back as priorDecisionsNotApplied; absent, priorDecisionsAbsent says memory was not applied. Before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions as priorDecisions (an empty list when none). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; refusals come back as priorDecisionsNotApplied. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, and the source comes back as memory {source, count, why} (an empty list skips the recall). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -217,8 +217,8 @@ const PRIOR_DECISIONS_MAX = 100
 const DECISION_TITLE_OVERLAP = 0.6
 
 /**
- * The `priorDecisions` argument, checked. Absent → nothing applied, no refusal (the report names the
- * absence: priorDecisionsAbsentSection). Anything else that is not a list → nothing applied, each problem named.
+ * The `priorDecisions` argument, checked. Absent → nothing applied, no refusal (the engine recalls instead:
+ * lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
  * @param {unknown} raw
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
@@ -278,20 +278,90 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISIONS_ABSENT priorDecisionsAbsent
-const PRIOR_DECISIONS_ABSENT = 'no remembered decisions were passed (priorDecisions absent), so project memory was not applied — before launching, call recall of the craft:memory skill for the paths of the diff and pass its active decisions as {priorDecisions: [...]} (an empty list when it finds none)'
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText readMemoryRecall initialMemory recallDecisions
+const RECALL_PATHS_MAX = 60
 
-/** @param {unknown} raw @returns {boolean} */
-function priorDecisionsAbsent(raw) {
+const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
+
+const MEMORY_RECALL_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['backend', 'why', 'decisions'],
+  properties: {
+    backend: { type: 'string', description: 'the memory backend recall used, or none' },
+    why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
+    decisions: {
+      type: 'array', description: 'the matching active decision records, verbatim',
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
+    },
+  },
+}
+
+/**
+ * The recall agent's prompt: the skill first, its backend order when the skill is unavailable.
+ * @param {string[]} paths the diff's changed paths; none → the agent lists them from the base
+ * @param {string} base @returns {string}
+ */
+function memoryRecallPrompt(paths, base) {
+  const listed = paths.slice(0, RECALL_PATHS_MAX)
+  const cut = paths.length - listed.length
+  const scope = listed.length
+    ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
+    : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
+  return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
+Scope: ${scope}
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness for this project; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
+Return {backend, why, decisions}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none).`
+}
+
+/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string }} MemorySource */
+/** @param {unknown} v @returns {string} */
+const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
+
+/**
+ * What the recall agent returned, read: the decisions to hand to parsePriorDecisions (a list, possibly
+ * empty) and the source to report. A dead or off-shape answer applies nothing and is named.
+ * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
+ */
+function readMemoryRecall(raw, cut) {
+  const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
+  const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
+  const list = r['decisions']
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  const backend = recallText(r['backend']) || 'an unnamed backend'
+  const why = recallText(r['why']) || 'no reason given'
+  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${tail}` } }
+  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${tail}` } }
+}
+
+/**
+ * The source before any recall: passed by the launcher (any value, an empty list included), or not yet recalled.
+ * @param {unknown} raw the priorDecisions argument @param {number} [count] the decisions accepted; the list length by default
+ * @returns {MemorySource}
+ */
+function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
   return raw == null || raw === ''
+    ? { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
+    : { source: 'passed', count, why: 'passed by the launcher' }
+}
+
+/**
+ * Runs the one recall agent through `ask` (the engine's agent call, schema MEMORY_RECALL_SCHEMA).
+ * @param {(prompt: string) => Promise<unknown>} ask @param {string[]} paths @param {string} base
+ * @returns {Promise<{ decisions: unknown[], memory: MemorySource }>}
+ */
+async function recallDecisions(ask, paths, base) {
+  return readMemoryRecall(await ask(memoryRecallPrompt(paths, base)), Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-const priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
+let priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
 for (const r of priorDecisionsIn.refused) log(`WARNING: priorDecisions: ${r}`)
-/** What a returned object adds when some of priorDecisions was not applied, or none was passed — nothing otherwise. */
+// Where the decisions came from (passed, recalled by this engine, or none); every returned object names it.
+let memory = initialMemory(A['priorDecisions'], priorDecisionsIn.decisions.length)
+/** What a returned object adds: the memory source, and what of priorDecisions was not applied. */
 const priorRefusedResult = () => ({
+  memory,
   ...(priorDecisionsIn.refused.length ? { priorDecisionsNotApplied: priorDecisionsIn.refused } : {}),
-  ...(priorDecisionsAbsent(A['priorDecisions']) ? { priorDecisionsAbsent: PRIOR_DECISIONS_ABSENT } : {}),
 })
 /** @param {string} key @returns {string} the argument as a string, '' when absent or falsy */
 const stringArg = key => A[key] ? String(A[key]) : ''
@@ -1094,6 +1164,17 @@ async function coverageGuard(scout) {
 }
 const early = await coverageGuard(scout)
 if (early) return early
+// No priorDecisions passed: ONE read-only agent recalls them through the craft:memory skill for the
+// diff's paths (realm @nick/craft, node #203); its answer is parsed like a passed list.
+async function recallMemory() {
+  if (memory.source !== 'none') return
+  const paths = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : []
+  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
+  memory = r.memory
+  priorDecisionsIn = parsePriorDecisions(r.decisions)
+  for (const x of priorDecisionsIn.refused) log(`WARNING: priorDecisions: ${x}`)
+}
+await recallMemory()
 
 // ================= Review: throttled finder lenses =================
 /**
