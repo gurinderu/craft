@@ -51,6 +51,8 @@ gh api graphql --paginate --slurp -f query='
           totalCount
           nodes {
             path
+            line
+            originalLine
             comments(first:50) {
               totalCount
               nodes { author { login } authorAssociation body url createdAt originalCommit { oid } }
@@ -65,8 +67,9 @@ node "<this skill's base directory>/../../lib/pr-rejections.mjs" "$f"
 
 The script prints `{ decisions, skipped }`. Each decision is already a `memory` record —
 `id`, `kind: decision`, `title` (the finding's), `body` (the reason), `scope` (the path), `date`,
-`author` (who rejected), `commit` (the commit the thread was on), `links` (the rejecting comment,
-then the finding comment). After a squash merge that commit is gone from the base branch: a later
+`author` (who rejected), `commit` (the commit the thread was on), `line` (the thread's line on that
+commit, when it has one), `lens` (the lens that raised the finding, when its comment names it),
+`links` (the rejecting comment, then the finding comment). After a squash merge that commit is gone from the base branch: a later
 review names such a decision under **Prior decisions not applied** and raises the finding normally
 — re-record it against a current commit if it still holds. (The PR's base commit is not recorded
 instead: the PR itself changed the file, so a scope check against it would always read "changed".) **`record-decision` each one as it is**, at once and without asking (→ SKILL.md, "Project

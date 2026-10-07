@@ -27,7 +27,7 @@ answered question becomes a `decision` that supersedes it.
 ## Record shape (lowest common denominator)
 
 ```
-{ id, kind, title, body, scope, status, date, author, commit, deferred, links[] }
+{ id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, links[] }
   id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
   kind    decision | lesson | question
   title   one line, ≤ 200 chars — the finding title verbatim, the lesson, the question
@@ -38,6 +38,8 @@ answered question becomes a `decision` that supersedes it.
   author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
   commit  the commit the decided code was at, 7–40 hex (decisions and deferred questions on findings; below)
   deferred  `true` on a question that defers a review finding (below); absent on every other record
+  line    the finding's line in `scope`'s file (records on review findings; absent when unknown)
+  lens    the review lens that raised the finding, as the review names it (absent when unknown)
   links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
 ```
 
@@ -45,11 +47,18 @@ answered question becomes a `decision` that supersedes it.
 made (the PR thread, the review comment): the review engine names them when it sets the finding
 aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
 decision without a `commit` is still recorded, but a review raises its finding again every time.
-The title is the finding's title as the review printed it — the engine matches on its words.
+The title is the finding's title as the review printed it; `line` and `lens` are the finding's
+anchor. The review rewords titles every round, so the engine matches a record to a finding by its
+file inside `scope`, its line and its lens: within 3 lines and the same lens it matches outright;
+a near miss (within 15 lines, the same lens, or shared title words) goes to a judge, an older record
+without `line` and `lens` included. Only when the judge gives no verdict does a near-verbatim title
+match on its own. A line counts only
+when `scope` is the finding's own file: under a directory or `.` scope only the lens and the title
+words count, so give the file as scope whenever the finding has one.
 
 **A deferred finding is an open question, not a decision**: valid, but not answered now. It is a
 `question` record with the same anchors — title = the finding's title, scope = its file, body = what
-would answer it, `author`, `commit`, links = the PR and the comment — and `deferred: true`, the field
+would answer it, `author`, `commit`, `line` and `lens` = the finding's, links = the PR and the comment — and `deferred: true`, the field
 that makes it a deferral. A question without `deferred: true` (a needs-decision question) is context
 only: a review sets nothing aside by it. A deferral without a `commit` sets nothing aside either —
 its finding is raised again and the review names why. A review lists its finding under

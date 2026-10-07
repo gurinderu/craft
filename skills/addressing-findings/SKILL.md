@@ -96,14 +96,16 @@ one itself). Only a **lesson** waits for the author's yes (below).
   deferred or answer it (a decision that supersedes it).
 - **On a disposition** — `record-decision` with title = the finding's title, scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
-  (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, links =
-  PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
+  (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
+  the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names, not the normalized finding's `source`, which is `rust-audit` / `github-pr`; or
+  adversarial-review's `lens`; leave either out when the finding has none), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
   body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
 - **A deferral is an open question, not a decision** — triage `defer` becomes `record-question`
   with title = the finding's title, scope = its file path, body = what would answer it (the event,
   the change or the call that would settle it), author = who deferred, commit = `git rev-parse
-  HEAD` at triage, links = the PR and the comment URL, and `deferred: true` — the field that makes
+  HEAD` at triage, line and lens = the finding's (as for a decision), links = the PR and the comment
+  URL, and `deferred: true` — the field that makes
   the question a deferral (a question without it is context only and sets nothing aside) —
   written right then, without asking. The next review lists that finding under
   **Known and deferred** instead of raising it as new — until it turns Critical/High or its file
