@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision and question records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision and question records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -275,12 +275,21 @@ function recordKind(o) {
 }
 
 /**
- * The id a record without one gets by the memory skill's rule, from its own kind, title and scope;
- * '' when it has an id or lacks any of the three. @param {Record<string, unknown>} o @returns {string}
+ * The memory skill's id of a record, from its own kind, title and scope, whatever id it carries — a
+ * scope left out is the whole repo, `.` (realm @nick/craft, node #222); '' when it lacks a kind or a
+ * title. @param {Record<string, unknown>} o @returns {string}
+ */
+function skillRecordId(o) {
+  const [kind, title] = [decisionText(o['kind']).toLowerCase(), decisionText(o['title'])]
+  return kind && title ? memoryRecordId(kind, title, decisionText(o['scope']) || '.') : ''
+}
+
+/**
+ * The id a record without one gets by the memory skill's rule (skillRecordId); '' when it has an id or
+ * lacks a kind or a title. @param {Record<string, unknown>} o @returns {string}
  */
 function derivedRecordId(o) {
-  const [kind, title, scope] = [decisionText(o['kind']).toLowerCase(), decisionText(o['title']), decisionText(o['scope'])]
-  return decisionText(o['id']) || !kind || !title || !scope ? '' : memoryRecordId(kind, title, scope)
+  return decisionText(o['id']) ? '' : skillRecordId(o)
 }
 
 /** The record's id: its own, else the derived one, else ''. @param {Record<string, unknown>} o @returns {string} */
@@ -314,11 +323,11 @@ function decisionFields(o) {
 
 /**
  * A required field missing, as the tail of a refusal sentence; '' when none is. A record with a title
- * and a reason but no id lacked the kind or the scope its id is derived from (derivedRecordId).
+ * and a reason but no id lacked the kind its id is derived from (derivedRecordId).
  * @param {PriorDecision} d @returns {string}
  */
 function missingFieldProblem(d) {
-  if (!d.id && d.title && d.reason) return ' lacks an id, and the kind or the scope its id is derived from'
+  if (!d.id && d.title && d.reason) return ' lacks an id, and the kind its id is derived from'
   return !d.id || !d.title || !d.reason ? ' lacks an id, a title or a reason' : ''
 }
 
@@ -499,7 +508,7 @@ Scope: ${scope}
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
+Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — but id is always the memory skill's record id, \`<kind>-\` + the first 10 hex chars of sha256("<kind>\\n<title>\\n<scope>") (title trimmed, inner whitespace collapsed, lower-cased; scope without a leading \`./\` or a trailing \`/\`, \`.\` when it has none): when the store keeps its own id for a record and it differs, derive it from kind, title and scope, put it in id, and add the store's own id to links as \`store: <id>\`; questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
 }
 
 /**
@@ -507,8 +516,9 @@ Return {backend, why, decisions, questions, stale}: backend names the store used
  * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records (accepted on
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
  * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
- * `derived` the applied records whose id was derived, their own having none.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number }} MemorySource
+ * `derived` the applied records whose id was derived, their own having none, and `derivedNamed` the
+ * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[] }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -576,17 +586,21 @@ function skippedMemory(m, why) {
  * recalled record already holds is dropped — the recalled one is the store's current state, a status
  * other than active included (it is then applied by neither copy). A malformed recalled record claims no
  * id, so the passed one stands and the reader refuses the recalled one by name (realm @nick/craft, node
- * #218). A record without an id is held under the one derived from its kind, title and scope (recordId);
- * one without either is kept, for the reader to refuse by name.
+ * #218). A record is held under its id and under the one derived from its kind, title and scope
+ * (skillRecordId), so a recalled record with a store's own id and a passed copy without one are one;
+ * a record with neither is kept, for the reader to refuse by name.
  * `addedAt` is each added record's index in the passed list.
  * @template T @param {T[]} recalled @param {T[]} passed @param {(x: T) => boolean} [readable]
  * @returns {{ merged: T[], addedAt: number[] }}
  */
 function mergeById(recalled, passed, readable = () => true) {
-  /** @param {T} x */
-  const idOf = x => (x && typeof x === 'object' && !Array.isArray(x) ? recordId(/** @type {Record<string, unknown>} */ (x)) : '')
-  const held = new Set(recalled.filter(x => readable(x)).map(idOf).filter(Boolean))
-  const addedAt = passed.flatMap((x, i) => (held.has(idOf(x)) ? [] : [i]))
+  /** Its id, and the one derived from its kind, title and scope. @param {T} x @returns {string[]} */
+  const idsOf = x => {
+    const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+    return [recordId(o), skillRecordId(o)].filter(Boolean)
+  }
+  const held = new Set(recalled.filter(x => readable(x)).flatMap(idsOf))
+  const addedAt = passed.flatMap((x, i) => (idsOf(x).some(id => held.has(id)) ? [] : [i]))
   return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], addedAt }
 }
 
@@ -598,13 +612,28 @@ function withPassed(m, passed, added) {
   return passed ? { ...m, passed, added } : m
 }
 
+const DERIVED_NAMED_MAX = 3
+
+const DERIVED_TITLE_MAX = 40
+
 /**
- * The source with how many of the applied records had their id derived; unchanged when none.
- * @param {MemorySource} m @param {Array<{ derived?: boolean }>} applied @returns {MemorySource}
+ * The source with how many of the applied records had their id derived, the first few named; unchanged when none.
+ * @param {MemorySource} m @param {Array<{ id?: string, title?: string, derived?: boolean }>} applied @returns {MemorySource}
  */
 function withDerived(m, applied) {
-  const derived = applied.filter(d => d.derived).length
-  return derived ? { ...m, derived } : m
+  const derived = applied.filter(d => d.derived)
+  /** @param {string} t */
+  const cut = t => (t.length > DERIVED_TITLE_MAX ? `${t.slice(0, DERIVED_TITLE_MAX)}…` : t)
+  const derivedNamed = derived.slice(0, DERIVED_NAMED_MAX).map(d => `${d.id ?? ''} (${cut(d.title ?? '')})`)
+  return derived.length ? { ...m, derived: derived.length, derivedNamed } : m
+}
+
+/** The derived ids' tail of the memory line; '' when none was derived. @param {MemorySource} m @returns {string} */
+function derivedTail(m) {
+  if (!m.derived) return ''
+  const named = m.derivedNamed ?? []
+  const more = m.derived - named.length
+  return `; id derived for ${m.derived} record(s)${named.length ? `: ${named.join(', ')}` : ''}${more > 0 && named.length ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -727,7 +756,7 @@ function launcherLine(m) {
  * the count is what recall returned, not what was accepted @returns {string}
  */
 function memoryLine(m, forwarded = false) {
-  return `${sourceLine(m, forwarded)}${m.derived ? `; id derived for ${m.derived} record(s)` : ''}`
+  return `${sourceLine(m, forwarded)}${derivedTail(m)}`
 }
 
 /** memoryLine without the derived ids' tail. @param {MemorySource} m @param {boolean} forwarded @returns {string} */
