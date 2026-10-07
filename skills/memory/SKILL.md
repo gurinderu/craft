@@ -134,8 +134,11 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
    list of `{id, storeId, kind, title, scope, status, date}` (`date` the store's last write of that
    record) — read only, never applied: the engine holds back any record handed to it that one of them
    names (by `id`, the store's own id, or kind + title + scope) and says so once — unless the handed
-   record's `date` is later than the inactive one's: that newer record is applied and the override
-   named once. Same day, older, or a date missing on either side: held back.
+   record's `date` is later than the inactive one's and than every active recalled record whose
+   `supersedes:`/`answers:` link names it: that newer record is applied (the successor's link no
+   longer drops it) and the override named once. Same day, older, or a date missing or malformed on
+   either side: held back, named — "held by <id>" when an active successor holds it. A timestamp
+   without a zone is UTC; a date against a timestamp compares by the timestamp's UTC day.
 5. **A recalled decision is context, not a verdict.** Check it still holds against the code as it
    is now: the reason was "the input is always validated upstream" and the validation is gone →
    say so, and supersede the decision instead of applying it. Recall inside a review engine is

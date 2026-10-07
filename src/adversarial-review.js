@@ -450,7 +450,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds ISO_DATE isoDate notLaterWhy blockedPassed withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived parseMerged mergeAndRead mergeRecall memoryParts readLaunch acceptedMemory recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived parseMerged mergeAndRead mergeRecall memoryParts readLaunch acceptedMemory recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -637,59 +637,154 @@ function heldIds(x) {
   return [recordId(o), skillRecordId(o)].filter(Boolean)
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?(Z|[+-]\d{2}:\d{2})?)?$/
 
-/** `v` when it is an ISO date that parses, else ''. @param {string} v @returns {string} */
-function isoDate(v) {
-  return ISO_DATE.test(v) && !Number.isNaN(Date.parse(v)) && !Number.isNaN(Date.parse(v.slice(0, 10))) ? v : ''
+/** The days of month `m` (1-12) of year `y`. @param {number} y @param {number} m @returns {number} */
+function monthDays(y, m) {
+  if (m === 2) return y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0) ? 29 : 28
+  return [4, 6, 9, 11].includes(m) ? 30 : 31
+}
+
+/** The day `by` (-1, 0 or 1) days from y-m-d, as YYYY-MM-DD. @param {number} y @param {number} m @param {number} d @param {number} by @returns {string} */
+function shiftedDay(y, m, d, by) {
+  let [yy, mm, dd] = [y, m, d + by]
+  if (dd < 1) [yy, mm] = mm === 1 ? [yy - 1, 12] : [yy, mm - 1]
+  if (dd < 1) dd = monthDays(yy, mm)
+  if (dd > monthDays(yy, mm)) [yy, mm, dd] = mm === 12 ? [yy + 1, 1, 1] : [yy, mm + 1, 1]
+  return `${String(yy).padStart(4, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+}
+
+/** A zone's offset in minutes east of UTC (none or `Z`: 0); null when out of range. @param {string | undefined} z @returns {number | null} */
+function zoneMinutes(z) {
+  if (!z || z === 'Z') return 0
+  const [h, m] = [Number(z.slice(1, 3)), Number(z.slice(4, 6))]
+  return h < 24 && m < 60 ? (z[0] === '-' ? -1 : 1) * (h * 60 + m) : null
 }
 
 /**
- * Why passed date `p` does not override inactive record `e`; '' when it is later (realm @nick/craft,
- * node #229). Two full timestamps compare to the instant; otherwise by the day, so a same-day pair is not later.
- * @param {string} p @param {InactiveRecord} e @returns {string}
+ * An ISO date read by hand (the engines' sandbox has no `Date`): its UTC day and, for a timestamp, its
+ * seconds into that day (a timestamp without a zone is UTC); null when `v` is no ISO date or names a
+ * day or time the calendar lacks (2026-02-30, 24:10).
+ * @param {string} v @returns {{ day: string, at: number | null } | null}
+ */
+function isoMoment(v) {
+  const p = ISO_DATE.exec(v)
+  if (!p) return null
+  const [y, m, d] = [Number(p[1]), Number(p[2]), Number(p[3])]
+  if (m < 1 || m > 12 || d < 1 || d > monthDays(y, m)) return null
+  if (p[4] === undefined) return { day: v, at: null }
+  const clock = utcSeconds(p)
+  if (clock === null) return null
+  const by = clock < 0 ? -1 : clock >= 86400 ? 1 : 0
+  return { day: shiftedDay(y, m, d, by), at: clock - by * 86400 }
+}
+
+/**
+ * A timestamp's time of day in UTC seconds from its own day's midnight (below 0 or past 86400 when the
+ * zone moves it to another day); null when the time or the zone is out of range.
+ * @param {RegExpExecArray} p ISO_DATE's match @returns {number | null}
+ */
+function utcSeconds(p) {
+  const [h, min, sec, off] = [Number(p[4]), Number(p[5]), Number(p[6] ?? 0), zoneMinutes(p[7])]
+  return h > 23 || min > 59 || sec >= 60 || off === null ? null : (h * 60 + min - off) * 60 + sec
+}
+
+/**
+ * Why passed date `p` does not override record `e` (an inactive copy, or an active successor); '' when
+ * it is later (realm @nick/craft, node #229). Two timestamps compare to the instant; otherwise by the
+ * UTC day, so a same-day pair is not later.
+ * @param {string} p @param {{ status: string, date: string }} e @returns {string}
  */
 function notLaterWhy(p, e) {
-  const [a, b] = [isoDate(p), isoDate(e.date)]
+  const [a, b] = [isoMoment(p), isoMoment(e.date)]
   if (!a) return 'the passed record carries no ISO date to set against it'
   if (!b) return `the ${e.status} record carries no ISO date to compare`
-  const later = a.length > 10 && b.length > 10 ? Date.parse(a) > Date.parse(b) : a.slice(0, 10) > b.slice(0, 10)
-  return later ? '' : `the passed record's date ${a} is not later than the ${e.status} record's ${b}`
+  const sameDayLater = a.day === b.day && a.at != null && b.at != null && a.at > b.at
+  return a.day > b.day || sameDayLater ? '' : `the passed record's date ${p} is not later than the ${e.status} record's ${e.date}`
 }
 
 /**
- * The passed records (those at `only`) an inactive record names (by any of its ids — heldIds), each
- * named once: `passed decision #i (<id>) not applied: <status> in memory (<why>)` (realm @nick/craft,
- * node #224) — unless the passed record is dated later than every inactive record naming it: then it
- * stands and the override is named, `… applied over a <status> record of <date>: newer` (node #229).
- * @param {unknown[]} passed @param {InactiveRecord[]} inactive @param {number[]} [only]
- * @returns {{ at: Set<number>, refused: string[], overrides: string[] }}
+ * An active recalled record whose `supersedes:`/`answers:` links name another: its id, date and the ids
+ * it names — it opposes a passed copy of a record it names, as the store's inactive copy does.
+ * @typedef {{ id: string, status: 'active', date: string, names: string[] }} Successor
  */
-function blockedPassed(passed, inactive, only = passed.map((_, i) => i)) {
+/** The successors among the recalled records `active` accepts. @param {unknown[]} recalled @param {(x: unknown) => boolean} active @returns {Successor[]} */
+function successorRecords(recalled, active) {
+  return recalled.flatMap(x => {
+    if (!active(x)) return []
+    const o = /** @type {Record<string, unknown>} */ (x)
+    const names = supersededIds(Array.isArray(o['links']) ? o['links'] : [])
+    return names.length ? [{ id: recordId(o), status: /** @type {const} */ ('active'), date: decisionText(o['date']) || decisionText(o['when']), names }] : []
+  })
+}
+
+/** Every id a passed record is known by: heldIds and its `store: <id>` links. @param {unknown} x @returns {string[]} */
+function passedAliases(x) {
+  const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+  return [...heldIds(o), ...linkedIds(Array.isArray(o['links']) ? o['links'] : [], /^store:\s*(\S+)$/i)]
+}
+
+/**
+ * The passed records (those at `only`) an inactive record names (by any of its ids) or an active
+ * recalled successor supersedes or answers, each named once (realm @nick/craft, node #224). One stands
+ * only when dated later than EVERY record opposing it (node #229): the override is named, `… applied
+ * over <what>: newer`, and its aliases go to `freed` — a successor's link to it no longer drops it.
+ * Otherwise it is held back: `… not applied: held by <id> (active, <date>) (<why>)` when a successor is
+ * not older, else `… not applied: <status> in memory (<why>)`.
+ * @param {unknown[]} passed @param {InactiveRecord[]} inactive @param {number[]} [only] @param {Successor[]} [successors]
+ * @returns {{ at: Set<number>, refused: string[], overrides: string[], freed: string[] }}
+ */
+function blockedPassed(passed, inactive, only = passed.map((_, i) => i), successors = []) {
   /** @type {Set<number>} */
   const at = new Set()
-  /** @type {string[]} */
-  const refused = []
-  /** @type {string[]} */
-  const overrides = []
+  /** @type {{ refused: string[], overrides: string[], freed: string[] }} */
+  const out = { refused: [], overrides: [], freed: [] }
   for (const i of only) {
-    const ids = heldIds(passed[i])
+    const ids = passedAliases(passed[i])
     const hits = inactive.filter(e => e.ids.some(id => ids.includes(id)))
-    if (!hits.length) continue
-    const o = /** @type {Record<string, unknown>} */ (passed[i])
-    const own = ids[0] ?? ''
-    const label = `passed decision #${i}${own && !hasControlChar(own) ? ` (${own})` : ''}`
-    const date = decisionText(o['when']) || decisionText(o['date'])
-    const stop = hits.map(e => ({ e, why: notLaterWhy(date, e) })).find(h => h.why)
-    if (!stop) {
-      const last = hits.reduce((m, e) => (notLaterWhy(e.date, m) ? m : e))
-      overrides.push(`${label} applied over a ${last.status} record of ${last.date}: newer`)
+    const over = successors.filter(s => s.names.some(id => ids.includes(id)))
+    if (!hits.length && !over.length) continue
+    const label = `passed decision #${i}${idTail(ids[0])}`
+    const v = opposedVerdict(passed[i], hits, over)
+    if (v.refused) {
+      at.add(i)
+      out.refused.push(`${label} not applied: ${v.refused}`)
       continue
     }
-    at.add(i)
-    refused.push(`${label} not applied: ${stop.e.status} in memory (${stop.why})`)
+    out.overrides.push(`${label} applied over ${v.over}: newer`)
+    if (over.length) out.freed.push(...ids)
   }
-  return { at, refused, overrides }
+  return { at, ...out }
+}
+
+/** ` (<id>)` for a label; '' for no id or one with a control character. @param {string | undefined} id @returns {string} */
+function idTail(id) {
+  return id && !hasControlChar(id) ? ` (${id})` : ''
+}
+
+/**
+ * One passed record against the records opposing it: why it is held back (a successor not older first,
+ * then an inactive copy), or, when it is later than all of them, what it is applied over.
+ * @param {unknown} x @param {InactiveRecord[]} hits @param {Successor[]} over @returns {{ refused?: string, over?: string }}
+ */
+function opposedVerdict(x, hits, over) {
+  const o = /** @type {Record<string, unknown>} */ (x)
+  const date = decisionText(o['when']) || decisionText(o['date'])
+  const held = over.map(s => ({ s, why: notLaterWhy(date, s) })).find(h => h.why)
+  if (held) return { refused: `held by ${held.s.id} (active, ${held.s.date || 'undated'}) (${held.why})` }
+  const stop = hits.map(e => ({ e, why: notLaterWhy(date, e) })).find(h => h.why)
+  if (stop) return { refused: `${stop.e.status} in memory (${stop.why})` }
+  const last = hits.length ? [hits.reduce((m, e) => (notLaterWhy(e.date, m) ? m : e))].map(e => `a ${e.status} record of ${e.date}`) : []
+  return { over: [...last, ...over.map(s => `${s.id} (active, ${s.date})`)].join(' and ') }
+}
+
+/** The record without its `supersedes:`/`answers:` links to any of `freed`; itself when it has none. @param {unknown} x @param {Set<string>} freed @returns {unknown} */
+function withoutLinksTo(x, freed) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return x
+  const o = /** @type {Record<string, unknown>} */ (x)
+  if (!Array.isArray(o['links'])) return x
+  const links = o['links'].filter(l => !supersededIds([l]).some(id => freed.has(id)))
+  return links.length === o['links'].length ? x : { ...o, links }
 }
 
 /**
@@ -739,8 +834,9 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
  * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
  * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
  * what a launching audit forwards as `_memoryParts`, so it adds up to the list. A passed record an
- * `inactive` record names is left out of the merge and named in `blocked`, or, dated later, kept and
- * named in `overrides` (blockedPassed) — checked only once the recall's own records did not already
+ * `inactive` record names, or an active recalled successor supersedes or answers, is left out of the
+ * merge and named in `blocked`, or, dated later than all of them, kept and named in `overrides`, the
+ * successors' links to it dropped from the merged list (blockedPassed) — checked only once the recall's own records did not already
  * hold it: a copy of a record the recall returned is the same decision, dropped silently.
  * @template {{ id: string, kind?: string, derived?: boolean }} D
  * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse @param {InactiveRecord[]} [inactive]
@@ -750,9 +846,10 @@ function mergeAndRead(recalled, passed, parse, inactive = []) {
   /** @param {unknown} x */
   const wellFormed = x => parse([x && typeof x === 'object' && !Array.isArray(x) ? { ...x, status: null } : x]).decisions.length > 0
   const fresh = mergeById(recalled, passed, wellFormed).addedAt
-  const block = blockedPassed(passed, inactive, fresh)
+  const block = blockedPassed(passed, inactive, fresh, successorRecords(recalled, x => parse([x]).decisions.length > 0))
   const addedAt = fresh.filter(i => !block.at.has(i))
-  const merged = [...recalled, ...addedAt.map(i => passed[i])]
+  const freed = new Set(block.freed)
+  const merged = [...(freed.size ? recalled.map(x => withoutLinksTo(x, freed)) : recalled), ...addedAt.map(i => passed[i])]
   return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused, overrides: block.overrides }
 }
 
@@ -2255,7 +2352,7 @@ function recordsDeferral(d) {
 
 /**
  * Every id a record is known by: its own and the store's own (`store: <id>` links, realm @nick/craft,
- * node #215). @param {PriorDecision} d @returns {string[]}
+ * node #226). @param {PriorDecision} d @returns {string[]}
  */
 function recordAliases(d) {
   return [d.id, ...(d.stores ?? [])]
