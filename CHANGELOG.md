@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.2](https://github.com/gurinderu/craft/compare/v0.24.1...v0.24.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **memory:** merge store-id records with launcher copies; withdrawn records block passed copies ([#170](https://github.com/gurinderu/craft/issues/170)) ([512b443](https://github.com/gurinderu/craft/commit/512b443cfa88c35096d5d1f89efca30ebe12d35a))
+* **review:** derive a missing record id by the memory skill's rule; addressing-findings writes dispositions to memory without asking ([#168](https://github.com/gurinderu/craft/issues/168)) ([7e32ef3](https://github.com/gurinderu/craft/commit/7e32ef3a04ed780f4e4ee9d3386ef969d3043c84))
+
 ## [0.24.1](https://github.com/gurinderu/craft/compare/v0.24.0...v0.24.1) (2026-10-07)
 
 
