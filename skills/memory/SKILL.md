@@ -87,7 +87,10 @@ reason names the rule.
    for how a decision, lesson or question becomes an item there — do not map the fields above
    yourself; the record shape is then only what you hand it.
 3. **The harness's project memory — the default.** In Claude Code: the project memory directory
-   the harness names in this session's instructions. Written without asking (it is private to the
+   the harness names in this session's instructions; an agent without it in context (a workflow's
+   agent, a subagent) derives it from the repository's main checkout root, never a worktree or
+   subdirectory — path rule in
+   [backends.md](backends.md). Written without asking (it is private to the
    user and tied to this project). A refused write — a `PreToolUse` guard, a permission denial,
    the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
    → [backends.md](backends.md).
@@ -113,18 +116,24 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
-   memory files, the harness index already in context) — never load the whole store into
+   memory files, the harness index `MEMORY.md`) — never load the whole store into
    context.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id.
 5. **A recalled decision is context, not a verdict.** Check it still holds against the code as it
    is now: the reason was "the input is always validated upstream" and the validation is gone →
-   say so, and supersede the decision instead of applying it.
+   say so, and supersede the decision instead of applying it. Recall inside a review engine is
+   read-only: its agent supersedes nothing — it returns such a decision in a `stale` list with the
+   reason, the report names it on the `memory:` line, and superseding stays with
+   `craft:addressing-findings`.
 
 ## Before a review — `priorDecisions`
 
-Every session that launches a craft review workflow (`review`, `rust-review`, `nix-review`,
-`adversarial-review`, or `rust-audit`, which hands them to its nested reviews) does this first:
+A session that launches a craft review workflow (`review`, `rust-review`, `nix-review`,
+`adversarial-review`, or `rust-audit`, which hands them to its nested reviews) may do this first.
+Without `priorDecisions` the engine does it itself: one read-only agent runs this recall (or, if
+the skill is unavailable, the backend order above), and the report names the source on its
+`memory:` line (`adversarial-review`: its `memory` field).
 
 1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
    only (`kind: decision`), **active** only.
@@ -133,8 +142,8 @@ Every session that launches a craft review workflow (`review`, `rust-review`, `n
    `id`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links` — nothing rewritten, nothing
    summarised. Never as a string: a `key=value` line cannot delimit the value (a reason holding
    `comment=true` would become an option), so the engine refuses any string and applies nothing.
-   No match, or backend `none` → omit the argument (say so in one line); the review runs exactly
-   as without it.
+   No match, or backend `none` → pass an empty list (say so in one line): it skips the engine's
+   own recall, and the review sets nothing aside.
 3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
    before** with the decision's reason, author, date and link, outside the verdict. It is raised
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
