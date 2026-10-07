@@ -23,7 +23,13 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 ## Harness project memory (Claude Code)
 
 The directory is the one the harness names in the session's instructions (in Claude Code,
-`~/.claude/projects/<project-slug>/memory/`). Use the harness's format, not a craft one:
+`~/.claude/projects/<project-slug>/memory/`, with `MEMORY.md` as its index). An agent that does not
+have the index in context — a workflow's agent, a subagent — derives the directory itself: the
+slug is its own working directory (`pwd`) with every `/` replaced by `-` (observed:
+`/home/ubuntu/projects/my/craft` → `-home-ubuntu-projects-my-craft`; a `.` was observed to become
+`-` too). This is an observed convention, not a documented one: if that directory does not exist,
+say `none — harness memory directory <path> not found` and never guess another. Use the harness's
+format, not a craft one:
 
 - **One file per record**, `<id>.md`:
 
@@ -51,7 +57,8 @@ The directory is the one the harness names in the session's instructions (in Cla
   `<id>.md`, then ` — <scope>`; at most 150 characters (shorten the title with
   `…` past that; the file keeps the full one). Superseded/withdrawn records leave the index (their
   files stay, `craft_status` updated) so the always-loaded index carries only live facts.
-- **Recall**: the index is already in context — match scope and keywords there, then read only
+- **Recall**: the index is in the main session's context (an agent without it reads `MEMORY.md`
+  at the derived path) — match scope and keywords there, then read only
   the matching files; for history, `grep -l "craft_scope: <path>"` over the directory.
   Handed on (a subagent's brief, a review's `priorDecisions`) as the SKILL.md shape: `name` → `id`,
   `craft_kind` → `kind`, the title from `description` without its `<kind>: ` prefix, `craft_scope`

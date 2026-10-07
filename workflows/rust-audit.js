@@ -149,7 +149,7 @@ const runMutants = !!A['mutants']
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText readMemoryRecall initialMemory memoryLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail readMemoryRecall initialMemory memoryLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -162,6 +162,10 @@ const MEMORY_RECALL_SCHEMA = {
     decisions: {
       type: 'array', description: 'the matching active decision records, verbatim',
       items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
+    },
+    stale: {
+      type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
+      items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } } },
     },
   },
 }
@@ -180,14 +184,25 @@ function memoryRecallPrompt(paths, base) {
   return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
 1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
-2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness for this project; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, where <slug> is your own working directory (\`pwd\`, after any cd this review requires) with every \`/\` replaced by \`-\` (observed: \`/home/ubuntu/projects/my/craft\` → \`-home-ubuntu-projects-my-craft\`; a \`.\` was observed to become \`-\` too) — an observed convention (realm @nick/craft, node #201); read MEMORY.md, then only the matching files; if that directory does not exist, say \`none — harness memory directory <path> not found\` and never guess another (if the path holds other characters and the rule finds nothing, say that in the line); (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
-Return {backend, why, decisions}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none).`
+4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
+Return {backend, why, decisions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); stale is [] when none.`
 }
 
 /** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string }} MemorySource */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
+
+/** The stale decisions the agent left out, as one line's tail. @param {unknown} list @returns {string} */
+function staleTail(list) {
+  const named = (Array.isArray(list) ? list : []).flatMap(x => {
+    const r = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' ? x : {})
+    const id = recallText(r['id'])
+    return id ? [`${id} (${recallText(r['why']) || 'no reason given'})`] : []
+  })
+  return named.length ? `; stale, left out: ${named.join(', ')}` : ''
+}
 
 /**
  * What the recall agent returned, read: the decisions to hand to parsePriorDecisions (a list, possibly
@@ -201,8 +216,9 @@ function readMemoryRecall(raw, cut) {
   if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
-  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${tail}` } }
-  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${tail}` } }
+  const stale = staleTail(r['stale'])
+  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${stale}${tail}` } }
 }
 
 /**
@@ -228,12 +244,21 @@ function memorySection(m) {
 }
 
 /**
- * Runs the one recall agent through `ask` (the engine's agent call, schema MEMORY_RECALL_SCHEMA).
+ * Runs the one recall agent through `ask` (the engine's agent call, schema MEMORY_RECALL_SCHEMA). A
+ * refused dispatch (the budget wall) is named and applies nothing: the run meets the same wall on its
+ * next dispatch, as it would have without a recall.
  * @param {(prompt: string) => Promise<unknown>} ask @param {string[]} paths @param {string} base
  * @returns {Promise<{ decisions: unknown[], memory: MemorySource }>}
  */
 async function recallDecisions(ask, paths, base) {
-  return readMemoryRecall(await ask(memoryRecallPrompt(paths, base)), Math.max(0, paths.length - RECALL_PATHS_MAX))
+  let raw
+  try {
+    raw = await ask(memoryRecallPrompt(paths, base))
+  } catch (e) {
+    const msg = recallText(e instanceof Error ? e.message : String(e))
+    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
+  }
+  return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
 // The project's prior decisions: as passed, or — absent — recalled once by this audit after the scout

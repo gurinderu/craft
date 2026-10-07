@@ -87,7 +87,9 @@ reason names the rule.
    for how a decision, lesson or question becomes an item there — do not map the fields above
    yourself; the record shape is then only what you hand it.
 3. **The harness's project memory — the default.** In Claude Code: the project memory directory
-   the harness names in this session's instructions. Written without asking (it is private to the
+   the harness names in this session's instructions; an agent without it in context (a workflow's
+   agent, a subagent) derives it from its own working directory — path rule in
+   [backends.md](backends.md). Written without asking (it is private to the
    user and tied to this project). A refused write — a `PreToolUse` guard, a permission denial,
    the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
    → [backends.md](backends.md).
@@ -113,13 +115,16 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
    a record must match the scope and at least one keyword.
 3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
-   memory files, the harness index already in context) — never load the whole store into
+   memory files, the harness index `MEMORY.md`) — never load the whole store into
    context.
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id.
 5. **A recalled decision is context, not a verdict.** Check it still holds against the code as it
    is now: the reason was "the input is always validated upstream" and the validation is gone →
-   say so, and supersede the decision instead of applying it.
+   say so, and supersede the decision instead of applying it. Recall inside a review engine is
+   read-only: its agent supersedes nothing — it returns such a decision in a `stale` list with the
+   reason, the report names it on the `memory:` line, and superseding stays with
+   `craft:addressing-findings`.
 
 ## Before a review — `priorDecisions`
 
