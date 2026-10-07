@@ -135,6 +135,154 @@ function textArg(key) {
 const baseArg = textArg('base')
 const runMutants = !!A['mutants']
 const craftRootArg = textArg('craftRoot')
+const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
+
+const PRIOR_RECORD_KINDS = ['decision', 'question']
+
+/** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
+function decisionScopeParts(p) {
+  return p.split(/[\\/]+/).filter(s => s && s !== '.')
+}
+
+/** @param {unknown} v @returns {string} */
+function decisionText(v) {
+  return typeof v === 'string' ? v.trim() : ''
+}
+
+/**
+ * A record's kind, lower-cased; a record without one takes the kind its id prefix names, for every
+ * kind of the memory skill (id = `<kind>-<hash>`: `decision-`, `question-`, `lesson-`), and is a
+ * `decision` only when its id names none — a launcher that leaves `kind` out must not turn a deferral
+ * into a rejection, nor a lesson into a decision.
+ * @param {Record<string, unknown>} o @returns {string}
+ */
+function recordKind(o) {
+  if (o['kind'] != null) return decisionText(o['kind']).toLowerCase()
+  const m = /^(decision|question|lesson)-/i.exec(decisionText(o['id']))
+  return m ? String(m[1]).toLowerCase() : 'decision'
+}
+
+/** The ids a record's `supersedes: <id>` and `answers: <id>` links name. @param {unknown[]} links @returns {string[]} */
+function supersededIds(links) {
+  return links.flatMap(l => {
+    const m = /^(?:supersedes|answers):\s*(\S+)$/i.exec(decisionText(l))
+    return m ? [String(m[1])] : []
+  })
+}
+
+/**
+ * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
+ * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
+ * http(s) URL in `links` for `link`. `kind` is `question` only when recordKind reads one; `deferred` only
+ * a boolean `true`.
+ * @param {Record<string, unknown>} o @returns {PriorDecision}
+ */
+function decisionFields(o) {
+  /** @param {string} k @param {string} [alt] */
+  const f = (k, alt = '') => decisionText(o[k]) || decisionText(o[alt])
+  const links = Array.isArray(o['links']) ? o['links'] : []
+  const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
+  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links) }
+}
+
+/**
+ * What is wrong with a decision, as the tail of a refusal sentence; '' when nothing is.
+ * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
+ */
+function decisionProblem(o, d) {
+  if (!PRIOR_RECORD_KINDS.includes(recordKind(o))) return ` is a ${JSON.stringify(recordKind(o))} record, not a decision or a question`
+  if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
+  if (!d.id || !d.title || !d.reason) return ' lacks an id, a title or a reason'
+  const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (k)].length > max)
+  if (over) return `: ${over[0]} is ${d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (over[0])].length} chars, over the ${over[1]}-char ceiling`
+  return decisionAnchorProblem(d)
+}
+
+const SAFE_SCOPE = /^[A-Za-z0-9._@+/ -]+$/
+
+/** Whether `s` holds a control character (a newline among them). @param {string} s */
+function hasControlChar(s) {
+  return [...s].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+}
+
+/**
+ * The id, the scope and the commit go into a shell line (scopeCheckScript) and the agent prompt that
+ * carries it: no control character in any, the scope a repo-relative path of safe characters, the
+ * commit a hash. '' when all hold.
+ * @param {PriorDecision} d @returns {string}
+ */
+function decisionAnchorProblem(d) {
+  const ctl = /** @type {const} */ (['id', 'scope', 'commit']).find(k => hasControlChar(d[k]))
+  if (ctl) return `: ${ctl} contains a control character`
+  if (/^([\\/]|~|[A-Za-z]:)/.test(d.scope) || decisionScopeParts(d.scope).includes('..')) return `: scope ${JSON.stringify(d.scope)} is not a repo-relative path`
+  if (!SAFE_SCOPE.test(d.scope)) return `: scope ${JSON.stringify(d.scope)} has a character outside letters, digits and ._@+/ -`
+  if (d.commit && !/^[0-9a-f]{7,40}$/i.test(d.commit)) return `: commit ${JSON.stringify(d.commit)} is not a commit hash`
+  return ''
+}
+
+/**
+ * One decision as given, checked: a refusal sentence, or the decision. `at` is its index in the list,
+ * or the label a refusal opens with (lib/memory-recall.mjs names the part it came from).
+ * @param {unknown} raw @param {number | string} at @returns {PriorDecision | string}
+ */
+function readPriorDecision(raw, at) {
+  const label = typeof at === 'number' ? `decision #${at}` : at
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return `${label} is not an object`
+  const o = /** @type {Record<string, unknown>} */ (raw)
+  const d = decisionFields(o)
+  const problem = decisionProblem(o, d)
+  return problem ? `${label}${d.id && !hasControlChar(d.id) ? ` (${d.id})` : ''}${problem}` : d
+}
+const PRIOR_DECISIONS_MAX = 100
+
+/** A refusal's label for the record at index `i`. @param {number} i @returns {string} */
+const decisionLabel = i => `decision #${i}`
+
+/** The record's id when it is fit to print, else ''. @param {unknown} item @returns {string} */
+function printableId(item) {
+  const id = item && typeof item === 'object' ? decisionText(/** @type {Record<string, unknown>} */ (item)['id']) : ''
+  return id && id.length <= DECISION_FIELD_MAX.id && !hasControlChar(id) ? id : ''
+}
+
+/**
+ * The records past the cap, each named (its label and id), the names bounded by the cap itself.
+ * @param {unknown[]} cut @param {(i: number) => string} labelOf @returns {string}
+ */
+function cutNames(cut, labelOf) {
+  const named = cut.slice(0, PRIOR_DECISIONS_MAX).map((item, k) => {
+    const id = printableId(item)
+    return `${labelOf(PRIOR_DECISIONS_MAX + k)}${id ? ` (${id})` : ''}`
+  })
+  const more = cut.length - named.length
+  return `${named.join(', ')}${more ? ` and ${more} more` : ''}`
+}
+
+/**
+ * The `priorDecisions` argument (or a recall's answer merged with it), checked. Absent → nothing of it applied, no refusal
+ * (the engine's own recall still runs: lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
+ * @param {unknown} raw @param {(i: number) => string} [labelOf] how a refusal names the record at index i
+ * @returns {{ decisions: PriorDecision[], refused: string[] }}
+ */
+function parsePriorDecisions(raw, labelOf = decisionLabel) {
+  if (raw == null || raw === '') return { decisions: [], refused: [] }
+  if (typeof raw === 'string') return { decisions: [], refused: ['priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied'] }
+  const list = raw
+  if (!Array.isArray(list)) return { decisions: [], refused: ['priorDecisions is not a list — no decision applied'] }
+  /** @type {PriorDecision[]} */
+  const decisions = []
+  /** @type {string[]} */
+  const refused = []
+  list.slice(0, PRIOR_DECISIONS_MAX).forEach((item, i) => {
+    const d = readPriorDecision(item, labelOf(i))
+    if (typeof d === 'string') refused.push(d)
+    else if (decisions.some(x => x.id === d.id)) refused.push(`${labelOf(i)} (${d.id}) repeats an id already given — not applied`)
+    else decisions.push(d)
+  })
+  if (list.length > PRIOR_DECISIONS_MAX) {
+    refused.push(`${list.length - PRIOR_DECISIONS_MAX} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally: ${cutNames(list.slice(PRIOR_DECISIONS_MAX), labelOf)}`)
+  }
+  return { decisions, refused }
+}
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -240,17 +388,20 @@ function initialMemory(passed, recalled = false, note = '') {
 }
 
 /**
- * The recalled records with the launcher's appended, one per id: a passed record whose id the recall
- * already holds is dropped — the recalled one is the store's current state. A record without an id is
- * kept, for the reader to refuse by name. `addedAt` is each added record's index in the passed list.
- * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number, addedAt: number[] }}
+ * The recalled records with the launcher's appended, one per id: a passed record whose id a READABLE
+ * recalled record already holds is dropped — the recalled one is the store's current state. A malformed
+ * recalled record claims no id, so the passed one stands and the reader refuses the recalled one by name
+ * (realm @nick/craft, node #218). A record without an id is kept, for the reader to refuse by name.
+ * `addedAt` is each added record's index in the passed list.
+ * @template T @param {T[]} recalled @param {T[]} passed @param {(x: T) => boolean} [readable]
+ * @returns {{ merged: T[], addedAt: number[] }}
  */
-function mergeById(recalled, passed) {
+function mergeById(recalled, passed, readable = () => true) {
   /** @param {T} x */
   const idOf = x => (x && typeof x === 'object' ? recallText(/** @type {Record<string, unknown>} */ (x)['id']) : '')
-  const held = new Set(recalled.map(idOf).filter(Boolean))
+  const held = new Set(recalled.filter(x => readable(x)).map(idOf).filter(Boolean))
   const addedAt = passed.flatMap((x, i) => (held.has(idOf(x)) ? [] : [i]))
-  return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], added: addedAt.length, addedAt }
+  return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], addedAt }
 }
 
 /**
@@ -259,6 +410,38 @@ function mergeById(recalled, passed) {
  */
 function withPassed(m, passed, added) {
   return passed ? { ...m, passed, added } : m
+}
+
+/**
+ * A merged list (its first `recalledLen` records the recall's, the rest the launcher's) read ONCE by
+ * `parse`, so one cap holds across both parts; each refusal names its part (`passedAt` maps a passed
+ * record back to its index in the launcher's list). The applied records split by part: a recalled id is
+ * one a readable recalled record holds, and `passed` counts the applied rest — the launcher's records
+ * new to this run, after the cap (realm @nick/craft, node #218).
+ * @template {{ id: string, kind?: string }} D
+ * @param {unknown[]} list @param {number} recalledLen @param {ParseDecisions<D>} parse @param {number[]} [passedAt]
+ * @returns {{ prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number }}
+ */
+function parseMerged(list, recalledLen, parse, passedAt = []) {
+  /** @param {number} i */
+  const labelOf = i => (i < recalledLen ? `recalled decision #${i}` : `passed decision #${passedAt[i - recalledLen] ?? i - recalledLen}`)
+  const prior = parse(list, labelOf)
+  const held = new Set(list.slice(0, recalledLen).flatMap(x => parse([x]).decisions.map(d => d.id)))
+  const recalled = prior.decisions.filter(d => held.has(d.id))
+  return { prior, recalled, passed: prior.decisions.length - recalled.length }
+}
+
+/**
+ * The recall's records merged with the launcher's list (mergeById, a recalled record readable by
+ * `parse` kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
+ * what a launching audit forwards as `_memoryParts`, so it adds up to the list.
+ * @template {{ id: string, kind?: string }} D
+ * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse
+ * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number } }}
+ */
+function mergeAndRead(recalled, passed, parse) {
+  const { merged, addedAt } = mergeById(recalled, passed, x => parse([x]).decisions.length > 0)
+  return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt) }
 }
 
 /** `N decision(s) and M open question(s)` of a source. @param {MemorySource} m @returns {string} */
@@ -1047,10 +1230,10 @@ const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scout
 async function recallOnce() {
   if (recalledByLauncher) return
   const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
-  const { merged, added } = mergeById(r.decisions, passedList)
-  memory = withPassed(r.memory, passedList.length, added)
+  const { merged, parts, read } = mergeAndRead(r.decisions, passedList, parsePriorDecisions)
+  memory = withPassed(r.memory, passedList.length, read.passed)
   nestedPriorDecisions = merged
-  nestedMemoryParts = { recalled: r.decisions.length, passed: added }
+  nestedMemoryParts = parts
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
   if (passedDecisions != null && passedDecisions !== '' && !Array.isArray(passedDecisions)) {
     log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
