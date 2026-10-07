@@ -97,7 +97,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
 - **On a disposition** — `record-decision` with title = the finding's title, scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
-  the finding's line, lens = the lens that raised it (the review ledger row's `source`, or
+  the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names, not the normalized finding's `source`, which is `rust-audit` / `github-pr`; or
   adversarial-review's `lens`; leave either out when the finding has none), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
   body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
