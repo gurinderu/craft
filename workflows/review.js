@@ -44,7 +44,6 @@ export const meta = {
  * @typedef {{ verdicts: Array<VerdictAnswer & { index: number }> }} BatchVerdictAnswer  BATCH_VERDICT_SCHEMA
  * @typedef {{ missingLenses: string[], notes: string }} CriticAnswer  CRITIC_SCHEMA
  * @typedef {{ changed: boolean, reason: string }} ChangedAnswer  CHANGED_SCHEMA
- * @typedef {{ unchanged: string[], reason: string }} ScopeCheckAnswer  SCOPE_CHECK_SCHEMA
  * @typedef {{ posted: number, reason: string }} PrCommentsAnswer  PR_COMMENTS_SCHEMA
  * @typedef {{ status: 'resolved' | 'still-open' | 'cannot-tell' | 'regressed', currentLine: number, note: string, invariant: string, attack: string }} AdjudicateAnswer  ADJUDICATE_SCHEMA
  * @typedef {{ defeated: boolean, attack: string }} AttackAnswer  ATTACK_SCHEMA
@@ -253,7 +252,7 @@ let scopeDetail = ''
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
 // The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft — the
 // memory skill's record shape). Pasted in by the craft-inline gate; the rules and why live in the module.
-// >>> craft-inline lib/prior-decisions.mjs decisionScopeParts decisionText decisionFields decisionAnchorProblem decisionProblem readPriorDecision titleWords reraisedBySeverity PRIOR_DECISIONS_MAX DECISION_FIELD_MAX DECISION_TITLE_OVERLAP parsePriorDecisions decisionAnswers decisionsToCheck priorDecisionMark reraiseReason splitByDecisions scopeCheckScript priorDecisionsRefusedSection priorRejectedSection
+// >>> craft-inline lib/prior-decisions.mjs decisionScopeParts decisionText decisionFields decisionAnchorProblem decisionProblem readPriorDecision titleWords reraisedBySeverity PRIOR_DECISIONS_MAX DECISION_FIELD_MAX DECISION_TITLE_OVERLAP parsePriorDecisions decisionAnswers decisionsToCheck priorDecisionMark reraiseReason splitByDecisions scopeCheckScript priorDecisionsRefusedSection priorRejectedSection SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck applyPriorDecisions
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
 function decisionScopeParts(p) {
   return p.split(/[\\/]+/).filter(s => s && s !== '.')
@@ -411,12 +410,13 @@ function reraiseReason(f, d, unchanged) {
 
 /**
  * Split one tier's findings by the decisions. `unchanged` holds the ids of decisions whose scope was
- * observed unchanged since their commit; every other decision cannot set a finding aside.
+ * observed unchanged since their commit; every other decision cannot set a finding aside. The mark
+ * is appended to `noteField` — `why` in review, `description` in adversarial-review.
  * @template {DecidableFinding} F
- * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier
+ * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
  * @returns {{ kept: F[], setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number }}
  */
-function splitByDecisions(findings, decisions, unchanged, tier) {
+function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why') {
   /** @type {F[]} */
   const kept = []
   /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
@@ -426,9 +426,10 @@ function splitByDecisions(findings, decisions, unchanged, tier) {
     const d = decisions.find(x => decisionAnswers(f, x))
     if (!d) { kept.push(f); continue }
     const why = reraiseReason(f, d, unchanged)
-    if (!why) { setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, why: `${String(f.why ?? '')} · ${priorDecisionMark(d)}` }); continue }
+    const note = `${String(f[noteField] ?? '')} · `
+    if (!why) { setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, [noteField]: note + priorDecisionMark(d) }); continue }
     reraised++
-    kept.push({ ...f, why: `${String(f.why ?? '')} · Rejected before (decision ${d.id}, ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}) — raised again: ${why}.` })
+    kept.push({ ...f, [noteField]: `${note}Rejected before (decision ${d.id}, ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}) — raised again: ${why}.` })
   }
   return { kept, setAside, reraised }
 }
@@ -461,6 +462,68 @@ function priorRejectedSection(setAside) {
   if (!setAside.length) return ''
   return `\n\n## Rejected before (set aside — not in the verdict)\n`
     + setAside.map(f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${String(f.why ?? '')}`).join('\n')
+}
+
+// What the scope-check agent returns: the ids it saw print status 0.
+const SCOPE_CHECK_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['unchanged', 'reason'],
+  properties: {
+    unchanged: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in exit status 0, exactly as printed' },
+    reason: { type: 'string', description: 'one line: anything that did not run' },
+  },
+}
+
+/** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
+function scopeCheckPrompt(decisions) {
+  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit.
+${scopeCheckScript(decisions)}
+Return {unchanged: [every id whose printed status was 0], reason: one line on anything that did not run}.`
+}
+
+/**
+ * The ids a scope-check answer names unchanged, or null when the answer is missing or unreadable —
+ * then no decision is shown unchanged and nothing is set aside.
+ * @param {unknown} ans @returns {string[] | null}
+ */
+function readScopeCheck(ans) {
+  const u = ans && typeof ans === 'object' ? /** @type {Record<string, unknown>} */ (ans)['unchanged'] : null
+  return Array.isArray(u) ? u.filter(x => typeof x === 'string') : null
+}
+
+/**
+ * Applies the decisions to every tier of an engine's findings. `checkScopes` runs the scope check for
+ * the decisions it is handed (never called with none) and returns the agent's raw answer.
+ * @template {DecidableFinding} F
+ * @param {Record<string, F[]>} tiers @param {PriorDecision[]} decisions
+ * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
+ * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number, notes: string[] }>}
+ */
+async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'why') {
+  /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
+  let setAside = []
+  /** @type {string[]} */
+  const notes = []
+  if (!decisions.length) return { tiers, setAside, reraised: 0, notes }
+  const toCheck = decisionsToCheck(Object.values(tiers).flat(), decisions)
+  const unchanged = new Set(/** @type {string[]} */ ([]))
+  if (toCheck.length) {
+    const ids = readScopeCheck(await checkScopes(toCheck))
+    if (ids == null) notes.push(`the scope-check agent died or answered unreadably — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`)
+    // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
+    // a finding below Critical/High and carry a commit, which is exactly what was checked.
+    for (const id of ids || []) unchanged.add(id)
+  }
+  let reraised = 0
+  /** @type {Record<string, F[]>} */
+  const out = {}
+  for (const [tier, list] of Object.entries(tiers)) {
+    const r = splitByDecisions(list, decisions, unchanged, tier, noteField)
+    out[tier] = r.kept
+    setAside = setAside.concat(r.setAside)
+    reraised += r.reraised
+  }
+  notes.push(`${decisions.length} decision(s) given, ${setAside.length} finding(s) set aside as rejected before, ${reraised} raised again`)
+  return { tiers: out, setAside, reraised, notes }
 }
 // <<< craft-inline
 
@@ -1725,14 +1788,6 @@ const CRITIC_SCHEMA = {
   },
 }
 
-/** @type {Schema<ScopeCheckAnswer>} */
-const SCOPE_CHECK_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['unchanged', 'reason'],
-  properties: {
-    unchanged: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in exit status 0, exactly as printed' },
-    reason: { type: 'string', description: 'one line: anything that did not run' },
-  },
-}
 /** @type {Schema<ChangedAnswer>} */
 const CHANGED_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['changed', 'reason'],
@@ -7222,37 +7277,18 @@ async function noFindingsExit() {
 // lines, and its death leaves every decision unconfirmed, so every such finding is raised again.
 /** @type {Array<Finding & { priorTier: string, priorDecision: string }>} */
 let priorRejected = []
-async function applyPriorDecisions() {
-  const decisions = priorDecisionsIn.decisions
-  if (!decisions.length) return
-  const toCheck = decisionsToCheck(confirmed.concat(suspected, unverified), decisions)
-  const unchanged = new Set(/** @type {string[]} */ ([]))
-  if (toCheck.length) {
-    const ans = await ragent(
-      `${REPO_DIRECTIVE}Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit.
-${scopeCheckScript(toCheck)}
-Return {unchanged: [every id whose printed status was 0], reason: one line on anything that did not run}.`,
-      { label: 'decision-scope', phase: 'Synthesize', schema: SCOPE_CHECK_SCHEMA, model: CULL_MODEL },
-    )
-    if (ans == null) log(`⚠️ priorDecisions: the scope-check agent died — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`)
-    // An id outside `toCheck` cannot set anything aside: splitByDecisions only consults decisions that
-    // answer a finding below Critical/High and carry a commit, which is exactly what was checked.
-    for (const id of ans?.unchanged || []) unchanged.add(id)
-  }
-  let reraised = 0
-  /** @param {Finding[]} list @param {string} tier @returns {Finding[]} */
-  const split = (list, tier) => {
-    const r = splitByDecisions(list, decisions, unchanged, tier)
-    priorRejected = priorRejected.concat(r.setAside)
-    reraised += r.reraised
-    return r.kept
-  }
-  confirmed = split(confirmed, 'confirmed')
-  suspected = split(suspected, 'suspected')
-  unverified = split(unverified, 'unverified')
-  log(`priorDecisions: ${decisions.length} given, ${priorRejected.length} finding(s) set aside as rejected before, ${reraised} raised again`)
+async function setAsidePriorDecisions() {
+  const r = await applyPriorDecisions({ confirmed, suspected, unverified }, priorDecisionsIn.decisions, toCheck => ragent(
+    REPO_DIRECTIVE + scopeCheckPrompt(toCheck),
+    { label: 'decision-scope', phase: 'Synthesize', schema: SCOPE_CHECK_SCHEMA, model: CULL_MODEL },
+  ))
+  confirmed = r.tiers['confirmed'] || []
+  suspected = r.tiers['suspected'] || []
+  unverified = r.tiers['unverified'] || []
+  priorRejected = r.setAside
+  for (const n of r.notes) log(`priorDecisions: ${n}`)
 }
-await applyPriorDecisions()
+await setAsidePriorDecisions()
 if (nothingSurvived()) return await noFindingsExit()
 
 // ================= Synthesize one merged report =================
