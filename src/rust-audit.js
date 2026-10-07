@@ -152,7 +152,89 @@ const craftRootArg = textArg('craftRoot')
 // The prior-decision reader, so the audit's merge keeps a recalled record on an id clash only when it is
 // readable and counts the launcher's records new under the one cap (realm @nick/craft, node #218); the
 // nested reviews still read and check the forwarded list themselves.
-// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX PRIOR_RECORD_KINDS decisionScopeParts decisionText recordKind supersededIds decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
+// >>> craft-inline lib/lens-scope.mjs utf8Bytes
+/** @param {string} text @returns {number[]} */
+function utf8Bytes(text) {
+  /** @type {number[]} */
+  const out = []
+  for (const ch of text) {
+    let cp = /** @type {number} */ (ch.codePointAt(0))
+    if (cp >= 0xd800 && cp <= 0xdfff) cp = 0xfffd
+    if (cp < 0x80) out.push(cp)
+    else if (cp < 0x800) out.push(0xc0 | (cp >> 6), 0x80 | (cp & 0x3f))
+    else if (cp < 0x10000) out.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
+    else out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f))
+  }
+  return out
+}
+// <<< craft-inline
+// >>> craft-inline lib/memory-record-id.mjs SHA256_K rotr word sha256Schedule sha256Block sha256Hex memoryRecordId
+const SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]
+
+/** @param {number} x @param {number} n */
+const rotr = (x, n) => (x >>> n) | (x << (32 - n))
+
+/** The 32-bit word at `i` of `a`, 0 past its end. @param {number[]} a @param {number} i */
+const word = (a, i) => a[i] ?? 0
+
+/** The 64-word message schedule of the 64-byte block at `at`. @param {number[]} bytes @param {number} at @returns {number[]} */
+function sha256Schedule(bytes, at) {
+  /** @type {number[]} */
+  const w = []
+  for (let i = 0; i < 16; i++) w[i] = (word(bytes, at + 4 * i) << 24) | (word(bytes, at + 4 * i + 1) << 16) | (word(bytes, at + 4 * i + 2) << 8) | word(bytes, at + 4 * i + 3)
+  for (let i = 16; i < 64; i++) {
+    const [a, b] = [word(w, i - 15), word(w, i - 2)]
+    const s0 = rotr(a, 7) ^ rotr(a, 18) ^ (a >>> 3)
+    const s1 = rotr(b, 17) ^ rotr(b, 19) ^ (b >>> 10)
+    w[i] = (word(w, i - 16) + s0 + word(w, i - 7) + s1) | 0
+  }
+  return w
+}
+
+/** One 64-byte block folded into the state `h`. @param {number[]} h @param {number[]} bytes @param {number} at */
+function sha256Block(h, bytes, at) {
+  const w = sha256Schedule(bytes, at)
+  let [a, b, c, d, e, f, g, k] = /** @type {[number, number, number, number, number, number, number, number]} */ (h.slice())
+  for (let i = 0; i < 64; i++) {
+    const t1 = (k + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + word(SHA256_K, i) + word(w, i)) | 0
+    const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0
+    k = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0
+  }
+  ;[a, b, c, d, e, f, g, k].forEach((v, i) => { h[i] = (word(h, i) + v) | 0 })
+}
+
+/** The sha256 of a string's UTF-8 bytes, as 64 lower-case hex chars. @param {string} s @returns {string} */
+function sha256Hex(s) {
+  const bytes = utf8Bytes(s)
+  const bits = bytes.length * 8
+  bytes.push(0x80)
+  while (bytes.length % 64 !== 56) bytes.push(0)
+  bytes.push(0, 0, 0, 0, (bits >>> 24) & 255, (bits >>> 16) & 255, (bits >>> 8) & 255, bits & 255)
+  const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+  for (let at = 0; at < bytes.length; at += 64) sha256Block(h, bytes, at)
+  return h.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('')
+}
+
+/**
+ * The memory skill's id of a record of `kind` with `title` and `scope`.
+ * @param {string} kind @param {string} title @param {string} scope @returns {string}
+ */
+function memoryRecordId(kind, title, scope) {
+  const t = title.trim().replace(/\s+/g, ' ').toLowerCase()
+  const s = scope.trim().replace(/^\.\//, '').replace(/\/+$/, '')
+  return `${kind}-${sha256Hex(`${kind}\n${t}\n${s}`).slice(0, 10)}`
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX PRIOR_RECORD_KINDS decisionScopeParts decisionText recordKind derivedRecordId recordId supersededIds decisionFields missingFieldProblem decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
 const PRIOR_RECORD_KINDS = ['decision', 'question']
@@ -180,6 +262,20 @@ function recordKind(o) {
   return m ? String(m[1]).toLowerCase() : 'decision'
 }
 
+/**
+ * The id a record without one gets by the memory skill's rule, from its own kind, title and scope;
+ * '' when it has an id or lacks any of the three. @param {Record<string, unknown>} o @returns {string}
+ */
+function derivedRecordId(o) {
+  const [kind, title, scope] = [decisionText(o['kind']).toLowerCase(), decisionText(o['title']), decisionText(o['scope'])]
+  return decisionText(o['id']) || !kind || !title || !scope ? '' : memoryRecordId(kind, title, scope)
+}
+
+/** The record's id: its own, else the derived one, else ''. @param {Record<string, unknown>} o @returns {string} */
+function recordId(o) {
+  return decisionText(o['id']) || derivedRecordId(o)
+}
+
 /** The ids a record's `supersedes: <id>` and `answers: <id>` links name. @param {unknown[]} links @returns {string[]} */
 function supersededIds(links) {
   return links.flatMap(l => {
@@ -200,7 +296,18 @@ function decisionFields(o) {
   const f = (k, alt = '') => decisionText(o[k]) || decisionText(o[alt])
   const links = Array.isArray(o['links']) ? o['links'] : []
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
-  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links) }
+  const derived = derivedRecordId(o)
+  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(derived ? { derived: /** @type {const} */ (true) } : {}) }
+}
+
+/**
+ * A required field missing, as the tail of a refusal sentence; '' when none is. A record with a title
+ * and a reason but no id lacked the kind or the scope its id is derived from (derivedRecordId).
+ * @param {PriorDecision} d @returns {string}
+ */
+function missingFieldProblem(d) {
+  if (!d.id && d.title && d.reason) return ' lacks an id, and the kind or the scope its id is derived from'
+  return !d.id || !d.title || !d.reason ? ' lacks an id, a title or a reason' : ''
 }
 
 /**
@@ -210,7 +317,8 @@ function decisionFields(o) {
 function decisionProblem(o, d) {
   if (!PRIOR_RECORD_KINDS.includes(recordKind(o))) return ` is a ${JSON.stringify(recordKind(o))} record, not a decision or a question`
   if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
-  if (!d.id || !d.title || !d.reason) return ' lacks an id, a title or a reason'
+  const missing = missingFieldProblem(d)
+  if (missing) return missing
   const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (k)].length > max)
   if (over) return `: ${over[0]} is ${d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (over[0])].length} chars, over the ${over[1]}-char ceiling`
   return decisionAnchorProblem(d)
@@ -258,9 +366,9 @@ const PRIOR_DECISIONS_MAX = 100
 /** A refusal's label for the record at index `i`. @param {number} i @returns {string} */
 const decisionLabel = i => `decision #${i}`
 
-/** The record's id when it is fit to print, else ''. @param {unknown} item @returns {string} */
+/** The record's id (its own, else the derived one) when it is fit to print, else ''. @param {unknown} item @returns {string} */
 function printableId(item) {
-  const id = item && typeof item === 'object' ? decisionText(/** @type {Record<string, unknown>} */ (item)['id']) : ''
+  const id = item && typeof item === 'object' && !Array.isArray(item) ? recordId(/** @type {Record<string, unknown>} */ (item)) : ''
   return id && id.length <= DECISION_FIELD_MAX.id && !hasControlChar(id) ? id : ''
 }
 
@@ -304,7 +412,7 @@ function parsePriorDecisions(raw, labelOf = decisionLabel) {
   return { decisions, refused }
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory mergeById withPassed parseMerged mergeAndRead countedRecords launcherLine memoryLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory mergeById withPassed withDerived parseMerged mergeAndRead countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -353,8 +461,9 @@ Return {backend, why, decisions, questions, stale}: backend names the store used
  * Where the decisions came from: `recalled` by this engine, `launcher` — recalled by the engine that
  * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records (accepted on
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
- * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section).
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number }} MemorySource
+ * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
+ * `derived` the applied records whose id was derived, their own having none.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -414,14 +523,15 @@ function initialMemory(passed, recalled = false, note = '') {
  * recalled record already holds is dropped — the recalled one is the store's current state, a status
  * other than active included (it is then applied by neither copy). A malformed recalled record claims no
  * id, so the passed one stands and the reader refuses the recalled one by name (realm @nick/craft, node
- * #218). A record without an id is kept, for the reader to refuse by name.
+ * #218). A record without an id is held under the one derived from its kind, title and scope (recordId);
+ * one without either is kept, for the reader to refuse by name.
  * `addedAt` is each added record's index in the passed list.
  * @template T @param {T[]} recalled @param {T[]} passed @param {(x: T) => boolean} [readable]
  * @returns {{ merged: T[], addedAt: number[] }}
  */
 function mergeById(recalled, passed, readable = () => true) {
   /** @param {T} x */
-  const idOf = x => (x && typeof x === 'object' ? recallText(/** @type {Record<string, unknown>} */ (x)['id']) : '')
+  const idOf = x => (x && typeof x === 'object' && !Array.isArray(x) ? recordId(/** @type {Record<string, unknown>} */ (x)) : '')
   const held = new Set(recalled.filter(x => readable(x)).map(idOf).filter(Boolean))
   const addedAt = passed.flatMap((x, i) => (held.has(idOf(x)) ? [] : [i]))
   return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], addedAt }
@@ -436,12 +546,21 @@ function withPassed(m, passed, added) {
 }
 
 /**
+ * The source with how many of the applied records had their id derived; unchanged when none.
+ * @param {MemorySource} m @param {Array<{ derived?: boolean }>} applied @returns {MemorySource}
+ */
+function withDerived(m, applied) {
+  const derived = applied.filter(d => d.derived).length
+  return derived ? { ...m, derived } : m
+}
+
+/**
  * A merged list (its first `recalledLen` records the recall's, the rest the launcher's) read ONCE by
  * `parse`, so one cap holds across both parts; each refusal names its part (`passedAt` maps a passed
  * record back to its index in the launcher's list). The applied records split by part: a recalled id is
  * one a readable recalled record holds, and `passed` counts the applied rest — the launcher's records
  * new to this run, after the cap (realm @nick/craft, node #218).
- * @template {{ id: string, kind?: string }} D
+ * @template {{ id: string, kind?: string, derived?: boolean }} D
  * @param {unknown[]} list @param {number} recalledLen @param {ParseDecisions<D>} parse @param {number[]} [passedAt]
  * @returns {{ prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number }}
  */
@@ -458,7 +577,7 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
  * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
  * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
  * what a launching audit forwards as `_memoryParts`, so it adds up to the list.
- * @template {{ id: string, kind?: string }} D
+ * @template {{ id: string, kind?: string, derived?: boolean }} D
  * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse
  * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number } }}
  */
@@ -492,6 +611,11 @@ function launcherLine(m) {
  * the count is what recall returned, not what was accepted @returns {string}
  */
 function memoryLine(m, forwarded = false) {
+  return `${sourceLine(m, forwarded)}${m.derived ? `; id derived for ${m.derived} record(s)` : ''}`
+}
+
+/** memoryLine without the derived ids' tail. @param {MemorySource} m @param {boolean} forwarded @returns {string} */
+function sourceLine(m, forwarded) {
   if (m.source === 'launcher') return launcherLine(m)
   const plus = m.passed ? `; plus ${m.passed} passed by the launcher${m.source === 'recalled' ? ` (${m.added ?? m.passed} new)` : ''}` : ''
   if (m.source !== 'recalled') return `memory: none — ${m.why}${plus}`
@@ -531,12 +655,14 @@ const passedDecisions = A['priorDecisions']
 const passedList = Array.isArray(passedDecisions) ? /** @type {unknown[]} */ (passedDecisions) : []
 // The launcher's records counted as review and adversarial-review count them: the ones accepted, not the
 // raw list (realm @nick/craft, node #218).
-const passedAccepted = parsePriorDecisions(passedList).decisions.length
+const passedRead = parsePriorDecisions(passedList).decisions
+const passedAccepted = passedRead.length
 // A launcher of this audit that already recalled (`_recalled`) — then nothing is recalled here either.
 const recalledByLauncher = A['_recalled'] === true
 /** @type {unknown} */
 let nestedPriorDecisions = passedDecisions
-let memory = initialMemory(passedAccepted, recalledByLauncher, A['_memory'])
+// A record without an id is counted by the id derived for it (realm @nick/craft, node #222).
+let memory = withDerived(initialMemory(passedAccepted, recalledByLauncher, A['_memory']), passedRead)
 // The audit's recall outcome when it found none, forwarded as `_memory` so each nested report names it.
 let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
 // How the forwarded list splits — this audit's recall first, then its launcher's records — so each nested
@@ -1376,7 +1502,7 @@ async function recallOnce() {
   if (recalledByLauncher) return
   const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
   const { merged, parts, read } = mergeAndRead(r.decisions, passedList, parsePriorDecisions)
-  memory = withPassed(r.memory, passedAccepted, read.passed)
+  memory = withDerived(withPassed(r.memory, passedAccepted, read.passed), read.prior.decisions)
   nestedPriorDecisions = merged
   nestedMemoryParts = parts
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'

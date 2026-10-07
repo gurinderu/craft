@@ -155,7 +155,9 @@ passing to stand in for the engine's recall.
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
    `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `links` — nothing rewritten,
    nothing summarised; `kind` on every record, or a question passed without it is read by its id
-   (`question-…`), and anything else as a decision. Never as a string: a `key=value` line cannot delimit the value (a reason holding
+   (`question-…`), and anything else as a decision. A record built by hand may leave `id` out when
+   it carries `kind`, `title` and `scope`: the engine derives the id by the rule above and its
+   `memory:` line says for how many records it did. Never as a string: a `key=value` line cannot delimit the value (a reason holding
    `comment=true` would become an option), so the engine refuses any string and applies nothing.
    Nothing to add → pass nothing (an empty list adds nothing and skips nothing).
 3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
@@ -167,7 +169,8 @@ passing to stand in for the engine's recall.
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
    since its `commit`, when the decision has no `commit`, or when the repository does not know that
    `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
-   More than 100 decisions, or a record that does not fit (a missing title or reason, a field past
+   More than 100 decisions, or a record that does not fit (a missing title or reason, no `id` and
+   no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
    characters other than letters, digits and `._@+/ -`),
    is refused and named — the report's **Prior decisions not applied** section (`adversarial-review`:

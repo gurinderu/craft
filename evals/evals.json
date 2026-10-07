@@ -353,7 +353,19 @@
     "query": "Mark the rejected findings from the last review run in the review ledger so the re-review carries them forward.",
     "expected_behavior": [
       "Selects addressing-findings for the review-ledger dispositions — craft's machine memory is not the memory skill's.",
-      "May additionally record the rejections as decisions through memory, but the ledger write itself stays in addressing-findings."
+      "Also records each rejection as a decision in project memory through the memory skill, at once and without asking whether to; the ledger write itself stays in addressing-findings."
+    ]
+  },
+  {
+    "skills": [
+      "addressing-findings"
+    ],
+    "query": "I rejected the unwrap finding in src/parse.rs (input is validated upstream) and want to defer the retry-policy one until after the release. Fix the rest of the review findings.",
+    "expected_behavior": [
+      "Selects addressing-findings and works the remaining findings through its fix loop.",
+      "Records the rejection as record-decision and the deferral as record-question with deferred: true, each with kind, title, scope, author, commit and links, through the memory skill — at once, WITHOUT asking the user whether to record them.",
+      "Prints one line per write naming the backend (memory backend: X), or says no memory backend is available and continues the loop.",
+      "Does NOT record a lesson unless the author says yes to one."
     ]
   }
 ]
