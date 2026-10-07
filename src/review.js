@@ -294,7 +294,7 @@ function memoryRecordId(kind, title, scope) {
   return `${kind}-${sha256Hex(`${kind}\n${t}\n${s}`).slice(0, 10)}`
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX PRIOR_RECORD_KINDS decisionScopeParts decisionText recordKind skillRecordId derivedRecordId recordId supersededIds decisionFields missingFieldProblem decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
+// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX PRIOR_RECORD_KINDS decisionScopeParts decisionText recordKind skillRecordId derivedRecordId recordId supersededIds linkedIds decisionFields missingFieldProblem decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
 const PRIOR_RECORD_KINDS = ['decision', 'question']
@@ -347,8 +347,13 @@ function recordId(o) {
 
 /** The ids a record's `supersedes: <id>` and `answers: <id>` links name. @param {unknown[]} links @returns {string[]} */
 function supersededIds(links) {
+  return linkedIds(links, /^(?:supersedes|answers):\s*(\S+)$/i)
+}
+
+/** The ids the links matching `re` (its group 1) name. @param {unknown[]} links @param {RegExp} re @returns {string[]} */
+function linkedIds(links, re) {
   return links.flatMap(l => {
-    const m = /^(?:supersedes|answers):\s*(\S+)$/i.exec(decisionText(l))
+    const m = re.exec(decisionText(l))
     return m ? [String(m[1])] : []
   })
 }
@@ -366,7 +371,8 @@ function decisionFields(o) {
   const links = Array.isArray(o['links']) ? o['links'] : []
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
   const derived = derivedRecordId(o)
-  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(derived ? { derived: /** @type {const} */ (true) } : {}) }
+  const stores = linkedIds(links, /^store:\s*(\S+)$/i)
+  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(stores.length ? { stores } : {}), ...(derived ? { derived: /** @type {const} */ (true) } : {}) }
 }
 
 /**
@@ -519,7 +525,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds blockedPassed withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail parseMerged mergeAndRead mergeRecall memoryParts readLaunch acceptedMemory countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail parseMerged mergeAndRead mergeRecall memoryParts readLaunch acceptedMemory countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -542,8 +548,8 @@ const MEMORY_RECALL_SCHEMA = {
       items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } } },
     },
     inactive: {
-      type: 'array', description: 'matching superseded or withdrawn records, named only — never applied; they hold back a passed copy',
-      items: { type: 'object', properties: Object.fromEntries(['id', 'storeId', 'kind', 'title', 'scope', 'status'].map(k => [k, { type: 'string' }])) },
+      type: 'array', description: 'matching superseded or withdrawn records, named only — never applied; they hold back a passed copy not dated later',
+      items: { type: 'object', properties: Object.fromEntries(['id', 'storeId', 'kind', 'title', 'scope', 'status', 'date'].map(k => [k, { type: 'string' }])) },
     },
   },
 }
@@ -565,7 +571,7 @@ Scope: ${scope}
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status} — storeId the store's own id when it keeps one ([] when none): the review holds back any record it is handed that is one of them.`
+Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
 }
 
 /**
@@ -627,15 +633,15 @@ function engineRecordId(o, stored) {
 
 /**
  * A record the store withdrew or superseded, as the recall named it: every id it is known by (its own,
- * the store's, the skill's from kind, title and scope) and its status.
- * @typedef {{ ids: string[], status: string }} InactiveRecord
+ * the store's, the skill's from kind, title and scope), its status and its last-write date ('' when none).
+ * @typedef {{ ids: string[], status: string, date: string }} InactiveRecord
  */
 /** The recall's `inactive` list, read; an entry without any id is dropped. @param {unknown} list @returns {InactiveRecord[]} */
 function inactiveRecords(list) {
   return (Array.isArray(list) ? list : []).flatMap(x => {
     const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
     const ids = [...new Set([decisionText(o['id']), decisionText(o['storeId']), skillRecordId(o)].filter(Boolean))]
-    return ids.length ? [{ ids, status: recallText(o['status']) || 'inactive' }] : []
+    return ids.length ? [{ ids, status: recallText(o['status']) || 'inactive', date: recallText(o['date']) }] : []
   })
 }
 
@@ -706,27 +712,154 @@ function heldIds(x) {
   return [recordId(o), skillRecordId(o)].filter(Boolean)
 }
 
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?(Z|[+-]\d{2}:\d{2})?)?$/
+
+/** The days of month `m` (1-12) of year `y`. @param {number} y @param {number} m @returns {number} */
+function monthDays(y, m) {
+  if (m === 2) return y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0) ? 29 : 28
+  return [4, 6, 9, 11].includes(m) ? 30 : 31
+}
+
+/** The day `by` (-1, 0 or 1) days from y-m-d, as YYYY-MM-DD. @param {number} y @param {number} m @param {number} d @param {number} by @returns {string} */
+function shiftedDay(y, m, d, by) {
+  let [yy, mm, dd] = [y, m, d + by]
+  if (dd < 1) [yy, mm] = mm === 1 ? [yy - 1, 12] : [yy, mm - 1]
+  if (dd < 1) dd = monthDays(yy, mm)
+  if (dd > monthDays(yy, mm)) [yy, mm, dd] = mm === 12 ? [yy + 1, 1, 1] : [yy, mm + 1, 1]
+  return `${String(yy).padStart(4, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+}
+
+/** A zone's offset in minutes east of UTC (none or `Z`: 0); null when out of range. @param {string | undefined} z @returns {number | null} */
+function zoneMinutes(z) {
+  if (!z || z === 'Z') return 0
+  const [h, m] = [Number(z.slice(1, 3)), Number(z.slice(4, 6))]
+  return h < 24 && m < 60 ? (z[0] === '-' ? -1 : 1) * (h * 60 + m) : null
+}
+
 /**
- * The passed records an inactive record names (by any of its ids — heldIds), each named once:
- * `passed decision #i (<id>) not applied: <status> in memory` (realm @nick/craft, node #224).
- * @param {unknown[]} passed @param {InactiveRecord[]} inactive @returns {{ at: Set<number>, refused: string[] }}
+ * An ISO date read by hand (the engines' sandbox has no `Date`): its UTC day and, for a timestamp, its
+ * seconds into that day (a timestamp without a zone is UTC); null when `v` is no ISO date or names a
+ * day or time the calendar lacks (2026-02-30, 24:10).
+ * @param {string} v @returns {{ day: string, at: number | null } | null}
  */
-function blockedPassed(passed, inactive) {
-  /** @type {Map<string, string>} */
-  const statusOf = new Map()
-  for (const e of inactive) for (const id of e.ids) if (!statusOf.has(id)) statusOf.set(id, e.status)
+function isoMoment(v) {
+  const p = ISO_DATE.exec(v)
+  if (!p) return null
+  const [y, m, d] = [Number(p[1]), Number(p[2]), Number(p[3])]
+  if (m < 1 || m > 12 || d < 1 || d > monthDays(y, m)) return null
+  if (p[4] === undefined) return { day: v, at: null }
+  const clock = utcSeconds(p)
+  if (clock === null) return null
+  const by = clock < 0 ? -1 : clock >= 86400 ? 1 : 0
+  return { day: shiftedDay(y, m, d, by), at: clock - by * 86400 }
+}
+
+/**
+ * A timestamp's time of day in UTC seconds from its own day's midnight (below 0 or past 86400 when the
+ * zone moves it to another day); null when the time or the zone is out of range.
+ * @param {RegExpExecArray} p ISO_DATE's match @returns {number | null}
+ */
+function utcSeconds(p) {
+  const [h, min, sec, off] = [Number(p[4]), Number(p[5]), Number(p[6] ?? 0), zoneMinutes(p[7])]
+  return h > 23 || min > 59 || sec >= 60 || off === null ? null : (h * 60 + min - off) * 60 + sec
+}
+
+/**
+ * Why passed date `p` does not override record `e` (an inactive copy, or an active successor); '' when
+ * it is later (realm @nick/craft, node #229). Two timestamps compare to the instant; otherwise by the
+ * UTC day, so a same-day pair is not later.
+ * @param {string} p @param {{ status: string, date: string }} e @returns {string}
+ */
+function notLaterWhy(p, e) {
+  const [a, b] = [isoMoment(p), isoMoment(e.date)]
+  if (!a) return 'the passed record carries no ISO date to set against it'
+  if (!b) return `the ${e.status} record carries no ISO date to compare`
+  const sameDayLater = a.day === b.day && a.at != null && b.at != null && a.at > b.at
+  return a.day > b.day || sameDayLater ? '' : `the passed record's date ${p} is not later than the ${e.status} record's ${e.date}`
+}
+
+/**
+ * An active recalled record whose `supersedes:`/`answers:` links name another: its id, date and the ids
+ * it names — it opposes a passed copy of a record it names, as the store's inactive copy does.
+ * @typedef {{ id: string, status: 'active', date: string, names: string[] }} Successor
+ */
+/** The successors among the recalled records `active` accepts. @param {unknown[]} recalled @param {(x: unknown) => boolean} active @returns {Successor[]} */
+function successorRecords(recalled, active) {
+  return recalled.flatMap(x => {
+    if (!active(x)) return []
+    const o = /** @type {Record<string, unknown>} */ (x)
+    const names = supersededIds(Array.isArray(o['links']) ? o['links'] : [])
+    return names.length ? [{ id: recordId(o), status: /** @type {const} */ ('active'), date: decisionText(o['date']) || decisionText(o['when']), names }] : []
+  })
+}
+
+/** Every id a passed record is known by: heldIds and its `store: <id>` links. @param {unknown} x @returns {string[]} */
+function passedAliases(x) {
+  const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+  return [...heldIds(o), ...linkedIds(Array.isArray(o['links']) ? o['links'] : [], /^store:\s*(\S+)$/i)]
+}
+
+/**
+ * The passed records (those at `only`) an inactive record names (by any of its ids) or an active
+ * recalled successor supersedes or answers, each named once (realm @nick/craft, node #224). One stands
+ * only when dated later than EVERY record opposing it (node #229): the override is named, `… applied
+ * over <what>: newer`, and its aliases go to `freed` — a successor's link to it no longer drops it.
+ * Otherwise it is held back: `… not applied: held by <id> (active, <date>) (<why>)` when a successor is
+ * not older, else `… not applied: <status> in memory (<why>)`.
+ * @param {unknown[]} passed @param {InactiveRecord[]} inactive @param {number[]} [only] @param {Successor[]} [successors]
+ * @returns {{ at: Set<number>, refused: string[], overrides: string[], freed: string[] }}
+ */
+function blockedPassed(passed, inactive, only = passed.map((_, i) => i), successors = []) {
   /** @type {Set<number>} */
   const at = new Set()
-  /** @type {string[]} */
-  const refused = []
-  passed.forEach((x, i) => {
-    const hit = heldIds(x).find(id => statusOf.has(id))
-    if (hit == null) return
-    const own = heldIds(x)[0] ?? ''
-    at.add(i)
-    refused.push(`passed decision #${i}${own && !hasControlChar(own) ? ` (${own})` : ''} not applied: ${statusOf.get(hit) ?? 'inactive'} in memory`)
-  })
-  return { at, refused }
+  /** @type {{ refused: string[], overrides: string[], freed: string[] }} */
+  const out = { refused: [], overrides: [], freed: [] }
+  for (const i of only) {
+    const ids = passedAliases(passed[i])
+    const hits = inactive.filter(e => e.ids.some(id => ids.includes(id)))
+    const over = successors.filter(s => s.names.some(id => ids.includes(id)))
+    if (!hits.length && !over.length) continue
+    const label = `passed decision #${i}${idTail(ids[0])}`
+    const v = opposedVerdict(passed[i], hits, over)
+    if (v.refused) {
+      at.add(i)
+      out.refused.push(`${label} not applied: ${v.refused}`)
+      continue
+    }
+    out.overrides.push(`${label} applied over ${v.over}: newer`)
+    if (over.length) out.freed.push(...ids)
+  }
+  return { at, ...out }
+}
+
+/** ` (<id>)` for a label; '' for no id or one with a control character. @param {string | undefined} id @returns {string} */
+function idTail(id) {
+  return id && !hasControlChar(id) ? ` (${id})` : ''
+}
+
+/**
+ * One passed record against the records opposing it: why it is held back (a successor not older first,
+ * then an inactive copy), or, when it is later than all of them, what it is applied over.
+ * @param {unknown} x @param {InactiveRecord[]} hits @param {Successor[]} over @returns {{ refused?: string, over?: string }}
+ */
+function opposedVerdict(x, hits, over) {
+  const o = /** @type {Record<string, unknown>} */ (x)
+  const date = decisionText(o['when']) || decisionText(o['date'])
+  const held = over.map(s => ({ s, why: notLaterWhy(date, s) })).find(h => h.why)
+  if (held) return { refused: `held by ${held.s.id} (active, ${held.s.date || 'undated'}) (${held.why})` }
+  const stop = hits.map(e => ({ e, why: notLaterWhy(date, e) })).find(h => h.why)
+  if (stop) return { refused: `${stop.e.status} in memory (${stop.why})` }
+  const last = hits.length ? [hits.reduce((m, e) => (notLaterWhy(e.date, m) ? m : e))].map(e => `a ${e.status} record of ${e.date}`) : []
+  return { over: [...last, ...over.map(s => `${s.id} (active, ${s.date})`)].join(' and ') }
+}
+
+/** The record without its `supersedes:`/`answers:` links to any of `freed`; itself when it has none. @param {unknown} x @param {Set<string>} freed @returns {unknown} */
+function withoutLinksTo(x, freed) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return x
+  const o = /** @type {Record<string, unknown>} */ (x)
+  if (!Array.isArray(o['links'])) return x
+  const links = o['links'].filter(l => !supersededIds([l]).some(id => freed.has(id)))
+  return links.length === o['links'].length ? x : { ...o, links }
 }
 
 /**
@@ -784,18 +917,23 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
  * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
  * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
  * what a launching audit forwards as `_memoryParts`, so it adds up to the list. A passed record an
- * `inactive` record names is left out of the merge and named in `blocked` (blockedPassed).
+ * `inactive` record names, or an active recalled successor supersedes or answers, is left out of the
+ * merge and named in `blocked`, or, dated later than all of them, kept and named in `overrides`, the
+ * successors' links to it dropped from the merged list (blockedPassed) — checked only once the recall's own records did not already
+ * hold it: a copy of a record the recall returned is the same decision, dropped silently.
  * @template {{ id: string, kind?: string, derived?: boolean }} D
  * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse @param {InactiveRecord[]} [inactive]
- * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number }, blocked: string[] }}
+ * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number }, blocked: string[], overrides: string[] }}
  */
 function mergeAndRead(recalled, passed, parse, inactive = []) {
   /** @param {unknown} x */
   const wellFormed = x => parse([x && typeof x === 'object' && !Array.isArray(x) ? { ...x, status: null } : x]).decisions.length > 0
-  const block = blockedPassed(passed, inactive)
-  const addedAt = mergeById(recalled, passed, wellFormed).addedAt.filter(i => !block.at.has(i))
-  const merged = [...recalled, ...addedAt.map(i => passed[i])]
-  return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused }
+  const fresh = mergeById(recalled, passed, wellFormed).addedAt
+  const block = blockedPassed(passed, inactive, fresh, successorRecords(recalled, x => parse([x]).decisions.length > 0))
+  const addedAt = fresh.filter(i => !block.at.has(i))
+  const freed = new Set(block.freed)
+  const merged = [...(freed.size ? recalled.map(x => withoutLinksTo(x, freed)) : recalled), ...addedAt.map(i => passed[i])]
+  return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused, overrides: block.overrides }
 }
 
 /**
@@ -803,18 +941,20 @@ function mergeAndRead(recalled, passed, parse, inactive = []) {
  * `parse` (parsePriorDecisions) under its one cap: the decisions to apply, every refusal (a launcher's
  * argument that is no list still named), the refusals not already logged at launch (the recall's and
  * the cap's, and the passed records an inactive one holds back), and the source — its new count the
- * launcher's records applied that the recall did not hold.
+ * launcher's records applied that the recall did not hold, its why naming each newer passed record
+ * applied over an inactive one.
  * @template {{ id: string, kind?: string, derived?: boolean }} D
  * @param {{ decisions: unknown[], memory: MemorySource, inactive?: InactiveRecord[] }} r @param {unknown} passedRaw @param {ParseDecisions<D>} parse
  * @returns {{ prior: { decisions: D[], refused: string[] }, recalledRefused: string[], memory: MemorySource }}
  */
 function mergeRecall(r, passedRaw, parse) {
   const alone = parse(passedRaw)
-  const { read: m, blocked } = mergeAndRead(r.decisions, Array.isArray(passedRaw) ? /** @type {unknown[]} */ (passedRaw) : [], parse, r.inactive)
+  const { read: m, blocked, overrides } = mergeAndRead(r.decisions, Array.isArray(passedRaw) ? /** @type {unknown[]} */ (passedRaw) : [], parse, r.inactive)
+  const memory = withDerived(withPassed(acceptedMemory(r.memory, m.recalled), alone.decisions.length, m.passed), m.prior.decisions)
   return {
     prior: { decisions: m.prior.decisions, refused: [...(Array.isArray(passedRaw) ? [] : alone.refused), ...m.prior.refused, ...blocked] },
     recalledRefused: [...m.prior.refused.filter(x => !x.startsWith('passed decision #')), ...blocked],
-    memory: withDerived(withPassed(acceptedMemory(r.memory, m.recalled), alone.decisions.length, m.passed), m.prior.decisions),
+    memory: overrides.length ? { ...memory, why: `${memory.why}; ${overrides.join('; ')}` } : memory,
   }
 }
 
@@ -1024,7 +1164,7 @@ function deferralOn(v) {
   return s('id') ? { id: s('id'), reason: s('reason'), who: s('who'), when: s('when'), link: s('link'), commit: s('commit') } : null
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-apply.mjs priorKindLabel matchesFindings recordsDeferral deferralReleased deferralMark priorDecisionMark commitMissingReason reraiseReason reraisedNote splitByDecisions whyWithoutDeferredMark priorRejectedSection applyPriorDecisions
+// >>> craft-inline lib/prior-decision-apply.mjs priorKindLabel matchesFindings recordsDeferral deferralReleased recordAliases deferralMark priorDecisionMark commitMissingReason reraiseReason reraisedNote splitByDecisions whyWithoutDeferredMark priorRejectedSection applyPriorDecisions
 /** What a record is called in a note: `decision` or `question`. @param {PriorDecision} d @returns {string} */
 function priorKindLabel(d) {
   return d.kind === 'question' ? 'question' : 'decision'
@@ -1056,11 +1196,21 @@ function recordsDeferral(d) {
  * in a `supersedes:` / `answers:` link — the memory skill's own way to close a question. The question's
  * ABSENCE never releases it (realm @nick/craft, node #204): absence has benign causes — a launcher
  * forwarding decisions only, a recall answer without its optional `questions` list, a recall from
- * another backend than the one the deferral was written to.
+ * another backend than the one the deferral was written to. A link may name the question by any of its
+ * aliases (recordAliases): the store's own id stays in links the engine wrote before it set the skill's.
  * @param {Deferral} deferral @param {PriorDecision[]} records
  */
 function deferralReleased(deferral, records) {
-  return records.some(d => d.supersedes.includes(deferral.id))
+  const aliases = new Set([deferral.id, ...records.filter(d => recordAliases(d).includes(deferral.id)).flatMap(recordAliases)])
+  return records.some(d => d.supersedes.some(id => aliases.has(id)))
+}
+
+/**
+ * Every id a record is known by: its own and the store's own (`store: <id>` links, realm @nick/craft,
+ * node #226). @param {PriorDecision} d @returns {string[]}
+ */
+function recordAliases(d) {
+  return [d.id, ...(d.stores ?? [])]
 }
 
 /** The KNOWN AND DEFERRED mark of a deferral. @param {Deferral} x */
@@ -1178,9 +1328,11 @@ async function applyPriorDecisions(tiers, given, checkScopes, noteField = 'why')
   const context = given.length - given.filter(matchesFindings).length
   if (context) notes.push(`${context} open question(s) record no deferral — context only, set nothing aside`)
   const replaced = new Set(given.flatMap(d => d.supersedes))
-  const superseded = given.filter(d => matchesFindings(d) && replaced.has(d.id))
+  /** @param {PriorDecision} d */
+  const isReplaced = d => recordAliases(d).some(id => replaced.has(id))
+  const superseded = given.filter(d => matchesFindings(d) && isReplaced(d))
   if (superseded.length) notes.push(`${superseded.length} record(s) superseded by another given record — not applied: ${superseded.map(d => d.id).join(', ')}`)
-  const decisions = given.filter(d => matchesFindings(d) && !replaced.has(d.id))
+  const decisions = given.filter(d => matchesFindings(d) && !isReplaced(d))
   if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
   const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(Object.values(tiers).flat(), decisions), checkScopes, notes)
   const refused = decisions.filter(d => !recordsDeferral(d)).map(d => `question ${d.id}: records a deferral but no commit, so an unchanged scope cannot be established — raised normally`)
