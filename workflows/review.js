@@ -261,7 +261,11 @@ let scopeDetail = ''
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
 // The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft — the
 // memory skill's record shape). Pasted in by the craft-inline gate; the rules and why live in the module.
-// >>> craft-inline lib/prior-decisions.mjs decisionScopeParts decisionText decisionFields decisionAnchorProblem decisionProblem readPriorDecision titleWords reraisedBySeverity PRIOR_DECISIONS_MAX DECISION_FIELD_MAX DECISION_TITLE_OVERLAP parsePriorDecisions decisionAnswers priorDecisionsRefusedSection
+// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX decisionScopeParts decisionText decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
+// Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut
+// mid-sentence would mark a finding with a rationale nobody wrote.
+const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
+
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
 function decisionScopeParts(p) {
   return p.split(/[\\/]+/).filter(s => s && s !== '.')
@@ -287,17 +291,6 @@ function decisionFields(o) {
 }
 
 /**
- * The scope and the commit go into a shell line (scopeCheckScript): a repo-relative path and a hash
- * only. '' when both are.
- * @param {PriorDecision} d @returns {string}
- */
-function decisionAnchorProblem(d) {
-  if (/^([\\/]|~|[A-Za-z]:)/.test(d.scope) || decisionScopeParts(d.scope).includes('..')) return `: scope ${JSON.stringify(d.scope)} is not a repo-relative path`
-  if (d.commit && !/^[0-9a-f]{7,40}$/i.test(d.commit)) return `: commit ${JSON.stringify(d.commit)} is not a commit hash`
-  return ''
-}
-
-/**
  * What is wrong with a decision, as the tail of a refusal sentence; '' when nothing is.
  * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
  */
@@ -310,6 +303,30 @@ function decisionProblem(o, d) {
   return decisionAnchorProblem(d)
 }
 
+// A scope is a repo-relative path of these characters only; the shell line quotes it, and the check
+// keeps anything a quote could mishandle out of it.
+const SAFE_SCOPE = /^[A-Za-z0-9._@+/ -]+$/
+
+/** Whether `s` holds a control character (a newline among them). @param {string} s */
+function hasControlChar(s) {
+  return [...s].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+}
+
+/**
+ * The id, the scope and the commit go into a shell line (scopeCheckScript) and the agent prompt that
+ * carries it: no control character in any, the scope a repo-relative path of safe characters, the
+ * commit a hash. '' when all hold.
+ * @param {PriorDecision} d @returns {string}
+ */
+function decisionAnchorProblem(d) {
+  const ctl = /** @type {const} */ (['id', 'scope', 'commit']).find(k => hasControlChar(d[k]))
+  if (ctl) return `: ${ctl} contains a control character`
+  if (/^([\\/]|~|[A-Za-z]:)/.test(d.scope) || decisionScopeParts(d.scope).includes('..')) return `: scope ${JSON.stringify(d.scope)} is not a repo-relative path`
+  if (!SAFE_SCOPE.test(d.scope)) return `: scope ${JSON.stringify(d.scope)} has a character outside letters, digits and ._@+/ -`
+  if (d.commit && !/^[0-9a-f]{7,40}$/i.test(d.commit)) return `: commit ${JSON.stringify(d.commit)} is not a commit hash`
+  return ''
+}
+
 /**
  * One decision as given, checked: a refusal sentence, or the decision.
  * @param {unknown} raw @param {number} i @returns {PriorDecision | string}
@@ -319,25 +336,12 @@ function readPriorDecision(raw, i) {
   const o = /** @type {Record<string, unknown>} */ (raw)
   const d = decisionFields(o)
   const problem = decisionProblem(o, d)
-  return problem ? `decision #${i}${d.id ? ` (${d.id})` : ''}${problem}` : d
+  return problem ? `decision #${i}${d.id && !hasControlChar(d.id) ? ` (${d.id})` : ''}${problem}` : d
 }
-
-/** Lower-cased alphanumeric words of a title. @param {unknown} t */
-function titleWords(t) {
-  return new Set(String(t ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))
-}
-
-/** @param {unknown} sev */
-function reraisedBySeverity(sev) {
-  return /^(critical|high)$/i.test(String(sev ?? '').trim())
-}
-
+// <<< craft-inline
+// >>> craft-inline lib/prior-decisions.mjs PRIOR_DECISIONS_MAX DECISION_TITLE_OVERLAP parsePriorDecisions titleWords decisionAnswers reraisedBySeverity priorDecisionsRefusedSection
 // The most decisions one run applies; the rest are refused by name and their findings raised normally.
 const PRIOR_DECISIONS_MAX = 100
-
-// Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut
-// mid-sentence would mark a finding with a rationale nobody wrote.
-const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
 // A decision answers a finding when the finding's file sits inside the decision's scope AND their
 // titles share at least this share of words (of the longer one).
@@ -374,6 +378,11 @@ function parsePriorDecisions(raw) {
   return { decisions, refused }
 }
 
+/** Lower-cased alphanumeric words of a title. @param {unknown} t */
+function titleWords(t) {
+  return new Set(String(t ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))
+}
+
 /**
  * Whether `d` answers finding `f`: the file inside the scope, and the titles overlapping enough.
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
@@ -390,6 +399,11 @@ function decisionAnswers(f, d) {
   return shared / Math.max(a.size, b.size) >= DECISION_TITLE_OVERLAP
 }
 
+/** @param {unknown} sev */
+function reraisedBySeverity(sev) {
+  return /^(critical|high)$/i.test(String(sev ?? '').trim())
+}
+
 /**
  * The report section naming what of `priorDecisions` was not applied; empty when everything was.
  * @param {string[]} refused @returns {string}
@@ -399,7 +413,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-apply.mjs decisionsToCheck priorDecisionMark reraiseReason splitByDecisions scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck applyPriorDecisions priorRejectedSection
+// >>> craft-inline lib/prior-decision-scope.mjs decisionsToCheck scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck runScopeCheck
 /**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
  * could set aside (not Critical/High) and that recorded a commit to compare against.
@@ -415,18 +429,87 @@ function decisionsToCheck(findings, decisions) {
   return [...out]
 }
 
+/**
+ * The shell lines the scope check runs, one per decision: when the repo knows the decision's commit,
+ * `git diff --quiet` against it, printing the id and the exit status (0 = unchanged since the commit,
+ * working tree included); when it does not (a squash-merged branch, another clone), the id and
+ * `missing`. Arguments single-quoted.
+ * @param {PriorDecision[]} decisions @returns {string}
+ */
+function scopeCheckScript(decisions) {
+  /** @param {string} s */
+  const q = s => `'${s.replace(/'/g, `'\\''`)}'`
+  return decisions.map(d => `if git cat-file -e ${q(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`).join('\n')
+}
+
+// What the scope-check agent returns: the ids it saw print status 0, and those it saw print `missing`.
+const SCOPE_CHECK_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['unchanged', 'missing', 'reason'],
+  properties: {
+    unchanged: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in exit status 0, exactly as printed' },
+    missing: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in the word missing, exactly as printed' },
+    reason: { type: 'string', description: 'one line: anything that did not run' },
+  },
+}
+
+/** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
+function scopeCheckPrompt(decisions) {
+  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit, or the word missing when the repository does not have that commit.
+${scopeCheckScript(decisions)}
+Return {unchanged: [every id whose printed status was 0], missing: [every id printed with the word missing], reason: one line on anything that did not run}.`
+}
+
+/**
+ * The ids a scope-check answer names unchanged and missing, or null when the answer is absent or its
+ * `unchanged` unreadable — then no decision is shown unchanged and nothing is set aside.
+ * @param {unknown} ans @returns {{ unchanged: string[], missing: string[] } | null}
+ */
+function readScopeCheck(ans) {
+  const o = ans && typeof ans === 'object' ? /** @type {Record<string, unknown>} */ (ans) : {}
+  /** @param {unknown} v */
+  const ids = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string') : [])
+  return Array.isArray(o['unchanged']) ? { unchanged: ids(o['unchanged']), missing: ids(o['missing']) } : null
+}
+
+/**
+ * Runs the scope check for `toCheck` (never with none): the ids observed unchanged, and those whose
+ * commit the repo does not know. A dead or unreadable answer shows nothing unchanged (said in `notes`).
+ * @param {PriorDecision[]} toCheck @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string[]} notes
+ * @returns {Promise<{ toCheck: PriorDecision[], unchanged: Set<string>, missing: Set<string> }>}
+ */
+async function runScopeCheck(toCheck, checkScopes, notes) {
+  const unchanged = new Set(/** @type {string[]} */ ([]))
+  const missing = new Set(/** @type {string[]} */ ([]))
+  if (!toCheck.length) return { toCheck, unchanged, missing }
+  const ids = readScopeCheck(await checkScopes(toCheck))
+  if (ids == null) notes.push(`the scope-check agent died or answered unreadably — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`)
+  // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
+  // a finding below Critical/High and carry a commit, which is exactly what was checked.
+  for (const id of ids?.unchanged || []) unchanged.add(id)
+  for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
+  return { toCheck, unchanged, missing }
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-apply.mjs priorDecisionMark commitMissingReason reraiseReason splitByDecisions priorRejectedSection applyPriorDecisions
 /** The mark a set-aside finding carries. @param {PriorDecision} d */
 function priorDecisionMark(d) {
   return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (decision ${d.id})`
 }
 
+/** Why a decision did not apply when the repo does not know its commit. @param {PriorDecision} d */
+function commitMissingReason(d) {
+  return `commit ${d.commit} not found in this repo — raised normally`
+}
+
 /**
- * Why decision `d` cannot set finding `f` aside; '' when it can.
- * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @returns {string}
+ * Why decision `d` cannot set finding `f` aside; '' when it can. `missing`: ids whose commit the repo
+ * does not know (a squash-merged branch, another clone) — named apart from a changed scope.
+ * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Set<string>} [missing] @returns {string}
  */
-function reraiseReason(f, d, unchanged) {
+function reraiseReason(f, d, unchanged, missing = new Set()) {
   if (reraisedBySeverity(f.severity)) return 'a Critical/High finding is never set aside by a prior decision'
   if (!d.commit) return 'the decision records no commit, so an unchanged scope cannot be established'
+  if (missing.has(d.id)) return commitMissingReason(d)
   if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${d.commit} (or that could not be checked)`
   return ''
 }
@@ -437,9 +520,10 @@ function reraiseReason(f, d, unchanged) {
  * is appended to `noteField` — `why` in review, `description` in adversarial-review.
  * @template {DecidableFinding} F
  * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
+ * @param {Set<string>} [missing]  ids whose commit the repo does not know
  * @returns {{ kept: F[], setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number }}
  */
-function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why') {
+function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set()) {
   /** @type {F[]} */
   const kept = []
   /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
@@ -448,86 +532,13 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
   for (const f of findings) {
     const d = decisions.find(x => decisionAnswers(f, x))
     if (!d) { kept.push(f); continue }
-    const why = reraiseReason(f, d, unchanged)
+    const why = reraiseReason(f, d, unchanged, missing)
     const note = `${String(f[noteField] ?? '')} · `
     if (!why) { setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, [noteField]: note + priorDecisionMark(d) }); continue }
     reraised++
     kept.push({ ...f, [noteField]: `${note}Rejected before (decision ${d.id}, ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}) — raised again: ${why}.` })
   }
   return { kept, setAside, reraised }
-}
-
-/**
- * The shell lines the scope check runs: one `git diff --quiet` per decision, printing its id and the
- * exit status (0 = unchanged since the commit, working tree included). Arguments single-quoted.
- * @param {PriorDecision[]} decisions @returns {string}
- */
-function scopeCheckScript(decisions) {
-  /** @param {string} s */
-  const q = s => `'${s.replace(/'/g, `'\\''`)}'`
-  return decisions.map(d => `git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?`).join('\n')
-}
-
-// What the scope-check agent returns: the ids it saw print status 0.
-const SCOPE_CHECK_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['unchanged', 'reason'],
-  properties: {
-    unchanged: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in exit status 0, exactly as printed' },
-    reason: { type: 'string', description: 'one line: anything that did not run' },
-  },
-}
-
-/** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
-function scopeCheckPrompt(decisions) {
-  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit.
-${scopeCheckScript(decisions)}
-Return {unchanged: [every id whose printed status was 0], reason: one line on anything that did not run}.`
-}
-
-/**
- * The ids a scope-check answer names unchanged, or null when the answer is missing or unreadable —
- * then no decision is shown unchanged and nothing is set aside.
- * @param {unknown} ans @returns {string[] | null}
- */
-function readScopeCheck(ans) {
-  const u = ans && typeof ans === 'object' ? /** @type {Record<string, unknown>} */ (ans)['unchanged'] : null
-  return Array.isArray(u) ? u.filter(x => typeof x === 'string') : null
-}
-
-/**
- * Applies the decisions to every tier of an engine's findings. `checkScopes` runs the scope check for
- * the decisions it is handed (never called with none) and returns the agent's raw answer.
- * @template {DecidableFinding} F
- * @param {Record<string, F[]>} tiers @param {PriorDecision[]} decisions
- * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
- * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number, notes: string[] }>}
- */
-async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'why') {
-  /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
-  let setAside = []
-  /** @type {string[]} */
-  const notes = []
-  if (!decisions.length) return { tiers, setAside, reraised: 0, notes }
-  const toCheck = decisionsToCheck(Object.values(tiers).flat(), decisions)
-  const unchanged = new Set(/** @type {string[]} */ ([]))
-  if (toCheck.length) {
-    const ids = readScopeCheck(await checkScopes(toCheck))
-    if (ids == null) notes.push(`the scope-check agent died or answered unreadably — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`)
-    // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
-    // a finding below Critical/High and carry a commit, which is exactly what was checked.
-    for (const id of ids || []) unchanged.add(id)
-  }
-  let reraised = 0
-  /** @type {Record<string, F[]>} */
-  const out = {}
-  for (const [tier, list] of Object.entries(tiers)) {
-    const r = splitByDecisions(list, decisions, unchanged, tier, noteField)
-    out[tier] = r.kept
-    setAside = setAside.concat(r.setAside)
-    reraised += r.reraised
-  }
-  notes.push(`${decisions.length} decision(s) given, ${setAside.length} finding(s) set aside as rejected before, ${reraised} raised again`)
-  return { tiers: out, setAside, reraised, notes }
 }
 
 /**
@@ -538,6 +549,36 @@ function priorRejectedSection(setAside) {
   if (!setAside.length) return ''
   return `\n\n## Rejected before (set aside — not in the verdict)\n`
     + setAside.map(f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${String(f.why ?? '')}`).join('\n')
+}
+
+/**
+ * Applies the decisions to every tier of an engine's findings. `checkScopes` runs the scope check for
+ * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
+ * the decisions whose commit the repo does not know, for the report's Prior decisions not applied.
+ * @template {DecidableFinding} F
+ * @param {Record<string, F[]>} tiers @param {PriorDecision[]} decisions
+ * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
+ * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number, notes: string[], refused: string[] }>}
+ */
+async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'why') {
+  /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
+  let setAside = []
+  /** @type {string[]} */
+  const notes = []
+  if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
+  const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(Object.values(tiers).flat(), decisions), checkScopes, notes)
+  const refused = toCheck.filter(d => missing.has(d.id)).map(d => `decision ${d.id}: ${commitMissingReason(d)}`)
+  let reraised = 0
+  /** @type {Record<string, F[]>} */
+  const out = {}
+  for (const [tier, list] of Object.entries(tiers)) {
+    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing)
+    out[tier] = r.kept
+    setAside = setAside.concat(r.setAside)
+    reraised += r.reraised
+  }
+  notes.push(`${decisions.length} decision(s) given, ${setAside.length} finding(s) set aside as rejected before, ${reraised} raised again`)
+  return { tiers: out, setAside, reraised, notes, refused }
 }
 // <<< craft-inline
 
@@ -7330,6 +7371,8 @@ async function setAsidePriorDecisions() {
   // A prior's ledger tier is its own; one that carries none is persisted as confirmed (it was adjudicated).
   priorRejected = r.setAside.map(f => /^(confirmed|suspected|unverified)$/.test(f.priorTier) ? f : { ...f, priorTier: 'confirmed' })
   for (const n of r.notes) log(`priorDecisions: ${n}`)
+  // A decision whose commit this repo does not know is named with the refusals, apart from a changed scope.
+  priorDecisionsIn.refused.push(...r.refused)
 }
 await setAsidePriorDecisions()
 if (nothingSurvived()) return await noFindingsExit()

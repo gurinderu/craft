@@ -138,8 +138,11 @@ Every session that launches a craft review workflow (`review`, `rust-review`, `n
 3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
    before** with the decision's reason, author, date and link, outside the verdict. It is raised
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
-   since its `commit`, or when the decision has no `commit`. More than 100 decisions, or a record
-   that does not fit (a missing title or reason, a field past its bound, a scope outside the repo),
+   since its `commit`, when the decision has no `commit`, or when the repository does not know that
+   `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
+   More than 100 decisions, or a record that does not fit (a missing title or reason, a field past
+   its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
+   characters other than letters, digits and `._@+/ -`),
    is refused and named — the report's **Prior decisions not applied** section (`adversarial-review`:
    its `priorDecisionsNotApplied` and `rejectedBefore` fields) — narrow the recall.
 
