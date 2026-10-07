@@ -63,7 +63,8 @@ craft/
 │   ├── rust-security-scanner.md
 │   ├── rust-miri.md
 │   └── rust-architecture-reviewer.md
-├── workflows/             # multi-agent orchestration scripts
+├── src/                   # the workflow scripts as authored
+├── workflows/             # multi-agent orchestration scripts, generated from src/ (npm run build:engines)
 │   ├── rust-review.js
 │   ├── rust-audit.js
 │   └── triage-findings.js

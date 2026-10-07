@@ -5,7 +5,7 @@
 // @opencode-ai/sdk. So a shipped entry that reaches a test file (they import vitest) or any other
 // package fails only in the consumer's repo, at run time; in CI every devDependency is installed and
 // the rest of the gate stays green. Knip (even --production --strict), tsc and the unit tests let both
-// through (realm @nick/craft, #145). The engines (workflows/*.js) are not here: they import nothing,
+// through (realm @nick/craft, #145). The engines (authored in src/*.js, shipped as workflows/*.js) are not here: they import nothing,
 // and what is inlined into them is held by lib/inlined-sandbox-names.mjs.
 //
 // Only imports that survive compilation are followed (tsPreCompilationDeps: false), and the TypeScript is

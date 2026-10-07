@@ -1,5 +1,5 @@
 {
-  "path": ["lib", "opencode/plugin", "workflows"],
+  "path": ["lib", "opencode/plugin", "src"],
   "format": ["javascript", "typescript"],
   "ignore": ["**/*.test.mjs", "**/node_modules/**"],
   "ignorePattern": ["(?m)^\\/\\/ >>> craft-inline (\\S+)((?: +\\S+)+)\\s*$[\\s\\S]*?^\\/\\/ <<< craft-inline\\s*$"],

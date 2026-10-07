@@ -91,8 +91,10 @@ agents (would duplicate).
 
 ## Workflows
 
-Multi-agent orchestration scripts under `workflows/` that compose the agents above (referencing
-them by `agentType` — internal to the plugin, no external dependency).
+Multi-agent orchestration scripts that compose the agents above (referencing them by `agentType` —
+internal to the plugin, no external dependency). They are authored under `src/`; `workflows/` holds the
+copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
+committed.
 
 | Workflow | Composes | Output |
 |---|---|---|

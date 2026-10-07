@@ -1,8 +1,8 @@
 // Knip: unused files, exports and dependencies across both deliveries.
 //
-// workflows/*.js are loaded by the harness's Workflow tool, not imported, and are not plain JS
-// (top-level return/await). They import nothing: the lib/ code they use is pasted in verbatim
-// between `craft-inline` fences. The compiler below hands Knip, in place of each engine's body,
+// The engines (src/*.js, shipped as the generated workflows/*.js) are loaded by the harness's Workflow
+// tool, not imported, and are not plain JS (top-level return/await). They import nothing: the lib/
+// code they use is pasted in verbatim between `craft-inline` fences. The compiler below hands Knip, in place of each engine's body,
 // one `import { names } from '../lib/<source>'` per fence — read with the checker's own fence
 // regex — naming only the fence's names the engine actually references outside that source's own
 // regions. Listing a name in a fence only copies it into the engine; an inlined export no engine
@@ -28,7 +28,7 @@ function withoutComments(text) {
 
 /** @param {string} text @param {string} filename */
 export function fencesAsImports(text, filename) {
-  if (!/(^|[\\/])workflows[\\/][^\\/]+\.js$/.test(filename)) return text
+  if (!/(^|[\\/])src[\\/][^\\/]+\.js$/.test(filename)) return text
   /** @type {{ source: string, names: string[] }[]} */
   const fences = []
   // Per line, the source of the fence it sits inside ('' outside every fence; fence lines are comments).
@@ -72,7 +72,7 @@ export default {
   workspaces: {
     '.': {
       entry: [
-        'workflows/*.js!',
+        'src/*.js!',
         // lib/craft-log-run.mjs (run by the engines through a shell line they build at runtime) and
         // lib/analyze-runs.mjs (run by hand): not imported. The list is shared with .dependency-cruiser.mjs.
         ...SHIPPED_NODE_ENTRIES.filter(p => !p.startsWith(PLUGIN)).map(p => `${p}!`),
@@ -86,13 +86,15 @@ export default {
         'lib/check-*.mjs!',
         // The gate as one call (`npm run gate`, CI's test job): run, not imported.
         'lib/gate.mjs!',
+        // The engine build (`npm run build:engines`, the gate's check:engines): run, not imported.
+        'lib/build-engines.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
         // reads only outside production mode, so its import is not followed there.
         'lib/lint-prerequisites.mjs!',
       ],
       project: [
         'lib/**/*.mjs!',
-        'workflows/*.js!',
+        'src/*.js!',
         // Test infrastructure without a .test name: only tests reach it, by design.
         '!lib/engine-harness.mjs!',
         '!lib/sandbox-globals.mjs!',
