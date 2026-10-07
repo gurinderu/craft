@@ -15,6 +15,11 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 - **Recall returns the record shape**: whatever the server stores, a recalled record handed on
   (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `author`,
   `commit` and `deferred` included when the item carries them.
+- **Ids — the convention for a server with its own ids**: `id` is the skill-rule id (SKILL.md,
+  from kind + title + scope), and the server's own id goes into `links` as `store: <id>`. `kind`,
+  `title` and `scope` are always handed on as stored, so the id can be derived again — a review
+  engine sets `id` from them itself whenever a record carries a `store:` link or an id not of the
+  form `<kind>-<10 hex>`, and `answers:` / `supersedes:` links name skill-rule ids.
 - **Search, don't list**: `recall` calls the server's search with the topic keywords and the scope,
   then filters the hits by `scope` and `status` — never a full listing.
 - **Supersede** by the server's own means (a status field, a supersede relation, a mode); if it has

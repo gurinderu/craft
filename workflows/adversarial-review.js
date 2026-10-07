@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision and question records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; refusals come back as priorDecisionsNotApplied. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing), and the source comes back as memory {source, count, why, passed?, added?}. It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). For a Rust or Nix diff prefer the `review` workflow (auto-detects language). Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision and question records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; refusals come back as priorDecisionsNotApplied. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the source comes back as memory {source, count, why, passed?, added?}. It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -232,12 +232,21 @@ function recordKind(o) {
 }
 
 /**
- * The id a record without one gets by the memory skill's rule, from its own kind, title and scope;
- * '' when it has an id or lacks any of the three. @param {Record<string, unknown>} o @returns {string}
+ * The memory skill's id of a record, from its own kind, title and scope, whatever id it carries (realm
+ * @nick/craft, node #222); '' when it lacks any of the three — no scope is guessed.
+ * @param {Record<string, unknown>} o @returns {string}
+ */
+function skillRecordId(o) {
+  const [kind, title, scope] = [decisionText(o['kind']).toLowerCase(), decisionText(o['title']), decisionText(o['scope'])]
+  return kind && title && scope ? memoryRecordId(kind, title, scope) : ''
+}
+
+/**
+ * The id a record without one gets by the memory skill's rule (skillRecordId); '' when it has an id or
+ * lacks any of kind, title and scope. @param {Record<string, unknown>} o @returns {string}
  */
 function derivedRecordId(o) {
-  const [kind, title, scope] = [decisionText(o['kind']).toLowerCase(), decisionText(o['title']), decisionText(o['scope'])]
-  return decisionText(o['id']) || !kind || !title || !scope ? '' : memoryRecordId(kind, title, scope)
+  return decisionText(o['id']) ? '' : skillRecordId(o)
 }
 
 /** The record's id: its own, else the derived one, else ''. @param {Record<string, unknown>} o @returns {string} */
@@ -270,13 +279,14 @@ function decisionFields(o) {
 }
 
 /**
- * A required field missing, as the tail of a refusal sentence; '' when none is. A record with a title
- * and a reason but no id lacked the kind or the scope its id is derived from (derivedRecordId).
- * @param {PriorDecision} d @returns {string}
+ * The required fields missing, as the tail of a refusal sentence — only those that are; '' when none
+ * is. A record with a title and a reason but no id lacked the kind or the scope its id is derived from
+ * (derivedRecordId). @param {PriorDecision} d @returns {string}
  */
 function missingFieldProblem(d) {
   if (!d.id && d.title && d.reason) return ' lacks an id, and the kind or the scope its id is derived from'
-  return !d.id || !d.title || !d.reason ? ' lacks an id, a title or a reason' : ''
+  const missing = [d.id ? '' : 'an id', d.title ? '' : 'a title', d.reason ? '' : 'a reason'].filter(Boolean)
+  return missing.length ? ` lacks ${missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ` : ''}${missing.at(-1)}` : ''
 }
 
 /**
@@ -436,6 +446,10 @@ const MEMORY_RECALL_SCHEMA = {
       type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
       items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } } },
     },
+    inactive: {
+      type: 'array', description: 'matching superseded or withdrawn records, named only — never applied; they hold back a passed copy',
+      items: { type: 'object', properties: Object.fromEntries(['id', 'storeId', 'kind', 'title', 'scope', 'status'].map(k => [k, { type: 'string' }])) },
+    },
   },
 }
 
@@ -452,11 +466,11 @@ function memoryRecallPrompt(paths, base) {
     : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
   return `Recall the remembered decisions and open questions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
-1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question.
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question. Then find the decision and question records for those paths whose status is superseded or withdrawn (the recall's history, or the backend's search filtered by status) — only to name them in inactive, never in decisions or questions.
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
+Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status} — storeId the store's own id when it keeps one ([] when none): the review holds back any record it is handed that is one of them.`
 }
 
 /**
@@ -464,8 +478,9 @@ Return {backend, why, decisions, questions, stale}: backend names the store used
  * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records (accepted on
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
  * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
- * `derived` the applied records whose id was derived, their own having none.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number }} MemorySource
+ * `derived` the applied records whose id was derived, their own having none, and `derivedNamed` the
+ * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[] }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -488,23 +503,67 @@ function recalledQuestions(list) {
   return (Array.isArray(list) ? list : []).map(q => (q && typeof q === 'object' && !Array.isArray(q) && !('kind' in q) ? { ...q, kind: 'question' } : q))
 }
 
+const SKILL_ID_FORM = /^(decision|question|lesson)-[0-9a-f]{10}$/
+
+/**
+ * A recalled record with the skill's id set by the engine: one that carries a `store: <id>` link, or an
+ * id not of the skill's form (a store's own), gets skillRecordId — the store's id kept in links as
+ * `store: <id>` — so `answers:`/`supersedes:` links match (realm @nick/craft, node #215). A record without
+ * an id, or one whose kind, title or scope is missing, is left as it is. @param {unknown} x @returns {unknown}
+ */
+function withSkillId(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return x
+  const o = /** @type {Record<string, unknown>} */ (x)
+  const links = Array.isArray(o['links']) ? o['links'] : []
+  const stored = links.some(l => /^store:\s*\S/i.test(decisionText(l)))
+  const sid = engineRecordId(o, stored)
+  return sid ? { ...o, id: sid, links: stored ? links : [...links, `store: ${decisionText(o['id'])}`] } : x
+}
+
+/**
+ * The id withSkillId sets: skillRecordId when the record's own id differs from it and is a store's (a
+ * `store:` link beside it, or not of the skill's form); '' when the record keeps its own.
+ * @param {Record<string, unknown>} o @param {boolean} stored @returns {string}
+ */
+function engineRecordId(o, stored) {
+  const [id, sid] = [decisionText(o['id']), skillRecordId(o)]
+  return id && sid && sid !== id && (stored || !SKILL_ID_FORM.test(id)) ? sid : ''
+}
+
+/**
+ * A record the store withdrew or superseded, as the recall named it: every id it is known by (its own,
+ * the store's, the skill's from kind, title and scope) and its status.
+ * @typedef {{ ids: string[], status: string }} InactiveRecord
+ */
+/** The recall's `inactive` list, read; an entry without any id is dropped. @param {unknown} list @returns {InactiveRecord[]} */
+function inactiveRecords(list) {
+  return (Array.isArray(list) ? list : []).flatMap(x => {
+    const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+    const ids = [...new Set([decisionText(o['id']), decisionText(o['storeId']), skillRecordId(o)].filter(Boolean))]
+    return ids.length ? [{ ids, status: recallText(o['status']) || 'inactive' }] : []
+  })
+}
+
 /**
  * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
- * list, possibly empty) and the source to report. A dead or off-shape answer applies nothing and is named.
- * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
+ * list, possibly empty, each id set by withSkillId), the inactive records that hold back a passed copy,
+ * and the source to report. A dead or off-shape answer applies nothing and is named.
+ * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX
+ * @returns {{ decisions: unknown[], memory: MemorySource, inactive: InactiveRecord[] }}
  */
 function readMemoryRecall(raw, cut) {
   const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
   const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
   const list = r['decisions']
-  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}` } }
+  const inactive = inactiveRecords(r['inactive'])
+  if (!Array.isArray(list)) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}` } }
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
-  const all = [...list, ...questions]
-  if (!all.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: all, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
+  const all = [...list, ...questions].map(withSkillId)
+  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -533,18 +592,46 @@ function skippedMemory(m, why) {
  * recalled record already holds is dropped — the recalled one is the store's current state, a status
  * other than active included (it is then applied by neither copy). A malformed recalled record claims no
  * id, so the passed one stands and the reader refuses the recalled one by name (realm @nick/craft, node
- * #218). A record without an id is held under the one derived from its kind, title and scope (recordId);
- * one without either is kept, for the reader to refuse by name.
+ * #218). A record is held under its id and under the one derived from its kind, title and scope
+ * (skillRecordId), so a recalled record with a store's own id and a passed copy without one are one;
+ * a record with neither is kept, for the reader to refuse by name.
  * `addedAt` is each added record's index in the passed list.
  * @template T @param {T[]} recalled @param {T[]} passed @param {(x: T) => boolean} [readable]
  * @returns {{ merged: T[], addedAt: number[] }}
  */
 function mergeById(recalled, passed, readable = () => true) {
-  /** @param {T} x */
-  const idOf = x => (x && typeof x === 'object' && !Array.isArray(x) ? recordId(/** @type {Record<string, unknown>} */ (x)) : '')
-  const held = new Set(recalled.filter(x => readable(x)).map(idOf).filter(Boolean))
-  const addedAt = passed.flatMap((x, i) => (held.has(idOf(x)) ? [] : [i]))
+  const held = new Set(recalled.filter(x => readable(x)).flatMap(heldIds))
+  const addedAt = passed.flatMap((x, i) => (heldIds(x).some(id => held.has(id)) ? [] : [i]))
   return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], addedAt }
+}
+
+/** A record's id, and the one derived from its kind, title and scope. @param {unknown} x @returns {string[]} */
+function heldIds(x) {
+  const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+  return [recordId(o), skillRecordId(o)].filter(Boolean)
+}
+
+/**
+ * The passed records an inactive record names (by any of its ids — heldIds), each named once:
+ * `passed decision #i (<id>) not applied: <status> in memory` (realm @nick/craft, node #224).
+ * @param {unknown[]} passed @param {InactiveRecord[]} inactive @returns {{ at: Set<number>, refused: string[] }}
+ */
+function blockedPassed(passed, inactive) {
+  /** @type {Map<string, string>} */
+  const statusOf = new Map()
+  for (const e of inactive) for (const id of e.ids) if (!statusOf.has(id)) statusOf.set(id, e.status)
+  /** @type {Set<number>} */
+  const at = new Set()
+  /** @type {string[]} */
+  const refused = []
+  passed.forEach((x, i) => {
+    const hit = heldIds(x).find(id => statusOf.has(id))
+    if (hit == null) return
+    const own = heldIds(x)[0] ?? ''
+    at.add(i)
+    refused.push(`passed decision #${i}${own && !hasControlChar(own) ? ` (${own})` : ''} not applied: ${statusOf.get(hit) ?? 'inactive'} in memory`)
+  })
+  return { at, refused }
 }
 
 /**
@@ -555,13 +642,20 @@ function withPassed(m, passed, added) {
   return passed ? { ...m, passed, added } : m
 }
 
+const DERIVED_NAMED_MAX = 3
+
+const DERIVED_TITLE_MAX = 40
+
 /**
- * The source with how many of the applied records had their id derived; unchanged when none.
- * @param {MemorySource} m @param {Array<{ derived?: boolean }>} applied @returns {MemorySource}
+ * The source with how many of the applied records had their id derived, the first few named; unchanged when none.
+ * @param {MemorySource} m @param {Array<{ id?: string, title?: string, derived?: boolean }>} applied @returns {MemorySource}
  */
 function withDerived(m, applied) {
-  const derived = applied.filter(d => d.derived).length
-  return derived ? { ...m, derived } : m
+  const derived = applied.filter(d => d.derived)
+  /** @param {string} t */
+  const cut = t => (t.length > DERIVED_TITLE_MAX ? `${t.slice(0, DERIVED_TITLE_MAX)}…` : t)
+  const derivedNamed = derived.slice(0, DERIVED_NAMED_MAX).map(d => `${d.id ?? ''} (${cut(d.title ?? '')})`)
+  return derived.length ? { ...m, derived: derived.length, derivedNamed } : m
 }
 
 /**
@@ -586,33 +680,37 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
 /**
  * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
  * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
- * what a launching audit forwards as `_memoryParts`, so it adds up to the list.
+ * what a launching audit forwards as `_memoryParts`, so it adds up to the list. A passed record an
+ * `inactive` record names is left out of the merge and named in `blocked` (blockedPassed).
  * @template {{ id: string, kind?: string, derived?: boolean }} D
- * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse
- * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number } }}
+ * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse @param {InactiveRecord[]} [inactive]
+ * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number }, blocked: string[] }}
  */
-function mergeAndRead(recalled, passed, parse) {
+function mergeAndRead(recalled, passed, parse, inactive = []) {
   /** @param {unknown} x */
   const wellFormed = x => parse([x && typeof x === 'object' && !Array.isArray(x) ? { ...x, status: null } : x]).decisions.length > 0
-  const { merged, addedAt } = mergeById(recalled, passed, wellFormed)
-  return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt) }
+  const block = blockedPassed(passed, inactive)
+  const addedAt = mergeById(recalled, passed, wellFormed).addedAt.filter(i => !block.at.has(i))
+  const merged = [...recalled, ...addedAt.map(i => passed[i])]
+  return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused }
 }
 
 /**
  * The recall's answer merged RAW with the launcher's `priorDecisions` (mergeAndRead), read once by
  * `parse` (parsePriorDecisions) under its one cap: the decisions to apply, every refusal (a launcher's
  * argument that is no list still named), the refusals not already logged at launch (the recall's and
- * the cap's), and the source — its new count the launcher's records applied that the recall did not hold.
+ * the cap's, and the passed records an inactive one holds back), and the source — its new count the
+ * launcher's records applied that the recall did not hold.
  * @template {{ id: string, kind?: string, derived?: boolean }} D
- * @param {{ decisions: unknown[], memory: MemorySource }} r @param {unknown} passedRaw @param {ParseDecisions<D>} parse
+ * @param {{ decisions: unknown[], memory: MemorySource, inactive?: InactiveRecord[] }} r @param {unknown} passedRaw @param {ParseDecisions<D>} parse
  * @returns {{ prior: { decisions: D[], refused: string[] }, recalledRefused: string[], memory: MemorySource }}
  */
 function mergeRecall(r, passedRaw, parse) {
   const alone = parse(passedRaw)
-  const { read: m } = mergeAndRead(r.decisions, Array.isArray(passedRaw) ? /** @type {unknown[]} */ (passedRaw) : [], parse)
+  const { read: m, blocked } = mergeAndRead(r.decisions, Array.isArray(passedRaw) ? /** @type {unknown[]} */ (passedRaw) : [], parse, r.inactive)
   return {
-    prior: { decisions: m.prior.decisions, refused: Array.isArray(passedRaw) ? m.prior.refused : [...alone.refused, ...m.prior.refused] },
-    recalledRefused: m.prior.refused.filter(x => !x.startsWith('passed decision #')),
+    prior: { decisions: m.prior.decisions, refused: [...(Array.isArray(passedRaw) ? [] : alone.refused), ...m.prior.refused, ...blocked] },
+    recalledRefused: [...m.prior.refused.filter(x => !x.startsWith('passed decision #')), ...blocked],
     memory: withDerived(withPassed(acceptedMemory(r.memory, m.recalled), alone.decisions.length, m.passed), m.prior.decisions),
   }
 }
@@ -666,7 +764,7 @@ function acceptedMemory(m, accepted) {
  * refused dispatch (the budget wall) is named and applies nothing: the run meets the same wall on its
  * next dispatch, as it would have without a recall.
  * @param {(prompt: string) => Promise<unknown>} ask @param {string[]} paths @param {string} base
- * @returns {Promise<{ decisions: unknown[], memory: MemorySource }>}
+ * @returns {Promise<{ decisions: unknown[], memory: MemorySource, inactive: InactiveRecord[] }>}
  */
 async function recallDecisions(ask, paths, base) {
   let raw
@@ -674,7 +772,7 @@ async function recallDecisions(ask, paths, base) {
     raw = await ask(memoryRecallPrompt(paths, base))
   } catch (e) {
     const msg = recallText(e instanceof Error ? e.message : String(e))
-    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` } }
+    return { decisions: [], inactive: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` } }
   }
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
