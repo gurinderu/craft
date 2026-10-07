@@ -263,18 +263,18 @@ function recordKind(o) {
 }
 
 /**
- * The memory skill's id of a record, from its own kind, title and scope, whatever id it carries — a
- * scope left out is the whole repo, `.` (realm @nick/craft, node #222); '' when it lacks a kind or a
- * title. @param {Record<string, unknown>} o @returns {string}
+ * The memory skill's id of a record, from its own kind, title and scope, whatever id it carries (realm
+ * @nick/craft, node #222); '' when it lacks any of the three — no scope is guessed.
+ * @param {Record<string, unknown>} o @returns {string}
  */
 function skillRecordId(o) {
-  const [kind, title] = [decisionText(o['kind']).toLowerCase(), decisionText(o['title'])]
-  return kind && title ? memoryRecordId(kind, title, decisionText(o['scope']) || '.') : ''
+  const [kind, title, scope] = [decisionText(o['kind']).toLowerCase(), decisionText(o['title']), decisionText(o['scope'])]
+  return kind && title && scope ? memoryRecordId(kind, title, scope) : ''
 }
 
 /**
  * The id a record without one gets by the memory skill's rule (skillRecordId); '' when it has an id or
- * lacks a kind or a title. @param {Record<string, unknown>} o @returns {string}
+ * lacks any of kind, title and scope. @param {Record<string, unknown>} o @returns {string}
  */
 function derivedRecordId(o) {
   return decisionText(o['id']) ? '' : skillRecordId(o)
@@ -310,13 +310,14 @@ function decisionFields(o) {
 }
 
 /**
- * A required field missing, as the tail of a refusal sentence; '' when none is. A record with a title
- * and a reason but no id lacked the kind its id is derived from (derivedRecordId).
- * @param {PriorDecision} d @returns {string}
+ * The required fields missing, as the tail of a refusal sentence — only those that are; '' when none
+ * is. A record with a title and a reason but no id lacked the kind or the scope its id is derived from
+ * (derivedRecordId). @param {PriorDecision} d @returns {string}
  */
 function missingFieldProblem(d) {
-  if (!d.id && d.title && d.reason) return ' lacks an id, and the kind its id is derived from'
-  return !d.id || !d.title || !d.reason ? ' lacks an id, a title or a reason' : ''
+  if (!d.id && d.title && d.reason) return ' lacks an id, and the kind or the scope its id is derived from'
+  const missing = [d.id ? '' : 'an id', d.title ? '' : 'a title', d.reason ? '' : 'a reason'].filter(Boolean)
+  return missing.length ? ` lacks ${missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ` : ''}${missing.at(-1)}` : ''
 }
 
 /**
@@ -421,7 +422,7 @@ function parsePriorDecisions(raw, labelOf = decisionLabel) {
   return { decisions, refused }
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory mergeById withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail withDerivedIds parseMerged mergeAndRead countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory mergeById heldIds blockedPassed withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail withDerivedIds parseMerged mergeAndRead countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -443,6 +444,10 @@ const MEMORY_RECALL_SCHEMA = {
       type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
       items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } } },
     },
+    inactive: {
+      type: 'array', description: 'matching superseded or withdrawn records, named only — never applied; they hold back a passed copy',
+      items: { type: 'object', properties: Object.fromEntries(['id', 'storeId', 'kind', 'title', 'scope', 'status'].map(k => [k, { type: 'string' }])) },
+    },
   },
 }
 
@@ -459,11 +464,11 @@ function memoryRecallPrompt(paths, base) {
     : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
   return `Recall the remembered decisions and open questions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
-1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question.
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question. Then find the decision and question records for those paths whose status is superseded or withdrawn (the recall's history, or the backend's search filtered by status) — only to name them in inactive, never in decisions or questions.
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — but id is always the memory skill's record id, \`<kind>-\` + the first 10 hex chars of sha256("<kind>\\n<title>\\n<scope>") (title trimmed, inner whitespace collapsed, lower-cased; scope without a leading \`./\` or a trailing \`/\`, \`.\` when it has none): when the store keeps its own id for a record and it differs, derive it from kind, title and scope, put it in id, and add the store's own id to links as \`store: <id>\`; questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
+Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status} — storeId the store's own id when it keeps one ([] when none): the review holds back any record it is handed that is one of them.`
 }
 
 /**
@@ -496,23 +501,67 @@ function recalledQuestions(list) {
   return (Array.isArray(list) ? list : []).map(q => (q && typeof q === 'object' && !Array.isArray(q) && !('kind' in q) ? { ...q, kind: 'question' } : q))
 }
 
+const SKILL_ID_FORM = /^(decision|question|lesson)-[0-9a-f]{10}$/
+
+/**
+ * A recalled record with the skill's id set by the engine: one that carries a `store: <id>` link, or an
+ * id not of the skill's form (a store's own), gets skillRecordId — the store's id kept in links as
+ * `store: <id>` — so `answers:`/`supersedes:` links match (realm @nick/craft, node #215). A record without
+ * an id, or one whose kind, title or scope is missing, is left as it is. @param {unknown} x @returns {unknown}
+ */
+function withSkillId(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return x
+  const o = /** @type {Record<string, unknown>} */ (x)
+  const links = Array.isArray(o['links']) ? o['links'] : []
+  const stored = links.some(l => /^store:\s*\S/i.test(decisionText(l)))
+  const sid = engineRecordId(o, stored)
+  return sid ? { ...o, id: sid, links: stored ? links : [...links, `store: ${decisionText(o['id'])}`] } : x
+}
+
+/**
+ * The id withSkillId sets: skillRecordId when the record's own id differs from it and is a store's (a
+ * `store:` link beside it, or not of the skill's form); '' when the record keeps its own.
+ * @param {Record<string, unknown>} o @param {boolean} stored @returns {string}
+ */
+function engineRecordId(o, stored) {
+  const [id, sid] = [decisionText(o['id']), skillRecordId(o)]
+  return id && sid && sid !== id && (stored || !SKILL_ID_FORM.test(id)) ? sid : ''
+}
+
+/**
+ * A record the store withdrew or superseded, as the recall named it: every id it is known by (its own,
+ * the store's, the skill's from kind, title and scope) and its status.
+ * @typedef {{ ids: string[], status: string }} InactiveRecord
+ */
+/** The recall's `inactive` list, read; an entry without any id is dropped. @param {unknown} list @returns {InactiveRecord[]} */
+function inactiveRecords(list) {
+  return (Array.isArray(list) ? list : []).flatMap(x => {
+    const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+    const ids = [...new Set([decisionText(o['id']), decisionText(o['storeId']), skillRecordId(o)].filter(Boolean))]
+    return ids.length ? [{ ids, status: recallText(o['status']) || 'inactive' }] : []
+  })
+}
+
 /**
  * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
- * list, possibly empty) and the source to report. A dead or off-shape answer applies nothing and is named.
- * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
+ * list, possibly empty, each id set by withSkillId), the inactive records that hold back a passed copy,
+ * and the source to report. A dead or off-shape answer applies nothing and is named.
+ * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX
+ * @returns {{ decisions: unknown[], memory: MemorySource, inactive: InactiveRecord[] }}
  */
 function readMemoryRecall(raw, cut) {
   const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
   const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
   const list = r['decisions']
-  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}` } }
+  const inactive = inactiveRecords(r['inactive'])
+  if (!Array.isArray(list)) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally${tail}` } }
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
-  const all = [...list, ...questions]
-  if (!all.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: all, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
+  const all = [...list, ...questions].map(withSkillId)
+  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -541,14 +590,38 @@ function initialMemory(passed, recalled = false, note = '') {
  * @returns {{ merged: T[], addedAt: number[] }}
  */
 function mergeById(recalled, passed, readable = () => true) {
-  /** Its id, and the one derived from its kind, title and scope. @param {T} x @returns {string[]} */
-  const idsOf = x => {
-    const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
-    return [recordId(o), skillRecordId(o)].filter(Boolean)
-  }
-  const held = new Set(recalled.filter(x => readable(x)).flatMap(idsOf))
-  const addedAt = passed.flatMap((x, i) => (idsOf(x).some(id => held.has(id)) ? [] : [i]))
+  const held = new Set(recalled.filter(x => readable(x)).flatMap(heldIds))
+  const addedAt = passed.flatMap((x, i) => (heldIds(x).some(id => held.has(id)) ? [] : [i]))
   return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], addedAt }
+}
+
+/** A record's id, and the one derived from its kind, title and scope. @param {unknown} x @returns {string[]} */
+function heldIds(x) {
+  const o = /** @type {Record<string, unknown>} */ (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+  return [recordId(o), skillRecordId(o)].filter(Boolean)
+}
+
+/**
+ * The passed records an inactive record names (by any of its ids — heldIds), each named once:
+ * `passed decision #i (<id>) not applied: <status> in memory` (realm @nick/craft, node #224).
+ * @param {unknown[]} passed @param {InactiveRecord[]} inactive @returns {{ at: Set<number>, refused: string[] }}
+ */
+function blockedPassed(passed, inactive) {
+  /** @type {Map<string, string>} */
+  const statusOf = new Map()
+  for (const e of inactive) for (const id of e.ids) if (!statusOf.has(id)) statusOf.set(id, e.status)
+  /** @type {Set<number>} */
+  const at = new Set()
+  /** @type {string[]} */
+  const refused = []
+  passed.forEach((x, i) => {
+    const hit = heldIds(x).find(id => statusOf.has(id))
+    if (hit == null) return
+    const own = heldIds(x)[0] ?? ''
+    at.add(i)
+    refused.push(`passed decision #${i}${own && !hasControlChar(own) ? ` (${own})` : ''} not applied: ${statusOf.get(hit) ?? 'inactive'} in memory`)
+  })
+  return { at, refused }
 }
 
 /**
@@ -617,16 +690,19 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
 /**
  * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
  * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
- * what a launching audit forwards as `_memoryParts`, so it adds up to the list.
+ * what a launching audit forwards as `_memoryParts`, so it adds up to the list. A passed record an
+ * `inactive` record names is left out of the merge and named in `blocked` (blockedPassed).
  * @template {{ id: string, kind?: string, derived?: boolean }} D
- * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse
- * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number } }}
+ * @param {unknown[]} recalled @param {unknown[]} passed @param {ParseDecisions<D>} parse @param {InactiveRecord[]} [inactive]
+ * @returns {{ merged: unknown[], parts: { recalled: number, passed: number }, read: { prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number }, blocked: string[] }}
  */
-function mergeAndRead(recalled, passed, parse) {
+function mergeAndRead(recalled, passed, parse, inactive = []) {
   /** @param {unknown} x */
   const wellFormed = x => parse([x && typeof x === 'object' && !Array.isArray(x) ? { ...x, status: null } : x]).decisions.length > 0
-  const { merged, addedAt } = mergeById(recalled, passed, wellFormed)
-  return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt) }
+  const block = blockedPassed(passed, inactive)
+  const addedAt = mergeById(recalled, passed, wellFormed).addedAt.filter(i => !block.at.has(i))
+  const merged = [...recalled, ...addedAt.map(i => passed[i])]
+  return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused }
 }
 
 /** `N decision(s) and M open question(s)` of a source. @param {MemorySource} m @returns {string} */
@@ -675,7 +751,7 @@ function memorySection(m, forwarded = false) {
  * refused dispatch (the budget wall) is named and applies nothing: the run meets the same wall on its
  * next dispatch, as it would have without a recall.
  * @param {(prompt: string) => Promise<unknown>} ask @param {string[]} paths @param {string} base
- * @returns {Promise<{ decisions: unknown[], memory: MemorySource }>}
+ * @returns {Promise<{ decisions: unknown[], memory: MemorySource, inactive: InactiveRecord[] }>}
  */
 async function recallDecisions(ask, paths, base) {
   let raw
@@ -683,7 +759,7 @@ async function recallDecisions(ask, paths, base) {
     raw = await ask(memoryRecallPrompt(paths, base))
   } catch (e) {
     const msg = recallText(e instanceof Error ? e.message : String(e))
-    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` } }
+    return { decisions: [], inactive: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — nothing recalled applied; findings are raised normally` } }
   }
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
@@ -1543,8 +1619,12 @@ const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scout
 async function recallOnce() {
   if (recalledByLauncher) return
   const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
-  const { merged, parts, read } = mergeAndRead(r.decisions, passedList, parsePriorDecisions)
+  const { merged, parts, read, blocked } = mergeAndRead(r.decisions, passedList, parsePriorDecisions, r.inactive)
   memory = withDerived(withPassed(r.memory, passedAccepted, read.passed), read.prior.decisions)
+  // A passed copy of a record the store withdrew or superseded is not forwarded; the audit names it on
+  // its memory line, the nested reviews never see it (realm @nick/craft, node #224).
+  for (const x of blocked) log(`⚠️ priorDecisions: ${x}`)
+  if (blocked.length) memory = { ...memory, why: `${memory.why}; ${blocked.join('; ')}` }
   nestedPriorDecisions = withDerivedIds(merged)
   nestedMemoryParts = parts
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
