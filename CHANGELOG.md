@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.3](https://github.com/gurinderu/craft/compare/v0.24.2...v0.24.3) (2026-10-07)
+
+
+### Bug Fixes
+
+* **memory:** a newer passed record overrides a withdrawn or superseded store record ([#171](https://github.com/gurinderu/craft/issues/171)) ([a8bcfb1](https://github.com/gurinderu/craft/commit/a8bcfb122e400f90f88d468371f151833a4279fe))
+* **memory:** match a reworded finding to its record by file, line and lens, with a judge for contested pairs ([#173](https://github.com/gurinderu/craft/issues/173)) ([a5f5d92](https://github.com/gurinderu/craft/commit/a5f5d925c318f7516aa2ab179697a073a0005fea))
+
 ## [0.24.2](https://github.com/gurinderu/craft/compare/v0.24.1...v0.24.2) (2026-10-07)
 
 

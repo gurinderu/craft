@@ -1033,7 +1033,7 @@ const UNUSED_VERDICT_SCHEMA = {
  *   _verification?: VerificationStats, _priorDecisions?: string }} DimResult
  */
 
-const CRAFT_VERSION = '0.24.2' // x-release-please-version
+const CRAFT_VERSION = '0.24.3' // x-release-please-version
 
 /** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
