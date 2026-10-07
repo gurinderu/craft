@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, triage each against the code, order, fix, verify, and re-review until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, record the author's PR-thread rejections of craft findings as project decisions, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -21,7 +21,8 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 `⫲` marks a step that **fans out across subagents** (→ "Parallelism via subagents").
 
 ```
-0. Recall    — `memory` recall(topic, scope) for every path the findings touch     (→ below)
+0. Recall    — the author's PR-thread rejections recorded first (→ pr-rejections.md),
+               then `memory` recall(topic, scope) for every path the findings touch (→ below)
 1. Gather  ⫲ — collect findings from both sources, one subagent per source in parallel:
                • craft: a rust-reviewer verdict / a rust-audit report
                • GitHub: gh pr view / gh api → inline thread comments     (→ github.md)
@@ -37,7 +38,9 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                first, RED→GREEN                                                (→ rust.md)
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
-7. Re-review ⫲ — re-dispatch the review agents in parallel (as rust-audit does); new
+7. Re-review ⫲ — PR-thread rejections recorded again, active decisions recalled and passed
+               to the review workflow as `priorDecisions`, an object argument (→ `memory`, "Before a review");
+               re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &
                resolve ONLY after explicit user OK; map reply→thread via thread_id (→ github.md)
@@ -76,8 +79,9 @@ the project has; it prints `memory backend: …` once).
   reason cited (and its id), not re-litigated — unless the code the decision relied on has changed,
   in which case say so and supersede the decision instead of applying it.
 - **On a disposition** — `record-decision` with title = the finding's title, scope = its file path
-  (the component, or `.`, for a locationless finding), body = the reason, links = PR / thread /
-  commit. Triggered by triage `reject`, triage `defer`, and a finding kept but `justified` in the
+  (the component, or `.`, for a locationless finding), body = the reason, author = who decided
+  (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, links =
+  PR / thread / commit. Triggered by triage `reject`, triage `defer`, and a finding kept but `justified` in the
   PR body. A `needs-decision` becomes `record-question` (body = what decision is needed, from
   whom); when it is decided, the decision supersedes the question.
 - **Subagents** (triage, fix) lack the memory tools: the launcher recalls and puts the matching
@@ -183,6 +187,15 @@ Where craft's fix loop fans out across subagents:
 
 Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what" proof table →
 [rust.md](rust.md).
+
+## The author's rejections on the PR
+
+Before the loop works the findings, what was already rejected on the PR — a reply that opens with
+"not a bug" / "by design" / "won't fix" … — is recorded as decisions with the author, the comment
+URL and the commit. Conservative: only a thread whose first comment is a craft finding, whose last
+word is that explicit reply, from the PR author or an owner, member or collaborator of the
+repository; a thread resolved without a reply is never a rejection. The rule, the `gh` query and
+the script → [pr-rejections.md](pr-rejections.md).
 
 ## Closing the loop on GitHub
 

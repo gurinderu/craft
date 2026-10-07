@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<the active decision records of the project, recalled by the memory skill for the paths of the diff>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -57,7 +57,7 @@ export const meta = {
 // through every `typeof args === 'object'` guard, so every option reverted to its default and the
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
-// >>> craft-inline lib/workflow-args.mjs applyOption parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
+// >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
 // One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
 // name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
 // module-level helper is copied into the engines' inlined regions only when it is, and the fence's
@@ -95,6 +95,10 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
+// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
+// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
+const OBJECT_ONLY_OPTIONS = ['priorDecisions']
+
 // Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
 // A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
@@ -102,7 +106,7 @@ function applyOption(m, out, ignored) {
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
- * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
@@ -118,12 +122,16 @@ function parseOptions(text) {
     // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
+    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
+    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
+    const key = String(m[2] ?? m[7])
+    if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
     pairs += applyOption(m, out, ignored)
   }
   const tail = text.slice(cursor).trim()
   if (tail) ignored.push(...tail.split(/\s+/))
-  return { options: out, pairs, ignored }
+  return { options: out, pairs, ignored, cut: '' }
 }
 
 // normalizeArgs' branch for a string that starts with `{`.
@@ -154,7 +162,8 @@ function normalizeJsonArgs(text, warn) {
  * @returns {Record<string, unknown>}
  */
 function normalizeKeyValueArgs(text, warn) {
-  const { options, pairs, ignored } = parseOptions(text)
+  const { options, pairs, ignored, cut } = parseOptions(text)
+  if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
     // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
     // and testing "is any value not true" threw away every string made only of boolean options —
@@ -250,6 +259,349 @@ let scopeDetail = ''
 // the drop happened before all of them. Appended to the synthesized report too rather than asked of
 // the synthesis model: what the review DID NOT cover is not something a prompt may forget.
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
+// The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft, node #177 — the
+// memory skill's record shape). Pasted in by the craft-inline gate; the rules and why live in the module.
+// >>> craft-inline lib/prior-decision-record.mjs DECISION_FIELD_MAX decisionScopeParts decisionText decisionFields decisionProblem SAFE_SCOPE hasControlChar decisionAnchorProblem readPriorDecision
+// Per-field ceilings. A field over its ceiling refuses the whole decision (said so) — a reason cut
+// mid-sentence would mark a finding with a rationale nobody wrote.
+const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
+
+/** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
+function decisionScopeParts(p) {
+  return p.split(/[\\/]+/).filter(s => s && s !== '.')
+}
+
+/** @param {unknown} v @returns {string} */
+function decisionText(v) {
+  return typeof v === 'string' ? v.trim() : ''
+}
+
+/**
+ * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
+ * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
+ * http(s) URL in `links` for `link`.
+ * @param {Record<string, unknown>} o @returns {PriorDecision}
+ */
+function decisionFields(o) {
+  /** @param {string} k @param {string} [alt] */
+  const f = (k, alt = '') => decisionText(o[k]) || decisionText(o[alt])
+  const links = Array.isArray(o['links']) ? o['links'] : []
+  const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
+  return { id: f('id'), title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit') }
+}
+
+/**
+ * What is wrong with a decision, as the tail of a refusal sentence; '' when nothing is.
+ * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
+ */
+function decisionProblem(o, d) {
+  if (o['kind'] != null && decisionText(o['kind']) !== 'decision') return ` is a ${JSON.stringify(o['kind'])} record, not a decision`
+  if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
+  if (!d.id || !d.title || !d.reason) return ' lacks an id, a title or a reason'
+  const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof PriorDecision} */ (k)].length > max)
+  if (over) return `: ${over[0]} is ${d[/** @type {keyof PriorDecision} */ (over[0])].length} chars, over the ${over[1]}-char ceiling`
+  return decisionAnchorProblem(d)
+}
+
+// A scope is a repo-relative path of these characters only; the shell line quotes it, and the check
+// keeps anything a quote could mishandle out of it.
+const SAFE_SCOPE = /^[A-Za-z0-9._@+/ -]+$/
+
+/** Whether `s` holds a control character (a newline among them). @param {string} s */
+function hasControlChar(s) {
+  return [...s].some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+}
+
+/**
+ * The id, the scope and the commit go into a shell line (scopeCheckScript) and the agent prompt that
+ * carries it: no control character in any, the scope a repo-relative path of safe characters, the
+ * commit a hash. '' when all hold.
+ * @param {PriorDecision} d @returns {string}
+ */
+function decisionAnchorProblem(d) {
+  const ctl = /** @type {const} */ (['id', 'scope', 'commit']).find(k => hasControlChar(d[k]))
+  if (ctl) return `: ${ctl} contains a control character`
+  if (/^([\\/]|~|[A-Za-z]:)/.test(d.scope) || decisionScopeParts(d.scope).includes('..')) return `: scope ${JSON.stringify(d.scope)} is not a repo-relative path`
+  if (!SAFE_SCOPE.test(d.scope)) return `: scope ${JSON.stringify(d.scope)} has a character outside letters, digits and ._@+/ -`
+  if (d.commit && !/^[0-9a-f]{7,40}$/i.test(d.commit)) return `: commit ${JSON.stringify(d.commit)} is not a commit hash`
+  return ''
+}
+
+/**
+ * One decision as given, checked: a refusal sentence, or the decision.
+ * @param {unknown} raw @param {number} i @returns {PriorDecision | string}
+ */
+function readPriorDecision(raw, i) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return `decision #${i} is not an object`
+  const o = /** @type {Record<string, unknown>} */ (raw)
+  const d = decisionFields(o)
+  const problem = decisionProblem(o, d)
+  return problem ? `decision #${i}${d.id && !hasControlChar(d.id) ? ` (${d.id})` : ''}${problem}` : d
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decisions.mjs PRIOR_DECISIONS_MAX DECISION_TITLE_OVERLAP parsePriorDecisions titleWords decisionAnswers reraisedBySeverity priorDecisionsRefusedSection
+// The most decisions one run applies; the rest are refused by name and their findings raised normally.
+const PRIOR_DECISIONS_MAX = 100
+
+// A decision answers a finding when the finding's file sits inside the decision's scope AND their
+// titles share at least this share of words (of the longer one) (realm @nick/craft, node #187).
+const DECISION_TITLE_OVERLAP = 0.6
+
+/**
+ * The `priorDecisions` argument, checked. Absent → nothing, silently: that is every run before this
+ * existed. Anything else that is not a list of decisions → nothing applied, each problem named.
+ * @param {unknown} raw
+ * @returns {{ decisions: PriorDecision[], refused: string[] }}
+ */
+function parsePriorDecisions(raw) {
+  if (raw == null || raw === '') return { decisions: [], refused: [] }
+  // Only a list inside an object argument: in the key=value form a value cannot be delimited, and a
+  // JSON string invites that form, so any string is refused (lib/workflow-args.mjs OBJECT_ONLY_OPTIONS; realm @nick/craft, node #183).
+  if (typeof raw === 'string') return { decisions: [], refused: ['priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied'] }
+  const list = raw
+  if (!Array.isArray(list)) return { decisions: [], refused: ['priorDecisions is not a list — no decision applied'] }
+  /** @type {PriorDecision[]} */
+  const decisions = []
+  /** @type {string[]} */
+  const refused = []
+  list.slice(0, PRIOR_DECISIONS_MAX).forEach((item, i) => {
+    const d = readPriorDecision(item, i)
+    if (typeof d === 'string') refused.push(d)
+    // The scope check answers by id: two decisions under one id could lend one's unchanged scope to
+    // the other, so the second is refused.
+    else if (decisions.some(x => x.id === d.id)) refused.push(`decision #${i} (${d.id}) repeats an id already given — not applied`)
+    else decisions.push(d)
+  })
+  if (list.length > PRIOR_DECISIONS_MAX) {
+    refused.push(`${list.length - PRIOR_DECISIONS_MAX} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally`)
+  }
+  return { decisions, refused }
+}
+
+/** Lower-cased alphanumeric words of a title. @param {unknown} t */
+function titleWords(t) {
+  return new Set(String(t ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))
+}
+
+/**
+ * Whether `d` answers finding `f`: the file inside the scope, and the titles overlapping enough.
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
+ */
+function decisionAnswers(f, d) {
+  const file = decisionScopeParts(String(f.file ?? ''))
+  const scope = decisionScopeParts(d.scope)
+  if (!file.length || scope.length > file.length || scope.some((s, i) => s !== file[i])) return false
+  const a = titleWords(f.title)
+  const b = titleWords(d.title)
+  if (!a.size || !b.size) return false
+  let shared = 0
+  for (const w of a) if (b.has(w)) shared++
+  return shared / Math.max(a.size, b.size) >= DECISION_TITLE_OVERLAP
+}
+
+/** Critical/High are always raised again (realm @nick/craft, node #187). @param {unknown} sev */
+function reraisedBySeverity(sev) {
+  return /^(critical|high)$/i.test(String(sev ?? '').trim())
+}
+
+/**
+ * The report section naming what of `priorDecisions` was not applied; empty when everything was.
+ * @param {string[]} refused @returns {string}
+ */
+function priorDecisionsRefusedSection(refused) {
+  if (!refused.length) return ''
+  return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-scope.mjs decisionsToCheck scopeCheckScript SCOPE_CHECK_SCHEMA scopeCheckPrompt readScopeCheck runScopeCheck
+/**
+ * The decisions whose scope must be checked for change: those that answer some finding a decision
+ * could set aside (not Critical/High) and that recorded a commit to compare against.
+ * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions @returns {PriorDecision[]}
+ */
+function decisionsToCheck(findings, decisions) {
+  const out = new Set(/** @type {PriorDecision[]} */ ([]))
+  for (const f of findings) {
+    if (reraisedBySeverity(f.severity)) continue
+    const d = decisions.find(x => decisionAnswers(f, x))
+    if (d && d.commit) out.add(d)
+  }
+  return [...out]
+}
+
+/**
+ * The shell lines the scope check runs, one per decision: when the repo knows the decision's commit,
+ * `git diff --quiet` against it, printing the id and the exit status (0 = unchanged since the commit,
+ * working tree included); when it does not (a squash-merged branch, another clone), the id and
+ * `missing`. Arguments single-quoted.
+ * @param {PriorDecision[]} decisions @returns {string}
+ */
+function scopeCheckScript(decisions) {
+  /** @param {string} s */
+  const q = s => `'${s.replace(/'/g, `'\\''`)}'`
+  return decisions.map(d => `if git cat-file -e ${q(`${d.commit}^{commit}`)} 2>/dev/null; then git diff --quiet ${q(d.commit)} -- ${q(d.scope)}; echo ${q(d.id)} $?; else echo ${q(d.id)} missing; fi`).join('\n')
+}
+
+// What the scope-check agent returns: the ids it saw print status 0, and those it saw print `missing`.
+const SCOPE_CHECK_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['unchanged', 'missing', 'reason'],
+  properties: {
+    unchanged: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in exit status 0, exactly as printed' },
+    missing: { type: 'array', items: { type: 'string' }, description: 'ids whose line ended in the word missing, exactly as printed' },
+    reason: { type: 'string', description: 'one line: anything that did not run' },
+  },
+}
+
+/** The scope-check agent's prompt. @param {PriorDecision[]} decisions @returns {string} */
+function scopeCheckPrompt(decisions) {
+  return `Run these lines in the repository under review, exactly as written (shell only, read only). Each prints a decision id and the exit status of \`git diff --quiet\` against that decision's commit, or the word missing when the repository does not have that commit.
+${scopeCheckScript(decisions)}
+Return {unchanged: [every id whose printed status was 0], missing: [every id printed with the word missing], reason: one line on anything that did not run}.`
+}
+
+/**
+ * The ids a scope-check answer names unchanged and missing, or null when the answer is absent or its
+ * `unchanged` unreadable — then no decision is shown unchanged and nothing is set aside.
+ * @param {unknown} ans @returns {{ unchanged: string[], missing: string[] } | null}
+ */
+function readScopeCheck(ans) {
+  const o = ans && typeof ans === 'object' ? /** @type {Record<string, unknown>} */ (ans) : {}
+  /** @param {unknown} v */
+  const ids = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string') : [])
+  return Array.isArray(o['unchanged']) ? { unchanged: ids(o['unchanged']), missing: ids(o['missing']) } : null
+}
+
+/**
+ * Runs the scope check for `toCheck` (never with none; a commit-based check, an unknown commit raises
+ * the finding and is reported — realm @nick/craft, node #184): the ids observed unchanged, and those whose
+ * commit the repo does not know. A dead or unreadable answer shows nothing unchanged (said in `notes`).
+ * @param {PriorDecision[]} toCheck @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string[]} notes
+ * @returns {Promise<{ toCheck: PriorDecision[], unchanged: Set<string>, missing: Set<string> }>}
+ */
+async function runScopeCheck(toCheck, checkScopes, notes) {
+  const unchanged = new Set(/** @type {string[]} */ ([]))
+  const missing = new Set(/** @type {string[]} */ ([]))
+  if (!toCheck.length) return { toCheck, unchanged, missing }
+  const ids = readScopeCheck(await checkScopes(toCheck))
+  if (ids == null) notes.push(`the scope-check agent died or answered unreadably — no decision could be shown unchanged, so the ${toCheck.length} decision(s) set nothing aside`)
+  // An id outside `toCheck` sets nothing aside: splitByDecisions only consults decisions that answer
+  // a finding below Critical/High and carry a commit, which is exactly what was checked.
+  for (const id of ids?.unchanged || []) unchanged.add(id)
+  for (const d of toCheck) if (ids?.missing.includes(d.id)) missing.add(d.id)
+  return { toCheck, unchanged, missing }
+}
+// <<< craft-inline
+// >>> craft-inline lib/prior-decision-apply.mjs priorDecisionMark commitMissingReason reraiseReason splitByDecisions priorRejectedSection applyPriorDecisions
+/** The mark a set-aside finding carries. @param {PriorDecision} d */
+function priorDecisionMark(d) {
+  return `REJECTED BEFORE: ${d.reason} — ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}, ${d.link || 'no link'} (decision ${d.id})`
+}
+
+/** Why a decision did not apply when the repo does not know its commit (realm @nick/craft, node #184). @param {PriorDecision} d */
+function commitMissingReason(d) {
+  return `commit ${d.commit} not found in this repo — raised normally`
+}
+
+/**
+ * Why decision `d` cannot set finding `f` aside; '' when it can. `missing`: ids whose commit the repo
+ * does not know (a squash-merged branch, another clone) — named apart from a changed scope.
+ * @param {DecidableFinding} f @param {PriorDecision} d @param {Set<string>} unchanged @param {Set<string>} [missing] @returns {string}
+ */
+function reraiseReason(f, d, unchanged, missing = new Set()) {
+  if (reraisedBySeverity(f.severity)) return 'a Critical/High finding is never set aside by a prior decision'
+  if (!d.commit) return 'the decision records no commit, so an unchanged scope cannot be established'
+  if (missing.has(d.id)) return commitMissingReason(d)
+  if (!unchanged.has(d.id)) return `the code in ${d.scope} changed since ${d.commit} (or that could not be checked)`
+  return ''
+}
+
+/**
+ * Split one tier's findings by the decisions. `unchanged` holds the ids of decisions whose scope was
+ * observed unchanged since their commit; every other decision cannot set a finding aside. The mark
+ * is appended to `noteField` — `why` in review, `description` in adversarial-review.
+ * @template {DecidableFinding} F
+ * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
+ * @param {Set<string>} [missing]  ids whose commit the repo does not know
+ * @returns {{ kept: F[], setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number }}
+ */
+function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set()) {
+  /** @type {F[]} */
+  const kept = []
+  /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
+  const setAside = []
+  let reraised = 0
+  for (const f of findings) {
+    const d = decisions.find(x => decisionAnswers(f, x))
+    if (!d) { kept.push(f); continue }
+    const why = reraiseReason(f, d, unchanged, missing)
+    const note = `${String(f[noteField] ?? '')} · `
+    if (!why) { setAside.push({ ...f, priorTier: String(f.tier || tier), priorDecision: d.id, [noteField]: note + priorDecisionMark(d) }); continue }
+    reraised++
+    kept.push({ ...f, [noteField]: `${note}Rejected before (decision ${d.id}, ${d.who || 'author not recorded'}, ${d.when || 'date not recorded'}) — raised again: ${why}.` })
+  }
+  return { kept, setAside, reraised }
+}
+
+/**
+ * The report section listing the findings set aside by a prior decision, each with its mark.
+ * @param {DecidableFinding[]} setAside @returns {string}
+ */
+function priorRejectedSection(setAside) {
+  if (!setAside.length) return ''
+  return `\n\n## Rejected before (set aside — not in the verdict)\n`
+    + setAside.map(f => `- ${String(f.severity ?? '?')} · \`${String(f.file || '?')}:${String(f['line'] || 0)}\` · ${String(f.title ?? '')} · ${String(f.why ?? '')}`).join('\n')
+}
+
+/**
+ * Applies the decisions to every tier of an engine's findings. `checkScopes` runs the scope check for
+ * the decisions it is handed (never called with none) and returns the agent's raw answer. `refused`:
+ * the decisions whose commit the repo does not know, for the report's Prior decisions not applied.
+ * @template {DecidableFinding} F
+ * @param {Record<string, F[]>} tiers @param {PriorDecision[]} decisions
+ * @param {(toCheck: PriorDecision[]) => Promise<unknown>} checkScopes @param {string} [noteField]
+ * @returns {Promise<{ tiers: Record<string, F[]>, setAside: Array<F & { priorTier: string, priorDecision: string }>, reraised: number, notes: string[], refused: string[] }>}
+ */
+async function applyPriorDecisions(tiers, decisions, checkScopes, noteField = 'why') {
+  /** @type {Array<F & { priorTier: string, priorDecision: string }>} */
+  let setAside = []
+  /** @type {string[]} */
+  const notes = []
+  if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
+  const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(Object.values(tiers).flat(), decisions), checkScopes, notes)
+  const refused = toCheck.filter(d => missing.has(d.id)).map(d => `decision ${d.id}: ${commitMissingReason(d)}`)
+  let reraised = 0
+  /** @type {Record<string, F[]>} */
+  const out = {}
+  for (const [tier, list] of Object.entries(tiers)) {
+    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing)
+    out[tier] = r.kept
+    setAside = setAside.concat(r.setAside)
+    reraised += r.reraised
+  }
+  notes.push(`${decisions.length} decision(s) given, ${setAside.length} finding(s) set aside as rejected before, ${reraised} raised again`)
+  return { tiers: out, setAside, reraised, notes, refused }
+}
+// <<< craft-inline
+
+// The PR comment body for a Confirmed finding, with the marker a later session reads back.
+// >>> craft-inline lib/finding-comment.mjs FINDING_COMMENT_MARKER commentLine findingCommentBody
+// An HTML comment: invisible on the PR page, present in the body the API returns.
+const FINDING_COMMENT_MARKER = '<!-- craft-finding -->'
+
+/** @param {unknown} v */
+function commentLine(v) {
+  return String(v ?? '').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The comment body for one finding: `[Severity] title`, the reason and the fix, the marker.
+ * @param {{ severity?: unknown, title?: unknown, why?: unknown, fix?: unknown }} f @returns {string}
+ */
+function findingCommentBody(f) {
+  return `[${commentLine(f.severity)}] ${commentLine(f.title)}\n\n${String(f.why ?? '').trim()} — ${String(f.fix ?? '').trim()}\n\n${FINDING_COMMENT_MARKER}`
+}
+// <<< craft-inline
+
 // >>> craft-inline lib/path-segments.mjs pathSegments
 // A path as normalized SEGMENTS, for containment decided segment by segment rather than on a raw
 // string prefix: `/r/./crates/../crates/core` is inside `/r`, and `/r-evil` is not. Both separators
@@ -324,6 +676,10 @@ const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION, repoAr
 const LOGGER_PATH = '"$CRAFT_LOGGER"'
 const viaArg = argString('_via')   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
+// The project's recorded rejections, recalled by the launching session for the diff's paths. Absent
+// → the run is today's run. Malformed → nothing of it applied, and every report says what was refused.
+const priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
+for (const r of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${r}`)
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
 // `null` (pin silently dropped, review auto-detected instead), while a `.map(String)` turned
@@ -3358,7 +3714,7 @@ const reviewerAgentSection = () => agentUnavailableSection(
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
 /** @param {string} reportText */
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}`
+  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -6972,7 +7328,7 @@ function hasAdjudicatedTracks() {
 // step so earlier tombstones are carried forward, exactly as carried priors (which make
 // `hasAdjudicated` true) already are — otherwise the memory evaporates on the first quiet round.
 function nothingSurvived() {
-  return !confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated && !priorTombstones.length
+  return !confirmed.length && !suspected.length && !unverified.length && !hasAdjudicated && !priorTombstones.length && !priorRejected.length
 }
 async function noFindingsExit() {
   // floorPremiseHeld is not yet known at this early exit (it is re-read after synthesis), so the
@@ -6992,6 +7348,38 @@ async function noFindingsExit() {
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n') + scopeSection())
 }
+// ---- Prior decisions: set aside what the project already rejected, never silently ----
+// A finding a recalled decision answers leaves the verdict and is listed under its own section with
+// the decision's reason, author, date and link; it is persisted as `rejected`, so a re-review carries
+// it like any other dismissal. It stays a finding when it is Critical/High or when its decision's
+// scope cannot be shown unchanged since the recorded commit — one agent runs the `git diff --quiet`
+// lines, and its death leaves every decision unconfirmed, so every such finding is raised again.
+// On a re-review the decisions reach the still-open and regressed priors as well: a fresh duplicate
+// of a live prior was absorbed into it (reconcileWithPriors), so the prior is where a rejected finding
+// sits, and it counts in the verdict unless it is set aside there.
+/** @type {Array<Finding & { priorTier: string, priorDecision: string }>} */
+let priorRejected = []
+// How many of `priorRejected` were live priors, not findings verified this round.
+let priorRejectedLive = 0
+async function setAsidePriorDecisions() {
+  const live = adjudicated.stillOpen.length + adjudicated.regressed.length
+  const r = await applyPriorDecisions({ confirmed, suspected, unverified, stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed }, priorDecisionsIn.decisions, toCheck => ragent(
+    REPO_DIRECTIVE + scopeCheckPrompt(toCheck),
+    { label: 'decision-scope', phase: 'Synthesize', schema: SCOPE_CHECK_SCHEMA, model: CULL_MODEL },
+  ))
+  confirmed = r.tiers['confirmed'] || []
+  suspected = r.tiers['suspected'] || []
+  unverified = r.tiers['unverified'] || []
+  adjudicated.stillOpen = r.tiers['stillOpen'] || []
+  adjudicated.regressed = r.tiers['regressed'] || []
+  priorRejectedLive = live - adjudicated.stillOpen.length - adjudicated.regressed.length
+  // A prior's ledger tier is its own; one that carries none is persisted as confirmed (it was adjudicated).
+  priorRejected = r.setAside.map(f => /^(confirmed|suspected|unverified)$/.test(f.priorTier) ? f : { ...f, priorTier: 'confirmed' })
+  for (const n of r.notes) log(`priorDecisions: ${n}`)
+  // A decision whose commit this repo does not know is named with the refusals, apart from a changed scope.
+  priorDecisionsIn.refused.push(...r.refused)
+}
+await setAsidePriorDecisions()
 if (nothingSurvived()) return await noFindingsExit()
 
 // ================= Synthesize one merged report =================
@@ -7094,8 +7482,8 @@ async function postPrComments() {
   if (postComments && confirmed.length) {
     const posted = await ragent(
       `Post these Confirmed code-review findings as inline comments on the current branch's PR using \`gh\`. If gh is missing/unauthenticated or there is no PR, post nothing and say so in \`reason\` — never fail.
-For each finding with a real file:line, add a review comment "[severity] why — fix" anchored to that file:line. Findings:
-${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, severity: f.severity, why: f.why, fix: f.fix })), null, 2)}
+For each finding with a real file:line, add a review comment anchored to that file:line whose body is the finding's \`body\` VERBATIM — its first line and its last line (an HTML comment) are how a later session ties a reply to the finding. Findings:
+${JSON.stringify(confirmed.map(f => ({ file: f.file, line: f.line, body: findingCommentBody(f) })), null, 2)}
 Return {posted: <how many comments you actually created>, reason: <one line: the PR you posted to, or why nothing was posted>}.`,
       { label: 'pr-comments', phase: 'Synthesize', effort: 'low', schema: PR_COMMENTS_SCHEMA },
     )
@@ -7110,7 +7498,7 @@ const allReviewFindings = confirmed.concat(suspected, unverified)
 // The verification denominator: what verification ACTUALLY judged. `unverified` is deliberately
 // absent — including it once made refuteRate incomparable across runs (on one measured run 118 of
 // 215 findings were Low/Info, so the denominator was more than double the 89 verdicts really cast).
-const totalVerified = confirmed.length + suspected.length + dropped
+const totalVerified = confirmed.length + suspected.length + dropped + priorRejected.filter(f => f.priorTier !== 'unverified').length - priorRejectedLive
 /** The verdict the record carries: the re-review tracks or the confirmed set, escalated by strict maintainability. */
 function decideRecordVerdict() {
   let recordVerdict = isRereview
@@ -7222,7 +7610,7 @@ const toTombstone = (/** @type {Finding} */ f, origin = 'resolved') => {
 // longer remembers (it treats the finding as novel), so the cap evicting the oldest rounds is safe.
 const liveLedgerCount = confirmed.length + suspected.length +
   unverified.filter(f => !f.ledgerDupOfUnverifiedPrior).length +
-  adjudicated.stillOpen.length + adjudicated.regressed.length + adjudicated.carried.length
+  adjudicated.stillOpen.length + adjudicated.regressed.length + adjudicated.carried.length + priorRejected.length
 const tombstones = assembleTombstones()
 function assembleTombstones() {
   return pruneTombstones([
@@ -7254,8 +7642,9 @@ function assembleLedger() {
       // round marker, which is the round the REGRESSION / re-raised note reports.
       ...tombstones,
       ...adjudicated.carried.map(f => toLedgerEntry(f, f['disposition'])),
+      ...priorRejected.map(f => toLedgerEntry(f, 'rejected', f.priorTier)),
     ]
-    : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected'))
+    : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected')).concat(priorRejected.map(f => toLedgerEntry(f, 'rejected', f.priorTier)))
 }
 // THE LEDGER IS PERSISTED BEFORE THE RECORD IS ATTEMPTED, in bounded shards, one small checkpoint
 // per shard (lib/ledger-shards.mjs carries the measurement and the reasoning). The final record is
@@ -7367,4 +7756,6 @@ function floorPremiseSection() {
     + savedByFloor.map(n => `- ${n}`).join('\n')
 }
 
-return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + scopeSection())
+// Appended, not asked of the synthesis model: a finding set aside by a prior decision must reach the
+// reader with that decision, whatever the model chose to render.
+return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection(priorRejected) + scopeSection())

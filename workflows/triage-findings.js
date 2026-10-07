@@ -19,7 +19,7 @@ export const meta = {
 // through every `typeof args === 'object'` guard, so every option reverted to its default and the
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs, inlined below).
-// >>> craft-inline lib/workflow-args.mjs applyOption parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
+// >>> craft-inline lib/workflow-args.mjs applyOption OBJECT_ONLY_OPTIONS parseOptions normalizeJsonArgs normalizeKeyValueArgs normalizeArgs
 // One match of parseOptions' pattern, applied: a `--flag` or `key=value` stored into `out`, a refused
 // name pushed onto `ignored`; 1 when it stored a pair, 0 when it refused one. Exported because a
 // module-level helper is copied into the engines' inlined regions only when it is, and the fence's
@@ -57,6 +57,10 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
+// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
+// split into options nobody wrote (`comment=true`, `repo=…`) (realm @nick/craft, node #183).
+const OBJECT_ONLY_OPTIONS = ['priorDecisions']
+
 // Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
 // A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
@@ -64,7 +68,7 @@ function applyOption(m, out, ignored) {
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
 /**
  * @param {string} text
- * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[] }}
+ * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
  */
 function parseOptions(text) {
   const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
@@ -80,12 +84,16 @@ function parseOptions(text) {
     // what it ignored instead of silently swallowing half the input.
     const gap = text.slice(cursor, m.index).trim()
     if (gap) ignored.push(...gap.split(/\s+/))
+    // A structured option's value cannot be delimited here: the rest of the text is kept, unread, as
+    // its (string) value — the engine refuses a string — and nothing in it becomes an option.
+    const key = String(m[2] ?? m[7])
+    if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
     cursor = pair.lastIndex
     pairs += applyOption(m, out, ignored)
   }
   const tail = text.slice(cursor).trim()
   if (tail) ignored.push(...tail.split(/\s+/))
-  return { options: out, pairs, ignored }
+  return { options: out, pairs, ignored, cut: '' }
 }
 
 // normalizeArgs' branch for a string that starts with `{`.
@@ -116,7 +124,8 @@ function normalizeJsonArgs(text, warn) {
  * @returns {Record<string, unknown>}
  */
 function normalizeKeyValueArgs(text, warn) {
-  const { options, pairs, ignored } = parseOptions(text)
+  const { options, pairs, ignored, cut } = parseOptions(text)
+  if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
   if (pairs) {
     // Counted, not inferred from the values: `mutants=true` is a pair whose value is boolean true,
     // and testing "is any value not true" threw away every string made only of boolean options —
