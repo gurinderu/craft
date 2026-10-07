@@ -82,6 +82,7 @@ Gate green and a coherent stage finished (a PR opened or updated, or you are abo
 - The reviewer's field: the whole branch diff against trunk; the repository itself; the focus holon and its steward role; references to the realm nodes the diff touches (not a retelling). It runs `integrity` read-only and returns, with findings, an integration report: affected nodes, relays, open questions, neighbour readiness, whom to wake (`standing`); unknown — `unknown`.
 - `NEEDS_CONTEXT` is a realm defect: design further, weave, pose vimarshas, review again.
 - A finding you disagree with is rejected with a recorded "why" (in the PR or on the node).
+- **Only Low findings left — no further round**: the PR is opened and merged as it stands; the Low findings go to a follow-up branch, named in the PR body.
 - A sub-agent helping a case is launched with the line `start <realm> <role> <case №N>` (`vahta` skill).
 
 ### Branch discipline

@@ -315,29 +315,53 @@ function decisionAnchorProblem(d) {
 }
 
 /**
- * One decision as given, checked: a refusal sentence, or the decision.
- * @param {unknown} raw @param {number} i @returns {PriorDecision | string}
+ * One decision as given, checked: a refusal sentence, or the decision. `at` is its index in the list,
+ * or the label a refusal opens with (lib/memory-recall.mjs names the part it came from).
+ * @param {unknown} raw @param {number | string} at @returns {PriorDecision | string}
  */
-function readPriorDecision(raw, i) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return `decision #${i} is not an object`
+function readPriorDecision(raw, at) {
+  const label = typeof at === 'number' ? `decision #${at}` : at
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return `${label} is not an object`
   const o = /** @type {Record<string, unknown>} */ (raw)
   const d = decisionFields(o)
   const problem = decisionProblem(o, d)
-  return problem ? `decision #${i}${d.id && !hasControlChar(d.id) ? ` (${d.id})` : ''}${problem}` : d
+  return problem ? `${label}${d.id && !hasControlChar(d.id) ? ` (${d.id})` : ''}${problem}` : d
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decisions.mjs PRIOR_DECISIONS_MAX DECISION_TITLE_OVERLAP parsePriorDecisions titleWords decisionAnswers reraisedBySeverity priorDecisionsRefusedSection
+// >>> craft-inline lib/prior-decisions.mjs PRIOR_DECISIONS_MAX DECISION_TITLE_OVERLAP decisionLabel printableId cutNames parsePriorDecisions titleWords decisionAnswers reraisedBySeverity priorDecisionsRefusedSection
 const PRIOR_DECISIONS_MAX = 100
 
 const DECISION_TITLE_OVERLAP = 0.6
 
+/** A refusal's label for the record at index `i`. @param {number} i @returns {string} */
+const decisionLabel = i => `decision #${i}`
+
+/** The record's id when it is fit to print, else ''. @param {unknown} item @returns {string} */
+function printableId(item) {
+  const id = item && typeof item === 'object' ? decisionText(/** @type {Record<string, unknown>} */ (item)['id']) : ''
+  return id && id.length <= DECISION_FIELD_MAX.id && !hasControlChar(id) ? id : ''
+}
+
 /**
- * The `priorDecisions` argument (or a recall's answer), checked. Absent → nothing of it applied, no refusal
+ * The records past the cap, each named (its label and id), the names bounded by the cap itself.
+ * @param {unknown[]} cut @param {(i: number) => string} labelOf @returns {string}
+ */
+function cutNames(cut, labelOf) {
+  const named = cut.slice(0, PRIOR_DECISIONS_MAX).map((item, k) => {
+    const id = printableId(item)
+    return `${labelOf(PRIOR_DECISIONS_MAX + k)}${id ? ` (${id})` : ''}`
+  })
+  const more = cut.length - named.length
+  return `${named.join(', ')}${more ? ` and ${more} more` : ''}`
+}
+
+/**
+ * The `priorDecisions` argument (or a recall's answer merged with it), checked. Absent → nothing of it applied, no refusal
  * (the engine's own recall still runs: lib/memory-recall.mjs). Anything else that is not a list → nothing applied, each problem named.
- * @param {unknown} raw
+ * @param {unknown} raw @param {(i: number) => string} [labelOf] how a refusal names the record at index i
  * @returns {{ decisions: PriorDecision[], refused: string[] }}
  */
-function parsePriorDecisions(raw) {
+function parsePriorDecisions(raw, labelOf = decisionLabel) {
   if (raw == null || raw === '') return { decisions: [], refused: [] }
   if (typeof raw === 'string') return { decisions: [], refused: ['priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied'] }
   const list = raw
@@ -347,13 +371,13 @@ function parsePriorDecisions(raw) {
   /** @type {string[]} */
   const refused = []
   list.slice(0, PRIOR_DECISIONS_MAX).forEach((item, i) => {
-    const d = readPriorDecision(item, i)
+    const d = readPriorDecision(item, labelOf(i))
     if (typeof d === 'string') refused.push(d)
-    else if (decisions.some(x => x.id === d.id)) refused.push(`decision #${i} (${d.id}) repeats an id already given — not applied`)
+    else if (decisions.some(x => x.id === d.id)) refused.push(`${labelOf(i)} (${d.id}) repeats an id already given — not applied`)
     else decisions.push(d)
   })
   if (list.length > PRIOR_DECISIONS_MAX) {
-    refused.push(`${list.length - PRIOR_DECISIONS_MAX} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally`)
+    refused.push(`${list.length - PRIOR_DECISIONS_MAX} decision(s) past the cap of ${PRIOR_DECISIONS_MAX} were not applied — findings they would answer are raised normally: ${cutNames(list.slice(PRIOR_DECISIONS_MAX), labelOf)}`)
   }
   return { decisions, refused }
 }
@@ -393,7 +417,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory skippedMemory mergeById withPassed mergeRecall acceptedMemory countedRecords launcherLine memoryLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory skippedMemory mergeById withPassed parseMerged mergeRecall memoryParts readLaunch acceptedMemory countedRecords launcherLine memoryLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -440,8 +464,9 @@ Return {backend, why, decisions, questions, stale}: backend names the store used
 
 /**
  * Where the decisions came from: `recalled` by this engine, `launcher` — recalled by the engine that
- * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records accepted,
- * `added` those of them the recall did not already hold.
+ * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records (accepted on
+ * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
+ * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section).
  * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
@@ -508,15 +533,15 @@ function skippedMemory(m, why) {
 /**
  * The recalled records with the launcher's appended, one per id: a passed record whose id the recall
  * already holds is dropped — the recalled one is the store's current state. A record without an id is
- * kept, for the reader to refuse by name.
- * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number }}
+ * kept, for the reader to refuse by name. `addedAt` is each added record's index in the passed list.
+ * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number, addedAt: number[] }}
  */
 function mergeById(recalled, passed) {
   /** @param {T} x */
   const idOf = x => (x && typeof x === 'object' ? recallText(/** @type {Record<string, unknown>} */ (x)['id']) : '')
   const held = new Set(recalled.map(idOf).filter(Boolean))
-  const added = passed.filter(x => !held.has(idOf(x)))
-  return { merged: [...recalled, ...added], added: added.length }
+  const addedAt = passed.flatMap((x, i) => (held.has(idOf(x)) ? [] : [i]))
+  return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], added: addedAt.length, addedAt }
 }
 
 /**
@@ -528,21 +553,71 @@ function withPassed(m, passed, added) {
 }
 
 /**
- * The recall's answer read by `parse` (parsePriorDecisions) and merged with the launcher's records,
- * already read: the decisions to apply, every refusal, the recall's own refusals apart (to log), and the source.
+ * A merged list (its first `recalledLen` records the recall's, the rest the launcher's) read ONCE by
+ * `parse`, so one cap holds across both parts; each refusal names its part (`passedAt` maps a passed
+ * record back to its index in the launcher's list). The applied records split by part.
  * @template {{ id: string, kind?: string }} D
- * @param {{ decisions: unknown[], memory: MemorySource }} r @param {{ decisions: D[], refused: string[] }} passedIn
- * @param {(raw: unknown) => { decisions: D[], refused: string[] }} parse
+ * @param {unknown[]} list @param {number} recalledLen @param {ParseDecisions<D>} parse @param {number[]} [passedAt]
+ * @returns {{ prior: { decisions: D[], refused: string[] }, recalled: D[], passed: number }}
+ */
+function parseMerged(list, recalledLen, parse, passedAt = []) {
+  /** @param {number} i */
+  const labelOf = i => (i < recalledLen ? `recalled decision #${i}` : `passed decision #${passedAt[i - recalledLen] ?? i - recalledLen}`)
+  const prior = parse(list, labelOf)
+  const held = new Set(list.slice(0, recalledLen).flatMap(x => (x && typeof x === 'object' ? [recallText(/** @type {Record<string, unknown>} */ (x)['id'])] : [])))
+  const recalled = prior.decisions.filter(d => held.has(d.id))
+  return { prior, recalled, passed: prior.decisions.length - recalled.length }
+}
+
+/**
+ * The recall's answer merged RAW with the launcher's `priorDecisions` (the recalled record kept on an id
+ * clash), then read once by `parse` (parsePriorDecisions) under its one cap: the decisions to apply,
+ * every refusal (a launcher's argument that is no list still named), the refusals not already logged at
+ * launch (the recall's and the cap's), and the source.
+ * @template {{ id: string, kind?: string }} D
+ * @param {{ decisions: unknown[], memory: MemorySource }} r @param {unknown} passedRaw @param {ParseDecisions<D>} parse
  * @returns {{ prior: { decisions: D[], refused: string[] }, recalledRefused: string[], memory: MemorySource }}
  */
-function mergeRecall(r, passedIn, parse) {
-  const recalled = parse(r.decisions)
-  const { merged, added } = mergeById(recalled.decisions, passedIn.decisions)
+function mergeRecall(r, passedRaw, parse) {
+  const alone = parse(passedRaw)
+  const { merged, added, addedAt } = mergeById(r.decisions, Array.isArray(passedRaw) ? /** @type {unknown[]} */ (passedRaw) : [])
+  const m = parseMerged(merged, r.decisions.length, parse, addedAt)
   return {
-    prior: { decisions: merged, refused: [...passedIn.refused, ...recalled.refused] },
-    recalledRefused: recalled.refused,
-    memory: withPassed(acceptedMemory(r.memory, recalled.decisions), passedIn.decisions.length, added),
+    prior: { decisions: m.prior.decisions, refused: Array.isArray(passedRaw) ? m.prior.refused : [...alone.refused, ...m.prior.refused] },
+    recalledRefused: m.prior.refused.filter(x => !x.startsWith('passed decision #')),
+    memory: withPassed(acceptedMemory(r.memory, m.recalled), alone.decisions.length, added),
   }
+}
+
+/**
+ * How a launching audit's forwarded list splits (`_memoryParts`): the first `recalled` records its
+ * recall's, the next `passed` its launcher's. Anything off-shape, or not adding up to the list, is ignored.
+ * @param {unknown} parts @param {unknown} list @returns {{ recalled: number, passed: number } | null}
+ */
+function memoryParts(parts, list) {
+  const p = /** @type {Record<string, unknown>} */ (parts && typeof parts === 'object' ? parts : {})
+  const [recalled, passed] = [p['recalled'], p['passed']]
+  if (!Array.isArray(list) || !Number.isInteger(recalled) || !Number.isInteger(passed)) return null
+  const [a, b] = [/** @type {number} */ (recalled), /** @type {number} */ (passed)]
+  return a >= 0 && b >= 0 && a + b === list.length ? { recalled: a, passed: b } : null
+}
+
+/**
+ * The `priorDecisions` argument read at launch, and the source before any recall. A launcher that
+ * already recalled and says how its list splits (`partsArg`) gets each refusal and the memory line
+ * named by part; otherwise the list is read as one.
+ * @template {{ id: string, kind?: string }} D
+ * @param {unknown} raw @param {boolean} recalled `_recalled` @param {unknown} note `_memory` @param {unknown} partsArg `_memoryParts`
+ * @param {ParseDecisions<D>} parse @returns {{ prior: { decisions: D[], refused: string[] }, memory: MemorySource }}
+ */
+function readLaunch(raw, recalled, note, partsArg, parse) {
+  const parts = recalled ? memoryParts(partsArg, raw) : null
+  if (!parts) {
+    const prior = parse(raw)
+    return { prior, memory: acceptedMemory(initialMemory(prior.decisions.length, recalled, note), prior.decisions) }
+  }
+  const m = parseMerged(/** @type {unknown[]} */ (raw), parts.recalled, parse)
+  return { prior: m.prior, memory: withPassed(acceptedMemory(initialMemory(0, true, note), m.prior.decisions), parts.passed, m.passed) }
 }
 
 /**
@@ -565,11 +640,13 @@ function countedRecords(m) {
 }
 
 /**
- * The line of a review the launching audit recalled for: what it applied, or why that recall found
+ * The line of a review the launching audit recalled for: what it applied — split into the audit's
+ * recall and its launcher's records when the audit said how (`_memoryParts`) — or why that recall found
  * none (and what the audit's own launcher passed). @param {MemorySource} m @returns {string}
  */
 function launcherLine(m) {
-  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}` : 'none'}`
+  const parts = m.passed ? ` — ${m.count - (m.added ?? 0)} recalled, ${m.added ?? 0} of the ${m.passed} passed by its launcher` : ''
+  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `none${parts}`}`
   return `memory: recalled by the launching audit — none (${m.why})${m.count ? `; applied ${m.count} passed by its launcher` : ''}`
 }
 
@@ -979,12 +1056,14 @@ const viaArg = argString('_via')   // set by a parent workflow (e.g. rust-audit)
 const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
 // The project's recorded rejections, passed by the launcher: they ADD to what this engine recalls itself
 // once the diff's paths are known (recallMemory). Malformed → nothing of it applied, and every report says what was refused.
-let priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
 // Set by a parent workflow (rust-audit) that already recalled for this run and forwards the merged
-// list: no recall here. `_memory` is that recall's outcome when it found none.
+// list: no recall here. `_memory` is that recall's outcome when it found none; `_memoryParts` how the
+// list splits into its recall's records and its launcher's.
 const recalledByLauncher = A['_recalled'] === true
+const launch = readLaunch(A['priorDecisions'], recalledByLauncher, argString('_memory'), A['_memoryParts'], parsePriorDecisions)
+let priorDecisionsIn = launch.prior
 // Where the decisions came from; every report names it.
-let memory = acceptedMemory(initialMemory(priorDecisionsIn.decisions.length, recalledByLauncher, argString('_memory')), priorDecisionsIn.decisions)
+let memory = launch.memory
 for (const r of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${r}`)
 // The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
 // hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
@@ -4425,7 +4504,7 @@ if (languageStop !== null) return languageStop
 async function recallMemory() {
   if (recalledByLauncher || !changedFiles.length) return
   const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
-  const m = mergeRecall(r, priorDecisionsIn, parsePriorDecisions)
+  const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
   for (const x of m.recalledRefused) log(`⚠️ priorDecisions: ${x}`)

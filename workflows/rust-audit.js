@@ -181,8 +181,9 @@ Return {backend, why, decisions, questions, stale}: backend names the store used
 
 /**
  * Where the decisions came from: `recalled` by this engine, `launcher` — recalled by the engine that
- * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records accepted,
- * `added` those of them the recall did not already hold.
+ * launched this one (`_recalled`), or `none`; `passed` counts the launcher's own records (accepted on
+ * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
+ * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section).
  * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
@@ -241,15 +242,15 @@ function initialMemory(passed, recalled = false, note = '') {
 /**
  * The recalled records with the launcher's appended, one per id: a passed record whose id the recall
  * already holds is dropped — the recalled one is the store's current state. A record without an id is
- * kept, for the reader to refuse by name.
- * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number }}
+ * kept, for the reader to refuse by name. `addedAt` is each added record's index in the passed list.
+ * @template T @param {T[]} recalled @param {T[]} passed @returns {{ merged: T[], added: number, addedAt: number[] }}
  */
 function mergeById(recalled, passed) {
   /** @param {T} x */
   const idOf = x => (x && typeof x === 'object' ? recallText(/** @type {Record<string, unknown>} */ (x)['id']) : '')
   const held = new Set(recalled.map(idOf).filter(Boolean))
-  const added = passed.filter(x => !held.has(idOf(x)))
-  return { merged: [...recalled, ...added], added: added.length }
+  const addedAt = passed.flatMap((x, i) => (held.has(idOf(x)) ? [] : [i]))
+  return { merged: [...recalled, ...addedAt.map(i => /** @type {T} */ (passed[i]))], added: addedAt.length, addedAt }
 }
 
 /**
@@ -267,11 +268,13 @@ function countedRecords(m) {
 }
 
 /**
- * The line of a review the launching audit recalled for: what it applied, or why that recall found
+ * The line of a review the launching audit recalled for: what it applied — split into the audit's
+ * recall and its launcher's records when the audit said how (`_memoryParts`) — or why that recall found
  * none (and what the audit's own launcher passed). @param {MemorySource} m @returns {string}
  */
 function launcherLine(m) {
-  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}` : 'none'}`
+  const parts = m.passed ? ` — ${m.count - (m.added ?? 0)} recalled, ${m.added ?? 0} of the ${m.passed} passed by its launcher` : ''
+  if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `none${parts}`}`
   return `memory: recalled by the launching audit — none (${m.why})${m.count ? `; applied ${m.count} passed by its launcher` : ''}`
 }
 
@@ -319,12 +322,15 @@ const recalledByLauncher = A['_recalled'] === true
 let nestedPriorDecisions = passedDecisions
 let memory = initialMemory(passedList.length, recalledByLauncher, A['_memory'])
 let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
+/** @type {unknown} */
+let nestedMemoryParts = recalledByLauncher ? A['_memoryParts'] : undefined
 function nestedReviewArgs() {
   return {
     ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
     ...(nestedPriorDecisions != null ? { priorDecisions: nestedPriorDecisions } : {}),
     ...(memory.source !== 'none' || nestedMemoryNote ? { _recalled: true } : {}),
     ...(nestedMemoryNote ? { _memory: nestedMemoryNote } : {}),
+    ...(nestedMemoryParts != null ? { _memoryParts: nestedMemoryParts } : {}),
   }
 }
 
@@ -1044,6 +1050,7 @@ async function recallOnce() {
   const { merged, added } = mergeById(r.decisions, passedList)
   memory = withPassed(r.memory, passedList.length, added)
   nestedPriorDecisions = merged
+  nestedMemoryParts = { recalled: r.decisions.length, passed: added }
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
   if (passedDecisions != null && passedDecisions !== '' && !Array.isArray(passedDecisions)) {
     log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
