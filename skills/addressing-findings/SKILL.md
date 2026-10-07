@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, record the author's PR-thread rejections of craft findings as project decisions, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, record the author's PR-thread rejections of craft findings as project decisions and deferred findings as open questions, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -38,7 +38,7 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                first, RED→GREEN                                                (→ rust.md)
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
-7. Re-review ⫲ — PR-thread rejections recorded again, active decisions recalled and passed
+7. Re-review ⫲ — PR-thread rejections recorded again, active decisions and questions recalled and passed
                to the review workflow as `priorDecisions`, an object argument (→ `memory`, "Before a review");
                re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
@@ -58,7 +58,7 @@ Validate each finding against the code (pinned to the ref it was generated again
 |---|---|---|
 | `accept` | real, in scope | into the plan |
 | `reject` | wrong / not a real problem | ledger + drafted pushback |
-| `defer` | valid but out of scope now | ledger (stays deferred across runs) |
+| `defer` | valid but out of scope now | ledger (stays deferred across runs) + an open question in `memory` |
 | `needs-decision` | valid but needs a product/spec call, **or** has no resolvable location | → `specs` |
 | `conflict` | contradicts another finding | both surfaced for a human; never silently pick one |
 
@@ -77,13 +77,23 @@ the project has; it prints `memory backend: …` once).
 - **Before triage (step 0)** — `recall(<finding keywords>, <path>)` for every touched path. A
   matching **active** decision is known context: a finding it already answers is triaged with that
   reason cited (and its id), not re-litigated — unless the code the decision relied on has changed,
-  in which case say so and supersede the decision instead of applying it.
+  in which case say so and supersede the decision instead of applying it. A matching **active
+  question** on the finding's title means it was deferred before: cite it, and either keep it
+  deferred or answer it (a decision that supersedes it).
 - **On a disposition** — `record-decision` with title = the finding's title, scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, links =
-  PR / thread / commit. Triggered by triage `reject`, triage `defer`, and a finding kept but `justified` in the
-  PR body. A `needs-decision` becomes `record-question` (body = what decision is needed, from
-  whom); when it is decided, the decision supersedes the question.
+  PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
+  body.
+- **A deferral is an open question, not a decision** — triage `defer` becomes `record-question`
+  with title = the finding's title, scope = its file path, body = what would answer it (the event,
+  the change or the call that would settle it), author = who deferred, commit = `git rev-parse
+  HEAD` at triage, links = the PR and the comment URL. The next review lists that finding under
+  **Known and deferred** instead of raising it as new — until it turns Critical/High or its file
+  changes. A deferral recorded earlier as a decision stays a decision; when a question is answered,
+  the decision supersedes it.
+- A `needs-decision` becomes `record-question` too (body = what decision is needed, from whom);
+  when it is decided, the decision supersedes the question.
 - **Subagents** (triage, fix) lack the memory tools: the launcher recalls and puts the matching
   records, verbatim with ids, into each brief; their reject/defer verdicts come back in the result
   and the launcher records them. Known limit, not a gap to route around.

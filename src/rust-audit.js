@@ -149,7 +149,7 @@ const runMutants = !!A['mutants']
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the audited repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail readMemoryRecall initialMemory memoryLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions readMemoryRecall initialMemory memoryLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
@@ -161,6 +161,10 @@ const MEMORY_RECALL_SCHEMA = {
     why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
     decisions: {
       type: 'array', description: 'the matching active decision records, verbatim',
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
+    },
+    questions: {
+      type: 'array', description: 'the matching active question records (open questions, deferred findings among them), verbatim',
       items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
     },
     stale: {
@@ -181,16 +185,16 @@ function memoryRecallPrompt(paths, base) {
   const scope = listed.length
     ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
     : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
-  return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
+  return `Recall the remembered decisions and open questions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
-1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
-2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); stale is [] when none.`
+Return {backend, why, decisions, questions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none.`
 }
 
-/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string }} MemorySource */
+/** @typedef {{ source: 'passed' | 'recalled' | 'none', count: number, why: string, questions?: number }} MemorySource */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
@@ -205,8 +209,16 @@ function staleTail(list) {
 }
 
 /**
- * What the recall agent returned, read: the decisions to hand to parsePriorDecisions (a list, possibly
- * empty) and the source to report. A dead or off-shape answer applies nothing and is named.
+ * The recalled questions, each tagged `kind: question` when it carries no kind (an object without one
+ * is still a question: it came back in that list). @param {unknown} list @returns {unknown[]}
+ */
+function recalledQuestions(list) {
+  return (Array.isArray(list) ? list : []).map(q => (q && typeof q === 'object' && !Array.isArray(q) && !('kind' in q) ? { ...q, kind: 'question' } : q))
+}
+
+/**
+ * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
+ * list, possibly empty) and the source to report. A dead or off-shape answer applies nothing and is named.
  * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
  */
 function readMemoryRecall(raw, cut) {
@@ -217,8 +229,10 @@ function readMemoryRecall(raw, cut) {
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
-  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${stale}${tail}` } }
+  const questions = recalledQuestions(r['questions'])
+  const all = [...list, ...questions]
+  if (!all.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: all, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -239,9 +253,11 @@ function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
 function memoryLine(m, forwarded = false) {
   if (m.source === 'passed') return m.why === 'passed by the launcher' ? `memory: passed by the launcher (${m.count})` : `memory: ${m.why}`
   if (m.source !== 'recalled') return `memory: none — ${m.why}`
+  const q = m.questions || 0
+  const counted = `${m.count - q} decision(s)${q ? ` and ${q} open question(s)` : ''}`
   return forwarded
-    ? `memory: returned ${m.count} decision(s) from ${m.why}; each nested review reports how many it applied`
-    : `memory: recalled ${m.count} decision(s) from ${m.why}`
+    ? `memory: returned ${counted} from ${m.why}; each nested review reports how many it applied`
+    : `memory: recalled ${counted} from ${m.why}`
 }
 
 /** The report section naming the source. @param {MemorySource} m @param {boolean} [forwarded] @returns {string} */
@@ -1236,7 +1252,7 @@ function reviewResult(dimension, report) {
 // The nested reviews' prior-decision sections, lifted before the bound in reviewResult and appended
 // whole to the audit — they sit at the report's tail, where the bound cuts.
 // >>> craft-inline lib/prior-decision-report.mjs PRIOR_DECISION_HEADINGS liftPriorDecisionSections nestedPriorDecisionsSection
-const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Prior decisions not applied']
+const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Known and deferred (open question — not in the verdict)', '## Prior decisions not applied']
 
 /**
  * The report without its prior-decision sections, and those sections, each from its heading to the
