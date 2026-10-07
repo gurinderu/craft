@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, record the author's PR-thread rejections of craft findings as project decisions and deferred findings as open questions, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, record the author's PR-thread rejections of craft findings as project decisions and deferred findings as open questions, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -22,7 +22,8 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 
 ```
 0. Recall    — the author's PR-thread rejections recorded first (→ pr-rejections.md),
-               then `memory` recall(topic, scope) for every path the findings touch (→ below)
+               then `memory` recall(topic, scope) for every path the findings touch (→ below),
+               then findings that recur across branches shown, a lesson offered per group (→ below)
 1. Gather  ⫲ — collect findings from both sources, one subagent per source in parallel:
                • craft: a rust-reviewer verdict / a rust-audit report
                • GitHub: gh pr view / gh api → inline thread comments     (→ github.md)
@@ -94,6 +95,25 @@ the project has; it prints `memory backend: …` once).
   the decision supersedes it.
 - A `needs-decision` becomes `record-question` too (body = what decision is needed, from whom);
   when it is decided, the decision supersedes the question.
+- **Recurring findings — a lesson only on the author's yes (step 0, after recall).** A finding that
+  keeps coming back on different branches is a pattern, not a one-off. Read craft's run store for
+  the touched paths:
+
+  ```bash
+  node "<this skill's base directory>/../../lib/recurring-findings.mjs" --path <path> [--path <path> …]
+  ```
+
+  It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
+  the same finding (same file, overlapping title) in the review ledgers of at least two different
+  branches of this project; the same branch reviewed twice is not a recurrence, another project's
+  runs never count. `--store <dir>` reads another store (default `~/.craft/runs`), `--project
+  <dir>` another checkout. Its `note` names every bound it reached (the newest 500 runs read, 20
+  groups listed) — repeat that line, never present a cut list as whole.
+  Show each group (file, titles, branches, when last seen) and **ask the author, per group**,
+  whether to record a lesson. Yes → `record-lesson` with scope = the file, title = the pattern in one
+  line, body = the pattern and what avoids it (in the author's words), links = the runs or PRs.
+  No answer or no → write nothing. No run store, or no group → say so in one line
+  (`recurring findings: none — <the note>`) and continue.
 - **Subagents** (triage, fix) lack the memory tools: the launcher recalls and puts the matching
   records, verbatim with ids, into each brief; their reject/defer verdicts come back in the result
   and the launcher records them. Known limit, not a gap to route around.
