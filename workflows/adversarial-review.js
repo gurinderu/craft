@@ -55,15 +55,15 @@ function applyOption(m, out, ignored) {
   return 1
 }
 
+// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
+// split into options nobody wrote (`comment=true`, `repo=…`).
+const OBJECT_ONLY_OPTIONS = ['priorDecisions']
+
 // Only `key=value` counts as an option, and that is a deliberate narrowing rather than a limitation.
 // A bare word cannot become a flag: once any pair is present, the rest of an unquoted sentence would
 // otherwise turn into options nobody wrote — `base=v1 intent=review the auth refactor strict` would
 // invent `strict`, and an invented `strict` changes what the run does. A flag is written `strict=true`
 // or `--strict`; a leading dash is an unambiguous statement of intent, a bare word is not.
-// Options read only from an object argument: a recalled reason holding spaces or `word=value` would
-// split into options nobody wrote (`comment=true`, `repo=…`).
-const OBJECT_ONLY_OPTIONS = ['priorDecisions']
-
 /**
  * @param {string} text
  * @returns {{ options: Record<string, unknown>, pairs: number, ignored: string[], cut: string }}
