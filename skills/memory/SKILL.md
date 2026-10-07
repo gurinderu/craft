@@ -131,9 +131,11 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
    history; a superseded record shown on request carries its successor's id. A review engine's
    recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`
-   list of `{id, storeId, kind, title, scope, status}` — read only, never applied: the engine holds
-   back any record handed to it that one of them names (by `id`, the store's own id, or kind + title
-   + scope) and says so once.
+   list of `{id, storeId, kind, title, scope, status, date}` (`date` the store's last write of that
+   record) — read only, never applied: the engine holds back any record handed to it that one of them
+   names (by `id`, the store's own id, or kind + title + scope) and says so once — unless the handed
+   record's `date` is later than the inactive one's: that newer record is applied and the override
+   named once. Same day, older, or a date missing on either side: held back.
 5. **A recalled decision is context, not a verdict.** Check it still holds against the code as it
    is now: the reason was "the input is always validated upstream" and the validation is gone →
    say so, and supersede the decision instead of applying it. Recall inside a review engine is
@@ -148,7 +150,7 @@ A craft review workflow (`review`, `rust-review`, `nix-review`, `adversarial-rev
 itself**: one read-only agent runs this recall (or, if the skill is unavailable, the backend order
 above) on every launch. Passing `priorDecisions` never replaces that recall — the passed records
 are **added** to the recalled ones (one per `id`; on a clash the recalled record wins, being the
-store's current state; a passed record the store withdrew or superseded is held back and named), and the report's `memory:` line names both parts (`adversarial-review`:
+store's current state; a passed record the store withdrew or superseded is held back and named, unless it is dated later), and the report's `memory:` line names both parts (`adversarial-review`:
 its `memory` field). A session recalls for its own work as below; it passes records only when it
 holds some the store may not — rejections just read from PR threads, say — and never relies on
 passing to stand in for the engine's recall.
