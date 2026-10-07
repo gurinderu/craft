@@ -1,7 +1,7 @@
 ---
 name: memory
 description: >-
-  Semantic memory of the consumer project's own facts — decisions on review findings (rejected, deferred, justified), lessons learned, open questions — recorded and recalled across sessions through whatever store the project has: an explicit setting, a connected memory or knowledge-graph MCP server, the harness's project memory, or files under .craft/memory. Verbs: recall(topic, scope), record-decision, record-lesson, record-question. Use when a decision, lesson or open question about this codebase should outlive the session, or before working on a path to learn what was already decided about it. Triggers: remember this decision, record why we rejected, what did we decide about, was this already discussed, note this lesson, open question for later. Not for memory leaks or memory usage (rust-performance, rust-ownership), nor craft's own run records and review ledger.
+  Semantic memory of the consumer project's own facts — decisions on review findings (rejected, deferred, justified), lessons learned, open questions — recorded and recalled across sessions through whatever store the project has: an explicit setting, a connected memory or knowledge-graph MCP server, the harness's project memory, or files under .craft/memory. Verbs: recall(topic, scope), record-decision, record-lesson, record-question. Use when a decision, lesson or open question about this codebase should outlive the session, before working on a path to learn what was already decided about it, or before launching a craft review, whose engine takes the recalled decisions as priorDecisions. Triggers: remember this decision, record why we rejected, what did we decide about, was this already discussed, note this lesson, open question for later. Not for memory leaks or memory usage (rust-performance, rust-ownership), nor craft's own run records and review ledger.
 ---
 
 # Memory — the project's decisions, lessons and questions
@@ -16,7 +16,7 @@ project already has; it never invents one. craft's machine memory — the run st
 | Verb | Input | Effect |
 |---|---|---|
 | `recall(topic, scope)` | keywords, a path or component | the **matching active** records only (below) |
-| `record-decision` | title, scope, body (the reason), links | one `decision` record |
+| `record-decision` | title, scope, body (the reason), author, commit, links | one `decision` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links | one `question` record |
 
@@ -27,16 +27,24 @@ answered question becomes a `decision` that supersedes it.
 ## Record shape (lowest common denominator)
 
 ```
-{ id, kind, title, body, scope, status, date, links[] }
+{ id, kind, title, body, scope, status, date, author, commit, links[] }
   id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
   kind    decision | lesson | question
-  title   one line, ≤ 80 chars — the finding title, the lesson, the question
+  title   one line, ≤ 200 chars — the finding title verbatim, the lesson, the question
   body    the reason / the lesson / what would answer it — ≤ 1200 chars
   scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo
   status  active | superseded | withdrawn
   date    YYYY-MM-DD of the last write
-  links   PR / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
+  author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
+  commit  the commit the decided code was at, 7–40 hex (decisions on findings; below)
+  links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
 ```
+
+**A decision on a review finding** carries all of `author`, `commit` and a link to where it was
+made (the PR thread, the review comment): the review engine names them when it sets the finding
+aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
+decision without a `commit` is still recorded, but a review raises its finding again every time.
+The title is the finding's title as the review printed it — the engine matches on its words.
 
 **id** = `<kind>-` + the first 10 hex chars of `sha256("<kind>\n<title>\n<scope>")`, with `title`
 trimmed, inner whitespace collapsed and lower-cased, and `scope` without a leading `./` or a
@@ -46,8 +54,8 @@ sha256sum | cut -c1-10`). Re-recording the same kind + title + scope **updates**
 
 **Bounds — what happens when one is reached.** These are refusals, never silent truncation:
 
-- `title` over 80 chars → shorten it to the claim yourself before writing; a title cut mid-word by
-  a tool is a different id on the next run.
+- `title` over 200 chars → shorten it to the claim yourself before writing; a title cut mid-word
+  by a tool is a different id on the next run.
 - `body` over 1200 chars → **do not write**. Summarise the reason to the limit and put the long
   form where it already lives (the PR thread, the commit) into `links`. A record that would not
   fit is reported to the caller as not written, with why.
@@ -112,6 +120,25 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 5. **A recalled decision is context, not a verdict.** Check it still holds against the code as it
    is now: the reason was "the input is always validated upstream" and the validation is gone →
    say so, and supersede the decision instead of applying it.
+
+## Before a review — `priorDecisions`
+
+Every session that launches a craft review workflow (`review`, `rust-review`, `nix-review`,
+`adversarial-review`, or `rust-audit`, which hands them to its nested reviews) does this first:
+
+1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
+   only (`kind: decision`), **active** only.
+2. Pass them to the workflow as the argument `priorDecisions`: a JSON array of the records in the
+   shape above, as recalled — `id`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links`
+   — nothing rewritten, nothing summarised. No match, or backend `none` → omit the argument (say
+   so in one line); the review runs exactly as without it.
+3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
+   before** with the decision's reason, author, date and link, outside the verdict. It is raised
+   again as a normal finding when it is Critical/High, when the code in the decision's scope changed
+   since its `commit`, or when the decision has no `commit`. More than 100 decisions, or a record
+   that does not fit (a missing title or reason, a field past its bound, a scope outside the repo),
+   is refused and named — the report's **Prior decisions not applied** section (`adversarial-review`:
+   its `priorDecisionsNotApplied` and `rejectedBefore` fields) — narrow the recall.
 
 ## Subagents
 

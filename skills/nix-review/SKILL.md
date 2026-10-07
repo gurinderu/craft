@@ -15,6 +15,10 @@ scout-scales depth to the diff, fans out the lenses below, grounds findings in t
 adversarially verifies each one. This skill is the rubric the workflow and the `nix-reviewer`
 lens worker apply.
 
+**Before launching it**, recall the project's active decisions for the diff's paths and pass them
+as `priorDecisions` (→ `memory`, "Before a review"): a finding the project already rejected comes
+back under **Rejected before** with who, when and why, instead of being raised as new.
+
 ## When to Use
 
 - Reviewing a diff / PR of Nix code (flakes, packages, NixOS modules, dev shells)
