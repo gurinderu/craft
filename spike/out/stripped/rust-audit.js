@@ -1,0 +1,1096 @@
+export const meta = {
+  name: 'rust-audit',
+  description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, once, hands them to the nested reviews and names the source (an empty list skips the recall). Pass {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding).',
+  phases: [
+    { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
+    { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
+    { title: 'Verify', detail: 'adversarially verify unused-crate candidates before reporting' },
+    { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report' },
+  ],
+}
+
+function applyOption(m, out, ignored) {
+  const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
+  if (m[7]) {
+    if (banned(m[7])) { ignored.push(m[7]); return 0 }
+    out[m[7]] = true
+    return 1
+  }
+  const key =  (m[2])
+  if (banned(key)) { ignored.push(key); return 0 }
+  const quoted = m[4] ?? m[5]
+  if (quoted !== undefined) { out[key] = quoted; return 1 }
+  try {
+    out[key] = JSON.parse( (m[3]))
+  } catch {
+    out[key] =  (m[3])
+  }
+  return 1
+}
+
+const OBJECT_ONLY_OPTIONS = ['priorDecisions']
+
+function parseOptions(text) {
+  const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  const out = {}
+  let pairs = 0
+  const ignored = []
+  let m
+  let cursor = 0
+  while ((m = pair.exec(text)) !== null) {
+    const gap = text.slice(cursor, m.index).trim()
+    if (gap) ignored.push(...gap.split(/\s+/))
+    const key = String(m[2] ?? m[7])
+    if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
+    cursor = pair.lastIndex
+    pairs += applyOption(m, out, ignored)
+  }
+  const tail = text.slice(cursor).trim()
+  if (tail) ignored.push(...tail.split(/\s+/))
+  return { options: out, pairs, ignored, cut: '' }
+}
+
+function normalizeJsonArgs(text, warn) {
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      warn('⚠️ args arrived as a JSON string, not an object — parsed it; pass a real object to avoid this')
+      return parsed
+    }
+    warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
+    return {}
+  } catch (e) {
+    warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e &&  (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+    return {}
+  }
+}
+
+function normalizeKeyValueArgs(text, warn) {
+  const { options, pairs, ignored, cut } = parseOptions(text)
+  if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
+  if (pairs) {
+    warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
+    if (ignored.length) {
+      warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
+    }
+    return options
+  }
+  warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
+  return {}
+}
+
+function normalizeArgs(args, warn = () => {}) {
+  if (args && typeof args === 'object' && !Array.isArray(args)) return  (args)
+  if (typeof args !== 'string' || !args.trim()) return {}
+  const text = args.trim()
+  if (text.startsWith('[') || text.startsWith('"')) {
+    warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
+    return {}
+  }
+  if (text.startsWith('{')) return normalizeJsonArgs(text, warn)
+  return normalizeKeyValueArgs(text, warn)
+}
+const A = normalizeArgs(args, log)
+
+function textArg(key) {
+  return A[key] ? String(A[key]) : ''
+}
+
+const baseArg = textArg('base')
+const runMutants = !!A['mutants']
+const craftRootArg = textArg('craftRoot')
+const RECALL_PATHS_MAX = 60
+
+const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
+
+const MEMORY_RECALL_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['backend', 'why', 'decisions'],
+  properties: {
+    backend: { type: 'string', description: 'the memory backend recall used, or none' },
+    why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
+    decisions: {
+      type: 'array', description: 'the matching active decision records, verbatim',
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), links: { type: 'array', items: { type: 'string' } } } },
+    },
+    stale: {
+      type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
+      items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } } },
+    },
+  },
+}
+
+function memoryRecallPrompt(paths, base) {
+  const listed = paths.slice(0, RECALL_PATHS_MAX)
+  const cut = paths.length - listed.length
+  const scope = listed.length
+    ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
+    : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
+  return `Recall the remembered decisions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
+Scope: ${scope}
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths: kind decision, status active only, no topic.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (observed: \`/home/ubuntu/projects/my/craft\` → \`-home-ubuntu-projects-my-craft\`) — an observed convention (realm @nick/craft, node #209); \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` in the repo. None applies: backend none.
+3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
+4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
+Return {backend, why, decisions, stale}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, links (nothing rewritten or summarised; [] when none); stale is [] when none.`
+}
+
+const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
+
+function staleTail(list) {
+  const named = (Array.isArray(list) ? list : []).flatMap(x => {
+    const r =  (x && typeof x === 'object' ? x : {})
+    const id = recallText(r['id'])
+    return id ? [`${id} (${recallText(r['why']) || 'no reason given'})`] : []
+  })
+  return named.length ? `; stale, left out: ${named.join(', ')}` : ''
+}
+
+function readMemoryRecall(raw, cut) {
+  const r =  (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
+  const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
+  const list = r['decisions']
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  const backend = recallText(r['backend']) || 'an unnamed backend'
+  const why = recallText(r['why']) || 'no reason given'
+  const stale = staleTail(r['stale'])
+  if (!list.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: list, memory: { source: 'recalled', count: list.length, why: `${backend} (${why})${stale}${tail}` } }
+}
+
+function initialMemory(raw, count = Array.isArray(raw) ? raw.length : 0) {
+  return raw == null || raw === ''
+    ? { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
+    : { source: 'passed', count, why: 'passed by the launcher' }
+}
+
+function memoryLine(m, forwarded = false) {
+  if (m.source === 'passed') return `memory: passed by the launcher (${m.count})`
+  if (m.source !== 'recalled') return `memory: none — ${m.why}`
+  return forwarded
+    ? `memory: returned ${m.count} decision(s) from ${m.why}; each nested review reports how many it applied`
+    : `memory: recalled ${m.count} decision(s) from ${m.why}`
+}
+
+function memorySection(m, forwarded = false) {
+  return `\n\n## Memory\n- ${memoryLine(m, forwarded)}\n`
+}
+
+async function recallDecisions(ask, paths, base) {
+  let raw
+  try {
+    raw = await ask(memoryRecallPrompt(paths, base))
+  } catch (e) {
+    const msg = recallText(e instanceof Error ? e.message : String(e))
+    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
+  }
+  return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
+}
+let nestedPriorDecisions = A['priorDecisions']
+let memory = initialMemory(nestedPriorDecisions)
+function nestedReviewArgs() {
+  return {
+    ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
+    ...(nestedPriorDecisions != null ? { priorDecisions: nestedPriorDecisions } : {}),
+  }
+}
+
+const CRATE_ITEM = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['name', 'path'],
+  properties: {
+    name: { type: 'string', description: 'crate (package) name' },
+    path: { type: 'string', description: "crate directory (its manifest dir), RELATIVE to the repo root — never the absolute `manifest_path` cargo prints, and never a leading `/`" },
+  },
+}
+
+const EDGE_ITEM = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['from', 'to'],
+  properties: {
+    from: { type: 'string', description: 'caller crate name (depends on `to`)' },
+    to: { type: 'string', description: 'callee crate name' },
+  },
+}
+
+const SCOUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['hasDiff', 'hasUnsafe', 'baseRef', 'repoRoot', 'crates', 'changedCrates', 'edges', 'notes'],
+  properties: {
+    hasDiff: { type: 'boolean', description: 'true if any .rs files differ vs the base ref (committed or uncommitted)' },
+    hasUnsafe: { type: 'boolean', description: 'true if the workspace contains any `unsafe` block or impl' },
+    baseRef: { type: 'string', description: 'the git ref the diff was computed against, or empty if none resolved' },
+    repoRoot: { type: 'string', description: 'absolute path of the repository root (`git rev-parse --show-toplevel`), empty if it cannot be resolved — used ONLY to relativize a crate path that came back absolute' },
+    crates: { type: 'array', items: CRATE_ITEM, description: 'workspace members; empty if cargo metadata is unavailable' },
+    changedCrates: { type: 'array', items: CRATE_ITEM, description: 'subset of crates with a changed .rs file vs the base; empty if no base / no changes' },
+    edges: { type: 'array', items: EDGE_ITEM, description: 'intra-workspace dependency edges; empty if cargo metadata is unavailable' },
+    notes: { type: 'string', description: 'one line on what was detected' },
+  },
+}
+
+const FINDINGS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['dimension', 'verdict', 'summary', 'findings', 'evidence'],
+  properties: {
+    dimension: { type: 'string', description: 'dimension label, e.g. review:<crate> | contract:<from>→<to> | architecture | security | miri | crate-decomposition | semver | build-matrix | deps | unused-crates | tests-cov' },
+    verdict: {
+      type: 'string',
+      enum: ['Approve', 'Warning', 'Block', 'Healthy', 'Concerns', 'At-risk', 'Clean', 'UB-found', 'INCOMPLETE (not run)'],
+      description: 'Approve/Warning/Block, Healthy/Concerns/At-risk, or Clean/UB-found — use one of these words exactly. Use "INCOMPLETE (not run)" when the tooling this dimension depends on was absent, so nothing was actually checked: a dimension that could not run is NOT an Approve.',
+    },
+    summary: { type: 'string', description: 'one-paragraph bottom line' },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['severity', 'title', 'location', 'detail'],
+        properties: {
+          severity: { type: 'string', description: 'Critical | High | Medium | Low | Info' },
+          title: { type: 'string' },
+          location: { type: 'string', description: 'file:line or crate/module, empty if not applicable' },
+          detail: { type: 'string', description: 'what is wrong and the direction of the fix' },
+        },
+      },
+    },
+    evidence: { type: 'string', description: 'Evidence: <the concrete commands run / tools used / files read this pass — never invented>. A passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.' },
+  },
+}
+
+const UNUSED_VERDICT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['confirmedUnused', 'evidence', 'removal'],
+  properties: {
+    confirmedUnused: { type: 'boolean', description: 'true ONLY if genuinely unused after trying to refute; default false when uncertain' },
+    evidence: { type: 'string', description: 'what was checked — use sites, cfg/feature gates, macros, re-exports, build.rs, dev/bench/example usage, bin/published status' },
+    removal: { type: 'string', description: 'concrete removal direction if confirmed unused; empty otherwise' },
+  },
+}
+
+
+const CRAFT_VERSION = '0.23.1'
+
+const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
+
+function countBySeverity(findings) {
+  const by = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 }
+  for (const f of (Array.isArray(findings) ? findings : [])) {
+    if (f && Object.prototype.hasOwnProperty.call(by, f.severity)) by[ (f.severity)] += 1
+  }
+  return by
+}
+
+function summarizeFindings(findings) {
+  const bySeverity = countBySeverity(findings)
+  return { total: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0), bySeverity }
+}
+
+function worstVerdict(verdicts) {
+  const vs = (Array.isArray(verdicts) ? verdicts : []).map(v => String(v || ''))
+  if (!vs.length) return 'INCOMPLETE (no verdicts)'
+  if (vs.some(v => /Block|At-risk|UB-found/i.test(v))) return 'Block'
+  if (vs.some(v => /Warning|Concerns/i.test(v))) return 'Warning'
+  if (vs.some(v => /INCOMPLETE/i.test(v) || !GREEN_VERDICT.test(v))) return 'Warning'
+  return 'Approve'
+}
+
+function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
+  return {
+    record: {
+      schemaVersion: 1, runtime: 'claude-code', craftVersion, kind: 'workflow', name: engine,
+      nested: !!via, via: via || null,
+      verdict: 'INCOMPLETE (repo not supported)', findings: summarizeFindings([]), dimensions: [], verification: null,
+      notRun: ['`repo` argument refused — this engine reviews only the session\'s own checkout'],
+      outputTokens,
+    },
+    report: [
+      `## Verdict`,
+      `⚠️ INCOMPLETE — \`repo=${repo}\` was given, but \`${engine}\` does not support reviewing a repository other than the one this session runs in: its agents would read THIS checkout and report a normal-looking verdict for the wrong code. Nothing ran.`,
+      ``,
+      `Either run \`craft:review\` with \`repo=\` (that engine threads a working-directory directive through its prompts), or start a session inside that repository and run \`${engine}\` there.`,
+    ].join('\n'),
+  }
+}
+
+function wrapVerdict(c, v) {
+  return v == null ? null : { c, v }
+}
+
+const VERIFY_MIN_JUDGED = 0.5
+
+function tallyVerification(candidates, verdicts) {
+  const list = Array.isArray(candidates) ? candidates : []
+  const alive = []
+  for (const x of (Array.isArray(verdicts) ? verdicts : [])) if (x) alive.push(x)
+  const confirmedItems = alive.filter(x => x && x.v && x.v.confirmedUnused)
+  const judged = alive.length
+  const died = list.length - judged
+  return {
+    candidates: list.length,
+    judged,
+    judgedItems: alive,
+    died: died > 0 ? died : 0,
+    confirmedItems,
+    confirmed: confirmedItems.length,
+    refuted: judged - confirmedItems.length,
+    refuteRate: judged ? Math.round(((judged - confirmedItems.length) / judged) * 100) / 100 : null,
+  }
+}
+
+function verificationIncomplete(t) {
+  return t.candidates > 0 && t.judged < Math.ceil(t.candidates * VERIFY_MIN_JUDGED)
+}
+
+function unusedCratesResult(candidates, verdicts) {
+  const t = tallyVerification(candidates, verdicts)
+  const _verification = { candidates: t.candidates, confirmed: t.confirmed, refuted: t.refuted, died: t.died, judged: t.judged, refuteRate: t.refuteRate }
+  const diedNote = t.died ? ` ${t.died} verifier(s) died — those candidates are UNVERIFIED, neither confirmed nor cleared.` : ''
+  const confirmed = t.confirmedItems.map(x => ({
+    severity: 'Medium',
+    title: x.c.title,
+    location: x.c.location || '',
+    detail: `${x.v.evidence || ''}${x.v.removal ? `\nRemove: ${x.v.removal}` : ''}`.trim() || (x.c.detail || ''),
+  }))
+  if (verificationIncomplete(t)) {
+    const unjudged = (Array.isArray(candidates) ? candidates : [])
+      .filter(c => !t.judgedItems.some(x => x.c === c))
+      .map(c => ({ severity: 'Info', title: `unverified: ${c.title}`, location: c.location || '', detail: `${c.detail || ''}\nVerification did not run for this candidate — it is neither confirmed unused nor cleared.`.trim() }))
+    return {
+      dimension: 'unused-crates',
+      verdict: 'INCOMPLETE (not run)',
+      summary: t.judged
+        ? `${t.candidates} candidate(s) flagged; ${t.judged} judged (${t.confirmed} verified unused, ${t.refuted} refuted), ${t.died} verifier(s) died. ${t.candidates - t.judged} candidate(s) are UNVERIFIED — neither confirmed nor cleared.`
+        : `${t.candidates} candidate(s) flagged, but every verifier failed to return — none was confirmed OR refuted. The unused-crate surface is UNVERIFIED, not clean.`,
+      findings: confirmed.concat(unjudged),
+      evidence: unusedEvidence(t),
+      _verification,
+    }
+  }
+  return {
+    dimension: 'unused-crates',
+    verdict: confirmed.length ? 'Warning' : 'Approve',
+    summary: `${t.candidates} candidate(s) flagged; ${t.confirmed} verified unused after trying to refute each; ${t.refuted} refuted (kept).${diedNote}`,
+    findings: confirmed.length ? confirmed : [{ severity: 'Info', title: 'No verified unused crates', location: '', detail: `${t.candidates} candidate(s) flagged, ${t.refuted} refuted by verification.${diedNote}` }],
+    evidence: unusedEvidence(t),
+    _verification,
+  }
+}
+
+function unusedEvidence(t) {
+  return `Evidence: ran the orphan/unused-dep detectors and verified each candidate — ${t.candidates} flagged, ${t.judged} judged (${t.confirmed} confirmed unused, ${t.refuted} refuted), ${t.died} verifier(s) died.`
+}
+
+const EVIDENCE_MARKER = 'Evidence:'
+
+const EVIDENCE_LINE = /^evidence\s*:/i
+
+const GREEN_VERDICT = /^(approve[ds]?|healthy|clean|pass(ed|ing)?|ok(ay)?|fine|good|green|no ub( (detected|found))?|no (issues|findings|problems|defects)( (detected|found))?|none( found)?|nothing (found|to report)|all (clear|good))[\s.!—–-]*$/i
+
+function hasEvidence(text) {
+  for (const raw of String(text ?? '').split('\n')) {
+    const line = raw.replace(/\r$/, '')
+    const i = line.search(/[^ \t>*_`#-]/)
+    if (i < 0) continue
+    const m = EVIDENCE_LINE.exec(line.slice(i))
+    if (!m) continue
+    if (/[^ \t>*_`#-]/.test(line.slice(i + m[0].length))) return true
+  }
+  return false
+}
+
+function demoteUnsupportedGreen(r) {
+  if (!r || !GREEN_VERDICT.test(String(r.verdict ?? ''))) return r
+  if (hasEvidence(r.evidence || r.summary)) return r
+  return { ...r, verdict: `INCOMPLETE (no evidence — claimed ${r.verdict})` }
+}
+
+function normalizeDimensionVerdict(v) {
+  const t = String(v == null ? '' : v).trim()
+  if (!t) return t
+  if (/INCOMPLETE/i.test(t)) return t
+  if (GREEN_VERDICT.test(t)) return 'Approve'
+  if (/\b(block(ing|ed)?|at[- ]risk|ub[- ]found|found ub|fail(ed|ure|ing)?|critical)\b/i.test(t)) return 'Block'
+  if (/\b(warn(ing)?s?|concerns?|caution)\b/i.test(t)) return 'Warning'
+  return t
+}
+
+function auditVerdict(worst, notRun) {
+  if (!notRun.length || /INCOMPLETE/i.test(worst)) return worst
+  return `${worst} (INCOMPLETE)`
+}
+
+function stripInternal(obj) {
+  const out = {}
+  for (const k of Object.keys(obj)) if (!k.startsWith('_')) out[k] = obj[k]
+  return out
+}
+const LOGRUN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok'],
+  properties: {
+    ok: { type: 'boolean', description: 'true only if the script ran and printed no craft-log-run FAILED line' },
+    error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
+  },
+}
+
+function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
+
+function loggerPrelude(craftRoot, version = '', repo = '') {
+  const preamble = `CRAFT_REPO="$(cd ${shq(repo || '.')} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
+craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
+  case "$1" in /*) ;; *) return 1 ;; esac
+  [ -f "$1" ] || return 1
+  [ -n "$CRAFT_REPO" ] || return 1   # belt to the braces below; see the note in the comment above
+  # A repo of "/" contains everything, so nothing can be outside it. The pattern below cannot say
+  # that: "$CRAFT_REPO"/* becomes //* and matches no ordinary path, so every candidate reads as
+  # outside and the guard inverts into an allow-all. Degenerate input, but the whole point of this
+  # predicate is that it fails closed.
+  [ "$CRAFT_REPO" = "/" ] && return 1
+  CRAFT_REAL="$1"
+  CRAFT_HOPS=0
+  while [ -L "$CRAFT_REAL" ]; do
+    [ "$CRAFT_HOPS" -lt 16 ] || return 1
+    CRAFT_LINK="$(readlink "$CRAFT_REAL")"
+    case "$CRAFT_LINK" in
+      /*) CRAFT_REAL="$CRAFT_LINK" ;;
+      *) CRAFT_REAL="$(dirname "$CRAFT_REAL")/$CRAFT_LINK" ;;
+    esac
+    CRAFT_HOPS=$((CRAFT_HOPS + 1))
+  done
+  CRAFT_DIR="$(cd "$(dirname "$CRAFT_REAL")" 2>/dev/null && pwd -P)" || return 1
+  [ -n "$CRAFT_DIR" ] || return 1
+  CRAFT_REAL="$CRAFT_DIR/$(basename "$CRAFT_REAL")"
+  case "$CRAFT_REAL" in
+    "$CRAFT_REPO"/*|"$CRAFT_REPO") return 1 ;;
+  esac
+  return 0
+ }
+CRAFT_LOGGER=""
+`
+  const tryCandidate = expr => `if [ -z "\${CRAFT_LOGGER:-}" ]; then
+  CRAFT_TRY=${expr}
+  craft_usable "$CRAFT_TRY" && CRAFT_LOGGER="$CRAFT_REAL"
+fi
+`
+  const explicit = craftRoot ? tryCandidate(`${shq(craftRoot)}"/lib/craft-log-run.mjs"`) : ''
+  const fromEnv = tryCandidate('"${CLAUDE_PLUGIN_ROOT:-}/lib/craft-log-run.mjs"')
+  const installed = version
+    ? tryCandidate(`"\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/"${shq(version)}"/lib/craft-log-run.mjs"`)
+    : ''
+  return `${preamble}${explicit}${fromEnv}${installed}[ -n "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no usable logger — no absolute craftRoot outside the reviewed repo, no CLAUDE_PLUGIN_ROOT, and no installed copy of "${version ? shq(version) : "'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
+`
+}
+
+function payloadVersion(payload) {
+  return String((payload && typeof payload === 'object' ?  (payload).craftVersion : undefined) ?? '')
+}
+
+function engineRevisionFlag(payload) {
+  const rev = payload && typeof payload === 'object' ?  (payload).workflowEngineRevision : undefined
+  return Number.isInteger(rev) ? `--engine-revision ${rev} ` : ''
+}
+
+function runDirFlags(dir, rejoin) {
+  return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
+}
+
+function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
+  const version = payloadVersion(record)
+  const flags = runDirFlags(dir, rejoin)
+  return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
+
+Run exactly this:
+
+\`\`\`
+${loggerPrelude(craftRoot, version, repo)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-rec.XXXXXX")"
+cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
+…RECORD below, byte for byte…
+CRAFT_RECORD_EOF
+cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" ${command} ${engineRevisionFlag(record)}${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
+\`\`\`
+
+The script computes every field (ts, project, commit, dirty, engineRevision, craftCommit, and — reading the working copy with git — branch and head, whose values in the record below are only a fallback for what git cannot resolve), names the file, appends the index line and verifies the readback. You compute NONE of that. In particular: do NOT \`mkdir\` the store, do NOT run \`date\`, \`pwd\` or \`git\` yourself, and do NOT append to index.jsonl by hand.
+
+COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
+
+If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true} — and if it ALSO printed a line starting \`craft-log-run WARNING\`, return {"ok": true, "error": "<that line verbatim>"}: the record landed, but something about the run directory did not, and the engine has to be able to say so. Best-effort either way: never error the run over this.
+
+RECORD:
+${JSON.stringify(record, null, 2)}`
+}
+
+function logRunDispatch(record, { phase = '' } = {}) {
+  const payloadKB = JSON.stringify(record).length / 1024
+  const big = payloadKB > 24
+  return {
+    label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
+    phase,
+    schema: LOGRUN_SCHEMA,
+    model: big ? 'sonnet' : 'haiku',
+    effort: 'low',
+  }
+}
+
+function logRunOutcome(res) {
+  const r = res && typeof res === 'object' ?  (res) : null
+  if (r && r.ok === true) return { ok: true, reason: String((r.error || '')).trim() }
+  return { ok: false, reason: String((r && (r.__threw || r.error)) || 'the logger agent returned no result') }
+}
+
+function quietly(call) {
+  return async (prompt, opts) => {
+    try {
+      return await call(prompt, opts)
+    } catch (e) {
+      return { __threw: String((e &&  (e).message) || e) }
+    }
+  }
+}
+
+function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+  return async recordIn => {
+    const record = prepare(recordIn)
+    const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
+    if (!landed.ok) noteLoss('the run record', landed.reason, false)
+    else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
+  }
+}
+
+function telemetryLossNoter(lost, say) {
+  return (what, why, landed) => {
+    lost.push(`${what} — ${why}`)
+    say(landed ? `⚠️ telemetry: ${why}` : `⚠️ telemetry lost: ${what} — ${why}`)
+  }
+}
+function telemetryLostSection(lost) {
+  const lines =  (Array.isArray(lost) ? lost : []).filter(l => String(l ?? '').trim())
+  if (!lines.length) return ''
+  const landed = lines.filter(l => /^the run directory \(the record itself landed\)/.test(String(l)))
+  const unconfirmed = lines.length - landed.length
+  const head = unconfirmed
+    ? `${unconfirmed} record write(s)/read(s) for this run could not be confirmed, so the run store may be missing or incomplete for it. Read the verdict below — not the store — for what this run actually did.`
+    : `This run's record is in the store, but ${landed.length} run director${landed.length === 1 ? 'y' : 'ies'} could not be folded into it, so what those held is not there. Read the verdict below for what this run actually did.`
+  return [
+    unconfirmed ? `## ⚠️ Telemetry lost` : `## ⚠️ Telemetry incomplete`,
+    head,
+    ...lines.map(l => `- ${String(l).replace(/[\r\n]+/g, ' ').slice(0, 300)}`),
+    ``,
+    ``,
+  ].join('\n')
+}
+
+const telemetryLost = []
+const logRun = makeRunLogger({
+  call: quietly(agent), phase: 'Synthesize', target: () => ({ craftRoot: craftRootArg }),
+  noteLoss: telemetryLossNoter(telemetryLost, log),
+})
+
+function isAgentTypeMissing(msg, agent) {
+  const m = String(msg ?? '')
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+}
+
+function agentUnavailableSection(missing, emptied) {
+  const hard = Array.isArray(missing) ? missing : []
+  const soft = (Array.isArray(emptied) ? emptied : []).filter(x => x && x.count > 0)
+  if (!hard.length && !soft.length) return ''
+  const quote = e => String(e).replace(/\s+/g, ' ').trim().slice(0, 160)
+  const lines = [
+    ...hard.map(x => `- \`${x.agent}\` is not registered in this session, so ${x.what} went to the generic subagent, without that agent's rubric — this run is weaker than a normal one, not broken.${x.error ? ` (${quote(x.error)})` : ''}`),
+    ...soft.map(x => x.error
+      ? `- \`${x.agent}\` failed with "${quote(x.error)}" on ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent in wording this engine does not recognise, or a missing model or tool).`
+      : `- \`${x.agent}\` returned nothing for ${x.count} ${x.what}, which were re-run on the generic subagent, without its rubric (an unregistered agent on some runtimes, or a transient failure).`),
+  ]
+  const fix = hard.length ? 'Enable the plugin in this project (`/plugin install craft@craft`, project or local scope) and re-run to use it.\n' : ''
+  return `## ⚠️ Reviewer agent unavailable\n${lines.join('\n')}\n${fix}\n`
+}
+
+function agentUnavailableRecord(missing, fallbacks) {
+  const agentFallbacks = {}
+  for (const x of fallbacks) if (x.count > 0) agentFallbacks[x.agent] = (agentFallbacks[x.agent] || 0) + x.count
+  return { agentUnavailable: [...new Set(missing)].sort(), agentFallbacks }
+}
+
+function readAgentUnavailableSection(report) {
+  const missing = []
+  const emptied = []
+  const text = String(report ?? '')
+  const head = text.indexOf('## ⚠️ Reviewer agent unavailable\n')
+  if (head < 0) return { missing, emptied }
+  for (const line of text.slice(head).split('\n').slice(1)) {
+    if (!line.startsWith('- ')) break
+    const got = readAgentUnavailableLine(line)
+    if ('count' in got) emptied.push(got)
+    else missing.push(got)
+  }
+  return { missing, emptied }
+}
+
+function readAgentUnavailableLine(line) {
+  const hard = /^- `([^`]+)` is not registered in this session, .*? not broken\.(?: \((.*)\))?$/.exec(line)
+  if (hard) return { agent: String(hard[1]), error: hard[2] || '' }
+  const threw = /^- `([^`]+)` failed with "(.*)" on (\d+) /.exec(line)
+  if (threw) return { agent: String(threw[1]), count: Number(threw[3]), error: threw[2] || '' }
+  const empty = /^- `([^`]+)` returned nothing for (\d+) /.exec(line)
+  if (empty) return { agent: String(empty[1]), count: Number(empty[2]) }
+  return { agent: /`([^`]+)`/.exec(line)?.[1] || 'a craft agent', error: line.slice(2, 162) }
+}
+const agentTypeMissing = new Map()
+const agentTypeEmptied = {}
+const agentTypeNotFound = new Map()
+async function safeAgent(prompt, opts = {}) {
+  const at = opts['agentType']
+  const generic = { ...opts }
+  delete generic['agentType']
+  if (!at || agentTypeMissing.has(at)) return agent(prompt, generic)
+  try {
+    const res = await agent(prompt, opts)
+    if (res != null) return res
+    return await genericAfterNull(prompt, generic, at)
+  } catch (e) {
+    return await genericAfterThrow(e, prompt, generic, at)
+  }
+}
+async function genericAfterNull(prompt, generic, at) {
+  const fallback = await agent(prompt, generic)
+  if (fallback) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
+  return fallback
+}
+async function genericAfterThrow(e, prompt, generic, at) {
+  const msg = String((e &&  (e).message) || e)
+  if (!isAgentTypeMissing(msg, at)) {
+    if (!/not found/i.test(msg)) throw e
+    const fallback = await agent(prompt, generic)
+    if (!fallback) throw e
+    agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
+    return fallback
+  }
+  agentTypeMissing.set(at, msg)
+  log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
+  const fallback = await agent(prompt, generic)
+  if (!fallback) throw e
+  return fallback
+}
+const nestedAgentNotes = []
+function noteNestedAgents(dimension, report) {
+  const got = readAgentUnavailableSection(report)
+  if (got.missing.length || got.emptied.length) nestedAgentNotes.push({ dimension, ...got })
+}
+const agentSection = () => agentUnavailableSection(
+  [
+    ...[...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
+    ...nestedAgentNotes.flatMap(n => n.missing.map(x => ({ agent: x.agent, what: `the lenses of the nested review ${n.dimension}`, error: x.error }))),
+  ],
+  [
+    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count, what: 'dimension dispatch(es)' })),
+    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
+  ].filter(x => !agentTypeMissing.has(x.agent)).concat(
+    nestedAgentNotes.flatMap(n => n.emptied.map(x => ({ ...x, what: `lens dispatch(es) of the nested review ${n.dimension}` })))),
+)
+const agentRecord = () => agentUnavailableRecord(
+  agentTypeMissing.keys(),
+  [
+    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count })),
+    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count })),
+  ],
+)
+
+if (A['repo']) {
+  const refused = repoRefusal({ engine: 'rust-audit', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  await logRun(refused.record)
+  return refused.report
+}
+
+
+function baseInstruction() {
+  return baseArg
+    ? `Use \`${baseArg}\` as the base ref.`
+    : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`.'
+}
+
+phase('Scout')
+const scout =  (await agent(
+  `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
+
+1. Determine the diff base. ${baseInstruction()}
+2. hasDiff = true if \`git diff --name-only <base>...HEAD\` lists any \`.rs\` file, OR \`git status --porcelain\` shows uncommitted \`.rs\` changes.
+3. hasUnsafe = true if \`grep -rnE "\\bunsafe\\b" --include=*.rs .\` finds any match (a rough check is fine; ignore obvious comment-only hits if cheap to do).
+4. baseRef = the ref you actually used (empty string if none resolved).
+5. crates = workspace members from \`cargo metadata --no-deps --format-version 1\` — each as {name, path} where path is the crate's manifest directory RELATIVE to the repo root. \`cargo metadata\` prints \`manifest_path\` as an ABSOLUTE file path: strip the repo root and the trailing \`/Cargo.toml\` yourself (the workspace root crate is \`.\`). An absolute path here cannot be used as a git pathspec and the per-crate review it feeds will refuse to run. Empty array if \`cargo metadata\` is unavailable.
+5b. repoRoot = \`git rev-parse --show-toplevel\` (empty string if it fails). It is the fallback that lets the script repair an absolute crate path; it is not a substitute for step 5.
+6. changedCrates = the subset of \`crates\` whose directory contains a \`.rs\` file listed by \`git diff --name-only <base>...HEAD\` (or \`git status --porcelain\` for uncommitted work). Empty if no base or no changed \`.rs\`.
+7. edges = intra-workspace dependency edges from \`cargo metadata --format-version 1\`: {from, to} where BOTH \`from\` and \`to\` are workspace members and \`from\` depends on \`to\`. Empty array if \`cargo metadata\` is unavailable.`,
+  { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
+))
+function scoutFacts(s) {
+  const noNotes = 'scout produced no result — assuming unsafe present, no base ref'
+  if (!s) return { baseRef: '', hasUnsafe: true, repoRoot: '', crates: [], changedCrates: [], edges: [], notes: noNotes }
+  return {
+    baseRef: s.baseRef ?? '',
+    hasUnsafe: s.hasUnsafe ?? true,
+    repoRoot: typeof s.repoRoot === 'string' ? s.repoRoot.trim() : '',
+    crates: Array.isArray(s.crates) ? s.crates : [],
+    changedCrates: Array.isArray(s.changedCrates) ? s.changedCrates : [],
+    edges: Array.isArray(s.edges) ? s.edges : [],
+    notes: s.notes ?? noNotes,
+  }
+}
+const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scoutNotes } = scoutFacts(scout)
+if (memory.source === 'none') {
+  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
+  memory = r.memory
+  nestedPriorDecisions = r.decisions
+}
+const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
+function pathSegments(p) {
+  const segs = []
+  for (const s of String(p).split(/[\\/]+/)) {
+    if (!s || s === '.') continue
+    if (s === '..' && segs.length && segs[segs.length - 1] !== '..') { segs.pop(); continue }
+    segs.push(s)
+  }
+  return segs
+}
+function crateScope(p) {
+  const raw = String(p ?? '').trim()
+  if (!raw) return null
+  if (!ABSOLUTE_PATH.test(raw)) {
+    const segs = pathSegments(raw)
+    if (segs[0] === '..') return null
+    return segs.join('/') || '.'
+  }
+  return absoluteScope(raw)
+}
+function absoluteScope(raw) {
+  const r = pathSegments(repoRoot)
+  const abs = pathSegments(raw)
+  if (!repoRoot || !r.length || abs.length < r.length) return null
+  for (let i = 0; i < r.length; i++) if (abs[i] !== r[i]) return null
+  return abs.slice(r.length).join('/') || '.'
+}
+log(scoutNotes)
+
+phase('Audit')
+
+function verdictLine(report) {
+  const text = String(report || '')
+  const m = /^[ \t]*#{1,6}[ \t]*Verdict\b(.*)$/im.exec(text)
+  if (!m) return null
+  const inline = String(m[1] || '').replace(/^[\s:：—–-]+/, '').trim()
+  if (inline) return inline
+  for (const line of text.slice(m.index + m[0].length).split('\n')) {
+    const t = line.trim()
+    if (t) return t
+  }
+  return null
+}
+
+function reviewVerdict(line, incomplete) {
+  if (line == null) return 'Warning'
+  if (/⛔|Block/.test(line)) return 'Block'
+  if (/⚠️|Warning/.test(line)) return 'Warning'
+  if (incomplete) return 'Warning'
+  return /✅|Approve/.test(line) ? 'Approve' : 'Warning'
+}
+
+function reviewSummary(line, verdict, incomplete) {
+  if (line == null) return 'Deep review verdict could not be read — this dimension is unverified, not clean.'
+  if (verdict === 'Block') return `Deep review returned a BLOCK — blocking findings below${incomplete ? '; coverage was also partial, so there may be more' : ''}.`
+  return incomplete
+    ? 'Deep review did NOT run to completion — this dimension is uncovered, not clean.'
+    : 'Elastic deep review — see findings below.'
+}
+
+function reviewResult(dimension, report) {
+  const line = verdictLine(report)
+  const incomplete = /INCOMPLETE|PARTIAL COVERAGE/i.test(line || '')
+  const verdict = reviewVerdict(line, incomplete)
+  const summary = reviewSummary(line, verdict, incomplete)
+  const kept = liftPriorDecisionSections(String(report || 'no report'))
+  return {
+    dimension,
+    verdict,
+    summary,
+    findings: [{ severity: 'Info', title: 'Deep review report', location: '', detail: kept.rest.slice(0, 4000) }],
+    ...(kept.lifted ? { _priorDecisions: kept.lifted } : {}),
+  }
+}
+
+const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Prior decisions not applied']
+
+function liftPriorDecisionSections(report) {
+  const lines = report.split('\n')
+  const rest = []
+  const lifted = []
+  let inside = false
+  for (const line of lines) {
+    if (line.startsWith('## ')) inside = PRIOR_DECISION_HEADINGS.includes(line.trim())
+    ;(inside ? lifted : rest).push(line)
+  }
+  return { rest: rest.join('\n'), lifted: lifted.join('\n').trim() }
+}
+
+function nestedPriorDecisionsSection(lifted) {
+  const given = lifted.filter(l => l.text)
+  if (!given.length) return ''
+  return `\n\n## Prior decisions in the nested reviews (verbatim)\n${given.map(l => `### ${l.dimension}\n${l.text}`).join('\n\n')}\n`
+}
+
+async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+  const messageOf = e => (e &&  (e).message) || e
+  const unresolved = e => /no workflow with that name/i.test(String(messageOf(e)))
+  try {
+    return await workflow(`craft:${name}`, args)
+  } catch (e) {
+    if (!unresolved(e)) throw e
+    warn(`nested workflow 'craft:${name}' did not resolve here — retrying as '${name}'`)
+    try {
+      return await workflow(name, args)
+    } catch (e2) {
+      if (unresolved(e2)) {
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${String(messageOf(e2))})`)
+      }
+      throw e2
+    }
+  }
+}
+
+
+function dimResult(dimension, r, deadReason, evidenceGate = true) {
+  if (!r) { log(`${dimension}: ${deadReason}`); return null }
+  const tagged = { ...r, dimension }
+  if (!evidenceGate) return tagged
+  const demoted = demoteUnsupportedGreen(tagged)
+  if (demoted !== tagged) log(`${dimension}: reported ${r.verdict} with no Evidence — demoted to ${demoted?.verdict}`)
+  return demoted
+}
+
+function dispatchDim(dimension, promise, opts = {}) {
+  const deadReason = opts.deadReason || 'agent returned no result (died or skipped) — dimension NOT RUN'
+  const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
+  return promise
+    .then(r => dimResult(dimension, r, deadReason, opts.evidenceGate ?? true))
+    .catch(( e) => { log(threw((e &&  (e).message) || e)); return null })
+}
+
+const tasks = []
+const dispatched = []
+
+function pushReviewDims() {
+  const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
+  if (reviewCrates.length > 1) {
+    for (const c of reviewCrates) {
+      const scope = crateScope(c.path)
+      if (scope == null) {
+        log(`⚠️ crate ${c.name}: path=${String(c.path)} could not be made repo-relative (repoRoot=${repoRoot || 'unresolved'}) — its per-crate review is NOT RUN rather than silently widened to the whole workspace`)
+        tasks.push(() => null)
+        dispatched.push(`review:${c.name}`)
+        continue
+      }
+      tasks.push(() => dispatchDim(`review:${c.name}`,
+        nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
+          .then( report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); return reviewResult(`review:${c.name}`, report) }),
+        { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
+          threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
+      dispatched.push(`review:${c.name}`)
+    }
+  } else {
+    tasks.push(() => dispatchDim('review',
+      nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }
+                                                  : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
+        .then( report => { if (report == null) return null; noteNestedAgents('review', report); return reviewResult('review', report) }),
+      { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
+        threw: msg => `review failed: ${msg}`, evidenceGate: false }))
+    dispatched.push('review')
+  }
+}
+pushReviewDims()
+
+function pushContractDims() {
+  const changedNames = new Set(changedCrates.map(c => c.name))
+  const touchedEdges = edges.filter(e => !baseRef || changedNames.has(e.from) || changedNames.has(e.to))
+  if (touchedEdges.length) {
+    for (const e of touchedEdges) {
+      tasks.push(() => dispatchDim(`contract:${e.from}→${e.to}`,  (safeAgent(
+        `Review the call contract on the workspace dependency edge \`${e.from}\` → \`${e.to}\`: does \`${e.from}\` use \`${e.to}\`'s PUBLIC API the way its contract intends? Check signatures and types at the boundary, error and panic contracts, documented invariants and trait laws, and the semver/breaking-change compatibility of \`${e.to}\`'s public surface against \`${e.from}\`'s usage. Load the rust-review skill (the api-design pass), rust-errors (error contracts), and rust-traits (trait laws) for the rubric. Return a verdict and findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+        { label: `contract:${e.from}->${e.to}`, agentType: 'craft:rust-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
+      ))))
+      dispatched.push(`contract:${e.from}→${e.to}`)
+    }
+  } else {
+    log('No intra-workspace dependency edges to review — skipping the contracts dimension.')
+  }
+}
+pushContractDims()
+
+tasks.push(() => dispatchDim('crate-decomposition',  (agent(
+  `Judge this Rust workspace's crate boundaries and recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back. Load the rust-ecosystem skill and its crate-extraction.md rubric, and build on the workspace dependency graph (\`cargo metadata\`). For EACH recommendation give: the DRIVER (reuse / compile parallelism / dependency inversion / trust boundary / independent semver / test isolation / god-crate split — or, for a merge, "single consumer, no boundary reason"), the BOUNDARY (which module or code), and the HOW. Recommend only — do NOT move code. Return a verdict (Healthy / Concerns / At-risk) and findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo metadata\`) and manifests you read this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
+  { label: 'crate-decomposition', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'medium' },
+))))
+dispatched.push('crate-decomposition')
+
+tasks.push(() => dispatchDim('architecture',  (safeAgent(
+  `Audit the architecture of this whole Rust project against the rust-architecture-review rubric (load the rust-architecture-review skill). Build the crate/module dependency graph and judge the structure in BOTH directions — too little (layer leaks, god modules) and too much (ghost abstractions, over-layering). Return your health rating and findings. If NO dependency graph could be built at all (cargo metadata/tree failed, cargo-modules absent, and no manifest or source structure was readable), nothing was judged: return verdict "INCOMPLETE (not run)" naming what was missing — not "Healthy". A graph built from the source fallback IS a graph: rate it normally.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+  { label: 'architecture', agentType: 'craft:rust-architecture-reviewer', phase: 'Audit', schema: FINDINGS_SCHEMA },
+))))
+dispatched.push('architecture')
+
+tasks.push(() => dispatchDim('security',  (safeAgent(
+  `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings. If NONE of the tools is installed, so nothing was actually scanned, return verdict "INCOMPLETE (not run)" and name the missing tools — a scan that ran nothing is not an Approve.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+  { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
+))))
+dispatched.push('security')
+
+function pushMiriDim() {
+  if (hasUnsafe) {
+    tasks.push(() => dispatchDim('miri',  (safeAgent(
+      `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found), or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
+      { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
+    ))))
+    dispatched.push('miri')
+  } else {
+    log('No unsafe code detected — skipping Miri.')
+  }
+}
+pushMiriDim()
+
+
+tasks.push(() => dispatchDim('semver',  (agent(
+  `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran and crates you checked this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
+  { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+))))
+dispatched.push('semver')
+
+tasks.push(() => dispatchDim('build-matrix',  (agent(
+  `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (feature sets, MSRV checks) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
+  { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+))))
+dispatched.push('build-matrix')
+
+tasks.push(() => dispatchDim('deps',  (agent(
+  `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo tree -d\`, \`cargo outdated\`) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
+  { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+))))
+dispatched.push('deps')
+
+tasks.push(() => dispatchDim('unused-crates', (async () => {
+  const found =  (await agent(
+    `Find UNUSED crates in this Rust workspace, in two classes:
+(a) ORPHAN workspace members — from \`cargo metadata --format-version 1\`, workspace members that NO other workspace member depends on (any dependency kind), EXCLUDING binaries (a [[bin]] target or src/main.rs) and published libraries (Cargo.toml \`publish\` is not false / it is meant for crates.io).
+(b) UNUSED dependencies — run \`cargo machete\` (or \`cargo +nightly udeps\` if machete is absent) to list dependencies declared in a Cargo.toml but not used.
+Skip a tool that is not installed with a note — do NOT fail. \`cargo metadata\` alone answers class (a), so it is enough to run: if the graph loads and there are no orphan members, that is a real "Approve" with an empty findings list. But if \`cargo metadata\` itself does not run, so NOTHING was inspected, return verdict "INCOMPLETE (not run)" naming what was missing — not "Approve".
+Load the rust-ecosystem skill (dependency / crate hygiene).
+These are CANDIDATES, not confirmed — they will be verified downstream. Return one finding per candidate: title = "orphan-member: <crate>" or "unused-dep: <dep> in <crate>", location = the owning manifest path, detail = why the graph/tool thinks it is unused. Use severity Info (verification sets the real severity).`,
+    { label: 'unused-crates:find', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+  ))
+  if (!found) return null
+  const candidates = (Array.isArray(found.findings) ? found.findings : [])
+    .filter(f => /^(orphan-member|unused-dep):/.test(f.title || ''))
+  if (!candidates.length) {
+    const t = tallyVerification(candidates, [])
+    const evidence = GREEN_VERDICT.test(String(found.verdict ?? '')) ? unusedEvidence(t) : (found.evidence ?? '')
+    return { ...found, dimension: 'unused-crates', evidence, _verification: { candidates: 0, confirmed: 0, refuted: 0, died: 0, judged: 0, refuteRate: null } }
+  }
+  const verdicts = await parallel(candidates.map((c, i) => () =>
+     (agent(
+      `A detector flagged a crate/dependency as UNUSED. Try HARD to REFUTE that — prove it IS used — before accepting it. Candidate: ${JSON.stringify(c)}.
+Check the usages machete/udeps and the dependency graph miss: \`use\`/path references; cfg-gated and feature-gated usage; macro-only and re-exported (\`pub use\`) usage; build.rs / [build-dependencies]; [dev-dependencies] exercised only in tests, benches, or examples; and for an orphan member whether it is actually a bin, an example/bench/xtask, or consumed/published outside this workspace. Grep the source to confirm.
+Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; default to false when uncertain.`,
+      { label: `unused-crates:verify#${i + 1}`, phase: 'Verify', schema: UNUSED_VERDICT_SCHEMA, model: 'opus' },
+    )).then(v => wrapVerdict(c, v)),
+  ))
+  return unusedCratesResult(candidates, verdicts)
+})()))
+dispatched.push('unused-crates')
+
+function mutantsInstruction() {
+  return runMutants ? ' Run `cargo mutants --timeout 60`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'
+}
+tasks.push(() => dispatchDim('tests-cov',  (agent(
+  `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${mutantsInstruction()} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
+  { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
+))))
+dispatched.push('tests-cov')
+
+const results = (await parallel(tasks)).filter(r => !!r).map(r => ({ ...r, verdict: normalizeDimensionVerdict(r.verdict) }))
+
+const ran = new Set(results.map(r => r.dimension))
+const notRun = dispatched.filter(d => !ran.has(d))
+const couldNotRun = results.filter(r => /^\s*INCOMPLETE \(not run\)/i.test(String(r.verdict || ''))).map(r => r.dimension)
+const noEvidence = results.filter(r => /^\s*INCOMPLETE \(no evidence/i.test(String(r.verdict || ''))).map(r => r.dimension)
+const incompleteDimensions = [...notRun, ...results.filter(r => /^\s*INCOMPLETE/i.test(String(r.verdict || ''))).map(r => r.dimension)]
+function logGaps() {
+  if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
+  if (couldNotRun.length) log(`Tooling absent, nothing checked: ${couldNotRun.join(', ')} — flagged COULD NOT RUN in the report.`)
+  if (noEvidence.length) log(`Reported a green but showed no Evidence: ${noEvidence.join(', ')} — flagged NO EVIDENCE (verdict not trusted) in the report.`)
+}
+logGaps()
+const listOrNone = names => names.length ? names.join(', ') : 'none'
+
+const stripped = results.map(stripInternal)
+
+phase('Synthesize')
+const report = await agent(
+  `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
+
+1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, or could not run, mark the audit INCOMPLETE.
+2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass. Any dimension listed under COULD NOT RUN below (verdict \`INCOMPLETE (not run)\`) must be rendered as \`COULD NOT RUN\` with a note naming the missing tool. Any dimension listed under NO EVIDENCE below (verdict \`INCOMPLETE (no evidence …)\`) must be rendered as \`NO EVIDENCE\` — it claimed a green but showed no work, so its verdict is not trusted; the tool may have run, so do NOT call it tooling-absent. NEVER render either as Approve or as a blank/green cell: a reader must be able to tell "ran, found nothing" from "never ran" from "claimed clean but showed nothing". Directly beneath the table, state in one line how many dimensions actually ran out of the total.
+3. **Findings by severity** (Critical first), each tagged with its dimension and location, plus a one-line fix direction.
+4. A short **"Fix first"** list — the few highest-leverage items across all dimensions.
+5. A **"Crate boundaries"** note: summarise the \`crate-decomposition\` extract/merge recommendations (driver + boundary), if any.
+6. If a \`review:*\` dimension's summary names a **gate provenance** (CI vs local), surface it in one line under the verdict.
+
+NOT RUN (no result — agent failed or was skipped): ${listOrNone(notRun)}
+COULD NOT RUN (agent reported back, but its tooling was absent so nothing was checked — treat as uncovered, never as a pass): ${listOrNone(couldNotRun)}
+NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not trusted — the tool may have run; treat as uncovered, never as a pass, but do NOT assert its tooling was absent): ${listOrNone(noEvidence)}
+
+RESULTS:
+${JSON.stringify(stripped, null, 2)}`,
+  { label: 'synthesis', effort: 'medium' },
+)
+
+const uc = results.find(r => r.dimension === 'unused-crates')
+function verificationRecord(u) {
+  if (!u || !u._verification) return null
+  const v = u._verification
+  return {
+    candidates: v.candidates,
+    confirmed: v.confirmed,
+    refuted: v.refuted ?? null,
+    died: v.died ?? null,
+    judged: v.judged ?? null,
+    refuteRate: v.refuteRate ?? null,
+  }
+}
+const auditRecord = {
+  schemaVersion: 1,
+  runtime: 'claude-code',
+  craftVersion: CRAFT_VERSION,
+  kind: 'workflow',
+  name: 'rust-audit',
+  verdict: auditVerdict(worstVerdict(results.map(r => r.verdict)), incompleteDimensions),
+  findings: summarizeFindings(results.flatMap(r => (Array.isArray(r.findings) ? r.findings : []))),
+  nested: false,
+  via: null,
+  scout: { baseRef, crateCount: crates.length, changedCrateCount: changedCrates.length, edgeCount: edges.length, hasUnsafe },
+  dimensions: stripped.map(r => {
+    const s = summarizeFindings(r['findings'])
+    return { dimension: r['dimension'], verdict: r['verdict'], findingCount: s.total, bySeverity: s.bySeverity }
+  }),
+  verification: verificationRecord(uc),
+  notRun,
+  couldNotRun,
+  noEvidence,
+  ...agentRecord(),
+  outputTokens: budget.spent(),
+}
+await logRun(auditRecord)
+
+if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`

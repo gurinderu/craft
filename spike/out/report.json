@@ -1,0 +1,1262 @@
+[
+  {
+    "f": "adversarial-review.js",
+    "sizes": {
+      "raw": 113580,
+      "stripped": 72976,
+      "min": 64687,
+      "syntax": 74359
+    },
+    "breakdown": {
+      "total": 113580,
+      "wholeLineComment": 17728,
+      "trailingComment": 209,
+      "jsdoc": 22110,
+      "blockComment": 0,
+      "whitespace": 8333,
+      "strings": 11758,
+      "templates": 20990,
+      "code": 32452,
+      "accounted": 113580
+    },
+    "head": {
+      "min": "export const meta={name:\"adversarial-review\",description:\"Ad",
+      "syntax": "export const meta = {\n  name: \"adversarial-review\",\n  descri"
+    },
+    "meta": {
+      "raw": "ok",
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "parse": {
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "warnings": 0,
+    "lit": {
+      "stripped": {
+        "flat": [],
+        "templates": []
+      },
+      "min": {
+        "flat": [
+          [
+            "priorDecisions",
+            2
+          ],
+          [
+            "links",
+            2
+          ],
+          [
+            "id",
+            1
+          ],
+          [
+            "kind",
+            3
+          ],
+          [
+            "status",
+            3
+          ],
+          [
+            "backend",
+            1
+          ],
+          [
+            "why",
+            2
+          ],
+          [
+            "decisions",
+            1
+          ],
+          [
+            "stale",
+            1
+          ],
+          [
+            "batch",
+            2
+          ],
+          [
+            "maxRetries",
+            2
+          ],
+          [
+            "repo",
+            2
+          ],
+          [
+            "unchanged",
+            2
+          ],
+          [
+            "missing",
+            1
+          ],
+          [
+            "confirmed",
+            1
+          ],
+          [
+            "suspected",
+            1
+          ]
+        ],
+        "templates": [
+          [
+            "[\"FINDING [\",\"] \",\" @ \",\":\",\"\\n\"]",
+            1
+          ],
+          [
+            "[\"Independently reported by lenses: \",\"\\n\",\"\\nProposed fix: \",\"\\n\"]",
+            1
+          ],
+          [
+            "[\"Off-site evidence claimed: \",\"\"]",
+            1
+          ],
+          [
+            "[\"FINDING [\",\"] \",\" @ \",\":\",\"\\nIndependently reported by lenses: \",\"\\n\",\"\\nProposed fix: \",\"\\nOff-site evidence claimed: \",\"\"]",
+            -1
+          ]
+        ]
+      },
+      "syntax": {
+        "flat": [
+          [
+            "priorDecisions",
+            2
+          ],
+          [
+            "links",
+            2
+          ],
+          [
+            "id",
+            1
+          ],
+          [
+            "kind",
+            3
+          ],
+          [
+            "status",
+            3
+          ],
+          [
+            "backend",
+            1
+          ],
+          [
+            "why",
+            2
+          ],
+          [
+            "decisions",
+            1
+          ],
+          [
+            "stale",
+            1
+          ],
+          [
+            "batch",
+            2
+          ],
+          [
+            "maxRetries",
+            2
+          ],
+          [
+            "repo",
+            2
+          ],
+          [
+            "unchanged",
+            2
+          ],
+          [
+            "missing",
+            1
+          ],
+          [
+            "confirmed",
+            1
+          ],
+          [
+            "suspected",
+            1
+          ]
+        ],
+        "templates": [
+          [
+            "[\"FINDING [\",\"] \",\" @ \",\":\",\"\\n\"]",
+            1
+          ],
+          [
+            "[\"Independently reported by lenses: \",\"\\n\",\"\\nProposed fix: \",\"\\n\"]",
+            1
+          ],
+          [
+            "[\"Off-site evidence claimed: \",\"\"]",
+            1
+          ],
+          [
+            "[\"FINDING [\",\"] \",\" @ \",\":\",\"\\nIndependently reported by lenses: \",\"\\n\",\"\\nProposed fix: \",\"\\nOff-site evidence claimed: \",\"\"]",
+            -1
+          ]
+        ]
+      }
+    },
+    "lines": {
+      "raw": 1892,
+      "min": 140,
+      "syntax": 1150
+    }
+  },
+  {
+    "f": "nix-review.js",
+    "sizes": {
+      "raw": 7687,
+      "stripped": 5075,
+      "min": 4403,
+      "syntax": 5150
+    },
+    "breakdown": {
+      "total": 7687,
+      "wholeLineComment": 1053,
+      "trailingComment": 0,
+      "jsdoc": 1524,
+      "blockComment": 0,
+      "whitespace": 714,
+      "strings": 1364,
+      "templates": 794,
+      "code": 2238,
+      "accounted": 7687
+    },
+    "head": {
+      "min": "export const meta={name:\"nix-review\",description:\"Nix-pinned",
+      "syntax": "export const meta = {\n  name: \"nix-review\",\n  description: \""
+    },
+    "meta": {
+      "raw": "ok",
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "parse": {
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "warnings": 0,
+    "lit": {
+      "stripped": {
+        "flat": [],
+        "templates": []
+      },
+      "min": {
+        "flat": [],
+        "templates": []
+      },
+      "syntax": {
+        "flat": [],
+        "templates": []
+      }
+    },
+    "lines": {
+      "raw": 167,
+      "min": 2,
+      "syntax": 88
+    }
+  },
+  {
+    "f": "review.js",
+    "sizes": {
+      "raw": 487676,
+      "stripped": 276411,
+      "min": 249170,
+      "syntax": 289780
+    },
+    "breakdown": {
+      "total": 487676,
+      "wholeLineComment": 155009,
+      "trailingComment": 815,
+      "jsdoc": 50591,
+      "blockComment": 0,
+      "whitespace": 30061,
+      "strings": 52563,
+      "templates": 87608,
+      "code": 111029,
+      "accounted": 487676
+    },
+    "head": {
+      "min": "export const meta={name:\"review\",description:\"Elastic deep r",
+      "syntax": "export const meta = {\n  name: \"review\",\n  description: \"Elas"
+    },
+    "meta": {
+      "raw": "ok",
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "parse": {
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "warnings": 0,
+    "lit": {
+      "stripped": {
+        "flat": [],
+        "templates": []
+      },
+      "min": {
+        "flat": [
+          [
+            "priorDecisions",
+            2
+          ],
+          [
+            "comment",
+            1
+          ],
+          [
+            "links",
+            2
+          ],
+          [
+            "id",
+            1
+          ],
+          [
+            "title",
+            7
+          ],
+          [
+            "reason",
+            5
+          ],
+          [
+            "kind",
+            3
+          ],
+          [
+            "status",
+            3
+          ],
+          [
+            "backend",
+            1
+          ],
+          [
+            "why",
+            20
+          ],
+          [
+            "decisions",
+            1
+          ],
+          [
+            "stale",
+            1
+          ],
+          [
+            "unchanged",
+            2
+          ],
+          [
+            "missing",
+            1
+          ],
+          [
+            "line",
+            19
+          ],
+          [
+            "strict",
+            1
+          ],
+          [
+            "languages",
+            1
+          ],
+          [
+            "fresh",
+            1
+          ],
+          [
+            "fullEvery",
+            2
+          ],
+          [
+            "source",
+            16
+          ],
+          [
+            "rust",
+            1
+          ],
+          [
+            "compat",
+            1
+          ],
+          [
+            "invariants",
+            1
+          ],
+          [
+            "optional",
+            2
+          ],
+          [
+            "nix",
+            1
+          ],
+          [
+            "severity",
+            23
+          ],
+          [
+            "file",
+            19
+          ],
+          [
+            "fix",
+            2
+          ],
+          [
+            "blastRadius",
+            1
+          ],
+          [
+            "ruleId",
+            9
+          ],
+          [
+            "whereChecked",
+            8
+          ],
+          [
+            "fp",
+            1
+          ],
+          [
+            "symbol",
+            2
+          ],
+          [
+            "tier",
+            6
+          ],
+          [
+            "disposition",
+            9
+          ],
+          [
+            "found",
+            1
+          ],
+          [
+            "round",
+            6
+          ],
+          [
+            "head",
+            8
+          ],
+          [
+            "ledger",
+            8
+          ],
+          [
+            "ledgerCount",
+            2
+          ],
+          [
+            "priorFindings",
+            2
+          ],
+          [
+            "journalSourced",
+            1
+          ],
+          [
+            "refuted",
+            3
+          ],
+          [
+            "citedLineMatches",
+            1
+          ],
+          [
+            "reachable",
+            1
+          ],
+          [
+            "premiseSupported",
+            1
+          ],
+          [
+            "regressed",
+            1
+          ],
+          [
+            "stillOpen",
+            1
+          ],
+          [
+            "unverified",
+            4
+          ],
+          [
+            "deadlineMs",
+            2
+          ],
+          [
+            "sources",
+            4
+          ],
+          [
+            "sameFpBasis",
+            2
+          ],
+          [
+            "fpBasisKnown",
+            2
+          ],
+          [
+            "priorFpRevisions",
+            3
+          ],
+          [
+            "priorFpRevisionsCheck",
+            2
+          ],
+          [
+            "confirmed",
+            5
+          ],
+          [
+            "suspected",
+            4
+          ],
+          [
+            "index",
+            1
+          ],
+          [
+            "plan",
+            9
+          ],
+          [
+            "probeViolations",
+            1
+          ],
+          [
+            "criticFollowupLenses",
+            1
+          ],
+          [
+            "dropped",
+            1
+          ],
+          [
+            "notRun",
+            1
+          ],
+          [
+            "savedByFloor",
+            1
+          ],
+          [
+            "criticNotes",
+            1
+          ],
+          [
+            "whyRef",
+            5
+          ],
+          [
+            "\n\n## ⚠️ INCOMPLETE — a verification saving whose premise did not hold\n",
+            1
+          ]
+        ],
+        "templates": [
+          [
+            "[\"⏱️ deadlineMs=\",\" replaces the per-phase deadline table for every phase that does not name its own\"]",
+            1
+          ],
+          [
+            "[\"\",\"\"]",
+            5
+          ],
+          [
+            "[\"[\",\"] Preflight: runner \",\"\"]",
+            1
+          ],
+          [
+            "[\" · \",\"\"]",
+            1
+          ],
+          [
+            "[\" · CI covers \",\"\"]",
+            1
+          ],
+          [
+            "[\"\",\" batch verification(s) were deliberately not dispatched because the verdict stood at Block when their turn came, and no judgement on a Medium can move a Block. The run ended at \",\". The saving therefore rested on a confirmed finding that did not reach the final verdict, and those findings are UNVERIFIED for no good reason — treat this section as a coverage hole and re-run. They are listed under Unverified above.\\n\"]",
+            1
+          ],
+          [
+            "[\"⏱️ deadlineMs=\",\" replaces the per-phase deadline table for every phase that does not name its own\",\"\",\"\",\"\"]",
+            -1
+          ],
+          [
+            "[\"[\",\"] Preflight: runner \",\" · \",\" · CI covers \",\"\",\"\",\"\"]",
+            -1
+          ],
+          [
+            "[\"\\n\\n## ⚠️ INCOMPLETE — a verification saving whose premise did not hold\\n\",\" batch verification(s) were deliberately not dispatched because the verdict stood at Block when their turn came, and no judgement on a Medium can move a Block. The run ended at \",\". The saving therefore rested on a confirmed finding that did not reach the final verdict, and those findings are UNVERIFIED for no good reason — treat this section as a coverage hole and re-run. They are listed under Unverified above.\\n\"]",
+            -1
+          ]
+        ]
+      },
+      "syntax": {
+        "flat": [
+          [
+            "priorDecisions",
+            2
+          ],
+          [
+            "comment",
+            1
+          ],
+          [
+            "links",
+            2
+          ],
+          [
+            "id",
+            1
+          ],
+          [
+            "title",
+            7
+          ],
+          [
+            "reason",
+            5
+          ],
+          [
+            "kind",
+            3
+          ],
+          [
+            "status",
+            3
+          ],
+          [
+            "backend",
+            1
+          ],
+          [
+            "why",
+            20
+          ],
+          [
+            "decisions",
+            1
+          ],
+          [
+            "stale",
+            1
+          ],
+          [
+            "unchanged",
+            2
+          ],
+          [
+            "missing",
+            1
+          ],
+          [
+            "line",
+            19
+          ],
+          [
+            "strict",
+            1
+          ],
+          [
+            "languages",
+            1
+          ],
+          [
+            "fresh",
+            1
+          ],
+          [
+            "fullEvery",
+            2
+          ],
+          [
+            "source",
+            16
+          ],
+          [
+            "rust",
+            1
+          ],
+          [
+            "compat",
+            1
+          ],
+          [
+            "invariants",
+            1
+          ],
+          [
+            "optional",
+            2
+          ],
+          [
+            "nix",
+            1
+          ],
+          [
+            "severity",
+            23
+          ],
+          [
+            "file",
+            19
+          ],
+          [
+            "fix",
+            2
+          ],
+          [
+            "blastRadius",
+            1
+          ],
+          [
+            "ruleId",
+            9
+          ],
+          [
+            "whereChecked",
+            8
+          ],
+          [
+            "fp",
+            1
+          ],
+          [
+            "symbol",
+            2
+          ],
+          [
+            "tier",
+            6
+          ],
+          [
+            "disposition",
+            9
+          ],
+          [
+            "found",
+            1
+          ],
+          [
+            "round",
+            6
+          ],
+          [
+            "head",
+            8
+          ],
+          [
+            "ledger",
+            8
+          ],
+          [
+            "ledgerCount",
+            2
+          ],
+          [
+            "priorFindings",
+            2
+          ],
+          [
+            "journalSourced",
+            1
+          ],
+          [
+            "refuted",
+            3
+          ],
+          [
+            "citedLineMatches",
+            1
+          ],
+          [
+            "reachable",
+            1
+          ],
+          [
+            "premiseSupported",
+            1
+          ],
+          [
+            "regressed",
+            1
+          ],
+          [
+            "stillOpen",
+            1
+          ],
+          [
+            "unverified",
+            4
+          ],
+          [
+            "deadlineMs",
+            2
+          ],
+          [
+            "sources",
+            4
+          ],
+          [
+            "sameFpBasis",
+            2
+          ],
+          [
+            "fpBasisKnown",
+            2
+          ],
+          [
+            "priorFpRevisions",
+            3
+          ],
+          [
+            "priorFpRevisionsCheck",
+            2
+          ],
+          [
+            "confirmed",
+            5
+          ],
+          [
+            "suspected",
+            4
+          ],
+          [
+            "index",
+            1
+          ],
+          [
+            "plan",
+            9
+          ],
+          [
+            "probeViolations",
+            1
+          ],
+          [
+            "criticFollowupLenses",
+            1
+          ],
+          [
+            "dropped",
+            1
+          ],
+          [
+            "notRun",
+            1
+          ],
+          [
+            "savedByFloor",
+            1
+          ],
+          [
+            "criticNotes",
+            1
+          ],
+          [
+            "whyRef",
+            5
+          ],
+          [
+            "\n\n## ⚠️ INCOMPLETE — a verification saving whose premise did not hold\n",
+            1
+          ]
+        ],
+        "templates": [
+          [
+            "[\"⏱️ deadlineMs=\",\" replaces the per-phase deadline table for every phase that does not name its own\"]",
+            1
+          ],
+          [
+            "[\"\",\"\"]",
+            5
+          ],
+          [
+            "[\"[\",\"] Preflight: runner \",\"\"]",
+            1
+          ],
+          [
+            "[\" · \",\"\"]",
+            1
+          ],
+          [
+            "[\" · CI covers \",\"\"]",
+            1
+          ],
+          [
+            "[\"\",\" batch verification(s) were deliberately not dispatched because the verdict stood at Block when their turn came, and no judgement on a Medium can move a Block. The run ended at \",\". The saving therefore rested on a confirmed finding that did not reach the final verdict, and those findings are UNVERIFIED for no good reason — treat this section as a coverage hole and re-run. They are listed under Unverified above.\\n\"]",
+            1
+          ],
+          [
+            "[\"⏱️ deadlineMs=\",\" replaces the per-phase deadline table for every phase that does not name its own\",\"\",\"\",\"\"]",
+            -1
+          ],
+          [
+            "[\"[\",\"] Preflight: runner \",\" · \",\" · CI covers \",\"\",\"\",\"\"]",
+            -1
+          ],
+          [
+            "[\"\\n\\n## ⚠️ INCOMPLETE — a verification saving whose premise did not hold\\n\",\" batch verification(s) were deliberately not dispatched because the verdict stood at Block when their turn came, and no judgement on a Medium can move a Block. The run ended at \",\". The saving therefore rested on a confirmed finding that did not reach the final verdict, and those findings are UNVERIFIED for no good reason — treat this section as a coverage hole and re-run. They are listed under Unverified above.\\n\"]",
+            -1
+          ]
+        ]
+      }
+    },
+    "lines": {
+      "raw": 6838,
+      "min": 479,
+      "syntax": 3730
+    }
+  },
+  {
+    "f": "rust-audit.js",
+    "sizes": {
+      "raw": 107813,
+      "stripped": 65129,
+      "min": 58258,
+      "syntax": 68590
+    },
+    "breakdown": {
+      "total": 107813,
+      "wholeLineComment": 27719,
+      "trailingComment": 466,
+      "jsdoc": 13567,
+      "blockComment": 0,
+      "whitespace": 7276,
+      "strings": 8711,
+      "templates": 24792,
+      "code": 25282,
+      "accounted": 107813
+    },
+    "head": {
+      "min": "export const meta={name:\"rust-audit\",description:\"Full Rust ",
+      "syntax": "export const meta = {\n  name: \"rust-audit\",\n  description: \""
+    },
+    "meta": {
+      "raw": "ok",
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "parse": {
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "warnings": 0,
+    "lit": {
+      "stripped": {
+        "flat": [],
+        "templates": []
+      },
+      "min": {
+        "flat": [
+          [
+            "priorDecisions",
+            1
+          ],
+          [
+            "mutants",
+            1
+          ],
+          [
+            "id",
+            1
+          ],
+          [
+            "backend",
+            1
+          ],
+          [
+            "why",
+            2
+          ],
+          [
+            "decisions",
+            1
+          ],
+          [
+            "stale",
+            1
+          ],
+          [
+            "dimension",
+            1
+          ],
+          [
+            "verdict",
+            1
+          ],
+          [
+            "findings",
+            1
+          ],
+          [
+            "Warning",
+            2
+          ],
+          [
+            "agentType",
+            2
+          ],
+          [
+            "repo",
+            2
+          ]
+        ],
+        "templates": []
+      },
+      "syntax": {
+        "flat": [
+          [
+            "priorDecisions",
+            1
+          ],
+          [
+            "mutants",
+            1
+          ],
+          [
+            "id",
+            1
+          ],
+          [
+            "backend",
+            1
+          ],
+          [
+            "why",
+            2
+          ],
+          [
+            "decisions",
+            1
+          ],
+          [
+            "stale",
+            1
+          ],
+          [
+            "dimension",
+            1
+          ],
+          [
+            "verdict",
+            1
+          ],
+          [
+            "findings",
+            1
+          ],
+          [
+            "Warning",
+            2
+          ],
+          [
+            "agentType",
+            2
+          ],
+          [
+            "repo",
+            2
+          ]
+        ],
+        "templates": []
+      }
+    },
+    "lines": {
+      "raw": 1685,
+      "min": 124,
+      "syntax": 994
+    }
+  },
+  {
+    "f": "rust-review.js",
+    "sizes": {
+      "raw": 7790,
+      "stripped": 5082,
+      "min": 4410,
+      "syntax": 5157
+    },
+    "breakdown": {
+      "total": 7790,
+      "wholeLineComment": 1148,
+      "trailingComment": 0,
+      "jsdoc": 1524,
+      "blockComment": 0,
+      "whitespace": 715,
+      "strings": 1371,
+      "templates": 794,
+      "code": 2238,
+      "accounted": 7790
+    },
+    "head": {
+      "min": "export const meta={name:\"rust-review\",description:\"Rust-pinn",
+      "syntax": "export const meta = {\n  name: \"rust-review\",\n  description: "
+    },
+    "meta": {
+      "raw": "ok",
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "parse": {
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "warnings": 0,
+    "lit": {
+      "stripped": {
+        "flat": [],
+        "templates": []
+      },
+      "min": {
+        "flat": [],
+        "templates": []
+      },
+      "syntax": {
+        "flat": [],
+        "templates": []
+      }
+    },
+    "lines": {
+      "raw": 168,
+      "min": 2,
+      "syntax": 88
+    }
+  },
+  {
+    "f": "triage-findings.js",
+    "sizes": {
+      "raw": 42043,
+      "stripped": 27267,
+      "min": 24325,
+      "syntax": 28258
+    },
+    "breakdown": {
+      "total": 42043,
+      "wholeLineComment": 8704,
+      "trailingComment": 189,
+      "jsdoc": 5613,
+      "blockComment": 0,
+      "whitespace": 3128,
+      "strings": 4106,
+      "templates": 9882,
+      "code": 10421,
+      "accounted": 42043
+    },
+    "head": {
+      "min": "export const meta={name:\"triage-findings\",description:\"Triag",
+      "syntax": "export const meta = {\n  name: \"triage-findings\",\n  descripti"
+    },
+    "meta": {
+      "raw": "ok",
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "parse": {
+      "stripped": "ok",
+      "min": "ok",
+      "syntax": "ok"
+    },
+    "warnings": 0,
+    "lit": {
+      "stripped": {
+        "flat": [],
+        "templates": []
+      },
+      "min": {
+        "flat": [
+          [
+            "priorLedger",
+            2
+          ],
+          [
+            "stable_id",
+            2
+          ],
+          [
+            "verdict",
+            1
+          ],
+          [
+            "reason",
+            1
+          ],
+          [
+            "repo",
+            2
+          ]
+        ],
+        "templates": []
+      },
+      "syntax": {
+        "flat": [
+          [
+            "priorLedger",
+            2
+          ],
+          [
+            "stable_id",
+            2
+          ],
+          [
+            "verdict",
+            1
+          ],
+          [
+            "reason",
+            1
+          ],
+          [
+            "repo",
+            2
+          ]
+        ],
+        "templates": []
+      }
+    },
+    "lines": {
+      "raw": 764,
+      "min": 92,
+      "syntax": 474
+    }
+  }
+]

@@ -1,0 +1,109 @@
+export const meta = {
+  name: 'rust-review',
+  description: 'Rust-pinned entry to the generic review engine — reviews only the Rust files in a diff. Prefer `review` (auto-detects language); use this to force a Rust-only pass.',
+  whenToUse: 'Explicit Rust-only diff review; the generic default is `review`. Same args as `review`: repo=<absolute path> to review ANOTHER repository (without it every git command runs in the checkout the session itself sits in), base, intent, comment, strict, path=<repo-relative pathspec> to narrow the scope INSIDE that repo, and priorDecisions (object argument only). priorDecisions is optional: without it the engine itself recalls the active decisions for the paths of the diff through the craft:memory skill, and the report names the source (an empty list skips the recall). To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding.',
+  phases: [{ title: 'Review', detail: 'delegates to the review engine pinned to the rust profile' }],
+}
+
+function applyOption(m, out, ignored) {
+  const banned = k => k === '__proto__' || k === 'constructor' || k === 'prototype'
+  if (m[7]) {
+    if (banned(m[7])) { ignored.push(m[7]); return 0 }
+    out[m[7]] = true
+    return 1
+  }
+  const key =  (m[2])
+  if (banned(key)) { ignored.push(key); return 0 }
+  const quoted = m[4] ?? m[5]
+  if (quoted !== undefined) { out[key] = quoted; return 1 }
+  try {
+    out[key] = JSON.parse( (m[3]))
+  } catch {
+    out[key] =  (m[3])
+  }
+  return 1
+}
+
+const OBJECT_ONLY_OPTIONS = ['priorDecisions']
+
+function parseOptions(text) {
+  const pair = /(--?)?(\w[\w-]*)=("([^"]*)"|'([^']*)'|\S+)|(--)(\w[\w-]*)/g
+  const out = {}
+  let pairs = 0
+  const ignored = []
+  let m
+  let cursor = 0
+  while ((m = pair.exec(text)) !== null) {
+    const gap = text.slice(cursor, m.index).trim()
+    if (gap) ignored.push(...gap.split(/\s+/))
+    const key = String(m[2] ?? m[7])
+    if (OBJECT_ONLY_OPTIONS.includes(key)) { out[key] = text.slice(m.index); return { options: out, pairs: pairs + 1, ignored, cut: key } }
+    cursor = pair.lastIndex
+    pairs += applyOption(m, out, ignored)
+  }
+  const tail = text.slice(cursor).trim()
+  if (tail) ignored.push(...tail.split(/\s+/))
+  return { options: out, pairs, ignored, cut: '' }
+}
+
+function normalizeJsonArgs(text, warn) {
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      warn('⚠️ args arrived as a JSON string, not an object — parsed it; pass a real object to avoid this')
+      return parsed
+    }
+    warn('⚠️ args arrived as a non-object JSON value — ALL options ignored, running with defaults')
+    return {}
+  } catch (e) {
+    warn(`⚠️ args arrived as a string that looks like JSON but is not (${String((e &&  (e).message) || e).slice(0, 60)}) — ALL options ignored, running with defaults`)
+    return {}
+  }
+}
+
+function normalizeKeyValueArgs(text, warn) {
+  const { options, pairs, ignored, cut } = parseOptions(text)
+  if (cut) warn(`⚠️ ${cut} arrived in the key=value string — it and everything after it were not read as options (its value cannot be delimited there); pass args as an object`)
+  if (pairs) {
+    warn('⚠️ args arrived as a key=value string — parsed it; pass a real object to avoid this')
+    if (ignored.length) {
+      warn(`⚠️ ignored ${ignored.length} word(s) in args that are not options (${ignored.slice(0, 6).join(' ')}) — quote a value that contains spaces`)
+    }
+    return options
+  }
+  warn(`⚠️ args arrived as an unrecognized string (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
+  return {}
+}
+
+function normalizeArgs(args, warn = () => {}) {
+  if (args && typeof args === 'object' && !Array.isArray(args)) return  (args)
+  if (typeof args !== 'string' || !args.trim()) return {}
+  const text = args.trim()
+  if (text.startsWith('[') || text.startsWith('"')) {
+    warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
+    return {}
+  }
+  if (text.startsWith('{')) return normalizeJsonArgs(text, warn)
+  return normalizeKeyValueArgs(text, warn)
+}
+
+async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+  const messageOf = e => (e &&  (e).message) || e
+  const unresolved = e => /no workflow with that name/i.test(String(messageOf(e)))
+  try {
+    return await workflow(`craft:${name}`, args)
+  } catch (e) {
+    if (!unresolved(e)) throw e
+    warn(`nested workflow 'craft:${name}' did not resolve here — retrying as '${name}'`)
+    try {
+      return await workflow(name, args)
+    } catch (e2) {
+      if (unresolved(e2)) {
+        throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${String(messageOf(e2))})`)
+      }
+      throw e2
+    }
+  }
+}
+
+return await nestedWorkflow(workflow, 'review', { ...normalizeArgs(args, log), languages: ['rust'] }, log)

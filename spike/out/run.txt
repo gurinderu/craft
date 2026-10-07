@@ -1,0 +1,60 @@
+
+== adversarial-review.js
+sizes {"raw":113580,"stripped":72976,"min":64687,"syntax":74359} lines {"raw":1892,"min":140,"syntax":1150}
+breakdown {"total":113580,"wholeLineComment":17728,"trailingComment":209,"jsdoc":22110,"blockComment":0,"whitespace":8333,"strings":11758,"templates":20990,"code":32452,"accounted":113580}
+meta {"raw":"ok","stripped":"ok","min":"ok","syntax":"ok"}
+head {"min":"export const meta={name:\"adversarial-review\",description:\"Ad","syntax":"export const meta = {\n  name: \"adversarial-review\",\n  descri"}
+parse {"stripped":"ok","min":"ok","syntax":"ok"} warnings 0
+literals stripped: flat diffs 0, template diffs 0
+literals min: flat diffs 16, template diffs 4
+literals syntax: flat diffs 16, template diffs 4
+
+== nix-review.js
+sizes {"raw":7687,"stripped":5075,"min":4403,"syntax":5150} lines {"raw":167,"min":2,"syntax":88}
+breakdown {"total":7687,"wholeLineComment":1053,"trailingComment":0,"jsdoc":1524,"blockComment":0,"whitespace":714,"strings":1364,"templates":794,"code":2238,"accounted":7687}
+meta {"raw":"ok","stripped":"ok","min":"ok","syntax":"ok"}
+head {"min":"export const meta={name:\"nix-review\",description:\"Nix-pinned","syntax":"export const meta = {\n  name: \"nix-review\",\n  description: \""}
+parse {"stripped":"ok","min":"ok","syntax":"ok"} warnings 0
+literals stripped: flat diffs 0, template diffs 0
+literals min: flat diffs 0, template diffs 0
+literals syntax: flat diffs 0, template diffs 0
+
+== review.js
+sizes {"raw":487676,"stripped":276411,"min":249170,"syntax":289780} lines {"raw":6838,"min":479,"syntax":3730}
+breakdown {"total":487676,"wholeLineComment":155009,"trailingComment":815,"jsdoc":50591,"blockComment":0,"whitespace":30061,"strings":52563,"templates":87608,"code":111029,"accounted":487676}
+meta {"raw":"ok","stripped":"ok","min":"ok","syntax":"ok"}
+head {"min":"export const meta={name:\"review\",description:\"Elastic deep r","syntax":"export const meta = {\n  name: \"review\",\n  description: \"Elas"}
+parse {"stripped":"ok","min":"ok","syntax":"ok"} warnings 0
+literals stripped: flat diffs 0, template diffs 0
+literals min: flat diffs 67, template diffs 9
+literals syntax: flat diffs 67, template diffs 9
+
+== rust-audit.js
+sizes {"raw":107813,"stripped":65129,"min":58258,"syntax":68590} lines {"raw":1685,"min":124,"syntax":994}
+breakdown {"total":107813,"wholeLineComment":27719,"trailingComment":466,"jsdoc":13567,"blockComment":0,"whitespace":7276,"strings":8711,"templates":24792,"code":25282,"accounted":107813}
+meta {"raw":"ok","stripped":"ok","min":"ok","syntax":"ok"}
+head {"min":"export const meta={name:\"rust-audit\",description:\"Full Rust ","syntax":"export const meta = {\n  name: \"rust-audit\",\n  description: \""}
+parse {"stripped":"ok","min":"ok","syntax":"ok"} warnings 0
+literals stripped: flat diffs 0, template diffs 0
+literals min: flat diffs 13, template diffs 0
+literals syntax: flat diffs 13, template diffs 0
+
+== rust-review.js
+sizes {"raw":7790,"stripped":5082,"min":4410,"syntax":5157} lines {"raw":168,"min":2,"syntax":88}
+breakdown {"total":7790,"wholeLineComment":1148,"trailingComment":0,"jsdoc":1524,"blockComment":0,"whitespace":715,"strings":1371,"templates":794,"code":2238,"accounted":7790}
+meta {"raw":"ok","stripped":"ok","min":"ok","syntax":"ok"}
+head {"min":"export const meta={name:\"rust-review\",description:\"Rust-pinn","syntax":"export const meta = {\n  name: \"rust-review\",\n  description: "}
+parse {"stripped":"ok","min":"ok","syntax":"ok"} warnings 0
+literals stripped: flat diffs 0, template diffs 0
+literals min: flat diffs 0, template diffs 0
+literals syntax: flat diffs 0, template diffs 0
+
+== triage-findings.js
+sizes {"raw":42043,"stripped":27267,"min":24325,"syntax":28258} lines {"raw":764,"min":92,"syntax":474}
+breakdown {"total":42043,"wholeLineComment":8704,"trailingComment":189,"jsdoc":5613,"blockComment":0,"whitespace":3128,"strings":4106,"templates":9882,"code":10421,"accounted":42043}
+meta {"raw":"ok","stripped":"ok","min":"ok","syntax":"ok"}
+head {"min":"export const meta={name:\"triage-findings\",description:\"Triag","syntax":"export const meta = {\n  name: \"triage-findings\",\n  descripti"}
+parse {"stripped":"ok","min":"ok","syntax":"ok"} warnings 0
+literals stripped: flat diffs 0, template diffs 0
+literals min: flat diffs 5, template diffs 0
+literals syntax: flat diffs 5, template diffs 0
