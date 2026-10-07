@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.24.1](https://github.com/gurinderu/craft/compare/v0.24.0...v0.24.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **review:** a passed priorDecisions adds to the engine's own recall, never replaces it ([#163](https://github.com/gurinderu/craft/issues/163)) ([26b5c5d](https://github.com/gurinderu/craft/commit/26b5c5d431b9968f5fc0ea5b0676b0889a738973))
+* **review:** count new passed records after the one read; a malformed recalled record claims no id ([#166](https://github.com/gurinderu/craft/issues/166)) ([b25361e](https://github.com/gurinderu/craft/commit/b25361e6a126c3d46b2aecb8a405bd3564363b57))
+* **review:** one prior-decision cap across recalled and passed records; nested reviews name both parts ([#165](https://github.com/gurinderu/craft/issues/165)) ([dca57ef](https://github.com/gurinderu/craft/commit/dca57ef524cd02ce802843e1e2400fcf34fccd06))
+* **review:** the audit counts the launcher's accepted records; a well-formed recalled record holds its id whatever its status ([#167](https://github.com/gurinderu/craft/issues/167)) ([1901dc9](https://github.com/gurinderu/craft/commit/1901dc93e89c854be3ae35347e48947ac0664bd2))
+
 ## [0.24.0](https://github.com/gurinderu/craft/compare/v0.23.1...v0.24.0) (2026-10-07)
 
 
