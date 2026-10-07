@@ -413,23 +413,20 @@ function recalledQuestions(list) {
 /**
  * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
  * list, possibly empty) and the source to report. A dead or off-shape answer applies nothing and is named.
- * `answered`: the agent returned both lists, empty ones included — only then does a record's absence say
- * it is no longer active (the engine releases a carried deferral on it).
- * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource, answered: boolean }}
+ * @param {unknown} raw @param {number} cut paths past RECALL_PATHS_MAX @returns {{ decisions: unknown[], memory: MemorySource }}
  */
 function readMemoryRecall(raw, cut) {
   const r = /** @type {Record<string, unknown>} */ (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {})
   const tail = cut > 0 ? `; ${cut} changed path(s) past the bound of ${RECALL_PATHS_MAX} were not recalled for` : ''
   const list = r['decisions']
-  if (!Array.isArray(list)) return { decisions: [], answered: false, memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
+  if (!Array.isArray(list)) return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent died or returned no decision list, so no project memory was applied — findings are raised normally${tail}` } }
   const backend = recallText(r['backend']) || 'an unnamed backend'
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
   const all = [...list, ...questions]
-  const answered = Array.isArray(r['questions'])
-  if (!all.length) return { decisions: [], answered, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: all, answered, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
+  if (!all.length) return { decisions: [], memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
+  return { decisions: all, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -499,7 +496,7 @@ function memorySection(m, forwarded = false) {
  * refused dispatch (the budget wall) is named and applies nothing: the run meets the same wall on its
  * next dispatch, as it would have without a recall.
  * @param {(prompt: string) => Promise<unknown>} ask @param {string[]} paths @param {string} base
- * @returns {Promise<{ decisions: unknown[], memory: MemorySource, answered: boolean }>}
+ * @returns {Promise<{ decisions: unknown[], memory: MemorySource }>}
  */
 async function recallDecisions(ask, paths, base) {
   let raw
@@ -507,7 +504,7 @@ async function recallDecisions(ask, paths, base) {
     raw = await ask(memoryRecallPrompt(paths, base))
   } catch (e) {
     const msg = recallText(e instanceof Error ? e.message : String(e))
-    return { decisions: [], answered: false, memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
+    return { decisions: [], memory: { source: 'none', count: 0, why: `the recall agent did not run (${msg}) — no project memory applied; findings are raised normally` } }
   }
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
@@ -618,16 +615,17 @@ function deferredQuestionId(why) {
 }
 
 /**
- * Whether a carried deferred prior's question no longer holds, judged against the records of a recall
- * that ANSWERED (the caller's to know): the question is not among them as a deferral (answered,
- * withdrawn or superseded — recall returns active records only), or a recalled record names it in a
- * `supersedes:` / `answers:` link. A row whose mark names no question is left as it is.
+ * Whether a carried deferred prior's question no longer holds: a record in hand (recalled or passed)
+ * names it in a `supersedes:` / `answers:` link — the memory skill's own way to close a question. The
+ * question's ABSENCE never releases it (realm @nick/craft, node #204): absence has benign causes — a
+ * launcher forwarding decisions only, a recall answer without its optional `questions` list, a recall
+ * from another backend than the one the deferral was written to. A row whose mark names no question
+ * is left as it is.
  * @param {unknown} why @param {PriorDecision[]} records
  */
 function deferralReleased(why, records) {
   const id = deferredQuestionId(why)
-  if (!id) return false
-  return !records.some(d => d.kind === 'question' && d.deferred && d.id === id) || records.some(d => d.supersedes.includes(id))
+  return !!id && records.some(d => d.supersedes.includes(id))
 }
 
 /** The mark a set-aside finding carries. @param {PriorDecision} d */
@@ -800,9 +798,6 @@ const strict = !!A['strict']   // harsh maintainability mode: confirmed maintain
 let priorDecisionsIn = parsePriorDecisions(A['priorDecisions'])
 let memory = launcherRecallMemory(initialMemory(A['priorDecisions'], priorDecisionsIn.decisions.length), argString('_memory'))
 for (const r of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${r}`)
-/** A launcher's list answers when it is non-empty. */
-function launcherAnswered() { return memory.source === 'passed' && priorDecisionsIn.decisions.length > 0 }
-let recallAnswered = launcherAnswered()
 const requestedLangs = A['languages']
 const freshArg = !!A['fresh']   // force a full first-pass review, ignore any prior round
 const fullEvery = fullEveryArg()
@@ -3559,7 +3554,6 @@ async function recallMemory() {
   const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
   priorDecisionsIn = parsePriorDecisions(r.decisions)
   memory = acceptedMemory(r.memory, priorDecisionsIn.decisions)
-  recallAnswered = r.answered
   for (const x of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${x}`)
 }
 await recallMemory()
@@ -4814,8 +4808,8 @@ function carryUnverifiedPriors(priorUnverified, priorRound) {
 /** @param {Finding} f */
 function deferralHeld(f) {
   if (reraisedBySeverity(f['severity'])) return false
-  if (!recallAnswered || !deferralReleased(f['why'], priorDecisionsIn.decisions)) return true
-  log(`Re-review: the deferral on ${f['file']}:${f['line']} no longer holds — its question is gone from this round's recall or superseded — adjudicated like any prior`)
+  if (!deferralReleased(f['why'], priorDecisionsIn.decisions)) return true
+  log(`Re-review: the deferral on ${f['file']}:${f['line']} no longer holds — a record supersedes or answers its question — adjudicated like any prior`)
   return false
 }
 /** @param {Finding} f */
