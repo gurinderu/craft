@@ -215,6 +215,28 @@ function memoryRecordId(kind, title, scope) {
 }
 const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 120, when: 40, link: 500 }
 
+const DECISION_LENS_MAX = 80
+
+/**
+ * A record's `line`: a non-negative integer, or a string of digits; 0 when absent (0 is "no line", as
+ * in a finding); -1 when malformed. @param {unknown} v @returns {number}
+ */
+function recordLine(v) {
+  if (v == null || v === '') return 0
+  if (typeof v === 'number') return Number.isInteger(v) && v >= 0 && v < 1e9 ? v : -1
+  return typeof v === 'string' && /^\s*\d{1,9}\s*$/.test(v) ? Number(v) : -1
+}
+
+/** What is wrong with a record's anchor (`line`, `lens`); '' when nothing is. @param {Record<string, unknown>} o @returns {string} */
+function anchorFieldProblem(o) {
+  if (recordLine(o['line']) < 0) return `: line ${JSON.stringify(o['line'])} is not a line number`
+  const lens = o['lens']
+  if (lens == null) return ''
+  if (typeof lens !== 'string') return `: lens ${JSON.stringify(lens)} is not a string`
+  if (lens.trim().length > DECISION_LENS_MAX) return `: lens is ${lens.trim().length} chars, over the ${DECISION_LENS_MAX}-char ceiling`
+  return hasControlChar(lens) ? ': lens contains a control character' : ''
+}
+
 const PRIOR_RECORD_KINDS = ['decision', 'question']
 
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
@@ -290,7 +312,19 @@ function decisionFields(o) {
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
   const derived = derivedRecordId(o)
   const stores = linkedIds(links, /^store:\s*(\S+)$/i)
-  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(stores.length ? { stores } : {}), ...(derived ? { derived: /** @type {const} */ (true) } : {}) }
+  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(stores.length ? { stores } : {}), ...(derived ? { derived: /** @type {const} */ (true) } : {}), ...recordAnchor(o) }
+}
+
+/**
+ * The record's anchor and overrides, each present only when given: `line` above 0, `lens` non-empty,
+ * `overrides` the ids of a list of strings. @param {Record<string, unknown>} o
+ * @returns {{ line?: number, lens?: string, overrides?: string[] }}
+ */
+function recordAnchor(o) {
+  const line = recordLine(o['line'])
+  const lens = decisionText(o['lens'])
+  const overrides = Array.isArray(o['overrides']) ? o['overrides'].map(decisionText).filter(Boolean) : []
+  return { ...(line > 0 ? { line } : {}), ...(lens ? { lens } : {}), ...(overrides.length ? { overrides } : {}) }
 }
 
 /**
@@ -315,7 +349,7 @@ function decisionProblem(o, d) {
   if (missing) return missing
   const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (k)].length > max)
   if (over) return `: ${over[0]} is ${d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (over[0])].length} chars, over the ${over[1]}-char ceiling`
-  return decisionAnchorProblem(d)
+  return anchorFieldProblem(o) || decisionAnchorProblem(d)
 }
 
 const SAFE_SCOPE = /^[A-Za-z0-9._@+/ -]+$/
@@ -405,7 +439,9 @@ function parsePriorDecisions(raw, labelOf = decisionLabel) {
 }
 const RECALL_PATHS_MAX = 60
 
-const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit']
+const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit', 'lens']
+
+const RECORD_OTHER_FIELDS = { line: { type: 'integer' }, deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } }
 
 const MEMORY_RECALL_SCHEMA = {
   type: 'object', additionalProperties: false, required: ['backend', 'why', 'decisions'],
@@ -414,11 +450,11 @@ const MEMORY_RECALL_SCHEMA = {
     why: { type: 'string', description: 'one line: the rule that chose the backend, or why there is none, or that recall found nothing' },
     decisions: {
       type: 'array', description: 'the matching active decision records, verbatim',
-      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } } },
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), ...RECORD_OTHER_FIELDS } },
     },
     questions: {
       type: 'array', description: 'the matching active question records (open questions, deferred findings among them), verbatim',
-      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } } },
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), ...RECORD_OTHER_FIELDS } },
     },
     stale: {
       type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
@@ -448,7 +484,7 @@ Scope: ${scope}
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, links (nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
+Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, links (line and lens only when the record carries them; nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
 }
 
 /**
@@ -676,13 +712,14 @@ function passedAliases(x) {
  * Otherwise it is held back: `… not applied: held by <id> (active, <date>) (<why>)` when a successor is
  * not older, else `… not applied: <status> in memory (<why>)`.
  * @param {unknown[]} passed @param {InactiveRecord[]} inactive @param {number[]} [only] @param {Successor[]} [successors]
- * @returns {{ at: Set<number>, refused: string[], overrides: string[], freed: string[] }}
+ * `over` maps each such passed record's index to the ids of the successors it overrides.
+ * @returns {{ at: Set<number>, refused: string[], overrides: string[], freed: string[], over: Map<number, string[]> }}
  */
 function blockedPassed(passed, inactive, only = passed.map((_, i) => i), successors = []) {
   /** @type {Set<number>} */
   const at = new Set()
-  /** @type {{ refused: string[], overrides: string[], freed: string[] }} */
-  const out = { refused: [], overrides: [], freed: [] }
+  /** @type {{ refused: string[], overrides: string[], freed: string[], over: Map<number, string[]> }} */
+  const out = { refused: [], overrides: [], freed: [], over: new Map() }
   for (const i of only) {
     const ids = passedAliases(passed[i])
     const hits = inactive.filter(e => e.ids.some(id => ids.includes(id)))
@@ -697,6 +734,7 @@ function blockedPassed(passed, inactive, only = passed.map((_, i) => i), success
     }
     out.overrides.push(`${label} applied over ${v.over}: newer`)
     if (over.length) out.freed.push(...ids)
+    if (over.length) out.over.set(i, over.map(s => s.id))
   }
   return { at, ...out }
 }
@@ -729,6 +767,11 @@ function withoutLinksTo(x, freed) {
   if (!Array.isArray(o['links'])) return x
   const links = o['links'].filter(l => !supersededIds([l]).some(id => freed.has(id)))
   return links.length === o['links'].length ? x : { ...o, links }
+}
+
+/** The record with `overrides` naming the successors it overrides; itself when none. @param {unknown} x @param {string[] | undefined} ids @returns {unknown} */
+function withOverrides(x, ids) {
+  return ids?.length && x && typeof x === 'object' && !Array.isArray(x) ? { ...x, overrides: ids } : x
 }
 
 /**
@@ -813,7 +856,7 @@ function mergeAndRead(recalled, passed, parse, inactive = []) {
   const block = blockedPassed(passed, inactive, fresh, successorRecords(recalled, x => parse([x]).decisions.length > 0))
   const addedAt = fresh.filter(i => !block.at.has(i))
   const freed = new Set(block.freed)
-  const merged = [...(freed.size ? recalled.map(x => withoutLinksTo(x, freed)) : recalled), ...addedAt.map(i => passed[i])]
+  const merged = [...(freed.size ? recalled.map(x => withoutLinksTo(x, freed)) : recalled), ...addedAt.map(i => withOverrides(passed[i], block.over.get(i)))]
   return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused, overrides: block.overrides }
 }
 
