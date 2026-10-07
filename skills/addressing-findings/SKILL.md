@@ -90,7 +90,8 @@ the project has; it prints `memory backend: …` once).
 - **A deferral is an open question, not a decision** — triage `defer` becomes `record-question`
   with title = the finding's title, scope = its file path, body = what would answer it (the event,
   the change or the call that would settle it), author = who deferred, commit = `git rev-parse
-  HEAD` at triage, links = the PR and the comment URL. The next review lists that finding under
+  HEAD` at triage, links = the PR and the comment URL, and `deferred: true` — the field that makes
+  the question a deferral (a question without it is context only and sets nothing aside). The next review lists that finding under
   **Known and deferred** instead of raising it as new — until it turns Critical/High or its file
   changes. A deferral recorded earlier as a decision stays a decision; when a question is answered,
   the decision supersedes it.
@@ -107,8 +108,9 @@ the project has; it prints `memory backend: …` once).
   It prints one JSON object: `groups` of `{file, titles, branches, runs, severities, lastSeen}` —
   the same finding (same file, overlapping title) in the review ledgers of at least two different
   branches of this project; the same branch reviewed twice is not a recurrence, another project's
-  runs never count, and only findings that were real do — a row rejected as wrong, a refuted one or a
-  dismissed one is left out (the `note` says so). `--store <dir>` reads another store (default `~/.craft/runs`), `--project
+  runs never count, and only findings that were real and not already settled do — a row rejected as
+  wrong, a refuted one, a justified or dismissed one and a deferred one (a known defect carried under
+  an open question) are left out (the `note` says so). `--store <dir>` reads another store (default `~/.craft/runs`), `--project
   <dir>` another checkout. Its `note` names every bound it reached (the newest 500 runs read, 20
   groups listed) — repeat that line, never present a cut list as whole.
   Show each group (file, titles, branches, when last seen) and **ask the author, per group**,

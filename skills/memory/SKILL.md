@@ -18,7 +18,7 @@ project already has; it never invents one. craft's machine memory — the run st
 | `recall(topic, scope)` | keywords, a path or component | the **matching active** records only (below) |
 | `record-decision` | title, scope, body (the reason), author, commit, links | one `decision` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
-| `record-question` | title, scope, body (what would answer it), links; author, commit for a deferred finding | one `question` record |
+| `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
 
 A record answered or overturned is not edited away: write the new record with a link to the old
 one and set the old one's `status` to `superseded` (or `withdrawn` when it was simply wrong). An
@@ -27,7 +27,7 @@ answered question becomes a `decision` that supersedes it.
 ## Record shape (lowest common denominator)
 
 ```
-{ id, kind, title, body, scope, status, date, author, commit, links[] }
+{ id, kind, title, body, scope, status, date, author, commit, deferred, links[] }
   id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
   kind    decision | lesson | question
   title   one line, ≤ 200 chars — the finding title verbatim, the lesson, the question
@@ -37,6 +37,7 @@ answered question becomes a `decision` that supersedes it.
   date    YYYY-MM-DD of the last write
   author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
   commit  the commit the decided code was at, 7–40 hex (decisions and deferred questions on findings; below)
+  deferred  `true` on a question that defers a review finding (below); absent on every other record
   links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
 ```
 
@@ -48,7 +49,10 @@ The title is the finding's title as the review printed it — the engine matches
 
 **A deferred finding is an open question, not a decision**: valid, but not answered now. It is a
 `question` record with the same anchors — title = the finding's title, scope = its file, body = what
-would answer it, `author`, `commit`, links = the PR and the comment. A review lists its finding under
+would answer it, `author`, `commit`, links = the PR and the comment — and `deferred: true`, the field
+that makes it a deferral. A question without `deferred: true` (a needs-decision question) is context
+only: a review sets nothing aside by it. A deferral without a `commit` sets nothing aside either —
+its finding is raised again and the review names why. A review lists its finding under
 **Known and deferred** by the same rules as a decision (below); an answer later becomes a `decision`
 that supersedes it. A deferral recorded earlier as a `decision` keeps working as a decision.
 
@@ -145,7 +149,7 @@ the skill is unavailable, the backend order above), and the report names the sou
    and questions (`kind: decision`, `kind: question`), **active** only; never lessons.
 2. Pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
-   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `links` — nothing rewritten,
+   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `links` — nothing rewritten,
    nothing summarised; `kind` on every record, or a question passed without it is read by its id
    (`question-…`), and anything else as a decision. Never as a string: a `key=value` line cannot delimit the value (a reason holding
    `comment=true` would become an option), so the engine refuses any string and applies nothing.
@@ -155,8 +159,8 @@ the skill is unavailable, the backend order above), and the report names the sou
    before** with the decision's reason, author, date and link, outside the verdict; one an open
    question answers, under **Known and deferred** with what would answer it, the author, date and
    link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
-   like a rejection). A question without a `commit` records no deferral: it sets nothing aside
-   and labels nothing. Either is raised
+   like a rejection). A question without `deferred: true` records no deferral: it sets nothing aside
+   and labels nothing; a deferral without a `commit` is raised again and named. Either is raised
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
    since its `commit`, when the decision has no `commit`, or when the repository does not know that
    `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
