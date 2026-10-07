@@ -7299,17 +7299,27 @@ async function noFindingsExit() {
 // it like any other dismissal. It stays a finding when it is Critical/High or when its decision's
 // scope cannot be shown unchanged since the recorded commit — one agent runs the `git diff --quiet`
 // lines, and its death leaves every decision unconfirmed, so every such finding is raised again.
+// On a re-review the decisions reach the still-open and regressed priors as well: a fresh duplicate
+// of a live prior was absorbed into it (reconcileWithPriors), so the prior is where a rejected finding
+// sits, and it counts in the verdict unless it is set aside there.
 /** @type {Array<Finding & { priorTier: string, priorDecision: string }>} */
 let priorRejected = []
+// How many of `priorRejected` were live priors, not findings verified this round.
+let priorRejectedLive = 0
 async function setAsidePriorDecisions() {
-  const r = await applyPriorDecisions({ confirmed, suspected, unverified }, priorDecisionsIn.decisions, toCheck => ragent(
+  const live = adjudicated.stillOpen.length + adjudicated.regressed.length
+  const r = await applyPriorDecisions({ confirmed, suspected, unverified, stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed }, priorDecisionsIn.decisions, toCheck => ragent(
     REPO_DIRECTIVE + scopeCheckPrompt(toCheck),
     { label: 'decision-scope', phase: 'Synthesize', schema: SCOPE_CHECK_SCHEMA, model: CULL_MODEL },
   ))
   confirmed = r.tiers['confirmed'] || []
   suspected = r.tiers['suspected'] || []
   unverified = r.tiers['unverified'] || []
-  priorRejected = r.setAside
+  adjudicated.stillOpen = r.tiers['stillOpen'] || []
+  adjudicated.regressed = r.tiers['regressed'] || []
+  priorRejectedLive = live - adjudicated.stillOpen.length - adjudicated.regressed.length
+  // A prior's ledger tier is its own; one that carries none is persisted as confirmed (it was adjudicated).
+  priorRejected = r.setAside.map(f => /^(confirmed|suspected|unverified)$/.test(f.priorTier) ? f : { ...f, priorTier: 'confirmed' })
   for (const n of r.notes) log(`priorDecisions: ${n}`)
 }
 await setAsidePriorDecisions()
@@ -7431,7 +7441,7 @@ const allReviewFindings = confirmed.concat(suspected, unverified)
 // The verification denominator: what verification ACTUALLY judged. `unverified` is deliberately
 // absent — including it once made refuteRate incomparable across runs (on one measured run 118 of
 // 215 findings were Low/Info, so the denominator was more than double the 89 verdicts really cast).
-const totalVerified = confirmed.length + suspected.length + dropped + priorRejected.filter(f => f.priorTier !== 'unverified').length
+const totalVerified = confirmed.length + suspected.length + dropped + priorRejected.filter(f => f.priorTier !== 'unverified').length - priorRejectedLive
 /** The verdict the record carries: the re-review tracks or the confirmed set, escalated by strict maintainability. */
 function decideRecordVerdict() {
   let recordVerdict = isRereview
