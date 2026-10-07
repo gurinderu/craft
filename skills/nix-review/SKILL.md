@@ -15,9 +15,10 @@ scout-scales depth to the diff, fans out the lenses below, grounds findings in t
 adversarially verifies each one. This skill is the rubric the workflow and the `nix-reviewer`
 lens worker apply.
 
-**Before launching it**, recall the project's active decisions and open questions for the diff's
-paths and pass them as `priorDecisions` in the object argument, never a string, each record with
-its `kind` (→ `memory`, "Before a review"): a finding the project already rejected comes back under **Rejected before** with who,
+The workflow recalls the project's active decisions and open questions for the diff's paths
+itself, on every launch; `priorDecisions` (the object argument, never a string, each record with
+its `kind`) only adds records the store may not hold yet and never replaces that recall
+(→ `memory`, "Before a review"): a finding the project already rejected comes back under **Rejected before** with who,
 when and why, and one it deferred under **Known and deferred**, instead of being raised as new.
 
 ## When to Use

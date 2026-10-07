@@ -22,7 +22,8 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 
 ```
 0. Recall    — the author's PR-thread rejections recorded first (→ pr-rejections.md),
-               then `memory` recall(topic, scope) for every path the findings touch (→ below),
+               then `memory` recall(topic, scope) for every path the findings touch, for this
+               skill's own triage — the review engines recall for themselves (→ below),
                then findings that recur across branches shown, a lesson offered per group (→ below)
 1. Gather  ⫲ — collect findings from both sources, one subagent per source in parallel:
                • craft: a rust-reviewer verdict / a rust-audit report
@@ -39,9 +40,10 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                first, RED→GREEN                                                (→ rust.md)
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
-7. Re-review ⫲ — PR-thread rejections recorded again, active decisions and questions recalled and passed
-               to the review workflow as `priorDecisions`, an object argument, each with its `kind`
-               (→ `memory`, "Before a review");
+7. Re-review ⫲ — PR-thread rejections recorded again; the review workflow recalls the active
+               decisions and questions itself on every launch — `priorDecisions` (an object
+               argument, each record with its `kind`) only ADDS records the store may not hold
+               yet, never replaces that recall (→ `memory`, "Before a review");
                re-dispatch the review agents in parallel (as rust-audit does); new
                findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &

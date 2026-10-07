@@ -48,9 +48,10 @@ no memory of the prior round):
 - `craft:rust-reviewer` — the gate + the rubric.
 - `craft:rust-security-scanner` — when the change touched deps / `unsafe` / input handling.
 - `craft:rust-miri` — when the change touched `unsafe`.
-- or re-run the `craft:rust-audit` workflow for all of them at once — with the recalled active
-  decisions and questions as `priorDecisions`, an object argument, each with its `kind` (→ `memory`, "Before a review"); it hands them to its nested
-  reviews.
+- or re-run the `craft:rust-audit` workflow for all of them at once — it recalls the active
+  decisions and questions itself, once, and hands them to its nested reviews; `priorDecisions` (an
+  object argument, each record with its `kind`) only adds records the store may not hold yet,
+  never replaces that recall (→ `memory`, "Before a review").
 
 Feed the new findings back into the loop. The triage ledger (keyed by `stable_id`) dedups
 recurring findings from genuinely new ones, so "loop until green" terminates on progress, not

@@ -1,7 +1,7 @@
 ---
 name: memory
 description: >-
-  Semantic memory of the consumer project's own facts — decisions on review findings (rejected, justified), lessons learned, open questions (deferred findings among them) — recorded and recalled across sessions through whatever store the project has: an explicit setting, a connected memory or knowledge-graph MCP server, the harness's project memory, or files under .craft/memory. Verbs: recall(topic, scope), record-decision, record-lesson, record-question. Use when a decision, lesson or open question about this codebase should outlive the session, before working on a path to learn what was already decided about it, or before launching a craft review, whose engine takes the recalled decisions and open questions as priorDecisions. Triggers: remember this decision, record why we rejected, what did we decide about, was this already discussed, note this lesson, open question for later. Not for memory leaks or memory usage (rust-performance, rust-ownership), nor craft's own run records and review ledger.
+  Semantic memory of the consumer project's own facts — decisions on review findings (rejected, justified), lessons learned, open questions (deferred findings among them) — recorded and recalled across sessions through whatever store the project has: an explicit setting, a connected memory or knowledge-graph MCP server, the harness's project memory, or files under .craft/memory. Verbs: recall(topic, scope), record-decision, record-lesson, record-question. Use when a decision, lesson or open question about this codebase should outlive the session, before working on a path to learn what was already decided about it, or before launching a craft review, whose engine recalls them itself (priorDecisions only adds). Triggers: remember this decision, record why we rejected, what did we decide about, was this already discussed, note this lesson, open question for later. Not for memory leaks or memory usage (rust-performance, rust-ownership), nor craft's own run records and review ledger.
 ---
 
 # Memory — the project's decisions, lessons and questions
@@ -139,22 +139,25 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 
 ## Before a review — `priorDecisions`
 
-A session that launches a craft review workflow (`review`, `rust-review`, `nix-review`,
-`adversarial-review`, or `rust-audit`, which hands them to its nested reviews) may do this first.
-Without `priorDecisions` the engine does it itself: one read-only agent runs this recall (or, if
-the skill is unavailable, the backend order above), and the report names the source on its
-`memory:` line (`adversarial-review`: its `memory` field).
+A craft review workflow (`review`, `rust-review`, `nix-review`, `adversarial-review`, or
+`rust-audit`, which recalls once and hands the result to its nested reviews) **always recalls
+itself**: one read-only agent runs this recall (or, if the skill is unavailable, the backend order
+above) on every launch. Passing `priorDecisions` never replaces that recall — the passed records
+are **added** to the recalled ones (one per `id`; on a clash the recalled record wins, being the
+store's current state), and the report's `memory:` line names both parts (`adversarial-review`:
+its `memory` field). A session recalls for its own work as below; it passes records only when it
+holds some the store may not — rejections just read from PR threads, say — and never relies on
+passing to stand in for the engine's recall.
 
 1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
    and questions (`kind: decision`, `kind: question`), **active** only; never lessons.
-2. Pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
+2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
    `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `links` — nothing rewritten,
    nothing summarised; `kind` on every record, or a question passed without it is read by its id
    (`question-…`), and anything else as a decision. Never as a string: a `key=value` line cannot delimit the value (a reason holding
    `comment=true` would become an option), so the engine refuses any string and applies nothing.
-   No match, or backend `none` → pass an empty list (say so in one line): it skips the engine's
-   own recall, and the review sets nothing aside.
+   Nothing to add → pass nothing (an empty list adds nothing and skips nothing).
 3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
    before** with the decision's reason, author, date and link, outside the verdict; one an open
    question answers, under **Known and deferred** with what would answer it, the author, date and
