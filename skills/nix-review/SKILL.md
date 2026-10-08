@@ -189,8 +189,9 @@ Beyond the gate, the workflow runs real tools scoped to the diff and feeds their
 findings (each still verified): `statix check` (anti-idioms), `deadnix --fail` (dead code),
 `nix flake check --all-systems` (eval errors, cycle detection), and `nix build --dry-run`
 (missing dependencies). Optional tools degrade gracefully when absent. Each seed carries, beside its
-catalog `ruleId`, the tool's own rule name as `toolRule` (the statix or deadnix diagnostic) — what
-tells two lints under one catalog rule (`MNT-001`) apart.
+catalog `ruleId`, the tool's own rule name as `toolRule` (the statix code, such as `W04`) — what
+tells two lints under one catalog rule (`MNT-001`) apart. deadnix and the formatter print no rule
+name, so their seeds carry no `toolRule` and match a past decision by line and lens alone.
 
 ## Premise grounding — cite it or drop the claim
 
