@@ -1161,6 +1161,24 @@ function ruleOf(f, d) {
   return mine === theirs ? 'same' : 'other'
 }
 
+/**
+ * Whether two gate-tool findings are distinct by the tool's own identity, so no dedup may merge them
+ * (realm @nick/craft, node #236): both carry a toolRule and they differ, or both are a rule-less tool's
+ * (deadnix, fmt) and their normalized titles differ — deadnix names the binding there (#237).
+ * @param {DecidableFinding} a @param {DecidableFinding} b @returns {boolean}
+ */
+function toolDistinct(a, b) {
+  if (!isToolFinding(a) || !isToolFinding(b)) return false
+  const [ra, rb] = [ruleKey(a['toolRule']), ruleKey(b['toolRule'])]
+  if (ra && rb) return ra !== rb
+  return isRulelessToolFinding(a) && isRulelessToolFinding(b) && titleKey(a.title) !== titleKey(b.title)
+}
+
+/** Whether any two of `fs` are distinct by their tool's identity (toolDistinct). @param {DecidableFinding[]} fs @returns {boolean} */
+function holdsToolDistinct(fs) {
+  return fs.some((a, i) => fs.slice(i + 1).some(b => toolDistinct(a, b)))
+}
+
 /** A finding's line when it is a positive integer, else 0. @param {DecidableFinding} f @returns {number} */
 function findingLine(f) {
   const n = Number(f['line'])
@@ -1369,7 +1387,8 @@ async function askJudge(sent, judge, refused) {
 /**
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
  * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
- * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone.
+ * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone, but
+ * a deadnix or fmt finding's: it stays raised (realm @nick/craft, node #236).
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -1392,14 +1411,14 @@ async function matchFindings(findings, decisions, judge) {
     const v = verdicts.get(i)
     if (v) byFinding.set(p.f, (byFinding.get(p.f) ?? new Map()).set(p.d, v))
   })
-  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d)).length : 0
-  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   if (sent.length && verdicts.size) notes.push(`match judge: ${verdicts.size} disputed pair(s) judged, ${[...verdicts.values()].filter(v => v.same).length} the same`)
   /** @param {DecidableFinding} f @returns {PriorMatch | undefined} */
   const matchOf = f => {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
+  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).length : 0
+  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
 /**
@@ -2040,7 +2059,7 @@ ${nixDepContext(ctx)}
 ${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
-Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out. A deadnix or formatter seed's \`title\` is the tool's own diagnostic message for that line, copied verbatim — deadnix's names the binding ("Unused lambda pattern: self"); never reword, shorten or paraphrase it: with no rule name, the title is what tells two such findings apart and matches a past decision round after round.`
+Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out. A deadnix seed's \`title\` is deadnix's own diagnostic message for that binding, copied verbatim — it names the binding ("Unused lambda pattern: self"); never reword, shorten or paraphrase it. The formatter prints no per-line message, so a formatter seed's \`title\` is the fixed form "File not formatted: <path>". With no rule name, the title is what tells two such findings apart and matches a past decision round after round.`
 }
 
 const CONDITIONAL_LENSES = ['failure-windows']
@@ -4834,7 +4853,8 @@ function sameTitleAt(pool, idxs, i, taken) {
   const g = []
   for (const j of idxs) {
     if (j === i || taken.has(j)) continue
-    if (shingleOverlap(/** @type {Finding} */ (pool[i])['title'], /** @type {Finding} */ (pool[j])['title']) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
+    const [a, b] = [/** @type {Finding} */ (pool[i]), /** @type {Finding} */ (pool[j])]
+    if (shingleOverlap(a['title'], b['title']) >= SAME_SPOT_OVERLAP && !toolDistinct(a, b)) { g.push(j); taken.add(j) }
   }
   return g
 }
@@ -4875,7 +4895,8 @@ async function dedupPool(pool, profile) {
   const res = await dedupModelGroups(profile, listing)
   const detGroups = sameSpotGroups(pool)
   const groups = detGroups.concat(
-    (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length)),
+    (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length))
+      .filter(g => !holdsToolDistinct(g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i])))),
   )
   /** @type {Finding[]} */
   const merged = []

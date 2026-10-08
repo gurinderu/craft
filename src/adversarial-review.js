@@ -2595,7 +2595,8 @@ async function askJudge(sent, judge, refused) {
 /**
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
  * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
- * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone.
+ * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone, but
+ * a deadnix or fmt finding's: it stays raised (realm @nick/craft, node #236).
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -2618,14 +2619,14 @@ async function matchFindings(findings, decisions, judge) {
     const v = verdicts.get(i)
     if (v) byFinding.set(p.f, (byFinding.get(p.f) ?? new Map()).set(p.d, v))
   })
-  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d)).length : 0
-  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   if (sent.length && verdicts.size) notes.push(`match judge: ${verdicts.size} disputed pair(s) judged, ${[...verdicts.values()].filter(v => v.same).length} the same`)
   /** @param {DecidableFinding} f @returns {PriorMatch | undefined} */
   const matchOf = f => {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
+  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).length : 0
+  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
 // <<< craft-inline
