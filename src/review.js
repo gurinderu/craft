@@ -1123,7 +1123,7 @@ async function recallDecisions(ask, paths, base) {
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf findingLine matchClass anchorOf pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf findingLine matchClass anchorOf pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -1291,15 +1291,16 @@ function findingPlan(f, ordered) {
 
 /**
  * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
- * order, a candidate judged the same; one without a verdict whose title answers the finding (#187);
- * else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
+ * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) —
+ * never a rule-less tool's (deadnix, fmt): a disputed pair of theirs has another title, and word overlap
+ * would join two bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
  * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
  */
 function resolvePlan(f, plan, judged) {
   for (const d of plan.disputed) {
     const v = judged?.get(d)
     if (v?.same) return { d, how: `matched by judge: ${v.why}` }
-    if (!v && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
+    if (!v && !isRulelessToolFinding(f) && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
   }
   return plan.sure
 }
@@ -1392,6 +1393,14 @@ function cutPairsNote(cut) {
 }
 
 /**
+ * The refusal for rule-less tool pairs (deadnix, fmt) the judge gave no verdict: raised, the title rule
+ * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
+ */
+function rulelessUnjudgedNote(n) {
+  return `${n} deadnix/fmt record–finding pair(s) with another title got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title or the judge, never by shared title words`
+}
+
+/**
  * Runs the judge over `sent` (never empty): the verdicts by pair index; a missing judge, a throw or an
  * unreadable answer yields none, said once in `refused`. @param {DisputedPair[]} sent
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge @param {string[]} refused
@@ -1437,6 +1446,8 @@ async function matchFindings(findings, decisions, judge) {
     const v = verdicts.get(i)
     if (v) byFinding.set(p.f, (byFinding.get(p.f) ?? new Map()).set(p.d, v))
   })
+  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d)).length : 0
+  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   if (sent.length && verdicts.size) notes.push(`match judge: ${verdicts.size} disputed pair(s) judged, ${[...verdicts.values()].filter(v => v.same).length} the same`)
   /** @param {DecidableFinding} f @returns {PriorMatch | undefined} */
   const matchOf = f => {
@@ -2168,7 +2179,7 @@ ${nixDepContext(ctx)}
 ${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
-Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out.`
+Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out. A deadnix or formatter seed's \`title\` is the tool's own diagnostic message for that line, copied verbatim — deadnix's names the binding ("Unused lambda pattern: self"); never reword, shorten or paraphrase it: with no rule name, the title is what tells two such findings apart and matches a past decision round after round.`
 }
 
 // Admitted by a code signal, never by a floor. See `blanketLenses()` in planFor: a blanket roster fill

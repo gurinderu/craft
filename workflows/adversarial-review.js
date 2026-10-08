@@ -2262,15 +2262,16 @@ function findingPlan(f, ordered) {
 
 /**
  * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
- * order, a candidate judged the same; one without a verdict whose title answers the finding (#187);
- * else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
+ * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) —
+ * never a rule-less tool's (deadnix, fmt): a disputed pair of theirs has another title, and word overlap
+ * would join two bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
  * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
  */
 function resolvePlan(f, plan, judged) {
   for (const d of plan.disputed) {
     const v = judged?.get(d)
     if (v?.same) return { d, how: `matched by judge: ${v.why}` }
-    if (!v && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
+    if (!v && !isRulelessToolFinding(f) && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
   }
   return plan.sure
 }
@@ -2363,6 +2364,14 @@ function cutPairsNote(cut) {
 }
 
 /**
+ * The refusal for rule-less tool pairs (deadnix, fmt) the judge gave no verdict: raised, the title rule
+ * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
+ */
+function rulelessUnjudgedNote(n) {
+  return `${n} deadnix/fmt record–finding pair(s) with another title got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title or the judge, never by shared title words`
+}
+
+/**
  * Runs the judge over `sent` (never empty): the verdicts by pair index; a missing judge, a throw or an
  * unreadable answer yields none, said once in `refused`. @param {DisputedPair[]} sent
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge @param {string[]} refused
@@ -2408,6 +2417,8 @@ async function matchFindings(findings, decisions, judge) {
     const v = verdicts.get(i)
     if (v) byFinding.set(p.f, (byFinding.get(p.f) ?? new Map()).set(p.d, v))
   })
+  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d)).length : 0
+  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   if (sent.length && verdicts.size) notes.push(`match judge: ${verdicts.size} disputed pair(s) judged, ${[...verdicts.values()].filter(v => v.same).length} the same`)
   /** @param {DecidableFinding} f @returns {PriorMatch | undefined} */
   const matchOf = f => {

@@ -192,7 +192,8 @@ findings (each still verified): `statix check` (anti-idioms), `deadnix --fail` (
 catalog `ruleId`, the tool's own rule name as `toolRule` (the statix code, such as `W04`) — what
 tells two lints under one catalog rule (`MNT-001`) apart. deadnix and the formatter print no rule
 name, so their seeds carry no `toolRule` and match a past decision outright only by line, lens and
-the same title (deadnix names the binding there); another title goes to the match judge.
+the same title (deadnix names the binding there), so the seed's title is the tool's message verbatim;
+another title goes to the match judge and stays raised when the judge gives no verdict.
 
 ## Premise grounding — cite it or drop the claim
 
