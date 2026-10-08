@@ -188,7 +188,9 @@ Report everything you suspect. Borderline findings go to Suspected, not the bin.
 Beyond the gate, the workflow runs real tools scoped to the diff and feeds their output in as seed
 findings (each still verified): `statix check` (anti-idioms), `deadnix --fail` (dead code),
 `nix flake check --all-systems` (eval errors, cycle detection), and `nix build --dry-run`
-(missing dependencies). Optional tools degrade gracefully when absent.
+(missing dependencies). Optional tools degrade gracefully when absent. Each seed carries, beside its
+catalog `ruleId`, the tool's own rule name as `toolRule` (the statix or deadnix diagnostic) — what
+tells two lints under one catalog rule (`MNT-001`) apart.
 
 ## Premise grounding — cite it or drop the claim
 
