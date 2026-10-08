@@ -1123,7 +1123,7 @@ async function recallDecisions(ask, paths, base) {
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding ruleOf findingLine matchClass anchorOf pairRank triedOrder findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_FILE_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf toolDistinct holdsToolDistinct findingLine matchClass anchorOf placeGap pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -1141,6 +1141,10 @@ const CUT_NAMED_MAX = 10
 const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
 
 const MATCHED_BY_RULE = 'matched by file:line+lens+toolRule'
+
+const MATCHED_BY_TOOL_TITLE = 'matched by file:line+lens+title'
+
+const MATCHED_BY_FILE_TITLE = 'matched by file+lens+title'
 
 const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
@@ -1188,18 +1192,48 @@ function isRulelessToolFinding(f) {
   return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l))
 }
 
+/** A title as a rule-less tool's finding compares it: lower-cased, whitespace collapsed, trimmed. @param {unknown} v @returns {string} */
+function titleKey(v) {
+  return typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, ' ').trim() : ''
+}
+
 /**
  * How the record's toolRule stands to a tool finding's (realm @nick/craft, node #236): `same` when both
  * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
- * none; `any` for a finding that is not a tool's, or a rule-less tool's (deadnix, fmt) — its toolRule
- * plays no part.
- * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'other' | 'unknown'}
+ * none; `any` for a finding that is not a tool's. A rule-less tool's finding (deadnix, fmt) has no
+ * toolRule — its title stands in: `title` when the normalized titles are equal, else `unknown` (the
+ * judge's; word overlap is not equality: "Unused lambda pattern: pkgs" and "…: self" share three words
+ * of four, #237).
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'title' | 'other' | 'unknown'}
  */
 function ruleOf(f, d) {
-  if (!isToolFinding(f) || isRulelessToolFinding(f)) return 'any'
+  if (!isToolFinding(f)) return 'any'
+  if (isRulelessToolFinding(f)) {
+    const t = titleKey(f.title)
+    return t && t === titleKey(d.title) ? 'title' : 'unknown'
+  }
   const [mine, theirs] = [ruleKey(f['toolRule']), ruleKey(d.toolRule)]
   if (!mine || !theirs) return 'unknown'
   return mine === theirs ? 'same' : 'other'
+}
+
+/**
+ * Whether two gate-tool findings are distinct by the tool's own identity, so no dedup may merge them
+ * (realm @nick/craft, node #238; the same signs as the memory match, #236): both carry a toolRule and they differ, or both are a rule-less tool's
+ * (deadnix, fmt) or neither names a rule, and their normalized titles differ — deadnix names the binding
+ * there (#237).
+ * @param {DecidableFinding} a @param {DecidableFinding} b @returns {boolean}
+ */
+function toolDistinct(a, b) {
+  if (!isToolFinding(a) || !isToolFinding(b)) return false
+  const [ra, rb] = [ruleKey(a['toolRule']), ruleKey(b['toolRule'])]
+  if (ra && rb) return ra !== rb
+  return !ra && !rb && titleKey(a.title) !== titleKey(b.title)
+}
+
+/** Whether any two of `fs` are distinct by their tool's identity (toolDistinct). @param {DecidableFinding[]} fs @returns {boolean} */
+function holdsToolDistinct(fs) {
+  return fs.some((a, i) => fs.slice(i + 1).some(b => toolDistinct(a, b)))
 }
 
 /** A finding's line when it is a positive integer, else 0. @param {DecidableFinding} f @returns {number} */
@@ -1210,7 +1244,7 @@ function findingLine(f) {
 
 /**
  * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
- * a tool finding but deadnix's and fmt's the same toolRule),
+ * a tool finding the same toolRule, for deadnix's and fmt's the same normalized title),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
@@ -1225,17 +1259,30 @@ function matchClass(f, d) {
 
 /**
  * How the record's anchor meets the finding's: line within the candidate window (`near`) and the sure
- * one (`sure`), a shared lens (`same`). @param {DecidableFinding} f @param {PriorDecision} d
- * @returns {{ near: boolean, sure: boolean, same: boolean }}
+ * one (`sure`), a shared lens (`same`), and whether both are a rule-less tool's whole-file finding in one
+ * file (`whole`: no line on either side — a formatter mismatch — anchors like a line).
+ * @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ near: boolean, sure: boolean, same: boolean, whole: boolean }}
  */
 function anchorOf(f, d) {
-  const line = findingLine(f)
   const own = lensWords(d.lens)
   const lenses = findingLenses(f)
-  const byLine = !!d.line && line > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
+  const { gap, whole } = placeGap(f, d)
   const byLens = own.length > 0 && lenses.size > 0
-  const gap = byLine ? Math.abs(line - Number(d.line)) : Infinity
-  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)) }
+  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)), whole }
+}
+
+/**
+ * How many lines apart the record and the finding are (Infinity when no line compares), and whether both
+ * are a rule-less tool's whole-file finding in one file. @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ gap: number, whole: boolean }}
+ */
+function placeGap(f, d) {
+  const line = findingLine(f)
+  const oneFile = inDecisionScope(d.scope, String(f.file ?? ''))
+  if (d.line && line > 0 && oneFile) return { gap: Math.abs(line - Number(d.line)), whole: false }
+  const whole = !d.line && line === 0 && oneFile && isRulelessToolFinding(f)
+  return { gap: whole ? 0 : Infinity, whole }
 }
 
 /**
@@ -1254,6 +1301,12 @@ function triedOrder(ds) {
   return first.length ? [...first, ...ds.filter(d => !d.overrides?.length)] : ds
 }
 
+/** How a sure match was established, by ruleOf. @param {string} rule @returns {string} */
+function sureHow(rule) {
+  if (rule === 'same') return MATCHED_BY_RULE
+  return rule === 'title' ? MATCHED_BY_TOOL_TITLE : MATCHED_BY_ANCHOR
+}
+
 /**
  * One finding against the records in tried order: the first anchored match, and the disputed candidates
  * tried before it (the judge decides whether one of them answers it first).
@@ -1264,7 +1317,7 @@ function findingPlan(f, ordered) {
   const disputed = []
   for (const d of ordered) {
     const c = matchClass(f, d)
-    if (c === 'anchored') return { sure: { d, how: ruleOf(f, d) === 'same' ? MATCHED_BY_RULE : MATCHED_BY_ANCHOR }, disputed }
+    if (c === 'anchored') return { sure: { d, how: anchorOf(f, d).whole ? MATCHED_BY_FILE_TITLE : sureHow(ruleOf(f, d)) }, disputed }
     if (c === 'disputed') disputed.push(d)
   }
   return { disputed }
@@ -1272,15 +1325,16 @@ function findingPlan(f, ordered) {
 
 /**
  * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
- * order, a candidate judged the same; one without a verdict whose title answers the finding (#187);
- * else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
+ * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) —
+ * never a rule-less tool's (deadnix, fmt): a disputed pair of theirs has another title, and word overlap
+ * would join two bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
  * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
  */
 function resolvePlan(f, plan, judged) {
   for (const d of plan.disputed) {
     const v = judged?.get(d)
     if (v?.same) return { d, how: `matched by judge: ${v.why}` }
-    if (!v && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
+    if (!v && !isRulelessToolFinding(f) && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
   }
   return plan.sure
 }
@@ -1373,6 +1427,14 @@ function cutPairsNote(cut) {
 }
 
 /**
+ * The refusal for rule-less tool pairs (deadnix, fmt) the judge gave no verdict: raised, the title rule
+ * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
+ */
+function rulelessUnjudgedNote(n) {
+  return `${n} deadnix/fmt record–finding pair(s) got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title at its place or by the judge, never by shared title words`
+}
+
+/**
  * Runs the judge over `sent` (never empty): the verdicts by pair index; a missing judge, a throw or an
  * unreadable answer yields none, said once in `refused`. @param {DisputedPair[]} sent
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge @param {string[]} refused
@@ -1384,18 +1446,19 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them, the rest raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them, the rest raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
   return v
 }
 
 /**
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
  * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
- * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone.
+ * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone, but
+ * a deadnix or fmt finding's: it stays raised (realm @nick/craft, node #236).
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -1424,6 +1487,8 @@ async function matchFindings(findings, decisions, judge) {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
+  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).length : 0
+  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
 // <<< craft-inline
@@ -2137,7 +2202,7 @@ ${preflightBrief(ctx.preflight)}
 GATE (per the nix-review skill — load it):
 0. USE THE PREFLIGHT ABOVE rather than rediscovering it: its command prefix, its blockers (a step that cannot evaluate here is skipped and reported, never run to watch it fail), its missing tools, and its ciCovers — signals already green in CI for this exact commit are cited, not re-run.
 1. If a \`flake.nix\` exists: \`nix flake check\` — a failure is a gate failure (list it in failedChecks), not a seed.
-2. Formatter: run \`alejandra --check .\` or \`nixpkgs-fmt --check\` (whichever the repo uses — check for a formatter in the flake / a treefmt config). Mismatches are seeds (source "fmt", Low), never a gate failure unless CI enforces fmt.
+2. Formatter: run \`alejandra --check .\` or \`nixpkgs-fmt --check\` (whichever the repo uses — check for a formatter in the flake / a treefmt config). Mismatches are seeds (source "fmt", Low, one per file at line 0 — the whole file), never a gate failure unless CI enforces fmt.
 3. \`nix eval\`/\`nix build\` the attrs the diff touches — an eval or build error on changed code is a gate failure.
 4. status = fail if \`nix flake check\` or an eval/build of touched attrs is red; pass if green; unknown if you could not establish it (e.g. nix not installed).
 
@@ -2149,7 +2214,7 @@ ${nixDepContext(ctx)}
 ${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
-Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out.`
+Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out. A deadnix seed's \`title\` is deadnix's own diagnostic message for that binding, copied verbatim — it names the binding ("Unused lambda pattern: self"); never reword, shorten or paraphrase it. The formatter prints no per-line message, so a formatter seed's \`title\` is the fixed form "File not formatted: <path>" and its \`line\` is 0. With no rule name, the title is what tells two such findings apart and matches a past decision round after round.`
 }
 
 // Admitted by a code signal, never by a floor. See `blanketLenses()` in planFor: a blanket roster fill
@@ -5606,7 +5671,9 @@ function sameTitleAt(pool, idxs, i, taken) {
   const g = []
   for (const j of idxs) {
     if (j === i || taken.has(j)) continue
-    if (shingleOverlap(/** @type {Finding} */ (pool[i])['title'], /** @type {Finding} */ (pool[j])['title']) >= SAME_SPOT_OVERLAP) { g.push(j); taken.add(j) }
+    const [a, b] = [/** @type {Finding} */ (pool[i]), /** @type {Finding} */ (pool[j])]
+    // Two gate-tool findings distinct by the tool's own identity are two findings, however alike their titles (realm @nick/craft, node #238).
+    if (shingleOverlap(a['title'], b['title']) >= SAME_SPOT_OVERLAP && !toolDistinct(a, b)) { g.push(j); taken.add(j) }
   }
   return g
 }
@@ -5655,7 +5722,9 @@ async function dedupPool(pool, profile) {
   // makes them authoritative over a model group that would have split the same indices differently.
   const detGroups = sameSpotGroups(pool)
   const groups = detGroups.concat(
-    (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length)),
+    (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length))
+      // Nor may the model merge them (realm @nick/craft, node #238).
+      .filter(g => !holdsToolDistinct(g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i])))),
   )
   /** @type {Finding[]} */
   const merged = []
