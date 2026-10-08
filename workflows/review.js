@@ -251,6 +251,8 @@ const DECISION_FIELD_MAX = { id: 80, title: 200, scope: 300, reason: 1200, who: 
 
 const DECISION_LENS_MAX = 80
 
+const DECISION_RULE_ID_MAX = 120
+
 /**
  * A record's `line`: a non-negative integer, or a string of digits; 0 when absent (0 is "no line", as
  * in a finding); -1 when malformed. @param {unknown} v @returns {number}
@@ -261,14 +263,19 @@ function recordLine(v) {
   return typeof v === 'string' && /^\s*\d{1,9}\s*$/.test(v) ? Number(v) : -1
 }
 
-/** What is wrong with a record's anchor (`line`, `lens`); '' when nothing is. @param {Record<string, unknown>} o @returns {string} */
+/** What is wrong with a record's anchor (`line`, `lens`, `ruleId`); '' when nothing is. @param {Record<string, unknown>} o @returns {string} */
 function anchorFieldProblem(o) {
   if (recordLine(o['line']) < 0) return `: line ${JSON.stringify(o['line'])} is not a line number`
-  const lens = o['lens']
-  if (lens == null) return ''
-  if (typeof lens !== 'string') return `: lens ${JSON.stringify(lens)} is not a string`
-  if (lens.trim().length > DECISION_LENS_MAX) return `: lens is ${lens.trim().length} chars, over the ${DECISION_LENS_MAX}-char ceiling`
-  return hasControlChar(lens) ? ': lens contains a control character' : ''
+  return anchorTextProblem(o, 'lens', DECISION_LENS_MAX) || anchorTextProblem(o, 'ruleId', DECISION_RULE_ID_MAX)
+}
+
+/** What is wrong with a text field of the anchor; '' when it is absent or fit. @param {Record<string, unknown>} o @param {string} k @param {number} max @returns {string} */
+function anchorTextProblem(o, k, max) {
+  const v = o[k]
+  if (v == null) return ''
+  if (typeof v !== 'string') return `: ${k} ${JSON.stringify(v)} is not a string`
+  if (v.trim().length > max) return `: ${k} is ${v.trim().length} chars, over the ${max}-char ceiling`
+  return hasControlChar(v) ? `: ${k} contains a control character` : ''
 }
 
 const PRIOR_RECORD_KINDS = ['decision', 'question']
@@ -350,15 +357,16 @@ function decisionFields(o) {
 }
 
 /**
- * The record's anchor and overrides, each present only when given: `line` above 0, `lens` non-empty,
- * `overrides` the ids of a list of strings. @param {Record<string, unknown>} o
- * @returns {{ line?: number, lens?: string, overrides?: string[] }}
+ * The record's anchor and overrides, each present only when given: `line` above 0, `lens` and `ruleId`
+ * non-empty (realm @nick/craft, node #236), `overrides` the ids of a list of strings. @param {Record<string, unknown>} o
+ * @returns {{ line?: number, lens?: string, ruleId?: string, overrides?: string[] }}
  */
 function recordAnchor(o) {
   const line = recordLine(o['line'])
   const lens = decisionText(o['lens'])
+  const ruleId = decisionText(o['ruleId'])
   const overrides = Array.isArray(o['overrides']) ? o['overrides'].map(decisionText).filter(Boolean) : []
-  return { ...(line > 0 ? { line } : {}), ...(lens ? { lens } : {}), ...(overrides.length ? { overrides } : {}) }
+  return { ...(line > 0 ? { line } : {}), ...(lens ? { lens } : {}), ...(ruleId ? { ruleId } : {}), ...(overrides.length ? { overrides } : {}) }
 }
 
 /**
@@ -521,7 +529,7 @@ function priorDecisionsRefusedSection(refused) {
 }
 const RECALL_PATHS_MAX = 60
 
-const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit', 'lens']
+const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit', 'lens', 'ruleId']
 
 const RECORD_OTHER_FIELDS = { line: { type: 'integer' }, deferred: { type: 'boolean' }, links: { type: 'array', items: { type: 'string' } } }
 
@@ -566,7 +574,7 @@ Scope: ${scope}
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, links (line and lens only when the record carries them; nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
+Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, ruleId, links (line, lens and ruleId only when the record carries them; nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
 }
 
 /**
@@ -1078,6 +1086,8 @@ const CUT_NAMED_MAX = 10
 
 const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
 
+const MATCHED_BY_RULE = 'matched by file:line+lens+ruleId'
+
 const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
 /** Lower-cased lens names of a value, split on commas. @param {unknown} v @returns {string[]} */
@@ -1091,6 +1101,32 @@ function findingLenses(f) {
   return new Set([f['lens'], ...sources, f['source']].flatMap(lensWords))
 }
 
+const TOOL_LENSES = ['tool', 'clippy', 'clippy-pedantic', 'semgrep', 'semver-checks', 'statix', 'deadnix', 'fmt', 'dep-context']
+
+/** Whether a finding is a gate tool's: one of its lenses is a tool's. @param {DecidableFinding} f @returns {boolean} */
+function isToolFinding(f) {
+  const lenses = findingLenses(f)
+  return TOOL_LENSES.some(l => lenses.has(l))
+}
+
+/** A ruleId compared case- and whitespace-blind; '' when absent. @param {unknown} v @returns {string} */
+function ruleKey(v) {
+  return typeof v === 'string' ? v.trim().toLowerCase() : ''
+}
+
+/**
+ * How the record's ruleId stands to a tool finding's (realm @nick/craft, node #236): `same` when both
+ * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
+ * none; `any` for a finding that is not a tool's — its ruleId plays no part.
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'other' | 'unknown'}
+ */
+function ruleOf(f, d) {
+  if (!isToolFinding(f)) return 'any'
+  const [mine, theirs] = [ruleKey(f['ruleId']), ruleKey(d.ruleId)]
+  if (!mine || !theirs) return 'unknown'
+  return mine === theirs ? 'same' : 'other'
+}
+
 /** A finding's line when it is a positive integer, else 0. @param {DecidableFinding} f @returns {number} */
 function findingLine(f) {
   const n = Number(f['line'])
@@ -1098,14 +1134,17 @@ function findingLine(f) {
 }
 
 /**
- * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens),
+ * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
+ * a tool finding the same ruleId),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
 function matchClass(f, d) {
   if (!inDecisionScope(f.file, d.scope)) return ''
+  const rule = ruleOf(f, d)
+  if (rule === 'other') return ''
   const { near, sure, same } = anchorOf(f, d)
-  if (sure && same) return 'anchored'
+  if (sure && same && rule !== 'unknown') return 'anchored'
   return near || same || titleOverlap(f.title, d.title) >= MATCH_CANDIDATE_OVERLAP ? 'disputed' : ''
 }
 
@@ -1150,7 +1189,7 @@ function findingPlan(f, ordered) {
   const disputed = []
   for (const d of ordered) {
     const c = matchClass(f, d)
-    if (c === 'anchored') return { sure: { d, how: MATCHED_BY_ANCHOR }, disputed }
+    if (c === 'anchored') return { sure: { d, how: ruleOf(f, d) === 'same' ? MATCHED_BY_RULE : MATCHED_BY_ANCHOR }, disputed }
     if (c === 'disputed') disputed.push(d)
   }
   return { disputed }
@@ -1614,6 +1653,8 @@ const FINDING_COMMENT_MARKER = '<!-- craft-finding -->'
 
 const LENS_LINE = /^<!-- craft-lens: ([A-Za-z0-9_,:/. -]{1,80}) -->$/m
 
+const RULE_LINE = /^<!-- craft-rule: ([A-Za-z0-9_:/.@#-]{1,120}) -->$/m
+
 /** @param {unknown} v */
 function commentLine(v) {
   return String(v ?? '').replace(/\s+/g, ' ').trim()
@@ -1621,12 +1662,14 @@ function commentLine(v) {
 
 /**
  * The comment body for one finding: `[Severity] title`, the reason and the fix, the lens line when the
- * finding names a lens fit for it (`source`), the marker.
- * @param {{ severity?: unknown, title?: unknown, why?: unknown, fix?: unknown, source?: unknown }} f @returns {string}
+ * finding names a lens fit for it (`source`), the rule line when it names a rule id fit for it
+ * (`ruleId`), the marker.
+ * @param {{ severity?: unknown, title?: unknown, why?: unknown, fix?: unknown, source?: unknown, ruleId?: unknown }} f @returns {string}
  */
 function findingCommentBody(f) {
   const lens = `<!-- craft-lens: ${commentLine(f.source)} -->`
-  return `[${commentLine(f.severity)}] ${commentLine(f.title)}\n\n${String(f.why ?? '').trim()} — ${String(f.fix ?? '').trim()}\n\n${LENS_LINE.test(lens) ? `${lens}\n` : ''}${FINDING_COMMENT_MARKER}`
+  const rule = `<!-- craft-rule: ${commentLine(f.ruleId)} -->`
+  return `[${commentLine(f.severity)}] ${commentLine(f.title)}\n\n${String(f.why ?? '').trim()} — ${String(f.fix ?? '').trim()}\n\n${LENS_LINE.test(lens) ? `${lens}\n` : ''}${RULE_LINE.test(rule) ? `${rule}\n` : ''}${FINDING_COMMENT_MARKER}`
 }
 
 /** @param {unknown} p */
