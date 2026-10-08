@@ -2295,7 +2295,7 @@ const refutedGaps = gapped.refutedGaps
 // The same rules as review (the module carries them): a matching finding below critical/high whose
 // decision's scope is unchanged since the recorded commit leaves the verdict and is returned under
 // `rejectedBefore`, marked in its description; anything else is raised again with the decision named.
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding ruleOf findingLine matchClass anchorOf pairRank triedOrder findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf findingLine matchClass anchorOf pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -2313,6 +2313,8 @@ const CUT_NAMED_MAX = 10
 const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
 
 const MATCHED_BY_RULE = 'matched by file:line+lens+toolRule'
+
+const MATCHED_BY_TOOL_TITLE = 'matched by file:line+lens+title'
 
 const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
@@ -2360,15 +2362,26 @@ function isRulelessToolFinding(f) {
   return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l))
 }
 
+/** A title as a rule-less tool's finding compares it: lower-cased, whitespace collapsed, trimmed. @param {unknown} v @returns {string} */
+function titleKey(v) {
+  return typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, ' ').trim() : ''
+}
+
 /**
  * How the record's toolRule stands to a tool finding's (realm @nick/craft, node #236): `same` when both
  * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
- * none; `any` for a finding that is not a tool's, or a rule-less tool's (deadnix, fmt) — its toolRule
- * plays no part.
- * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'other' | 'unknown'}
+ * none; `any` for a finding that is not a tool's. A rule-less tool's finding (deadnix, fmt) has no
+ * toolRule — its title stands in: `title` when the normalized titles are equal, else `unknown` (the
+ * judge's; word overlap is not equality: "Unused lambda pattern: pkgs" and "…: self" share three words
+ * of four, #237).
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'title' | 'other' | 'unknown'}
  */
 function ruleOf(f, d) {
-  if (!isToolFinding(f) || isRulelessToolFinding(f)) return 'any'
+  if (!isToolFinding(f)) return 'any'
+  if (isRulelessToolFinding(f)) {
+    const t = titleKey(f.title)
+    return t && t === titleKey(d.title) ? 'title' : 'unknown'
+  }
   const [mine, theirs] = [ruleKey(f['toolRule']), ruleKey(d.toolRule)]
   if (!mine || !theirs) return 'unknown'
   return mine === theirs ? 'same' : 'other'
@@ -2382,7 +2395,7 @@ function findingLine(f) {
 
 /**
  * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
- * a tool finding but deadnix's and fmt's the same toolRule),
+ * a tool finding the same toolRule, for deadnix's and fmt's the same normalized title),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
@@ -2426,6 +2439,12 @@ function triedOrder(ds) {
   return first.length ? [...first, ...ds.filter(d => !d.overrides?.length)] : ds
 }
 
+/** How a sure match was established, by ruleOf. @param {string} rule @returns {string} */
+function sureHow(rule) {
+  if (rule === 'same') return MATCHED_BY_RULE
+  return rule === 'title' ? MATCHED_BY_TOOL_TITLE : MATCHED_BY_ANCHOR
+}
+
 /**
  * One finding against the records in tried order: the first anchored match, and the disputed candidates
  * tried before it (the judge decides whether one of them answers it first).
@@ -2436,7 +2455,7 @@ function findingPlan(f, ordered) {
   const disputed = []
   for (const d of ordered) {
     const c = matchClass(f, d)
-    if (c === 'anchored') return { sure: { d, how: ruleOf(f, d) === 'same' ? MATCHED_BY_RULE : MATCHED_BY_ANCHOR }, disputed }
+    if (c === 'anchored') return { sure: { d, how: sureHow(ruleOf(f, d)) }, disputed }
     if (c === 'disputed') disputed.push(d)
   }
   return { disputed }
