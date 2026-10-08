@@ -1123,7 +1123,7 @@ async function recallDecisions(ask, paths, base) {
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf toolDistinct holdsToolDistinct findingLine matchClass anchorOf pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_FILE_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf toolDistinct holdsToolDistinct findingLine matchClass anchorOf placeGap pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -1143,6 +1143,8 @@ const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
 const MATCHED_BY_RULE = 'matched by file:line+lens+toolRule'
 
 const MATCHED_BY_TOOL_TITLE = 'matched by file:line+lens+title'
+
+const MATCHED_BY_FILE_TITLE = 'matched by file+lens+title'
 
 const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
@@ -1218,14 +1220,15 @@ function ruleOf(f, d) {
 /**
  * Whether two gate-tool findings are distinct by the tool's own identity, so no dedup may merge them
  * (realm @nick/craft, node #238; the same signs as the memory match, #236): both carry a toolRule and they differ, or both are a rule-less tool's
- * (deadnix, fmt) and their normalized titles differ — deadnix names the binding there (#237).
+ * (deadnix, fmt) or neither names a rule, and their normalized titles differ — deadnix names the binding
+ * there (#237).
  * @param {DecidableFinding} a @param {DecidableFinding} b @returns {boolean}
  */
 function toolDistinct(a, b) {
   if (!isToolFinding(a) || !isToolFinding(b)) return false
   const [ra, rb] = [ruleKey(a['toolRule']), ruleKey(b['toolRule'])]
   if (ra && rb) return ra !== rb
-  return isRulelessToolFinding(a) && isRulelessToolFinding(b) && titleKey(a.title) !== titleKey(b.title)
+  return !ra && !rb && titleKey(a.title) !== titleKey(b.title)
 }
 
 /** Whether any two of `fs` are distinct by their tool's identity (toolDistinct). @param {DecidableFinding[]} fs @returns {boolean} */
@@ -1256,17 +1259,30 @@ function matchClass(f, d) {
 
 /**
  * How the record's anchor meets the finding's: line within the candidate window (`near`) and the sure
- * one (`sure`), a shared lens (`same`). @param {DecidableFinding} f @param {PriorDecision} d
- * @returns {{ near: boolean, sure: boolean, same: boolean }}
+ * one (`sure`), a shared lens (`same`), and whether both are a rule-less tool's whole-file finding in one
+ * file (`whole`: no line on either side — a formatter mismatch — anchors like a line).
+ * @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ near: boolean, sure: boolean, same: boolean, whole: boolean }}
  */
 function anchorOf(f, d) {
-  const line = findingLine(f)
   const own = lensWords(d.lens)
   const lenses = findingLenses(f)
-  const byLine = !!d.line && line > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
+  const { gap, whole } = placeGap(f, d)
   const byLens = own.length > 0 && lenses.size > 0
-  const gap = byLine ? Math.abs(line - Number(d.line)) : Infinity
-  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)) }
+  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)), whole }
+}
+
+/**
+ * How many lines apart the record and the finding are (Infinity when no line compares), and whether both
+ * are a rule-less tool's whole-file finding in one file. @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ gap: number, whole: boolean }}
+ */
+function placeGap(f, d) {
+  const line = findingLine(f)
+  const oneFile = inDecisionScope(d.scope, String(f.file ?? ''))
+  if (d.line && line > 0 && oneFile) return { gap: Math.abs(line - Number(d.line)), whole: false }
+  const whole = !d.line && line === 0 && oneFile && isRulelessToolFinding(f)
+  return { gap: whole ? 0 : Infinity, whole }
 }
 
 /**
@@ -1301,7 +1317,7 @@ function findingPlan(f, ordered) {
   const disputed = []
   for (const d of ordered) {
     const c = matchClass(f, d)
-    if (c === 'anchored') return { sure: { d, how: sureHow(ruleOf(f, d)) }, disputed }
+    if (c === 'anchored') return { sure: { d, how: anchorOf(f, d).whole ? MATCHED_BY_FILE_TITLE : sureHow(ruleOf(f, d)) }, disputed }
     if (c === 'disputed') disputed.push(d)
   }
   return { disputed }
@@ -1415,7 +1431,7 @@ function cutPairsNote(cut) {
  * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
  */
 function rulelessUnjudgedNote(n) {
-  return `${n} deadnix/fmt record–finding pair(s) with another title got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title or the judge, never by shared title words`
+  return `${n} deadnix/fmt record–finding pair(s) got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title at its place or by the judge, never by shared title words`
 }
 
 /**
@@ -1430,11 +1446,11 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them, the rest raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them, the rest raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
   return v
 }
 
@@ -2186,7 +2202,7 @@ ${preflightBrief(ctx.preflight)}
 GATE (per the nix-review skill — load it):
 0. USE THE PREFLIGHT ABOVE rather than rediscovering it: its command prefix, its blockers (a step that cannot evaluate here is skipped and reported, never run to watch it fail), its missing tools, and its ciCovers — signals already green in CI for this exact commit are cited, not re-run.
 1. If a \`flake.nix\` exists: \`nix flake check\` — a failure is a gate failure (list it in failedChecks), not a seed.
-2. Formatter: run \`alejandra --check .\` or \`nixpkgs-fmt --check\` (whichever the repo uses — check for a formatter in the flake / a treefmt config). Mismatches are seeds (source "fmt", Low), never a gate failure unless CI enforces fmt.
+2. Formatter: run \`alejandra --check .\` or \`nixpkgs-fmt --check\` (whichever the repo uses — check for a formatter in the flake / a treefmt config). Mismatches are seeds (source "fmt", Low, one per file at line 0 — the whole file), never a gate failure unless CI enforces fmt.
 3. \`nix eval\`/\`nix build\` the attrs the diff touches — an eval or build error on changed code is a gate failure.
 4. status = fail if \`nix flake check\` or an eval/build of touched attrs is red; pass if green; unknown if you could not establish it (e.g. nix not installed).
 
@@ -2198,7 +2214,7 @@ ${nixDepContext(ctx)}
 ${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
-Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out. A deadnix seed's \`title\` is deadnix's own diagnostic message for that binding, copied verbatim — it names the binding ("Unused lambda pattern: self"); never reword, shorten or paraphrase it. The formatter prints no per-line message, so a formatter seed's \`title\` is the fixed form "File not formatted: <path>". With no rule name, the title is what tells two such findings apart and matches a past decision round after round.`
+Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out. A deadnix seed's \`title\` is deadnix's own diagnostic message for that binding, copied verbatim — it names the binding ("Unused lambda pattern: self"); never reword, shorten or paraphrase it. The formatter prints no per-line message, so a formatter seed's \`title\` is the fixed form "File not formatted: <path>" and its \`line\` is 0. With no rule name, the title is what tells two such findings apart and matches a past decision round after round.`
 }
 
 // Admitted by a code signal, never by a floor. See `blanketLenses()` in planFor: a blanket roster fill

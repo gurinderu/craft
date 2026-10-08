@@ -2295,7 +2295,7 @@ const refutedGaps = gapped.refutedGaps
 // The same rules as review (the module carries them): a matching finding below critical/high whose
 // decision's scope is unchanged since the recorded commit leaves the verdict and is returned under
 // `rejectedBefore`, marked in its description; anything else is raised again with the decision named.
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf findingLine matchClass anchorOf pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_FILE_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf findingLine matchClass anchorOf placeGap pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -2315,6 +2315,8 @@ const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
 const MATCHED_BY_RULE = 'matched by file:line+lens+toolRule'
 
 const MATCHED_BY_TOOL_TITLE = 'matched by file:line+lens+title'
+
+const MATCHED_BY_FILE_TITLE = 'matched by file+lens+title'
 
 const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
@@ -2410,17 +2412,30 @@ function matchClass(f, d) {
 
 /**
  * How the record's anchor meets the finding's: line within the candidate window (`near`) and the sure
- * one (`sure`), a shared lens (`same`). @param {DecidableFinding} f @param {PriorDecision} d
- * @returns {{ near: boolean, sure: boolean, same: boolean }}
+ * one (`sure`), a shared lens (`same`), and whether both are a rule-less tool's whole-file finding in one
+ * file (`whole`: no line on either side — a formatter mismatch — anchors like a line).
+ * @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ near: boolean, sure: boolean, same: boolean, whole: boolean }}
  */
 function anchorOf(f, d) {
-  const line = findingLine(f)
   const own = lensWords(d.lens)
   const lenses = findingLenses(f)
-  const byLine = !!d.line && line > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
+  const { gap, whole } = placeGap(f, d)
   const byLens = own.length > 0 && lenses.size > 0
-  const gap = byLine ? Math.abs(line - Number(d.line)) : Infinity
-  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)) }
+  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)), whole }
+}
+
+/**
+ * How many lines apart the record and the finding are (Infinity when no line compares), and whether both
+ * are a rule-less tool's whole-file finding in one file. @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ gap: number, whole: boolean }}
+ */
+function placeGap(f, d) {
+  const line = findingLine(f)
+  const oneFile = inDecisionScope(d.scope, String(f.file ?? ''))
+  if (d.line && line > 0 && oneFile) return { gap: Math.abs(line - Number(d.line)), whole: false }
+  const whole = !d.line && line === 0 && oneFile && isRulelessToolFinding(f)
+  return { gap: whole ? 0 : Infinity, whole }
 }
 
 /**
@@ -2455,7 +2470,7 @@ function findingPlan(f, ordered) {
   const disputed = []
   for (const d of ordered) {
     const c = matchClass(f, d)
-    if (c === 'anchored') return { sure: { d, how: sureHow(ruleOf(f, d)) }, disputed }
+    if (c === 'anchored') return { sure: { d, how: anchorOf(f, d).whole ? MATCHED_BY_FILE_TITLE : sureHow(ruleOf(f, d)) }, disputed }
     if (c === 'disputed') disputed.push(d)
   }
   return { disputed }
@@ -2569,7 +2584,7 @@ function cutPairsNote(cut) {
  * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
  */
 function rulelessUnjudgedNote(n) {
-  return `${n} deadnix/fmt record–finding pair(s) with another title got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title or the judge, never by shared title words`
+  return `${n} deadnix/fmt record–finding pair(s) got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title at its place or by the judge, never by shared title words`
 }
 
 /**
@@ -2584,11 +2599,11 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them, the rest raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them, the rest raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
   return v
 }
 
