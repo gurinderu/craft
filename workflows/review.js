@@ -1163,7 +1163,7 @@ function ruleOf(f, d) {
 
 /**
  * Whether two gate-tool findings are distinct by the tool's own identity, so no dedup may merge them
- * (realm @nick/craft, node #236): both carry a toolRule and they differ, or both are a rule-less tool's
+ * (realm @nick/craft, node #238; the same signs as the memory match, #236): both carry a toolRule and they differ, or both are a rule-less tool's
  * (deadnix, fmt) and their normalized titles differ — deadnix names the binding there (#237).
  * @param {DecidableFinding} a @param {DecidableFinding} b @returns {boolean}
  */

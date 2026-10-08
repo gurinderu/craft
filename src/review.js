@@ -1217,7 +1217,7 @@ function ruleOf(f, d) {
 
 /**
  * Whether two gate-tool findings are distinct by the tool's own identity, so no dedup may merge them
- * (realm @nick/craft, node #236): both carry a toolRule and they differ, or both are a rule-less tool's
+ * (realm @nick/craft, node #238; the same signs as the memory match, #236): both carry a toolRule and they differ, or both are a rule-less tool's
  * (deadnix, fmt) and their normalized titles differ — deadnix names the binding there (#237).
  * @param {DecidableFinding} a @param {DecidableFinding} b @returns {boolean}
  */
@@ -5656,7 +5656,7 @@ function sameTitleAt(pool, idxs, i, taken) {
   for (const j of idxs) {
     if (j === i || taken.has(j)) continue
     const [a, b] = [/** @type {Finding} */ (pool[i]), /** @type {Finding} */ (pool[j])]
-    // Two gate-tool findings distinct by the tool's own identity are two findings, however alike their titles (realm @nick/craft, node #236).
+    // Two gate-tool findings distinct by the tool's own identity are two findings, however alike their titles (realm @nick/craft, node #238).
     if (shingleOverlap(a['title'], b['title']) >= SAME_SPOT_OVERLAP && !toolDistinct(a, b)) { g.push(j); taken.add(j) }
   }
   return g
@@ -5707,7 +5707,7 @@ async function dedupPool(pool, profile) {
   const detGroups = sameSpotGroups(pool)
   const groups = detGroups.concat(
     (res?.groups ?? []).filter(g => Array.isArray(g) && g.length > 1 && g.every(i => Number.isInteger(i) && i >= 0 && i < pool.length))
-      // Nor may the model merge them (realm @nick/craft, node #236).
+      // Nor may the model merge them (realm @nick/craft, node #238).
       .filter(g => !holdsToolDistinct(g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i])))),
   )
   /** @type {Finding[]} */
