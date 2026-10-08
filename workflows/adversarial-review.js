@@ -2113,6 +2113,10 @@ const MATCHED_BY_ANCHOR = 'matched by file:line+lens'
 
 const MATCHED_BY_RULE = 'matched by file:line+lens+toolRule'
 
+const MATCHED_BY_TOOL_TITLE = 'matched by file:line+lens+title'
+
+const MATCHED_BY_FILE_TITLE = 'matched by file+lens+title'
+
 const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
 /** Lower-cased lens names of a value, split on commas. @param {unknown} v @returns {string[]} */
@@ -2159,15 +2163,26 @@ function isRulelessToolFinding(f) {
   return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l))
 }
 
+/** A title as a rule-less tool's finding compares it: lower-cased, whitespace collapsed, trimmed. @param {unknown} v @returns {string} */
+function titleKey(v) {
+  return typeof v === 'string' ? v.toLowerCase().replace(/\s+/g, ' ').trim() : ''
+}
+
 /**
  * How the record's toolRule stands to a tool finding's (realm @nick/craft, node #236): `same` when both
  * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
- * none; `any` for a finding that is not a tool's, or a rule-less tool's (deadnix, fmt) — its toolRule
- * plays no part.
- * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'other' | 'unknown'}
+ * none; `any` for a finding that is not a tool's. A rule-less tool's finding (deadnix, fmt) has no
+ * toolRule — its title stands in: `title` when the normalized titles are equal, else `unknown` (the
+ * judge's; word overlap is not equality: "Unused lambda pattern: pkgs" and "…: self" share three words
+ * of four, #237).
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'title' | 'other' | 'unknown'}
  */
 function ruleOf(f, d) {
-  if (!isToolFinding(f) || isRulelessToolFinding(f)) return 'any'
+  if (!isToolFinding(f)) return 'any'
+  if (isRulelessToolFinding(f)) {
+    const t = titleKey(f.title)
+    return t && t === titleKey(d.title) ? 'title' : 'unknown'
+  }
   const [mine, theirs] = [ruleKey(f['toolRule']), ruleKey(d.toolRule)]
   if (!mine || !theirs) return 'unknown'
   return mine === theirs ? 'same' : 'other'
@@ -2181,7 +2196,7 @@ function findingLine(f) {
 
 /**
  * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
- * a tool finding but deadnix's and fmt's the same toolRule),
+ * a tool finding the same toolRule, for deadnix's and fmt's the same normalized title),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
@@ -2196,17 +2211,30 @@ function matchClass(f, d) {
 
 /**
  * How the record's anchor meets the finding's: line within the candidate window (`near`) and the sure
- * one (`sure`), a shared lens (`same`). @param {DecidableFinding} f @param {PriorDecision} d
- * @returns {{ near: boolean, sure: boolean, same: boolean }}
+ * one (`sure`), a shared lens (`same`), and whether both are a rule-less tool's whole-file finding in one
+ * file (`whole`: no line on either side — a formatter mismatch — anchors like a line).
+ * @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ near: boolean, sure: boolean, same: boolean, whole: boolean }}
  */
 function anchorOf(f, d) {
-  const line = findingLine(f)
   const own = lensWords(d.lens)
   const lenses = findingLenses(f)
-  const byLine = !!d.line && line > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
+  const { gap, whole } = placeGap(f, d)
   const byLens = own.length > 0 && lenses.size > 0
-  const gap = byLine ? Math.abs(line - Number(d.line)) : Infinity
-  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)) }
+  return { near: gap <= MATCH_LINE_WINDOW, sure: gap <= MATCH_SURE_WINDOW, same: byLens && own.some(l => lenses.has(l)), whole }
+}
+
+/**
+ * How many lines apart the record and the finding are (Infinity when no line compares), and whether both
+ * are a rule-less tool's whole-file finding in one file. @param {DecidableFinding} f @param {PriorDecision} d
+ * @returns {{ gap: number, whole: boolean }}
+ */
+function placeGap(f, d) {
+  const line = findingLine(f)
+  const oneFile = inDecisionScope(d.scope, String(f.file ?? ''))
+  if (d.line && line > 0 && oneFile) return { gap: Math.abs(line - Number(d.line)), whole: false }
+  const whole = !d.line && line === 0 && oneFile && isRulelessToolFinding(f)
+  return { gap: whole ? 0 : Infinity, whole }
 }
 
 /**
@@ -2225,6 +2253,12 @@ function triedOrder(ds) {
   return first.length ? [...first, ...ds.filter(d => !d.overrides?.length)] : ds
 }
 
+/** How a sure match was established, by ruleOf. @param {string} rule @returns {string} */
+function sureHow(rule) {
+  if (rule === 'same') return MATCHED_BY_RULE
+  return rule === 'title' ? MATCHED_BY_TOOL_TITLE : MATCHED_BY_ANCHOR
+}
+
 /**
  * One finding against the records in tried order: the first anchored match, and the disputed candidates
  * tried before it (the judge decides whether one of them answers it first).
@@ -2235,7 +2269,7 @@ function findingPlan(f, ordered) {
   const disputed = []
   for (const d of ordered) {
     const c = matchClass(f, d)
-    if (c === 'anchored') return { sure: { d, how: ruleOf(f, d) === 'same' ? MATCHED_BY_RULE : MATCHED_BY_ANCHOR }, disputed }
+    if (c === 'anchored') return { sure: { d, how: anchorOf(f, d).whole ? MATCHED_BY_FILE_TITLE : sureHow(ruleOf(f, d)) }, disputed }
     if (c === 'disputed') disputed.push(d)
   }
   return { disputed }
@@ -2243,15 +2277,16 @@ function findingPlan(f, ordered) {
 
 /**
  * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
- * order, a candidate judged the same; one without a verdict whose title answers the finding (#187);
- * else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
+ * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) —
+ * never a rule-less tool's (deadnix, fmt): a disputed pair of theirs has another title, and word overlap
+ * would join two bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
  * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
  */
 function resolvePlan(f, plan, judged) {
   for (const d of plan.disputed) {
     const v = judged?.get(d)
     if (v?.same) return { d, how: `matched by judge: ${v.why}` }
-    if (!v && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
+    if (!v && !isRulelessToolFinding(f) && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
   }
   return plan.sure
 }
@@ -2344,6 +2379,14 @@ function cutPairsNote(cut) {
 }
 
 /**
+ * The refusal for rule-less tool pairs (deadnix, fmt) the judge gave no verdict: raised, the title rule
+ * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
+ */
+function rulelessUnjudgedNote(n) {
+  return `${n} deadnix/fmt record–finding pair(s) got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title at its place or by the judge, never by shared title words`
+}
+
+/**
  * Runs the judge over `sent` (never empty): the verdicts by pair index; a missing judge, a throw or an
  * unreadable answer yields none, said once in `refused`. @param {DisputedPair[]} sent
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge @param {string[]} refused
@@ -2355,18 +2398,19 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them, the rest raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them, the rest raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
   return v
 }
 
 /**
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
  * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
- * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone.
+ * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone, but
+ * a deadnix or fmt finding's: it stays raised (realm @nick/craft, node #236).
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -2395,6 +2439,8 @@ async function matchFindings(findings, decisions, judge) {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
+  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).length : 0
+  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
 /**
