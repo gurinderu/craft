@@ -40,7 +40,7 @@ answered question becomes a `decision` that supersedes it.
   deferred  `true` on a question that defers a review finding (below); absent on every other record
   line    the finding's line in `scope`'s file (records on review findings; absent when unknown)
   lens    the review lens that raised the finding, as the review names it (absent when unknown)
-  toolRule  a gate tool's own rule name the finding fired (a clippy lint, a semgrep rule id, a statix/deadnix code), as the review prints it — what tells two gate-tool findings apart; not the catalog ruleId (absent when unknown)
+  toolRule  a gate tool's own rule name the finding fired (a clippy lint, a semgrep rule id, a statix code; deadnix and fmt print none, so theirs carry none), as the review prints it — what tells two gate-tool findings apart; not the catalog ruleId (absent when unknown)
   links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
 ```
 

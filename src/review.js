@@ -1123,7 +1123,7 @@ async function recallDecisions(ask, paths, base) {
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES isToolSource isToolFinding ruleKey ruleOf findingLine matchClass anchorOf pairRank triedOrder findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding ruleOf findingLine matchClass anchorOf pairRank triedOrder findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -1157,6 +1157,8 @@ function findingLenses(f) {
 
 const TOOL_LENSES = ['tool', 'clippy', 'clippy-pedantic', 'semgrep', 'semver', 'semver-checks', 'statix', 'deadnix', 'fmt']
 
+const RULELESS_TOOL_LENSES = ['deadnix', 'fmt']
+
 /** Whether a source names a gate tool. @param {unknown} source @returns {boolean} */
 function isToolSource(source) {
   return lensWords(source).some(l => TOOL_LENSES.includes(l))
@@ -1180,14 +1182,21 @@ function ruleKey(v) {
   return m && TOOL_LENSES.some(l => l === tool || l.split('-')[0] === tool) ? String(m[2]) : s
 }
 
+/** Whether every tool a finding names prints no rule name (deadnix, fmt). @param {DecidableFinding} f @returns {boolean} */
+function isRulelessToolFinding(f) {
+  const tools = [...findingLenses(f)].filter(l => TOOL_LENSES.includes(l))
+  return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l))
+}
+
 /**
  * How the record's toolRule stands to a tool finding's (realm @nick/craft, node #236): `same` when both
  * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
- * none; `any` for a finding that is not a tool's — its toolRule plays no part.
+ * none; `any` for a finding that is not a tool's, or a rule-less tool's (deadnix, fmt) — its toolRule
+ * plays no part.
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'other' | 'unknown'}
  */
 function ruleOf(f, d) {
-  if (!isToolFinding(f)) return 'any'
+  if (!isToolFinding(f) || isRulelessToolFinding(f)) return 'any'
   const [mine, theirs] = [ruleKey(f['toolRule']), ruleKey(d.toolRule)]
   if (!mine || !theirs) return 'unknown'
   return mine === theirs ? 'same' : 'other'
@@ -1201,7 +1210,7 @@ function findingLine(f) {
 
 /**
  * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
- * a tool finding the same toolRule),
+ * a tool finding but deadnix's and fmt's the same toolRule),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
@@ -7648,7 +7657,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${incompleteClause}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
-3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. A finding with a non-empty \`toolRule\` (a gate tool's own rule) carries it in the same brackets after the ruleId, as \`[ruleId · toolRule]\` (\`[toolRule]\` when ruleId is empty). When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
+3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. A finding with a non-empty \`toolRule\` (a gate tool's own rule) carries it in the same brackets, always labelled \`tool:\` so it never reads as a catalog id: \`[ruleId · tool: toolRule]\`, or \`[tool: toolRule]\` when ruleId is empty. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
 4. \`## Suspected (needs confirmation)\` — findings a verifier DID examine and could not confirm; same format; omit the section if empty.
 5. \`## Unverified (not checked)\` — same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into Confirmed or Suspected, never call them confirmed, and do not re-rank or upgrade their severity. Omit the section if empty.
 6. \`## Fix first\` — the few highest-leverage Confirmed items.
@@ -7916,7 +7925,7 @@ function fallbackReport() {
   // Approve and hide live still-open/regressed priors. Render those tracks too.
   const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[isRereview ? recordVerdict : finalVerdict(confirmed)]
   // The catalog ruleId and a gate tool's own rule beside it (realm @nick/craft, node #236).
-  const ruleTag = (/** @type {Finding} */ f) => { const r = [f['ruleId'], f['toolRule']].filter(Boolean).join(' · '); return r ? ` · [${r}]` : '' }
+  const ruleTag = (/** @type {Finding} */ f) => { const r = [f['ruleId'], f['toolRule'] ? `tool: ${f['toolRule']}` : ''].filter(Boolean).join(' · '); return r ? ` · [${r}]` : '' }
   const fmt = (/** @type {Finding} */ f) => `- ${f['severity']} · \`${f['file'] || '?'}:${f['line'] || 0}\`${ruleTag(f)} · ${f['title']} · ${f['why']} · Fix: ${f['fix']}${f['whereChecked'] ? ` · Premise checked at: ${f['whereChecked']}` : ''}`
   const bySev = (/** @type {Finding[]} */ a) => a.slice().sort((/** @type {Finding} */ x, /** @type {Finding} */ y) => (SEV_RANK[x['severity'] ?? ''] ?? 9) - (SEV_RANK[y['severity'] ?? ''] ?? 9))
   return [

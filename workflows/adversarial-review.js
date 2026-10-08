@@ -2128,6 +2128,8 @@ function findingLenses(f) {
 
 const TOOL_LENSES = ['tool', 'clippy', 'clippy-pedantic', 'semgrep', 'semver', 'semver-checks', 'statix', 'deadnix', 'fmt']
 
+const RULELESS_TOOL_LENSES = ['deadnix', 'fmt']
+
 /** Whether a source names a gate tool. @param {unknown} source @returns {boolean} */
 function isToolSource(source) {
   return lensWords(source).some(l => TOOL_LENSES.includes(l))
@@ -2151,14 +2153,21 @@ function ruleKey(v) {
   return m && TOOL_LENSES.some(l => l === tool || l.split('-')[0] === tool) ? String(m[2]) : s
 }
 
+/** Whether every tool a finding names prints no rule name (deadnix, fmt). @param {DecidableFinding} f @returns {boolean} */
+function isRulelessToolFinding(f) {
+  const tools = [...findingLenses(f)].filter(l => TOOL_LENSES.includes(l))
+  return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l))
+}
+
 /**
  * How the record's toolRule stands to a tool finding's (realm @nick/craft, node #236): `same` when both
  * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
- * none; `any` for a finding that is not a tool's — its toolRule plays no part.
+ * none; `any` for a finding that is not a tool's, or a rule-less tool's (deadnix, fmt) — its toolRule
+ * plays no part.
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'other' | 'unknown'}
  */
 function ruleOf(f, d) {
-  if (!isToolFinding(f)) return 'any'
+  if (!isToolFinding(f) || isRulelessToolFinding(f)) return 'any'
   const [mine, theirs] = [ruleKey(f['toolRule']), ruleKey(d.toolRule)]
   if (!mine || !theirs) return 'unknown'
   return mine === theirs ? 'same' : 'other'
@@ -2172,7 +2181,7 @@ function findingLine(f) {
 
 /**
  * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
- * a tool finding the same toolRule),
+ * a tool finding but deadnix's and fmt's the same toolRule),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
