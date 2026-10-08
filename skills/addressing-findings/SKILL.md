@@ -100,9 +100,11 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names, not the normalized finding's `source`, which is `rust-audit` / `github-pr`; or
   adversarial-review's `lens`; leave either out when the finding has none), toolRule = the gate
   tool's own rule name — a clippy lint, a semgrep rule id, a statix code — read, like the lens, from
-  the review ledger row's `toolRule` (else from the report's brackets after the ruleId, or the PR
-  comment's `craft-tool-rule` line), copied as it stands; a tool's finding matches a record outright
-  only on the same toolRule; leave it out when none of these names one, never fill it from memory), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
+  the review ledger row's `toolRule` (else from the report's brackets — only the part labelled `tool:`,
+  as in `[MNT-001 · tool: W04]` or `[tool: W04]`; a bracket without `tool:` is a catalog ruleId, never a
+  toolRule — or the PR comment's `craft-tool-rule` line), copied as it stands; a tool's finding
+  matches a record outright only on the same toolRule (deadnix and fmt print none — theirs match by
+  line and lens alone); leave it out when none of these names one, never fill it from memory), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
   body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
 - **A deferral is an open question, not a decision** — triage `defer` becomes `record-question`
