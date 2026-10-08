@@ -244,7 +244,9 @@ published libraries `cargo semver-checks check-release`; and `semgrep` as a SAST
 `./semgrep/` custom rules always when present, plus `p/rust`/`p/secrets` when the diff is
 security-sensitive (auth, crypto, input parsing, unsafe, FFI, deps). semgrep results are seeds, never
 gate failures: taint/secrets over-report, so the downstream verification refutes the false positives
-(see `rust-security`). Optional tools degrade gracefully when absent.
+(see `rust-security`). Optional tools degrade gracefully when absent. Each seed carries, beside its
+catalog `ruleId`, the tool's own rule name as `toolRule` (the clippy lint, the semgrep rule id, the
+semver-checks check) — what tells two lints under one catalog rule apart.
 
 ## Severity magnitude — measure it, don't inherit it (`SAF-009`)
 
