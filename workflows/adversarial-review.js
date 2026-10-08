@@ -2126,7 +2126,12 @@ function findingLenses(f) {
   return new Set([f['lens'], ...sources, f['source']].flatMap(lensWords))
 }
 
-const TOOL_LENSES = ['tool', 'clippy', 'clippy-pedantic', 'semgrep', 'semver-checks', 'statix', 'deadnix', 'fmt', 'dep-context']
+const TOOL_LENSES = ['tool', 'clippy', 'clippy-pedantic', 'semgrep', 'semver', 'semver-checks', 'statix', 'deadnix', 'fmt']
+
+/** Whether a source names a gate tool. @param {unknown} source @returns {boolean} */
+function isToolSource(source) {
+  return lensWords(source).some(l => TOOL_LENSES.includes(l))
+}
 
 /** Whether a finding is a gate tool's: one of its lenses is a tool's. @param {DecidableFinding} f @returns {boolean} */
 function isToolFinding(f) {
@@ -2134,9 +2139,16 @@ function isToolFinding(f) {
   return TOOL_LENSES.some(l => lenses.has(l))
 }
 
-/** A toolRule compared case- and whitespace-blind; '' when absent. @param {unknown} v @returns {string} */
+/**
+ * A toolRule as compared: trimmed, lower-cased, without a leading `<tool>::` naming a gate tool —
+ * `clippy::needless_clone`, `needless_clone` and `Clippy::NEEDLESS_CLONE` are one rule (realm
+ * @nick/craft, node #236); '' when absent. @param {unknown} v @returns {string}
+ */
 function ruleKey(v) {
-  return typeof v === 'string' ? v.trim().toLowerCase() : ''
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : ''
+  const m = /^([a-z0-9_-]+)\s*::\s*(\S.*)$/.exec(s)
+  const tool = m?.[1]
+  return m && TOOL_LENSES.some(l => l === tool || l.split('-')[0] === tool) ? String(m[2]) : s
 }
 
 /**

@@ -98,10 +98,11 @@ one itself). Only a **lesson** waits for the author's yes (below).
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
   the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names, not the normalized finding's `source`, which is `rust-audit` / `github-pr`; or
-  adversarial-review's `lens`; leave either out when the finding has none), toolRule = the finding's
-  `toolRule` (the gate tool's own rule name — a clippy lint, a semgrep rule id, a statix/deadnix code —
-  printed after the ruleId in the report's brackets and on the PR comment's `craft-tool-rule` line; a
-  tool's finding matches a record outright only on the same toolRule; leave it out when the finding has none), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
+  adversarial-review's `lens`; leave either out when the finding has none), toolRule = the gate
+  tool's own rule name — a clippy lint, a semgrep rule id, a statix code — read, like the lens, from
+  the review ledger row's `toolRule` (else from the report's brackets after the ruleId, or the PR
+  comment's `craft-tool-rule` line), copied as it stands; a tool's finding matches a record outright
+  only on the same toolRule; leave it out when none of these names one, never fill it from memory), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
   body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
 - **A deferral is an open question, not a decision** — triage `defer` becomes `record-question`

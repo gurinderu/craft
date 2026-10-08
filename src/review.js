@@ -1123,7 +1123,7 @@ async function recallDecisions(ask, paths, base) {
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES isToolFinding ruleKey ruleOf findingLine matchClass anchorOf pairRank triedOrder findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES isToolSource isToolFinding ruleKey ruleOf findingLine matchClass anchorOf pairRank triedOrder findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -1155,7 +1155,12 @@ function findingLenses(f) {
   return new Set([f['lens'], ...sources, f['source']].flatMap(lensWords))
 }
 
-const TOOL_LENSES = ['tool', 'clippy', 'clippy-pedantic', 'semgrep', 'semver-checks', 'statix', 'deadnix', 'fmt', 'dep-context']
+const TOOL_LENSES = ['tool', 'clippy', 'clippy-pedantic', 'semgrep', 'semver', 'semver-checks', 'statix', 'deadnix', 'fmt']
+
+/** Whether a source names a gate tool. @param {unknown} source @returns {boolean} */
+function isToolSource(source) {
+  return lensWords(source).some(l => TOOL_LENSES.includes(l))
+}
 
 /** Whether a finding is a gate tool's: one of its lenses is a tool's. @param {DecidableFinding} f @returns {boolean} */
 function isToolFinding(f) {
@@ -1163,9 +1168,16 @@ function isToolFinding(f) {
   return TOOL_LENSES.some(l => lenses.has(l))
 }
 
-/** A toolRule compared case- and whitespace-blind; '' when absent. @param {unknown} v @returns {string} */
+/**
+ * A toolRule as compared: trimmed, lower-cased, without a leading `<tool>::` naming a gate tool —
+ * `clippy::needless_clone`, `needless_clone` and `Clippy::NEEDLESS_CLONE` are one rule (realm
+ * @nick/craft, node #236); '' when absent. @param {unknown} v @returns {string}
+ */
 function ruleKey(v) {
-  return typeof v === 'string' ? v.trim().toLowerCase() : ''
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : ''
+  const m = /^([a-z0-9_-]+)\s*::\s*(\S.*)$/.exec(s)
+  const tool = m?.[1]
+  return m && TOOL_LENSES.some(l => l === tool || l.split('-')[0] === tool) ? String(m[2]) : s
 }
 
 /**
@@ -2087,7 +2099,7 @@ GATE (CI-aware, per the rust-review skill — load it):
 4. status = fail if any of fmt/clippy/test/build is red (CI or local), or a security check red is attributable to this diff per 3; pass if all green; unknown if you could not establish it. Anything in carriedChecks NEVER moves status — that is the whole distinction.
 
 SEED FINDINGS (tool grounding — beyond the gate, scoped to the changed crates):
-5. Pedantic seeds (a SEPARATE, optional pass — never a substitute for the gate in step 2; SKIP OUTRIGHT if preflight 0b found a compile blocker), on the SAME changed packages and the SAME feature flags you resolved there, so the two passes see the same code: \`cargo clippy -p <pkg> --all-targets --message-format=short <their feature flags> -- -W clippy::pedantic -W clippy::nursery\`. Only fall back to the whole workspace when the diff genuinely spans it. Keep the last ~200 diagnostic lines; if you truncate, SAY how many you dropped in notes — a silent cut reads as "there were only N". Turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these. This step is optional: if it exceeds the budget, skip it and note that the pedantic seeds are absent.
+5. Pedantic seeds (a SEPARATE, optional pass — never a substitute for the gate in step 2; SKIP OUTRIGHT if preflight 0b found a compile blocker), on the SAME changed packages and the SAME feature flags you resolved there, so the two passes see the same code. Run it in JSON so each line names its lint (\`--message-format=short\` does not): \`cargo clippy -p <pkg> --all-targets --message-format=json <their feature flags> -- -W clippy::pedantic -W clippy::nursery 2>/dev/null | jq -r 'select(.reason=="compiler-message") | .message | select(.code != null) | (first(.spans[] | select(.is_primary)) // {}) as $s | "\\($s.file_name // "?"):\\($s.line_start // 0): \\(.level) [\\(.code.code)] \\(.message)"' | sort -u\` — one line per diagnostic, \`file:line: level [clippy::lint] message\`. Without jq, drop \`--message-format\` and read the lint from each diagnostic's help link, \`…/index.html#<lint>\` → \`clippy::<lint>\`. Only fall back to the whole workspace when the diff genuinely spans it. Keep the last ~200 diagnostic lines; if you truncate, SAY how many you dropped in notes — a silent cut reads as "there were only N". Turn each NEW pedantic/nursery diagnostic on changed lines into a seed finding (severity Low/Medium, source "clippy-pedantic"). Do not fail the gate on these. This step is optional: if it exceeds the budget, skip it and note that the pedantic seeds are absent.
 ${ctx.isLibrary ? '6. This is a library: run `cargo semver-checks check-release` if installed; each reported break is a seed finding (severity High, source "semver-checks"). If not installed, log and skip.' : '6. Not a library — skip semver-checks.'}
 
 7. SAST seed (semgrep) — decide what configs apply, then run only if any do:
@@ -2102,7 +2114,7 @@ ${rustDepContext(ctx)}
 ${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI (cite the check name). Never infer a pass. If the changed files are not part of a cargo project, do NOT fabricate a temporary crate/harness around them to lint or build — record build/clippy/test as not establishable (status=unknown) and say why in notes.
 
-Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits, and \`toolRule\` to the tool's own rule name exactly as its output prints it — the clippy lint ("clippy::needless_pass_by_value"), the semgrep rule id, the cargo-semver-checks check name; leave \`toolRule\` out when the tool names no rule (a dep-context finding).`
+Set provenance to a one-line summary like "clippy/test via CI #123; fmt/audit/deny local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from clippy-pedantic / semver / semgrep / dep-context only. On every seed finding set \`ruleId\` to the matching rust-review rules.md catalog ID (e.g. "DEP-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the clippy lint in its brackets ("clippy::needless_pass_by_value"), the semgrep \`check_id\`, the cargo-semver-checks check name. \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a dep-context finding, a line you cannot tie to a rule), leave \`toolRule\` out.`
 }
 /** @param {Ctx} _ctx */
 function nixDepContext(_ctx) {
@@ -2128,7 +2140,7 @@ ${nixDepContext(ctx)}
 ${GATE_TIME_BUDGET}
 EVIDENCE RULE: report a check as pass/fail ONLY if you ran it yourself (quote the command and its exit status / decisive output line in notes) or saw it conclusively green/red in CI. Never infer a pass; a tool you could not run is "skipped" in notes, never a pass.
 
-Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name exactly as its output prints it — the statix warning code or name, the deadnix diagnostic kind; leave \`toolRule\` out when the tool names no rule (a formatter mismatch, a dep-context finding).`
+Set provenance to a one-line summary like "nix flake check pass; statix/deadnix local". Put gate failures in failedChecks (NOT seedFindings). Seed findings come from statix / deadnix / fmt / dep-context only. On every seed finding set \`ruleId\` to the matching nix-review rules.md catalog ID (e.g. "MNT-001") or "" if none fits, and \`toolRule\` to the tool's own rule name copied from that finding's line of tool output — the statix code it prints in brackets ("W04"). \`toolRule\` ONLY when the tool output you read names the rule, NEVER from memory or guessed from the message text — a wrong name hides a different lint behind an old decision; when the output names none (a deadnix diagnostic, a formatter mismatch, a dep-context finding), leave \`toolRule\` out.`
 }
 
 // Admitted by a code signal, never by a floor. See `blanketLenses()` in planFor: a blanket roster fill
@@ -2660,7 +2672,7 @@ const FINDING_ITEM = {
     source: { type: 'string', description: 'lens name or tool name that produced this' },
     ruleId: { type: 'string', description: 'catalog rule ID from the active profile\'s rules.md (e.g. "CON-003" for rust, "PUR-001" for nix) if the finding maps to one; empty string otherwise' },
     // A gate tool's own rule name, set by the gate on its seeds — what tells two lints sharing a catalog ruleId apart (realm @nick/craft, node #236).
-    toolRule: { type: 'string', description: 'gate seeds only: the tool\'s own rule name exactly as its output prints it (clippy lint "clippy::needless_pass_by_value", semgrep rule id, statix/deadnix code, semver-checks check name); omit when the tool names none or the finding is not a tool\'s' },
+    toolRule: { type: 'string', description: 'gate seeds only: the tool\'s own rule name copied from the tool output line that names it (clippy lint "clippy::needless_pass_by_value", semgrep rule id, statix code, semver-checks check name) — never from memory; omit when the output names none or the finding is not a tool\'s' },
     fp: { type: 'string', description: 'line-tolerant fingerprint; empty if not from a ledger' },
     symbol: { type: 'string', description: 'enclosing fn/type name; empty if unknown' },
     tier: { type: 'string', description: 'confirmed|suspected|unverified|refuted; empty if n/a' },
@@ -2690,6 +2702,8 @@ const LEDGER_ITEM = {
     source: { type: 'string' },
     sources: { type: 'array', items: { type: 'string' } },
     ruleId: { type: 'string' },
+    // Optional: a gate tool's own rule name, present only on a seed whose tool output named it (realm @nick/craft, node #236).
+    toolRule: { type: 'string' },
     title: { type: 'string' },
     why: { type: 'string' },
     // Optional (not in `required`): present only on an item whose `why` the loader script shortened for
@@ -4837,17 +4851,6 @@ function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalS
   return Number(thisRound) % n === 0
 }
 
-// A finding is "tool-sourced" — deterministic and re-runnable, so a verifier may refute it ONLY by
-// re-running the tool — when it came from neither a review lens nor the negative-space lens nor
-// dep-context. dep-context is a *reasoning* seed from the gate (version-specific API misuse) with no
-// re-runnable tool behind it, so it must be verifiable by argument like a lens finding; classifying
-// it as a tool would make it effectively unfalsifiable ("keep an unverifiable tool finding alive")
-// and inflate the verdict with false Warnings.
-/** @param {Profile} profile @param {string | undefined} source */
-function isToolSource(profile, source) {
-  return !((source !== undefined && profile.lenses.includes(source)) || source === 'negative-space' || source === 'dep-context')
-}
-
 // ================= Detect base + languages =================
 phase('Scout')
 // An absolute `path` with no `repo` to decide it against: refuse BEFORE the first agent is
@@ -5636,7 +5639,7 @@ function mergedGroup(members, isToolSrc) {
 /** @param {Finding[]} pool @param {Profile} profile */
 async function dedupPool(pool, profile) {
   if (pool.length < 2) return pool
-  const isToolSrc = (/** @type {Finding} */ f) => isToolSource(profile, f['source'])
+  const isToolSrc = (/** @type {Finding} */ f) => isToolSource(f['source'])
   const listing = pool.map((/** @type {Finding} */ f, /** @type {number} */ i) => `${i}. ${f['file'] || '?'}:${f['line'] || 0} [${f['severity']}] (${f['source']}) ${f['title']} — ${String(f['why'] || '').slice(0, 160)}`).join('\n')
   const res = await dedupModelGroups(profile, listing)
   // Deterministic same-spot groups go FIRST: the "overlapping groups: first wins" rule below then
@@ -6117,8 +6120,8 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   }
 
   const individualThunks = route.individual.map(f => () => {
-    // Anything not produced by a review lens came from a deterministic tool (gate seeds: clippy-pedantic, statix, deadnix, semgrep, …) — except dep-context, a reasoning seed (see isToolSource).
-    const isTool = isToolSource(profile, f['source'])
+    // A gate tool's seed (clippy-pedantic, statix, deadnix, semgrep, …) is deterministic and re-runnable, so a verifier refutes it only by re-running the tool; dep-context, a reasoning seed, is verified by argument like a lens finding (isToolSource, lib/prior-decision-match.mjs).
+    const isTool = isToolSource(f['source'])
     const isHigh = f['severity'] === 'Critical' || f['severity'] === 'High'
     const n1 = isHigh ? Math.max(1, plan.verifyVotes) : 1
     // Cull votes on the cheap model.
@@ -7760,6 +7763,7 @@ const toLedgerEntry = (f, disposition, tier) => ({
   severity: f['severity'], tier: tier || f['tier'] || 'suspected', disposition: disposition || f['disposition'] || 'open',
   source: f['source'] || '', ruleId: f['ruleId'] || '', title: f['title'] || '', why: String(f['why'] || '').split(TRACKED_MARK).join('').replace(THINNED_CLAUSE, ''),
   ...ledgerSources(f),
+  ...ledgerToolRule(f),
   ...ledgerWhyRef(f),
   ...ledgerDeferral(f),
 })
@@ -7771,6 +7775,14 @@ function ledgerDeferral(f) {
 /** The leading fields of a ledger entry: its fingerprint and where it sits. @param {Finding} f */
 function ledgerLocation(f) {
   return { fp: f['fp'] || fingerprint(f), file: f['file'] || '', line: f['line'] || 0, symbol: f['symbol'] || '' }
+}
+/**
+ * A ledger entry's `toolRule`, present only when the finding carries one: a gate tool's own rule rides
+ * the ledger beside `source`, so a carried finding keeps it next round (realm @nick/craft, node #236).
+ * @param {Finding} f
+ */
+function ledgerToolRule(f) {
+  return typeof f['toolRule'] === 'string' && f['toolRule'] ? { toolRule: f['toolRule'] } : {}
 }
 /** A ledger entry's `sources`, present only when the finding carries an array of them. @param {Finding} f */
 function ledgerSources(f) {
