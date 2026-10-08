@@ -1089,7 +1089,7 @@ const isPath = f => typeof f === 'string' && f.trim() !== ''
 const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
 const isEscalated = (/** @type {{ lens?: string, severity: string }} */ f) => f.lens !== 'complexity' && (f.severity === 'critical' || f.severity === 'high')
 
-const CRAFT_VERSION = '0.24.3' // x-release-please-version
+const CRAFT_VERSION = '0.24.4' // x-release-please-version
 
 /** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']

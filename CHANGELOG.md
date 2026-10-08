@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.4](https://github.com/gurinderu/craft/compare/v0.24.3...v0.24.4) (2026-10-08)
+
+
+### Bug Fixes
+
+* **memory:** a tool finding matches its record by the tool's own rule name (toolRule) ([#177](https://github.com/gurinderu/craft/issues/177)) ([d44cf11](https://github.com/gurinderu/craft/commit/d44cf11e16145472f062d8a29faaf5ef025cbac0))
+* **memory:** deadnix and fmt findings match by lens and line; the report labels the tool rule ([#179](https://github.com/gurinderu/craft/issues/179)) ([7647268](https://github.com/gurinderu/craft/commit/76472684cb0321911bfb76ab23f614bf1f99d8c5))
+* **memory:** deadnix and fmt findings need the same title to match a record; same-spot dedup keeps distinct tool findings apart ([#180](https://github.com/gurinderu/craft/issues/180)) ([638bb4e](https://github.com/gurinderu/craft/commit/638bb4eb53ef6034b201a523fd30c80f0d0fce03))
+
 ## [0.24.3](https://github.com/gurinderu/craft/compare/v0.24.2...v0.24.3) (2026-10-07)
 
 
