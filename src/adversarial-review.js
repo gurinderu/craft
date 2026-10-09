@@ -2581,7 +2581,7 @@ function readJudge(raw, n) {
 function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming no tool), the rest raised normally:${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming no tool), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
