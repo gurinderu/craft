@@ -2299,7 +2299,7 @@ function findingPlan(f, ordered) {
 /**
  * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
  * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) — for
- * a finding naming no rule (namesNoRule) only the same title near its line: word overlap would join two
+ * a finding naming no rule (namesNoRule) only a tool record with the same title (sameTitleOf): word overlap would join two
  * bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
  * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
  */
@@ -2316,26 +2316,25 @@ function resolvePlan(f, plan, judged) {
 }
 
 /**
- * Whether the record's lens is the finding's tool: a lens they share, or — for a source-less seed ('tool'),
- * whose tool is unknown — any tool lens; a record with no lens (an old one) too (realm @nick/craft, node #236).
- * @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
+ * Whether a record comes from a gate tool's lens, or carries none (an old record) — any tool's, not only
+ * the finding's own: the gate names a seed's tool one round and not the next, and tool aliases differ
+ * (realm @nick/craft, node #236). @param {PriorDecision} d @returns {boolean}
  */
-function recordOfTool(f, d) {
+function fromToolLens(d) {
   const own = lensWords(d.lens)
-  const lenses = findingLenses(f)
-  return !own.length || own.some(l => lenses.has(l) || (lenses.has('tool') && TOOL_LENSES.includes(l)))
+  return !own.length || own.some(l => TOOL_LENSES.includes(l))
 }
 
 /**
  * How the record answers a finding naming no rule by its title, '' when it does not: the same normalized
- * title, in scope, from the finding's tool (recordOfTool), and the line within MATCH_LINE_WINDOW when both
+ * title, in scope, from a tool lens (or none: an old record), and the line within MATCH_LINE_WINDOW when both
  * lines compare in one file — with no line to compare (none on a side, a directory scope) the same title
  * in scope is enough, and the answer says so (realm @nick/craft, node #236).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {string}
  */
 function sameTitleOf(f, d) {
   const t = titleKey(f.title)
-  if (!t || t !== titleKey(d.title) || !inDecisionScope(f.file, d.scope) || !recordOfTool(f, d)) return ''
+  if (!t || t !== titleKey(d.title) || !inDecisionScope(f.file, d.scope) || !fromToolLens(d)) return ''
   const compares = Boolean(d.line) && findingLine(f) > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
   if (!compares) return MATCHED_BY_SAME_TITLE_IN_SCOPE
   return anchorOf(f, d).near ? MATCHED_BY_SAME_TITLE : ''
@@ -2425,19 +2424,18 @@ function readJudge(raw, n) {
 function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only the same title near its line), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
- * The refusal for pairs of a tool finding naming no rule (namesNoRule) the judge gave no verdict and no
- * record of its tool with the same title answers: raised, the title rule does not join another title —
- * the raised findings named, as for the pairs past the bound (realm @nick/craft, node #236).
- * @param {DisputedPair[]} raised @returns {string}
+ * The refusal for tool findings naming no rule (namesNoRule) that the judge gave no verdict on and no tool
+ * record with the same title answers: raised, the title rule does not join another title — each finding
+ * named once (realm @nick/craft, node #236). @param {DecidableFinding[]} raised @returns {string}
  */
 function rulelessUnjudgedNote(raised) {
-  const named = raised.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
+  const named = raised.slice(0, CUT_NAMED_MAX).map(f => `"${clipLine(f.title, 60)}" @ ${clipLine(f.file)}:${findingLine(f)}`)
   const more = raised.length - named.length
-  return `of the pairs without a judge verdict, ${raised.length} of a tool finding naming no rule were not set aside by a record of its tool with the same title — raised: such a finding is set aside only by the same title or by the judge, never by shared title words: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${raised.length} tool finding(s) naming no rule got no judge verdict and no tool record with the same title — raised (such a finding is set aside only by the same title or by the judge, never by shared title words): ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -2452,11 +2450,11 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only the same title near its line), the rest raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only the same title near its line), the rest raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally`)
   return v
 }
 
@@ -2464,7 +2462,7 @@ async function askJudge(sent, judge, refused) {
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
  * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
  * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone, but
- * a tool finding's that names no rule: only the same title near its line sets it aside (realm @nick/craft, node #236).
+ * a tool finding's that names no rule: only a tool record with the same title sets it aside (realm @nick/craft, node #236).
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -2493,7 +2491,7 @@ async function matchFindings(findings, decisions, judge) {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
-  const titleless = judge ? all.filter(p => namesNoRule(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)) : []
+  const titleless = judge ? [...new Set(sent.filter(p => namesNoRule(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
