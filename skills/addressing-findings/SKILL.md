@@ -94,7 +94,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
   in which case say so and supersede the decision instead of applying it. A matching **active
   question** on the finding's title means it was deferred before: cite it, and either keep it
   deferred or answer it (a decision that supersedes it).
-- **On a disposition** — `record-decision` with title = the finding's title, scope = its file path
+- **On a disposition** — `record-decision` with title = the finding's title (the review ledger row's `title` first — the seed's own words; the report's line is a summary — else as the report printed it), scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
   the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names, not the normalized finding's `source`, which is `rust-audit` / `github-pr`; or
@@ -106,7 +106,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
   matches a record outright only on the same toolRule; leave it out when none of these names one,
   never fill it from memory. A gate tool's finding without toolRule — deadnix and fmt always, any lint
   the review printed without a `tool:` rule — is told apart by its title alone: copy the title exactly
-  as the review printed it, never reworded, since only the same title sets it aside when the judge
+  as the review ledger row carries it, never reworded, since only the same title sets it aside when the judge
   gives no verdict (deadnix names the binding there)), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
   body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
