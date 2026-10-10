@@ -1429,7 +1429,7 @@ function cutPairsNote(cut) {
 function rulelessUnjudgedNote(raised) {
   const named = raised.slice(0, CUT_NAMED_MAX).map(f => `"${clipLine(f.title, 60)}" @ ${clipLine(f.file)}:${findingLine(f)}`)
   const more = raised.length - named.length
-  return `${raised.length} tool finding(s) naming no rule had a candidate record the judge gave no verdict on and no tool record with the same title — raised (such a finding is set aside only by the same title or by the judge, never by shared title words): ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${raised.length} tool finding(s) naming no rule had a candidate record the judge gave no verdict on (or that fell past its bound) and no tool record with the same title — raised (such a finding is set aside only by the same title or by the judge, never by shared title words): ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -6172,7 +6172,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 3. \`## ✅ Resolved\` — prior findings the fixes closed (one line each); omit if empty.
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
-6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty. In Still open, Regressed and New alike: A gate tool's finding without a \`toolRule\` (its source a gate tool: clippy, clippy-pedantic, semgrep, semver, semver-checks, statix, deadnix, fmt, tool) prints its \`title\` verbatim as \`what\` — never reworded: a past decision is matched to it by that title.
+6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty. In Still open, Regressed, New and Unverified alike: A gate tool's finding without a \`toolRule\` (its source a gate tool: clippy, clippy-pedantic, semgrep, semver, semver-checks, statix, deadnix, fmt, tool) prints its \`title\` verbatim as \`what\` — never reworded: a past decision is matched to it by that title.
 6b. \`## Unverified (not checked)\` — the UNVERIFIED JSON below, same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into New, Still open or Carried, never call them confirmed, and do not re-rank or upgrade their severity. They change nothing about the verdict. Omit the section if empty.
 7. \`## 🔽 Carried\` — settled priors (rejected/justified/deferred) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
@@ -6384,9 +6384,8 @@ function floorPremiseSection() {
     + savedByFloor.map(n => `- ${n}`).join('\n')
 }
 
-/** Every finding the report prints and the author can rule on: Confirmed, Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open and regressed tracks. @returns {Finding[]} */
+/** Every finding the report prints and the author can rule on — most deadnix/statix seeds are Low and land Unverified: on a first round Confirmed, Suspected, Unverified; on a re-review, which prints no Suspected section, Still open, Regressed, New (Confirmed) and Unverified. @returns {Finding[]} */
 function verdictFindings() {
-  const tiers = [...confirmed, ...suspected, ...unverified]
-  return isRereview ? [...tiers, ...adjudicated.stillOpen, ...adjudicated.regressed] : tiers
+  return isRereview ? [...adjudicated.stillOpen, ...adjudicated.regressed, ...confirmed, ...unverified] : [...confirmed, ...suspected, ...unverified]
 }
 return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + toolTitlesSection(verdictFindings()) + scopeSection())
