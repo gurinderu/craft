@@ -552,7 +552,7 @@ function gatherPlan() {
   if (report) {
     requestedLocators.push('report')
     gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
-      `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present.`,
+      `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's \`## Tool finding titles (verbatim)\` section (also nested under \`## Prior decisions in the nested reviews (verbatim)\`) lists titles, not findings: never extract its rows as findings. For a finding at a \`file:line\` it lists, take the title from it — the listed title equal to the finding's line, or the only one listed there; when several are listed and none is equal, keep the finding's own line, never a guess between them.`,
       { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
     )))
   }

@@ -2492,7 +2492,8 @@ async function matchFindings(findings, decisions, judge) {
     return p && resolvePlan(f, p, byFinding.get(f))
   }
   const cutF = new Set(pairs.slice(sent.length, sent.length + CUT_NAMED_MAX).map(p => p.f))
-  const titleless = judge ? [...new Set(sent.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
+  const unnamed = [...sent, ...pairs.slice(sent.length + CUT_NAMED_MAX)]
+  const titleless = judge ? [...new Set(unnamed.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
