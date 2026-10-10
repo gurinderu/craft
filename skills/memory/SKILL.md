@@ -48,7 +48,7 @@ answered question becomes a `decision` that supersedes it.
 made (the PR thread, the review comment): the review engine names them when it sets the finding
 aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
 decision without a `commit` is still recorded, but a review raises its finding again every time.
-The title is the finding's title as the review ledger row carries it (the report prints a summary line); `line`, `lens` and `toolRule` are the
+The title is the finding's title as the review printed it — for a gate tool's finding without `toolRule`, as the report lists it under **Tool finding titles (verbatim)** at its `file:line` (none listed: the review ledger row's title, else the report line, which then goes to the judge each round) — never from a refusal note, which clips it; `line`, `lens` and `toolRule` are the
 finding's anchor. The review rewords titles every round, so the engine matches a record to a finding by its
 file inside `scope`, its line and its lens: within 3 lines and the same lens it matches outright;
 a near miss (within 15 lines, the same lens, or shared title words) goes to a judge, an older record
@@ -65,7 +65,7 @@ same title (case and spacing aside) in its scope — and, when both lines compar
 shared title words. So record such a finding's title verbatim, with its file as scope and its line.
 
 **A deferred finding is an open question, not a decision**: valid, but not answered now. It is a
-`question` record with the same anchors — title = the finding's title, scope = its file, body = what
+`question` record with the same anchors — title = the finding's title (from the same source as a decision's), scope = its file, body = what
 would answer it, `author`, `commit`, `line`, `lens` and `toolRule` = the finding's, links = the PR and the comment — and `deferred: true`, the field
 that makes it a deferral. A question without `deferred: true` (a needs-decision question) is context
 only: a review sets nothing aside by it. A deferral without a `commit` sets nothing aside either —

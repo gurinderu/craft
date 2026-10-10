@@ -1759,7 +1759,7 @@ function reviewResult(dimension, report) {
   }
 }
 
-const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Known and deferred (open question — not in the verdict)', '## Prior decisions not applied']
+const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Known and deferred (open question — not in the verdict)', '## Prior decisions not applied', '## Tool finding titles (verbatim)']
 
 /**
  * The report without its prior-decision sections, and those sections, each from its heading to the

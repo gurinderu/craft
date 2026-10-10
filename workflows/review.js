@@ -1486,9 +1486,20 @@ async function matchFindings(findings, decisions, judge) {
     return p && resolvePlan(f, p, byFinding.get(f))
   }
   const cutF = new Set(pairs.slice(sent.length, sent.length + CUT_NAMED_MAX).map(p => p.f))
-  const titleless = judge ? [...new Set(sent.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
+  const unnamed = [...sent, ...pairs.slice(sent.length + CUT_NAMED_MAX)]
+  const titleless = judge ? [...new Set(unnamed.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
+}
+/**
+ * The section listing each verdict finding of a gate tool that names no rule, once, as
+ * `file:line` and its title unchanged but for collapsed whitespace; '' when there is none.
+ * @param {DecidableFinding[]} findings @returns {string}
+ */
+function toolTitlesSection(findings) {
+  const rows = findings.filter(namesNoRule).map(f => `- \`${String(f.file || '?')}:${findingLine(f)}\` · ${String(f.title ?? '').replace(/\s+/g, ' ').trim()}`)
+  const unique = [...new Set(rows)]
+  return unique.length ? `\n\n## Tool finding titles (verbatim)\n${unique.join('\n')}\n` : ''
 }
 /**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
@@ -6161,14 +6172,14 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 3. \`## ✅ Resolved\` — prior findings the fixes closed (one line each); omit if empty.
 4. \`## 🔴 Still open\` — prior findings still present; \`severity · file:line · [ruleId] · what · why\`; omit if empty.
 5. \`## ⚠️ Regressed\` — new defects the fixes introduced at a prior site; omit if empty.
-6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty.
+6. \`## 🆕 New\` — Confirmed findings from the delta lenses (same format); omit if empty. In Still open, Regressed and New alike: A gate tool's finding without a \`toolRule\` (its source a gate tool: clippy, clippy-pedantic, semgrep, semver, semver-checks, statix, deadnix, fmt, tool) prints its \`title\` verbatim as \`what\` — never reworded: a past decision is matched to it by that title.
 6b. \`## Unverified (not checked)\` — the UNVERIFIED JSON below, same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into New, Still open or Carried, never call them confirmed, and do not re-rank or upgrade their severity. They change nothing about the verdict. Omit the section if empty.
 7. \`## 🔽 Carried\` — settled priors (rejected/justified/deferred) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
 RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${incompleteClause}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
-3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. A finding with a non-empty \`toolRule\` (a gate tool's own rule) carries it in the same brackets, always labelled \`tool:\` so it never reads as a catalog id: \`[ruleId · tool: toolRule]\`, or \`[tool: toolRule]\` when ruleId is empty. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration.
+3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. A finding with a non-empty \`toolRule\` (a gate tool's own rule) carries it in the same brackets, always labelled \`tool:\` so it never reads as a catalog id: \`[ruleId · tool: toolRule]\`, or \`[tool: toolRule]\` when ruleId is empty. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration. A gate tool's finding without a \`toolRule\` (its source a gate tool: clippy, clippy-pedantic, semgrep, semver, semver-checks, statix, deadnix, fmt, tool) prints its \`title\` verbatim as \`what\` — never reworded: a past decision is matched to it by that title.
 4. \`## Suspected (needs confirmation)\` — findings a verifier DID examine and could not confirm; same format; omit the section if empty.
 5. \`## Unverified (not checked)\` — same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into Confirmed or Suspected, never call them confirmed, and do not re-rank or upgrade their severity. Omit the section if empty.
 6. \`## Fix first\` — the few highest-leverage Confirmed items.
@@ -6373,4 +6384,9 @@ function floorPremiseSection() {
     + savedByFloor.map(n => `- ${n}`).join('\n')
 }
 
-return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + scopeSection())
+/** Every finding the report prints and the author can rule on: Confirmed, Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open and regressed tracks. @returns {Finding[]} */
+function verdictFindings() {
+  const tiers = [...confirmed, ...suspected, ...unverified]
+  return isRereview ? [...tiers, ...adjudicated.stillOpen, ...adjudicated.regressed] : tiers
+}
+return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + toolTitlesSection(verdictFindings()) + scopeSection())
