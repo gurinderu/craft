@@ -1123,7 +1123,7 @@ async function recallDecisions(ask, paths, base) {
   return readMemoryRecall(raw, Math.max(0, paths.length - RECALL_PATHS_MAX))
 }
 // <<< craft-inline
-// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_FILE_TITLE MATCHED_BY_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey isRulelessToolFinding titleKey ruleOf toolDistinct holdsToolDistinct findingLine matchClass anchorOf placeGap pairRank triedOrder sureHow findingPlan resolvePlan sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
+// >>> craft-inline lib/prior-decision-match.mjs MATCH_LINE_WINDOW MATCH_SURE_WINDOW MATCH_CANDIDATE_OVERLAP MATCH_JUDGE_PAIRS_MAX MATCH_WHY_MAX MATCH_BODY_MAX CUT_NAMED_MAX MATCHED_BY_ANCHOR MATCHED_BY_RULE MATCHED_BY_TOOL_TITLE MATCHED_BY_FILE_TITLE MATCHED_BY_TITLE MATCHED_BY_SAME_TITLE lensWords findingLenses TOOL_LENSES RULELESS_TOOL_LENSES isToolSource isToolFinding ruleKey namesNoRule isRulelessToolFinding titleKey ruleOf toolDistinct holdsToolDistinct findingLine matchClass anchorOf placeGap pairRank triedOrder sureHow findingPlan resolvePlan sameTitleNear sureMatchOf clipLine MATCH_JUDGE_SCHEMA judgePair judgePrompt judgeVerdict readJudge cutPairsNote rulelessUnjudgedNote askJudge matchFindings
 const MATCH_LINE_WINDOW = 15
 
 const MATCH_SURE_WINDOW = 3
@@ -1147,6 +1147,8 @@ const MATCHED_BY_TOOL_TITLE = 'matched by file:line+lens+title'
 const MATCHED_BY_FILE_TITLE = 'matched by file+lens+title'
 
 const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
+
+const MATCHED_BY_SAME_TITLE = 'matched by the same title near its line (the judge gave no verdict)'
 
 /** Lower-cased lens names of a value, split on commas. @param {unknown} v @returns {string[]} */
 function lensWords(v) {
@@ -1187,14 +1189,24 @@ function ruleKey(v) {
 }
 
 /**
- * Whether no tool a finding names gives it a rule name: deadnix, fmt, or a seed the gate left without a
- * source ('tool') and without a toolRule — it may be a deadnix one, so its title tells it apart, as in
- * the dedup (realm @nick/craft, nodes #236, #238). @param {DecidableFinding} f @returns {boolean}
+ * Whether a finding is a gate tool's alone and names no rule: every lens of it a tool's, no toolRule. Its
+ * title is all that tells it apart, as in the dedup — so with no judge verdict only the same title near
+ * its line sets it aside, never shared title words. A review lens merged into it keeps the title rule
+ * (realm @nick/craft, nodes #236, #238). @param {DecidableFinding} f @returns {boolean}
+ */
+function namesNoRule(f) {
+  const lenses = [...findingLenses(f)]
+  return lenses.length > 0 && lenses.every(l => TOOL_LENSES.includes(l)) && !ruleKey(f['toolRule'])
+}
+
+/**
+ * Whether a finding names no rule because its tool prints none: deadnix, fmt, or a seed the gate left
+ * without a source ('tool') — it may be a deadnix one. Such a finding matches a record that names no
+ * rule either by the same title at its place, without a judge (realm @nick/craft, node #236).
+ * @param {DecidableFinding} f @returns {boolean}
  */
 function isRulelessToolFinding(f) {
-  const tools = [...findingLenses(f)].filter(l => TOOL_LENSES.includes(l))
-  const unnamed = !ruleKey(f['toolRule'])
-  return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l) || (l === 'tool' && unnamed))
+  return namesNoRule(f) && [...findingLenses(f)].every(l => l === 'tool' || RULELESS_TOOL_LENSES.includes(l))
 }
 
 /** A title as a rule-less tool's finding compares it: lower-cased, whitespace collapsed, trimmed. @param {unknown} v @returns {string} */
@@ -1205,15 +1217,16 @@ function titleKey(v) {
 /**
  * How the record's toolRule stands to a tool finding's (realm @nick/craft, node #236): `same` when both
  * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
- * none; `any` for a finding that is not a tool's. A rule-less tool's finding (deadnix, fmt, a seed naming neither tool nor rule) has no
- * toolRule — its title stands in: `title` when the normalized titles are equal, else `unknown` (the
- * judge's; word overlap is not equality: "Unused lambda pattern: pkgs" and "…: self" share three words
+ * none; `any` for a finding that is not a tool's. A rule-less tool's finding (isRulelessToolFinding) has no
+ * toolRule — its title stands in: `title` when the normalized titles are equal and the record names no
+ * rule either, else `unknown` (the judge's; word overlap is not equality: "Unused lambda pattern: pkgs" and "…: self" share three words
  * of four, #237).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'any' | 'same' | 'title' | 'other' | 'unknown'}
  */
 function ruleOf(f, d) {
   if (!isToolFinding(f)) return 'any'
   if (isRulelessToolFinding(f)) {
+    if (ruleKey(d.toolRule)) return 'unknown'
     const t = titleKey(f.title)
     return t && t === titleKey(d.title) ? 'title' : 'unknown'
   }
@@ -1224,8 +1237,8 @@ function ruleOf(f, d) {
 
 /**
  * Whether two gate-tool findings are distinct by the tool's own identity, so no dedup may merge them
- * (realm @nick/craft, node #238; the same signs as the memory match, #236): both carry a toolRule and they differ, or both are a rule-less tool's
- * (deadnix, fmt) or neither names a rule, and their normalized titles differ — deadnix names the binding
+ * (realm @nick/craft, node #238; the same signs as the memory match, #236): both carry a toolRule and they differ, or
+ * neither names a rule (deadnix, fmt, a source-less seed, a lint the gate left without toolRule), and their normalized titles differ — deadnix names the binding
  * there (#237).
  * @param {DecidableFinding} a @param {DecidableFinding} b @returns {boolean}
  */
@@ -1249,7 +1262,7 @@ function findingLine(f) {
 
 /**
  * How record `d` stands to finding `f`: `anchored` (file, line within MATCH_SURE_WINDOW, lens, and for
- * a tool finding the same toolRule, for deadnix's and fmt's the same normalized title),
+ * a tool finding the same toolRule, for a rule-less tool's the same normalized title — isRulelessToolFinding),
  * `disputed` (a candidate for the judge), '' (none).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {'anchored' | 'disputed' | ''}
  */
@@ -1330,18 +1343,31 @@ function findingPlan(f, ordered) {
 
 /**
  * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
- * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) —
- * never a rule-less tool's (deadnix, fmt, a seed naming neither tool nor rule): a disputed pair of theirs has another title, and word overlap
- * would join two bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
+ * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) — for
+ * a finding naming no rule (namesNoRule) only the same title near its line: word overlap would join two
+ * bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
  * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
  */
 function resolvePlan(f, plan, judged) {
+  const plain = namesNoRule(f)
   for (const d of plan.disputed) {
     const v = judged?.get(d)
     if (v?.same) return { d, how: `matched by judge: ${v.why}` }
-    if (!v && !isRulelessToolFinding(f) && decisionAnswers(f, d)) return { d, how: MATCHED_BY_TITLE }
+    if (v) continue
+    if (plain ? sameTitleNear(f, d) : decisionAnswers(f, d)) return { d, how: plain ? MATCHED_BY_SAME_TITLE : MATCHED_BY_TITLE }
   }
   return plan.sure
+}
+
+/**
+ * Whether the record carries the finding's normalized title near its place: in scope, the line within
+ * MATCH_LINE_WINDOW or both whole-file. @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
+ */
+function sameTitleNear(f, d) {
+  const t = titleKey(f.title)
+  if (!t || t !== titleKey(d.title) || !inDecisionScope(f.file, d.scope)) return false
+  const { near, whole } = anchorOf(f, d)
+  return near || whole
 }
 
 /** The answer each finding gets without a judge: anchored, else the title rule. @param {PriorDecision[]} ds @returns {(f: DecidableFinding) => PriorMatch | undefined} */
@@ -1428,15 +1454,15 @@ function readJudge(raw, n) {
 function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming neither tool nor rule), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only the same title near its line), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
- * The refusal for rule-less tool pairs (deadnix, fmt, a seed naming neither tool nor rule) the judge gave no verdict: raised, the title rule
+ * The refusal for pairs of a tool finding naming no rule (namesNoRule) the judge gave no verdict and no same title near its line answers: raised, the title rule
  * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
  */
 function rulelessUnjudgedNote(n) {
-  return `${n} rule-less tool (deadnix, fmt or one naming neither tool nor rule) record–finding pair(s) got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title at its place or by the judge, never by shared title words`
+  return `${n} record–finding pair(s) of a tool finding naming no rule got no judge verdict and no same title near its line — raised: such a finding is set aside only by the same title or by the judge, never by shared title words`
 }
 
 /**
@@ -1451,11 +1477,11 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming neither tool nor rule), the rest raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only the same title near its line), the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming neither tool nor rule), the rest raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only the same title near its line), the rest raised normally`)
   return v
 }
 
@@ -1463,7 +1489,7 @@ async function askJudge(sent, judge, refused) {
  * Matches every finding to the record that answers it: a sure match, unless a disputed candidate tried
  * before it is judged the same. `judge` runs once, only when a disputed pair exists; under the bound the
  * pairs go in pairRank order. Without a judge every disputed pair resolves by the title rule alone, but
- * a deadnix or fmt finding's: it stays raised (realm @nick/craft, node #236).
+ * a tool finding's that names no rule: only the same title near its line sets it aside (realm @nick/craft, node #236).
  * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, notes: string[], refused: string[] }>}
@@ -1492,7 +1518,7 @@ async function matchFindings(findings, decisions, judge) {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
-  const titleless = judge ? all.filter(p => isRulelessToolFinding(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).length : 0
+  const titleless = judge ? all.filter(p => namesNoRule(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).length : 0
   if (titleless) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
