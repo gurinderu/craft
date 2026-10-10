@@ -94,7 +94,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
   in which case say so and supersede the decision instead of applying it. A matching **active
   question** on the finding's title means it was deferred before: cite it, and either keep it
   deferred or answer it (a decision that supersedes it).
-- **On a disposition** — `record-decision` with title = the finding's title (the review ledger row's `title` when that row is matched by the finding's `fp` — the seed's own words; a row found by file and title is no source for it — else the PR comment's title line, else as the report printed it, never from a refusal note, which clips titles), scope = its file path
+- **On a disposition** — `record-decision` with title = the finding's title (for a gate tool's finding without toolRule, the title the report lists for its `file:line` under **Tool finding titles (verbatim)** — the one equal to the report line's text, or the only one listed there; when several are listed and none is equal, the report line's text, never a guess between them, and the finding then goes to the judge each round; any other finding's title as the report printed it; never from a refusal note, which clips titles), scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
   the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names, not the normalized finding's `source`, which is `rust-audit` / `github-pr`; or
