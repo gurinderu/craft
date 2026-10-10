@@ -2160,14 +2160,14 @@ function ruleKey(v) {
 }
 
 /**
- * Whether a finding is a gate tool's alone and names no rule: every lens of it a tool's, no toolRule. Its
- * title is all that tells it apart, as in the dedup — so with no judge verdict only the same title near
- * its line sets it aside, never shared title words. A review lens merged into it keeps the title rule
- * (realm @nick/craft, nodes #236, #238). @param {DecidableFinding} f @returns {boolean}
+ * Whether a finding is a gate tool's and names no rule: a tool lens, no toolRule. Its title is all that
+ * tells it apart, as in the dedup — so with no judge verdict only the same title sets it aside, never
+ * shared title words. A review lens merged into it changes nothing: the dedup keeps the tool's title,
+ * and word overlap would join two bindings of one line again (realm @nick/craft, nodes #236, #237, #238).
+ * @param {DecidableFinding} f @returns {boolean}
  */
 function namesNoRule(f) {
-  const lenses = [...findingLenses(f)]
-  return lenses.length > 0 && lenses.every(l => TOOL_LENSES.includes(l)) && !ruleKey(f['toolRule'])
+  return isToolFinding(f) && !ruleKey(f['toolRule'])
 }
 
 /**
@@ -2177,7 +2177,8 @@ function namesNoRule(f) {
  * @param {DecidableFinding} f @returns {boolean}
  */
 function isRulelessToolFinding(f) {
-  return namesNoRule(f) && [...findingLenses(f)].every(l => l === 'tool' || RULELESS_TOOL_LENSES.includes(l))
+  const tools = [...findingLenses(f)].filter(l => TOOL_LENSES.includes(l))
+  return namesNoRule(f) && tools.every(l => l === 'tool' || RULELESS_TOOL_LENSES.includes(l))
 }
 
 /** A title as a rule-less tool's finding compares it: lower-cased, whitespace collapsed, trimmed. @param {unknown} v @returns {string} */
@@ -2312,14 +2313,18 @@ function resolvePlan(f, plan, judged) {
 }
 
 /**
- * Whether the record carries the finding's normalized title near its place: in scope, the line within
- * MATCH_LINE_WINDOW or both whole-file. @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
+ * Whether the record carries the finding's normalized title near its place: in scope, from a tool lens
+ * (or none), and the line within MATCH_LINE_WINDOW when both lines compare in one file — with no line to
+ * compare (none on a side, a directory scope) the same title in scope is enough (realm @nick/craft, node #236).
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
  */
 function sameTitleNear(f, d) {
   const t = titleKey(f.title)
   if (!t || t !== titleKey(d.title) || !inDecisionScope(f.file, d.scope)) return false
-  const bothWhole = !d.line && findingLine(f) === 0 && inDecisionScope(d.scope, String(f.file ?? ''))
-  return anchorOf(f, d).near || bothWhole
+  const own = lensWords(d.lens)
+  if (own.length && !own.some(l => TOOL_LENSES.includes(l))) return false
+  const compares = Boolean(d.line) && findingLine(f) > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
+  return !compares || anchorOf(f, d).near
 }
 
 /** The answer each finding gets without a judge: anchored, else the title rule. @param {PriorDecision[]} ds @returns {(f: DecidableFinding) => PriorMatch | undefined} */
@@ -2414,7 +2419,7 @@ function cutPairsNote(cut) {
  * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
  */
 function rulelessUnjudgedNote(n) {
-  return `${n} record–finding pair(s) of a tool finding naming no rule got no judge verdict and no same title near its line — raised: such a finding is set aside only by the same title or by the judge, never by shared title words`
+  return `of the pairs without a judge verdict, ${n} of a tool finding naming no rule had no same title near its line — raised: such a finding is set aside only by the same title or by the judge, never by shared title words`
 }
 
 /**
