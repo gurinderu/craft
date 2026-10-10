@@ -1422,14 +1422,14 @@ function cutPairsNote(cut) {
 }
 
 /**
- * The refusal for tool findings naming no rule (namesNoRule) that the judge gave no verdict on and no tool
- * record with the same title answers: raised, the title rule does not join another title — each finding
+ * The refusal for tool findings naming no rule (namesNoRule) with a candidate record the judge gave no
+ * verdict on, and no tool record with the same title to answer them: raised, the title rule does not join another title — each finding
  * named once (realm @nick/craft, node #236). @param {DecidableFinding[]} raised @returns {string}
  */
 function rulelessUnjudgedNote(raised) {
   const named = raised.slice(0, CUT_NAMED_MAX).map(f => `"${clipLine(f.title, 60)}" @ ${clipLine(f.file)}:${findingLine(f)}`)
   const more = raised.length - named.length
-  return `${raised.length} tool finding(s) naming no rule got no judge verdict and no tool record with the same title — raised (such a finding is set aside only by the same title or by the judge, never by shared title words): ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${raised.length} tool finding(s) naming no rule had a candidate record the judge gave no verdict on and no tool record with the same title — raised (such a finding is set aside only by the same title or by the judge, never by shared title words): ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -1485,7 +1485,8 @@ async function matchFindings(findings, decisions, judge) {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
-  const titleless = judge ? [...new Set(sent.filter(p => namesNoRule(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
+  const cutF = new Set(pairs.slice(sent.length).map(p => p.f))
+  const titleless = judge ? [...new Set(sent.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
