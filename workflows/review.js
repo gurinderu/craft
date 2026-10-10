@@ -1312,8 +1312,8 @@ function resolvePlan(f, plan, judged) {
 function sameTitleNear(f, d) {
   const t = titleKey(f.title)
   if (!t || t !== titleKey(d.title) || !inDecisionScope(f.file, d.scope)) return false
-  const { near, whole } = anchorOf(f, d)
-  return near || whole
+  const bothWhole = !d.line && findingLine(f) === 0 && inDecisionScope(d.scope, String(f.file ?? ''))
+  return anchorOf(f, d).near || bothWhole
 }
 
 /** The answer each finding gets without a judge: anchored, else the title rule. @param {PriorDecision[]} ds @returns {(f: DecidableFinding) => PriorMatch | undefined} */
