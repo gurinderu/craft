@@ -247,8 +247,8 @@ gate failures: taint/secrets over-report, so the downstream verification refutes
 (see `rust-security`). Optional tools degrade gracefully when absent. Each seed carries, beside its
 catalog `ruleId`, the tool's own rule name as `toolRule` (the clippy lint, the semgrep rule id, the
 semver-checks check) — what tells two lints under one catalog rule apart — and, as its title, the
-tool's own message verbatim: when the judge gives no verdict, a seed without `toolRule` is told apart from a past decision by that title
-alone.
+tool's own message verbatim: a seed without `toolRule` matches a past decision outright only by the same
+title; another title goes to the match judge and stays raised when the judge gives no verdict.
 
 ## Severity magnitude — measure it, don't inherit it (`SAF-009`)
 
