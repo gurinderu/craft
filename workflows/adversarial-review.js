@@ -2121,6 +2121,8 @@ const MATCHED_BY_TITLE = 'matched by title words (the judge gave no verdict)'
 
 const MATCHED_BY_SAME_TITLE = 'matched by the same title near its line (the judge gave no verdict)'
 
+const MATCHED_BY_SAME_TITLE_IN_SCOPE = 'matched by the same title in scope, no line to compare (the judge gave no verdict)'
+
 /** Lower-cased lens names of a value, split on commas. @param {unknown} v @returns {string[]} */
 function lensWords(v) {
   return typeof v === 'string' ? v.toLowerCase().split(/[,;|]/).map(s => s.trim()).filter(Boolean) : []
@@ -2307,24 +2309,36 @@ function resolvePlan(f, plan, judged) {
     const v = judged?.get(d)
     if (v?.same) return { d, how: `matched by judge: ${v.why}` }
     if (v) continue
-    if (plain ? sameTitleNear(f, d) : decisionAnswers(f, d)) return { d, how: plain ? MATCHED_BY_SAME_TITLE : MATCHED_BY_TITLE }
+    const how = plain ? sameTitleOf(f, d) : decisionAnswers(f, d) ? MATCHED_BY_TITLE : ''
+    if (how) return { d, how }
   }
   return plan.sure
 }
 
 /**
- * Whether the record carries the finding's normalized title near its place: in scope, from a tool lens
- * (or none), and the line within MATCH_LINE_WINDOW when both lines compare in one file — with no line to
- * compare (none on a side, a directory scope) the same title in scope is enough (realm @nick/craft, node #236).
+ * Whether the record's lens is the finding's tool: a lens they share, or — for a source-less seed ('tool'),
+ * whose tool is unknown — any tool lens; a record with no lens (an old one) too (realm @nick/craft, node #236).
  * @param {DecidableFinding} f @param {PriorDecision} d @returns {boolean}
  */
-function sameTitleNear(f, d) {
-  const t = titleKey(f.title)
-  if (!t || t !== titleKey(d.title) || !inDecisionScope(f.file, d.scope)) return false
+function recordOfTool(f, d) {
   const own = lensWords(d.lens)
-  if (own.length && !own.some(l => TOOL_LENSES.includes(l))) return false
+  const lenses = findingLenses(f)
+  return !own.length || own.some(l => lenses.has(l) || (lenses.has('tool') && TOOL_LENSES.includes(l)))
+}
+
+/**
+ * How the record answers a finding naming no rule by its title, '' when it does not: the same normalized
+ * title, in scope, from the finding's tool (recordOfTool), and the line within MATCH_LINE_WINDOW when both
+ * lines compare in one file — with no line to compare (none on a side, a directory scope) the same title
+ * in scope is enough, and the answer says so (realm @nick/craft, node #236).
+ * @param {DecidableFinding} f @param {PriorDecision} d @returns {string}
+ */
+function sameTitleOf(f, d) {
+  const t = titleKey(f.title)
+  if (!t || t !== titleKey(d.title) || !inDecisionScope(f.file, d.scope) || !recordOfTool(f, d)) return ''
   const compares = Boolean(d.line) && findingLine(f) > 0 && inDecisionScope(d.scope, String(f.file ?? ''))
-  return !compares || anchorOf(f, d).near
+  if (!compares) return MATCHED_BY_SAME_TITLE_IN_SCOPE
+  return anchorOf(f, d).near ? MATCHED_BY_SAME_TITLE : ''
 }
 
 /** The answer each finding gets without a judge: anchored, else the title rule. @param {PriorDecision[]} ds @returns {(f: DecidableFinding) => PriorMatch | undefined} */
@@ -2415,11 +2429,15 @@ function cutPairsNote(cut) {
 }
 
 /**
- * The refusal for pairs of a tool finding naming no rule (namesNoRule) the judge gave no verdict and no same title near its line answers: raised, the title rule
- * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
+ * The refusal for pairs of a tool finding naming no rule (namesNoRule) the judge gave no verdict and no
+ * record of its tool with the same title answers: raised, the title rule does not join another title —
+ * the raised findings named, as for the pairs past the bound (realm @nick/craft, node #236).
+ * @param {DisputedPair[]} raised @returns {string}
  */
-function rulelessUnjudgedNote(n) {
-  return `of the pairs without a judge verdict, ${n} of a tool finding naming no rule had no same title near its line — raised: such a finding is set aside only by the same title or by the judge, never by shared title words`
+function rulelessUnjudgedNote(raised) {
+  const named = raised.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
+  const more = raised.length - named.length
+  return `of the pairs without a judge verdict, ${raised.length} of a tool finding naming no rule were not set aside by a record of its tool with the same title — raised: such a finding is set aside only by the same title or by the judge, never by shared title words: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
@@ -2475,8 +2493,8 @@ async function matchFindings(findings, decisions, judge) {
     const p = plans.get(f)
     return p && resolvePlan(f, p, byFinding.get(f))
   }
-  const titleless = judge ? all.filter(p => namesNoRule(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).length : 0
-  if (titleless) refused.push(rulelessUnjudgedNote(titleless))
+  const titleless = judge ? all.filter(p => namesNoRule(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)) : []
+  if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
   return { matchOf, notes, refused }
 }
 /**
