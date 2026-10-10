@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.25.0](https://github.com/gurinderu/craft/compare/v0.24.4...v0.25.0) (2026-10-10)
+
+
+### Features
+
+* **review:** the report lists the verbatim titles of tool findings naming no rule; decisions take their title from that list ([#187](https://github.com/gurinderu/craft/issues/187)) ([5608efb](https://github.com/gurinderu/craft/commit/5608efbc784b6678ee25f187a61de3f899f1a80a))
+
+
+### Bug Fixes
+
+* **memory:** a finding the cut note only counts is named by the rule-less note; decisions take the seed's title from the review ledger row; rust-review states when the title decides ([#186](https://github.com/gurinderu/craft/issues/186)) ([71a7a81](https://github.com/gurinderu/craft/commit/71a7a8166244c27633fdc6ffdda08b0bfcabe73d))
+* **memory:** a gate tool's finding naming no rule is told apart by its title ([#183](https://github.com/gurinderu/craft/issues/183)) ([6795057](https://github.com/gurinderu/craft/commit/67950571cba42a758373abae4e5eb5c90d0bba0e))
+* **memory:** a sourceless tool seed without toolRule is told apart by title; the past-the-bound note no longer promises the title rule ([#181](https://github.com/gurinderu/craft/issues/181)) ([f922a33](https://github.com/gurinderu/craft/commit/f922a33e1b523290263a295af041083d9405835e))
+* **memory:** same-title matches name their real reason; gate prompts ask for verbatim tool titles ([#184](https://github.com/gurinderu/craft/issues/184)) ([e9f3bed](https://github.com/gurinderu/craft/commit/e9f3bedda66e5501393278d87b5f55589449b8b6))
+* **memory:** the rule-less note never names a finding the cut note named and says which pairs went unjudged; tests for its counting; skills and REALITY carry the verbatim-title rule ([#185](https://github.com/gurinderu/craft/issues/185)) ([821989d](https://github.com/gurinderu/craft/commit/821989d909af5c961831ac799c1c7c721d62546b))
+
 ## [0.24.4](https://github.com/gurinderu/craft/compare/v0.24.3...v0.24.4) (2026-10-08)
 
 
