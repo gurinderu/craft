@@ -2157,10 +2157,15 @@ function ruleKey(v) {
   return m && TOOL_LENSES.some(l => l === tool || l.split('-')[0] === tool) ? String(m[2]) : s
 }
 
-/** Whether every tool a finding names prints no rule name (deadnix, fmt). @param {DecidableFinding} f @returns {boolean} */
+/**
+ * Whether no tool a finding names gives it a rule name: deadnix, fmt, or a seed the gate left without a
+ * source ('tool') and without a toolRule — it may be a deadnix one, so its title tells it apart, as in
+ * the dedup (realm @nick/craft, nodes #236, #238). @param {DecidableFinding} f @returns {boolean}
+ */
 function isRulelessToolFinding(f) {
   const tools = [...findingLenses(f)].filter(l => TOOL_LENSES.includes(l))
-  return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l))
+  const unnamed = !ruleKey(f['toolRule'])
+  return tools.length > 0 && tools.every(l => RULELESS_TOOL_LENSES.includes(l) || (l === 'tool' && unnamed))
 }
 
 /** A title as a rule-less tool's finding compares it: lower-cased, whitespace collapsed, trimmed. @param {unknown} v @returns {string} */
@@ -2171,7 +2176,7 @@ function titleKey(v) {
 /**
  * How the record's toolRule stands to a tool finding's (realm @nick/craft, node #236): `same` when both
  * carry one and they are equal, `other` when both carry one and they differ, `unknown` when either has
- * none; `any` for a finding that is not a tool's. A rule-less tool's finding (deadnix, fmt) has no
+ * none; `any` for a finding that is not a tool's. A rule-less tool's finding (deadnix, fmt, a seed naming neither tool nor rule) has no
  * toolRule — its title stands in: `title` when the normalized titles are equal, else `unknown` (the
  * judge's; word overlap is not equality: "Unused lambda pattern: pkgs" and "…: self" share three words
  * of four, #237).
@@ -2278,7 +2283,7 @@ function findingPlan(f, ordered) {
 /**
  * The record answering `f` under `plan`, given the judge's verdicts on its disputed candidates: in tried
  * order, a candidate judged the same; one without a verdict whose title answers the finding (#187) —
- * never a rule-less tool's (deadnix, fmt): a disputed pair of theirs has another title, and word overlap
+ * never a rule-less tool's (deadnix, fmt, a seed naming neither tool nor rule): a disputed pair of theirs has another title, and word overlap
  * would join two bindings of one line (realm @nick/craft, node #236; #237); else the anchored match. @param {DecidableFinding} f @param {{ sure?: PriorMatch, disputed: PriorDecision[] }} plan
  * @param {Map<PriorDecision, { same: boolean, why: string }> | undefined} judged @returns {PriorMatch | undefined}
  */
@@ -2375,15 +2380,15 @@ function readJudge(raw, n) {
 function cutPairsNote(cut) {
   const named = cut.slice(0, CUT_NAMED_MAX).map(p => `"${clipLine(p.f.title, 60)}" @ ${clipLine(p.f.file)}:${findingLine(p.f)} ~ ${p.d.id}`)
   const more = cut.length - named.length
-  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them, the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${cut.length} disputed record–finding pair(s) past the judge's bound of ${MATCH_JUDGE_PAIRS_MAX} were not judged — not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming neither tool nor rule), the rest raised normally: ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
- * The refusal for rule-less tool pairs (deadnix, fmt) the judge gave no verdict: raised, the title rule
+ * The refusal for rule-less tool pairs (deadnix, fmt, a seed naming neither tool nor rule) the judge gave no verdict: raised, the title rule
  * does not join another title (realm @nick/craft, node #236). @param {number} n @returns {string}
  */
 function rulelessUnjudgedNote(n) {
-  return `${n} deadnix/fmt record–finding pair(s) got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title at its place or by the judge, never by shared title words`
+  return `${n} rule-less tool (deadnix, fmt or one naming neither tool nor rule) record–finding pair(s) got no judge verdict — raised: a rule-less tool's finding is set aside only by the same title at its place or by the judge, never by shared title words`
 }
 
 /**
@@ -2398,11 +2403,11 @@ async function askJudge(sent, judge, refused) {
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
   if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
+    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming neither tool nor rule), the rest raised normally`)
     return new Map()
   }
   const unjudged = sent.length - v.size
-  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (never for a deadnix/fmt finding), the rest raised normally`)
+  if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (never for a rule-less tool finding: deadnix, fmt or one naming neither tool nor rule), the rest raised normally`)
   return v
 }
 
