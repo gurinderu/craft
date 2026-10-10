@@ -8123,8 +8123,9 @@ function floorPremiseSection() {
 // Appended, not asked of the synthesis model: a finding set aside by a prior decision must reach the
 // reader with that decision, whatever the model chose to render.
 // The verbatim titles of the verdict's tool findings that name no rule: the engine's, never the model's (realm @nick/craft, node #236).
-/** Every finding the report prints and the author can rule on — most deadnix/statix seeds are Low and land Unverified: on a first round Confirmed, Suspected, Unverified; on a re-review, which prints no Suspected section, Still open, Regressed, New (Confirmed) and Unverified. @returns {Finding[]} */
+/** Every finding the report prints and the author can rule on under its own title: Confirmed (New on a re-review), Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open priors. Not a regressed prior: it keeps the prior round's title, and a deadnix regression at that site is usually another binding. @returns {Finding[]} */
 function verdictFindings() {
-  return isRereview ? [...adjudicated.stillOpen, ...adjudicated.regressed, ...confirmed, ...unverified] : [...confirmed, ...suspected, ...unverified]
+  const tiers = [...confirmed, ...suspected, ...unverified]
+  return isRereview ? [...adjudicated.stillOpen, ...tiers] : tiers
 }
 return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + toolTitlesSection(verdictFindings()) + scopeSection())
