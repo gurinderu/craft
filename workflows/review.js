@@ -2752,7 +2752,7 @@ const ATTACK_SCHEMA = {
   },
 }
 
-const CRAFT_VERSION = '0.24.4' // x-release-please-version
+const CRAFT_VERSION = '0.25.0' // x-release-please-version
 /** @type {Record<string, number>} */
 const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 /** @type {Record<string, string>} */
