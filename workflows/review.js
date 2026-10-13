@@ -6384,9 +6384,9 @@ function floorPremiseSection() {
     + savedByFloor.map(n => `- ${n}`).join('\n')
 }
 
-/** Every finding the report prints and the author can rule on under its own title: Confirmed (New on a re-review), Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open priors. Not a regressed prior: it keeps the prior round's title, and a deadnix regression at that site is usually another binding. @returns {Finding[]} */
+/** Every finding the report prints and the author can rule on: Confirmed (New on a re-review), Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open and regressed priors. A regressed prior prints under Regressed with the prior round's title; listing that title beside a fresh seed's at the same site lets the equal-title rule pick (realm @nick/craft, node #236). @returns {Finding[]} */
 function verdictFindings() {
   const tiers = [...confirmed, ...suspected, ...unverified]
-  return isRereview ? [...adjudicated.stillOpen, ...tiers] : tiers
+  return isRereview ? [...adjudicated.stillOpen, ...adjudicated.regressed, ...tiers] : tiers
 }
 return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + toolTitlesSection(verdictFindings()) + scopeSection())
