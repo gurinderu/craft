@@ -36,7 +36,7 @@
 The craft plugin ships engineering skills, review agents, and a review workflow engine to other repositories.
 
 ## Persistence rules
-State lives in the **repo** or in the **realm** — nowhere else. The harness's built-in memory (memory directory, conversation summaries, `/tmp`, machine-local files) is **forbidden entirely, not by category**; the temporary directory is only the session's scratch, and the session cleans it up.
+State lives in the **repo** or in the **realm** — nowhere else. The harness's built-in memory (memory directory, conversation summaries, `/tmp`, machine-local files) is **forbidden entirely, by directory — not by category**; the temporary directory is only the session's scratch, and the session cleans it up.
 - **Repo**: code, configs, rituals (how to act here), branch state.
 - **Realm**: decisions, substantive questions (vimarshas), plans (the transformation map), lessons, gotchas. Do not restate the realm in the repo — link it.
 - **Case** (a conversation on a realm node): the brief, a question, an agreement, acceptance; work progress and its state are not kept there — they are in the realm.
