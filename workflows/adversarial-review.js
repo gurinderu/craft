@@ -2435,7 +2435,7 @@ function cutPairsNote(cut) {
 function rulelessUnjudgedNote(raised) {
   const named = raised.slice(0, CUT_NAMED_MAX).map(f => `"${clipLine(f.title, 60)}" @ ${clipLine(f.file)}:${findingLine(f)}`)
   const more = raised.length - named.length
-  return `${raised.length} tool finding(s) naming no rule had a candidate record the judge gave no verdict on and no tool record with the same title — raised (such a finding is set aside only by the same title or by the judge, never by shared title words): ${named.join(', ')}${more ? ` and ${more} more` : ''}`
+  return `${raised.length} tool finding(s) naming no rule had a candidate record the judge gave no verdict on (or that fell past its bound) and no tool record with the same title — raised (such a finding is set aside only by the same title or by the judge, never by shared title words): ${named.join(', ')}${more ? ` and ${more} more` : ''}`
 }
 
 /**
