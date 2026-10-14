@@ -1,5 +1,5 @@
 # Reality — what a claim is checked against
-The realm is the model of the work, the repo is part of its embodiment; this file names the third thing — what the work becomes when it runs, and how to look at it. A claim is settled by its canonical carrier, never by the source that was supposed to produce it; tests are a rung of evidence, not a carrier.
+The realm is the model of the work, the repo is part of its embodiment; this file names the third thing — what the work becomes when it runs, and how to look at it. The carrier follows the claim: behaviour is settled by the built product, never by the source that was supposed to produce it; the content of a source or a norm — by the text itself; tests are a rung of evidence, not a carrier.
 
 | Claim class | Canonical carrier | How to observe | Who |
 |---|---|---|---|
