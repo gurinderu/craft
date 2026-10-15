@@ -926,7 +926,7 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
 /**
  * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
  * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
- * what a launching audit forwards as `_memoryParts`, so it adds up to the list. A passed record an
+ * the `recalled` and `passed` a launching audit forwards in `_memoryParts` (beside `accepted`, its K), so it adds up to the list. A passed record an
  * `inactive` record names, or an active recalled successor supersedes or answers, is left out of the
  * merge and named in `blocked`, or, dated later than all of them, kept and named in `overrides`, the
  * successors' links to it dropped from the merged list (blockedPassed) — checked only once the recall's own records did not already
@@ -968,17 +968,24 @@ function mergeRecall(r, passedRaw, parse) {
   }
 }
 
+/** A count of `_memoryParts`: a non-negative integer, else null. @param {unknown} x @returns {number | null} */
+function partCount(x) {
+  return Number.isInteger(x) && /** @type {number} */ (x) >= 0 ? /** @type {number} */ (x) : null
+}
+
 /**
  * How a launching audit's forwarded list splits (`_memoryParts`): the first `recalled` records its
- * recall's, the next `passed` its launcher's. Anything off-shape, or not adding up to the list, is ignored.
- * @param {unknown} parts @param {unknown} list @returns {{ recalled: number, passed: number } | null}
+ * recall's, the next `passed` its launcher's; `accepted`, the launcher's records the audit's reader
+ * accepted — the K its own memory line prints, so the nested line counts the same, and without it the
+ * line names no K (realm @nick/craft, node #244). Anything off-shape, or not adding up to the list, is
+ * ignored; an off-shape `accepted` alone.
+ * @param {unknown} parts @param {unknown} list @returns {{ recalled: number, passed: number, accepted?: number } | null}
  */
 function memoryParts(parts, list) {
   const p = /** @type {Record<string, unknown>} */ (parts && typeof parts === 'object' ? parts : {})
-  const [recalled, passed] = [p['recalled'], p['passed']]
-  if (!Array.isArray(list) || !Number.isInteger(recalled) || !Number.isInteger(passed)) return null
-  const [a, b] = [/** @type {number} */ (recalled), /** @type {number} */ (passed)]
-  return a >= 0 && b >= 0 && a + b === list.length ? { recalled: a, passed: b } : null
+  const [a, b, k] = [partCount(p['recalled']), partCount(p['passed']), partCount(p['accepted'])]
+  if (!Array.isArray(list) || a == null || b == null || a + b !== list.length) return null
+  return k == null ? { recalled: a, passed: b } : { recalled: a, passed: b, accepted: k }
 }
 
 /**
@@ -996,7 +1003,7 @@ function readLaunch(raw, recalled, note, partsArg, parse) {
     return { prior, memory: withDerived(acceptedMemory(initialMemory(prior.decisions.length, recalled, note), prior.decisions), prior.decisions) }
   }
   const m = parseMerged(/** @type {unknown[]} */ (raw), parts.recalled, parse)
-  return { prior: m.prior, memory: withDerived(withPassed(acceptedMemory(initialMemory(0, true, note), m.prior.decisions), parts.passed, m.passed), m.prior.decisions) }
+  return { prior: m.prior, memory: withDerived(withPassed(acceptedMemory(initialMemory(0, true, note), m.prior.decisions), parts.accepted ?? 0, m.passed), m.prior.decisions) }
 }
 
 /**
@@ -1026,7 +1033,8 @@ function countedRecords(m) {
 function launcherLine(m) {
   const parts = m.passed ? ` — ${m.count - (m.added ?? 0)} recalled, ${m.added ?? 0} of the ${m.passed} passed by its launcher` : ''
   if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `none${parts}`}`
-  return `memory: recalled by the launching audit — none (${m.why})${m.count ? `; applied ${m.count} passed by its launcher` : ''}`
+  const applied = m.passed ? `; applied ${m.added ?? m.count} of the ${m.passed} passed by its launcher` : `; applied ${m.count} passed by its launcher`
+  return `memory: recalled by the launching audit — none (${m.why})${m.count || m.passed ? applied : ''}`
 }
 
 /**
