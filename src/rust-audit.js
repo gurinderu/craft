@@ -1817,7 +1817,7 @@ async function recallOnce() {
   // A passed copy dated later than the inactive record is forwarded, and named (realm @nick/craft, node #229).
   memory = { ...memory, why: [memory.why, ...blocked, ...overrides].join('; ') }
   nestedPriorDecisions = withDerivedIds(merged)
-  // With the K this audit's line prints, so each nested line counts the same records (realm @nick/craft, node #218).
+  // With the K this audit's line prints, so each nested line counts the same records (realm @nick/craft, node #244).
   nestedMemoryParts = { ...parts, accepted: passedAccepted }
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
   if (passedDecisions != null && passedDecisions !== '' && !Array.isArray(passedDecisions)) {

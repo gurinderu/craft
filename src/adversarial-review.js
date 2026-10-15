@@ -946,7 +946,7 @@ function partCount(x) {
  * How a launching audit's forwarded list splits (`_memoryParts`): the first `recalled` records its
  * recall's, the next `passed` its launcher's; `accepted`, the launcher's records the audit's reader
  * accepted — the K its own memory line prints, so the nested line counts the same, and without it the
- * line names no K (realm @nick/craft, node #218). Anything off-shape, or not adding up to the list, is
+ * line names no K (realm @nick/craft, node #244). Anything off-shape, or not adding up to the list, is
  * ignored; an off-shape `accepted` alone.
  * @param {unknown} parts @param {unknown} list @returns {{ recalled: number, passed: number, accepted?: number } | null}
  */
