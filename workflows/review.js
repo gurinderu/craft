@@ -2894,6 +2894,7 @@ function carriedKey(f) {
 function findCarrier(f, priors, fallbackMatch) {
   const key = carriedKey(f)
   return (priors || []).find(p => {
+    if (toolDistinct(f, p)) return false
     const pk = carriedKey(p)
     if (key && pk) return key === pk
     return typeof fallbackMatch === 'function' ? !!fallbackMatch(f, p) : false
