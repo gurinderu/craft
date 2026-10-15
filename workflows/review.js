@@ -1198,6 +1198,19 @@ function toolDistinct(a, b) {
   return !ra && !rb && titleKey(a.title) !== titleKey(b.title)
 }
 
+/**
+ * A gate-tool finding's own identity beyond its fingerprint, as toolDistinct tells two apart: `rule:` and its
+ * toolRule, or for one naming no rule (namesNoRule) `title:` and its normalized title — the binding deadnix
+ * names; '' for a finding that is not a tool's. The tombstone memory keys on fingerprint plus this, so two
+ * bindings of one file are remembered apart (realm @nick/craft, vimarsha #242; rule #238).
+ * @param {DecidableFinding} f @returns {string}
+ */
+function toolIdentity(f) {
+  if (!isToolFinding(f)) return ''
+  const rule = ruleKey(f['toolRule'])
+  return rule ? `rule:${rule}` : `title:${titleKey(f.title)}`
+}
+
 /** Whether any two of `fs` are distinct by their tool's identity (toolDistinct). @param {DecidableFinding[]} fs @returns {boolean} */
 function holdsToolDistinct(fs) {
   return fs.some((a, i) => fs.slice(i + 1).some(b => toolDistinct(a, b)))
@@ -4090,7 +4103,7 @@ function packLedgerGroups(items, max, maxShards) {
 }
 
 /**
- * @typedef {{ fp?: unknown, why?: unknown, round?: unknown }} Tombstone
+ * @typedef {{ fp?: unknown, why?: unknown, round?: unknown, [k: string]: unknown }} Tombstone
  */
 /**
  * @param {Tombstone | null | undefined} t
@@ -4105,13 +4118,13 @@ function tombstoneRound(t) {
 
 /**
  * @param {unknown} tombstones
- * @param {{ max?: number }} [opts]
+ * @param {{ max?: number, identity?: (t: Tombstone) => string }} [opts]
  * @returns {Tombstone[]}
  */
-function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
+function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX, identity = () => '' } = {}) {
   /** @type {Tombstone[]} */
   const items = Array.isArray(tombstones) ? tombstones : []
-  const deduped = newestTombstonePerFp(items)
+  const deduped = newestTombstonePerBinding(items, identity)
   if (deduped.length <= max) return deduped
   return deduped
     .map(row => ({ row, r: tombstoneRound(row) }))
@@ -4120,19 +4133,20 @@ function pruneTombstones(tombstones, { max = LEDGER_TOMBSTONE_MAX } = {}) {
     .map(d => d.row)
 }
 
-/** @param {Tombstone[]} items @returns {Tombstone[]} */
-function newestTombstonePerFp(items) {
-  /** @type {Map<unknown, Tombstone>} */
-  const newestByFp = new Map()
+/** @param {Tombstone[]} items @param {(t: Tombstone) => string} identity @returns {Tombstone[]} */
+function newestTombstonePerBinding(items, identity) {
+  /** @type {Map<string, Tombstone>} */
+  const newestByBinding = new Map()
   /** @type {Tombstone[]} */
   const noFp = []
   for (const t of items) {
     if (!t || typeof t !== 'object') continue
     if (!t.fp) { noFp.push(t); continue }
-    const prev = newestByFp.get(t.fp)
-    if (!prev || tombstoneRound(t) >= tombstoneRound(prev)) newestByFp.set(t.fp, t)
+    const binding = `${String(t.fp)}\0${identity(t)}`
+    const prev = newestByBinding.get(binding)
+    if (!prev || tombstoneRound(t) >= tombstoneRound(prev)) newestByBinding.set(binding, t)
   }
-  return [...newestByFp.values(), ...noFp]
+  return [...newestByBinding.values(), ...noFp]
 }
 
 /**
@@ -6042,16 +6056,27 @@ function dropTombstonesForBasis() {
     log('Re-review: the prior round was fingerprinted under a different, known basis — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on (expected once, right after an upgrade that changed the basis)')
   }
 }
+/**
+ * The tombstone a fresh finding returns among its fingerprint's: the newest one its tool does not tell
+ * apart (toolDistinct — another deadnix binding, another lint), a later one winning a tie; undefined when none.
+ * @param {LedgerAnswer[]} tombs @param {Finding} f @returns {LedgerAnswer | undefined}
+ */
+function returnedTombstone(tombs, f) {
+  return tombs.filter(t => !toolDistinct(f, t)).reduce((/** @type {LedgerAnswer | undefined} */ best, t) => !best || tombstoneRound(t) >= tombstoneRound(best) ? t : best, undefined)
+}
 /** Fresh findings matching a prior tombstone: annotated as a regression or a re-raised dismissal. */
 function flagReturningDefects() {
-  /** @type {Map<string, LedgerAnswer>} */
-  const tombstoneByFp = new Map()
-  for (const t of priorTombstones) if (t.ruleId) tombstoneByFp.set(t.fp || fingerprint(t), t)
+  /** @type {Map<string, LedgerAnswer[]>} */
+  const tombstonesByFp = new Map()
+  for (const t of priorTombstones) {
+    const fp = t.fp || fingerprint(t)
+    if (t.ruleId) tombstonesByFp.set(fp, [...(tombstonesByFp.get(fp) || []), t])
+  }
   let regressions = 0
   let reraised = 0
   const flagRegression = (/** @type {Finding} */ f) => {
     if (!f['ruleId']) return
-    const hit = tombstoneByFp.get(fingerprint(f))
+    const hit = returnedTombstone(tombstonesByFp.get(fingerprint(f)) || [], f)
     if (!hit) return
     const why = String(hit.why || '')
     const m = /round (\d+)/.exec(why)
@@ -6292,7 +6317,7 @@ function assembleTombstones() {
     ...adjudicated.resolved.map(f => toTombstone(f, 'resolved')),
     ...adjudicated.retired.map(f => toTombstone(f, 'dismissed')),
     ...(priorFpComparable ? priorTombstones : []),
-  ], { max: tombstoneBudget(liveLedgerCount) })
+  ], { max: tombstoneBudget(liveLedgerCount), identity: toolIdentity })
 }
 const reviewLedger = assembleLedger()
 function assembleLedger() {
