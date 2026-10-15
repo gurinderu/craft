@@ -7560,7 +7560,8 @@ function flagReturningDefects() {
   const flagRegression = (/** @type {Finding} */ f) => {
     if (!f['ruleId']) return
     const hit = tombstoneByFp.get(fingerprint(f))
-    if (!hit) return
+    // A tombstone the tool tells apart (another deadnix binding) is another defect, not its return (realm @nick/craft, #238, #239).
+    if (!hit || toolDistinct(f, hit)) return
     const why = String(hit.why || '')
     const m = /round (\d+)/.exec(why)
     // A LEDGER_ITEM carries no round, so this falls through to '?' unless a ledger extra supplies one.
@@ -8125,7 +8126,7 @@ function floorPremiseSection() {
 // Appended, not asked of the synthesis model: a finding set aside by a prior decision must reach the
 // reader with that decision, whatever the model chose to render.
 // The verbatim titles of the verdict's tool findings that name no rule: the engine's, never the model's (realm @nick/craft, node #236).
-/** Every finding the report prints and the author can rule on: Confirmed (New on a re-review), Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open and regressed priors. A regressed prior prints under Regressed with the prior round's title; listing that title beside a fresh Low seed's at the same site lets the equal-title rule pick (realm @nick/craft, node #236); a Medium or higher fresh seed there is folded into the prior instead (#239). @returns {Finding[]} */
+/** Every finding the report prints and the author can rule on: Confirmed (New on a re-review), Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open and regressed priors. A regressed prior prints under Regressed with the prior round's title; listing that title beside a fresh Low seed's at the same site lets the equal-title rule pick (realm @nick/craft, node #236); a Medium or higher fresh seed there is folded into the prior instead, unless the tool tells the two apart (#239). @returns {Finding[]} */
 function verdictFindings() {
   const tiers = [...confirmed, ...suspected, ...unverified]
   return isRereview ? [...adjudicated.stillOpen, ...adjudicated.regressed, ...tiers] : tiers

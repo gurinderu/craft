@@ -6053,7 +6053,7 @@ function flagReturningDefects() {
   const flagRegression = (/** @type {Finding} */ f) => {
     if (!f['ruleId']) return
     const hit = tombstoneByFp.get(fingerprint(f))
-    if (!hit) return
+    if (!hit || toolDistinct(f, hit)) return
     const why = String(hit.why || '')
     const m = /round (\d+)/.exec(why)
     const r = m ? m[1] : (/** @type {{ round?: unknown }} */ (hit).round || '?')
@@ -6386,7 +6386,7 @@ function floorPremiseSection() {
     + savedByFloor.map(n => `- ${n}`).join('\n')
 }
 
-/** Every finding the report prints and the author can rule on: Confirmed (New on a re-review), Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open and regressed priors. A regressed prior prints under Regressed with the prior round's title; listing that title beside a fresh Low seed's at the same site lets the equal-title rule pick (realm @nick/craft, node #236); a Medium or higher fresh seed there is folded into the prior instead (#239). @returns {Finding[]} */
+/** Every finding the report prints and the author can rule on: Confirmed (New on a re-review), Suspected, Unverified — most deadnix/statix seeds are Low and land Unverified — and on a re-review the still-open and regressed priors. A regressed prior prints under Regressed with the prior round's title; listing that title beside a fresh Low seed's at the same site lets the equal-title rule pick (realm @nick/craft, node #236); a Medium or higher fresh seed there is folded into the prior instead, unless the tool tells the two apart (#239). @returns {Finding[]} */
 function verdictFindings() {
   const tiers = [...confirmed, ...suspected, ...unverified]
   return isRereview ? [...adjudicated.stillOpen, ...adjudicated.regressed, ...tiers] : tiers
