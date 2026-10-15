@@ -848,7 +848,7 @@ function parseMerged(list, recalledLen, parse, passedAt = []) {
 /**
  * The recall's records merged with the launcher's list (mergeById, a recalled record `parse` reads
  * whatever its status kept on an id clash) and read once (parseMerged); `parts` is how the merged list splits —
- * what a launching audit forwards as `_memoryParts`, so it adds up to the list. A passed record an
+ * the `recalled` and `passed` a launching audit forwards in `_memoryParts` (beside `accepted`, its K), so it adds up to the list. A passed record an
  * `inactive` record names, or an active recalled successor supersedes or answers, is left out of the
  * merge and named in `blocked`, or, dated later than all of them, kept and named in `overrides`, the
  * successors' links to it dropped from the merged list (blockedPassed) — checked only once the recall's own records did not already
@@ -882,7 +882,8 @@ function countedRecords(m) {
 function launcherLine(m) {
   const parts = m.passed ? ` — ${m.count - (m.added ?? 0)} recalled, ${m.added ?? 0} of the ${m.passed} passed by its launcher` : ''
   if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `none${parts}`}`
-  return `memory: recalled by the launching audit — none (${m.why})${m.count ? `; applied ${m.count} passed by its launcher` : ''}`
+  const applied = m.passed ? `; applied ${m.added ?? m.count} of the ${m.passed} passed by its launcher` : `; applied ${m.count} passed by its launcher`
+  return `memory: recalled by the launching audit — none (${m.why})${m.count || m.passed ? applied : ''}`
 }
 
 /**
@@ -1666,7 +1667,7 @@ async function recallOnce() {
   for (const x of blocked) log(`⚠️ priorDecisions: ${x}`)
   memory = { ...memory, why: [memory.why, ...blocked, ...overrides].join('; ') }
   nestedPriorDecisions = withDerivedIds(merged)
-  nestedMemoryParts = parts
+  nestedMemoryParts = { ...parts, accepted: passedAccepted }
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
   if (passedDecisions != null && passedDecisions !== '' && !Array.isArray(passedDecisions)) {
     log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
