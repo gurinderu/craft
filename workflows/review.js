@@ -6053,7 +6053,7 @@ function flagReturningDefects() {
   const flagRegression = (/** @type {Finding} */ f) => {
     if (!f['ruleId']) return
     const hit = tombstoneByFp.get(fingerprint(f))
-    if (!hit || toolDistinct(f, hit)) return
+    if (!hit) return
     const why = String(hit.why || '')
     const m = /round (\d+)/.exec(why)
     const r = m ? m[1] : (/** @type {{ round?: unknown }} */ (hit).round || '?')

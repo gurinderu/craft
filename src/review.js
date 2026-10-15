@@ -7560,8 +7560,7 @@ function flagReturningDefects() {
   const flagRegression = (/** @type {Finding} */ f) => {
     if (!f['ruleId']) return
     const hit = tombstoneByFp.get(fingerprint(f))
-    // A tombstone the tool tells apart (another deadnix binding) is another defect, not its return (realm @nick/craft, #238, #239).
-    if (!hit || toolDistinct(f, hit)) return
+    if (!hit) return
     const why = String(hit.why || '')
     const m = /round (\d+)/.exec(why)
     // A LEDGER_ITEM carries no round, so this falls through to '?' unless a ledger extra supplies one.
