@@ -1,7 +1,7 @@
 # Reality — what a claim is checked against
 The realm is the model of the work, the repo is part of its embodiment; this file names the third thing — what the work becomes when it runs, and how to look at it. The carrier follows the claim: behaviour is settled by the built product, never by the source that was supposed to produce it; the content of a source or a norm — by the text itself; tests are a rung of evidence, not a carrier.
 
-Each carrier is marked: *proposed* — derived from the code, the configs and CI; *confirmed* — the owner role (realm `@nick/craft`, #2) confirmed it as canonical for its class. Only the owner's word turns a mark to *confirmed*.
+Each carrier is marked: *proposed* — put forward by an agent from the code, the configs, CI, an observation recorded in the realm or a user's answer; *owner-confirmed* — the owner role (realm `@nick/craft`, #2) accepted it as canonical for its class. Only the owner's word turns a mark to *owner-confirmed*. The mark is about the carrier, not a verdict on a claim (that is the verifier's `VERDICT`).
 
 | Claim class | Canonical carrier | How to observe | Who |
 |---|---|---|---|
@@ -47,4 +47,4 @@ Each carrier is marked: *proposed* — derived from the code, the configs and CI
 - "this skill triggers on this prompt" — the triggering evals are a local harness that needs a live model and are excluded from CI (`evals/README.md`); a green CI says nothing about triggering. The ceiling is a local eval run.
 - "the review engine produces good findings" — a judgment over someone else's code; no carrier in this repo decides it. Closed only by the owner's reading of a real run's `run-record`.
 
-**The table grows by use.** A session that learned a carrier the table lacks (an unnamed carrier, an observation reachable or not — then under *Ceiling*, a wrong command here) writes the row then, before closing the work that taught it. Only what observation needs goes here; dated measurements and history are realm nodes.
+**The table grows by use.** A session that learned a carrier the table lacks (an unnamed carrier, an observation reachable or not — then under *Ceiling*, a wrong command here) writes the row then, marked *proposed*, before closing the work that taught it. Only what observation needs goes here; dated measurements and history are realm nodes.
