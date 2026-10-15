@@ -578,7 +578,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS RECORD_OTHER_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withOverrides withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail parseMerged mergeAndRead mergeRecall memoryParts readLaunch acceptedMemory countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS RECORD_OTHER_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withOverrides withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail parseMerged mergeAndRead mergeRecall partCount memoryParts readLaunch acceptedMemory countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit', 'lens', 'toolRule']
@@ -1020,17 +1020,24 @@ function mergeRecall(r, passedRaw, parse) {
   }
 }
 
+/** A count of `_memoryParts`: a non-negative integer, else null. @param {unknown} x @returns {number | null} */
+function partCount(x) {
+  return Number.isInteger(x) && /** @type {number} */ (x) >= 0 ? /** @type {number} */ (x) : null
+}
+
 /**
  * How a launching audit's forwarded list splits (`_memoryParts`): the first `recalled` records its
- * recall's, the next `passed` its launcher's. Anything off-shape, or not adding up to the list, is ignored.
- * @param {unknown} parts @param {unknown} list @returns {{ recalled: number, passed: number } | null}
+ * recall's, the next `passed` its launcher's; `accepted`, the launcher's records the audit's reader
+ * accepted — the K its own memory line prints, so the nested line counts the same, and without it the
+ * line names no K (realm @nick/craft, node #218). Anything off-shape, or not adding up to the list, is
+ * ignored; an off-shape `accepted` alone.
+ * @param {unknown} parts @param {unknown} list @returns {{ recalled: number, passed: number, accepted?: number } | null}
  */
 function memoryParts(parts, list) {
   const p = /** @type {Record<string, unknown>} */ (parts && typeof parts === 'object' ? parts : {})
-  const [recalled, passed] = [p['recalled'], p['passed']]
-  if (!Array.isArray(list) || !Number.isInteger(recalled) || !Number.isInteger(passed)) return null
-  const [a, b] = [/** @type {number} */ (recalled), /** @type {number} */ (passed)]
-  return a >= 0 && b >= 0 && a + b === list.length ? { recalled: a, passed: b } : null
+  const [a, b, k] = [partCount(p['recalled']), partCount(p['passed']), partCount(p['accepted'])]
+  if (!Array.isArray(list) || a == null || b == null || a + b !== list.length) return null
+  return k == null ? { recalled: a, passed: b } : { recalled: a, passed: b, accepted: k }
 }
 
 /**
@@ -1048,7 +1055,7 @@ function readLaunch(raw, recalled, note, partsArg, parse) {
     return { prior, memory: withDerived(acceptedMemory(initialMemory(prior.decisions.length, recalled, note), prior.decisions), prior.decisions) }
   }
   const m = parseMerged(/** @type {unknown[]} */ (raw), parts.recalled, parse)
-  return { prior: m.prior, memory: withDerived(withPassed(acceptedMemory(initialMemory(0, true, note), m.prior.decisions), parts.passed, m.passed), m.prior.decisions) }
+  return { prior: m.prior, memory: withDerived(withPassed(acceptedMemory(initialMemory(0, true, note), m.prior.decisions), parts.accepted ?? 0, m.passed), m.prior.decisions) }
 }
 
 /**
@@ -1078,7 +1085,8 @@ function countedRecords(m) {
 function launcherLine(m) {
   const parts = m.passed ? ` — ${m.count - (m.added ?? 0)} recalled, ${m.added ?? 0} of the ${m.passed} passed by its launcher` : ''
   if (!m.why) return `memory: recalled by the launching audit — ${m.count ? `applied ${countedRecords(m)}${parts}` : `none${parts}`}`
-  return `memory: recalled by the launching audit — none (${m.why})${m.count ? `; applied ${m.count} passed by its launcher` : ''}`
+  const applied = m.passed ? `; applied ${m.added ?? m.count} of the ${m.passed} passed by its launcher` : `; applied ${m.count} passed by its launcher`
+  return `memory: recalled by the launching audit — none (${m.why})${m.count || m.passed ? applied : ''}`
 }
 
 /**
