@@ -1207,10 +1207,14 @@ function toolDistinct(a, b) {
 }
 
 /**
- * A gate-tool finding's own identity beyond its fingerprint, as toolDistinct tells two apart: `rule:` and its
- * toolRule, or for one naming no rule (namesNoRule) `title:` and its normalized title — the binding deadnix
- * names; '' for a finding that is not a tool's. The tombstone memory keys on fingerprint plus this, so two
- * bindings of one file are remembered apart (realm @nick/craft, vimarsha #242; rule #238).
+ * A gate-tool finding's own identity beyond its fingerprint: `rule:` and its toolRule, or for one naming no
+ * rule (namesNoRule) `title:` and its normalized title — the binding deadnix names; '' for a finding that is
+ * not a tool's. It agrees with toolDistinct on two rule-less tool findings and on two with a toolRule; two
+ * pairs get distinct identities though toolDistinct does not tell them apart — a tool finding with a toolRule
+ * beside one without, and a tool finding beside a lens finding of the same fingerprint — so the regression
+ * check matches a returning finding against tombstones by toolDistinct, not by this. The tombstone memory
+ * keys on fingerprint plus this, so two bindings of one file are remembered apart (realm @nick/craft,
+ * vimarsha #242; rule #238).
  * @param {DecidableFinding} f @returns {string}
  */
 function toolIdentity(f) {
