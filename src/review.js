@@ -5683,7 +5683,7 @@ const DEDUP_SCHEMA = {
   },
 }
 // The round that first found a finding, and what each round's findings became (realm @nick/craft, node #248).
-// >>> craft-inline lib/lens-round-yield.mjs earliestRound withEarliestRound roundYield lensRoundYield
+// >>> craft-inline lib/lens-round-yield.mjs earliestRound withEarliestRound roundYield lensRoundYield unattributedCount
 /**
  * The earliest round among findings merged into one; undefined when none of them carries one.
  * @param {ReadonlyArray<object>} members
@@ -5723,6 +5723,15 @@ function roundYield(round, confirmed, suspected) {
  */
 function lensRoundYield(lensRounds, confirmed, suspected) {
   return (lensRounds || []).map(x => ({ ...x, ...roundYield(x.round, confirmed, suspected) }))
+}
+
+/**
+ * Confirmed findings no round produced (a resurrected lens, a critic follow-up): with the round
+ * yields and the seed yield they sum to the confirmed total.
+ * @param {unknown[]} confirmed
+ */
+function unattributedCount(confirmed) {
+  return (confirmed || []).filter(f => f != null && typeof /** @type {{ foundInRound?: unknown }} */ (f).foundInRound !== 'number').length
 }
 // <<< craft-inline
 // Mechanical roll-up of high-volume, low-value rule IDs. The api-idioms lens brief already ASKS for
@@ -7250,9 +7259,10 @@ function reviewRecord(extra) {
     branch, head,
     languages: active.map(p => p.id),
     uncoveredFiles,
-    // Each round's verified yield rides beside its cost; gate seeds (round 0) in `seedYield`, not as a round entry (realm @nick/craft, node #248).
+    // Each round's verified yield rides beside its cost; gate seeds (round 0) in `seedYield`, not as a round entry, with the confirmed
+    // findings no round produced beside them (realm @nick/craft, node #248).
     lensRounds: results.flatMap(r => lensRoundYield(r.lensRounds || [], r['confirmed'], r['suspected']).map(x => ({ language: r.profile.id, ...x }))),
-    seedYield: results.map(r => ({ language: r.profile.id, ...roundYield(0, r['confirmed'], r['suspected']) })),
+    seedYield: results.map(r => ({ language: r.profile.id, ...roundYield(0, r['confirmed'], r['suspected']), unattributedConfirmed: unattributedCount(r['confirmed']) })),
     scout: results.map(r => ({ language: r.profile.id, size: r['plan'].sizeBucket, lenses: r['plan'].lenses, model: r['plan'].lensModel, maxRounds: r['plan'].maxRounds, verifyVotes: r['plan'].verifyVotes, securitySensitive: !!r['plan'].securitySensitive, isLibrary: !!r['plan'].isLibrary })),
     gate: runGate,
     // The optional pass, on the record: `skipped` is the field that keeps a cheap run from reading

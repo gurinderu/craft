@@ -4927,6 +4927,15 @@ function roundYield(round, confirmed, suspected) {
 function lensRoundYield(lensRounds, confirmed, suspected) {
   return (lensRounds || []).map(x => ({ ...x, ...roundYield(x.round, confirmed, suspected) }))
 }
+
+/**
+ * Confirmed findings no round produced (a resurrected lens, a critic follow-up): with the round
+ * yields and the seed yield they sum to the confirmed total.
+ * @param {unknown[]} confirmed
+ */
+function unattributedCount(confirmed) {
+  return (confirmed || []).filter(f => f != null && typeof /** @type {{ foundInRound?: unknown }} */ (f).foundInRound !== 'number').length
+}
 const ROLLUP_MAX = 3
 /** @param {Finding[]} pool @param {Profile} profile */
 function rollupPool(pool, profile) {
@@ -5910,7 +5919,7 @@ function reviewRecord(extra) {
     languages: active.map(p => p.id),
     uncoveredFiles,
     lensRounds: results.flatMap(r => lensRoundYield(r.lensRounds || [], r['confirmed'], r['suspected']).map(x => ({ language: r.profile.id, ...x }))),
-    seedYield: results.map(r => ({ language: r.profile.id, ...roundYield(0, r['confirmed'], r['suspected']) })),
+    seedYield: results.map(r => ({ language: r.profile.id, ...roundYield(0, r['confirmed'], r['suspected']), unattributedConfirmed: unattributedCount(r['confirmed']) })),
     scout: results.map(r => ({ language: r.profile.id, size: r['plan'].sizeBucket, lenses: r['plan'].lenses, model: r['plan'].lensModel, maxRounds: r['plan'].maxRounds, verifyVotes: r['plan'].verifyVotes, securitySensitive: !!r['plan'].securitySensitive, isLibrary: !!r['plan'].isLibrary })),
     gate: runGate,
     optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
