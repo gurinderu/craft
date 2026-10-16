@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/gurinderu/craft/compare/v0.25.1...v0.25.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **review:** the final run record leaves its ledger to the shards that already landed ([#201](https://github.com/gurinderu/craft/issues/201)) ([1561599](https://github.com/gurinderu/craft/commit/1561599cbcd1a9b046ef6df0255ec4323da7ba3a))
+
 ## [0.25.1](https://github.com/gurinderu/craft/compare/v0.25.0...v0.25.1) (2026-10-16)
 
 
