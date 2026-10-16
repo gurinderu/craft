@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.25.1](https://github.com/gurinderu/craft/compare/v0.25.0...v0.25.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **memory:** the ledger title fallback names a live row as one whose disposition is not closed ([#193](https://github.com/gurinderu/craft/issues/193)) ([60b5c0c](https://github.com/gurinderu/craft/commit/60b5c0c6e4b4096981e6dd30d5c1a538be8685c6))
+* **memory:** the nested review under an audit counts the launcher's records by the audit's own K ([#197](https://github.com/gurinderu/craft/issues/197)) ([0599466](https://github.com/gurinderu/craft/commit/05994660435abb7b4cea8e1313c111dba3d285ad))
+* **review:** a re-review does not absorb a fresh tool finding into a prior the tool tells apart ([#195](https://github.com/gurinderu/craft/issues/195)) ([62c3724](https://github.com/gurinderu/craft/commit/62c37248746a4f3342d841310043dfcca448efaa))
+* **review:** re-review rows carry the tool: label; triage takes the only listed title only where one finding is printed; the ledger fallback counts live rows ([#191](https://github.com/gurinderu/craft/issues/191)) ([3e0f57a](https://github.com/gurinderu/craft/commit/3e0f57a9fedf84403c14b8770fddc4b860f2c602))
+* **review:** the ledger keeps a tombstone per binding for a tool finding, and a return is matched to its own binding ([#196](https://github.com/gurinderu/craft/issues/196)) ([ec59641](https://github.com/gurinderu/craft/commit/ec59641aceae67b4f55702b03117805e9c9dc42e))
+
 ## [0.25.0](https://github.com/gurinderu/craft/compare/v0.24.4...v0.25.0) (2026-10-14)
 
 
