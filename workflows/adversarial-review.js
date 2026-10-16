@@ -1233,10 +1233,10 @@ function runDirFlags(dir, rejoin) {
   return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
 }
 
-/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
-function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean, retry?: boolean }} [opts] */
+function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false, retry = false } = {}) {
   const version = payloadVersion(record)
-  const flags = runDirFlags(dir, rejoin)
+  const flags = `${retry ? '--retry ' : ''}${runDirFlags(dir, rejoin)}`
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -1301,10 +1301,12 @@ function quietly(call) {
   }
 }
 
+const MISSED_STRUCTURED_OUTPUT = 'without calling StructuredOutput'
+
 /** @param {unknown} res @returns {boolean} */
 function missedStructuredOutput(res) {
   const threw = res && typeof res === 'object' ? /** @type {{ __threw?: unknown }} */ (res).__threw : undefined
-  return /without calling StructuredOutput/.test(String(threw ?? ''))
+  return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
 /**
@@ -1320,10 +1322,10 @@ function missedStructuredOutput(res) {
 function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
   return async recordIn => {
     const record = prepare(recordIn)
-    const prompt = logRunPrompt({ ...target(), record })
+    const at = { ...target(), record }
     const dispatch = logRunDispatch(record, { phase })
-    let res = await call(prompt, dispatch)
-    if (missedStructuredOutput(res)) res = await call(prompt, dispatch)
+    let res = await call(logRunPrompt(at), dispatch)
+    if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
