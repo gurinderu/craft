@@ -4887,6 +4887,46 @@ const DEDUP_SCHEMA = {
     },
   },
 }
+/**
+ * The earliest round among findings merged into one; undefined when none of them carries one.
+ * @param {ReadonlyArray<object>} members
+ * @returns {number | undefined}
+ */
+function earliestRound(members) {
+  const rounds = members.map(m => /** @type {{ foundInRound?: unknown }} */ (m).foundInRound).filter(r => typeof r === 'number')
+  return rounds.length ? Math.min(...rounds) : undefined
+}
+
+/**
+ * `f` as the merge of `members`: it was first found when the earliest of them was.
+ * @template {object} F
+ * @param {F} f @param {ReadonlyArray<object>} members
+ * @returns {F}
+ */
+function withEarliestRound(f, members) {
+  const round = earliestRound(members)
+  return round === undefined ? f : { ...f, foundInRound: round }
+}
+
+/**
+ * What verification made of the findings first found in `round`.
+ * @param {number} round @param {unknown[]} confirmed @param {unknown[]} suspected
+ */
+function roundYield(round, confirmed, suspected) {
+  /** @param {unknown} f */
+  const inRound = f => f != null && /** @type {{ foundInRound?: unknown }} */ (f).foundInRound === round
+  const c = (confirmed || []).filter(inRound)
+  return { confirmedCount: c.length, confirmedBySeverity: countBySeverity(c), suspectedCount: (suspected || []).filter(inRound).length }
+}
+
+/**
+ * Each lens round's record entry with its yield beside the fields it already had.
+ * @template {{ round: number }} R
+ * @param {R[]} lensRounds @param {unknown[]} confirmed @param {unknown[]} suspected
+ */
+function lensRoundYield(lensRounds, confirmed, suspected) {
+  return (lensRounds || []).map(x => ({ ...x, ...roundYield(x.round, confirmed, suspected) }))
+}
 const ROLLUP_MAX = 3
 /** @param {Finding[]} pool @param {Profile} profile */
 function rollupPool(pool, profile) {
@@ -4929,11 +4969,11 @@ function rolledUp(g, profile) {
   const folded = sorted.slice(ROLLUP_MAX)
   const rep = /** @type {Finding} */ (folded[0])   // folded is non-empty: sorted.length > ROLLUP_MAX
   const where = folded.slice(0, 6).map((/** @type {Finding} */ f) => `${f['file'] || '?'}:${f['line'] || 0}`).join(', ')
-  const rolled = [...keep, {
+  const rolled = [...keep, withEarliestRound({
     ...rep,
     title: `${rep.title} — and ${folded.length - 1} more of the same (${rep.ruleId})`,
     why: `${rep.why} Repeated ${folded.length} more times across the diff (${where}${folded.length > 6 ? ', …' : ''}); rolled into one finding because per-occurrence reporting of this rule buries the rest of the review. Fix the pattern, not the instance.`,
-  }]
+  }, folded)]
   log(`[${profile.id}] Roll-up: ${g.length}× ${rep.ruleId} from '${rep.source}' → ${keep.length} individual + 1 grouped`)
   return rolled
 }
@@ -5007,7 +5047,7 @@ function mergedGroup(members, isToolSrc) {
   const others = members.filter(m => m !== base)
   const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
   const whereChecked = [...new Set(members.map(m => m['whereChecked']).filter(Boolean))].join('; ')
-  return { ...base, sources, whereChecked, why: `${base['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` }
+  return withEarliestRound({ ...base, sources, whereChecked, why: `${base['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` }, members)
 }
 
 /** @param {Finding[]} pool @param {Profile} profile */
@@ -5652,7 +5692,7 @@ async function reviewProfile(profile) {
   const seen = new Set()
   /** @type {Finding[]} */
   const pool = []
-  for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
+  for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push({ ...f, foundInRound: 0 }) } }
   const notRun = [...scoutNotRun]
   /** @type {Set<string>} */
   const expectedDispatches = new Set()
@@ -5680,7 +5720,7 @@ async function reviewProfile(profile) {
     const fresh = []
     for (const r of results) {
       for (const f0 of (r.findings || [])) {
-        const f = { ...f0, source: r.__lens }
+        const f = { ...f0, source: r.__lens, foundInRound: round }
         const k = key(f)
         if (!seen.has(k)) { seen.add(k); fresh.push(f) }
       }
@@ -5869,7 +5909,8 @@ function reviewRecord(extra) {
     branch, head,
     languages: active.map(p => p.id),
     uncoveredFiles,
-    lensRounds: results.flatMap(r => (r.lensRounds || []).map(x => ({ language: r.profile.id, ...x }))),
+    lensRounds: results.flatMap(r => lensRoundYield(r.lensRounds || [], r['confirmed'], r['suspected']).map(x => ({ language: r.profile.id, ...x }))),
+    seedYield: results.map(r => ({ language: r.profile.id, ...roundYield(0, r['confirmed'], r['suspected']) })),
     scout: results.map(r => ({ language: r.profile.id, size: r['plan'].sizeBucket, lenses: r['plan'].lenses, model: r['plan'].lensModel, maxRounds: r['plan'].maxRounds, verifyVotes: r['plan'].verifyVotes, securitySensitive: !!r['plan'].securitySensitive, isLibrary: !!r['plan'].isLibrary })),
     gate: runGate,
     optionalPass: { requested: optionalRequested, ...optionalTally(), namedByCritic: [...optionalNamedByCritic] },
@@ -6192,6 +6233,8 @@ if (nothingSurvived()) return await noFindingsExit()
 const UNVERIFIED_PREAMBLE = 'These were not verified: no verifier was spent on them because a Low/Info finding cannot change the verdict, or because the verdict was already fixed at Block by a confirmed Critical/High and a Medium cannot move it, or the verifier that should have judged them died before returning a verdict, or every vote the panel DID return answered off-schema and carried none of the judgements the tier is decided on — each entry says which in its own `why`. Nothing below has been checked against the code — treat each as a lead, not a finding.'
 phase('Synthesize')
 const isRereview = !!priorRound
+/** @param {string} k @param {unknown} v */
+const withoutRound = (k, v) => (k === 'foundInRound' ? undefined : v)
 const rereviewData = rereviewDataOf()
 function rereviewDataOf() {
   return isRereview ? {
@@ -6231,7 +6274,7 @@ ${isRereview ? `This is a RE-REVIEW (round ${thisRound}). Produce, in order:
 6b. \`## Unverified (not checked)\` — the UNVERIFIED JSON below, same format, and OPEN the section with exactly this sentence: "${UNVERIFIED_PREAMBLE}" Never merge these into New, Still open or Carried, never call them confirmed, and do not re-rank or upgrade their severity. They change nothing about the verdict. Omit the section if empty.
 7. \`## 🔽 Carried\` — settled priors (rejected/justified/deferred) that are re-checked again next round, collapsed to a count + one-line list; omit if empty.
 7b. \`## 🏁 Retired\` — dismissals whose code has not moved since the author ruled on them: they leave the ledger and are NOT re-checked again. Collapse to a count + one-line list; omit if empty. If a defect here also appears under \`## 🆕 New\`, say so on its line — the dismissal stopped being tracked and the site was raised afresh; that is expected, not a contradiction.${uncoveredFiles.length ? `\n8. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}${criticNotes ? `\n9. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}
-RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in order:
+RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, withoutRound, 2)}` : `Produce, in order:
 1. \`## Verdict\` — one line (emoji + reason).${incompleteClause}
 2. \`## Gate\` — ${JSON.stringify(mergedProvenance)}.${carriedLine}
 3. \`## Confirmed\` — findings by severity (Critical first), each as \`severity · file:line · [ruleId] · what · why · fix\` and a blast-radius note when present. Include the \`ruleId\` in brackets when the finding has a non-empty one; omit the brackets otherwise. A finding with a non-empty \`toolRule\` (a gate tool's own rule) carries it in the same brackets, always labelled \`tool:\` so it never reads as a catalog id: \`[ruleId · tool: toolRule]\`, or \`[tool: toolRule]\` when ruleId is empty. When a finding carries a non-empty \`whereChecked\`, append \`· Premise checked at: <value>\` — that is the off-site evidence the author needs in order to re-check the claim, not decoration. A gate tool's finding without a \`toolRule\` (its source a gate tool: clippy, clippy-pedantic, semgrep, semver, semver-checks, statix, deadnix, fmt, tool) prints its \`title\` verbatim as \`what\` — never reworded: a past decision is matched to it by that title.
@@ -6241,11 +6284,11 @@ RE-REVIEW DATA (JSON): ${JSON.stringify(rereviewData, null, 2)}` : `Produce, in 
 ${uncoveredFiles.length ? `7. \`## Not reviewed\` — these changed files match no active language profile and were NOT reviewed; list them verbatim: ${JSON.stringify(uncoveredFiles)}` : ''}
 ${criticNotes ? `8. \`## Coverage gaps\` — surface verbatim: ${JSON.stringify(criticNotes)}` : ''}`}
 
-CONFIRMED (JSON): ${JSON.stringify(confirmed, null, 2)}
+CONFIRMED (JSON): ${JSON.stringify(confirmed, withoutRound, 2)}
 
-SUSPECTED (JSON): ${JSON.stringify(suspected, null, 2)}
+SUSPECTED (JSON): ${JSON.stringify(suspected, withoutRound, 2)}
 
-UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, null, 2)}`,
+UNVERIFIED — NOT CHECKED (JSON): ${JSON.stringify(unverified, withoutRound, 2)}`,
     { label: 'synthesis', phase: 'Synthesize', effort: 'medium' },
   ).then(text => {
     if (typeof text === 'string' && text.trim()) return text
