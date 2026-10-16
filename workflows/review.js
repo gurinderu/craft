@@ -4172,6 +4172,19 @@ function tombstoneBudget(liveCount, { ceiling = LEDGER_TOMBSTONE_MAX } = {}) {
   return Math.max(0, ceiling - live)
 }
 
+/**
+ * @param {unknown[]} ledger
+ * @param {{ ledgerShard: { of: number, total: number }, ledgerItems: unknown[] }[]} shards  shardLedger(ledger)
+ * @param {boolean} landed  every shard checkpoint landed in the directory the run asked for, never adopted
+ * @returns {{ ledger: unknown[] } | { ledgerInShards: { of: number, total: number } }}
+ */
+function ledgerRecordFields(ledger, shards, landed) {
+  const first = shards[0]
+  const carried = shards.reduce((n, s) => n + s.ledgerItems.length, 0)
+  if (!landed || !first || carried !== ledger.length) return { ledger }
+  return { ledgerInShards: { of: first.ledgerShard.of, total: first.ledgerShard.total } }
+}
+
 /** @type {Schema<CheckpointAnswer>} */
 const CHECKPOINT_SCHEMA = {
   type: 'object',
@@ -4185,7 +4198,7 @@ const CHECKPOINT_SCHEMA = {
 let runDir = ''
 let checkpointFailed = false
 let rejoinArmed = false
-/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group */
+/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
 async function checkpoint(phase, payloadIn, group) {
   const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn, workflowEngineRevision: ENGINE_REVISION }
   const asked = runDir
@@ -4195,15 +4208,18 @@ async function checkpoint(phase, payloadIn, group) {
     checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: armRejoin }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   ))
-  if (res?.runDir) {
-    if (asked && res.runDir !== asked) {
-      noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${res.runDir} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
-    }
-    runDir = res.runDir
-  } else {
-    checkpointFailed = true
-    noteTelemetryLoss(`phase checkpoint '${phase}'`, threw || res?.error || 'the logger agent returned no runDir')
+  if (res?.runDir) return tookRunDir(phase, asked, res.runDir)
+  checkpointFailed = true
+  noteTelemetryLoss(`phase checkpoint '${phase}'`, threw || res?.error || 'the logger agent returned no runDir')
+  return false
+}
+/** @param {string} phase @param {string} asked @param {string} returned @returns {boolean} */
+function tookRunDir(phase, asked, returned) {
+  if (asked && returned !== asked) {
+    noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${returned} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
   }
+  runDir = returned
+  return !!asked && returned === asked
 }
 
 const logRun = makeRunLogger({
@@ -6348,18 +6364,21 @@ function assembleLedger() {
     : allReviewFindings.map(f => toLedgerEntry(f, 'open', f.tier || 'suspected')).concat(priorRejected.map(f => toLedgerEntry(f, priorDisposition(f), f.priorTier)))
 }
 async function persistLedgerShards() {
-  for (const shard of shardLedger(reviewLedger)) {
-    await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
+  const shards = shardLedger(reviewLedger)
+  let landed = true
+  for (const shard of shards) {
+    landed = (await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')) && landed
   }
+  return ledgerRecordFields(reviewLedger, shards, landed && !rejoinArmed)
 }
-await persistLedgerShards()
+const ledgerFields = await persistLedgerShards()
 await logRun(reviewRecord({
   verdict: recordVerdict + verdictSuffix({ notRun, coverageNotes, floorPremiseHeld }),
   savedByFloor,
   savedByFloorPremiseHeld: floorPremiseHeld,
   round: thisRound,
   findings: summarizeFindings(allReviewFindings),
-  ledger: reviewLedger,
+  ...ledgerFields,
   dimensions: results.flatMap(r => r['plan'].lenses.map((/** @type {string} */ l) => {
     const s = summarizeFindings(r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l))
     const confirmedCount = r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length

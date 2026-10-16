@@ -4729,6 +4729,22 @@ function tombstoneBudget(liveCount, { ceiling = LEDGER_TOMBSTONE_MAX } = {}) {
 }
 // <<< craft-inline
 
+// What the final record says about its ledger once the shards hold it (realm @nick/craft, node #245).
+// >>> craft-inline lib/ledger-in-shards.mjs ledgerRecordFields
+/**
+ * @param {unknown[]} ledger
+ * @param {{ ledgerShard: { of: number, total: number }, ledgerItems: unknown[] }[]} shards  shardLedger(ledger)
+ * @param {boolean} landed  every shard checkpoint landed in the directory the run asked for, never adopted
+ * @returns {{ ledger: unknown[] } | { ledgerInShards: { of: number, total: number } }}
+ */
+function ledgerRecordFields(ledger, shards, landed) {
+  const first = shards[0]
+  const carried = shards.reduce((n, s) => n + s.ledgerItems.length, 0)
+  if (!landed || !first || carried !== ledger.length) return { ledger }
+  return { ledgerInShards: { of: first.ledgerShard.of, total: first.ledgerShard.total } }
+}
+// <<< craft-inline
+
 /** @type {Schema<CheckpointAnswer>} */
 const CHECKPOINT_SCHEMA = {
   type: 'object',
@@ -4749,7 +4765,8 @@ let rejoinArmed = false
 // the `ownDir` shortcut, read a mid-review branch move as "not this run's directory", and left the
 // run's own phases unfolded. Sticky, because an adoption is not undone by later checkpoints
 // succeeding — once a directory MIGHT be someone else's, it stays might-be for the finalize proof.
-/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group */
+// Resolves true only when the slice landed in the directory this run already had and asked for.
+/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
 async function checkpoint(phase, payloadIn, group) {
   // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
   // that name to rebuild a dead run's identity. A payload without them produced a real
@@ -4771,26 +4788,30 @@ async function checkpoint(phase, payloadIn, group) {
     checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: armRejoin }),
     { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   ))
-  if (res?.runDir) {
-    // A refused `--dir` does not fail the checkpoint: the script MINTS a fresh directory, prints a
-    // WARNING on stderr and returns a perfectly valid runDir on stdout. Taking it silently strands
-    // every slice written into the directory we asked for — finalize folds only the new one, its
-    // `kept` warning cannot fire (the old directory was never its target), and the report calls the
-    // run clean. The engine can see this without trusting the model to relay stderr: we know which
-    // directory we asked for, so a different one coming back IS the refusal.
-    if (asked && res.runDir !== asked) {
-      noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${res.runDir} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
-    }
-    runDir = res.runDir
-  } else {
-    // Remember it: with no runDir to thread, every later checkpoint would mint a directory of its
-    // own and this run would fragment into orphan partials that `recover` promotes as unrelated
-    // half-runs. `--rejoin` lets the script re-enter the directory this run already has. It is opt-in
-    // for a reason — asking for it unconditionally would make a SECOND, concurrent review adopt this
-    // one's directory, and concurrent reviews on one machine are ordinary.
-    checkpointFailed = true
-    noteTelemetryLoss(`phase checkpoint '${phase}'`, threw || res?.error || 'the logger agent returned no runDir')
+  if (res?.runDir) return tookRunDir(phase, asked, res.runDir)
+  // Remember it: with no runDir to thread, every later checkpoint would mint a directory of its
+  // own and this run would fragment into orphan partials that `recover` promotes as unrelated
+  // half-runs. `--rejoin` lets the script re-enter the directory this run already has. It is opt-in
+  // for a reason — asking for it unconditionally would make a SECOND, concurrent review adopt this
+  // one's directory, and concurrent reviews on one machine are ordinary.
+  checkpointFailed = true
+  noteTelemetryLoss(`phase checkpoint '${phase}'`, threw || res?.error || 'the logger agent returned no runDir')
+  return false
+}
+// The directory a landed checkpoint returned, taken as the run's; true when it is the one the run asked for.
+/** @param {string} phase @param {string} asked @param {string} returned @returns {boolean} */
+function tookRunDir(phase, asked, returned) {
+  // A refused `--dir` does not fail the checkpoint: the script MINTS a fresh directory, prints a
+  // WARNING on stderr and returns a perfectly valid runDir on stdout. Taking it silently strands
+  // every slice written into the directory we asked for — finalize folds only the new one, its
+  // `kept` warning cannot fire (the old directory was never its target), and the report calls the
+  // run clean. The engine can see this without trusting the model to relay stderr: we know which
+  // directory we asked for, so a different one coming back IS the refusal.
+  if (asked && returned !== asked) {
+    noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${returned} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
   }
+  runDir = returned
+  return !!asked && returned === asked
 }
 
 // Persisting the record is deterministic work, and it is now done by lib/craft-log-run.mjs. The model
@@ -8060,12 +8081,20 @@ function assembleLedger() {
 //
 // Written HERE and not earlier because this is the first moment the ledger exists — it is the
 // carry-forward, so it needs the adjudication of the prior round that only just finished.
+//
+// And once every shard has landed in the run's own directory, the record leaves the ledger to them:
+// the one copy that kept being interrupted no longer carries the largest array, and finalize rebuilds
+// it from the shards (realm @nick/craft, node #245). A directory that may have been adopted — a
+// rejoin was armed — is not the run's own, so the record then carries the whole ledger as before.
 async function persistLedgerShards() {
-  for (const shard of shardLedger(reviewLedger)) {
-    await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')
+  const shards = shardLedger(reviewLedger)
+  let landed = true
+  for (const shard of shards) {
+    landed = (await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')) && landed
   }
+  return ledgerRecordFields(reviewLedger, shards, landed && !rejoinArmed)
 }
-await persistLedgerShards()
+const ledgerFields = await persistLedgerShards()
 await logRun(reviewRecord({
   verdict: recordVerdict + verdictSuffix({ notRun, coverageNotes, floorPremiseHeld }),
   savedByFloor,
@@ -8075,7 +8104,7 @@ await logRun(reviewRecord({
   savedByFloorPremiseHeld: floorPremiseHeld,
   round: thisRound,
   findings: summarizeFindings(allReviewFindings),
-  ledger: reviewLedger,
+  ...ledgerFields,
   dimensions: results.flatMap(r => r['plan'].lenses.map((/** @type {string} */ l) => {
     const s = summarizeFindings(r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l))
     const confirmedCount = r['confirmed'].filter((/** @type {Finding} */ f) => (f['source'] || '') === l).length
