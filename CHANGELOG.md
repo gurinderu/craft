@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.26.0](https://github.com/gurinderu/craft/compare/v0.25.2...v0.26.0) (2026-10-17)
+
+
+### Features
+
+* **analyze-runs:** a resumed run's second record is folded into one run, and the report says so ([#206](https://github.com/gurinderu/craft/issues/206)) ([9faac59](https://github.com/gurinderu/craft/commit/9faac59c8d9197d3b0e20701bd4fe81f9ab5bb89))
+* **review:** the run record counts confirmed findings by the lens round that found them ([#204](https://github.com/gurinderu/craft/issues/204)) ([2a367fa](https://github.com/gurinderu/craft/commit/2a367fa52fe8aefa59b4794913aa12e5d14fd482))
+
+
+### Bug Fixes
+
+* **logging:** re-ask a logger that missed its structured answer; a store write recognises its own retry ([#203](https://github.com/gurinderu/craft/issues/203)) ([e47adef](https://github.com/gurinderu/craft/commit/e47adef61db63a493a5e33a70c19061cb593f5a9))
+
 ## [0.25.2](https://github.com/gurinderu/craft/compare/v0.25.1...v0.25.2) (2026-10-16)
 
 
