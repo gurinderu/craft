@@ -1200,7 +1200,7 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly makeRunLogger telemetryLossNoter
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly MISSED_STRUCTURED_OUTPUT missedStructuredOutput makeRunLogger telemetryLossNoter
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1282,10 +1282,10 @@ function runDirFlags(dir, rejoin) {
   return `${dir ? `--dir ${shq(dir)} ` : ''}${rejoin ? '--rejoin ' : ''}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `
 }
 
-/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean }} [opts] */
-function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false } = {}) {
+/** @param {{ record?: unknown, craftRoot?: string, repo?: string, command?: string, dir?: string, rejoin?: boolean, retry?: boolean }} [opts] */
+function logRunPrompt({ record, craftRoot = '', repo = '', command = 'write', dir = '', rejoin = false, retry = false } = {}) {
   const version = payloadVersion(record)
-  const flags = runDirFlags(dir, rejoin)
+  const flags = `${retry ? '--retry ' : ''}${runDirFlags(dir, rejoin)}`
   return `You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
@@ -1302,7 +1302,7 @@ The script computes every field (ts, project, commit, dirty, engineRevision, cra
 
 COPY THE RECORD VERBATIM into the quoted heredoc — it can be hundreds of KB (findings, ledger, dimensions), and re-emitting it from memory silently drops the big arrays. That is exactly how a completed review once persisted \`findings: 111\` with \`dimensions: []\` and no \`verification\`, destroying the per-lens telemetry the whole store exists for.
 
-If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded, return {"ok": true} — and if it ALSO printed a line starting \`craft-log-run WARNING\`, return {"ok": true, "error": "<that line verbatim>"}: the record landed, but something about the run directory did not, and the engine has to be able to say so. Best-effort either way: never error the run over this.
+If the script prints a line starting \`craft-log-run FAILED\`, or the command itself fails (for example the logger path does not exist), return {"ok": false, "error": "<that line, or the shell error, verbatim>"} and stop — do NOT fall back to writing the file by hand. If it succeeded — it prints \`wrote <file>\`, or \`already filed <file>\` when an earlier attempt filed this same record — return {"ok": true} — and if it ALSO printed a line starting \`craft-log-run WARNING\`, return {"ok": true, "error": "<that line verbatim>"}: the record landed, but something about the run directory did not, and the engine has to be able to say so. Best-effort either way: never error the run over this.
 
 RECORD:
 ${JSON.stringify(record, null, 2)}`
@@ -1350,6 +1350,14 @@ function quietly(call) {
   }
 }
 
+const MISSED_STRUCTURED_OUTPUT = 'without calling StructuredOutput'
+
+/** @param {unknown} res @returns {boolean} */
+function missedStructuredOutput(res) {
+  const threw = res && typeof res === 'object' ? /** @type {{ __threw?: unknown }} */ (res).__threw : undefined
+  return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -1363,7 +1371,11 @@ function quietly(call) {
 function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
   return async recordIn => {
     const record = prepare(recordIn)
-    const landed = logRunOutcome(await call(logRunPrompt({ ...target(), record }), logRunDispatch(record, { phase })))
+    const at = { ...target(), record }
+    const dispatch = logRunDispatch(record, { phase })
+    let res = await call(logRunPrompt(at), dispatch)
+    if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
   }
