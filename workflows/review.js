@@ -685,7 +685,8 @@ function initialMemory(passed, recalled = false, note = '') {
 
 /**
  * The source as the run record carries it, so the store can tell a run that recalled from one that did not
- * and why (realm @nick/craft, node #40): the counts and the backend, without the derived titles.
+ * and why (realm @nick/craft, node #40): the counts and the backend; the derived ids' titles are dropped,
+ * `why` stays the prose the report prints (the recall agent's words, the blocked and override lines).
  * @param {MemorySource} m
  * @returns {Omit<MemorySource, 'derivedNamed'>}
  */
