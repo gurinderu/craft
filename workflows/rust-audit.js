@@ -501,8 +501,8 @@ Return {backend, why, decisions, questions, stale, inactive}: backend names the 
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
  * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
  * `derived` the applied records whose id was derived, their own having none, and `derivedNamed` the
- * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[] }} MemorySource
+ * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -584,8 +584,20 @@ function readMemoryRecall(raw, cut) {
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
   const all = [...list, ...questions].map(withSkillId)
-  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
+  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}`, backend } }
+  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, backend, ...(questions.length ? { questions: questions.length } : {}) } }
+}
+
+/**
+ * The source as the run record carries it, so the store can tell a run that recalled from one that did not
+ * and why (realm @nick/craft, node #40): the counts and the backend, without the derived titles.
+ * @param {MemorySource} m
+ * @returns {Omit<MemorySource, 'derivedNamed'>}
+ */
+function memoryRecord(m) {
+  const rest = { ...m }
+  delete rest.derivedNamed
+  return rest
 }
 
 /**
@@ -2067,6 +2079,7 @@ const auditRecord = {
   findings: summarizeFindings(results.flatMap(r => (Array.isArray(r.findings) ? r.findings : []))),
   nested: false,
   via: null,
+  memory: memoryRecord(memory),
   scout: { baseRef, crateCount: crates.length, changedCrateCount: changedCrates.length, edgeCount: edges.length, hasUnsafe },
   dimensions: stripped.map(r => {
     const s = summarizeFindings(r['findings'])
