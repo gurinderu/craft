@@ -578,7 +578,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS RECORD_OTHER_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withOverrides withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail parseMerged mergeAndRead mergeRecall partCount memoryParts readLaunch acceptedMemory countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS RECORD_OTHER_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory memoryRecord skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withOverrides withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived derivedTail parseMerged mergeAndRead mergeRecall partCount memoryParts readLaunch acceptedMemory countedRecords launcherLine memoryLine sourceLine memorySection recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit', 'lens', 'toolRule']
@@ -635,8 +635,8 @@ Return {backend, why, decisions, questions, stale, inactive}: backend names the 
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
  * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
  * `derived` the applied records whose id was derived, their own having none, and `derivedNamed` the
- * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[] }} MemorySource
+ * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -718,8 +718,8 @@ function readMemoryRecall(raw, cut) {
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
   const all = [...list, ...questions].map(withSkillId)
-  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
+  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}`, backend } }
+  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, backend, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -733,6 +733,19 @@ function initialMemory(passed, recalled = false, note = '') {
   /** @type {MemorySource} */
   const m = { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
   return passed ? { ...m, passed } : m
+}
+
+/**
+ * The source as the run record carries it, so the store can tell a run that recalled from one that did not
+ * and why (realm @nick/craft, node #40): the counts and the backend; the derived ids' titles are dropped,
+ * `why` stays the prose the report prints (the recall agent's words, the blocked and override lines).
+ * @param {MemorySource} m
+ * @returns {Omit<MemorySource, 'derivedNamed'>}
+ */
+function memoryRecord(m) {
+  const rest = { ...m }
+  delete rest.derivedNamed
+  return rest
 }
 
 /**
@@ -1067,7 +1080,7 @@ function acceptedMemory(m, accepted) {
   if (m.source === 'none') return m
   const questions = accepted.filter(d => d.kind === 'question').length
   /** @type {MemorySource} */
-  const out = { source: m.source, count: accepted.length, why: m.why }
+  const out = { source: m.source, count: accepted.length, why: m.why, ...(m.backend ? { backend: m.backend } : {}) }
   return questions ? { ...out, questions } : out
 }
 
@@ -5059,7 +5072,7 @@ phase('Scout')
 async function ambiguousPathExit() {
   const msg = `path=${ambiguousPath} is an absolute path and no \`repo\` was given, so it is ambiguous: it could name the REPOSITORY to review (pass it as \`repo\`) or a directory INSIDE the repository to narrow to (pass it relative to the repo root). Nothing ran — re-dispatch with one of those two spellings.`
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (ambiguous path)', findings: summarizeFindings([]), dimensions: [], verification: null,
     // The CLASS, not this run's path — `notRun` is ranked by exact string (see `scopeNotRun`).
     // The path itself is in the verdict prose below, where nothing ranks it.
@@ -5069,7 +5082,7 @@ async function ambiguousPathExit() {
 }
 async function detectDiedExit() {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
@@ -5386,7 +5399,7 @@ const { pinned: pinnedLangs, unknown: unknownLangs } = resolveProfilePin(PROFILE
 async function unknownPinExit() {
   const msg = unknownPinMessage(PROFILES, unknownLangs)
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
     notRun: [`nothing ran — ${msg}`, ...scopeNotRun], outputTokens: budget.spent(),
   })
@@ -5413,7 +5426,7 @@ async function coverageExit() {
 async function emptyDiffExit() {
   const emptyMsg = noChangedFilesMessage()
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun], outputTokens: budget.spent(),
   })
@@ -5427,7 +5440,7 @@ async function nothingToReviewExit() {
   // marker that fires on every README-only change stops being read.
   const okMsg = nothingToReviewMessage(changedFiles.length)
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: changedFiles, notRun: [...scopeNotRun], outputTokens: budget.spent(),
   })
@@ -5440,7 +5453,7 @@ async function nothingToReviewExit() {
 async function noProfileExit() {
   const msg = noLanguageMessage(PROFILES, changedFiles.length, coverage.material.length)
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null,
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: changedFiles, notRun: [msg, ...scopeNotRun], outputTokens: budget.spent(),
   })
@@ -7268,6 +7281,8 @@ function reviewRecord(extra) {
     name: 'review',
     nested: !!viaArg,
     via: viaArg || null,
+    // What the recall step brought, or why none (realm @nick/craft, node #40).
+    memory: memoryRecord(memory),
     branch, head,
     languages: active.map(p => p.id),
     uncoveredFiles,
