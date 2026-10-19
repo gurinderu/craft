@@ -41,6 +41,8 @@ echo "Installing craft opencode adapters into: $TARGET  (scope: $SCOPE)"
 # Skills — one symlink per skill dir (target dir may hold other skills).
 for d in "$REPO_ROOT"/skills/*/; do
   [ -f "$d/SKILL.md" ] || continue
+  # develop drives the review engines through the Workflow tool, which only Claude Code has.
+  [ "$(basename "$d")" = develop ] && continue
   link "${d%/}" "$TARGET/skills/$(basename "$d")"
 done
 
