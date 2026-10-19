@@ -503,7 +503,7 @@ function priorDecisionsRefusedSection(refused) {
   return `\n\n## Prior decisions not applied\n${refused.map(r => `- ⚠️ ${r}`).join('\n')}\n`
 }
 // <<< craft-inline
-// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS RECORD_OTHER_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withOverrides withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived parseMerged mergeAndRead mergeRecall partCount memoryParts readLaunch acceptedMemory recallDecisions
+// >>> craft-inline lib/memory-recall.mjs RECALL_PATHS_MAX RECORD_TEXT_FIELDS RECORD_OTHER_FIELDS MEMORY_RECALL_SCHEMA memoryRecallPrompt recallText staleTail recalledQuestions SKILL_ID_FORM withSkillId engineRecordId inactiveRecords readMemoryRecall initialMemory memoryRecord skippedMemory mergeById heldIds ISO_DATE monthDays shiftedDay zoneMinutes isoMoment utcSeconds notLaterWhy successorRecords passedAliases blockedPassed idTail opposedVerdict withoutLinksTo withOverrides withPassed DERIVED_NAMED_MAX DERIVED_TITLE_MAX withDerived parseMerged mergeAndRead mergeRecall partCount memoryParts readLaunch acceptedMemory recallDecisions
 const RECALL_PATHS_MAX = 60
 
 const RECORD_TEXT_FIELDS = ['id', 'kind', 'title', 'body', 'scope', 'status', 'date', 'author', 'commit', 'lens', 'toolRule']
@@ -560,8 +560,8 @@ Return {backend, why, decisions, questions, stale, inactive}: backend names the 
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
  * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
  * `derived` the applied records whose id was derived, their own having none, and `derivedNamed` the
- * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[] }} MemorySource
+ * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -643,8 +643,8 @@ function readMemoryRecall(raw, cut) {
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
   const all = [...list, ...questions].map(withSkillId)
-  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
+  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}`, backend } }
+  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, backend, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -658,6 +658,19 @@ function initialMemory(passed, recalled = false, note = '') {
   /** @type {MemorySource} */
   const m = { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
   return passed ? { ...m, passed } : m
+}
+
+/**
+ * The source as the run record carries it, so the store can tell a run that recalled from one that did not
+ * and why (realm @nick/craft, node #40): the counts and the backend; the derived ids' titles are dropped,
+ * `why` stays the prose the report prints (the recall agent's words, the blocked and override lines).
+ * @param {MemorySource} m
+ * @returns {Omit<MemorySource, 'derivedNamed'>}
+ */
+function memoryRecord(m) {
+  const rest = { ...m }
+  delete rest.derivedNamed
+  return rest
 }
 
 /**
@@ -984,7 +997,7 @@ function acceptedMemory(m, accepted) {
   if (m.source === 'none') return m
   const questions = accepted.filter(d => d.kind === 'question').length
   /** @type {MemorySource} */
-  const out = { source: m.source, count: accepted.length, why: m.why }
+  const out = { source: m.source, count: accepted.length, why: m.why, ...(m.backend ? { backend: m.backend } : {}) }
   return questions ? { ...out, questions } : out
 }
 
@@ -1421,6 +1434,8 @@ const capSeverity = f => ({ ...f, severity: f.severity ? f.severity.charAt(0).to
 const recordHead = () => ({
   schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
   nested: !!viaArg, via: viaArg || null,
+  // What the recall step brought, or why none (realm @nick/craft, node #40).
+  memory: memoryRecord(memory),
 })
 
 // ---- lens catalog ----

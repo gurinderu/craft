@@ -540,8 +540,8 @@ Return {backend, why, decisions, questions, stale, inactive}: backend names the 
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
  * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
  * `derived` the applied records whose id was derived, their own having none, and `derivedNamed` the
- * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[] }} MemorySource
+ * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered.
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -623,8 +623,8 @@ function readMemoryRecall(raw, cut) {
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
   const all = [...list, ...questions].map(withSkillId)
-  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}` } }
-  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, ...(questions.length ? { questions: questions.length } : {}) } }
+  if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}`, backend } }
+  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, backend, ...(questions.length ? { questions: questions.length } : {}) } }
 }
 
 /**
@@ -638,6 +638,19 @@ function initialMemory(passed, recalled = false, note = '') {
   /** @type {MemorySource} */
   const m = { source: 'none', count: 0, why: 'not recalled — the run ended before its recall step' }
   return passed ? { ...m, passed } : m
+}
+
+/**
+ * The source as the run record carries it, so the store can tell a run that recalled from one that did not
+ * and why (realm @nick/craft, node #40): the counts and the backend; the derived ids' titles are dropped,
+ * `why` stays the prose the report prints (the recall agent's words, the blocked and override lines).
+ * @param {MemorySource} m
+ * @returns {Omit<MemorySource, 'derivedNamed'>}
+ */
+function memoryRecord(m) {
+  const rest = { ...m }
+  delete rest.derivedNamed
+  return rest
 }
 
 /**
@@ -964,7 +977,7 @@ function acceptedMemory(m, accepted) {
   if (m.source === 'none') return m
   const questions = accepted.filter(d => d.kind === 'question').length
   /** @type {MemorySource} */
-  const out = { source: m.source, count: accepted.length, why: m.why }
+  const out = { source: m.source, count: accepted.length, why: m.why, ...(m.backend ? { backend: m.backend } : {}) }
   return questions ? { ...out, questions } : out
 }
 
@@ -1361,6 +1374,7 @@ const capSeverity = f => ({ ...f, severity: f.severity ? f.severity.charAt(0).to
 const recordHead = () => ({
   schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'adversarial-review',
   nested: !!viaArg, via: viaArg || null,
+  memory: memoryRecord(memory),
 })
 
 /** @type {Record<string, string>} */
