@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/gurinderu/craft/compare/v0.26.0...v0.27.0) (2026-10-19)
+
+
+### Features
+
+* **run-record:** the run record carries what memory recall brought, and analyze-runs reports it ([#207](https://github.com/gurinderu/craft/issues/207)) ([2718a3e](https://github.com/gurinderu/craft/commit/2718a3ef7221c851d616d5b3e7dd3dc8f9e9774a))
+
+
+### Bug Fixes
+
+* **review:** a review launched on the trunk says so, and its empty-diff record keeps the base ([#209](https://github.com/gurinderu/craft/issues/209)) ([d5f87b2](https://github.com/gurinderu/craft/commit/d5f87b2898426917bf40180507a8d1e9585c6f9e))
+
 ## [0.26.0](https://github.com/gurinderu/craft/compare/v0.25.2...v0.26.0) (2026-10-17)
 
 
