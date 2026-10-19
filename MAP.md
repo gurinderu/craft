@@ -7,10 +7,12 @@ engineering-process content. It replaces `rust-skills` entirely.
 ## Principles
 
 1. **Own the domain; leave generic process out.** craft carries only Rust/Nix domain knowledge.
-   The language-agnostic *discipline* (the debugging method, verification, how to run a review) is
-   intentionally out of scope — craft names no external process skills and declares no plugin
-   dependencies; bring your own. Skills reference *each other* — that cross-linking is the
-   collection's cohesion.
+   The language-agnostic *discipline* (the debugging method, verification, how to plan or run a
+   development process) is intentionally out of scope — craft names no external process skills and
+   declares no plugin dependencies; bring your own. craft may ship a role that runs the cycle with
+   craft's own tools (memory, review, triage, the fix loop — `develop`), and that role yields to
+   the consumer's declared process: a role or rule the project declares for a step runs that step.
+   Skills reference *each other* — that cross-linking is the collection's cohesion.
 2. **Concrete over Socratic.** Good/Bad code and decision tables, not just "ask yourself…".
    (`rust-skills` is reasoning-first; `craft` is action-first.)
 3. **Organized by task, not by error code.** One skill per thing you're *doing*
@@ -120,6 +122,7 @@ committed.
 | `distributed-races` | ✅ | controller / reconcile-loop correctness as questions → answer needed → where to read it (`catalogue.md`, R1–R15): self-triggering writes, wake source per requeue outcome, foreign stale cache, permissions, protection lifetime, migration window, plus create/patch divergence, partial-failure strands, cleanup, status churn, feature gates, 409/404 races, swallowed errors, strict decode on shared streams, webhook failurePolicy; the `reconciler` lens reads its catalogue | R7–R12 as `REC-001`…`REC-006` in `rust-review`; write-pair durability → the `failure-windows` lens |
 | `compatibility` | ✅ | backward compatibility as questions → answer needed → where to read it (`catalogue.md`, C1–C13): old data under the new shape, rolling deploy both directions, read-only alias, migration vs running code, CLI contract, config/env/chart surface, changed defaults, schema fields narrowed, API version lifecycle, IDL breaks, rollout order across components, renamed exported identifiers, regression vs standing state against the last released tag; the `compat` lens reads its catalogue | crate semver (`cargo semver-checks`) → `rust-ecosystem`; pre-existing objects a controller handles → `distributed-races` R6 |
 | `memory` | ✅ | the project's decisions, lessons and open questions across sessions: one record shape, four verbs, deterministic backend order (explicit setting → memory MCP server by capability → harness project memory → `.craft/memory/` files on existing dir or consent → none), recall by scope + keywords returning only active matches; `backends.md` per store | run records, review ledger, telemetry → `addressing-findings` / `docs/observability.md` |
+| `develop` | ✅ | the development cycle up to a PR with craft's own tools: consumer roles first (a declared role or rule takes its phase, one line per phase says whose) → `memory` recall → work → review loop (`review` for Rust/Nix, `adversarial-review` otherwise → triage → `addressing-findings`) until a round brings no new Medium+ finding, at most 4 rounds, then stop and tell the human → one full review (`rust-audit` / strict `review` / `adversarial-review` by stack) → PR; main session only | planning, test-first, debugging method → the project's own process; working findings alone → `addressing-findings`; a single review → the review workflows |
 | `addressing-findings` | ✅ | the fix loop for review findings: gather (craft agents + GitHub PR comments) → normalize → triage (accept/reject/defer/needs-decision/conflict) → order → fix → verify → re-review → close the GitHub loop; scales to the `triage-findings` workflow | the review *rubric* → `rust-review`; *running* the agents → `rust-audit`; *how* to fix → topic skills |
 
 > **Out of scope:** the generic engineering-process method (systematic debugging, verification,

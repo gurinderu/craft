@@ -5,7 +5,9 @@ Personal Claude Code collection of opinionated engineering skills and agents.
 craft owns its **Rust** and **Nix** knowledge in full and is **self-contained** — it declares no
 plugin dependencies and carries no generic engineering-process content. Language-agnostic
 *discipline* (how to run a review, how to verify a claim, the debugging method) is intentionally
-out of scope; bring your own process skills. craft's skills cross-reference **each other** — that
+out of scope; bring your own process skills. The one cycle craft runs — `craft:develop`, up to a
+PR — uses only craft's own tools (memory, review, triage, the fix loop) and yields every phase to
+the process your project declares. craft's skills cross-reference **each other** — that
 cross-linking is the collection's cohesion.
 
 ## Contents
@@ -41,6 +43,7 @@ cross-linking is the collection's cohesion.
 | skill | `craft:compatibility` | Backward compatibility, any language — old data under a new shape, rolling deploy in both directions, migrations, read-only aliases, CLI/config/env/Helm contract and defaults, CRD/API version lifecycle, proto/OpenAPI breaks, rollout order across components, renamed exported names, regression vs last release; read by the review workflow's `compat` lens |
 | skill | `craft:memory` | Semantic memory of the project's own facts — decisions on findings, lessons, open questions — `recall` / `record-decision` / `record-lesson` / `record-question` over whatever store the project has (explicit setting, a memory MCP server found by capability, the harness's project memory, or `.craft/memory/` files); not craft's run records |
 | skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; scales to the `triage-findings` workflow |
+| skill | `craft:develop` | The development cycle up to a PR with craft's own tools — the project's declared roles and rules take any phase they cover; recall project memory, make the change, review → triage → fix until a round brings no new Medium+ finding (at most 4 rounds, then stop and tell the human), one full review, then the PR; runs in the main session |
 | agent | `rust-reviewer` | Per-lens worker for the `review` workflow's rust profile; run directly for an ad-hoc whole-diff Rust review (establishes the CI-aware gate and returns a verdict) |
 | agent | `nix-reviewer` | Per-lens worker for the `review` workflow's nix profile; run directly for an ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) |
 | agent | `rust-security-scanner` | Runs the security toolchain, consolidates findings, returns a verdict |

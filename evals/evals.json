@@ -367,5 +367,38 @@
       "Prints one line per write naming the backend (memory backend: X), or says no memory backend is available and continues the loop.",
       "Does NOT record a lesson unless the author says yes to one."
     ]
+  },
+  {
+    "skills": [
+      "develop"
+    ],
+    "query": "Implement rate limiting on the /login endpoint and open a PR when it's ready.",
+    "expected_behavior": [
+      "Selects develop and runs it in the main session, not in a subagent.",
+      "Before working, reads the repository's declared roles and rules (.claude/agents, .opencode/agents, AGENTS.md / CLAUDE.md) and prints one line per phase naming whose role or rule runs it.",
+      "Recalls project memory for the touched paths, makes the change, then loops review → triage → addressing findings until a round brings no new Medium+ finding, at most 4 rounds.",
+      "Runs one full review before opening the PR; never opens the PR after a loop that did not converge without the human's word."
+    ]
+  },
+  {
+    "skills": [
+      "develop"
+    ],
+    "query": "Develop the CSV export feature end to end — our AGENTS.md says every change gets reviewed by the reviewer agent in .claude/agents before a PR.",
+    "expected_behavior": [
+      "Selects develop.",
+      "The project's declared reviewer takes the review phases instead of craft's engines; the phase line names the reviewer agent file or the AGENTS.md rule for them.",
+      "Still counts rounds and stops at convergence or after 4 rounds, telling the human what is left."
+    ]
+  },
+  {
+    "skills": [
+      "addressing-findings"
+    ],
+    "query": "The review on my branch came back with five findings. Fix them and re-review until it's green.",
+    "expected_behavior": [
+      "Selects addressing-findings, not develop: the change already exists and only its findings are to be worked.",
+      "Does not run the whole development cycle (roles, recall, full review, PR)."
+    ]
   }
 ]
