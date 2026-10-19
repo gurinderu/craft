@@ -36,7 +36,7 @@ export const meta = {
  * @typedef {{ severity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info', title: string, file: string, line: number, why: string, whereChecked: string, fix: string, blastRadius: string, source: string, ruleId: string, toolRule?: string, fp?: string, symbol?: string, tier?: string, disposition?: string }} FindingAnswer  FINDING_ITEM
  * @typedef {{ fp: string, file: string, line: number, symbol: string, severity: string, tier: string, disposition: string, source: string, sources?: string[], ruleId: string, title: string, why: string, whyRef?: { record: string, fp: string }, deferral?: { id: string, reason: string, who: string, when: string, link: string, commit: string } }} LedgerAnswer  LEDGER_ITEM
  * @typedef {{ found: boolean, round: number, head: string, ledger: LedgerAnswer[], ledgerCount: number, reason: string, priorFindings: number, journalSourced: boolean, sameFpBasis?: boolean, fpBasisKnown?: boolean, priorFpRevisions?: number[], priorFpRevisionsCheck?: string }} PriorRoundAnswer  PRIOR_ROUND_SCHEMA
- * @typedef {{ baseRef: string, files: string[], spec: string, branch: string, head: string, notes: string }} DetectAnswer  DETECT_SCHEMA
+ * @typedef {{ baseRef: string, files: string[], spec: string, branch: string, head: string, baseIsHead?: boolean, notes: string }} DetectAnswer  DETECT_SCHEMA
  * @typedef {{ sizeBucket: 'small' | 'medium' | 'large', lenses: string[], isLibrary: boolean, securitySensitive: boolean, intent: string, churn: string[], notes: string, surfaces?: { crossBoundarySymbol?: boolean, wireForm?: boolean, invariantType?: boolean } }} ScoutAnswer  SCOUT_SCHEMA
  * @typedef {{ status: 'pass' | 'fail' | 'unknown', provenance: string, failedChecks: string[], carriedChecks: string[], seedFindings: FindingAnswer[], notes: string }} GateAnswer  GATE_SCHEMA
  * @typedef {{ lens: string, findings: FindingAnswer[] }} FindingsAnswer  FINDINGS_SCHEMA
@@ -2478,6 +2478,18 @@ function noChangedFilesMessage() {
   return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
 }
 
+/** @param {string} baseRef @param {string} head @returns {boolean} */
+function baseIsHead(baseRef, head) {
+  const b = baseRef.trim().toLowerCase()
+  const h = head.trim().toLowerCase()
+  if (!/^[0-9a-f]{7,40}$/.test(b) || !/^[0-9a-f]{7,40}$/.test(h)) return false
+  return b.startsWith(h) || h.startsWith(b)
+}
+
+function onTrunkMessage() {
+  return `NOTHING WAS REVIEWED — HEAD IS the resolved base: this checkout has no commit of its own beyond the trunk (the review ran on the trunk itself, or on a branch not yet ahead of it), so the diff against the trunk is empty by construction. Re-run it from the branch's own checkout or worktree, or pass \`base\` naming what to compare against. No lens ran, so this is not an approval.`
+}
+
 const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
 
 const INERT_NAMES = new Set([
@@ -2670,13 +2682,14 @@ const PRIOR_ROUND_SCHEMA = {
 const DETECT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['baseRef', 'files', 'spec', 'branch', 'head', 'notes'],
+  required: ['baseRef', 'files', 'spec', 'branch', 'head', 'baseIsHead', 'notes'],
   properties: {
     baseRef: { type: 'string', description: 'git ref the diff was computed against; empty if none resolved' },
     files: { type: 'array', items: { type: 'string' }, description: 'changed file paths in the diff' },
     spec: { type: 'string', description: 'verbatim change description — the open PR title+body, else the commit messages on the diff range; truncated to ~4000 chars; empty string if none' },
     branch: { type: 'string', description: 'current git branch name; empty string if detached HEAD' },
     head: { type: 'string', description: 'current HEAD short SHA; empty string if not a git repo' },
+    baseIsHead: { type: 'boolean', description: 'true when the resolved base and HEAD are the same commit (git rev-parse of each); false otherwise or when none resolved' },
     notes: { type: 'string', description: 'one line on what was detected' },
   },
 }
@@ -4461,7 +4474,8 @@ async function detectChanges() {
 2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${shq(pathArg)}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
 3. Capture the VERBATIM change description as \`spec\` — the authors' own written claims/invariants, checked against code later. If the current branch has an OPEN PR, run \`gh pr view --json body,title\` and use its title + body. Otherwise use the commit messages on the diff range: \`git log <base>..HEAD --format=%B\`. Do not summarize or paraphrase — copy the text as-is. Truncate to ~4000 chars. Empty string if there is no PR and no commit body (e.g. only uncommitted changes). If \`gh\` is missing/unauthenticated, fall through to the commit messages.
 4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). These two are a FALLBACK only: the logger reads both off the working copy with git at the moment a record is written, and its values win. Do not work to fill them — an empty string is a fine answer.
-Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, and head.`,
+5. Set \`baseIsHead\`: true when \`git rev-parse '<base>^{commit}'\` and \`git rev-parse HEAD\` print the same sha, else false. This one is NOT a fallback: the run reads it to tell a review launched on the trunk itself from any other empty diff.
+Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, head, and baseIsHead.`,
     { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   if (!detected) return { exit: await detectDiedExit(), detected: null }
@@ -4657,16 +4671,27 @@ async function coverageExit() {
   if (coverage.outcome === 'no-profile') return noProfileExit()
   return null
 }
+function launchedOnTrunk() {
+  if (baseArg) return false
+  return detected?.baseIsHead === true || baseIsHead(baseRef || '', head)
+}
+/** The Detected line of an empty diff. @param {boolean} onTrunk @returns {string} */
+function emptyDetectedLine(onTrunk) {
+  if (onTrunk) return `HEAD ${head}${branch ? ` on \`${branch}\`` : ''} is the base itself (${baseRef}): 0 changed file(s)`
+  return detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`
+}
 async function emptyDiffExit() {
-  const emptyMsg = noChangedFilesMessage()
+  const onTrunk = launchedOnTrunk()
+  const emptyMsg = onTrunk ? onTrunkMessage() : noChangedFilesMessage()
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    base: baseRef || '',
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
-    ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
+    ``, `## Detected`, emptyDetectedLine(onTrunk),
   ].join('\n') + scopeSection())
 }
 async function nothingToReviewExit() {
