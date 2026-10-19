@@ -78,7 +78,8 @@ Gate green and a coherent stage finished (a PR opened or updated, or you are abo
 
 ### Cold review of the stage
 - **A self-check does not replace a cold review** — both, in this order: you see your own work as you intended it.
-- **Two stages, not a round on every PR.** A finished branch — one light independent review of its diff (this section, with craft's own engine as its gate — "Review" below); an unfinished feature or an intermediate PR is not put through a full audit. The full review — once, on the assembled release candidate, before publication. After a fix — a check of the changed delta and the findings it touched; a new SHA alone is not a new round. CI, tests and a targeted check of a security or data-loss threat stay.
+- **Two stages, not a round on every PR** (realm `@nick/craft`, #254). A finished branch — one light independent review of its diff by the `reviewer` role (below); an unfinished feature or an intermediate PR is not put through a full review. The full review — once, on release-please's release PR before it merges: the `reviewer` role over the whole diff since the previous tag, with its integration report; Medium and above are fixed in their own branch before the release merges. After a fix — a check of the changed delta and the findings it touched; a new SHA alone is not a new round. CI, tests and a targeted check of a security or data-loss threat stay.
+- craft's own review engine is not run on craft: craft carries no review rules for JavaScript, the language its code is written in.
 - The finished branch's review — after the self-check, before `gh pr create` — by the `reviewer` role, **in a separate worktree**: where the spawning tool gives isolation (Claude Code — `isolation`) — through it; where it does not (OpenCode) — the lead lays a detached tree (`git worktree add --detach <dir> <head>`), the path goes into the brief as "work only there", the no-edit rule as the second line; the report says "manual isolation". Neither — say that there was no cold review. Only the push has a hook; a stage without a push is yours to hold.
 - **The cold review comes before the PR, not after** (realm `@nick/craft`, #127): an open PR is an invitation to merge, and a review that lands after the merge has lost.
 - The reviewer's field: the whole branch diff against trunk; the repository itself; the focus holon and its steward role; references to the realm nodes the diff touches (not a retelling). It runs `integrity` read-only and returns, with findings, an integration report: affected nodes, relays, open questions, neighbour readiness, whom to wake (`standing`); unknown — `unknown`.
@@ -182,21 +183,9 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - **Testing discipline**: unit tests cover `lib/**` and `opencode/plugin/**`; workflow scripts are exercised through `lib/engine-harness.mjs`, skill bodies only by static checkers. No coverage threshold. Logic that must be executed and sits in `src/*.js` is extracted into `lib/` and inlined back (realm `@nick/craft`, #120).
 - **Gotchas do not live here**: they are rule nodes on the realm steps they constrain — #119–#126 for the gate, the two deliveries, inlined regions and run records; reference them here and in code.
 
-## Review: craft reviews itself with its own engine
-- **A review request goes to the background**: dispatch the handler (a workflow via the Workflow tool, or an agent with `run_in_background: true`) and keep working; report the verdict when it completes. A synchronous review only on explicit request.
-- **Always a fresh agent**: every review, re-reviews included, is a new agent with a clean context — never `SendMessage` to a prior one; restate the diff range and intent each time.
-- **Self-review is a gate in the authoring loop**: before `gh pr create` run `craft:review` on `git diff main...HEAD` → `craft:triage-findings` → `craft:addressing-findings` → re-review with a fresh agent, until the verdict is **Approve** (or **Warning** with each remaining item justified in the PR body).
-
-| Scope | Handler |
-|---|---|
-| A diff before commit or merge (default) | `craft:review` workflow — auto-detects Rust/Nix |
-| Force Rust-only / Nix-only | `craft:rust-review` / `craft:nix-review` |
-| Mixed or non-Rust/Nix diff; money-path invariants | `craft:adversarial-review` (not `review --strict`, the harsh mode of the same engine) |
-| One-off single pass without a workflow | agent `craft:rust-reviewer` / `craft:nix-reviewer` |
-| Whole-project structural audit | agent `craft:rust-architecture-reviewer` |
-| Security / dependencies / unsafe surface | agent `craft:rust-security-scanner` |
-| `unsafe` under Miri | agent `craft:rust-miri` |
-| Full audit, one synthesized report | `craft:rust-audit` workflow |
+## Running a review
+- **A review request goes to the background**: dispatch the `reviewer` agent with `run_in_background: true` and keep working; report the verdict when it completes. A synchronous review only on explicit request.
+- **Always a fresh agent**: every review, a delta check after a fix included, is a new agent with a clean context — never `SendMessage` to a prior one; restate the diff range and intent each time.
 
 ## What to update when
 - `AGENTS.md` — **what can be learned from a realm node is not written here**; it holds what is needed before an agent reaches the realm (commands, the entry into orientation, invariants a linter cannot express, forks that must stop you) and changes when those change. Cleaning out prose means moving it into the carrying nodes, not deleting it.
