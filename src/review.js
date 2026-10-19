@@ -2686,7 +2686,7 @@ PROFILES['nix'] = {
 // language roster they need is the mutable PROFILES table above, so it is passed in as an argument
 // rather than read: that argument is exactly what keeps them extractable.
 
-// >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote verdictSuffix telemetryLostSection
+// >>> craft-inline lib/review-coverage.mjs supportedLangLabel resolveProfilePin unknownPinMessage noLanguageMessage noChangedFilesMessage baseIsHead onTrunkMessage INERT_EXT INERT_NAMES GENERATED_PATH GENERATED_FILE isInertUncovered materialUncovered ANCILLARY_NAMES ANCILLARY_PATH isAncillaryConfig coverageGapFiles resolveCoverage nothingToReviewMessage uncoveredNotRunNote verdictSuffix telemetryLostSection
 /** @param {Record<string, {lang: string}>} profiles */
 function supportedLangLabel(profiles) {
   return Object.values(profiles).map(p => p.lang).join('/')
@@ -2729,6 +2729,18 @@ function noLanguageMessage(profiles, fileCount, materialCount = fileCount) {
 
 function noChangedFilesMessage() {
   return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
+}
+
+/** @param {string} baseRef @param {string} head @returns {boolean} */
+function baseIsHead(baseRef, head) {
+  const b = baseRef.trim().toLowerCase()
+  const h = head.trim().toLowerCase()
+  if (!/^[0-9a-f]{7,40}$/.test(b) || !/^[0-9a-f]{7,40}$/.test(h)) return false
+  return b.startsWith(h) || h.startsWith(b)
+}
+
+function onTrunkMessage() {
+  return `NOTHING WAS REVIEWED — HEAD IS the resolved base: the review ran on the trunk itself, where the diff against the trunk is empty by construction. Re-run it from the branch's own checkout or worktree, or pass \`base\` naming what to compare against. No lens ran, so this is not an approval.`
 }
 
 const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
@@ -5424,15 +5436,18 @@ async function coverageExit() {
   return null
 }
 async function emptyDiffExit() {
-  const emptyMsg = noChangedFilesMessage()
+  const onTrunk = baseIsHead(baseRef || '', head)
+  const emptyMsg = onTrunk ? onTrunkMessage() : noChangedFilesMessage()
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    // The base this run resolved, so a later reader of the store can see what the empty diff was taken against.
+    base: baseRef || '',
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
-    ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
+    ``, `## Detected`, onTrunk ? `HEAD ${head}${branch ? ` on \`${branch}\`` : ''} is the base itself (${baseRef}): 0 changed file(s)` : detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
   ].join('\n') + scopeSection())
 }
 async function nothingToReviewExit() {

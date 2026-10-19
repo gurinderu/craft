@@ -2478,6 +2478,18 @@ function noChangedFilesMessage() {
   return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
 }
 
+/** @param {string} baseRef @param {string} head @returns {boolean} */
+function baseIsHead(baseRef, head) {
+  const b = baseRef.trim().toLowerCase()
+  const h = head.trim().toLowerCase()
+  if (!/^[0-9a-f]{7,40}$/.test(b) || !/^[0-9a-f]{7,40}$/.test(h)) return false
+  return b.startsWith(h) || h.startsWith(b)
+}
+
+function onTrunkMessage() {
+  return `NOTHING WAS REVIEWED — HEAD IS the resolved base: the review ran on the trunk itself, where the diff against the trunk is empty by construction. Re-run it from the branch's own checkout or worktree, or pass \`base\` naming what to compare against. No lens ran, so this is not an approval.`
+}
+
 const INERT_EXT = /\.(md|markdown|rst|adoc|svg|png|jpe?g|gif|ico|webp|pdf|woff2?|ttf|otf)$/i
 
 const INERT_NAMES = new Set([
@@ -4658,15 +4670,17 @@ async function coverageExit() {
   return null
 }
 async function emptyDiffExit() {
-  const emptyMsg = noChangedFilesMessage()
+  const onTrunk = baseIsHead(baseRef || '', head)
+  const emptyMsg = onTrunk ? onTrunkMessage() : noChangedFilesMessage()
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    base: baseRef || '',
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun], outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
-    ``, `## Detected`, detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
+    ``, `## Detected`, onTrunk ? `HEAD ${head}${branch ? ` on \`${branch}\`` : ''} is the base itself (${baseRef}): 0 changed file(s)` : detected?.notes || `0 changed file(s) against ${baseRef || 'HEAD'}`,
   ].join('\n') + scopeSection())
 }
 async function nothingToReviewExit() {
