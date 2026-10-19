@@ -131,7 +131,7 @@ before a PR) when there is one; otherwise by stack, once, over the whole branch 
 
 `adversarial-review` has no strict mode; `strict` belongs to `craft:review` only.
 
-Findings from the full review go through `craft:addressing-findings` like a loop round. A new
+Findings from the full review go through `craft:addressing-findings` like a loop round. An open
 Medium+ finding here reopens phase 4 within the same 4-round budget (the rounds already spent
 count); a full review without a verdict is handled as in phase 4.
 
