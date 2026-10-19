@@ -1,7 +1,7 @@
 ---
 name: develop
 description: >-
-  Run a change in this repository end to end up to a pull request with craft's own tools — read the project's declared roles and rules first and let them take any phase they cover, recall project memory for the touched paths, make the change, loop review → triage → fix until a round brings no new Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full review, and open the PR only after that. Loaded in the main session, never delegated to a subagent (subagents have no Workflow tool). Use when asked to implement a feature or fix and open a PR, develop something end to end, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
+  Run a change in this repository end to end up to a pull request with craft's own tools — read the project's declared roles and rules first and let them take any phase they cover, recall project memory for the touched paths, make the change, loop review → triage → fix until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full review, and open the PR only after that. Loaded in the main session, never delegated to a subagent (subagents have no Workflow tool). Use when asked to implement a feature or fix and open a PR, develop something end to end, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
 ---
 
 # Develop — the cycle up to a PR
@@ -93,16 +93,18 @@ One **round** is:
    its `kind`, `title` and `scope`; never as a string (it is refused).
 2. **Triage** — a large report → the `craft:triage-findings` workflow; a small one → inline, as
    `craft:addressing-findings` describes.
-3. **Address** — `craft:addressing-findings` works the findings: fixes the accepted ones, writes
-   every rejection or justification as a decision and every deferral as an open question in project
-   memory at once, without asking. Gate green and commit again before the next round.
+3. **Address** — `craft:addressing-findings` works the findings through its step 6 (verify): fixes
+   the accepted ones, writes every rejection or justification as a decision and every deferral as an
+   open question in project memory at once, without asking. Stop it there: its re-review (step 7) is
+   this loop's next round, and its PR-thread replies (step 8) have no PR yet. Gate green and commit
+   again before the next round.
 
 **Count the rounds, and stop on one of these — nothing else ends the loop:**
 
-- **Converged** — the round's review returned a verdict and brought **no new finding of Medium
-  severity or higher**. *New* means not raised in an earlier round of this loop and not set aside
-  by a decision or deferred question in memory (the report's **Rejected before** / **Known and
-  deferred**). Low findings never hold the loop. → go to phase 5.
+- **Converged** — the round's review returned a verdict and raised **no open finding of Medium
+  severity or higher**. *Open* means not set aside by a decision or deferred question in memory
+  (the report's **Rejected before** / **Known and deferred**) — a Medium+ finding raised again
+  after its fix holds the loop like a new one. Low findings never hold the loop. → go to phase 5.
 - **Round 4 ended without converging** — stop. Tell the human what is left: each open Medium+
   finding (title, file, severity, why it is still open) and the rounds' verdicts. **No PR** without
   the human's word.
@@ -114,7 +116,7 @@ One **round** is:
 A declared reviewer that reports no severities cannot show convergence by itself: ask it for
 severities on its findings, or treat each of its findings as Medium.
 
-Print one line per round: `develop: round <n>/4 — <engine> verdict <V>, new Medium+: <k> (<titles>)`.
+Print one line per round: `develop: round <n>/4 — <engine> verdict <V>, open Medium+: <k> (<titles>)`.
 
 ## Phase 5 — Full review
 
@@ -123,7 +125,7 @@ before a PR) when there is one; otherwise by stack, once, over the whole branch 
 
 | Diff | Full review |
 |---|---|
-| touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` — and, when the diff also holds code other than Rust and Nix, the `craft:adversarial-review` workflow over it |
+| touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` (it reviews the Rust part only) — and, when the diff also holds Nix, the `craft:nix-review` workflow with `{ base: <trunk>, strict: true }`; when it holds code other than Rust and Nix, the `craft:adversarial-review` workflow over it |
 | Nix only | the `craft:review` workflow with `{ base: <trunk>, strict: true }` — the harsh maintainability bar |
 | anything else | the `craft:adversarial-review` workflow, `{ diffBase: <trunk> }`, a fresh run over the whole branch |
 

@@ -376,7 +376,7 @@
     "expected_behavior": [
       "Selects develop and runs it in the main session, not in a subagent.",
       "Before working, reads the repository's declared roles and rules (.claude/agents, .opencode/agents, AGENTS.md / CLAUDE.md) and prints one line per phase naming whose role or rule runs it.",
-      "Recalls project memory for the touched paths, makes the change, then loops review → triage → addressing findings until a round brings no new Medium+ finding, at most 4 rounds.",
+      "Recalls project memory for the touched paths, makes the change, then loops review → triage → addressing findings until a round brings no open Medium+ finding, at most 4 rounds.",
       "Runs one full review before opening the PR; never opens the PR after a loop that did not converge without the human's word."
     ]
   },
