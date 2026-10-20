@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered with its data; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -2062,18 +2062,22 @@ function findingCommentBody(f, kind = 'defect') {
   const question = kind === 'question'
   return `[${commentLine(f.severity)}] ${commentLine(f.title)}\n\n${question ? `${QUESTION_ASK}\n\n` : ''}${String(f.why ?? '').trim()} — ${String(f.fix ?? '').trim()}\n\n${LENS_LINE.test(lens) ? `${lens}\n` : ''}${TOOL_RULE_LINE.test(rule) ? `${rule}\n` : ''}${question ? '<!-- craft-kind: question -->\n' : ''}${FINDING_COMMENT_MARKER}`
 }
+const END_LINE = 'HUNKS-END'
+
 const HUNK_LINE = /^HUNK\t\+(\d+)(?:,(\d+))?\t(.*)$/
 
 /**
  * The shell command that prints one `HUNK<TAB>+c,d<TAB><path>` line per hunk of the diff of `range` over
- * `files` (each single-quoted): `git diff -U0`, headers only, so a large diff prints a line per hunk.
+ * `files` (each single-quoted): `git diff -U0`, headers only, so a large diff prints a line per hunk; then
+ * END_LINE, only when the pipe succeeded (`pipefail`: a failed git ends the pipe in failure; a shell
+ * without the option stops at `set`, and prints no END_LINE either).
  * @param {string} range the git diff range argument, already shell-safe (`--merge-base '<ref>'` or `HEAD`)
  * @param {string[]} files @returns {string}
  */
 function diffLinesScript(range, files) {
   /** @param {string} s */
   const q = s => `'${s.replace(/'/g, `'\\''`)}'`
-  return `git diff -U0 --no-color --no-ext-diff ${range} -- ${files.map(q).join(' ')} | awk '/^\\+\\+\\+ /{f=substr($0,5)} /^@@ /{print "HUNK\\t" $3 "\\t" f}'`
+  return `set -o pipefail; git diff -U0 --no-color --no-ext-diff ${range} -- ${files.map(q).join(' ')} | awk '/^\\+\\+\\+ /{f=substr($0,5)} /^@@ /{print "HUNK\\t" $3 "\\t" f}' && echo ${END_LINE}`
 }
 
 const DIFF_LINES_SCHEMA = {
@@ -2086,14 +2090,15 @@ const DIFF_LINES_SCHEMA = {
 
 /** The diff-lines agent's prompt. @param {string} range @param {string[]} files @returns {string} */
 function diffLinesPrompt(range, files) {
-  return `Run this command in the repository under review, exactly as written (shell only, read only). It prints one line per changed hunk: the word HUNK, the new-side line field of the hunk header and the file path, separated by tabs.
+  return `Run this command in the repository under review, exactly as written (shell only, read only). It prints one line per changed hunk: the word HUNK, the new-side line field of the hunk header and the file path, separated by tabs — then ${END_LINE} when it succeeded.
 ${diffLinesScript(range, files)}
-Return {lines: [every printed line, verbatim, tabs kept], reason: one line on anything that did not run}.`
+Return {lines: [every printed line, verbatim, tabs kept, ${END_LINE} included], reason: one line on anything that did not run}.`
 }
 
 /**
- * The changed new-side line ranges an answer names, or null when the answer is absent or unreadable — then
- * no finding can be placed inside or outside the diff. A path git quoted (a space, a non-ASCII byte) or a
+ * The changed new-side line ranges an answer names, or null when the answer is absent, unreadable, or
+ * does not end with END_LINE (git failed, the list was cut, the agent answered `[]`) — then no finding
+ * can be placed inside or outside the diff. A path git quoted (a space, a non-ASCII byte) or a
  * deleted file (`/dev/null`) is left out, so its findings read as outside the diff — the side that goes to
  * the reviewer, never the one that is posted unasked.
  * @param {unknown} ans @returns {ChangedLines | null}
@@ -2101,6 +2106,8 @@ Return {lines: [every printed line, verbatim, tabs kept], reason: one line on an
 function readDiffLines(ans) {
   const lines = ans && typeof ans === 'object' ? /** @type {Record<string, unknown>} */ (ans)['lines'] : undefined
   if (!Array.isArray(lines)) return null
+  const said = lines.filter(l => typeof l === 'string' && l.trim())
+  if (String(said[said.length - 1] ?? '').trim() !== END_LINE) return null
   /** @type {ChangedLines} */
   const out = new Map()
   for (const l of lines) {
@@ -2140,6 +2147,8 @@ const DOUBT_WORDS = /\b(?:roll(?:ed|ing)?[ -]?backs?|roll(?:ed|ing)?[ -]?outs?|r
 
 const DOUBTFUL_HEADING = '## Doubtful — for the reviewer, not posted'
 
+const OUTSIDE_REASON = 'its line is outside the lines the diff changed'
+
 /**
  * Why a finding is doubtful, one reason per sign that holds; empty — a defect. `changed` null: the
  * outside-the-diff sign cannot be told and is not applied.
@@ -2153,7 +2162,7 @@ function doubtReasons(f, changed) {
   if (tier !== 'confirmed') out.push(`not confirmed (${tier})`)
   if (lenses.length) out.push(`raised by the ${lenses.join(', ')} lens`)
   if (DOUBT_WORDS.test(`${String(f.title ?? '')} ${String(f.why ?? '')}`)) out.push('it speaks of rollback, rollout, old replicas, migration or a breaking change')
-  if (lineInDiff(changed, f.file, findingLine(f)) === false) out.push('its line is outside the lines the diff changed')
+  if (lineInDiff(changed, f.file, findingLine(f)) === false) out.push(OUTSIDE_REASON)
   return out
 }
 
@@ -2177,14 +2186,21 @@ function sortFindings(findings, changed) {
   return { defect, doubtful }
 }
 
-/** The fields a doubtful finding is posted from later (lib/finding-post.mjs), numbered from 1. @param {SortableFinding} f @param {number} i */
-function postable(f, i) {
-  return { n: i + 1, severity: f.severity, title: f.title, file: f.file, line: findingLine(f), why: f.why, fix: f.fix, source: f.source ?? '', toolRule: f.toolRule ?? '' }
+/**
+ * A doubtful finding as the run record keeps it, numbered from 1: what lib/finding-post.mjs builds its
+ * comment from, and whether its line is outside the diff (then only a file-level comment can carry it).
+ * @param {SortableFinding} f @param {number} i @param {string[]} reasons
+ */
+function postable(f, i, reasons) {
+  return {
+    n: i + 1, severity: String(f.severity ?? ''), title: String(f.title ?? ''), file: String(f.file ?? ''), line: findingLine(f),
+    why: String(f.why ?? ''), fix: String(f.fix ?? ''), source: String(f.source ?? ''), toolRule: String(f.toolRule ?? ''), outsideDiff: reasons.includes(OUTSIDE_REASON),
+  }
 }
 
 /**
- * The report section of the doubtful findings: numbered, each with why it is doubtful, then the list as
- * one JSON line the launcher posts a chosen one from. '' when none and nothing to say.
+ * The report section of the doubtful findings: numbered, each with why it is doubtful; the run record
+ * keeps them by the same numbers for posting a chosen one. '' when none and nothing to say.
  * @param {Array<{ f: SortableFinding, reasons: string[] }>} doubtful @param {string} note why the outside-the-diff sign was not applied, or ''
  * @returns {string}
  */
@@ -2193,8 +2209,7 @@ function doubtfulSection(doubtful, note) {
   const lines = doubtful.map(({ f, reasons }, i) => `${i + 1}. ${String(f.severity ?? '')} · \`${String(f.file || '?')}:${findingLine(f)}\` · ${String(f.title ?? '')} · doubtful: ${reasons.join('; ')}`)
   return `\n\n${DOUBTFUL_HEADING}\n`
     + `Not posted on the PR: each waits for the reviewer's choice — ask the author (a question comment), post it as a defect, or do not post it. The sorting changes nothing in the verdict.${note ? ` ⚠️ ${note}` : ''}\n`
-    + `${lines.join('\n')}\n\n`
-    + `The same findings as data, for posting a chosen one:\n\`\`\`json\n${JSON.stringify(doubtful.map(({ f }, i) => postable(f, i)))}\n\`\`\`\n`
+    + `${lines.join('\n')}\n`
 }
 
 /** @param {unknown} p */
@@ -6732,7 +6747,7 @@ async function sortBeforePosting() {
   const changed = files.length
     ? readDiffLines(await ragent(REPO_DIRECTIVE + diffLinesPrompt(range, files), { label: 'diff-lines', phase: 'Synthesize', schema: DIFF_LINES_SCHEMA, model: CULL_MODEL, effort: 'low' }))
     : null
-  const note = files.length && !changed ? 'the diff-lines agent died or answered unreadably, so whether a line is inside the diff was not judged' : ''
+  const note = files.length && !changed ? 'the diff-lines agent died, answered unreadably, or its command did not finish, so whether a line is inside the diff was not judged' : ''
   if (note) log(`⚠️ sorting: ${note}`)
   const sorted = { ...sortFindings(candidates, changed), note }
   log(`sorting: ${sorted.defect.length} defect(s) to post, ${sorted.doubtful.length} doubtful for the reviewer`)
@@ -6746,8 +6761,8 @@ const sorting = await sortBeforePosting()
  */
 function sortingRecord() {
   if (!sorting) return null
-  const findings = sorting.doubtful.map(({ f }, i) => ({ n: i + 1, title: String(f['title'] || ''), file: String(f['file'] || ''), line: Number(f['line']) || 0 }))
-  return { defect: sorting.defect.length, doubtful: sorting.doubtful.length, inDiffJudged: !sorting.note, findings }
+  const findings = sorting.doubtful.map(({ f, reasons }, i) => postable(f, i, reasons))
+  return { defect: sorting.defect.length, doubtful: sorting.doubtful.length, inDiffJudged: !sorting.note, ...(sorting.note ? { inDiffNote: sorting.note } : {}), findings }
 }
 /** The report section of the doubtful findings, '' without `comment`. */
 function doubtfulReport() {
