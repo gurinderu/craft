@@ -2077,7 +2077,7 @@ const HUNK_LINE = /^HUNK\t\+(\d+)(?:,(\d+))?\t(.*)$/
 function diffLinesScript(range, files) {
   /** @param {string} s */
   const q = s => `'${s.replace(/'/g, `'\\''`)}'`
-  return `set -o pipefail; git diff -U0 --no-color --no-ext-diff ${range} -- ${files.map(q).join(' ')} | awk '/^\\+\\+\\+ /{f=substr($0,5)} /^@@ /{print "HUNK\\t" $3 "\\t" f}' && echo ${END_LINE}`
+  return `set -o pipefail; git diff -U0 --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ ${range} -- ${files.map(q).join(' ')} | awk '/^\\+\\+\\+ /{f=substr($0,5)} /^@@ /{print "HUNK\\t" $3 "\\t" f}' && echo ${END_LINE}`
 }
 
 const DIFF_LINES_SCHEMA = {
@@ -2133,7 +2133,8 @@ function hunkOf(l) {
 
 /**
  * Whether `line` of `file` is among the lines the diff changed: true or false, or null when it cannot be
- * told (no changed-lines answer, no line). A file the answer does not name was not changed: false.
+ * told (no changed-lines answer, no line). A file the answer does not name was not changed: false — so the
+ * command must be asked about every file a finding is judged in.
  * @param {ChangedLines | null} changed @param {unknown} file @param {unknown} line @returns {boolean | null}
  */
 function lineInDiff(changed, file, line) {
@@ -6742,7 +6743,7 @@ const report = await synthesize()
 async function sortBeforePosting() {
   if (!postComments) return null
   const candidates = [...confirmed.map(f => ({ ...f, tier: 'confirmed' })), ...suspected.map(f => ({ ...f, tier: 'suspected' }))]
-  const files = [...new Set(candidates.filter(f => !doubtReasons(f, null).length).map(f => String(f['file'] || '')).filter(Boolean))]
+  const files = [...new Set(candidates.map(f => String(f['file'] || '')).filter(Boolean))]
   const range = baseRef ? `--merge-base ${shq(baseRef)}` : 'HEAD'
   const changed = files.length
     ? readDiffLines(await ragent(REPO_DIRECTIVE + diffLinesPrompt(range, files), { label: 'diff-lines', phase: 'Synthesize', schema: DIFF_LINES_SCHEMA, model: CULL_MODEL, effort: 'low' }))

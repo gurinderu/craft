@@ -48,8 +48,9 @@ The sorting changes nothing in the verdict.
      of this skill; the finding at hand still gets its decision;
    - "later" → `record-question` with `deferred: true`, as a deferral in this skill.
 4. **Count the choice** — after each chosen finding is posted or dropped, append the choice to the
-   review run's own record, in the reviewed repository (no network; the newest review record of the
-   project that lists doubtful findings, unless `--record <file>` names one):
+   review run's own record, in the reviewed repository on the reviewed branch (no network; the newest
+   review record of the project that lists doubtful findings; when that newest one is another
+   branch's it is refused, and `--record <file>` must name the run meant):
 
    ```bash
    node "<this skill's base directory>/../../lib/craft-log-run.mjs" sorting-choice --n <n> --choice <question|defect|dropped>

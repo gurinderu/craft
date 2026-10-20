@@ -2149,7 +2149,7 @@ const HUNK_LINE = /^HUNK\t\+(\d+)(?:,(\d+))?\t(.*)$/
 function diffLinesScript(range, files) {
   /** @param {string} s */
   const q = s => `'${s.replace(/'/g, `'\\''`)}'`
-  return `set -o pipefail; git diff -U0 --no-color --no-ext-diff ${range} -- ${files.map(q).join(' ')} | awk '/^\\+\\+\\+ /{f=substr($0,5)} /^@@ /{print "HUNK\\t" $3 "\\t" f}' && echo ${END_LINE}`
+  return `set -o pipefail; git diff -U0 --no-color --no-ext-diff --src-prefix=a/ --dst-prefix=b/ ${range} -- ${files.map(q).join(' ')} | awk '/^\\+\\+\\+ /{f=substr($0,5)} /^@@ /{print "HUNK\\t" $3 "\\t" f}' && echo ${END_LINE}`
 }
 
 const DIFF_LINES_SCHEMA = {
@@ -2205,7 +2205,8 @@ function hunkOf(l) {
 
 /**
  * Whether `line` of `file` is among the lines the diff changed: true or false, or null when it cannot be
- * told (no changed-lines answer, no line). A file the answer does not name was not changed: false.
+ * told (no changed-lines answer, no line). A file the answer does not name was not changed: false — so the
+ * command must be asked about every file a finding is judged in.
  * @param {ChangedLines | null} changed @param {unknown} file @param {unknown} line @returns {boolean | null}
  */
 function lineInDiff(changed, file, line) {
@@ -8394,16 +8395,17 @@ const report = await synthesize()
 // never checked against the code and are offered to no one. What a decision set aside or a rule covered
 // left these lists before (setAsidePriorDecisions, coverByProjectRules) and is not sorted. The
 // outside-the-diff sign needs the changed lines: ONE cheap agent prints the hunk headers of the PR's
-// whole diff (base...working tree, not a re-review's delta) for the files of the candidates no other sign
-// made doubtful (none — no agent); dead, the sign is not applied and the section says so.
+// whole diff (base...working tree, not a re-review's delta) for every candidate's file (no candidate with a
+// file — no agent); dead, the sign is not applied and the section says so.
 /** @typedef {{ defect: Finding[], doubtful: Array<{ f: Finding, reasons: string[] }>, note: string }} Sorting */
 /** @returns {Promise<Sorting | null>} */
 async function sortBeforePosting() {
   if (!postComments) return null
   // The tier is the list a finding sits in, whatever a carried field says.
   const candidates = [...confirmed.map(f => ({ ...f, tier: 'confirmed' })), ...suspected.map(f => ({ ...f, tier: 'suspected' }))]
-  // Only the files of findings no other sign already makes doubtful: for the rest the lines change nothing.
-  const files = [...new Set(candidates.filter(f => !doubtReasons(f, null).length).map(f => String(f['file'] || '')).filter(Boolean))]
+  // Every candidate's file: a file the answer does not name reads as untouched, so none may go unasked —
+  // and a doubtful finding's line decides whether it can be posted as a line comment at all.
+  const files = [...new Set(candidates.map(f => String(f['file'] || '')).filter(Boolean))]
   const range = baseRef ? `--merge-base ${shq(baseRef)}` : 'HEAD'
   const changed = files.length
     ? readDiffLines(await ragent(REPO_DIRECTIVE + diffLinesPrompt(range, files), { label: 'diff-lines', phase: 'Synthesize', schema: DIFF_LINES_SCHEMA, model: CULL_MODEL, effort: 'low' }))
