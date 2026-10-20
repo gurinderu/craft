@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.28.0](https://github.com/gurinderu/craft/compare/v0.27.0...v0.28.0) (2026-10-20)
+
+
+### Features
+
+* **skills:** develop — the cycle up to a PR with craft's own tools ([#211](https://github.com/gurinderu/craft/issues/211)) ([69f7c5b](https://github.com/gurinderu/craft/commit/69f7c5ba5ac87081f8eaba491a9c4225798884eb))
+
+
+### Bug Fixes
+
+* **test:** let the weekly mutation run reach its report ([#213](https://github.com/gurinderu/craft/issues/213)) ([2621082](https://github.com/gurinderu/craft/commit/2621082910f06546e9b45bdc2a314e0697ab0ce5))
+
 ## [0.27.0](https://github.com/gurinderu/craft/compare/v0.26.0...v0.27.0) (2026-10-19)
 
 
