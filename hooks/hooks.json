@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/lib/session-start-hook.mjs\"",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/session-start-hook.mjs\" || true",
             "timeout": 10
           }
         ]
