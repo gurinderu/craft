@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, show the human the doubtful findings a review posting to a PR held back and post (marked) or record each as he chooses, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -256,6 +256,14 @@ Where craft's fix loop fans out across subagents:
 
 Which agents to re-dispatch, the fix-to-skill routing, and the "what proves what" proof table →
 [rust.md](rust.md).
+
+## Doubtful findings a review held back
+
+A review run with `comment` posts only defects; its **Doubtful — for the reviewer, not posted**
+list goes to the human, who chooses for each: ask the author, post it as a defect, or do not post
+it. A chosen one is posted only through `lib/finding-post.mjs`, with the marker; a "do not post" is
+written to memory at once (a decision, or a project rule when the reason is a stance); the author's
+answer on a question thread is read by the thread rules → [doubtful.md](doubtful.md).
 
 ## The author's rejections on the PR
 

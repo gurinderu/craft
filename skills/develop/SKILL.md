@@ -148,6 +148,8 @@ project's rules on pushing and opening PRs (and on asking first) apply unchanged
 
 - Working an existing set of findings, without the rest of the cycle → `craft:addressing-findings`.
 - A single review of a diff → the review workflows directly.
+- A review posting to an open PR (`comment`) posts defects only; its doubtful findings go to the
+  human first → `craft:addressing-findings`.
 - Recording or recalling a single fact → `craft:memory`.
 - Planning, test-first, debugging method, verification discipline → the project's own process;
   craft does not ship one.
