@@ -244,7 +244,7 @@ function anchorTextProblem(o, k, max) {
   return hasControlChar(v) ? `: ${k} contains a control character` : ''
 }
 
-const PRIOR_RECORD_KINDS = ['decision', 'question']
+const PRIOR_RECORD_KINDS = ['decision', 'question', 'rule']
 
 /** Path segments with `.`, empty segments and separators folded; `..` kept literal. @param {string} p */
 function decisionScopeParts(p) {
@@ -260,12 +260,12 @@ function decisionText(v) {
  * A record's kind, lower-cased; a record without one takes the kind its id prefix names, for every
  * kind of the memory skill (id = `<kind>-<hash>`: `decision-`, `question-`, `lesson-`), and is a
  * `decision` only when its id names none — a launcher that leaves `kind` out must not turn a deferral
- * into a rejection, nor a lesson into a decision.
+ * into a rejection, nor a lesson or a project rule into a decision.
  * @param {Record<string, unknown>} o @returns {string}
  */
 function recordKind(o) {
   if (o['kind'] != null) return decisionText(o['kind']).toLowerCase()
-  const m = /^(decision|question|lesson)-/i.exec(decisionText(o['id']))
+  const m = /^(decision|question|lesson|rule)-/i.exec(decisionText(o['id']))
   return m ? String(m[1]).toLowerCase() : 'decision'
 }
 
@@ -308,8 +308,8 @@ function linkedIds(links, re) {
 /**
  * The decision's fields as strings, trimmed. A memory record (skills/memory) is read as it is
  * recalled: `body`, `date` and `author` stand in for `reason`, `when` and `who`, and the first
- * http(s) URL in `links` for `link`. `kind` is `question` only when recordKind reads one; `deferred` only
- * a boolean `true`.
+ * http(s) URL in `links` for `link`. `kind` is `question` or `rule` only when recordKind reads one;
+ * `deferred` only a boolean `true`.
  * @param {Record<string, unknown>} o @returns {PriorDecision}
  */
 function decisionFields(o) {
@@ -319,7 +319,7 @@ function decisionFields(o) {
   const url = decisionText(links.find(l => /^https?:\/\//.test(decisionText(l))))
   const derived = derivedRecordId(o)
   const stores = linkedIds(links, /^store:\s*(\S+)$/i)
-  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: recordKind(o) === 'question' ? 'question' : 'decision', deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(stores.length ? { stores } : {}), ...(derived ? { derived: /** @type {const} */ (true) } : {}), ...recordAnchor(o) }
+  return { id: f('id') || derived, title: f('title'), scope: f('scope') || '.', reason: f('reason', 'body'), who: f('who', 'author'), when: f('when', 'date'), link: f('link') || url, commit: f('commit'), kind: priorKind(recordKind(o)), deferred: o['deferred'] === true, supersedes: supersededIds(links), ...(stores.length ? { stores } : {}), ...(derived ? { derived: /** @type {const} */ (true) } : {}), ...recordAnchor(o) }
 }
 
 /**
@@ -333,6 +333,11 @@ function recordAnchor(o) {
   const toolRule = decisionText(o['toolRule'])
   const overrides = Array.isArray(o['overrides']) ? o['overrides'].map(decisionText).filter(Boolean) : []
   return { ...(line > 0 ? { line } : {}), ...(lens ? { lens } : {}), ...(toolRule ? { toolRule } : {}), ...(overrides.length ? { overrides } : {}) }
+}
+
+/** A read kind as a review holds it: `question` and `rule` as they are, anything else a `decision`. @param {string} k @returns {'decision' | 'question' | 'rule'} */
+function priorKind(k) {
+  return k === 'question' || k === 'rule' ? k : 'decision'
 }
 
 /**
@@ -351,8 +356,9 @@ function missingFieldProblem(d) {
  * @param {Record<string, unknown>} o @param {PriorDecision} d @returns {string}
  */
 function decisionProblem(o, d) {
-  if (!PRIOR_RECORD_KINDS.includes(recordKind(o))) return ` is a ${JSON.stringify(recordKind(o))} record, not a decision or a question`
+  if (!PRIOR_RECORD_KINDS.includes(recordKind(o))) return ` is a ${JSON.stringify(recordKind(o))} record, not a decision, a question or a rule`
   if (o['status'] != null && decisionText(o['status']) !== 'active') return ` is not active (status ${JSON.stringify(o['status'])})`
+  if (d.kind === 'rule' && !decisionText(o['scope'])) return ' is a project rule without a scope — a rule names the folder, component or `.` it covers'
   const missing = missingFieldProblem(d)
   if (missing) return missing
   const over = Object.entries(DECISION_FIELD_MAX).find(([k, max]) => d[/** @type {keyof typeof DECISION_FIELD_MAX} */ (k)].length > max)
@@ -464,6 +470,10 @@ const MEMORY_RECALL_SCHEMA = {
       type: 'array', description: 'the matching active question records (open questions, deferred findings among them), verbatim',
       items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), ...RECORD_OTHER_FIELDS } },
     },
+    rules: {
+      type: 'array', description: 'the matching active project rule records (a stance on a class of findings), verbatim',
+      items: { type: 'object', properties: { ...Object.fromEntries(RECORD_TEXT_FIELDS.map(k => [k, { type: 'string' }])), ...RECORD_OTHER_FIELDS } },
+    },
     stale: {
       type: 'array', description: 'matching active decisions that no longer hold against the code, left out of decisions and NOT superseded',
       items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } } },
@@ -486,13 +496,13 @@ function memoryRecallPrompt(paths, base) {
   const scope = listed.length
     ? `these changed paths of the diff:\n${listed.map(p => `- ${p}`).join('\n')}${cut ? `\n(${cut} more path(s) cut at the bound of ${RECALL_PATHS_MAX} — not recalled for)` : ''}`
     : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
-  return `Recall the remembered decisions and open questions of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
+  return `Recall the remembered decisions, open questions and project rules of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
-1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question. Then find the decision and question records for those paths whose status is superseded or withdrawn (the recall's history, or the backend's search filtered by status) — only to name them in inactive, never in decisions or questions.
-2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\` and \`.craft/memory/question/\` in the repo. None applies: backend none.
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question, once for kind rule (a project rule: a stance the project took on a whole class of findings); never lessons. Then find the decision, question and rule records for those paths whose status is superseded or withdrawn (the recall's history, or the backend's search filtered by status) — only to name them in inactive, never in decisions, questions or rules.
+2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; a record there carries its fields as attributes prefixed \`craft_\` (craft_kind, craft_id, craft_scope, craft_status, …), and one written before that as bare names (kind, id, scope, status, …): search and filter by both, never by one alone; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\`, \`.craft/memory/question/\` and \`.craft/memory/rule/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
-Return {backend, why, decisions, questions, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links (line, lens and toolRule only when the record carries them; nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
+Return {backend, why, decisions, questions, rules, stale, inactive}: backend names the store used (or none); why is one line naming the rule that chose it, or why there is none, or that recall found nothing; decisions are the matching active decision records verbatim in the record shape id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links (line, lens and toolRule only when the record carries them; nothing rewritten or summarised; [] when none) — kind, title and scope always as stored; when the store keeps its own id for a record, add it to links as \`store: <id>\` (the review sets the record id from kind, title and scope itself); questions are the matching active question records in the same shape, verbatim ([] when none); rules are the matching active project rule records in the same shape, verbatim ([] when none); stale is [] when none; inactive is the matching superseded or withdrawn records as {id, storeId, kind, title, scope, status, date} — storeId the store's own id when it keeps one, date the store's last-write date of that record as YYYY-MM-DD or full ISO ([] when none): the review holds back any record it is handed that is one of them, unless the handed record is dated later.`
 }
 
 /**
@@ -501,8 +511,9 @@ Return {backend, why, decisions, questions, stale, inactive}: backend names the 
  * their own, or as forwarded by the launching audit), `added` those of them the recall did not already
  * hold (under `launcher`: those of them applied; the cap's refusals are named in their own section);
  * `derived` the applied records whose id was derived, their own having none, and `derivedNamed` the
- * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered.
- * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string }} MemorySource
+ * first DERIVED_NAMED_MAX of them as `<id> (<title, cut>)`; `backend` the store the recall agent named, when it answered;
+ * `rules` the project rules among the records, `covered` the findings a rule covered (set by the engine once applied).
+ * @typedef {{ source: 'recalled' | 'launcher' | 'none', count: number, why: string, questions?: number, rules?: number, covered?: number, passed?: number, added?: number, derived?: number, derivedNamed?: string[], backend?: string }} MemorySource
  */
 /** @param {unknown} v @returns {string} */
 const recallText = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
@@ -522,10 +533,15 @@ function staleTail(list) {
  * is still a question: it came back in that list). @param {unknown} list @returns {unknown[]}
  */
 function recalledQuestions(list) {
-  return (Array.isArray(list) ? list : []).map(q => (q && typeof q === 'object' && !Array.isArray(q) && !('kind' in q) ? { ...q, kind: 'question' } : q))
+  return recalledOfKind(list, 'question')
 }
 
-const SKILL_ID_FORM = /^(decision|question|lesson)-[0-9a-f]{10}$/
+/** The records of a recalled list, each tagged with `kind` when it carries none. @param {unknown} list @param {string} kind @returns {unknown[]} */
+function recalledOfKind(list, kind) {
+  return (Array.isArray(list) ? list : []).map(q => (q && typeof q === 'object' && !Array.isArray(q) && !('kind' in q) ? { ...q, kind } : q))
+}
+
+const SKILL_ID_FORM = /^(decision|question|lesson|rule)-[0-9a-f]{10}$/
 
 /**
  * A recalled record with the skill's id set by the engine: one that carries a `store: <id>` link, or an
@@ -566,6 +582,11 @@ function inactiveRecords(list) {
   })
 }
 
+/** The open questions and project rules among the records, each counted only when there are any. @param {number} questions @param {number} rules */
+function kindCounts(questions, rules) {
+  return { ...(questions ? { questions } : {}), ...(rules ? { rules } : {}) }
+}
+
 /**
  * What the recall agent returned, read: the decisions and questions to hand to parsePriorDecisions (a
  * list, possibly empty, each id set by withSkillId), the inactive records that hold back a passed copy,
@@ -583,9 +604,10 @@ function readMemoryRecall(raw, cut) {
   const why = recallText(r['why']) || 'no reason given'
   const stale = staleTail(r['stale'])
   const questions = recalledQuestions(r['questions'])
-  const all = [...list, ...questions].map(withSkillId)
+  const rules = recalledOfKind(r['rules'], 'rule')
+  const all = [...list, ...questions, ...rules].map(withSkillId)
   if (!all.length) return { decisions: [], inactive, memory: { source: 'none', count: 0, why: `${why} (backend ${backend})${stale}${tail}`, backend } }
-  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, backend, ...(questions.length ? { questions: questions.length } : {}) } }
+  return { decisions: all, inactive, memory: { source: 'recalled', count: all.length, why: `${backend} (${why})${stale}${tail}`, backend, ...kindCounts(questions.length, rules.length) } }
 }
 
 /**
@@ -881,10 +903,10 @@ function mergeAndRead(recalled, passed, parse, inactive = []) {
   return { merged, parts: { recalled: recalled.length, passed: addedAt.length }, read: parseMerged(merged, recalled.length, parse, addedAt), blocked: block.refused, overrides: block.overrides }
 }
 
-/** `N decision(s) and M open question(s)` of a source. @param {MemorySource} m @returns {string} */
+/** `N decision(s), M open question(s) and R project rule(s)` of a source. @param {MemorySource} m @returns {string} */
 function countedRecords(m) {
-  const q = m.questions || 0
-  return `${m.count - q} decision(s)${q ? ` and ${q} open question(s)` : ''}`
+  const [q, r] = [m.questions || 0, m.rules || 0]
+  return `${m.count - q - r} decision(s)${q ? ` and ${q} open question(s)` : ''}${r ? ` and ${r} project rule(s)` : ''}`
 }
 
 /**
@@ -1785,7 +1807,7 @@ function reviewResult(dimension, report) {
   }
 }
 
-const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Known and deferred (open question — not in the verdict)', '## Prior decisions not applied', '## Tool finding titles (verbatim)']
+const PRIOR_DECISION_HEADINGS = ['## Rejected before (set aside — not in the verdict)', '## Known and deferred (open question — not in the verdict)', '## Covered by project rules (not in the verdict)', '## Prior decisions not applied', '## Tool finding titles (verbatim)']
 
 /**
  * The report without its prior-decision sections, and those sections, each from its heading to the
