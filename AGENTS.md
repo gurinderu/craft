@@ -155,6 +155,7 @@ The gate is one call: `npm run gate` (`lib/gate.mjs`; needs `npm ci` and `npm ci
 | The mutation floor only rises and what it is measured over only widens (`lib/mutation-floor.json`: `break` and `mutate`, which `stryker.config.mjs` must take as its `thresholds.break` and `mutate`; CI's `test` job compares the file with the PR's base) | `node lib/check-mutation-floor.mjs --base origin/main` (after `git fetch origin main`); without `--base` it checks only the file's form and that the config applies it. To raise it after a better weekly run: read the score in that run's `mutation-report` artifact and set `break` a little under it (room for run-to-run noise, such as timeouts) in its own PR — never above the score, or the next run is red |
 | What the shipped Node entries reach (config `.dependency-cruiser.mjs`: no test file, no npm package beyond the plugin's `@opencode-ai/*`) | `npm run check:deps` (needs `npm ci` and `npm ci --prefix opencode/plugin`) |
 | Plugin manifests | `npx --yes @anthropic-ai/claude-code plugin validate . --strict` |
+| Plugin manifest and its hooks (`hooks/hooks.json`; `validate .` reads only the marketplace) | `npx --yes @anthropic-ai/claude-code plugin validate .claude-plugin/plugin.json --strict` |
 | Audit the OpenCode plugin's locked production closure (blocking at high in CI; needs the network, so offline it is CI's to run — not reproducible, realm #141) | `npm audit --prefix opencode/plugin --omit=dev --audit-level=high` |
 | Static analysis, semgrep public rule sets (CI job `semgrep`, image pinned there; the rules come from the registry per run, so not reproducible) | `semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0 --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs --config p/security-audit --config p/secrets --config p/default lib opencode/plugin workflows` |
 | Quality delta between two checkouts — complexity, lint/type errors, tests, Knip, import cycles; a signal for review, not a gate (CI job `quality-delta`, PRs only, writes the job summary and always passes) | `node lib/quality-delta.mjs --base <checkout> --head <checkout>` — Markdown on stdout; each checkout needs its own `npm ci` and `npm ci --prefix opencode/plugin` (e.g. a `git worktree add <dir> origin/main`) |
@@ -171,6 +172,7 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - `opencode/` — the parallel OpenCode delivery: `agents/`, `commands/`, `plugin/` (TypeScript), `scripts/`.
 - `docs/` — `LESSONS.md`, `observability.md`.
 - `.claude-plugin/` — the plugin and marketplace manifests.
+- `hooks/` — `hooks.json`: the SessionStart hook (Claude Code), run as `lib/session-start-hook.mjs`.
 - `.claude/` — `settings.json` (hooks) and `agents/` (the six role agents for working on this repo; not shipped).
 - `MAP.md` — a map of the repo's contents; `README.md` — the human-facing entry point.
 

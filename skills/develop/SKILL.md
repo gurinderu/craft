@@ -1,7 +1,7 @@
 ---
 name: develop
 description: >-
-  Run a change in this repository end to end up to a pull request with craft's own tools — read the project's declared roles and rules first and let them take any phase they cover, recall project memory for the touched paths, make the change, loop review → triage → fix until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full review, and open the PR only after that. Loaded in the main session, never delegated to a subagent (subagents have no Workflow tool). Use when asked to implement a feature or fix and open a PR, develop something end to end, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
+  Run a change in this repository end to end up to a pull request with craft's own tools — read the project's declared roles and rules first and let them take any phase they cover, recall project memory for the touched paths, make the change, loop review → triage → fix until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full review, and open the PR only after that. Loaded in the main session, never delegated to a subagent (subagents have no Workflow tool; a --agent session is a main one); craft's SessionStart hook points a repo's declared developer role here. Use when asked to implement a feature or fix and open a PR, develop something end to end, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
 ---
 
 # Develop — the cycle up to a PR
@@ -16,6 +16,16 @@ skill that already exists for it.
 In the **main session**. The review engines are Workflow-tool scripts, and a subagent launched with
 the Agent tool has no Workflow tool — so never hand this skill, or a phase that launches an engine,
 to a subagent. Subagents may still do bulky work inside a phase (a coding role, a triage fan-out).
+A session started with `claude --agent <role>` is a main session with that role's prompt: when the
+role's `tools` list is empty or names `Workflow` and `Skill`, it runs this cycle itself.
+
+In Claude Code, craft's SessionStart hook says this at the start of a session in a repo that
+declares its own agents (`.claude/agents/*.md`) or work rules (an `AGENTS.md` / `CLAUDE.md` that
+names the process: pull request, PR, code review, reviewer, review loop, before merging): the repo's
+roles and rules win on every step they cover, whichever declared role develops there runs this cycle
+with craft's tools, and a role running as a subagent hands the review loop back to the main session.
+It is silent in other repos and on a resumed session; `CRAFT_ROLE_HOOK=0` in the environment, or a
+line `craft-role-hook: off` in `AGENTS.md` / `CLAUDE.md`, switches it off.
 
 ## The rule over every phase: the project's process comes first
 

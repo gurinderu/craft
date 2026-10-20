@@ -1,0 +1,17 @@
+{
+  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/session-start-hook.mjs\" || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
