@@ -1,5 +1,5 @@
 {
-  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools.",
+  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools — at session start, on a request for review work, and to the subagent such work is handed to.",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,28 @@
           {
             "type": "command",
             "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/session-start-hook.mjs\" || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/work-hook-entry.mjs\" || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/work-hook-entry.mjs\" || true",
             "timeout": 10
           }
         ]

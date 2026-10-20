@@ -50,6 +50,7 @@ cross-linking is the collection's cohesion.
 | agent | `rust-miri` | Runs unsafe code under Miri to detect undefined behavior |
 | agent | `rust-architecture-reviewer` | Audits the whole-project structure against the `rust-architecture-review` rubric, returns a Healthy/Concerns/At-risk rating |
 | hook | `SessionStart` (Claude Code) | When the repo declares its own agents (`.claude/agents/*.md`) or work rules (an `AGENTS.md` / `CLAUDE.md` that names the process: pull request, PR, code review, reviewer, review loop, before merging), adds four lines of context: the repo's roles and rules win on every step they cover, whichever declared role develops there runs its cycle with craft's tools (`craft:memory` before the work, `craft:develop`'s review loop before a PR), and a role running as a subagent hands the review loop back to the main session. Silent otherwise; off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in `AGENTS.md` / `CLAUDE.md`. Each run appends one line to `~/.craft/hooks.jsonl` (spoke or why silent; rotated past 256 KiB), which `lib/analyze-runs.mjs` reports beside the review runs made after it first spoke in their repo |
+| hook | `UserPromptSubmit`, `SubagentStart` (Claude Code) | In the same repos and with the same off switch: on a message that asks for review work — English or Russian words such as review, findings, PR comments, pull request, ревью, находки, замечания, комментарии к PR, фиксы по ревью — adds four lines once per session and kind (findings or review): work findings with `craft:addressing-findings`, a review with `craft:review` or `craft:develop`; record each rejected or deferred finding with `craft:memory` and check its `memory backend:` line; put the same instructions in a subagent's brief and keep the review loop in the main session. In that session, a subagent started with the Agent tool gets three lines of its own (the Workflow tool's agents get none). Each firing goes to `~/.craft/hooks.jsonl` with its event, counted per event by `lib/analyze-runs.mjs` |
 | workflow | `review` | **Default diff-review path.** Auto-detects the language(s) in the diff (Rust/Nix), runs each language's gate + scout-scaled lens fan-out (loop-until-dry, adversarial + self-verification), and merges into one Confirmed/Suspected report + verdict |
 | workflow | `rust-review` / `nix-review` | Thin pins over `review` that force a single language (`workflow('review', {languages:['rust'\|'nix']})`) |
 | workflow | `rust-audit` | Full crate audit — per-crate review, inter-crate contracts, architecture, crate-decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health, run in parallel and synthesized into one report |
@@ -68,7 +69,7 @@ craft/
 │   ├── rust-miri.md
 │   └── rust-architecture-reviewer.md
 ├── hooks/
-│   └── hooks.json         # the SessionStart hook (runs lib/session-start-hook.mjs)
+│   └── hooks.json         # SessionStart (lib/session-start-hook.mjs); UserPromptSubmit, SubagentStart (lib/work-hook-entry.mjs)
 ├── src/                   # the workflow scripts as authored
 ├── workflows/             # multi-agent orchestration scripts, generated from src/ (npm run build:engines)
 │   ├── rust-review.js
