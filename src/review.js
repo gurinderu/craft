@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision and question records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -632,7 +632,7 @@ function memoryRecallPrompt(paths, base) {
     : `the paths of \`git diff --name-only ${base || '$(git merge-base origin/main HEAD)'}...HEAD\``
   return `Recall the remembered decisions, open questions and project rules of this project for a code review. READ ONLY: write, record, edit or create nothing anywhere (no memory record, no file, no MCP create call).
 Scope: ${scope}
-1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question, once for kind rule (a project rule: a stance the project took on a whole class of findings); never lessons. Then find the decision and question records for those paths whose status is superseded or withdrawn (the recall's history, or the backend's search filtered by status) — only to name them in inactive, never in decisions or questions.
+1. Invoke the craft:memory skill with the Skill tool and run its recall for those paths, no topic, status active only: once for kind decision, once for kind question, once for kind rule (a project rule: a stance the project took on a whole class of findings); never lessons. Then find the decision, question and rule records for those paths whose status is superseded or withdrawn (the recall's history, or the backend's search filtered by status) — only to name them in inactive, never in decisions, questions or rules.
 2. If that skill is unavailable, follow its backend order yourself; the first that applies wins: (a) an explicit setting, env CRAFT_MEMORY, else a line \`craft-memory: <value>\` in AGENTS.md or CLAUDE.md at the repo root (mcp | harness | repo | none; a pinned backend that is unavailable means none); (b) a connected memory or knowledge-graph MCP server found by capability: load the deferred tools of the session with ToolSearch and take a server whose tools offer both a search over stored items and a create of a new item, judged by what the tools do, never by a server or tool name; use only its search; a record there carries its fields as attributes prefixed \`craft_\` (craft_kind, craft_id, craft_scope, craft_status, …), and one written before that as bare names (kind, id, scope, status, …): search and filter by both, never by one alone; (c) the project memory files of the harness: Claude Code keeps them in \`~/.claude/projects/<slug>/memory/\` with \`MEMORY.md\` as the index, keyed by the repository's main checkout, never a worktree or subdirectory: root = \`dirname "$(git rev-parse --path-format=absolute --git-common-dir)"\`, \`pwd\` only outside a git repo; <slug> = root with every character that is not an ASCII letter or digit replaced by \`-\` (for example \`/home/alice/src/app\` → \`-home-alice-src-app\`) — an observed convention, not a documented one; \`~/.claude/projects/<slug>/memory\` must exist: read MEMORY.md, then only the matching files; else say \`none — harness memory directory <path>/memory not found\` and never guess a near match; (d) \`.craft/memory/decision/\`, \`.craft/memory/question/\` and \`.craft/memory/rule/\` in the repo. None applies: backend none.
 3. A record matches a path when its scope equals the path, is a directory containing it, names its component, or is \`.\`.
 4. A stale matching decision — one that no longer holds against the code as it is now (its reason is gone): supersede nothing — leave it out of decisions and list it in stale as {id, why}; superseding stays with craft:addressing-findings.
@@ -2001,7 +2001,7 @@ async function askRuleJudge(sent, judge) {
   return v ? { verdicts: v, why: 'the rule judge returned no verdict for it' } : { verdicts: new Map(), why: 'the rule judge died or answered unreadably' }
 }
 // <<< craft-inline
-// >>> craft-inline lib/project-rule-apply.mjs PROJECT_RULE_HEADING ruleFindingName ruleVerdicts unjudgedNotices applyProjectRules projectRuleSection
+// >>> craft-inline lib/project-rule-apply.mjs PROJECT_RULE_HEADING ruleFindingName ruleVerdicts unjudgedNotices activeRules applyProjectRules projectRuleSection
 const PROJECT_RULE_HEADING = '## Covered by project rules (not in the verdict)'
 
 /** A finding as a notice names it. @param {DecidableFinding} f @returns {string} */
@@ -2039,6 +2039,18 @@ function unjudgedNotices(unjudged) {
 }
 
 /**
+ * The rules among `records` that apply, and those another given record supersedes or answers (by any of
+ * their aliases), which do not. @param {PriorDecision[]} records
+ */
+function activeRules(records) {
+  const replaced = new Set(records.flatMap(d => d.supersedes))
+  const rules = records.filter(d => d.kind === 'rule')
+  /** @param {PriorDecision} d */
+  const isReplaced = d => recordAliases(d).some(id => replaced.has(id))
+  return { rules: rules.filter(d => !isReplaced(d)), superseded: rules.filter(isReplaced).map(d => d.id) }
+}
+
+/**
  * Applies the rules among `records` to every tier. `judge` is the one rule judge, called only when a
  * candidate pair exists. `notices` are the section's warnings (a Critical raised, a finding left for want
  * of a verdict); `notes` the log lines. @template {DecidableFinding} F
@@ -2047,9 +2059,10 @@ function unjudgedNotices(unjudged) {
  * @returns {Promise<{ tiers: Record<string, F[]>, covered: Array<Covered<F>>, notices: string[], notes: string[], rules: number }>}
  */
 async function applyProjectRules(tiers, records, noteField = 'why', judge = undefined) {
-  const rules = records.filter(d => d.kind === 'rule')
+  const { rules, superseded } = activeRules(records)
+  const gone = superseded.length ? [`${superseded.length} project rule(s) superseded by another given record — not applied: ${superseded.join(', ')}`] : []
   const pairs = rulePairs(Object.values(tiers).flat(), rules)
-  if (!pairs.length) return { tiers, covered: [], notices: [], notes: rules.length ? [`${rules.length} project rule(s) given, no finding in their scope`] : [], rules: rules.length }
+  if (!pairs.length) return { tiers, covered: [], notices: [], notes: [...gone, ...(rules.length ? [`${rules.length} project rule(s) given, no finding in their scope`] : [])], rules: rules.length }
   const sent = Math.min(pairs.length, RULE_JUDGE_PAIRS_MAX)
   const { covers, unjudged } = ruleVerdicts(pairs, sent, await askRuleJudge(pairs.slice(0, sent), judge))
   /** @type {Array<Covered<F>>} */
@@ -2072,7 +2085,7 @@ async function applyProjectRules(tiers, records, noteField = 'why', judge = unde
     })
   }
   notices.push(...unjudgedNotices(new Map([...unjudged].filter(([f]) => !covers.has(f)))))
-  const notes = [`${rules.length} project rule(s) given, ${pairs.length} rule–finding pair(s), ${covered.length} finding(s) covered`]
+  const notes = [...gone, `${rules.length} project rule(s) given, ${pairs.length} rule–finding pair(s), ${covered.length} finding(s) covered`]
   return { tiers: out, covered, notices, notes, rules: rules.length }
 }
 
