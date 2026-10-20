@@ -172,7 +172,7 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - `opencode/` — the parallel OpenCode delivery: `agents/`, `commands/`, `plugin/` (TypeScript), `scripts/`.
 - `docs/` — `LESSONS.md`, `observability.md`.
 - `.claude-plugin/` — the plugin and marketplace manifests.
-- `hooks/` — `hooks.json`: the SessionStart hook (Claude Code), run as `lib/session-start-hook.mjs`.
+- `hooks/` — `hooks.json`: the SessionStart hook (Claude Code), run as `lib/session-start-hook.mjs`; the UserPromptSubmit and SubagentStart hooks, run as `lib/work-hook-entry.mjs`.
 - `.claude/` — `settings.json` (hooks) and `agents/` (the six role agents for working on this repo; not shipped).
 - `MAP.md` — a map of the repo's contents; `README.md` — the human-facing entry point.
 

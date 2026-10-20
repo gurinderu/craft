@@ -25,7 +25,12 @@ names the process: pull request, PR, code review, reviewer, review loop, before 
 roles and rules win on every step they cover, whichever declared role develops there runs this cycle
 with craft's tools, and a role running as a subagent hands the review loop back to the main session.
 It is silent in other repos and on a resumed session; `CRAFT_ROLE_HOOK=0` in the environment, or a
-line `craft-role-hook: off` in `AGENTS.md` / `CLAUDE.md`, switches it off.
+line `craft-role-hook: off` in `AGENTS.md` / `CLAUDE.md`, switches it off. In the same repos it speaks
+again at the moment of work: on a message asking for a review, for work on findings or PR comments,
+it names `craft:addressing-findings`, `craft:review` and this skill, asks for every rejected or
+deferred finding to be recorded with `craft:memory`, and for the same instructions to go into a
+subagent's brief; a subagent started in that session hears that the review loop is the main
+session's.
 
 ## The rule over every phase: the project's process comes first
 
