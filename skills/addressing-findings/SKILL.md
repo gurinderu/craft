@@ -265,6 +265,10 @@ it. A chosen one is posted only through `lib/finding-post.mjs`, with the marker;
 written to memory at once (a decision, or a project rule when the reason is a stance); the author's
 answer on a question thread is read by the thread rules → [doubtful.md](doubtful.md).
 
+A finding listed under **Contradicts project memory** goes against an active decision or project rule:
+it is a defect, never a doubt. Fix it, or — on the human's word — supersede the record it breaks; do not
+reject it on the record's own authority.
+
 ## The author's rejections on the PR
 
 Before the loop works the findings, what was already rejected on the PR — a reply that opens with

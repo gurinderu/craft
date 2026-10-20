@@ -75,7 +75,10 @@ finding, and the code changing under it does not lift it. A review applies it af
 finding inside the scope (and of the lens, when given) a judge asks whether the concern the finding
 raises is exactly what the rule declares acceptable. A covered finding leaves the verdict and the PR
 comments and is listed under **Covered by project rules** with the rule's id, its statement and the
-judge's why (`adversarial-review`: its `coveredByRule` and `ruleNotices` fields). A Critical finding is raised even under a rule, named there as raised; a finding the
+judge's why (`adversarial-review`: its `coveredByRule` and `ruleNotices` fields). A finding a judge (the
+decisions' or the rules') says goes against an active record is not set aside: it stays in the verdict marked
+with the record (`memoryContradicts`), listed under **Contradicts project memory**, and goes to the PR as a
+defect even when a doubt sign holds. A Critical finding is raised even under a rule, named there as raised; a finding the
 judge gave no verdict on stays in the verdict, named there too. A rule is retired like any record:
 `superseded` or `withdrawn`. A stance recorded as a decision on one finding does not cover the next
 finding of its class.
