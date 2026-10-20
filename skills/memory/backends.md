@@ -10,8 +10,15 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
   and hand it the record's content — title, body, scope, kind, author, commit, deferred, line, lens, toolRule, links. Do not force the fields
   below onto a store that has its own discipline.
 - **Without instructions**, the plain mapping: one item per record; the item's name = `title`;
-  its text = `body`; `kind`, `scope`, `status`, `id`, `author`, `commit`, `deferred`, `line`, `lens`, `toolRule` as tags, attributes or observations,
-  whichever the tool accepts; `links` as relations when the tool has them, else as text.
+  its text = `body`; the other fields under fixed keys, prefixed `craft_` as in the harness format
+  below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_author`, `craft_commit`,
+  `craft_deferred`, `craft_line`, `craft_lens`, `craft_tool_rule` — as attributes, tags
+  (`craft_kind:decision`) or observations, whichever the tool accepts, never under another name;
+  `links` as relations when the tool has them, else as text.
+- **Recall searches both spellings**: records written before these keys were fixed may carry them
+  bare (`kind`, `id`, `scope`, `status`, …). Search and filter by the `craft_` key **and** the bare
+  one (`craft_kind:decision` or `kind:decision`), never by one alone, and hand the record on with the
+  bare names of SKILL.md.
 - **Recall returns the record shape**: whatever the server stores, a recalled record handed on
   (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `author`,
   `commit`, `deferred`, `line`, `lens` and `toolRule` included when the item carries them.
@@ -48,14 +55,14 @@ match. Use the harness's format, not a craft one:
   description: "<kind>: <title>"
   metadata:
     type: project
-    craft_kind: decision
+    craft_kind: decision    # decision | rule | lesson | question
     craft_scope: src/parse.rs
     craft_status: active
     craft_author: alice
     craft_commit: 33d0240d4fe0
     craft_deferred: true    # a deferred question only
     craft_line: 42          # the finding's line, when known
-    craft_lens: safety      # the lens that raised it, when known
+    craft_lens: safety      # the lens that raised it, when known; on a rule, the lens it is narrowed to
     craft_tool_rule: clippy::needless_pass_by_value  # the gate tool's own rule the finding fired, when known
     modified: 2026-10-06
   ---
@@ -84,7 +91,7 @@ match. Use the harness's format, not a craft one:
 
 ## Files in the consumer repo
 
-`.craft/memory/<kind>/<id>.md` — `kind` ∈ `decision`, `lesson`, `question`:
+`.craft/memory/<kind>/<id>.md` — `kind` ∈ `decision`, `rule`, `lesson`, `question`:
 
 ```markdown
 ---

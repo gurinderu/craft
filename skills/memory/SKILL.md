@@ -1,13 +1,13 @@
 ---
 name: memory
 description: >-
-  Semantic memory of the consumer project's own facts — decisions on review findings (rejected, justified), lessons learned, open questions (deferred findings among them) — recorded and recalled across sessions through whatever store the project has: an explicit setting, a connected memory or knowledge-graph MCP server, the harness's project memory, or files under .craft/memory. Verbs: recall(topic, scope), record-decision, record-lesson, record-question. Use when a decision, lesson or open question about this codebase should outlive the session, before working on a path to learn what was already decided about it, or before launching a craft review, whose engine recalls them itself (priorDecisions only adds). Triggers: remember this decision, record why we rejected, what did we decide about, was this already discussed, note this lesson, open question for later. Not for memory leaks or memory usage (rust-performance, rust-ownership), nor craft's own run records and review ledger.
+  Semantic memory of the consumer project's own facts — decisions on review findings (rejected, justified), project rules (a stance covering a whole class of findings), lessons, open questions (deferred findings too) — kept across sessions in whatever store the project has: an explicit setting, a memory MCP server, the harness's project memory, or .craft/memory files. Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question. Use when a decision, rule, lesson or open question about this codebase should outlive the session, before working on a path to learn what was already decided about it, or before launching a craft review, whose engine recalls them itself (priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, was this already discussed, note this lesson, open question for later. Not for memory leaks or memory usage (rust-performance, rust-ownership), nor craft's own run records and review ledger.
 ---
 
-# Memory — the project's decisions, lessons and questions
+# Memory — the project's decisions, rules, lessons and questions
 
-Facts about the consumer's project that outlive a session: *why* a finding was rejected, what a
-painful bug taught, what is still open. This skill is an **abstraction** over whatever store the
+Facts about the consumer's project that outlive a session: *why* a finding was rejected, which
+whole class of findings the project accepts, what a painful bug taught, what is still open. This skill is an **abstraction** over whatever store the
 project already has; it never invents one. craft's machine memory — the run store
 (`~/.craft/runs/`), the review ledger, telemetry — is a different thing and is not touched here.
 
@@ -17,6 +17,7 @@ project already has; it never invents one. craft's machine memory — the run st
 |---|---|---|
 | `recall(topic, scope)` | keywords, a path or component | the **matching active** records (below); for a review, also a short list of the matching inactive ones' ids, only to block them |
 | `record-decision` | title, scope, body (the reason), author, commit, links | one `decision` record |
+| `record-rule` | title (the rule), scope, body (why), author, links; `lens` to narrow it | one `rule` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
 
@@ -29,17 +30,17 @@ answered question becomes a `decision` that supersedes it.
 ```
 { id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links[] }
   id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
-  kind    decision | lesson | question
-  title   one line, ≤ 200 chars — the finding title verbatim, the lesson, the question
-  body    the reason / the lesson / what would answer it — ≤ 1200 chars
-  scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo
+  kind    decision | rule | lesson | question
+  title   one line, ≤ 200 chars — the finding title verbatim, the rule's statement, the lesson, the question
+  body    the reason / why the rule holds / the lesson / what would answer it — ≤ 1200 chars
+  scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo (required on a rule)
   status  active | superseded | withdrawn
   date    YYYY-MM-DD of the last write
   author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
   commit  the commit the decided code was at, 7–40 hex (decisions and deferred questions on findings; below)
   deferred  `true` on a question that defers a review finding (below); absent on every other record
-  line    the finding's line in `scope`'s file (records on review findings; absent when unknown)
-  lens    the review lens that raised the finding, as the review names it (absent when unknown)
+  line    the finding's line in `scope`'s file (records on review findings; absent when unknown; never on a rule)
+  lens    the review lens that raised the finding, as the review names it (absent when unknown); on a rule, the lens it is narrowed to
   toolRule  a gate tool's own rule name the finding fired (a clippy lint, a semgrep rule id, a statix code; deadnix and fmt print none, so theirs carry none), as the review prints it — what tells two gate-tool findings apart; not the catalog ruleId (absent when unknown)
   links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
 ```
@@ -63,6 +64,21 @@ A gate tool's finding without `toolRule` (deadnix and fmt always) is told apart 
 the judge gives no verdict, only a record from a tool lens (or with no lens) with the very
 same title (case and spacing aside) in its scope — and, when both lines compare in one file, within 15 lines — sets it aside, never
 shared title words. So record such a finding's title verbatim, with its file as scope and its line.
+
+**A project rule covers a class of findings, not one.** When a finding is rejected for a reason that
+is a stance of the whole project — "we do not support rollback", "a new API without consumers may
+break", "crd-client is released on demand" — and not "this is not a bug here", record a `rule`, on
+the human's word: title = the rule as one statement, scope = the folder, component or `.` it holds
+for (a rule without a scope is refused), body = why, author, date and links; `lens` (e.g. `compat`)
+narrows it to findings of that lens. It carries no `line` and no `commit`: it does not anchor to one
+finding, and the code changing under it does not lift it. A review applies it after judging: for a
+finding inside the scope (and of the lens, when given) a judge asks whether the concern the finding
+raises is exactly what the rule declares acceptable. A covered finding leaves the verdict and the PR
+comments and is listed under **Covered by project rules** with the rule's id, its statement and the
+judge's why (`adversarial-review`: its `coveredByRule` and `ruleNotices` fields). A Critical finding is raised even under a rule, named there as raised; a finding the
+judge gave no verdict on stays in the verdict, named there too. A rule is retired like any record:
+`superseded` or `withdrawn`. A stance recorded as a decision on one finding does not cover the next
+finding of its class.
 
 **A deferred finding is an open question, not a decision**: valid, but not answered now. It is a
 `question` record with the same anchors — title = the finding's title (from the same source as a decision's), scope = its file, body = what
@@ -175,13 +191,14 @@ its `memory` field). A session recalls for its own work as below; it passes reco
 holds some the store may not — rejections just read from PR threads, say — and never relies on
 passing to stand in for the engine's recall.
 
-1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions
-   and questions (`kind: decision`, `kind: question`), **active** only; never lessons.
+1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions,
+   questions and project rules (`kind: decision`, `kind: question`, `kind: rule`), **active** only;
+   never lessons.
 2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
-   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `links` — nothing rewritten,
-   nothing summarised; `kind` on every record, or a question passed without it is read by its id
-   (`question-…`), and anything else as a decision. A record built by hand may leave `id` out when
+   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
+   nothing summarised; `kind` on every record, or a question or a rule passed without it is read by its id
+   (`question-…`, `rule-…`), and anything else as a decision. A record built by hand may leave `id` out when
    it carries `kind`, `title` and `scope`: the engine derives the id by the rule above and its
    `memory:` line says for how many records it did. Never as a string: a `key=value` line cannot delimit the value (a reason holding
    `comment=true` would become an option), so the engine refuses any string and applies nothing.
@@ -190,7 +207,7 @@ passing to stand in for the engine's recall.
    before** with the decision's reason, author, date and link, outside the verdict; one an open
    question answers, under **Known and deferred** with what would answer it, the author, date and
    link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
-   like a rejection). A question without `deferred: true` records no deferral: it sets nothing aside
+   like a rejection); one a project rule covers, under **Covered by project rules** (above). A question without `deferred: true` records no deferral: it sets nothing aside
    and labels nothing; a deferral without a `commit` is raised again and named. Either is raised
    again as a normal finding when it is Critical/High, when the code in the decision's scope changed
    since its `commit`, when the decision has no `commit`, or when the repository does not know that

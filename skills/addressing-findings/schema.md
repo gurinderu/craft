@@ -60,7 +60,7 @@ Path/shape: `~/.craft/runs/<ts>-workflow-review.json`, keyed by `project + branc
   fp,           // engine fingerprint — the join key this fix loop matches on
   file, line, symbol,
   severity, tier,
-  disposition,  // open | closed | rejected | justified | deferred
+  disposition,  // open | closed | rejected | justified | deferred | covered
   source, ruleId, title, why,
   deferral,     // optional, engine-written: { id, reason, who, when, link, commit } of the question
                 // that set a `deferred` row aside — never written or edited by this fix loop
@@ -70,6 +70,10 @@ Path/shape: `~/.craft/runs/<ts>-workflow-review.json`, keyed by `project + branc
 A `deferred` row is carried across rounds only while it has a `deferral`. A row this fix loop marks
 `deferred` has none: the next round checks it like any open finding, and the engine sets it aside
 again when it recalls the open question recorded for it (→ SKILL.md, "Project memory").
+
+A `covered` row is engine-written: a project rule covered the finding in that round. It is not a
+dismissal — the next round checks it like any open finding and applies the recalled rules again, so a
+rule withdrawn since brings the finding back. This fix loop never writes `covered`.
 
 **Two writer roles.** The `review` engine writes the findings + `tier` (and may auto-set `closed`
 when it later confirms a fix); this fix-loop skill writes the human-sourced dispositions

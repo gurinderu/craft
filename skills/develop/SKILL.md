@@ -87,7 +87,7 @@ use it there.)
 One **round** is:
 
 1. **Review** — launch the engine with an object argument, `{ base | diffBase: <trunk>, priorDecisions?: [...] }`.
-   The engine recalls the project's active decisions and questions for the diff's paths itself on
+   The engine recalls the project's active decisions, questions and project rules for the diff's paths itself on
    every launch. Pass `priorDecisions` only for records the store may not hold yet — rejections
    just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
    its `kind`, `title` and `scope`; never as a string (it is refused).
@@ -102,8 +102,9 @@ One **round** is:
 **Count the rounds, and stop on one of these — nothing else ends the loop:**
 
 - **Converged** — the round's review returned a verdict and raised **no open finding of Medium
-  severity or higher**. *Open* means not set aside by a decision or deferred question in memory
-  (the report's **Rejected before** / **Known and deferred**) — a Medium+ finding raised again
+  severity or higher**. *Open* means not set aside by a decision or deferred question in memory, nor
+  covered by a project rule (the report's **Rejected before** / **Known and deferred** / **Covered by
+  project rules**) — a Medium+ finding raised again
   after its fix holds the loop like a new one. Low findings never hold the loop. → go to phase 5.
 - **Round 4 ended without converging** — stop. Tell the human what is left: each open Medium+
   finding (title, file, severity, why it is still open) and the rounds' verdicts. **No PR** without
