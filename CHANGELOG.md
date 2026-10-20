@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.29.0](https://github.com/gurinderu/craft/compare/v0.28.0...v0.29.0) (2026-10-20)
+
+
+### Features
+
+* **develop:** light review loop by default; a finding against project memory is a defect ([#222](https://github.com/gurinderu/craft/issues/222)) ([23d0331](https://github.com/gurinderu/craft/commit/23d0331d0b59604c487cd7ba80320f4b3c5fb8a9))
+* **hooks:** SessionStart hook tells a repo's declared roles how they run craft's cycle ([#220](https://github.com/gurinderu/craft/issues/220)) ([ef9c2f9](https://github.com/gurinderu/craft/commit/ef9c2f92fb4467fc1913339a09e63f51e922160d))
+* **memory:** project rules cover a class of findings, applied after the review ([#218](https://github.com/gurinderu/craft/issues/218)) ([23577f7](https://github.com/gurinderu/craft/commit/23577f7464b05aff0aa7a4c94059f5c5d664bc05))
+* **review:** sort findings before posting — defects posted, doubtful ones to the reviewer ([#221](https://github.com/gurinderu/craft/issues/221)) ([876e40a](https://github.com/gurinderu/craft/commit/876e40a3334e8044c08ddea349ffcc65c5a03b85))
+
 ## [0.28.0](https://github.com/gurinderu/craft/compare/v0.27.0...v0.28.0) (2026-10-20)
 
 
