@@ -2796,7 +2796,7 @@ const FINDING_ITEM = {
     fp: { type: 'string', description: 'line-tolerant fingerprint; empty if not from a ledger' },
     symbol: { type: 'string', description: 'enclosing fn/type name; empty if unknown' },
     tier: { type: 'string', description: 'confirmed|suspected|unverified|refuted; empty if n/a' },
-    disposition: { type: 'string', description: 'open|closed|rejected|justified|deferred; empty if n/a' },
+    disposition: { type: 'string', description: 'open|closed|rejected|justified|deferred|covered; empty if n/a' },
   },
 }
 
@@ -6454,8 +6454,13 @@ async function noFindingsExit() {
 }
 /** @type {Array<Finding & { priorTier: string, priorDecision: string, priorKind: 'decision' | 'question' | 'rule' }>} */
 let priorRejected = []
-/** The ledger disposition of a set-aside finding. @param {{ priorKind: string }} f */
-const priorDisposition = f => (f.priorKind === 'question' ? 'deferred' : 'rejected')
+/**
+ * The ledger disposition of a set-aside finding. One a project rule covered is `covered`, not a dismissal:
+ * the re-review adjudicates it like an open prior and the rules, recalled again, decide again — so a rule
+ * withdrawn or superseded since lets it back into the verdict (realm @nick/craft, node #273).
+ * @param {{ priorKind: string }} f
+ */
+const priorDisposition = f => (f.priorKind === 'question' ? 'deferred' : f.priorKind === 'rule' ? 'covered' : 'rejected')
 let priorRejectedLive = 0
 /** The tiers a prior-record split returned, back into the run's lists. @param {Record<string, Finding[]>} t */
 function takeTiers(t) {

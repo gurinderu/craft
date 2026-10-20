@@ -3056,7 +3056,7 @@ const FINDING_ITEM = {
     fp: { type: 'string', description: 'line-tolerant fingerprint; empty if not from a ledger' },
     symbol: { type: 'string', description: 'enclosing fn/type name; empty if unknown' },
     tier: { type: 'string', description: 'confirmed|suspected|unverified|refuted; empty if n/a' },
-    disposition: { type: 'string', description: 'open|closed|rejected|justified|deferred; empty if n/a' },
+    disposition: { type: 'string', description: 'open|closed|rejected|justified|deferred|covered; empty if n/a' },
   },
 }
 
@@ -8068,8 +8068,13 @@ async function noFindingsExit() {
 // judge (`decision-match`, launched only when a disputed pair exists; realm @nick/craft, node #230).
 /** @type {Array<Finding & { priorTier: string, priorDecision: string, priorKind: 'decision' | 'question' | 'rule' }>} */
 let priorRejected = []
-/** The ledger disposition of a set-aside finding. @param {{ priorKind: string }} f */
-const priorDisposition = f => (f.priorKind === 'question' ? 'deferred' : 'rejected')
+/**
+ * The ledger disposition of a set-aside finding. One a project rule covered is `covered`, not a dismissal:
+ * the re-review adjudicates it like an open prior and the rules, recalled again, decide again — so a rule
+ * withdrawn or superseded since lets it back into the verdict (realm @nick/craft, node #273).
+ * @param {{ priorKind: string }} f
+ */
+const priorDisposition = f => (f.priorKind === 'question' ? 'deferred' : f.priorKind === 'rule' ? 'covered' : 'rejected')
 // How many of `priorRejected` were live priors, not findings verified this round.
 let priorRejectedLive = 0
 /** The tiers a prior-record split returned, back into the run's lists. @param {Record<string, Finding[]>} t */
@@ -8097,9 +8102,9 @@ async function setAsidePriorDecisions() {
 await setAsidePriorDecisions()
 // ---- Project rules: a class of findings the project accepts, covered visibly (realm @nick/craft, node #273) ----
 // After the decisions: a finding ONE cheap judge (`rule-match`, launched only when a finding sits in a
-// rule's scope) puts under a project rule leaves the verdict and the PR comments like a rejected one, is
-// persisted `rejected`, and is listed under Covered by project rules; a Critical one, or one the judge
-// gave no verdict on, stays — and the section says so.
+// rule's scope) puts under a project rule leaves the verdict and the PR comments like a rejected one and is listed under Covered by project rules; a Critical one, or one the judge
+// gave no verdict on, stays — and the section says so. It is persisted `covered` (priorDisposition), never
+// carried as a dismissal: each round adjudicates it and applies the rules afresh.
 /** @type {string[]} */
 let ruleNotices = []
 async function coverByProjectRules() {

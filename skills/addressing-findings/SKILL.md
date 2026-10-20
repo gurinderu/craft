@@ -143,7 +143,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the same finding (same file, overlapping title) in the review ledgers of at least two different
   branches of this project; the same branch reviewed twice is not a recurrence, another project's
   runs never count, and only findings verified real and not already settled do — a row rejected as
-  wrong, a refuted one, a justified or dismissed one, a deferred one (a known defect carried under
+  wrong, a refuted one, a justified or dismissed one, one a project rule covered, a deferred one (a known defect carried under
   an open question) and one no verifier confirmed (unverified or suspected) are left out (the `note`
   says so). `--store <dir>` reads another store (default `~/.craft/runs`), `--project
   <dir>` another checkout. Its `note` names every bound it reached (the newest 500 runs read, 20
