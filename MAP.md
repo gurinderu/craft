@@ -13,7 +13,8 @@ engineering-process content. It replaces `rust-skills` entirely.
    craft's own tools (memory, review, triage, the fix loop — `develop`), and that role yields to
    the consumer's declared process: a role or rule the project declares for a step runs that step.
    A SessionStart hook (Claude Code) tells a repo that declares its own roles or work rules how they
-   run that cycle with craft's tools; it is silent elsewhere and can be switched off.
+   run that cycle with craft's tools, again when a message asks for review work and to a subagent
+   that work is handed to; it is silent elsewhere and can be switched off.
    Skills reference *each other* — that cross-linking is the collection's cohesion.
 2. **Concrete over Socratic.** Good/Bad code and decision tables, not just "ask yourself…".
    (`rust-skills` is reasoning-first; `craft` is action-first.)
