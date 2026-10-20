@@ -1497,20 +1497,26 @@ function rulelessUnjudgedNote(raised) {
 
 /**
  * Runs the judge over `sent` (never empty): the verdicts by pair index; a missing judge, a throw or an
- * unreadable answer yields none, said once in `refused`. @param {DisputedPair[]} sent
- * @param {((prompt: string) => Promise<unknown>) | undefined} judge @param {string[]} refused
+ * unreadable answer yields none, said once in `refused`. The first `disputed` pairs are the disputed ones
+ * the refusals count; any after them are re-raised sure matches asked about `violates` only (node #282).
+ * @param {DisputedPair[]} sent
+ * @param {((prompt: string) => Promise<unknown>) | undefined} judge @param {string[]} refused @param {number} [disputed]
  * @returns {Promise<Map<number, JudgeVerdict>>}
  */
-async function askJudge(sent, judge, refused) {
+async function askJudge(sent, judge, refused, disputed = sent.length) {
   /** @type {unknown} */
   let raw = null
   try { raw = judge ? await judge(judgePrompt(sent)) : null } catch { raw = null }
   const v = readJudge(raw, sent.length)
-  if (!v) {
-    refused.push(`the match judge died or answered unreadably — ${sent.length} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally`)
+  if (!v && !disputed) {
+    refused.push(`the match judge died or answered unreadably — ${sent.length} re-raised match(es) not asked whether the code goes against the record`)
     return new Map()
   }
-  const unjudged = sent.length - v.size
+  if (!v) {
+    refused.push(`the match judge died or answered unreadably — ${disputed} disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally`)
+    return new Map()
+  }
+  const unjudged = disputed - [...v.keys()].filter(i => i < disputed).length
   if (unjudged) refused.push(`the match judge returned no verdict for ${unjudged} disputed record–finding pair(s) — not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally`)
   return v
 }
@@ -1524,10 +1530,12 @@ async function askJudge(sent, judge, refused) {
  * @param {((prompt: string) => Promise<unknown>) | undefined} judge
  * A finding the judge says goes against a record it does not answer is a contradiction (`contradictionOf`,
  * realm @nick/craft, node #282): the first such pair in the order the judge saw them; a finding another
- * record answers has none.
- * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, contradictionOf: (f: DecidableFinding) => Contradiction | undefined, notes: string[], refused: string[] }>}
+ * record answers has none. `reraisedSure` names the sure matches the split will raise again: the same one
+ * call also asks the judge about them, for `violates` only (`violationOf`); a sure match is never judged `same`.
+ * @param {((f: DecidableFinding, d: PriorDecision) => boolean)} [reraisedSure]
+ * @returns {Promise<{ matchOf: (f: DecidableFinding) => PriorMatch | undefined, contradictionOf: (f: DecidableFinding) => Contradiction | undefined, violationOf: (f: DecidableFinding) => Contradiction | undefined, notes: string[], refused: string[] }>}
  */
-async function matchFindings(findings, decisions, judge) {
+async function matchFindings(findings, decisions, judge, reraisedSure = undefined) {
   const ordered = triedOrder(decisions)
   const plans = new Map(findings.map(f => [f, findingPlan(f, ordered)]))
   const all = [...plans].flatMap(([f, p]) => p.disputed.map(d => ({ f, d })))
@@ -1538,7 +1546,8 @@ async function matchFindings(findings, decisions, judge) {
   const refused = []
   const sent = pairs.slice(0, MATCH_JUDGE_PAIRS_MAX)
   if (pairs.length > sent.length) refused.push(cutPairsNote(pairs.slice(sent.length)))
-  const verdicts = sent.length && judge ? await askJudge(sent, judge, refused) : new Map()
+  const asked = [...sent, ...surePairsToAsk(plans, reraisedSure, MATCH_JUDGE_PAIRS_MAX - sent.length, notes)]
+  const verdicts = asked.length && judge ? await askJudge(asked, judge, refused, sent.length) : new Map()
   /** @type {Map<DecidableFinding, Map<PriorDecision, JudgeVerdict>>} */
   const byFinding = new Map()
   /** @type {Map<DecidableFinding, Contradiction>} */
@@ -1546,10 +1555,12 @@ async function matchFindings(findings, decisions, judge) {
   sent.forEach((p, i) => {
     const v = verdicts.get(i)
     if (v) byFinding.set(p.f, (byFinding.get(p.f) ?? new Map()).set(p.d, v))
+  })
+  asked.forEach((p, i) => {
+    const v = verdicts.get(i)
     if (v?.violates && !against.has(p.f)) against.set(p.f, { d: p.d, why: v.why })
   })
-  const violating = [...verdicts.values()].filter(v => v.violates).length
-  if (sent.length && verdicts.size) notes.push(`match judge: ${verdicts.size} disputed pair(s) judged, ${[...verdicts.values()].filter(v => v.same).length} the same${violating ? `, ${violating} showing the code against the record` : ''}`)
+  if (verdicts.size) notes.push(judgeNote([...verdicts].filter(([i]) => i < sent.length).map(([, v]) => v), asked.length - sent.length, against.size))
   /** @param {DecidableFinding} f @returns {PriorMatch | undefined} */
   const matchOf = f => {
     const p = plans.get(f)
@@ -1557,11 +1568,38 @@ async function matchFindings(findings, decisions, judge) {
   }
   /** @param {DecidableFinding} f @returns {Contradiction | undefined} */
   const contradictionOf = f => (matchOf(f) ? undefined : against.get(f))
+  /** The record the judge says `f`'s code goes against, matched or not — for a re-raised match. @param {DecidableFinding} f @returns {Contradiction | undefined} */
+  const violationOf = f => against.get(f)
   const cutF = new Set(pairs.slice(sent.length, sent.length + CUT_NAMED_MAX).map(p => p.f))
   const unnamed = [...sent, ...pairs.slice(sent.length + CUT_NAMED_MAX)]
   const titleless = judge ? [...new Set(unnamed.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
-  return { matchOf, contradictionOf, notes, refused }
+  return { matchOf, contradictionOf, violationOf, notes, refused }
+}
+
+/**
+ * The sure matches the split will raise again (`reraisedSure`: a Critical/High finding, a record without a
+ * commit, a changed scope), as pairs the one judge is asked about `violates` only, after the disputed ones
+ * and within the room the bound leaves; the rest are counted in `notes` (realm @nick/craft, node #282).
+ * @param {Map<DecidableFinding, { sure?: PriorMatch, disputed: PriorDecision[] }>} plans
+ * @param {((f: DecidableFinding, d: PriorDecision) => boolean) | undefined} reraisedSure @param {number} room @param {string[]} notes
+ * @returns {DisputedPair[]}
+ */
+function surePairsToAsk(plans, reraisedSure, room, notes) {
+  if (!reraisedSure) return []
+  const pairs = [...plans].flatMap(([f, p]) => (p.sure && reraisedSure(f, p.sure.d) ? [{ f, d: p.sure.d }] : []))
+  const past = pairs.length - Math.max(0, room)
+  if (past > 0) notes.push(`${past} re-raised matched pair(s) past the judge's bound were not asked whether the code goes against the record`)
+  return pairs.slice(0, Math.max(0, room))
+}
+
+/**
+ * The judge's note: the disputed pairs judged and how many the same, the re-raised matches asked, and the
+ * findings shown going against a record. @param {JudgeVerdict[]} disputed @param {number} sureAsked @param {number} violating @returns {string}
+ */
+function judgeNote(disputed, sureAsked, violating) {
+  return `match judge: ${disputed.length} disputed pair(s) judged, ${disputed.filter(v => v.same).length} the same`
+    + `${sureAsked ? `, ${sureAsked} re-raised match(es) asked about the record` : ''}${violating ? `, ${violating} showing the code against the record` : ''}`
 }
 /**
  * The section listing each verdict finding of a gate tool that names no rule, once, as
@@ -1573,6 +1611,24 @@ function toolTitlesSection(findings) {
   const unique = [...new Set(rows)]
   return unique.length ? `\n\n## Tool finding titles (verbatim)\n${unique.join('\n')}\n` : ''
 }
+/**
+ * Every decision that could answer some finding a decision could set aside — a sure match or a candidate
+ * for the judge — and that recorded a commit: checked once BEFORE the judge, so the one judge call can also
+ * ask whether a sure match re-raised for a changed scope shows the code going against its record (realm
+ * @nick/craft, node #282). A superset of decisionsToCheck under any match.
+ * @param {DecidableFinding[]} findings @param {PriorDecision[]} decisions @returns {PriorDecision[]}
+ */
+function candidatesToCheck(findings, decisions) {
+  const ordered = triedOrder(decisions)
+  const out = new Set(/** @type {PriorDecision[]} */ ([]))
+  for (const f of findings) {
+    if (reraisedBySeverity(f.severity)) continue
+    const plan = findingPlan(f, ordered)
+    for (const d of plan.sure ? [...plan.disputed, plan.sure.d] : plan.disputed) if (d.commit) out.add(d)
+  }
+  return [...out]
+}
+
 /**
  * The decisions whose scope must be checked for change: those that answer some finding a decision
  * could set aside (not Critical/High) and that recorded a commit to compare against. `matchOf` is the
@@ -1758,6 +1814,16 @@ function reraisedNote(d, why) {
 }
 
 /**
+ * A finding raised again despite its record: its note appended, and marked with the record its code goes
+ * against when the judge said so (node #282).
+ * @template {DecidableFinding} F @param {F} f @param {string} note @param {string} noteField
+ * @param {((f: DecidableFinding) => { d: PriorDecision, why: string } | undefined) | undefined} violationOf @returns {F}
+ */
+function reraisedFinding(f, note, noteField, violationOf) {
+  return markContradicting({ ...f, [noteField]: note }, violationOf?.(f))
+}
+
+/**
  * Split one tier's findings by the decisions. `unchanged` holds the ids of decisions whose scope was
  * observed unchanged since their commit; every other decision cannot set a finding aside. The mark
  * is appended to `noteField` — `why` in review, `description` in adversarial-review.
@@ -1765,9 +1831,10 @@ function reraisedNote(d, why) {
  * @param {F[]} findings @param {PriorDecision[]} decisions @param {Set<string>} unchanged @param {string} tier @param {string} [noteField]
  * @param {Set<string>} [missing]  ids whose commit the repo does not know
  * @param {(f: DecidableFinding) => PriorMatch | undefined} [matchOf]  the record answering a finding (default: the sure matches)
+ * @param {(f: DecidableFinding) => { d: PriorDecision, why: string } | undefined} [violationOf]  the record a re-raised finding's code goes against (node #282)
  * @returns {{ kept: F[], setAside: Array<SetAside<F>>, reraised: number }}
  */
-function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set(), matchOf = sureMatchOf(decisions)) {
+function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why', missing = new Set(), matchOf = sureMatchOf(decisions), violationOf) {
   /** @type {F[]} */
   const kept = []
   /** @type {Array<SetAside<F>>} */
@@ -1785,7 +1852,7 @@ function splitByDecisions(findings, decisions, unchanged, tier, noteField = 'why
       continue
     }
     reraised++
-    kept.push({ ...f, [noteField]: note + reraisedNote(d, why) })
+    kept.push(reraisedFinding(f, note + reraisedNote(d, why), noteField, violationOf))
   }
   return { kept, setAside, reraised }
 }
@@ -1851,16 +1918,17 @@ async function applyPriorDecisions(tiers, records, checkScopes, noteField = 'why
   const decisions = given.filter(d => matchesFindings(d) && !isReplaced(d))
   if (!decisions.length) return { tiers, setAside, reraised: 0, notes, refused: [] }
   const all = Object.values(tiers).flat()
-  const matched = await matchFindings(all, decisions, judge)
+  const { unchanged, missing } = await runScopeCheck(candidatesToCheck(all, decisions), checkScopes, notes)
+  const matched = await matchFindings(all, decisions, judge, (f, d) => reraiseReason(f, d, unchanged, missing) !== '')
   notes.push(...matched.notes)
-  const { toCheck, unchanged, missing } = await runScopeCheck(decisionsToCheck(all, decisions, matched.matchOf), checkScopes, notes)
+  const applied = decisionsToCheck(all, decisions, matched.matchOf)
   const refused = matched.refused.concat(decisions.filter(d => !recordsDeferral(d)).map(d => `question ${d.id}: records a deferral but no commit, so an unchanged scope cannot be established — raised normally`)
-    .concat(toCheck.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`)))
+    .concat(applied.filter(d => missing.has(d.id)).map(d => `${priorKindLabel(d)} ${d.id}: ${commitMissingReason(d)}`)))
   let reraised = 0
   /** @type {Record<string, F[]>} */
   const out = {}
   for (const [tier, list] of Object.entries(tiers)) {
-    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing, matched.matchOf)
+    const r = splitByDecisions(list, decisions, unchanged, tier, noteField, missing, matched.matchOf, matched.violationOf)
     out[tier] = r.kept.map(f => markContradicting(f, matched.contradictionOf(f)))
     setAside = setAside.concat(r.setAside)
     reraised += r.reraised
@@ -2269,10 +2337,11 @@ function markContradicting(f, c) {
 
 /**
  * The run record's count of the findings going against memory: each with the record, the doubt signs that
- * would have sent it to the reviewer without the mark, and whether it went to the PR as a defect.
+ * would have sent it to the reviewer without the mark, and whether it went to the PR as a defect — `toPr`
+ * null: the engine posts nothing (adversarial-review), so `toPr` is null on every item.
  * `changed` null: the outside-the-diff sign was not told (`inDiffJudged` false).
  * @param {SortableFinding[]} findings the verdict's findings, each with its tier @param {ChangedLines | null} changed
- * @param {(f: SortableFinding) => string} fpOf @param {(f: SortableFinding) => boolean} toPr
+ * @param {(f: SortableFinding) => string} fpOf @param {((f: SortableFinding) => boolean) | null} toPr
  * @returns {ContradictionRecord}
  */
 function contradictionRecord(findings, changed, fpOf, toPr) {
@@ -2283,7 +2352,7 @@ function contradictionRecord(findings, changed, fpOf, toPr) {
     if (!c) continue
     items.push({
       fp: fpOf(f), record: c.id, kind: c.kind, severity: String(f.severity ?? ''), title: clipLine(f.title), file: String(f.file ?? ''),
-      line: findingLine(f), doubtSigns: doubtReasons(f, changed), toPr: toPr(f),
+      line: findingLine(f), doubtSigns: doubtReasons(f, changed), toPr: toPr ? toPr(f) : null,
     })
   }
   return { count: items.length, doubtSignsAlone: items.filter(x => x.doubtSigns.length).length, inDiffJudged: changed != null, findings: items }

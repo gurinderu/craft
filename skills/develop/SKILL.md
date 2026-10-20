@@ -133,8 +133,8 @@ One **round** is:
    this loop's next round, and its PR-thread replies (step 8) have no PR yet. Gate green and commit
    again before the next round.
 
-A finding marked as going against a project-memory record (the report's **Contradicts project
-memory** section) is a defect: fix it, or change the record with the human's word — never reject it
+A finding marked as going against a project-memory record (`craft:review`'s **Contradicts project
+memory** section; `craft:adversarial-review`'s `contradictsMemory` field, the same lines) is a defect: fix it, or change the record with the human's word — never reject it
 as a doubt.
 
 **Count the rounds, and stop on one of these — nothing else ends the loop:**
