@@ -18,7 +18,9 @@ its `kind`) only adds records the store may not hold yet and never replaces that
 (→ `memory`, "Before a review"): a finding the project already rejected comes back under **Rejected before** with who,
 when and why, one it deferred under **Known and deferred**, and one a project rule covers (a judge agreed its
 concern is exactly what the rule accepts; never a Critical) under **Covered by project rules**, instead of
-being raised as new.
+being raised as new. A finding the same judges say goes against an active decision or rule stays in the
+verdict, listed under **Contradicts project memory** with the record's id, and is a defect whatever
+doubt sign it carries.
 
 With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
 the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking

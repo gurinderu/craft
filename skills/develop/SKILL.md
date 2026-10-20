@@ -1,7 +1,7 @@
 ---
 name: develop
 description: >-
-  Run a change in this repository end to end up to a pull request with craft's own tools — read the project's declared roles and rules first and let them take any phase they cover, recall project memory for the touched paths, make the change, loop review → triage → fix until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full review, and open the PR only after that. Loaded in the main session, never delegated to a subagent (subagents have no Workflow tool; a --agent session is a main one); craft's SessionStart hook points a repo's declared developer role here. Use when asked to implement a feature or fix and open a PR, develop something end to end, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
+  Run a change end to end up to a pull request with craft's tools — read the project's declared roles and rules first and let them take any phase they cover, recall project memory for the touched paths, make the change, loop review → triage → fix — the first round over the branch diff, each next over the fixed delta only — until a round brings no open Medium-or-higher finding (at most 4 rounds, then stop and tell the human), run one full review, record the cycle, and open the PR only after that. Loaded in the main session, never in a subagent (it has no Workflow tool); craft's SessionStart hook points a repo's declared developer role here. Use when asked to implement a feature or fix and open a PR, or take a change from request to PR. Triggers: implement this and open a PR, develop X end to end, take this to a PR, do the whole cycle. Not for working existing findings only (addressing-findings), a one-off review (the review workflows), or how to plan, test or debug (bring the project's own process).
 ---
 
 # Develop — the cycle up to a PR
@@ -49,7 +49,7 @@ Then print one line per phase, before starting phase 2:
 ```
 develop: roles — 1 roles: craft (read) · 2 recall: craft:memory · 3 work: <role or rule | craft session>
          · 4 review loop: <role/rule | craft:review | craft:adversarial-review> · 5 full review: <…>
-         · 6 PR: <rule | craft default>
+         · 6 record: craft · 7 PR: <rule | craft default>
 ```
 
 Each slot names the file the role or rule came from (`.claude/agents/reviewer.md`, `AGENTS.md §Git`).
@@ -86,21 +86,45 @@ the tree is dirty.
 The review here is the project's declared reviewer or review rule when there is one. Otherwise the
 engine is chosen by the stack of the branch diff (`git diff --name-only <base>...HEAD`):
 
-| Diff | Engine | Base argument |
-|---|---|---|
-| Rust and/or Nix only | the `craft:review` workflow (auto-detects Rust/Nix) | `base` |
-| anything else, or mixed with other languages | the `craft:adversarial-review` workflow | `diffBase` |
+| Diff | Engine |
+|---|---|
+| Rust and/or Nix only | the `craft:review` workflow (auto-detects Rust/Nix) |
+| anything else, or mixed with other languages | the `craft:adversarial-review` workflow |
 
 (`craft:review` on a diff with no Rust or Nix returns `INCOMPLETE (no language profile)` — do not
 use it there.)
 
+**The loop is light by default.** The first round reviews the whole branch diff; every later round
+reviews only the delta the fixes changed, together with the findings that delta touched — not the
+whole diff again. The whole diff is reviewed once more, in phase 5. Only on the human's word ("full
+rounds") does every round review the whole branch diff. Before each round, note `git rev-parse HEAD`
+— the commit that round reviews.
+
+The engine's argument for each round, as an object (never a string):
+
+| Round | `craft:review` | `craft:adversarial-review` |
+|---|---|---|
+| 1 | `{ base: <trunk>, fresh: true, fullEvery: 0 }` | `{ diffBase: <trunk> }` |
+| 2 and later, light | `{ base: <trunk>, fullEvery: 0 }` | `{ diffBase: <HEAD the previous round reviewed> }` |
+| 2 and later, full rounds | `{ base: <trunk>, fresh: true }` | `{ diffBase: <trunk> }` |
+
+- `craft:review` keeps the loop's memory itself: `fresh` on round 1 starts a new chain (an older run
+  on this branch is not this cycle's round), and each later round chains to the one before it,
+  scans the fix commits only (`fullEvery: 0` turns off its periodic whole-diff rescan) and checks
+  every finding the previous round left open again — whether it was fixed, is still there, or came
+  back.
+- `craft:adversarial-review` keeps no memory between runs. Its light round reviews the delta only;
+  a finding of the previous round stays **open** unless the fix that addressed it is in that delta
+  and `craft:addressing-findings` verified it (its step 6), or a decision or deferred question set
+  it aside. Carry the open ones into the round's count yourself.
+- Add `priorDecisions: [...]` to either only for records the store may not hold yet — rejections
+  just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
+  its `kind`, `title` and `scope`. The engine recalls the project's active decisions, questions and
+  project rules for the diff's paths itself on every launch.
+
 One **round** is:
 
-1. **Review** — launch the engine with an object argument, `{ base | diffBase: <trunk>, priorDecisions?: [...] }`.
-   The engine recalls the project's active decisions, questions and project rules for the diff's paths itself on
-   every launch. Pass `priorDecisions` only for records the store may not hold yet — rejections
-   just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
-   its `kind`, `title` and `scope`; never as a string (it is refused).
+1. **Review** — launch the engine with the round's argument above.
 2. **Triage** — a large report → the `craft:triage-findings` workflow; a small one → inline, as
    `craft:addressing-findings` describes.
 3. **Address** — `craft:addressing-findings` works the findings through its step 6 (verify): fixes
@@ -109,13 +133,18 @@ One **round** is:
    this loop's next round, and its PR-thread replies (step 8) have no PR yet. Gate green and commit
    again before the next round.
 
+A finding marked as going against a project-memory record (`craft:review`'s **Contradicts project
+memory** section; `craft:adversarial-review`'s `contradictsMemory` field, the same lines) is a defect: fix it, or change the record with the human's word — never reject it
+as a doubt.
+
 **Count the rounds, and stop on one of these — nothing else ends the loop:**
 
-- **Converged** — the round's review returned a verdict and raised **no open finding of Medium
-  severity or higher**. *Open* means not set aside by a decision or deferred question in memory, nor
-  covered by a project rule (the report's **Rejected before** / **Known and deferred** / **Covered by
-  project rules**) — a Medium+ finding raised again
-  after its fix holds the loop like a new one. Low findings never hold the loop. → go to phase 5.
+- **Converged** — the round's review returned a verdict and **no finding of Medium severity or
+  higher is open**: none raised by this round, and none carried open from an earlier round. *Open*
+  means not set aside by a decision or deferred question in memory, nor covered by a project rule
+  (the report's **Rejected before** / **Known and deferred** / **Covered by project rules**) — a
+  Medium+ finding raised again after its fix holds the loop like a new one. Low findings never hold
+  the loop. → go to phase 5.
 - **Round 4 ended without converging** — stop. Tell the human what is left: each open Medium+
   finding (title, file, severity, why it is still open) and the rounds' verdicts. **No PR** without
   the human's word.
@@ -127,26 +156,48 @@ One **round** is:
 A declared reviewer that reports no severities cannot show convergence by itself: ask it for
 severities on its findings, or treat each of its findings as Medium.
 
-Print one line per round: `develop: round <n>/4 — <engine> verdict <V>, open Medium+: <k> (<titles>)`.
+Print one line per round: `develop: round <n>/4 (<whole diff | delta since <sha>>) — <engine> verdict <V>, open Medium+: <k> (<titles>)`.
 
 ## Phase 5 — Full review
 
-Only after the loop converged. The project's declared reviewer (or its rule for the last review
-before a PR) when there is one; otherwise by stack, once, over the whole branch diff:
+Only after the loop converged, and once. The project's declared reviewer (or its rule for the last
+review before a PR) when there is one; otherwise by stack, over the whole branch diff:
 
 | Diff | Full review |
 |---|---|
-| touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` (it reviews the Rust part only) — and, when the diff also holds Nix, the `craft:nix-review` workflow with `{ base: <trunk>, strict: true }`; when it holds code other than Rust and Nix, the `craft:adversarial-review` workflow over it |
-| Nix only | the `craft:review` workflow with `{ base: <trunk>, strict: true }` — the harsh maintainability bar |
-| anything else | the `craft:adversarial-review` workflow, `{ diffBase: <trunk> }`, a fresh run over the whole branch |
+| touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` (it reviews the Rust part only) — and, when the diff also holds Nix, the `craft:nix-review` workflow with `{ base: <trunk>, strict: true }`; when it holds code other than Rust and Nix, the `craft:adversarial-review` workflow over it, `{ diffBase: <trunk> }` |
+| Nix only | the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` — the harsh maintainability bar over the whole diff (`fresh`: without it the run would chain to the loop and scan the last delta only) |
+| anything else | the `craft:adversarial-review` workflow, `{ diffBase: <trunk> }` |
 
 `adversarial-review` has no strict mode; `strict` belongs to `craft:review` only.
 
 Findings from the full review go through `craft:addressing-findings` like a loop round. An open
 Medium+ finding here reopens phase 4 within the same 4-round budget (the rounds already spent
-count); a full review without a verdict is handled as in phase 4.
+count); the reopened rounds are light ones — their delta starts at the HEAD the full review
+reviewed — and after it converges again the full review runs once more. A full review without a
+verdict is handled as in phase 4.
 
-## Phase 6 — PR
+## Phase 6 — Record the cycle
+
+When the cycle ends — converged with a clean full review, capped at round 4, or stopped without a
+verdict — file one record of it in craft's run store, from the reviewed repository on the branch:
+
+```bash
+node "<this skill's base directory>/../../lib/craft-log-run.mjs" develop-cycle <<'JSON'
+{"mode": "light", "outcome": "converged",
+ "rounds": [{"engine": "craft:adversarial-review", "scope": "full", "verdict": "Warning", "mediumPlus": 2},
+            {"engine": "craft:adversarial-review", "scope": "delta", "verdict": "Approve", "mediumPlus": 0}],
+ "fullReviews": [{"afterRound": 2, "engine": "craft:adversarial-review", "verdict": "Approve", "mediumPlus": 0}]}
+JSON
+```
+
+`mode` is `light` or `full`; `outcome` is `converged`, `capped` or `no-verdict`; each round's
+`scope` is `full` (the whole branch diff) or `delta`, its `mediumPlus` the open Medium+ count after
+it (`null` for a round without a verdict); a declared reviewer is named as the engine. It prints the
+file it wrote; a refusal names the field that does not fit — fix it and file again. A failure to
+file is named in one line and changes nothing else.
+
+## Phase 7 — PR
 
 Only after phase 5 ended clean — or on the human's explicit word when the loop did not converge.
 Follow the project's PR rules (title form, body sections, what must be linked, who opens it, draft
