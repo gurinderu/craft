@@ -1,7 +1,7 @@
 ---
 name: rust-review
 description: >-
-  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines, the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), and how to dispatch the craft review agents. Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
+  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines, the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), how to dispatch the craft review agents, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
 ---
 
 # Rust Review
@@ -19,6 +19,12 @@ its `kind`) only adds records the store may not hold yet and never replaces that
 when and why, one it deferred under **Known and deferred**, and one a project rule covers (a judge agreed its
 concern is exactly what the rule accepts; never a Critical) under **Covered by project rules**, instead of
 being raised as new.
+
+With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
+the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking
+change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
+waits for the human: show him that list, and act on his choice for each — ask the author, post as a
+defect, or do not post — as `craft:addressing-findings` says (its doubtful findings section).
 
 ## When to Use
 

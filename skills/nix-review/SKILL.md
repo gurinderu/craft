@@ -1,7 +1,7 @@
 ---
 name: nix-review
 description: >-
-  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), and the "what proves what" table. Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
+  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
 ---
 
 # Nix Review
@@ -22,6 +22,12 @@ its `kind`) only adds records the store may not hold yet and never replaces that
 when and why, one it deferred under **Known and deferred**, and one a project rule covers (a judge agreed its
 concern is exactly what the rule accepts; never a Critical) under **Covered by project rules**, instead of
 being raised as new.
+
+With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
+the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking
+change, or outside the changed lines) is listed under **Doubtful — for the reviewer, not posted** and
+waits for the human: show him that list, and act on his choice for each — ask the author, post as a
+defect, or do not post — as `craft:addressing-findings` says (its doubtful findings section).
 
 ## When to Use
 
