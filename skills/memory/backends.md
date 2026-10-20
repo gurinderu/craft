@@ -48,14 +48,14 @@ match. Use the harness's format, not a craft one:
   description: "<kind>: <title>"
   metadata:
     type: project
-    craft_kind: decision
+    craft_kind: decision    # decision | rule | lesson | question
     craft_scope: src/parse.rs
     craft_status: active
     craft_author: alice
     craft_commit: 33d0240d4fe0
     craft_deferred: true    # a deferred question only
     craft_line: 42          # the finding's line, when known
-    craft_lens: safety      # the lens that raised it, when known
+    craft_lens: safety      # the lens that raised it, when known; on a rule, the lens it is narrowed to
     craft_tool_rule: clippy::needless_pass_by_value  # the gate tool's own rule the finding fired, when known
     modified: 2026-10-06
   ---
@@ -84,7 +84,7 @@ match. Use the harness's format, not a craft one:
 
 ## Files in the consumer repo
 
-`.craft/memory/<kind>/<id>.md` — `kind` ∈ `decision`, `lesson`, `question`:
+`.craft/memory/<kind>/<id>.md` — `kind` ∈ `decision`, `rule`, `lesson`, `question`:
 
 ```markdown
 ---

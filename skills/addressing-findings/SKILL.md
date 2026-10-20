@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision and each deferral as an open question at once, without asking, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -110,6 +110,15 @@ one itself). Only a **lesson** waits for the author's yes (below).
   gives no verdict (deadnix names the binding there)), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
   body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
+- **A stance is a project rule, not a decision** — when the reason for a reject is a stance of the
+  whole project rather than "this is not a bug here" ("we do not support rollback", "a new API
+  without consumers may break", "this crate is released on demand"), it covers every finding of
+  its class, and a decision on one finding would not: `record-rule` with title = the stance as one
+  statement, scope = the folder, component or `.` it holds for, body = why, author = who said it,
+  links = where; `lens` only to narrow it to one lens's findings (e.g. `compat`). The rule needs
+  the human's word that it is a stance — ask in words when the reason reads like one and they did
+  not say so; without it, record the decision as above. The finding at hand still gets its
+  decision; the next review lists the rest of the class under **Covered by project rules**.
 - **A deferral is an open question, not a decision** — triage `defer` becomes `record-question`
   with title = the finding's title (from the same source as a decision's), scope = its file path, body = what would answer it (the event,
   the change or the call that would settle it), author = who deferred, commit = `git rev-parse
