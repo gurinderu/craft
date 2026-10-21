@@ -116,7 +116,8 @@ codex plugin add craft@craft
 Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
 skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines (`craft:review`,
 `adversarial-review`, `rust-audit`, `triage-findings`) and the review loop of `craft:develop` do not run there,
-and the review agents under `agents/` are not shipped to it.
+and the review agents under `agents/` are not shipped to it: the hooks tell a Codex session to review the diff
+itself. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
 
 ## Workflows
 
