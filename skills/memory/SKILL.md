@@ -127,8 +127,10 @@ reason names the rule.
    another store of the same server for the rest of its work. The setting **pins** the backend: if
    the pinned one is unavailable (the server missing, or the store refused or unknown to it), the
    result is `none` with that reason, never a silent fall-through to another store or to rule 2.
-   The line names the store: `memory backend: mcp iskron @cloudless/fluence (craft-memory in
-   AGENTS.md)`. An unknown value gives `none (CRAFT_MEMORY=<v> is not mcp|harness|repo|none)`. A
+   `<server>` matches a connected server by its own name as its tools are prefixed, ignoring case
+   (it is enough that it appears in the tool prefix, such as `mcp__<...>__`). The line names the
+   store: `memory backend: mcp <server> <store> (craft-memory in AGENTS.md)`. An unknown value,
+   including one with more words than `mcp <server> <store>`, gives `none (CRAFT_MEMORY=<v> is not mcp|harness|repo|none)`. A
    consumer sets it with one line in its `AGENTS.md`: `craft-memory: mcp <server> <store>`.
 2. **A connected memory / knowledge-graph MCP server, found by capability.** Look at the tools the
    session actually has (deferred ones included). A server qualifies when its own tool set offers
