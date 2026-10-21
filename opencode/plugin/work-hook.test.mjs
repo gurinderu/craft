@@ -41,7 +41,7 @@ test('a review request gets one synthetic part after its own, logged as chat.mes
   const again = output('s1', 'more findings')
   await message({ sessionID: 's1' }, again)
   assert.equal(again.parts.length, 1, 'once per session')
-  assert.deepEqual(log().map(e => [e.event, e.session, e.spoke, e.kind]), [['chat.message', 's1', true, 'findings'], ['chat.message', 's1', false, 'findings']])
+  assert.deepEqual(log().map(e => [e.event, e.harness, e.session, e.spoke, e.kind]), [['chat.message', 'opencode', 's1', true, 'findings'], ['chat.message', 'opencode', 's1', false, 'findings']])
   await event({ event: { type: 'session.compacted', properties: { sessionID: 's1' } } })
   const after = output('s1', 'review again')
   await message({ sessionID: 's1' }, after)
