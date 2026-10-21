@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.2](https://github.com/gurinderu/craft/compare/v0.32.1...v0.32.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **hooks:** stay silent at the start of craft's own agents ([#241](https://github.com/gurinderu/craft/issues/241)) ([d436d05](https://github.com/gurinderu/craft/commit/d436d05b1e28a8f159065d36d8224afbec917b28))
+
 ## [0.32.1](https://github.com/gurinderu/craft/compare/v0.32.0...v0.32.1) (2026-10-21)
 
 
