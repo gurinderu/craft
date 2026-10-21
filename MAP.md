@@ -12,7 +12,8 @@ engineering-process content. It replaces `rust-skills` entirely.
    declares no plugin dependencies; bring your own. craft may ship a role that runs the cycle with
    craft's own tools (memory, review, triage, the fix loop — `develop`), and that role yields to
    the consumer's declared process: a role or rule the project declares for a step runs that step.
-   A SessionStart hook (Claude Code) tells a repo that declares its own roles or work rules how they
+   A SessionStart hook (Claude Code and Codex; the OpenCode plugin carries the same work-moment
+   lines) tells a repo that declares its own roles or work rules how they
    run that cycle with craft's tools, again when a message asks for review work and to a subagent
    that work is handed to; it is silent elsewhere and can be switched off.
    Skills reference *each other* — that cross-linking is the collection's cohesion.
@@ -199,5 +200,13 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 
 `opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
 (skills shared verbatim by symlink; 4 translated agent files; a TS/Bun plugin hosting the
-`rust-audit` and `triage-findings` workflows; a symlink `install.sh`). Single source of truth: the
-skills are not duplicated. The design spec that shaped this layer has been removed.
+`rust-audit` and `triage-findings` workflows and craft's work hook on `chat.message` and `event`;
+a symlink `install.sh`). Single source of truth: the skills are not duplicated. The design spec
+that shaped this layer has been removed.
+
+## Codex delivery
+
+`.codex-plugin/plugin.json` and the marketplace `.agents/plugins/marketplace.json` deliver the same
+`skills/` and `hooks/hooks.json` to the Codex CLI. Codex has no Workflow tool, so the workflow
+engines and the review agents under `agents/` are not shipped there; the hooks tell a Codex session
+to review the diff itself.
