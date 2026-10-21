@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.0](https://github.com/gurinderu/craft/compare/v0.31.1...v0.32.0) (2026-10-21)
+
+
+### Features
+
+* **memory:** let craft-memory pin a store of the MCP server ([#237](https://github.com/gurinderu/craft/issues/237)) ([9dfe7b1](https://github.com/gurinderu/craft/commit/9dfe7b129e13bb44fc1b30ede434919f717cff50))
+
+
+### Bug Fixes
+
+* **addressing-findings:** ask before a light re-review across a merge ([#238](https://github.com/gurinderu/craft/issues/238)) ([eeedbf1](https://github.com/gurinderu/craft/commit/eeedbf1211106d47e500dc1918f7cfd11af6f2b1))
+* **addressing-findings:** re-review only the fix commits by default ([#235](https://github.com/gurinderu/craft/issues/235)) ([b7eef4f](https://github.com/gurinderu/craft/commit/b7eef4f17d5f0e65e444d7f51a80e36c51c86a1f))
+
 ## [0.31.1](https://github.com/gurinderu/craft/compare/v0.31.0...v0.31.1) (2026-10-21)
 
 
