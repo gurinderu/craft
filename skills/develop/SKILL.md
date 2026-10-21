@@ -118,7 +118,9 @@ The engine's argument for each round, as an object (never a string):
   on this branch is not this cycle's round), and each later round chains to the one before it,
   scans the fix commits only (`fullEvery: 0` turns off its periodic whole-diff rescan) and checks
   every finding the previous round left open again — whether it was fixed, is still there, or came
-  back.
+  back. Its `base: <trunk>` row holds only inside this loop, where a round 1 started the chain: with
+  no earlier engine round to chain to (findings from a human), it is a full review of the whole
+  diff — there `craft:addressing-findings` step 7 passes the commit that review was made on.
 - `craft:adversarial-review` keeps no memory between runs. Its light round reviews the delta only;
   a finding of the previous round stays **open** unless the fix that addressed it is in that delta
   and `craft:addressing-findings` verified it (its step 6), or a decision or deferred question set
