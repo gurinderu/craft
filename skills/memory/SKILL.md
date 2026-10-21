@@ -119,10 +119,17 @@ Run once per session, before the first verb; print the result as **one line**:
 reason names the rule.
 
 1. **Explicit setting.** Env `CRAFT_MEMORY`, else a line `craft-memory: <value>` in the consumer's
-   `AGENTS.md` or `CLAUDE.md` (repo root). Values: `mcp` (optionally `mcp <server>`), `harness`,
-   `repo`, `none`. The setting **pins** the backend: if the pinned one is unavailable, the result is
-   `none` with that reason — never a silent fall-through to another store. An unknown value →
-   `none (CRAFT_MEMORY=<v> is not mcp|harness|repo|none)`.
+   `AGENTS.md` or `CLAUDE.md` (repo root). Values: `mcp` (optionally `mcp <server>` or
+   `mcp <server> <store>`), `harness`, `repo`, `none`. The store is the address of a graph, project
+   or workspace on that server: what its tools take as their scope parameter, whatever it is called
+   there; when the server ships its own skill, hand the store to that skill as its scope. Every
+   recall and record then uses that store and no other, even when the consumer's instructions name
+   another store of the same server for the rest of its work. The setting **pins** the backend: if
+   the pinned one is unavailable (the server missing, or the store refused or unknown to it), the
+   result is `none` with that reason, never a silent fall-through to another store or to rule 2.
+   The line names the store: `memory backend: mcp iskron @cloudless/fluence (craft-memory in
+   AGENTS.md)`. An unknown value gives `none (CRAFT_MEMORY=<v> is not mcp|harness|repo|none)`. A
+   consumer sets it with one line in its `AGENTS.md`: `craft-memory: mcp <server> <store>`.
 2. **A connected memory / knowledge-graph MCP server, found by capability.** Look at the tools the
    session actually has (deferred ones included). A server qualifies when its own tool set offers
    **both** a text or semantic *search* over stored items **and** a *create/record* of a new item

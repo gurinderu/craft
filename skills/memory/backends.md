@@ -5,6 +5,11 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 
 ## MCP memory / knowledge-graph server
 
+- **A pinned store** (`craft-memory: mcp <server> <store>`, SKILL.md rule 1): every search and
+  every create passes the store as the tools' scope parameter (a graph, project or workspace
+  argument, whatever that server calls it), or as the scope of the server's own skill. A tool that
+  takes no scope, or refuses the store, makes the backend unavailable: `none` with that reason,
+  never a write to the server's default or another store.
 - **Its own instructions first.** When the server ships a skill, a prompt or tool descriptions
   saying how to write (which item type, which fields, which modes, where to anchor), follow them
   and hand it the record's content — title, body, scope, kind, author, commit, deferred, line, lens, toolRule, links. Do not force the fields
