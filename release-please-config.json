@@ -11,6 +11,7 @@
         { "type": "json", "path": ".claude-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.plugins[0].version" },
+        { "type": "json", "path": ".codex-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "src/review.js" },
         { "type": "generic", "path": "workflows/review.js" },
         { "type": "generic", "path": "src/adversarial-review.js" },

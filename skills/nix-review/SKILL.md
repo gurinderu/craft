@@ -1,7 +1,7 @@
 ---
 name: nix-review
 description: >-
-  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
+  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
 ---
 
 # Nix Review
