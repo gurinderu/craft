@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.31.0](https://github.com/gurinderu/craft/compare/v0.30.0...v0.31.0) (2026-10-21)
+
+
+### Features
+
+* **codex:** deliver craft's skills and hooks to the Codex CLI ([#228](https://github.com/gurinderu/craft/issues/228)) ([144970b](https://github.com/gurinderu/craft/commit/144970b557e3693f9dbd6504838a3a5996a44d10))
+* **opencode:** speak at the moment of review work and to the subagent it is handed to ([#227](https://github.com/gurinderu/craft/issues/227)) ([a831b11](https://github.com/gurinderu/craft/commit/a831b112cdc7a81c8c6fc41b818315ac3b41e4e0))
+
+
+### Bug Fixes
+
+* **codex:** review in the session, count Codex roles, label OpenCode hook lines ([#229](https://github.com/gurinderu/craft/issues/229)) ([993b1c1](https://github.com/gurinderu/craft/commit/993b1c1be6b3562eccdaff8f40d3862398596b1c))
+* **hooks:** class a request as findings work only when it is about review feedback ([#231](https://github.com/gurinderu/craft/issues/231)) ([e8ef28c](https://github.com/gurinderu/craft/commit/e8ef28cd7418b9faca73301ae1d5325c582c9057))
+* **hooks:** demand the skill before the first tool call and catch colloquial PR-comment asks ([#225](https://github.com/gurinderu/craft/issues/225)) ([00fc373](https://github.com/gurinderu/craft/commit/00fc3732169596fa0997f7e6b3260ec1fe5df8f6))
+* **hooks:** make the work hook persuade, per request kind ([#230](https://github.com/gurinderu/craft/issues/230)) ([4e2ee35](https://github.com/gurinderu/craft/commit/4e2ee35aa32bbd0f80989ddccfb080a4fa20d280))
+
 ## [0.30.0](https://github.com/gurinderu/craft/compare/v0.29.0...v0.30.0) (2026-10-20)
 
 

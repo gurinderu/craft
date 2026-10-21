@@ -1,6 +1,6 @@
 {
   "name": "craft",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "description": "Opinionated engineering skills for Codex — a broad Rust skill set, language-agnostic engineering skills and a Nix skill set — with craft's start and work-moment hooks. The workflow engines and review agents are Claude Code only. Its hooks run only after you trust them in /hooks.",
   "author": {
     "name": "gurinderu",
@@ -8,7 +8,14 @@
   },
   "repository": "https://github.com/gurinderu/craft",
   "license": "MIT",
-  "keywords": ["codex", "skills", "rust", "nix", "code-review", "craft"],
+  "keywords": [
+    "codex",
+    "skills",
+    "rust",
+    "nix",
+    "code-review",
+    "craft"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "craft",
