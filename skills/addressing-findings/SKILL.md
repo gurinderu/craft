@@ -50,7 +50,11 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                reviews → the oldest), and for a previous engine run, the HEAD it reviewed. Check
                `git merge-base --is-ancestor <that commit> HEAD`; if it fails (a rebase, a
                force-push, the commit missing), say so and ask the human — the full PR review
-               only on their word. Run the `craft:review` workflow on a Rust or Nix diff with
+               only on their word. Then check `git rev-list --merges <that commit>..HEAD`; if it
+               lists a merge (trunk or another branch merged in since the review), the diff from
+               that commit carries the merged code too, not the fix commits only: say so and ask
+               the human: the whole PR (`base: <trunk>`, still `fresh: true`), or the fix
+               commits named, or a base after the merge. Run the `craft:review` workflow on a Rust or Nix diff with
                `{ base: <that commit>, fresh: true, fullEvery: 0 }` when the findings did not
                come from its last round on this branch (a human's PR review, any other review):
                `fresh` keeps it from chaining to an older run on the branch, which would widen
