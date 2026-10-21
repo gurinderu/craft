@@ -1,7 +1,7 @@
 ---
 name: rust-review
 description: >-
-  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines, the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), how to dispatch the craft review agents, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
+  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines, the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), how to dispatch the craft review agents, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
 ---
 
 # Rust Review

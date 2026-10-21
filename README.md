@@ -64,6 +64,8 @@ craft/
 ├── .claude-plugin/
 │   ├── plugin.json        # plugin metadata
 │   └── marketplace.json   # single-plugin marketplace (source: ./)
+├── .codex-plugin/plugin.json      # the Codex plugin manifest (same skills/ and hooks/)
+├── .agents/plugins/marketplace.json  # the Codex marketplace (source: .)
 ├── agents/                # diff/structure review agents
 │   ├── rust-reviewer.md
 │   ├── rust-security-scanner.md
@@ -99,6 +101,22 @@ review agents are translated to opencode agent files, and the `rust-audit` / `tr
 workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`). Install with
 `opencode/install.sh` (project-scoped by default). See `opencode/README.md` for details, the model
 strategy, and parity caveats.
+
+## Codex
+
+craft installs into the [Codex CLI](https://github.com/openai/codex) as a plugin: `.codex-plugin/plugin.json`
+and the marketplace `.agents/plugins/marketplace.json` serve the same `skills/` and `hooks/hooks.json` as the
+Claude Code plugin.
+
+```
+codex plugin marketplace add gurinderu/craft
+codex plugin add craft@craft
+```
+
+Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
+skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines (`craft:review`,
+`adversarial-review`, `rust-audit`, `triage-findings`) and the review loop of `craft:develop` do not run there,
+and the review agents under `agents/` are not shipped to it.
 
 ## Workflows
 
