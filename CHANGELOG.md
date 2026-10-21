@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/gurinderu/craft/compare/v0.29.0...v0.30.0) (2026-10-20)
+
+
+### Features
+
+* **hooks:** speak at the moment of review work and to the subagent it is handed to ([#223](https://github.com/gurinderu/craft/issues/223)) ([7e5a1a0](https://github.com/gurinderu/craft/commit/7e5a1a08aeeff7a14da4bb50b36f54c1beed11ee))
+
 ## [0.29.0](https://github.com/gurinderu/craft/compare/v0.28.0...v0.29.0) (2026-10-20)
 
 
