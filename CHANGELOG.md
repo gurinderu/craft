@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/gurinderu/craft/compare/v0.32.0...v0.32.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **hooks:** stay silent on a message from another session ([#239](https://github.com/gurinderu/craft/issues/239)) ([a3a48cf](https://github.com/gurinderu/craft/commit/a3a48cf549e5d459ed0cd422e8c3d5c6251d9877))
+
 ## [0.32.0](https://github.com/gurinderu/craft/compare/v0.31.1...v0.32.0) (2026-10-21)
 
 
