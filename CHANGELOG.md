@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.1](https://github.com/gurinderu/craft/compare/v0.31.0...v0.31.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **hooks:** keep the other-language text from silencing later requests ([#234](https://github.com/gurinderu/craft/issues/234)) ([8987ab5](https://github.com/gurinderu/craft/commit/8987ab5aca1712478be1318ff87cd18d98792084))
+* **hooks:** speak only on the human's word and gate replies on a re-review ([#232](https://github.com/gurinderu/craft/issues/232)) ([774e382](https://github.com/gurinderu/craft/commit/774e3828f3d75346ad566607b4bf755ee3f11d63))
+
 ## [0.31.0](https://github.com/gurinderu/craft/compare/v0.30.0...v0.31.0) (2026-10-21)
 
 
