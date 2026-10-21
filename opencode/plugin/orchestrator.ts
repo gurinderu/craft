@@ -29,12 +29,16 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | { __timeout: tru
   })
 }
 
+// The sessions this plugin's workflows opened: craft's hook at the moment of work stays silent there (work-hook.ts).
+export const ENGINE_SESSIONS = new Set<string>()
+
 // Spawn one child session bound to a hidden agent and return its final text. NOT exported: both
 // callers moved to runAnswering/fanOut, and an exported un-gated spawn is exactly the bypass this
 // file closes everywhere else — the next caller would get no predicate and no deadline.
 async function runAgent(ctx: PluginCtx, agentName: string, prompt: string): Promise<string> {
   const session = await ctx.client.session.create({ body: { title: `craft:${agentName}` } })
   const path = { id: session.id ?? session.data?.id }
+  if (typeof path.id === "string") ENGINE_SESSIONS.add(path.id)
   const res = await ctx.client.session.prompt({
     path,
     body: { agent: agentName, parts: [{ type: "text", text: prompt }] },

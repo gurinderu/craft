@@ -1,7 +1,11 @@
 // craft-rust opencode plugin — CONTAINED:
-//   • registers ONLY the two craft workflow tools (via the `tool` hook)
-//   • installs NONE of: event / chat.message / chat.params / tool.execute.* / permission.ask
-//   • talks only to the injected local `client`; opens no ports, no outbound network, no telemetry
+//   • registers the two craft workflow tools (via the `tool` hook)
+//   • and craft's hook at the moment of work (work-hook.ts): `event` only remembers subagent sessions and logs
+//     compactions, `chat.message` only appends lines to a review request in a repo that declares its roles or work
+//     rules — silent elsewhere, off with CRAFT_ROLE_HOOK=0 (realm @nick/craft, node #288)
+//   • installs NONE of: chat.params / tool.execute.* / permission.ask
+//   • talks only to the injected local `client`; opens no ports, no outbound network, no telemetry; the hook
+//     writes one line per firing to ~/.craft/hooks.jsonl
 //   • the 4 review subagents stay hidden (their own frontmatter: hidden: true)
 //
 // The plugin's own shape — the `Plugin` signature, `tool({ description, args, execute })` and
@@ -10,8 +14,10 @@
 // `tsc` passes whatever the SDK's real shapes are; a mismatch there shows only at runtime, in opencode.
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
+import { ENGINE_SESSIONS } from "./orchestrator.ts"
 import { runRustAudit } from "./rust-audit.ts"
 import { runTriageFindings } from "./triage-findings.ts"
+import { workHooks } from "./work-hook.ts"
 
 // The subset of the plugin input that our orchestration needs.
 export interface PluginCtx {
@@ -24,7 +30,7 @@ export interface PluginCtx {
 const CraftRustPlugin: Plugin = async ({ client, $, directory, worktree }) => {
   const ctx: PluginCtx = { client, $, directory, worktree }
   return {
-    // ONLY this hook. No global hooks → inert on every unrelated session.
+    ...workHooks(directory, ENGINE_SESSIONS),
     tool: {
       "rust-audit": tool({
         description:
