@@ -43,8 +43,9 @@ Rust mechanics for three of them:
 ## Re-review (step 7)
 
 The re-review is the review workflow the main session runs (SKILL.md, step 7); on a Rust diff that
-is `craft:review`. To widen it on a Rust change, re-dispatch the craft review agents on the post-fix
-diff as well (a **fresh** agent each time — they carry no memory of the prior round):
+is `craft:review` over the fix commits only: `{ base: <the commit the review was made on>,
+fresh: true, fullEvery: 0 }`, or chained as `develop` does when the findings are its last round. To widen it on a Rust change, re-dispatch the craft review agents on those fix commits
+as well (a **fresh** agent each time — they carry no memory of the prior round):
 
 - `craft:rust-reviewer` — the gate + the rubric.
 - `craft:rust-security-scanner` — when the change touched deps / `unsafe` / input handling.

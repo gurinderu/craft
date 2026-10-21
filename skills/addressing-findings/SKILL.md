@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, show the human the doubtful findings a review posting to a PR held back and post (marked) or record each as he chooses, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review in the main session until green before any reply is posted. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Its triage and re-review workflows need Claude Code's Workflow tool (not in Codex or OpenCode); the fix loop runs anywhere. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, show the human the doubtful findings a review posting to a PR held back and post (marked) or record each as he chooses, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review the fix commits in the main session until green before any reply is posted. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Its triage and re-review workflows need Claude Code's Workflow tool (not in Codex or OpenCode); the fix loop runs anywhere. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -42,13 +42,27 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
 7. Re-review — a gate, in the main session, once every fix has landed (each fixer subagent
-               returned, its fix committed — pushed where there is a PR): run the review
-               workflow over the diff under review (the PR's, or the branch's against its
-               base) — the `craft:review` workflow on a Rust or Nix diff, the `craft:adversarial-review`
-               workflow on any other, with the arguments `develop` gives a round ("Phase 4");
-               never handed to a subagent (it has no Workflow tool). Without the Workflow tool
-               (Codex, OpenCode) the re-review is this session's own review pass over the diff,
-               with the `rust-review` or `nix-review` rubric where it applies.
+               returned, its fix committed — pushed where there is a PR). Light by default: it
+               reviews only the fix commits, from the commit the addressed review was made on
+               (its base) to HEAD. That base is, for a GitHub PR review, the review's `commit_id`
+               (`gh api repos/<owner>/<repo>/pulls/<N>/reviews` → `.commit_id`; for inline
+               comments `.../pulls/<N>/comments` → `original_commit_id`, else `commit_id`; several
+               reviews → the oldest), and for a previous engine run, the HEAD it reviewed. Check
+               `git merge-base --is-ancestor <that commit> HEAD`; if it fails (a rebase, a
+               force-push, the commit missing), say so and ask the human — the full PR review
+               only on their word. Run the `craft:review` workflow on a Rust or Nix diff with
+               `{ base: <that commit>, fresh: true, fullEvery: 0 }` when the findings did not
+               come from its last round on this branch (a human's PR review, any other review):
+               `fresh` keeps it from chaining to an older run on the branch, which would widen
+               the scan and carry that run's settled findings; when they did, chain as `develop`
+               does (Phase 4, a later light round). Run the `craft:adversarial-review` workflow on
+               any other diff with `{ diffBase: <that commit> }`. Add `repo` and `intent` as
+               usual; one run per PR. The findings the fixes touch were checked in step 6;
+               `craft:review` re-checks its previous round's where it chains. The whole diff only
+               on the human's word, or as the final pass the repo's rules ask for. Never handed to a subagent (it has no Workflow tool). Without the Workflow
+               tool (Codex, OpenCode) the re-review is this session's own review pass over the fix
+               commits (`git diff <that commit>..HEAD`), with the `rust-review` or `nix-review`
+               rubric where it applies.
                PR-thread rejections recorded again; the review workflow recalls the active
                decisions and questions itself on every launch — `priorDecisions` (an object
                argument, each record with its `kind`, `title` and `scope`; the `id` may be left
