@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, show the human the doubtful findings a review posting to a PR held back and post (marked) or record each as he chooses, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review (handing the recalled decisions to the review) until green. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Its triage and re-review workflows need Claude Code's Workflow tool (not in Codex or OpenCode); the fix loop runs anywhere. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Systematic fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, show the human the doubtful findings a review posting to a PR held back and post (marked) or record each as he chooses, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review in the main session until green before any reply is posted. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Its triage and re-review workflows need Claude Code's Workflow tool (not in Codex or OpenCode); the fix loop runs anywhere. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -21,7 +21,8 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 `⫲` marks a step that **fans out across subagents** (→ "Parallelism via subagents").
 
 ```
-0. Recall    — the author's PR-thread rejections recorded first (→ pr-rejections.md),
+0. Recall    — mandatory, before any triage, also when subagents triage or fix:
+               the author's PR-thread rejections recorded first (→ pr-rejections.md),
                then `memory` recall(topic, scope) for every path the findings touch, for this
                skill's own triage — the review engines recall for themselves (→ below),
                then findings that recur across branches shown, a lesson offered per group (→ below)
@@ -40,15 +41,25 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                first, RED→GREEN                                                (→ rust.md)
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
-7. Re-review ⫲ — PR-thread rejections recorded again; the review workflow recalls the active
+7. Re-review — a gate, in the main session, once every fix has landed (each fixer subagent
+               returned, its fix committed — pushed where there is a PR): run the review
+               workflow over the diff under review (the PR's, or the branch's against its
+               base) — the `craft:review` workflow on a Rust or Nix diff, the `craft:adversarial-review`
+               workflow on any other, with the arguments `develop` gives a round ("Phase 4");
+               never handed to a subagent (it has no Workflow tool). Without the Workflow tool
+               (Codex, OpenCode) the re-review is this session's own review pass over the diff,
+               with the `rust-review` or `nix-review` rubric where it applies.
+               PR-thread rejections recorded again; the review workflow recalls the active
                decisions and questions itself on every launch — `priorDecisions` (an object
                argument, each record with its `kind`, `title` and `scope`; the `id` may be left
                out, the engine derives it by the memory skill's rule) only ADDS records the store
                may not hold yet, never replaces that recall (→ `memory`, "Before a review");
-               re-dispatch the review agents in parallel (as rust-audit does); new
-               findings re-enter the loop; the ledger dedups; repeat until green (→ rust.md)
-8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit), post &
-               resolve ONLY after explicit user OK; map reply→thread via thread_id (→ github.md)
+               new findings re-enter the loop (steps 3–6); the ledger dedups; repeat until
+               no Medium-or-higher finding is open (→ rust.md)
+8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit); drafts may be
+               written during step 7, but none is posted before the re-review is green (or
+               the human waives it), and a reply may cite that run. Post & resolve ONLY after
+               explicit user OK; map reply→thread via thread_id (→ github.md)
 ```
 
 **Scaling:** small batch → steps 2–4 inline. Large batch (a fat `rust-audit` report, a
@@ -250,7 +261,8 @@ Where craft's fix loop fans out across subagents:
 - **Fix (5)** — the plan is grouped by file so **independent groups run concurrently**, one
   subagent per group; worktree isolation only when groups could touch shared files. Within a
   group, serial.
-- **Re-review (7)** — review agents run in parallel, as `rust-audit` orchestrates them.
+- **Re-review (7)** — not a fan-out of yours: the main session launches the review workflow, which
+  fans its own lenses out.
 
 ## Rust wiring
 
