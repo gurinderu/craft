@@ -47,15 +47,19 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                (its base) to HEAD. That base is, for a GitHub PR review, the review's `commit_id`
                (`gh api repos/<owner>/<repo>/pulls/<N>/reviews` → `.commit_id`; for inline
                comments `.../pulls/<N>/comments` → `original_commit_id`, else `commit_id`; several
-               reviews → the oldest), and for a previous engine run, the HEAD it reviewed. Run
-               the `craft:review` workflow on a Rust or Nix diff with `{ base: <that commit>,
-               fullEvery: 0 }`, the `craft:adversarial-review` workflow on any other with
-               `{ diffBase: <that commit> }` (plus `repo` and `intent` as usual); one run per PR.
-               Not `base: <trunk>`: with no earlier engine round to chain to (findings from a
-               human), that is a full review of the whole PR. The findings the fixes touch were
-               checked in step 6; `craft:review` re-checks its previous round's where it chains.
-               The whole diff only on the human's word, or as the final pass the repo's rules
-               ask for. Never handed to a subagent (it has no Workflow tool). Without the Workflow
+               reviews → the oldest), and for a previous engine run, the HEAD it reviewed. Check
+               `git merge-base --is-ancestor <that commit> HEAD`; if it fails (a rebase, a
+               force-push, the commit missing), say so and ask the human — the full PR review
+               only on their word. Run the `craft:review` workflow on a Rust or Nix diff with
+               `{ base: <that commit>, fresh: true, fullEvery: 0 }` when the findings did not
+               come from its last round on this branch (a human's PR review, any other review):
+               `fresh` keeps it from chaining to an older run on the branch, which would widen
+               the scan and carry that run's settled findings; when they did, chain as `develop`
+               does (Phase 4, a later light round). Run the `craft:adversarial-review` workflow on
+               any other diff with `{ diffBase: <that commit> }`. Add `repo` and `intent` as
+               usual; one run per PR. The findings the fixes touch were checked in step 6;
+               `craft:review` re-checks its previous round's where it chains. The whole diff only
+               on the human's word, or as the final pass the repo's rules ask for. Never handed to a subagent (it has no Workflow tool). Without the Workflow
                tool (Codex, OpenCode) the re-review is this session's own review pass over the fix
                commits (`git diff <that commit>..HEAD`), with the `rust-review` or `nix-review`
                rubric where it applies.
