@@ -42,8 +42,9 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 6. Verify    — per fix: every facet · your own check · sibling sweep ·
                falsify per element · bounds reached                           (→ below, rust.md)
 7. Re-review — a gate, in the main session, once every fix has landed (each fixer subagent
-               returned, its fix pushed): run the review workflow over the PR's diff — the
-               `craft:review` workflow on a Rust or Nix diff, the `craft:adversarial-review`
+               returned, its fix committed — pushed where there is a PR): run the review
+               workflow over the diff under review (the PR's, or the branch's against its
+               base) — the `craft:review` workflow on a Rust or Nix diff, the `craft:adversarial-review`
                workflow on any other, with the arguments `develop` gives a round ("Phase 4");
                never handed to a subagent (it has no Workflow tool). Without the Workflow tool
                (Codex, OpenCode) the re-review is this session's own review pass over the diff,
