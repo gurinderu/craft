@@ -390,7 +390,7 @@ Hand the reviewer a **crafted brief**, not your chat history:
 - **what it should do** — the requirement/spec it's meant to satisfy (→ `specs`);
 - **what you built** — a one-paragraph summary.
 
-In craft, dispatch the agents with that brief:
+Where the harness ships craft's review agents (Claude Code, OpenCode), dispatch them with that brief; where it does not (Codex), apply this rubric yourself in the session:
 
 - **`rust-reviewer`** — runs the cargo gate + this rubric → Approve/Warning/Block.
 - **`rust-security-scanner`** — security-sensitive changes (deps, `unsafe`, input handling) → `rust-security` verdict.

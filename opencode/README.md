@@ -48,7 +48,7 @@ The plugin registers the two workflow tools and one narrow hook: craft's hook at
 Its `event` hook only remembers which sessions are subagents' and notes compactions; its
 `chat.message` hook only appends a short synthetic text part to a message asking for review work
 (findings, PR comments, a review), in a repo that declares its own agents or work rules, once per
-session — silent everywhere else, off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in
+request kind (findings, review) per session — silent everywhere else, off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in
 `AGENTS.md` / `CLAUDE.md`. Each firing appends one line to `~/.craft/hooks.jsonl`. No permission or
 tool-call interception. It talks only to the local opencode server, opens no ports, and makes no
 outbound calls. Installed project-scoped by default. The hook loads craft's `lib/` from the checkout
