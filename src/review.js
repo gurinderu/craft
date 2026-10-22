@@ -4854,15 +4854,13 @@ function announceDeadlineOverride() {
   }
 }
 announceDeadlineOverride()
-// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop
+// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop recoverCommand limitStopAdvice
 const LIMIT_ANSWER_MAX = 400
 
 const LIMIT_PATTERNS = [
-  /\bhit your (?:\w+[ -])?limit\b/i,
-  /\b(?:usage|weekly|daily|monthly|session) limit (?:reached|exceeded|hit)\b/i,
-  /\breached (?:your|the) (?:\w+ )?(?:usage|rate) limit\b/i,
-  /\brate[ -]limit(?:ed)?\b[^\n]*\b(?:429|exceeded|reached|try again|resets?)\b/i,
-  /\b(?:usage|rate|weekly) limit\b[^\n]*\bresets?\b/i,
+  /\bhit your (?:[\w-]+ )?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
+  /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
 ]
 
 /**
@@ -4905,6 +4903,28 @@ function makeLimitStop(say) {
     observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
     note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
   }
+}
+
+/**
+ * The shell command that promotes a run's `.partial` checkpoints into a partial record, run in the
+ * reviewed repository with the installed plugin of this version.
+ * @param {string} version
+ * @returns {string}
+ */
+function recoverCommand(version) {
+  return `node "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}/lib/craft-log-run.mjs" recover`
+}
+
+/**
+ * What a human does about a run stopped at the usage limit, '' when it was not: the logger shares the
+ * account, so a record lost to the same limit is recovered from `.partial` once the limit resets.
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {string} version
+ * @returns {string}
+ */
+function limitStopAdvice(stop, version) {
+  if (!stop.seen()) return ''
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${recoverCommand(version)}\``
 }
 // <<< craft-inline
 // >>> craft-inline lib/honest-verdict.mjs GREEN_WORD VERDICT_WORD NOTE_MAX notRunList honestVerdict verdictLineAt honestVerdictLine
@@ -4969,7 +4989,8 @@ function honestVerdictLine(text, notRun) {
 }
 // <<< craft-inline
 // The run's stop at a usage limit (realm @nick/craft, node #299): once one agent failed on it, ragent
-// dispatches no more review work; only the bookkeeping writes still go, so the record is attempted.
+// dispatches no more review work; only the bookkeeping writes still go, so the record is attempted (on
+// the same account, so under an account-wide limit it stays in `.partial` for `craft-log-run recover`).
 const limitStop = makeLimitStop(log)
 /** @param {AgentOpts} opts */
 function deadlineMsFor(opts) {
@@ -5331,9 +5352,15 @@ function extraLensReport() {
   return extraLensOutcome.reached ? extraLensSection({ how: extraLensRequest.how, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed, discovery: extraLensOutcome.discovery, exit: extraLensOutcome.exit, rubric: extraLensOutcome.ran.length ? active[0]?.id ?? '' : '' }) : ''
 }
 
+/** The usage-limit stop and how to recover the record it may have cost, above the verdict; '' without a stop. */
+function limitStopSection() {
+  const advice = limitStopAdvice(limitStop, CRAFT_VERSION)
+  return advice ? `## \u26d4 Usage limit reached\n${advice}\n\n` : ''
+}
+
 /** @param {string} reportText */
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses], lensPhaseReached) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
+  return `${limitStopSection()}${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses], lensPhaseReached) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----

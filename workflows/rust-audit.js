@@ -1898,18 +1898,16 @@ function dispatchDim(dimension, promise, opts = {}) {
   const deadReason = opts.deadReason || 'agent returned no result (died or skipped) — dimension NOT RUN'
   const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
   return promise
-    .then(r => dimResult(dimension, r, deadReason, opts.evidenceGate ?? true))
+    .then(r => dimResult(dimension, auditLimit.observeAnswer(r) ? null : r, deadReason, opts.evidenceGate ?? true))
     .catch((/** @type {unknown} */ e) => { auditLimit.observeError(e); log(threw((e && /** @type {{ message?: unknown }} */ (e).message) || e)); return null })
 }
 
 const LIMIT_ANSWER_MAX = 400
 
 const LIMIT_PATTERNS = [
-  /\bhit your (?:\w+[ -])?limit\b/i,
-  /\b(?:usage|weekly|daily|monthly|session) limit (?:reached|exceeded|hit)\b/i,
-  /\breached (?:your|the) (?:\w+ )?(?:usage|rate) limit\b/i,
-  /\brate[ -]limit(?:ed)?\b[^\n]*\b(?:429|exceeded|reached|try again|resets?)\b/i,
-  /\b(?:usage|rate|weekly) limit\b[^\n]*\bresets?\b/i,
+  /\bhit your (?:[\w-]+ )?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
+  /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
 ]
 
 /**
@@ -1952,6 +1950,28 @@ function makeLimitStop(say) {
     observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
     note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
   }
+}
+
+/**
+ * The shell command that promotes a run's `.partial` checkpoints into a partial record, run in the
+ * reviewed repository with the installed plugin of this version.
+ * @param {string} version
+ * @returns {string}
+ */
+function recoverCommand(version) {
+  return `node "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}/lib/craft-log-run.mjs" recover`
+}
+
+/**
+ * What a human does about a run stopped at the usage limit, '' when it was not: the logger shares the
+ * account, so a record lost to the same limit is recovered from `.partial` once the limit resets.
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {string} version
+ * @returns {string}
+ */
+function limitStopAdvice(stop, version) {
+  if (!stop.seen()) return ''
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${recoverCommand(version)}\``
 }
 const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
 
@@ -2211,6 +2231,13 @@ function verificationRecord(u) {
     refuteRate: v.refuteRate ?? null,
   }
 }
+function noteSynthesisLimit() {
+  if (auditLimit.observeAnswer(report)) {
+    notRun.unshift(auditLimit.note())
+    incompleteDimensions.unshift(auditLimit.note())
+  }
+}
+noteSynthesisLimit()
 const auditRecord = {
   schemaVersion: 1,
   runtime: 'claude-code',
@@ -2236,6 +2263,6 @@ const auditRecord = {
 }
 await logRun(auditRecord)
 
-if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 ${auditLimit.note()}: the synthesis was not dispatched, so this audit has NO report. Nothing here is an approval; re-run it once the limit resets.\n`
+if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 the synthesis did not run, so this audit has NO report; nothing here is an approval. ${limitStopAdvice(auditLimit, CRAFT_VERSION)}\n`
 if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
 return `${telemetryLostSection(telemetryLost)}${agentSection()}${honestVerdictLine(report, incompleteDimensions)}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`

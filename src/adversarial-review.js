@@ -1766,15 +1766,13 @@ const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
 const notRunBlocking = () => notRun.filter(e => e.incomplete)
-// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop stopAtLimit
+// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop stopAtLimit recoverCommand limitStopAdvice
 const LIMIT_ANSWER_MAX = 400
 
 const LIMIT_PATTERNS = [
-  /\bhit your (?:\w+[ -])?limit\b/i,
-  /\b(?:usage|weekly|daily|monthly|session) limit (?:reached|exceeded|hit)\b/i,
-  /\breached (?:your|the) (?:\w+ )?(?:usage|rate) limit\b/i,
-  /\brate[ -]limit(?:ed)?\b[^\n]*\b(?:429|exceeded|reached|try again|resets?)\b/i,
-  /\b(?:usage|rate|weekly) limit\b[^\n]*\bresets?\b/i,
+  /\bhit your (?:[\w-]+ )?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
+  /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
 ]
 
 /**
@@ -1839,6 +1837,28 @@ function stopAtLimit(call, stop) {
     }
   }
 }
+
+/**
+ * The shell command that promotes a run's `.partial` checkpoints into a partial record, run in the
+ * reviewed repository with the installed plugin of this version.
+ * @param {string} version
+ * @returns {string}
+ */
+function recoverCommand(version) {
+  return `node "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}/lib/craft-log-run.mjs" recover`
+}
+
+/**
+ * What a human does about a run stopped at the usage limit, '' when it was not: the logger shares the
+ * account, so a record lost to the same limit is recovered from `.partial` once the limit resets.
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {string} version
+ * @returns {string}
+ */
+function limitStopAdvice(stop, version) {
+  if (!stop.seen()) return ''
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${recoverCommand(version)}\``
+}
 // <<< craft-inline
 // >>> craft-inline lib/honest-verdict.mjs GREEN_WORD notRunList honestVerdict
 const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
@@ -1863,7 +1883,8 @@ function honestVerdict(verdict, notRun) {
 }
 // <<< craft-inline
 // The run's stop at a usage limit (realm @nick/craft, node #299): the lens, verifier and critic dispatches
-// go through `reviewAgent`, which dispatches nothing once one agent failed on the limit.
+// go through `reviewAgent`, and so do the memory recall and the decision and rule judges: it dispatches
+// nothing once one agent failed on the limit.
 const advLimit = makeLimitStop(log)
 const reviewAgent = stopAtLimit(agent, advLimit)
 const runThrottled = makeThrottledRunner({
@@ -1990,7 +2011,7 @@ async function recallMemory() {
     return
   }
   const paths = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : []
-  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
+  const r = await recallDecisions(p => reviewAgent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
@@ -3485,10 +3506,10 @@ function projectRuleSection(covered, notices) {
 const prior = await applyPriorDecisions(
   /** @type {Record<string, Array<(typeof confirmed)[number] | (typeof suspected)[number]>>} */ ({ confirmed, suspected }),
   priorDecisionsIn.decisions,
-  toCheck => agent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Coverage', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
+  toCheck => reviewAgent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Coverage', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
   'description',
   // One cheap judge for the disputed record–finding pairs, only when one exists (realm @nick/craft, node #230).
-  prompt => agent(prompt, { label: 'decision-match', phase: 'Coverage', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+  prompt => reviewAgent(prompt, { label: 'decision-match', phase: 'Coverage', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
 )
 for (const n of prior.notes) log(`priorDecisions: ${n}`)
 // A decision whose commit this repo does not know is named with the refusals, apart from a changed scope.
@@ -3502,7 +3523,7 @@ async function coverByProjectRules() {
     /** @type {Record<string, Array<(typeof confirmed)[number] | (typeof suspected)[number]>>} */ ({ confirmed, suspected }),
     priorDecisionsIn.decisions,
     'description',
-    prompt => agent(prompt, { label: 'rule-match', phase: 'Coverage', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+    prompt => reviewAgent(prompt, { label: 'rule-match', phase: 'Coverage', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
   )
   for (const n of r.notes) log(`project rules: ${n}`)
   confirmed = /** @type {typeof confirmed} */ (r.tiers['confirmed'])
@@ -3543,7 +3564,7 @@ function verdictOf(found) {
 }
 // A usage limit stopped the run: the stop is a blocking notRun entry, so the verdict is never Approve.
 function noteLimitStop() {
-  if (advLimit.seen()) markNotRun('usage-limit', advLimit.note())
+  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, CRAFT_VERSION))
 }
 noteLimitStop()
 const verdict = verdictOf(confirmed)

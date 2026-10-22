@@ -1659,11 +1659,9 @@ const notRunBlocking = () => notRun.filter(e => e.incomplete)
 const LIMIT_ANSWER_MAX = 400
 
 const LIMIT_PATTERNS = [
-  /\bhit your (?:\w+[ -])?limit\b/i,
-  /\b(?:usage|weekly|daily|monthly|session) limit (?:reached|exceeded|hit)\b/i,
-  /\breached (?:your|the) (?:\w+ )?(?:usage|rate) limit\b/i,
-  /\brate[ -]limit(?:ed)?\b[^\n]*\b(?:429|exceeded|reached|try again|resets?)\b/i,
-  /\b(?:usage|rate|weekly) limit\b[^\n]*\bresets?\b/i,
+  /\bhit your (?:[\w-]+ )?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
+  /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
 ]
 
 /**
@@ -1727,6 +1725,28 @@ function stopAtLimit(call, stop) {
       throw e
     }
   }
+}
+
+/**
+ * The shell command that promotes a run's `.partial` checkpoints into a partial record, run in the
+ * reviewed repository with the installed plugin of this version.
+ * @param {string} version
+ * @returns {string}
+ */
+function recoverCommand(version) {
+  return `node "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}/lib/craft-log-run.mjs" recover`
+}
+
+/**
+ * What a human does about a run stopped at the usage limit, '' when it was not: the logger shares the
+ * account, so a record lost to the same limit is recovered from `.partial` once the limit resets.
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {string} version
+ * @returns {string}
+ */
+function limitStopAdvice(stop, version) {
+  if (!stop.seen()) return ''
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${recoverCommand(version)}\``
 }
 const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
 
@@ -1847,7 +1867,7 @@ async function recallMemory() {
     return
   }
   const paths = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : []
-  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
+  const r = await recallDecisions(p => reviewAgent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
@@ -3259,9 +3279,9 @@ function projectRuleSection(covered, notices) {
 const prior = await applyPriorDecisions(
   /** @type {Record<string, Array<(typeof confirmed)[number] | (typeof suspected)[number]>>} */ ({ confirmed, suspected }),
   priorDecisionsIn.decisions,
-  toCheck => agent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Coverage', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
+  toCheck => reviewAgent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Coverage', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
   'description',
-  prompt => agent(prompt, { label: 'decision-match', phase: 'Coverage', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+  prompt => reviewAgent(prompt, { label: 'decision-match', phase: 'Coverage', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
 )
 for (const n of prior.notes) log(`priorDecisions: ${n}`)
 priorDecisionsIn.refused.push(...prior.refused)
@@ -3272,7 +3292,7 @@ async function coverByProjectRules() {
     /** @type {Record<string, Array<(typeof confirmed)[number] | (typeof suspected)[number]>>} */ ({ confirmed, suspected }),
     priorDecisionsIn.decisions,
     'description',
-    prompt => agent(prompt, { label: 'rule-match', phase: 'Coverage', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+    prompt => reviewAgent(prompt, { label: 'rule-match', phase: 'Coverage', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
   )
   for (const n of r.notes) log(`project rules: ${n}`)
   confirmed = /** @type {typeof confirmed} */ (r.tiers['confirmed'])
@@ -3307,7 +3327,7 @@ function verdictOf(found) {
   return honestVerdict(baseVerdict, notRunBlocking().map(e => e.label))
 }
 function noteLimitStop() {
-  if (advLimit.seen()) markNotRun('usage-limit', advLimit.note())
+  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, CRAFT_VERSION))
 }
 noteLimitStop()
 const verdict = verdictOf(confirmed)
