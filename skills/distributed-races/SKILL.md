@@ -1,7 +1,7 @@
 ---
 name: distributed-races
 description: >-
-  Correctness of controllers, reconcile loops and retry loops in any language — the questions a review must answer about state that other actors read and write concurrently: self-triggering status writes, what wakes the loop at the deadline it promises, another controller acting on a stale cache, permissions for new API verbs, protection released on spec change instead of end of use, objects created before the change, idempotent create/patch, cleanup on delete. Use when reviewing or writing a Kubernetes operator/controller, a reconcile or requeue path, a finalizer, a watch, an admission webhook, or any converge-to-desired-state loop. Language-agnostic. Triggers: reconcile, controller, operator, requeue, finalizer, watch, informer, observedGeneration, eventual consistency, race between controllers. Not for in-process data races, locks or async tasks (rust-concurrency), nor file watchers or MVC controllers.
+  Correctness of controllers, reconcile and retry loops in any language — questions about state other actors read and write concurrently: self-triggering status writes, what wakes the loop by its promised deadline, another controller acting on a stale cache, permissions for new API verbs, protection released on spec change, not end of use, objects created before the change, idempotent create/patch, cleanup on delete, error-path retry bounds, holds no watch clears, writes without a resourceVersion or UID fence, unchecked external claims. Use when reviewing or writing a Kubernetes operator/controller, reconcile or requeue path, finalizer, watch, admission webhook, or any converge-to-desired-state loop. Triggers: reconcile, controller, operator, requeue, finalizer, watch, informer, resourceVersion, observedGeneration, eventual consistency, race between controllers. Not for in-process races, locks or async (rust-concurrency), file watchers or MVC controllers.
 ---
 
 # Distributed races — controller and reconcile-loop correctness
@@ -47,10 +47,21 @@ fix shape for every class are in [catalogue.md](catalogue.md).
 | R13 | Swallowed error, no timer | Is a secondary error swallowed and the pass returns await-change while no watch event will fire in that failure mode? |
 | R14 | Strict decode on a shared stream | Can one undecodable object on a shared/cluster-wide watch stall the stream for every object? |
 | R15 | Webhook failure policy | Does the admission handler's error→decision mapping match the shipped `failurePolicy`? |
+| R16 | Retry bound lost on an error path | Does every error arm (a failed status write, a `Context` error) end in a bounded timed retry, or does it return await-change and wait for a change only another actor can make? |
+| R17 | Hold only an unwatched object clears | Is every hold or wait released by a change on an object this controller watches (with a mapper back to the primary), or by a timer? |
+| R18 | Cached write, no version fence | Is a status write built from a reflector/informer snapshot sent without a `resourceVersion` precondition, overwriting a concurrent writer? |
+| R19 | No identity fence | Between selecting an object by name and mutating or deleting it, is the write fenced on its `uid`, so a recreated object with the same name is not hit? |
+| R20 | Unverified external claim | Is every claim about an external system (API server, KubeVirt, kube-ovn, a cloud API) checked against that system's pinned source or versioned docs? |
 
 R1–R6 are the classes reviews miss most: they need a source **outside the diff** (the watch setup,
 the requeue table, the other controller's code, the RBAC manifest, data already in the cluster).
 Read that source; the diff alone cannot answer them.
+R16-R20 were found missing by an external reviewer on Kubernetes controllers: they too need a
+source outside the diff (the watch mapper, the patch parameters, the external system's pinned
+source).
+
+A finding on a deletion or recovery path (finalizer removal, teardown, a delete handler, crash or
+partial-failure recovery) is at least **Medium** (catalogue, "Severity floor").
 
 ## Where answers live
 
@@ -61,6 +72,7 @@ Read that source; the diff alone cannot answer them.
 | What another controller does | that controller's source (same repo or vendored), its status fields |
 | What the controller may call | Role/ClusterRole templates in the chart, operator bundle, IAM policy |
 | What exists already | CRD schema history, the migration/backfill code, a release note |
+| How an external system behaves | its source or versioned docs at the version the lockfile, chart or image pins |
 | What happened on a real cluster | an integration/e2e trace, controller logs — the only carrier for "it works" |
 
 ## Relation to other skills
