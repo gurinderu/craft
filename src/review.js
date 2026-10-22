@@ -3869,6 +3869,69 @@ const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 // SEV_RANK so the severity helpers stay unit-testable.
 /** @type {Record<string, string>} */
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
+// The deletion/recovery-path severity floor, applied before dedup and verification routing. In the
+// declarations prefix beside DEMOTE, which reachDemoted pairs it with, so the tests that eval the
+// prefix see it. Pure helpers, tested as a real module in lib/path-severity-floor.mjs and pasted
+// back here by the craft-inline gate.
+// >>> craft-inline lib/path-severity-floor.mjs PATH_FLOOR_LENSES PATH_FLOOR_MARK pathFloorNoteRe raisePathFloor pathFloorNote withoutPathFloorNote applyPathFloor
+/** The lenses whose flag the floor honours: the ones that read the distributed-races catalogue. */
+const PATH_FLOOR_LENSES = ['reconciler', 'failure-windows']
+
+/** The words the floor's note carries, which synthesis is told not to calibrate below Medium. */
+const PATH_FLOOR_MARK = 'deletion/recovery-path floor'
+
+/**
+ * The floor's note as `raisePathFloor` writes it, built from the same mark.
+ * @returns {RegExp}
+ */
+function pathFloorNoteRe() {
+  return new RegExp(` \\(raised to Medium from \\w+: ${PATH_FLOOR_MARK} \\(R16-R20 catalogue\\); [^\\x29]*\\)`)
+}
+
+/**
+ * `f` raised to Medium when a catalogue lens flagged it on a deletion or recovery path below Medium;
+ * otherwise `f` unchanged.
+ * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
+ * @param {F} f
+ * @returns {F}
+ */
+function raisePathFloor(f) {
+  if (f.deletionOrRecoveryPath !== true) return f
+  if (!PATH_FLOOR_LENSES.includes(String(f.source ?? ''))) return f
+  if (f.severity !== 'Low' && f.severity !== 'Info') return f
+  return { ...f, severity: 'Medium', why: `${f.why ?? ''} (raised to Medium from ${f.severity}: ${PATH_FLOOR_MARK} (R16-R20 catalogue); a verifier judging it unreachable in production can still lower it)` }
+}
+
+/**
+ * The floor's note carried by `why`, or '' when the finding was not raised by the floor.
+ * @param {unknown} why
+ * @returns {string}
+ */
+function pathFloorNote(why) {
+  const m = pathFloorNoteRe().exec(String(why ?? ''))
+  return m ? m[0] : ''
+}
+
+/**
+ * `why` without the floor's note: once the reach demotion lowers a floored finding, the note's
+ * claim that it stands at Medium is no longer true.
+ * @param {unknown} why
+ * @returns {string}
+ */
+function withoutPathFloorNote(why) {
+  return String(why ?? '').replace(pathFloorNoteRe(), '')
+}
+
+/**
+ * Every finding of a pool through the floor.
+ * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
+ * @param {F[]} pool
+ * @returns {F[]}
+ */
+function applyPathFloor(pool) {
+  return pool.map(raisePathFloor)
+}
+// <<< craft-inline
 // ---- adjudicate-track pure helpers ----
 // These live in lib/review-adjudicate.mjs — a real, linted module with real unit tests that IMPORT
 // it — and are pasted back in here by the craft-inline gate, because this script cannot be
@@ -6700,50 +6763,6 @@ function unattributedCount(confirmed) {
   return (confirmed || []).filter(f => f != null && typeof /** @type {{ foundInRound?: unknown }} */ (f).foundInRound !== 'number').length
 }
 // <<< craft-inline
-// The deletion/recovery-path severity floor, applied before dedup and verification routing. Pure
-// helpers, tested as a real module in lib/path-severity-floor.mjs and pasted back here by the
-// craft-inline gate.
-// >>> craft-inline lib/path-severity-floor.mjs PATH_FLOOR_LENSES PATH_FLOOR_MARK raisePathFloor pathFloorNote applyPathFloor
-/** The lenses whose flag the floor honours: the ones that read the distributed-races catalogue. */
-const PATH_FLOOR_LENSES = ['reconciler', 'failure-windows']
-
-/** The words the floor's note carries, which synthesis is told not to calibrate below Medium. */
-const PATH_FLOOR_MARK = 'deletion/recovery-path floor'
-
-/**
- * `f` raised to Medium when a catalogue lens flagged it on a deletion or recovery path below Medium;
- * otherwise `f` unchanged.
- * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
- * @param {F} f
- * @returns {F}
- */
-function raisePathFloor(f) {
-  if (f.deletionOrRecoveryPath !== true) return f
-  if (!PATH_FLOOR_LENSES.includes(String(f.source ?? ''))) return f
-  if (f.severity !== 'Low' && f.severity !== 'Info') return f
-  return { ...f, severity: 'Medium', why: `${f.why ?? ''} (raised to Medium from ${f.severity}: ${PATH_FLOOR_MARK} (R16-R20 catalogue); a verifier judging it unreachable in production can still lower it)` }
-}
-
-/**
- * The floor's note carried by `why`, or '' when the finding was not raised by the floor.
- * @param {unknown} why
- * @returns {string}
- */
-function pathFloorNote(why) {
-  const m = / \(raised to Medium from \w+: deletion\/recovery-path floor \(R16-R20 catalogue\); [^)]*\)/.exec(String(why ?? ''))
-  return m ? m[0] : ''
-}
-
-/**
- * Every finding of a pool through the floor.
- * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
- * @param {F[]} pool
- * @returns {F[]}
- */
-function applyPathFloor(pool) {
-  return pool.map(raisePathFloor)
-}
-// <<< craft-inline
 // Mechanical roll-up of high-volume, low-value rule IDs. The api-idioms lens brief already ASKS for
 // this ("do NOT file one finding per occurrence — roll repeated instances into ONE finding"), and the
 // run store shows it is not obeyed: one lens produced 126 confirmed findings over 21 runs, 100 of
@@ -6879,10 +6898,12 @@ function mergedGroup(members, isToolSrc) {
   // re-running the tool), then highest severity.
   const base = /** @type {Finding} */ (members.slice().sort((a, b) => (/** @type {number} */ (/** @type {unknown} */ (isToolSrc(b))) - /** @type {number} */ (/** @type {unknown} */ (isToolSrc(a)))) || ((SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9)))[0])
   const others = members.filter(m => m !== base)
-  // The group keeps its highest severity even when a tool-sourced base is lower, with the floor's
-  // note when that severity came from the deletion/recovery-path floor.
-  const top = members.reduce((t, m) => ((SEV_RANK[m['severity'] ?? ''] ?? 9) < (SEV_RANK[t['severity'] ?? ''] ?? 9) ? m : t), base)
-  const lifted = top === base || top['severity'] === undefined ? {} : { severity: top['severity'], why: `${base['why']}${pathFloorNote(top['why'])}` }
+  // A floored member keeps the group at Medium even when a lower tool-sourced finding is the base,
+  // with the floor's note. Only the floor lifts: any other higher member leaves the base as it was,
+  // because a tool base is refuted only by re-running the tool and must not carry a lens's claim.
+  const sevOf = (/** @type {Finding} */ m) => SEV_RANK[m['severity'] ?? ''] ?? 9
+  const floored = members.find(m => pathFloorNote(m['why']) !== '' && sevOf(m) < sevOf(base))
+  const lifted = floored && sevOf(base) > (SEV_RANK['Medium'] ?? 2) ? { severity: 'Medium', why: `${base['why']}${pathFloorNote(floored['why'])}` } : {}
   // Carry ALL contributing sources so a downstream source-keyed rule (strict maintainability
   // escalation) still fires when its trigger lens was merged into a different-source base.
   const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
@@ -7165,7 +7186,8 @@ function premiseDemoted(f) {
 function reachDemoted(f, tier) {
   const demoted = DEMOTE[f['severity'] ?? ''] || f['severity']
   // `demoted` is undefined only when `f` carries no severity, which `...f` already says.
-  return { ...f, tier, ...(demoted === undefined ? {} : { severity: demoted }), why: `${f['why']} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
+  // The floor's note claims Medium; once demoted that is false, so it is dropped from the why.
+  return { ...f, tier, ...(demoted === undefined ? {} : { severity: demoted }), why: `${withoutPathFloorNote(f['why'])} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
 }
 // Shared vote→tier decision, so the batched path cannot drift from the individual one.
 //

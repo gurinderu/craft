@@ -3552,6 +3552,63 @@ const CRAFT_VERSION = '0.32.2' // x-release-please-version
 const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
 /** @type {Record<string, string>} */
 const DEMOTE = { Critical: 'High', High: 'Medium', Medium: 'Low', Low: 'Info', Info: 'Info' }
+/** The lenses whose flag the floor honours: the ones that read the distributed-races catalogue. */
+const PATH_FLOOR_LENSES = ['reconciler', 'failure-windows']
+
+/** The words the floor's note carries, which synthesis is told not to calibrate below Medium. */
+const PATH_FLOOR_MARK = 'deletion/recovery-path floor'
+
+/**
+ * The floor's note as `raisePathFloor` writes it, built from the same mark.
+ * @returns {RegExp}
+ */
+function pathFloorNoteRe() {
+  return new RegExp(` \\(raised to Medium from \\w+: ${PATH_FLOOR_MARK} \\(R16-R20 catalogue\\); [^\\x29]*\\)`)
+}
+
+/**
+ * `f` raised to Medium when a catalogue lens flagged it on a deletion or recovery path below Medium;
+ * otherwise `f` unchanged.
+ * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
+ * @param {F} f
+ * @returns {F}
+ */
+function raisePathFloor(f) {
+  if (f.deletionOrRecoveryPath !== true) return f
+  if (!PATH_FLOOR_LENSES.includes(String(f.source ?? ''))) return f
+  if (f.severity !== 'Low' && f.severity !== 'Info') return f
+  return { ...f, severity: 'Medium', why: `${f.why ?? ''} (raised to Medium from ${f.severity}: ${PATH_FLOOR_MARK} (R16-R20 catalogue); a verifier judging it unreachable in production can still lower it)` }
+}
+
+/**
+ * The floor's note carried by `why`, or '' when the finding was not raised by the floor.
+ * @param {unknown} why
+ * @returns {string}
+ */
+function pathFloorNote(why) {
+  const m = pathFloorNoteRe().exec(String(why ?? ''))
+  return m ? m[0] : ''
+}
+
+/**
+ * `why` without the floor's note: once the reach demotion lowers a floored finding, the note's
+ * claim that it stands at Medium is no longer true.
+ * @param {unknown} why
+ * @returns {string}
+ */
+function withoutPathFloorNote(why) {
+  return String(why ?? '').replace(pathFloorNoteRe(), '')
+}
+
+/**
+ * Every finding of a pool through the floor.
+ * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
+ * @param {F[]} pool
+ * @returns {F[]}
+ */
+function applyPathFloor(pool) {
+  return pool.map(raisePathFloor)
+}
 const ATTACK_MAX = 500
 
 /**
@@ -5854,45 +5911,6 @@ function lensRoundYield(lensRounds, confirmed, suspected) {
 function unattributedCount(confirmed) {
   return (confirmed || []).filter(f => f != null && typeof /** @type {{ foundInRound?: unknown }} */ (f).foundInRound !== 'number').length
 }
-/** The lenses whose flag the floor honours: the ones that read the distributed-races catalogue. */
-const PATH_FLOOR_LENSES = ['reconciler', 'failure-windows']
-
-/** The words the floor's note carries, which synthesis is told not to calibrate below Medium. */
-const PATH_FLOOR_MARK = 'deletion/recovery-path floor'
-
-/**
- * `f` raised to Medium when a catalogue lens flagged it on a deletion or recovery path below Medium;
- * otherwise `f` unchanged.
- * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
- * @param {F} f
- * @returns {F}
- */
-function raisePathFloor(f) {
-  if (f.deletionOrRecoveryPath !== true) return f
-  if (!PATH_FLOOR_LENSES.includes(String(f.source ?? ''))) return f
-  if (f.severity !== 'Low' && f.severity !== 'Info') return f
-  return { ...f, severity: 'Medium', why: `${f.why ?? ''} (raised to Medium from ${f.severity}: ${PATH_FLOOR_MARK} (R16-R20 catalogue); a verifier judging it unreachable in production can still lower it)` }
-}
-
-/**
- * The floor's note carried by `why`, or '' when the finding was not raised by the floor.
- * @param {unknown} why
- * @returns {string}
- */
-function pathFloorNote(why) {
-  const m = / \(raised to Medium from \w+: deletion\/recovery-path floor \(R16-R20 catalogue\); [^)]*\)/.exec(String(why ?? ''))
-  return m ? m[0] : ''
-}
-
-/**
- * Every finding of a pool through the floor.
- * @template {{ severity?: string, source?: string, why?: string, deletionOrRecoveryPath?: boolean }} F
- * @param {F[]} pool
- * @returns {F[]}
- */
-function applyPathFloor(pool) {
-  return pool.map(raisePathFloor)
-}
 const ROLLUP_MAX = 3
 /** @param {Finding[]} pool @param {Profile} profile */
 function rollupPool(pool, profile) {
@@ -6011,8 +6029,9 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
 function mergedGroup(members, isToolSrc) {
   const base = /** @type {Finding} */ (members.slice().sort((a, b) => (/** @type {number} */ (/** @type {unknown} */ (isToolSrc(b))) - /** @type {number} */ (/** @type {unknown} */ (isToolSrc(a)))) || ((SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9)))[0])
   const others = members.filter(m => m !== base)
-  const top = members.reduce((t, m) => ((SEV_RANK[m['severity'] ?? ''] ?? 9) < (SEV_RANK[t['severity'] ?? ''] ?? 9) ? m : t), base)
-  const lifted = top === base || top['severity'] === undefined ? {} : { severity: top['severity'], why: `${base['why']}${pathFloorNote(top['why'])}` }
+  const sevOf = (/** @type {Finding} */ m) => SEV_RANK[m['severity'] ?? ''] ?? 9
+  const floored = members.find(m => pathFloorNote(m['why']) !== '' && sevOf(m) < sevOf(base))
+  const lifted = floored && sevOf(base) > (SEV_RANK['Medium'] ?? 2) ? { severity: 'Medium', why: `${base['why']}${pathFloorNote(floored['why'])}` } : {}
   const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
   const whereChecked = [...new Set(members.map(m => m['whereChecked']).filter(Boolean))].join('; ')
   const merged = { ...base, ...lifted }
@@ -6201,7 +6220,7 @@ function premiseDemoted(f) {
 /** A confirmed finding off every production-reachable path: one severity lower. @param {Finding} f @param {string} tier @returns {Finding} */
 function reachDemoted(f, tier) {
   const demoted = DEMOTE[f['severity'] ?? ''] || f['severity']
-  return { ...f, tier, ...(demoted === undefined ? {} : { severity: demoted }), why: `${f['why']} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
+  return { ...f, tier, ...(demoted === undefined ? {} : { severity: demoted }), why: `${withoutPathFloorNote(f['why'])} (severity demoted ${f['severity']}→${demoted}: not on a production-reachable path)` }
 }
 /** @param {Finding} f @param {Array<Vote | null | undefined>} votes @returns {Finding} */
 function tierFromVotes(f, votes) {
