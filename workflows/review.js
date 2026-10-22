@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. depth=light is a cheaper pass: one round of the diff-scoped lenses only (no negative-space, compat, invariants or failure-windows; tests and intent still run whenever the diff changes production code), no completeness critic, and only Medium and above verified; its verdict and report say light pass and name what it skipped, and the run record carries depth (default depth=full, the review as it was). The engine accepts only depth=light (any other value runs full): routing a "quick" or "light" request to it belongs to the calling skill or hook. The consumer repository\'s own reviewing agents can run as extra lenses in the same run: each reviews the whole change and its findings go through the same verification and verdict. On a light pass with extraLenses absent, the engine discovers them among the .claude/agents of the project the session runs in, and only when repo= is absent or names that project or one of its worktrees (a foreign repo skips discovery and the report says so) (an agent that reviews and has no edit tool -- its tools list names none, or its disallowedTools take them all away -- told to stay read-only; the report says when none was found); a full review runs them only when named. extraLenses=[<agentType>, ...] (an object argument, e.g. {extraLenses: ["reviewer"]}) names them at either depth, and extraLenses=[] turns them off; a named agent that is unknown or fails is a coverage gap (INCOMPLETE), never a failed run; a discovered one that cannot run is reported as such, never a gap. The report names which extra lenses ran and how they were chosen. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. depth=light is a cheaper pass: one round of the diff-scoped lenses only (no negative-space or invariants; tests and intent still run whenever the diff changes production code, reconciler and failure-windows on controller code, compat on a public contract path), no completeness critic, and only Medium and above verified; its verdict and report say light pass and name what it skipped, and the run record carries depth (default depth=full, the review as it was). The engine accepts only depth=light (any other value runs full): routing a "quick" or "light" request to it belongs to the calling skill or hook. The consumer repository\'s own reviewing agents can run as extra lenses in the same run: each reviews the whole change and its findings go through the same verification and verdict. On a light pass with extraLenses absent, the engine discovers them among the .claude/agents of the project the session runs in, and only when repo= is absent or names that project or one of its worktrees (a foreign repo skips discovery and the report says so) (an agent that reviews and has no edit tool -- its tools list names none, or its disallowedTools take them all away -- told to stay read-only; the report says when none was found); a full review runs them only when named. extraLenses=[<agentType>, ...] (an object argument, e.g. {extraLenses: ["reviewer"]}) names them at either depth, and extraLenses=[] turns them off; a named agent that is unknown or fails is a coverage gap (INCOMPLETE), never a failed run; a discovered one that cannot run is reported as such, never a gap. The report names which extra lenses ran and how they were chosen. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -2455,6 +2455,12 @@ function lightForcedLenses(files, diffGlobs, roster) {
   return changesProductionCode(files, diffGlobs) ? LIGHT_FORCED_LENSES.filter(l => roster.includes(l)) : []
 }
 
+/** @param {string[]} files @param {boolean} controller @param {string[]} roster @returns {string[]} */
+function lightCalledForLenses(files, controller, roster) {
+  const called = [...(controller ? ['reconciler', 'failure-windows'] : []), ...(files.some(isContractOrSchemaPath) ? ['compat'] : [])]
+  return called.filter(l => roster.includes(l))
+}
+
 /** @type {readonly (string | undefined)[]} */
 const LIGHT_VERIFIED_SEVERITIES = ['Critical', 'High', 'Medium']
 
@@ -2479,13 +2485,14 @@ function markVerdictLight(text) {
   return lines.join('\n')
 }
 
-/** @param {string[]} skippedLenses @param {boolean} [lensesRan] false on an exit before any lens ran @returns {string} */
-function lightSection(skippedLenses, lensesRan = true) {
+/** @param {string[]} skippedLenses @param {boolean} [lensesRan] false on an exit before any lens ran @param {string[]} [keptWholeDiff] the whole-diff lenses it ran @returns {string} */
+function lightSection(skippedLenses, lensesRan = true, keptWholeDiff = []) {
   if (!lensesRan) return `\n\n## Light pass -- no lens ran\n\u26a0\ufe0f This was a LIGHT pass (depth=light), and it ended before any lens ran, so it makes no statement about the code. Re-run once the cause above is fixed.\n`
   const lenses = skippedLenses.length
-    ? `the whole-diff lenses ${skippedLenses.join(', ')} were NOT dispatched (tests and intent still run whenever the diff changes production code)`
+    ? `the whole-diff lenses ${skippedLenses.join(', ')} were NOT dispatched`
     : 'no whole-diff lens was in the plan to skip'
-  return `\n\n## Light pass -- what it skipped\n\u26a0\ufe0f This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: ${lenses}; the lenses ran ONE round (no loop-until-dry); the completeness critic did not run; Low and Info findings were not verified (each says so in its \`why\`). That is an absence of a result, not a clean one. Re-run without \`depth\` (or with \`depth=full\`) for the full review.\n`
+  const kept = keptWholeDiff.length ? ` (it DID run ${keptWholeDiff.join(', ')}, which the diff called for)` : ''
+  return `\n\n## Light pass -- what it skipped\n\u26a0\ufe0f This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: ${lenses}${kept}; the lenses ran ONE round (no loop-until-dry); the completeness critic did not run; Low and Info findings were not verified (each says so in its \`why\`). That is an absence of a result, not a clean one. Re-run without \`depth\` (or with \`depth=full\`) for the full review.\n`
 }
 const AGENT_TYPE_FORM = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/
 
@@ -2610,6 +2617,8 @@ warnUnknownDepth()
 const extraLensRequest = parseExtraLenses(A['extraLenses'], lightPass)
 /** The whole-diff lenses a light pass did not dispatch, across profiles. @type {Set<string>} */
 const lightSkippedLenses = new Set()
+/** The whole-diff lenses a light pass did dispatch, across profiles. @type {Set<string>} */
+const lightKeptLenses = new Set()
 /** Whether any profile reached its lens phase: a light report on an earlier exit says no lens ran. */
 let lensPhaseReached = false
 /** The extra lenses that answered, and those that did not, each with the class of its failure. */
@@ -4853,7 +4862,7 @@ function limitStopSection() {
 
 /** @param {string} reportText */
 function out(reportText) {
-  return `${limitStopSection()}${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses], lensPhaseReached) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
+  return `${limitStopSection()}${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses], lensPhaseReached, [...lightKeptLenses]) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
 }
 
 const LOGRUN_SCHEMA = {
@@ -6638,9 +6647,13 @@ function addOfferedLens(profile, plan, l) {
 function addRequiredLenses(profile, scout, plan) {
   for (const l of (profile.alwaysLenses || [])) addOfferedLens(profile, plan, l)
   if (changesProductionCode(changedFiles, profile.diffGlobs)) addOfferedLens(profile, plan, 'tests')
-  const scoutedReconciler = Array.isArray(scout?.lenses) && scout.lenses.includes('reconciler')
-  if (scoutedReconciler) addOfferedLens(profile, plan, 'failure-windows')
+  if (scoutChoseReconciler(scout)) addOfferedLens(profile, plan, 'failure-windows')
   if (strict) addOfferedLens(profile, plan, 'maintainability')
+}
+
+/** Whether the scout, having read the diff, chose `reconciler`: the controller-code signal. @param {ScoutAnswer | null} scout */
+function scoutChoseReconciler(scout) {
+  return Array.isArray(scout?.lenses) && scout.lenses.includes('reconciler')
 }
 
 /** The rigor floors: security, the size-driven lenses, and an explicit optional request. @param {Profile} profile @param {Plan} plan */
@@ -6684,13 +6697,15 @@ function planFromScout(profile, scout) {
   return { plan, surfaceDropped }
 }
 
-/** @param {Profile} profile @param {Plan} plan */
-function applyLightProfile(profile, plan) {
+/** @param {Profile} profile @param {ScoutAnswer | null} scout @param {Plan} plan */
+function applyLightProfile(profile, scout, plan) {
   if (!lightPass) return
-  const { kept, skipped } = lightLenses(plan.lenses, WHOLE_DIFF_LENSES, blanketLenses(profile), lightForcedLenses(changedFiles, profile.diffGlobs, profile.lenses))
+  const forced = [...lightForcedLenses(changedFiles, profile.diffGlobs, profile.lenses), ...lightCalledForLenses(changedFiles, scoutChoseReconciler(scout), profile.lenses)]
+  const { kept, skipped } = lightLenses(plan.lenses, WHOLE_DIFF_LENSES, blanketLenses(profile), forced)
   plan.lenses = kept
   plan.maxRounds = 1
   for (const l of skipped) lightSkippedLenses.add(l)
+  for (const l of kept) if (WHOLE_DIFF_LENSES.includes(l)) lightKeptLenses.add(l)
   log(`[${profile.id}] light pass: ${kept.join(', ')}, one round${skipped.length ? `; whole-diff lenses skipped: ${skipped.join(', ')}` : ''}`)
 }
 
@@ -6774,7 +6789,7 @@ async function reviewProfile(profile) {
     ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one`]
     : []
   const { plan, surfaceDropped } = planFromScout(profile, scout)
-  applyLightProfile(profile, plan)
+  applyLightProfile(profile, scout, plan)
   const optionalScope = profile.lenses.filter((/** @type {string} */ l) => OPTIONAL_LENSES.includes(l))
   logScoutPlan(profile, scout, plan)
 
