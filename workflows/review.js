@@ -2736,6 +2736,23 @@ function isContractOrSchemaPath(f) {
   return contractPathClass(f) !== ''
 }
 
+/** @param {unknown} f @returns {boolean} */
+function isTestPath(f) {
+  const segs = pathSegments(f)
+  const base = segs.pop() ?? ''
+  if (segs.some(s => NON_CONTRACT_DIRS.has(s.toLowerCase()))) return true
+  return /(^|[._-])tests?\.[^.]+$/i.test(base) || /^test_/i.test(base)
+}
+
+/** @param {unknown[]} files @param {string[]} diffGlobs @returns {boolean} */
+function changesProductionCode(files, diffGlobs) {
+  const globs = diffGlobs.map(g => g.replace(/^'|'$/g, ''))
+  return files.some(f => {
+    const base = pathSegments(f).pop() ?? ''
+    return !isTestPath(f) && globs.some(g => (g.startsWith('*') ? base.endsWith(g.slice(1)) : base === g))
+  })
+}
+
 const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
 
 /** The values that buy no optional lens, and those that buy the whole set (compared as `===` would). */
@@ -2893,7 +2910,7 @@ PROFILES['rust'] = {
   usesLibrary: true,
   alwaysLenses: ['intent'],
   safetyLens: 'safety',
-  scoutRules: `Decide what is "in play" from the diff: unsafe → safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, a migration renaming/retyping a column the code (de)serializes, a changed CLI flag / subcommand / exit code / output format, a changed config key / env var read / default value, a changed Helm chart value or template, a changed CRD schema or API version list, a changed proto/OpenAPI definition, or a renamed or removed exported/public name other code references → compat (pick it whenever the diff changes a contract that a party running another version reads, calls or deploys against — stored or wire data, the CLI/config/chart surface, an API/schema version, an exported name). ('intent' is enforced by the engine and added automatically — do not count it toward your choices.) \`performance\`, \`api-idioms\` and \`api-boundary\` are the OPTIONAL pass: pick them on the same signals as ever, but the engine admits them only on a run that explicitly asked for the optional pass and drops them otherwise — so do not treat their absence from a run as a judgement about the code they cover.`,
+  scoutRules: `Decide what is "in play" from the diff: unsafe → safety; async/threads → concurrency; SQL/untrusted input → safety; loops/collections → performance; changed \`pub\` surface → api-idioms; a changed HTTP-framework handler / route, an error enum or its IntoResponse (error→HTTP-status) mapping, an OpenAPI/response-annotation, or a repository error-mapping the handlers surface → api-boundary (web-service diffs only — pick it when the diff touches the api/handler layer or the error-to-status plumbing); new/changed tests → tests; new branching / growing files / large refactor → maintainability; a changed operation on a domain entity that carries a status/lifecycle field, soft-delete, scoped foreign keys, or a documented derived/effective quantity → invariants (pick it for any medium-or-larger diff touching the domain/application/infrastructure layers); a changed reconcile loop / controller / operator (a reconcile or requeue fn, a status or condition update, a create-or-patch of a child/external resource, a finalizer or delete path), a changed typed watch / secondary-watch setup (a \`watcher\`/\`Controller::watches\`/\`secondary_watches\`/object-mapper), or a changed admission / validating-webhook handler → reconciler (pick it whenever the diff touches a controller/reconcile loop, a retry / idempotent-apply flow, a Kubernetes typed watch, or an admission webhook — this lens reads the Helm chart's webhook \`failurePolicy\` and CRD schemas, not just the Rust); a changed serde attribute / renamed-or-retagged field or enum variant / added non-defaulted field on a type that is persisted (JSONB, blob, cache, event log, message payload) or sent over the wire, a migration renaming/retyping a column the code (de)serializes, a changed CLI flag / subcommand / exit code / output format, a changed config key / env var read / default value, a changed Helm chart value or template, a changed CRD schema or API version list, a changed proto/OpenAPI definition, or a renamed or removed exported/public name other code references → compat (pick it whenever the diff changes a contract that a party running another version reads, calls or deploys against — stored or wire data, the CLI/config/chart surface, an API/schema version, an exported name). ('intent' is enforced by the engine and added automatically, and so is 'tests' whenever the diff changes production (non-test) source; do not count either toward your choices.) \`performance\`, \`api-idioms\` and \`api-boundary\` are the OPTIONAL pass: pick them on the same signals as ever, but the engine admits them only on a run that explicitly asked for the optional pass and drops them otherwise — so do not treat their absence from a run as a judgement about the code they cover.`,
   gate: rustGate,
   depContext: rustDepContext,
   lenses: ['safety', 'errors', 'concurrency', 'performance', 'api-idioms', 'api-boundary', 'reconciler', 'failure-windows', 'compat', 'maintainability', 'tests', 'intent', 'invariants'],
@@ -6040,6 +6057,7 @@ function addOfferedLens(profile, plan, l) {
 /** The lenses the plan must carry whatever the scout picked: the always set, and those the scout's own signals call for. @param {Profile} profile @param {ScoutAnswer | null} scout @param {Plan} plan */
 function addRequiredLenses(profile, scout, plan) {
   for (const l of (profile.alwaysLenses || [])) addOfferedLens(profile, plan, l)
+  if (changesProductionCode(changedFiles, profile.diffGlobs)) addOfferedLens(profile, plan, 'tests')
   const scoutedReconciler = Array.isArray(scout?.lenses) && scout.lenses.includes('reconciler')
   if (scoutedReconciler) addOfferedLens(profile, plan, 'failure-windows')
   if (strict) addOfferedLens(profile, plan, 'maintainability')
