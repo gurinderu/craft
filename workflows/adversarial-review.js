@@ -1659,7 +1659,7 @@ const notRunBlocking = () => notRun.filter(e => e.incomplete)
 const LIMIT_ANSWER_MAX = 400
 
 const LIMIT_PATTERNS = [
-  /\bhit your (?:[\w-]+ )?limit\b/i,
+  /\bhit your (?!rate\b)(?:[\w-]+ )?limit\b/i,
   /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
   /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
 ]
@@ -1728,25 +1728,33 @@ function stopAtLimit(call, stop) {
 }
 
 /**
- * The shell command that promotes a run's `.partial` checkpoints into a partial record, run in the
- * reviewed repository with the installed plugin of this version.
+ * The logger as a human runs it, located the way the engine's logger is (lib/run-logging.mjs,
+ * loggerPrelude): an absolute craftRoot, else CLAUDE_PLUGIN_ROOT, else this version's installed copy.
  * @param {string} version
+ * @param {string} [craftRoot]
  * @returns {string}
  */
-function recoverCommand(version) {
-  return `node "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}/lib/craft-log-run.mjs" recover`
+function loggerCommand(version, craftRoot = '') {
+  const root = craftRoot.startsWith('/') ? shq(craftRoot) : `"\${CLAUDE_PLUGIN_ROOT:-\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}}"`
+  return `node ${root}/lib/craft-log-run.mjs`
 }
 
 /**
- * What a human does about a run stopped at the usage limit, '' when it was not: the logger shares the
- * account, so a record lost to the same limit is recovered from `.partial` once the limit resets.
+ * What a human does about a run stopped at the usage limit, '' when it was not. The logger shares the
+ * account, so the record may be lost to the same limit. An engine that writes phase checkpoints
+ * (review) leaves them in `.partial` for `recover`; one that writes none leaves only its workflow
+ * transcript, which `from-journal` rebuilds a partial record from.
  * @param {ReturnType<typeof makeLimitStop>} stop
- * @param {string} version
+ * @param {{ version: string, craftRoot?: string, engine: string, checkpoints: boolean }} o
  * @returns {string}
  */
-function limitStopAdvice(stop, version) {
+function limitStopAdvice(stop, { version, craftRoot = '', engine, checkpoints }) {
   if (!stop.seen()) return ''
-  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${recoverCommand(version)}\``
+  const cmd = loggerCommand(version, craftRoot)
+  const recovery = checkpoints
+    ? `if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${cmd} recover\``
+    : `${engine} writes no checkpoints, so if it is reported lost nothing of this run is in .partial; once the limit resets, a partial record can be rebuilt from this run's workflow transcript (its wf_* directory under the session's subagents/workflows), run in the reviewed repository: \`${cmd} from-journal <that directory> --name ${engine}\``
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; ${recovery}`
 }
 const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
 
@@ -3327,7 +3335,7 @@ function verdictOf(found) {
   return honestVerdict(baseVerdict, notRunBlocking().map(e => e.label))
 }
 function noteLimitStop() {
-  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, CRAFT_VERSION))
+  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, { version: CRAFT_VERSION, craftRoot: craftRootArg, engine: 'adversarial-review', checkpoints: false }))
 }
 noteLimitStop()
 const verdict = verdictOf(confirmed)

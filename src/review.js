@@ -4854,11 +4854,11 @@ function announceDeadlineOverride() {
   }
 }
 announceDeadlineOverride()
-// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop recoverCommand limitStopAdvice
+// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop loggerCommand limitStopAdvice
 const LIMIT_ANSWER_MAX = 400
 
 const LIMIT_PATTERNS = [
-  /\bhit your (?:[\w-]+ )?limit\b/i,
+  /\bhit your (?!rate\b)(?:[\w-]+ )?limit\b/i,
   /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
   /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
 ]
@@ -4906,25 +4906,33 @@ function makeLimitStop(say) {
 }
 
 /**
- * The shell command that promotes a run's `.partial` checkpoints into a partial record, run in the
- * reviewed repository with the installed plugin of this version.
+ * The logger as a human runs it, located the way the engine's logger is (lib/run-logging.mjs,
+ * loggerPrelude): an absolute craftRoot, else CLAUDE_PLUGIN_ROOT, else this version's installed copy.
  * @param {string} version
+ * @param {string} [craftRoot]
  * @returns {string}
  */
-function recoverCommand(version) {
-  return `node "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}/lib/craft-log-run.mjs" recover`
+function loggerCommand(version, craftRoot = '') {
+  const root = craftRoot.startsWith('/') ? shq(craftRoot) : `"\${CLAUDE_PLUGIN_ROOT:-\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}}"`
+  return `node ${root}/lib/craft-log-run.mjs`
 }
 
 /**
- * What a human does about a run stopped at the usage limit, '' when it was not: the logger shares the
- * account, so a record lost to the same limit is recovered from `.partial` once the limit resets.
+ * What a human does about a run stopped at the usage limit, '' when it was not. The logger shares the
+ * account, so the record may be lost to the same limit. An engine that writes phase checkpoints
+ * (review) leaves them in `.partial` for `recover`; one that writes none leaves only its workflow
+ * transcript, which `from-journal` rebuilds a partial record from.
  * @param {ReturnType<typeof makeLimitStop>} stop
- * @param {string} version
+ * @param {{ version: string, craftRoot?: string, engine: string, checkpoints: boolean }} o
  * @returns {string}
  */
-function limitStopAdvice(stop, version) {
+function limitStopAdvice(stop, { version, craftRoot = '', engine, checkpoints }) {
   if (!stop.seen()) return ''
-  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${recoverCommand(version)}\``
+  const cmd = loggerCommand(version, craftRoot)
+  const recovery = checkpoints
+    ? `if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${cmd} recover\``
+    : `${engine} writes no checkpoints, so if it is reported lost nothing of this run is in .partial; once the limit resets, a partial record can be rebuilt from this run's workflow transcript (its wf_* directory under the session's subagents/workflows), run in the reviewed repository: \`${cmd} from-journal <that directory> --name ${engine}\``
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; ${recovery}`
 }
 // <<< craft-inline
 // >>> craft-inline lib/honest-verdict.mjs GREEN_WORD VERDICT_WORD NOTE_MAX notRunList honestVerdict verdictLineAt honestVerdictLine
@@ -5354,7 +5362,7 @@ function extraLensReport() {
 
 /** The usage-limit stop and how to recover the record it may have cost, above the verdict; '' without a stop. */
 function limitStopSection() {
-  const advice = limitStopAdvice(limitStop, CRAFT_VERSION)
+  const advice = limitStopAdvice(limitStop, { version: CRAFT_VERSION, craftRoot: craftRootArg, engine: 'review', checkpoints: true })
   return advice ? `## \u26d4 Usage limit reached\n${advice}\n\n` : ''
 }
 
