@@ -2547,7 +2547,7 @@ function fullEveryArg() {
 // realm @nick/craft, node #295: `depth: 'light'` runs one round of the diff-scoped lenses and verifies
 // Medium and above only; `extraLenses: [<agentType>, ...]` runs the consumer's own agents as lenses
 // in the same run. The default depth, 'full', is the review as it was, plan for plan.
-// >>> craft-inline lib/review-depth.mjs parseDepth lightLenses LIGHT_FORCED_LENSES isTestPath lightForcedLenses LIGHT_VERIFIED_SEVERITIES depthVerifyTier lightUnverifiedWhy markVerdictLight lightSection
+// >>> craft-inline lib/review-depth.mjs parseDepth lightLenses LIGHT_FORCED_LENSES lightForcedLenses LIGHT_VERIFIED_SEVERITIES depthVerifyTier lightUnverifiedWhy markVerdictLight lightSection
 /** @param {unknown} raw @returns {{ depth: 'full' | 'light', unknown: string }} */
 function parseDepth(raw) {
   if (raw == null || raw === '') return { depth: 'full', unknown: '' }
@@ -2572,15 +2572,9 @@ function lightLenses(lenses, wholeDiff, fallback, forced = []) {
 
 const LIGHT_FORCED_LENSES = ['tests', 'intent']
 
-/** @param {unknown} f @returns {boolean} */
-function isTestPath(f) {
-  const p = String(f ?? '')
-  return /(^|\/)(tests?|__tests__|testdata|fixtures|benches)\//i.test(p) || /(^|\/)(test_[^/]*|[^/]*[._-](test|tests|spec))\.[a-z0-9]+$/i.test(p)
-}
-
-/** @param {string[]} files @param {(fs: string[]) => boolean} detect @param {string[]} roster @returns {string[]} */
-function lightForcedLenses(files, detect, roster) {
-  return files.some(f => detect([f]) && !isTestPath(f)) ? LIGHT_FORCED_LENSES.filter(l => roster.includes(l)) : []
+/** @param {string[]} files @param {string[]} diffGlobs @param {string[]} roster @returns {string[]} */
+function lightForcedLenses(files, diffGlobs, roster) {
+  return changesProductionCode(files, diffGlobs) ? LIGHT_FORCED_LENSES.filter(l => roster.includes(l)) : []
 }
 
 /** @type {readonly (string | undefined)[]} */
@@ -7558,7 +7552,7 @@ function planFromScout(profile, scout) {
 /** @param {Profile} profile @param {Plan} plan */
 function applyLightProfile(profile, plan) {
   if (!lightPass) return
-  const { kept, skipped } = lightLenses(plan.lenses, WHOLE_DIFF_LENSES, blanketLenses(profile), lightForcedLenses(changedFiles, profile.detect, profile.lenses))
+  const { kept, skipped } = lightLenses(plan.lenses, WHOLE_DIFF_LENSES, blanketLenses(profile), lightForcedLenses(changedFiles, profile.diffGlobs, profile.lenses))
   plan.lenses = kept
   plan.maxRounds = 1
   for (const l of skipped) lightSkippedLenses.add(l)

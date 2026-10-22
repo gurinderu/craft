@@ -2450,15 +2450,9 @@ function lightLenses(lenses, wholeDiff, fallback, forced = []) {
 
 const LIGHT_FORCED_LENSES = ['tests', 'intent']
 
-/** @param {unknown} f @returns {boolean} */
-function isTestPath(f) {
-  const p = String(f ?? '')
-  return /(^|\/)(tests?|__tests__|testdata|fixtures|benches)\//i.test(p) || /(^|\/)(test_[^/]*|[^/]*[._-](test|tests|spec))\.[a-z0-9]+$/i.test(p)
-}
-
-/** @param {string[]} files @param {(fs: string[]) => boolean} detect @param {string[]} roster @returns {string[]} */
-function lightForcedLenses(files, detect, roster) {
-  return files.some(f => detect([f]) && !isTestPath(f)) ? LIGHT_FORCED_LENSES.filter(l => roster.includes(l)) : []
+/** @param {string[]} files @param {string[]} diffGlobs @param {string[]} roster @returns {string[]} */
+function lightForcedLenses(files, diffGlobs, roster) {
+  return changesProductionCode(files, diffGlobs) ? LIGHT_FORCED_LENSES.filter(l => roster.includes(l)) : []
 }
 
 /** @type {readonly (string | undefined)[]} */
@@ -6402,7 +6396,7 @@ function planFromScout(profile, scout) {
 /** @param {Profile} profile @param {Plan} plan */
 function applyLightProfile(profile, plan) {
   if (!lightPass) return
-  const { kept, skipped } = lightLenses(plan.lenses, WHOLE_DIFF_LENSES, blanketLenses(profile), lightForcedLenses(changedFiles, profile.detect, profile.lenses))
+  const { kept, skipped } = lightLenses(plan.lenses, WHOLE_DIFF_LENSES, blanketLenses(profile), lightForcedLenses(changedFiles, profile.diffGlobs, profile.lenses))
   plan.lenses = kept
   plan.maxRounds = 1
   for (const l of skipped) lightSkippedLenses.add(l)
