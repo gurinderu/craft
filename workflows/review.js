@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. depth=light is a cheaper pass: one round of the diff-scoped lenses only (no negative-space, compat, invariants or failure-windows; tests and intent still run whenever the diff changes production code), no completeness critic, and only Medium and above verified; its verdict and report say light pass and name what it skipped, and the run record carries depth (default depth=full, the review as it was). The engine accepts only depth=light (any other value runs full): routing a "quick" or "light" request to it belongs to the calling skill or hook. The consumer repository\'s own reviewing agents can run as extra lenses in the same run: each reviews the whole change and its findings go through the same verification and verdict. On a light pass with extraLenses absent, the engine discovers them among the repository\'s .claude/agents (an agent that reviews and has no edit tool -- its tools list names none, or its disallowedTools take them all away -- told to stay read-only; the report says when none was found); a full review runs them only when named. extraLenses=[<agentType>, ...] (an object argument, e.g. {extraLenses: ["reviewer"]}) names them at either depth, and extraLenses=[] turns them off; a named agent that is unknown or fails is a coverage gap (INCOMPLETE), never a failed run. The report names which extra lenses ran and how they were chosen. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. depth=light is a cheaper pass: one round of the diff-scoped lenses only (no negative-space, compat, invariants or failure-windows; tests and intent still run whenever the diff changes production code), no completeness critic, and only Medium and above verified; its verdict and report say light pass and name what it skipped, and the run record carries depth (default depth=full, the review as it was). The engine accepts only depth=light (any other value runs full): routing a "quick" or "light" request to it belongs to the calling skill or hook. The consumer repository\'s own reviewing agents can run as extra lenses in the same run: each reviews the whole change and its findings go through the same verification and verdict. On a light pass with extraLenses absent, the engine discovers them among the .claude/agents of the project the session runs in, not of repo= (an agent that reviews and has no edit tool -- its tools list names none, or its disallowedTools take them all away -- told to stay read-only; the report says when none was found); a full review runs them only when named. extraLenses=[<agentType>, ...] (an object argument, e.g. {extraLenses: ["reviewer"]}) names them at either depth, and extraLenses=[] turns them off; a named agent that is unknown or fails is a coverage gap (INCOMPLETE), never a failed run; a discovered one that cannot run is reported as such, never a gap. The report names which extra lenses ran and how they were chosen. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -17,7 +17,7 @@ export const meta = {
  * @typedef {VerdictAnswer} Vote  one verifier verdict (model output, VERDICT_SCHEMA or one BATCH_VERDICT_SCHEMA entry)
  * @typedef {PriorRoundAnswer} PriorRound  the loaded prior round (loader agent output)
  * @typedef {ReturnType<typeof sliceDiff>[number]} Slice
- * @typedef {AgentOptions & { deadlineMs?: number | undefined, breaker?: ReturnType<typeof makeDeathBreaker> | null | undefined }} AgentOpts  agent() options plus the two this engine strips; closed, so a misspelt option is a type error
+ * @typedef {AgentOptions & { deadlineMs?: number | undefined, breaker?: ReturnType<typeof makeDeathBreaker> | null | undefined, inSessionDir?: boolean | undefined }} AgentOpts  agent() options plus the three this engine strips (inSessionDir: no `repo` cd, the agent works where the session started); closed, so a misspelt option is a type error
  * @typedef {{ why?: string, file?: string, severity?: string, title?: string, line?: number, source?: string, ruleId?: string, toolRule?: string, fp?: string, symbol?: string, tier?: string, disposition?: string, whyRef?: { record?: unknown, fp?: unknown }, fix?: string, whereChecked?: string, blastRadius?: string, verifySkipped?: boolean, votesDiscarded?: number, carriedUnverified?: boolean, ledgerDupOfUnverifiedPrior?: boolean, [k: string]: unknown }} Finding  a finding as a model reports it (FindingAnswer, LedgerAnswer), then as the pipeline stamps it
  * @typedef {PreflightAnswer} Preflight  the preflight agent's answer (model output)
  * @typedef {{ baseRef?: unknown, preflight?: Preflight | null, isLibrary?: boolean, securitySensitive?: boolean }} Ctx  what a profile's gate prompt is built from
@@ -2547,6 +2547,16 @@ function extraLensGapMark(x) {
   return `- \u26a0\ufe0f coverage gap: ${x.agent} -- ${x.why}; its review did not happen.`
 }
 
+/** @param {{ agent: string, why: string }} x */
+function extraLensSoftMark(x) {
+  return `- ${x.agent} could not run: ${x.why} (discovered, not named, so no coverage gap).`
+}
+
+/** @param {string} how @param {{ agent: string, why: string }[]} failed @returns {string[]} */
+function extraLensFailedLines(how, failed) {
+  return failed.map(how === 'named' ? extraLensGapMark : extraLensSoftMark)
+}
+
 /** @param {string} how @param {{ reason: string, needed: boolean }} exit @param {{ agent: string, why: string }[]} failed @returns {string} */
 function extraLensExitSection(how, exit, failed) {
   const head = how === 'discovered' ? [`Discovery did not run (${exit.reason}).`]
@@ -2566,9 +2576,9 @@ function extraLensSection({ how, ran, failed, discovery, rubric = '', exit = nul
     return `\n\n## Extra lenses\nNo repo reviewer found: ${discovery || 'none of the repository\'s own agents describes itself as reviewing'} -- only the engine's own lenses ran. Name one with \`extraLenses: ["<agent>"]\`.\n`
   }
   const lines = [
-    `Chosen: ${how === 'named' ? 'named by the caller (extraLenses)' : 'discovered among the repository\'s own agents'}.`,
+    `Chosen: ${how === 'named' ? 'named by the caller (extraLenses)' : 'discovered among the session project\'s own agents'}.`,
     extraLensRanLine(ran, rubric),
-    ...failed.map(extraLensGapMark),
+    ...extraLensFailedLines(how, failed),
   ]
   return `\n\n## Extra lenses\n${lines.join('\n')}\n`
 }
@@ -4380,7 +4390,7 @@ function deadlineMsFor(opts) {
  * @returns {Promise<T | null>}
  */
 async function ragent(prompt, opts = {}) {
-  const { deadlineMs: _deadlineMs, breaker, ...agentOpts } = opts
+  const { deadlineMs: _deadlineMs, breaker, inSessionDir: _inSessionDir, ...agentOpts } = opts
   const ms = deadlineMsFor(opts)
   const budget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
   try {
@@ -4394,7 +4404,7 @@ async function ragent(prompt, opts = {}) {
 async function withBudget(prompt, agentOpts, budget, breaker, opts) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
-    const res = await Promise.race([agent(`${REPO_DIRECTIVE}${prompt}`, o), budget.hit])
+    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), budget.hit])
     const spentOut = budget.belowFloor()
     if (res === DEADLINE_HIT) {
       logDeadlineFire(o, budget)
@@ -5641,7 +5651,7 @@ async function chosenExtraLenses() {
   }
   const defs = Array.isArray(listed.agents) ? listed.agents : []
   const agents = pickRepoReviewers(defs)
-  extraLensOutcome.discovery = defs.length ? `${defs.length} agent definition(s) read, none describes itself as reviewing without editing` : 'the repository declares no agent under .claude/agents'
+  extraLensOutcome.discovery = defs.length ? `${defs.length} agent definition(s) read, none describes itself as reviewing without editing` : 'the session\'s project declares no agent under .claude/agents'
   log(`extra lenses discovered: ${agents.length ? agents.join(', ') : 'none'} (of ${defs.length} repository agent definition(s))`)
   return agents
 }
@@ -5649,17 +5659,17 @@ async function chosenExtraLenses() {
 /** @returns {Promise<AgentDefinitionsAnswer | null>} */
 async function listRepoAgents() {
   try {
-    return await ragent(`List the agent definitions this repository itself declares: every \`.claude/agents/*.md\` file at the repository root (not plugin agents, not files elsewhere). For each, read its YAML frontmatter and return its \`name\` (the file name without .md when there is none), its \`description\` verbatim, and its \`tools\` and \`disallowedTools\` values verbatim ("" for each one absent). No such directory or no files -> {agents: []}. Use shell + read only; change nothing.`,
-    { label: 'extra-lens-discovery', phase: 'Lenses', schema: AGENT_DEFINITIONS_SCHEMA, model: 'haiku', effort: 'low' })
+    return await ragent(`List the agent definitions the project this session runs in declares: every \`.claude/agents/*.md\` file under the directory you START in (the session's project root; do not cd anywhere else, even if another repository is reviewed). Not plugin agents, not files elsewhere. For each, read its YAML frontmatter and return its \`name\` (the file name without .md when there is none), its \`description\` verbatim, and its \`tools\` and \`disallowedTools\` values verbatim ("" for each one absent). No such directory or no files -> {agents: []}. Use shell + read only; change nothing.`,
+    { label: 'extra-lens-discovery', phase: 'Lenses', schema: AGENT_DEFINITIONS_SCHEMA, model: 'haiku', effort: 'low', inSessionDir: true })
   } catch (e) {
     log(`\u26a0\ufe0f extra-lens discovery threw: ${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 160)}`)
     return null
   }
 }
 
-/** Each failed or refused extra lens as a coverage gap of the first profile; a failure never fails the run. @param {Profile} profile @returns {string[]} */
+/** @param {Profile} profile @returns {string[]} */
 function extraLensGaps(profile) {
-  return profile === active[0] ? extraLensOutcome.failed.map(extraLensGapLine) : []
+  return profile === active[0] && extraLensRequest.how === 'named' ? extraLensOutcome.failed.map(extraLensGapLine) : []
 }
 
 /** @param {{ agent: string, why: string }} x */
