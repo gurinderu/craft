@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.33.0](https://github.com/gurinderu/craft/compare/v0.32.2...v0.33.0) (2026-10-22)
+
+
+### Features
+
+* **hooks:** warn before pushing a PR head with no craft verdict ([#248](https://github.com/gurinderu/craft/issues/248)) ([0e82959](https://github.com/gurinderu/craft/commit/0e829597e85a6738134d507db35973db11e8a2e4))
+* **review:** add a light profile and the consumer's agents as extra lenses ([#245](https://github.com/gurinderu/craft/issues/245)) ([fb7a1a5](https://github.com/gurinderu/craft/commit/fb7a1a539807ea24c23291258c093ae7faa5c879))
+* **review:** catalogue the controller race and convergence blind spots ([#247](https://github.com/gurinderu/craft/issues/247)) ([3e8b262](https://github.com/gurinderu/craft/commit/3e8b262379f597177d529bdbac44180e39a57d41))
+* **review:** keep the controller and contract lenses in a light pass ([#250](https://github.com/gurinderu/craft/issues/250)) ([18043d3](https://github.com/gurinderu/craft/commit/18043d35f75e81a7e406fd8968cd0eb68216ad98))
+
+
+### Bug Fixes
+
+* **hooks:** key the push warning to the commit the review read ([#251](https://github.com/gurinderu/craft/issues/251)) ([e90dc5e](https://github.com/gurinderu/craft/commit/e90dc5ebc0b2c943fd44377ab90cd46c57ef0915))
+* **review:** always run the tests lens on a code change ([#243](https://github.com/gurinderu/craft/issues/243)) ([6c2b54a](https://github.com/gurinderu/craft/commit/6c2b54afb4774f7ef7bb10dfa3bc7b0f81579edc))
+* **review:** discover extra lenses where they resolve and keep their failure soft ([#246](https://github.com/gurinderu/craft/issues/246)) ([ced932d](https://github.com/gurinderu/craft/commit/ced932de642cd0d6c0477dd5edcfd8d47ce2ebf1))
+* **review:** never approve over dead lenses, stop on a usage limit, keep the record ([#249](https://github.com/gurinderu/craft/issues/249)) ([e77daec](https://github.com/gurinderu/craft/commit/e77daec0b40206e2102716aeea1ebf8239e15858))
+
 ## [0.32.2](https://github.com/gurinderu/craft/compare/v0.32.1...v0.32.2) (2026-10-21)
 
 
