@@ -166,6 +166,7 @@ provisioner, a queue consumer with retries, or a sync daemon.
 - **Answer needed**: the wake source in exactly that failure mode. A failed create leaves no
   object to watch, and a failed update or delete emits no event.
 - **Where**: the swallow site and the outcome returned after it. This is R2 for the error path.
+  An error that is handled but mapped to await-change is R16.
 - **Finding**: silent drift that never converges. A swallowed error must schedule a bounded timed
   requeue.
 
@@ -188,3 +189,96 @@ provisioner, a queue consumer with retries, or a sync daemon.
 - **Where**: the handler and the chart's ValidatingWebhookConfiguration / MutatingWebhookConfiguration.
 - **Finding**: a handler that denies on internal error while the chart or a comment claims
   `Ignore` / "fails open". Every CREATE/UPDATE then fails closed on a transient error.
+
+## R16 - Retry bound lost on an error path
+
+- **Question**: when a step on the error path fails (a `PatchStatus` / status write, a
+  `Context` or lookup error, a failed API call), does the pass still end in a bounded, timed
+  retry? Or does it return `await_change` (an `AwaitChange` requeue, a `None` / no-requeue
+  action) and wait for a change only another actor can make?
+- **Not this class**: an error that is swallowed and never surfaces is R13. R16 is the error that
+  IS handled, but whose handling drops the retry bound the happy path had.
+- **Answer needed**: for EVERY error arm in the pass, the requeue it produces and the wake source
+  behind it. Pay special attention to errors raised while writing the status that would have
+  recorded the failure: the status write failed, so no status event fires either. "The object
+  will change eventually" is not a wake source.
+- **Where**: the error -> action policy (`error_policy`, the reconcile's `Result` mapping, every
+  `?` inside the pass), each `await_change` / no-requeue return, and the watches that could wake
+  it (R2).
+- **Finding**: name the error, the arm that maps it to await-change, and the actor whose change
+  the object now waits for. The object stalls forever when nothing else touches it. The fix is a
+  bounded `requeue_after` (with backoff) on every error arm, the status-write failure included.
+
+## R17 - Hold or requeue only an unwatched object can clear
+
+- **Question**: the pass holds (a finalizer, a hold condition, a "waiting for X" status, a
+  deferred delete) or requeues until some other object reaches a state. Does this controller
+  watch that other object, so that its change re-enqueues the waiting one?
+- **Answer needed**: for each hold or wait, the object whose state releases it, and the watch /
+  `owns` / `watches` mapping that maps a change of that object back to the waiting primary. If
+  there is no such watch, the timer that re-checks it instead, with its period.
+- **Where**: the hold site and its release condition, the controller's watch setup (including the
+  mapper that turns the other object's event into the primary's key), and the requeue it returns.
+- **Finding**: a hold whose only release is a change on an object the controller does not watch
+  (a KubeVirt VMI, a kube-ovn IP or subnet, a pod of another operator) plus `await_change`. The
+  hold clears only by accident, when something unrelated re-enqueues the primary. The fix is a
+  watch with a mapper to the waiting object, or a bounded timed requeue while held.
+
+## R18 - Status written from a cached snapshot without a version fence
+
+- **Question**: is a status (or any) write built from an object read out of a reflector / informer
+  cache and sent as a full replace or merge patch with no `resourceVersion` precondition? Can
+  another writer (another controller, a second replica, the same controller's earlier pass) have
+  written the same object since the snapshot was taken?
+- **Not this class**: R12 is choosing create vs patch from a stale read. R18 is the write itself
+  overwriting fields a concurrent writer just set.
+- **Answer needed**: for each write, its patch type (replace, JSON merge, strategic merge,
+  server-side apply with field manager), whether it carries `metadata.resourceVersion` as an
+  optimistic-concurrency fence, and which fields other writers own on that object.
+- **Where**: the write call and the object it is built from (the reflector store / cached `Arc`
+  vs a fresh GET), and the other writers of the same object (its status conditions often have
+  several authors).
+- **Finding**: a write from a cached snapshot with no resourceVersion fence silently reverts a
+  concurrent writer's fields (a condition, a list entry, an annotation). The fix is a
+  resourceVersion-fenced replace that re-reads and retries on 409, a patch that names only this
+  controller's fields, or server-side apply with its own field manager.
+
+## R19 - No identity fence between selecting and mutating
+
+- **Question**: the pass selects an object by name (a lookup, a list filter, a label selector, a
+  name derived from the primary) and later mutates or deletes it. Can that object be deleted and
+  recreated with the same name between the selection and the mutation, so the mutation lands on
+  a different object?
+- **Answer needed**: whether the mutation is fenced on the identity that was selected:
+  `metadata.uid` as a delete precondition (`Preconditions { uid }`), the `uid` in an owner
+  reference that is checked before acting, or a `resourceVersion` precondition. Name the window
+  (an await, a requeue, a second pass) between selection and mutation.
+- **Where**: the selection site, every later write by name to the selected object, and the
+  delete / patch parameters (preconditions).
+- **Finding**: a delete, finalizer removal or patch by name only, after a window in which the
+  object can be recreated. A new object with the same name gets the mutation meant for the old
+  one: its finalizer stripped, its data deleted, its status overwritten. The fix is a UID
+  precondition on the write, or a re-check of the UID immediately before it.
+
+## R20 - Unverified claim about an external system
+
+- **Question**: does the code (or its comment, or the PR text) rely on a claim about how an
+  external system behaves: the API server (ordering, defaulting, what a field means, when an
+  event fires), KubeVirt (when a VMI is recreated, what a status field means), kube-ovn (when an
+  IP is released, how a subnet behaves), a cloud API?
+- **Answer needed**: for each such claim, the pinned source of that system at the version the
+  deployment runs (its `go.mod` / `Cargo.lock` / chart version), or its versioned documentation,
+  with the file or section that establishes it. A claim checked only against memory, a comment or
+  a different version is unverified.
+- **Where**: the dependency pin (lockfile, chart, image tag) for the version, then that system's
+  source or docs at that version.
+- **Finding**: name the claim, where the code relies on it, and that it was not checked against
+  the pinned source. Report it as an open finding even when it might be true: a wrong claim
+  about the external system turns every other answer in this catalogue into fiction.
+
+## Severity floor
+
+A finding on a deletion or recovery path (finalizer removal, teardown, a delete handler,
+crash or partial-failure recovery, an error / retry path) is at least **Medium**. These are the
+paths that run rarely, that tests exercise least, and where a defect strands or destroys state.
+Severity calibration never demotes one to Low.
