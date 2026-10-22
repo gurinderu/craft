@@ -132,8 +132,9 @@ The engine's argument for each round, as an object (never a string):
   project rules for the diff's paths itself on every launch.
 - `craft:review` also takes `depth` and `extraLenses` (not in the table: the loop leaves both at
   their defaults unless the human asks). `depth: 'light'` is a cheaper pass, not the light loop
-  above: one round of the diff-scoped lenses only (no negative-space, compat, invariants or
-  failure-windows lens; `tests` and `intent` still run whenever the diff changes production code),
+  above: one round of the diff-scoped lenses only (no negative-space or invariants lens; `tests`
+  and `intent` still run whenever the diff changes production code, `reconciler` and
+  `failure-windows` on controller code, `compat` on a public contract path),
   no completeness critic, and only Medium and above verified; its verdict says light pass and its
   report names what it skipped. The default, `depth: 'full'`, is the whole review. The engine
   accepts only `depth: 'light'`; any other value runs full. Deciding that a "quick" or "light"
