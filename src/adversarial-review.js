@@ -1115,8 +1115,9 @@ const VERDICT = {
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['baseRef', 'sizeBucket', 'lenses', 'changedFiles', 'notes'],
+  required: ['head', 'baseRef', 'sizeBucket', 'lenses', 'changedFiles', 'notes'],
   properties: {
+    head: { type: 'string', description: '`git rev-parse --short HEAD`, run FIRST, before anything reads the diff; empty if not a git repo' },
     baseRef: { type: 'string', description: 'git ref the diff was computed against; empty if none resolved' },
     sizeBucket: { type: 'string', enum: ['small', 'medium', 'large'] },
     lenses: { type: 'array', items: { type: 'string' }, description: 'subset of the lens catalog to run' },
@@ -1155,7 +1156,7 @@ const CROSSCHECK_SCHEMA = {
  * @typedef {{ title: string, file: string, line: number, severity: string, description: string, fix: string, whereChecked: string }} RawFinding
  * @typedef {{ findings: RawFinding[] }} FindingsResult
  * @typedef {{ refuted: boolean, premiseSupported: boolean, reasoning: string, severity: string }} VerdictResult
- * @typedef {{ baseRef: string, sizeBucket: 'small' | 'medium' | 'large', lenses: string[], changedFiles: string[], notes: string }} ScoutResult
+ * @typedef {{ head: string, baseRef: string, sizeBucket: 'small' | 'medium' | 'large', lenses: string[], changedFiles: string[], notes: string }} ScoutResult
  * @typedef {{ indexed: boolean, notes: string }} WarmupResult
  * @typedef {{ ok: boolean, fileCount: number, files: string[] }} CrosscheckResult
  * @typedef {{ clusters: number[][] }} ClustersResult
@@ -1235,7 +1236,7 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly MISSED_STRUCTURED_OUTPUT missedStructuredOutput loggerAgentDied makeRunLogger telemetryLossNoter
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt MISSED_STRUCTURED_OUTPUT missedStructuredOutput loggerAgentDied makeRunLogger telemetryLossNoter
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1385,6 +1386,28 @@ function quietly(call) {
   }
 }
 
+/** @param {{ payload?: unknown, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
+function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
+  const version = payloadVersion(payload)
+  const flags = `--phase ${shq(phase)} ${engineRevisionFlag(payload)}${runDirFlags(dir, rejoin)}`
+  return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
+
+Run exactly this, then return the runDir the script prints:
+
+\`\`\`
+${loggerPrelude(craftRoot, version, repo)}CRAFT_REC="$(mktemp "\${TMPDIR:-/tmp}/craft-ckpt.XXXXXX")"
+cat > "$CRAFT_REC" <<'CRAFT_RECORD_EOF'
+…PAYLOAD below, byte for byte…
+CRAFT_RECORD_EOF
+cd ${shq(repo || '.')} && node "$CRAFT_LOGGER" checkpoint ${flags}--project "$PWD" < "$CRAFT_REC"; CRAFT_RC=$?; rm -f "$CRAFT_REC"; exit $CRAFT_RC
+\`\`\`
+
+The script owns naming, sequencing and every computed field. Copy PAYLOAD verbatim into the quoted heredoc. Best-effort: if it fails, report the error line and do NOT retry by writing files yourself.
+
+PAYLOAD:
+${JSON.stringify(payload, null, 2)}`
+}
+
 const MISSED_STRUCTURED_OUTPUT = 'without calling StructuredOutput'
 
 /** @param {unknown} res @returns {boolean} */
@@ -1450,9 +1473,40 @@ const telemetryNotes = () => telemetryLost.map(l => (
     ? `⚠️ telemetry: ${l} — the record for this run is in the store; what the directory held may not be.`
     : `⚠️ telemetry lost: ${l} — this run may be missing or incomplete in the run store. Read this verdict, not the store, for what it did.`))
 
-// The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note.
+// ---- the start checkpoint: the head the run read, observed by code ----
+// ONE phase slice, written after the scout and before any lens or the memory recall reads the diff. The logger
+// stamps the slice's `head` and tracked dirtiness from git; `startHead` is the head the scout saw first. The
+// record is filed with `finalize`, which folds this slice and files `reviewedHead`/`reviewedDirty` only when the
+// two name one commit (lib/craft-log-run.mjs, reviewedTree) — the rule craft:review's checkpoints go through, so a
+// push verdict is keyed to the commit this run read, never to one committed while it ran (realm @nick/craft, node #299).
+const CHECKPOINT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['runDir'],
+  properties: {
+    runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' },
+    error: { type: 'string', description: 'when runDir is empty, the failing line verbatim; empty otherwise' },
+  },
+}
+let runDir = ''
+/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {ScoutResult | null} scout  its `head` is the start head */
+async function startCheckpoint(phase, payloadIn, scout) {
+  const payload = { kind: 'workflow', name: 'adversarial-review', craftVersion: CRAFT_VERSION, ...payloadIn, phase, startHead: scout?.head ?? '' }
+  const res = /** @type {{ runDir?: string, error?: string, __threw?: string } | null} */ (await quietly(agent)(
+    checkpointPrompt({ payload, craftRoot: craftRootArg, phase }),
+    { label: `checkpoint:${phase}`, phase: 'Prep', schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
+  ))
+  if (res?.runDir) {
+    runDir = res.runDir
+    return
+  }
+  telemetryLossNoter(telemetryLost, log)(`phase checkpoint '${phase}'`, res?.__threw || res?.error || 'the logger agent returned no runDir', false)
+}
+
+// The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note. `finalize`, not
+// `write`: it folds the start checkpoint, when one landed, into the record (see startCheckpoint above).
 const logRun = makeRunLogger({
-  call: quietly(agent), phase: 'Coverage', target: () => ({ craftRoot: craftRootArg }),
+  call: quietly(agent), phase: 'Coverage', target: () => ({ craftRoot: craftRootArg, command: 'finalize', dir: runDir }),
   noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 // adversarial-review uses lowercase severities internally; the store schema is capitalized.
@@ -1687,6 +1741,7 @@ phase('Prep')
 const [scoutRaw, warmupRaw] = await parallel([
   () => agent(
     `You are scouting a diff to plan an adversarial review. Use shell + read only — do NOT review yet.
+0. FIRST, before anything else: \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). It tells the logger which commit the run started on, so an empty \`head\` files no verdict for that commit.
 1. Resolve the diff base. ${scoutBaseStep()}
 2. Inspect \`git diff --stat\` and list every touched path with \`git diff --name-only\` (same base) into changedFiles — complete and verbatim. sizeBucket: small = a few files / < ~80 changed lines; large = many files / > ~400 lines or auth/money/concurrency-heavy; medium otherwise.
 3. lenses: choose from ${JSON.stringify(ALL_LENSES)}.
@@ -2013,6 +2068,7 @@ async function coverageGuard(scout) {
 }
 const early = await coverageGuard(scout)
 if (early) return early
+await startCheckpoint('prep', { size: plan.sizeBucket, lenses: plan.lenses }, scout)
 // ONE read-only agent recalls the decisions through the craft:memory skill for the diff's paths (realm
 // @nick/craft, node #203); its answer is parsed like a passed list and the passed records merge into it.
 async function recallMemory() {
@@ -3575,7 +3631,7 @@ function verdictOf(found) {
 }
 // A usage limit stopped the run: the stop is a blocking notRun entry, so the verdict is never Approve.
 function noteLimitStop() {
-  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, { version: CRAFT_VERSION, engine: 'adversarial-review', checkpoints: false }))
+  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, { version: CRAFT_VERSION, engine: 'adversarial-review', checkpoints: !!runDir }))
 }
 noteLimitStop()
 const verdict = verdictOf(confirmed)
