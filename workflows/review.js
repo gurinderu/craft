@@ -5857,6 +5857,9 @@ function unattributedCount(confirmed) {
 /** The lenses whose flag the floor honours: the ones that read the distributed-races catalogue. */
 const PATH_FLOOR_LENSES = ['reconciler', 'failure-windows']
 
+/** The words the floor's note carries, which synthesis is told not to calibrate below Medium. */
+const PATH_FLOOR_MARK = 'deletion/recovery-path floor'
+
 /**
  * `f` raised to Medium when a catalogue lens flagged it on a deletion or recovery path below Medium;
  * otherwise `f` unchanged.
@@ -5868,7 +5871,17 @@ function raisePathFloor(f) {
   if (f.deletionOrRecoveryPath !== true) return f
   if (!PATH_FLOOR_LENSES.includes(String(f.source ?? ''))) return f
   if (f.severity !== 'Low' && f.severity !== 'Info') return f
-  return { ...f, severity: 'Medium', why: `${f.why ?? ''} (raised to Medium from ${f.severity}: deletion/recovery-path floor (R16-R20 catalogue); a verifier judging it unreachable in production can still lower it)` }
+  return { ...f, severity: 'Medium', why: `${f.why ?? ''} (raised to Medium from ${f.severity}: ${PATH_FLOOR_MARK} (R16-R20 catalogue); a verifier judging it unreachable in production can still lower it)` }
+}
+
+/**
+ * The floor's note carried by `why`, or '' when the finding was not raised by the floor.
+ * @param {unknown} why
+ * @returns {string}
+ */
+function pathFloorNote(why) {
+  const m = / \(raised to Medium from \w+: deletion\/recovery-path floor \(R16-R20 catalogue\); [^)]*\)/.exec(String(why ?? ''))
+  return m ? m[0] : ''
 }
 
 /**
@@ -5998,9 +6011,12 @@ Return {groups: [[i, j, ...], ...]} — index groups of same-defect findings; om
 function mergedGroup(members, isToolSrc) {
   const base = /** @type {Finding} */ (members.slice().sort((a, b) => (/** @type {number} */ (/** @type {unknown} */ (isToolSrc(b))) - /** @type {number} */ (/** @type {unknown} */ (isToolSrc(a)))) || ((SEV_RANK[a['severity'] ?? ''] ?? 9) - (SEV_RANK[b['severity'] ?? ''] ?? 9)))[0])
   const others = members.filter(m => m !== base)
+  const top = members.reduce((t, m) => ((SEV_RANK[m['severity'] ?? ''] ?? 9) < (SEV_RANK[t['severity'] ?? ''] ?? 9) ? m : t), base)
+  const lifted = top === base || top['severity'] === undefined ? {} : { severity: top['severity'], why: `${base['why']}${pathFloorNote(top['why'])}` }
   const sources = [...new Set(members.map(m => m['source']).filter(Boolean))]
   const whereChecked = [...new Set(members.map(m => m['whereChecked']).filter(Boolean))].join('; ')
-  return withEarliestRound({ ...base, sources, whereChecked, why: `${base['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` }, members)
+  const merged = { ...base, ...lifted }
+  return withEarliestRound({ ...merged, sources, whereChecked, why: `${merged['why']} (same defect also reported by: ${others.map(m => m['source']).join(', ')})` }, members)
 }
 
 /** @param {Finding[]} pool @param {Profile} profile */
@@ -6816,7 +6832,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
       notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
       log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
     }
-    const extra = settledExtra.filter(r => r != null).flatMap(r => r.findings || [])
+    const extra = settledExtra.flatMap((r, i) => (r == null ? [] : (r.findings || []).map(f => ({ ...f, source: /** @type {string} */ (followups[i]) }))))
     const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
     if (fresh.length) {
       const v = await verifyPool(await dedupPool(applyPathFloor(fresh), profile), plan, profile, toolProvenance)
@@ -7253,7 +7269,7 @@ VERDICT RULE: the verdict is driven ONLY by Confirmed findings.
 - ✅ Approve if no Confirmed Critical/High/Medium.
 Suspected findings NEVER change the verdict — they are surfaced for the author. UNVERIFIED findings were never checked at all — EITHER no verifier was spent (a Low/Info cannot move the verdict) OR the verifier that should have judged them died before returning one OR every vote it did return was off-schema and unreadable, so a Critical or High can carry this tier. They change nothing and must never be presented as confirmed, as checked, or as cheap.${strict ? '\nSTRICT MODE: the maintainability bar is a presumption of block — if ANY Confirmed finding has source "maintainability" (or lists "maintainability" among its merged `sources`) at Medium or above, the verdict is ⛔ Block (state in the verdict line that strict maintainability mode escalated it).' : ''}
 
-CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
+CALIBRATE severities across the Confirmed set so the same kind of issue is not Critical in one place and Medium in another; adjust outliers and say so in one line if you do. A finding whose why carries "raised to Medium from" with "${PATH_FLOOR_MARK}" is never calibrated below Medium in the report: the record already holds it at Medium. For any resource-exhaustion / algorithmic-complexity finding (SAF-009), severity must be MEASURED, not inherited from "same class as X" — a shared mechanism implies nothing about shared magnitude. Demand attack cost against a REAL-DATA baseline (not just the PoC's own numbers) and attacker-bytes-per-victim-CPU-second; where the finding carries no such measurement, say so and rate it conservatively rather than borrowing a neighbour's label.
 
 DEDUPLICATE across lenses: findings that describe the same underlying defect (same file, same/overlapping lines, fixes that collapse into one edit) MUST be merged into ONE entry — keep the highest severity and the clearest why, credit the other lens in one clause. Never list per-lens duplicates as separate findings.
 
