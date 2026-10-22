@@ -303,7 +303,7 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly MISSED_STRUCTURED_OUTPUT missedStructuredOutput makeRunLogger telemetryLossNoter
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly MISSED_STRUCTURED_OUTPUT missedStructuredOutput loggerAgentDied makeRunLogger telemetryLossNoter
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -461,6 +461,12 @@ function missedStructuredOutput(res) {
   return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
+/** @param {unknown} res @returns {boolean} */
+function loggerAgentDied(res) {
+  const outcome = logRunOutcome(res)
+  return !outcome.ok && !/craft-log-run FAILED/.test(outcome.reason)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -478,6 +484,7 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const dispatch = logRunDispatch(record, { phase })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)

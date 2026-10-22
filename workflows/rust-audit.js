@@ -1279,8 +1279,7 @@ function normalizeDimensionVerdict(v) {
  * @param {unknown[]} notRun
  */
 function auditVerdict(worst, notRun) {
-  if (!notRun.length || /INCOMPLETE/i.test(worst)) return worst
-  return `${worst} (INCOMPLETE)`
+  return honestVerdict(worst, notRun)
 }
 
 /**
@@ -1450,6 +1449,12 @@ function missedStructuredOutput(res) {
   return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
+/** @param {unknown} res @returns {boolean} */
+function loggerAgentDied(res) {
+  const outcome = logRunOutcome(res)
+  return !outcome.ok && !/craft-log-run FAILED/.test(outcome.reason)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -1467,6 +1472,7 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const dispatch = logRunDispatch(record, { phase })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
@@ -1594,9 +1600,9 @@ async function safeAgent(prompt, opts = {}) {
   const at = opts['agentType']
   const generic = { ...opts }
   delete generic['agentType']
-  if (!at || agentTypeMissing.has(at)) return agent(prompt, generic)
+  if (!at || agentTypeMissing.has(at)) return auditAgent(prompt, generic)
   try {
-    const res = await agent(prompt, opts)
+    const res = await auditAgent(prompt, opts)
     if (res != null) return res
     return await genericAfterNull(prompt, generic, at)
   } catch (e) {
@@ -1610,7 +1616,7 @@ async function safeAgent(prompt, opts = {}) {
  * @param {string} prompt @param {AgentOptions} generic @param {string} at @returns {Promise<unknown>}
  */
 async function genericAfterNull(prompt, generic, at) {
-  const fallback = await agent(prompt, generic)
+  const fallback = await auditAgent(prompt, generic)
   if (fallback) agentTypeEmptied[at] = (agentTypeEmptied[at] || 0) + 1
   return fallback
 }
@@ -1623,14 +1629,14 @@ async function genericAfterThrow(e, prompt, generic, at) {
   const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
   if (!isAgentTypeMissing(msg, at)) {
     if (!/not found/i.test(msg)) throw e
-    const fallback = await agent(prompt, generic)
+    const fallback = await auditAgent(prompt, generic)
     if (!fallback) throw e
     agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
     return fallback
   }
   agentTypeMissing.set(at, msg)
   log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
-  const fallback = await agent(prompt, generic)
+  const fallback = await auditAgent(prompt, generic)
   if (!fallback) throw e
   return fallback
 }
@@ -1673,8 +1679,183 @@ function baseInstruction() {
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`.'
 }
 
+const LIMIT_ANSWER_MAX = 400
+
+const LIMIT_PATTERNS = [
+  /\bhit your (?!rate\b)(?:[\w-]+ )?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
+  /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
+]
+
+/**
+ * The usage/rate-limit message in a failure's text, trimmed to one line, or '' when the text is not one.
+ * @param {unknown} text an error message, or an agent's text answer
+ * @returns {string}
+ */
+function usageLimitText(text) {
+  const s = String(text ?? '')
+  if (!s.trim()) return ''
+  const line = s.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).find(l => LIMIT_PATTERNS.some(p => p.test(l)))
+  return line ? line.slice(0, 200) : ''
+}
+
+/** @param {unknown} e @returns {string} */
+function errorText(e) {
+  return String((e && typeof e === 'object' && 'message' in e ? /** @type {{ message?: unknown }} */ (e).message : e) ?? '')
+}
+
+/**
+ * The run's stop at a usage limit: `seen` the first limit message ('' until one arrives), `observe`
+ * reads one agent outcome and answers whether it was a limit failure.
+ * @param {(line: string) => void} say
+ * @returns {{ seen: () => string, observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, note: () => string }}
+ */
+function makeLimitStop(say) {
+  let hit = ''
+  /** @param {string} text */
+  const take = text => {
+    if (!text) return false
+    if (!hit) {
+      hit = text
+      say(`\u26d4 usage limit reached (${text}) \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+    }
+    return true
+  }
+  return {
+    seen: () => hit,
+    observeError: e => take(usageLimitText(errorText(e))),
+    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
+    note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
+  }
+}
+
+/**
+ * An agent callback that dispatches nothing once the stop has seen a limit (answering null, as a dead
+ * agent does), and turns a limit failure of its own into that stop and a null.
+ * @template P, O
+ * @param {(prompt: P, opts: O) => Promise<unknown>} call
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @returns {(prompt: P, opts: O) => Promise<unknown>}
+ */
+function stopAtLimit(call, stop) {
+  return async (prompt, opts) => {
+    if (stop.seen()) return null
+    try {
+      const res = await call(prompt, opts)
+      return stop.observeAnswer(res) ? null : res
+    } catch (e) {
+      if (stop.observeError(e)) return null
+      throw e
+    }
+  }
+}
+
+/**
+ * The logger as a human runs it: CLAUDE_PLUGIN_ROOT, else this version's installed copy. Never a
+ * craftRoot from the run's arguments, which a model composed: the advice is pasted into a shell.
+ * @param {string} version
+ * @returns {string}
+ */
+function loggerCommand(version) {
+  return `node "\${CLAUDE_PLUGIN_ROOT:-\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${shellSafe(version)}}"/lib/craft-log-run.mjs`
+}
+
+/** A version as it may stand inside double quotes: digits, letters, dots and dashes only. @param {string} v */
+function shellSafe(v) {
+  return String(v ?? '').replace(/[^\w.-]/g, '')
+}
+
+/**
+ * What a human does about a run stopped at the usage limit, '' when it was not. The logger shares the
+ * account, so the record may be lost to the same limit. An engine that writes phase checkpoints
+ * (review) leaves them in `.partial` for `recover`; one that writes none has nothing to recover from,
+ * and the honest advice is to rerun it.
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {{ version: string, engine: string, checkpoints: boolean }} o
+ * @returns {string}
+ */
+function limitStopAdvice(stop, { version, engine, checkpoints }) {
+  if (!stop.seen()) return ''
+  const cmd = loggerCommand(version)
+  const recovery = checkpoints
+    ? `if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${cmd} recover\``
+    : `if it is reported lost, this run's record could not be written (${engine} writes no checkpoints): rerun the ${engine === 'rust-audit' ? 'audit' : 'review'} after the limit resets`
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; ${recovery}`
+}
+
+/**
+ * The limit message a nested review's report says it stopped on, or '': the parent reads the child's
+ * stop from the child's own words (`stopped: usage limit reached (<text>)`), not from its length.
+ * @param {unknown} report
+ * @returns {string}
+ */
+function limitInReport(report) {
+  const m = /stopped: usage limit reached \((.+?)\)(?=[.;:,]|\s|$)/m.exec(typeof report === 'string' ? report : '')
+  return m ? usageLimitText(m[1]) : ''
+}
+const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
+
+const VERDICT_WORD = /\b(Approve|Healthy|Clean|Block|Warning|Concerns|At-risk|UB-found|INCOMPLETE)\b/i
+
+const NOTE_MAX = 600
+
+/** @param {unknown} notRun @returns {string[]} */
+function notRunList(notRun) {
+  return (Array.isArray(notRun) ? notRun : []).map(n => String(n ?? '').trim()).filter(Boolean)
+}
+
+/**
+ * The verdict a run may claim: unchanged when nothing failed to run; INCOMPLETE in place of a green
+ * one; a red one marked ` (INCOMPLETE)` once.
+ * @param {unknown} verdict the verdict over the findings, suffix included or not
+ * @param {unknown} notRun what did not run (any entry counts)
+ * @returns {string}
+ */
+function honestVerdict(verdict, notRun) {
+  const v = String(verdict ?? '').trim()
+  if (!notRunList(notRun).length) return v
+  if (!v || GREEN_WORD.test(v)) return 'INCOMPLETE'
+  return /INCOMPLETE/i.test(v) ? v : `${v} (INCOMPLETE)`
+}
+
+/** The index of the line carrying the verdict word, or -1. @param {string[]} lines @returns {number} */
+function verdictLineAt(lines) {
+  const head = lines.findIndex(l => /verdict/i.test(l))
+  if (head < 0) return -1
+  const after = String(lines[head]).replace(/^[\s#*_>-]*verdict\b/i, '')
+  if (VERDICT_WORD.test(after)) return head
+  return lines.findIndex((l, i) => i > head && l.trim())
+}
+
+/**
+ * A rendered report whose verdict line no longer says Approve when something did not run: the first
+ * verdict word of the line under the verdict heading (or on it), when green, becomes INCOMPLETE and
+ * the line names what did not run. A red verdict line, and any report when everything ran, is
+ * returned as it came.
+ * @param {unknown} text
+ * @param {unknown} notRun
+ * @returns {string}
+ */
+function honestVerdictLine(text, notRun) {
+  const s = String(text ?? '')
+  const missing = notRunList(notRun)
+  if (!missing.length) return s
+  const lines = s.split('\n')
+  const at = verdictLineAt(lines)
+  if (at < 0) return s
+  const line = String(lines[at])
+  const word = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
+  if (!word || !GREEN_WORD.test(String(word[1]))) return s
+  const fixed = line.replace(/(?:(?:\u2705|\u26a0\ufe0f?)\s*)?\b(?:Approve|Healthy|Clean)\b(?:\s*\((?:INCOMPLETE|PARTIAL COVERAGE)\))?/i, '\u26a0\ufe0f INCOMPLETE')
+  const list = missing.join('; ')
+  const named = /did not run/i.test(fixed) ? '' : ` \u00b7 part of this review did not run: ${list.length > NOTE_MAX ? `${list.slice(0, NOTE_MAX)}\u2026` : list}`
+  lines[at] = `${fixed}${named}`
+  return lines.join('\n')
+}
+const auditLimit = makeLimitStop(log)
+const auditAgent = stopAtLimit(agent, auditLimit)
 phase('Scout')
-const scout = /** @type {ScoutResult | null} */ (await agent(
+const scout = /** @type {ScoutResult | null} */ (await auditAgent(
   `You are scouting a Rust workspace to plan an audit. Use shell commands only — do NOT review anything yet.
 
 1. Determine the diff base. ${baseInstruction()}
@@ -1709,7 +1890,7 @@ function scoutFacts(s) {
 const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scoutNotes } = scoutFacts(scout)
 async function recallOnce() {
   if (recalledByLauncher) return
-  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
+  const r = await recallDecisions(p => auditAgent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
   const { merged, parts, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parsePriorDecisions, r.inactive)
   memory = withDerived(withPassed(r.memory, passedAccepted, read.passed), read.prior.decisions)
   for (const x of blocked) log(`⚠️ priorDecisions: ${x}`)
@@ -1892,8 +2073,8 @@ function dispatchDim(dimension, promise, opts = {}) {
   const deadReason = opts.deadReason || 'agent returned no result (died or skipped) — dimension NOT RUN'
   const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
   return promise
-    .then(r => dimResult(dimension, r, deadReason, opts.evidenceGate ?? true))
-    .catch((/** @type {unknown} */ e) => { log(threw((e && /** @type {{ message?: unknown }} */ (e).message) || e)); return null })
+    .then(r => dimResult(dimension, auditLimit.observeAnswer(r) ? null : r, deadReason, opts.evidenceGate ?? true))
+    .catch((/** @type {unknown} */ e) => { auditLimit.observeError(e); log(threw((e && /** @type {{ message?: unknown }} */ (e).message) || e)); return null })
 }
 
 /** @type {Array<() => Promise<DimResult | null | undefined> | null>} */
@@ -1913,18 +2094,18 @@ function pushReviewDims() {
         dispatched.push(`review:${c.name}`)
         continue
       }
-      tasks.push(() => dispatchDim(`review:${c.name}`,
+      tasks.push(() => auditLimit.seen() ? null : dispatchDim(`review:${c.name}`,
         nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
-          .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); return reviewResult(`review:${c.name}`, report) }),
+          .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); auditLimit.observeError(limitInReport(report)); return reviewResult(`review:${c.name}`, report) }),
         { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
           threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
       dispatched.push(`review:${c.name}`)
     }
   } else {
-    tasks.push(() => dispatchDim('review',
+    tasks.push(() => auditLimit.seen() ? null : dispatchDim('review',
       nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }
                                                   : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
-        .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); return reviewResult('review', report) }),
+        .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); auditLimit.observeError(limitInReport(report)); return reviewResult('review', report) }),
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
         threw: msg => `review failed: ${msg}`, evidenceGate: false }))
     dispatched.push('review')
@@ -1950,7 +2131,7 @@ function pushContractDims() {
 }
 pushContractDims()
 
-tasks.push(() => dispatchDim('crate-decomposition', /** @type {Promise<FindingsResult | null>} */ (agent(
+tasks.push(() => dispatchDim('crate-decomposition', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Judge this Rust workspace's crate boundaries and recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back. Load the rust-ecosystem skill and its crate-extraction.md rubric, and build on the workspace dependency graph (\`cargo metadata\`). For EACH recommendation give: the DRIVER (reuse / compile parallelism / dependency inversion / trust boundary / independent semver / test isolation / god-crate split — or, for a merge, "single consumer, no boundary reason"), the BOUNDARY (which module or code), and the HOW. Recommend only — do NOT move code. Return a verdict (Healthy / Concerns / At-risk) and findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo metadata\`) and manifests you read this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'crate-decomposition', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'medium' },
 ))))
@@ -1982,26 +2163,26 @@ function pushMiriDim() {
 }
 pushMiriDim()
 
-tasks.push(() => dispatchDim('semver', /** @type {Promise<FindingsResult | null>} */ (agent(
+tasks.push(() => dispatchDim('semver', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran and crates you checked this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ))))
 dispatched.push('semver')
 
-tasks.push(() => dispatchDim('build-matrix', /** @type {Promise<FindingsResult | null>} */ (agent(
+tasks.push(() => dispatchDim('build-matrix', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (feature sets, MSRV checks) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ))))
 dispatched.push('build-matrix')
 
-tasks.push(() => dispatchDim('deps', /** @type {Promise<FindingsResult | null>} */ (agent(
+tasks.push(() => dispatchDim('deps', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Audit dependency HYGIENE (distinct from security vulns/licenses). Run \`cargo tree -d\` (duplicate/conflicting versions that bloat the build and binary) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the \`unused-crates\` dimension owns that (with verification). Skip any tool that is not installed with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill (dependency weight/hygiene). Report duplicates and notably out-of-date deps as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (e.g. \`cargo tree -d\`, \`cargo outdated\`) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'deps', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ))))
 dispatched.push('deps')
 
 tasks.push(() => dispatchDim('unused-crates', (async () => {
-  const found = /** @type {FindingsResult | null} */ (await agent(
+  const found = /** @type {FindingsResult | null} */ (await auditAgent(
     `Find UNUSED crates in this Rust workspace, in two classes:
 (a) ORPHAN workspace members — from \`cargo metadata --format-version 1\`, workspace members that NO other workspace member depends on (any dependency kind), EXCLUDING binaries (a [[bin]] target or src/main.rs) and published libraries (Cargo.toml \`publish\` is not false / it is meant for crates.io).
 (b) UNUSED dependencies — run \`cargo machete\` (or \`cargo +nightly udeps\` if machete is absent) to list dependencies declared in a Cargo.toml but not used.
@@ -2019,7 +2200,7 @@ These are CANDIDATES, not confirmed — they will be verified downstream. Return
     return { ...found, dimension: 'unused-crates', evidence, _verification: { candidates: 0, confirmed: 0, refuted: 0, died: 0, judged: 0, refuteRate: null } }
   }
   const verdicts = await parallel(candidates.map((c, i) => () =>
-    /** @type {Promise<UnusedVerdict | null>} */ (agent(
+    /** @type {Promise<UnusedVerdict | null>} */ (auditAgent(
       `A detector flagged a crate/dependency as UNUSED. Try HARD to REFUTE that — prove it IS used — before accepting it. Candidate: ${JSON.stringify(c)}.
 Check the usages machete/udeps and the dependency graph miss: \`use\`/path references; cfg-gated and feature-gated usage; macro-only and re-exported (\`pub use\`) usage; build.rs / [build-dependencies]; [dev-dependencies] exercised only in tests, benches, or examples; and for an orphan member whether it is actually a bin, an example/bench/xtask, or consumed/published outside this workspace. Grep the source to confirm.
 Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; default to false when uncertain.`,
@@ -2034,7 +2215,7 @@ dispatched.push('unused-crates')
 function mutantsInstruction() {
   return runMutants ? ' Run `cargo mutants --timeout 60`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'
 }
-tasks.push(() => dispatchDim('tests-cov', /** @type {Promise<FindingsResult | null>} */ (agent(
+tasks.push(() => dispatchDim('tests-cov', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${mutantsInstruction()} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
 ))))
@@ -2044,6 +2225,7 @@ const results = (await parallel(tasks)).filter(r => !!r).map(r => ({ ...r, verdi
 
 const ran = new Set(results.map(r => r.dimension))
 const notRun = dispatched.filter(d => !ran.has(d))
+if (auditLimit.seen()) notRun.unshift(auditLimit.note())
 const couldNotRun = results.filter(r => /^\s*INCOMPLETE \(not run\)/i.test(String(r.verdict || ''))).map(r => r.dimension)
 const noEvidence = results.filter(r => /^\s*INCOMPLETE \(no evidence/i.test(String(r.verdict || ''))).map(r => r.dimension)
 const incompleteDimensions = [...notRun, ...results.filter(r => /^\s*INCOMPLETE/i.test(String(r.verdict || ''))).map(r => r.dimension)]
@@ -2060,7 +2242,7 @@ const listOrNone = names => names.length ? names.join(', ') : 'none'
 const stripped = results.map(stripInternal)
 
 phase('Synthesize')
-const report = await agent(
+const report = await auditAgent(
   `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, or could not run, mark the audit INCOMPLETE.
@@ -2093,6 +2275,13 @@ function verificationRecord(u) {
     refuteRate: v.refuteRate ?? null,
   }
 }
+function noteSynthesisLimit() {
+  if (auditLimit.seen() && !notRun.includes(auditLimit.note())) {
+    notRun.unshift(auditLimit.note())
+    incompleteDimensions.unshift(auditLimit.note())
+  }
+}
+noteSynthesisLimit()
 const auditRecord = {
   schemaVersion: 1,
   runtime: 'claude-code',
@@ -2118,5 +2307,6 @@ const auditRecord = {
 }
 await logRun(auditRecord)
 
+if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 the synthesis did not run, so this audit has NO report; nothing here is an approval. ${limitStopAdvice(auditLimit, { version: CRAFT_VERSION, engine: 'rust-audit', checkpoints: false })}\n`
 if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
-return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${honestVerdictLine(report, incompleteDimensions)}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
