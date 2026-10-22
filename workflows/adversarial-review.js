@@ -1344,6 +1344,12 @@ function missedStructuredOutput(res) {
   return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
+/** @param {unknown} res @returns {boolean} */
+function loggerAgentDied(res) {
+  const outcome = logRunOutcome(res)
+  return !outcome.ok && !/craft-log-run FAILED/.test(outcome.reason)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -1361,6 +1367,7 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const dispatch = logRunDispatch(record, { phase })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
@@ -1649,8 +1656,133 @@ const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
 const notRunBlocking = () => notRun.filter(e => e.incomplete)
+const LIMIT_ANSWER_MAX = 400
+
+const LIMIT_PATTERNS = [
+  /\bhit your (?!rate\b)(?:[\w-]+ )?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session|5-hour) limit\b[^\n]*\b(?:reached|resets?)\b/i,
+  /\breached (?:your|the) (?:\w+ )?usage limit\b/i,
+]
+
+/**
+ * The usage/rate-limit message in a failure's text, trimmed to one line, or '' when the text is not one.
+ * @param {unknown} text an error message, or an agent's text answer
+ * @returns {string}
+ */
+function usageLimitText(text) {
+  const s = String(text ?? '')
+  if (!s.trim()) return ''
+  const line = s.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).find(l => LIMIT_PATTERNS.some(p => p.test(l)))
+  return line ? line.slice(0, 200) : ''
+}
+
+/** @param {unknown} e @returns {string} */
+function errorText(e) {
+  return String((e && typeof e === 'object' && 'message' in e ? /** @type {{ message?: unknown }} */ (e).message : e) ?? '')
+}
+
+/**
+ * The run's stop at a usage limit: `seen` the first limit message ('' until one arrives), `observe`
+ * reads one agent outcome and answers whether it was a limit failure.
+ * @param {(line: string) => void} say
+ * @returns {{ seen: () => string, observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, note: () => string }}
+ */
+function makeLimitStop(say) {
+  let hit = ''
+  /** @param {string} text */
+  const take = text => {
+    if (!text) return false
+    if (!hit) {
+      hit = text
+      say(`\u26d4 usage limit reached (${text}) \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+    }
+    return true
+  }
+  return {
+    seen: () => hit,
+    observeError: e => take(usageLimitText(errorText(e))),
+    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
+    note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
+  }
+}
+
+/**
+ * An agent callback that dispatches nothing once the stop has seen a limit (answering null, as a dead
+ * agent does), and turns a limit failure of its own into that stop and a null.
+ * @template P, O
+ * @param {(prompt: P, opts: O) => Promise<unknown>} call
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @returns {(prompt: P, opts: O) => Promise<unknown>}
+ */
+function stopAtLimit(call, stop) {
+  return async (prompt, opts) => {
+    if (stop.seen()) return null
+    try {
+      const res = await call(prompt, opts)
+      return stop.observeAnswer(res) ? null : res
+    } catch (e) {
+      if (stop.observeError(e)) return null
+      throw e
+    }
+  }
+}
+
+/**
+ * The logger as a human runs it: CLAUDE_PLUGIN_ROOT, else this version's installed copy. Never a
+ * craftRoot from the run's arguments, which a model composed: the advice is pasted into a shell.
+ * @param {string} version
+ * @returns {string}
+ */
+function loggerCommand(version) {
+  return `node "\${CLAUDE_PLUGIN_ROOT:-\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${shellSafe(version)}}"/lib/craft-log-run.mjs`
+}
+
+/** A version as it may stand inside double quotes: digits, letters, dots and dashes only. @param {string} v */
+function shellSafe(v) {
+  return String(v ?? '').replace(/[^\w.-]/g, '')
+}
+
+/**
+ * What a human does about a run stopped at the usage limit, '' when it was not. The logger shares the
+ * account, so the record may be lost to the same limit. An engine that writes phase checkpoints
+ * (review) leaves them in `.partial` for `recover`; one that writes none has nothing to recover from,
+ * and the honest advice is to rerun it.
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {{ version: string, engine: string, checkpoints: boolean }} o
+ * @returns {string}
+ */
+function limitStopAdvice(stop, { version, engine, checkpoints }) {
+  if (!stop.seen()) return ''
+  const cmd = loggerCommand(version)
+  const recovery = checkpoints
+    ? `if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${cmd} recover\``
+    : `if it is reported lost, this run's record could not be written (${engine} writes no checkpoints): rerun the ${engine === 'rust-audit' ? 'audit' : 'review'} after the limit resets`
+  return `${stop.note()}. The run record was attempted, but its logger runs on the same account; ${recovery}`
+}
+const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
+
+/** @param {unknown} notRun @returns {string[]} */
+function notRunList(notRun) {
+  return (Array.isArray(notRun) ? notRun : []).map(n => String(n ?? '').trim()).filter(Boolean)
+}
+
+/**
+ * The verdict a run may claim: unchanged when nothing failed to run; INCOMPLETE in place of a green
+ * one; a red one marked ` (INCOMPLETE)` once.
+ * @param {unknown} verdict the verdict over the findings, suffix included or not
+ * @param {unknown} notRun what did not run (any entry counts)
+ * @returns {string}
+ */
+function honestVerdict(verdict, notRun) {
+  const v = String(verdict ?? '').trim()
+  if (!notRunList(notRun).length) return v
+  if (!v || GREEN_WORD.test(v)) return 'INCOMPLETE'
+  return /INCOMPLETE/i.test(v) ? v : `${v} (INCOMPLETE)`
+}
+const advLimit = makeLimitStop(log)
+const reviewAgent = stopAtLimit(agent, advLimit)
 const runThrottled = makeThrottledRunner({
-  agent, parallel, log, markNotRun,
+  agent: reviewAgent, parallel, log, markNotRun,
   batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
   budget, budgetFloor: BUDGET_FLOOR,
 })
@@ -1746,7 +1878,7 @@ async function recallMemory() {
     return
   }
   const paths = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : []
-  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
+  const r = await recallDecisions(p => reviewAgent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
@@ -2100,10 +2232,10 @@ CONFIRMED findings (do not repeat them): ${JSON.stringify(confirmed.map(f => `${
 REFUTED claims (do NOT re-report these — they were adversarially disproven): ${JSON.stringify(refuted.map(f => `${f.title} @ ${f.file}:${f.line}`))}
 Dead lenses this run (their dimension is UNCOVERED — look there first): ${JSON.stringify(deadLenses)}
 If coverage is complete, return {"findings": []}.`
-  let critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
+  let critic = /** @type {FindingsResult | null} */ (await reviewAgent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
   if (!critic) {
     log('Coverage critic failed, retrying once')
-    critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
+    critic = /** @type {FindingsResult | null} */ (await reviewAgent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
   }
   if (!critic) {
     log('WARNING: coverage critic died twice — completeness was never checked')
@@ -3158,9 +3290,9 @@ function projectRuleSection(covered, notices) {
 const prior = await applyPriorDecisions(
   /** @type {Record<string, Array<(typeof confirmed)[number] | (typeof suspected)[number]>>} */ ({ confirmed, suspected }),
   priorDecisionsIn.decisions,
-  toCheck => agent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Coverage', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
+  toCheck => reviewAgent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Coverage', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
   'description',
-  prompt => agent(prompt, { label: 'decision-match', phase: 'Coverage', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+  prompt => reviewAgent(prompt, { label: 'decision-match', phase: 'Coverage', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
 )
 for (const n of prior.notes) log(`priorDecisions: ${n}`)
 priorDecisionsIn.refused.push(...prior.refused)
@@ -3171,7 +3303,7 @@ async function coverByProjectRules() {
     /** @type {Record<string, Array<(typeof confirmed)[number] | (typeof suspected)[number]>>} */ ({ confirmed, suspected }),
     priorDecisionsIn.decisions,
     'description',
-    prompt => agent(prompt, { label: 'rule-match', phase: 'Coverage', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+    prompt => reviewAgent(prompt, { label: 'rule-match', phase: 'Coverage', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
   )
   for (const n of r.notes) log(`project rules: ${n}`)
   confirmed = /** @type {typeof confirmed} */ (r.tiers['confirmed'])
@@ -3203,8 +3335,12 @@ function priorDecisionsResult() {
 function verdictOf(found) {
   const baseVerdict = found.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
     : found.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
-  return notRunBlocking().length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
+  return honestVerdict(baseVerdict, notRunBlocking().map(e => e.label))
 }
+function noteLimitStop() {
+  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, { version: CRAFT_VERSION, engine: 'adversarial-review', checkpoints: false }))
+}
+noteLimitStop()
 const verdict = verdictOf(confirmed)
 log(`Verdict: ${verdict} — ${confirmed.length} confirmed, ${suspected.length} suspected`)
 for (const e of notRun) log(`${e.incomplete ? 'NOT RUN' : 'PARTIAL'}: ${e.note}`)
