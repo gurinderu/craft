@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. depth=light is a cheaper pass: one round of the diff-scoped lenses only (no negative-space, compat, invariants or failure-windows; tests and intent still run whenever the diff changes production code), no completeness critic, and only Medium and above verified; its verdict and report say light pass and name what it skipped, and the run record carries depth (default depth=full, the review as it was). The consumer repository\'s own reviewing agents can run as extra lenses in the same run: each reviews the whole change and its findings go through the same verification and verdict. On a light pass with extraLenses absent, the engine discovers them among the repository\'s .claude/agents (an agent that reviews and does not edit; the report says when none was found); a full review runs them only when named. extraLenses=[<agentType>, ...] (an object argument, e.g. {extraLenses: ["reviewer"]}) names them at either depth, and extraLenses=[] turns them off; a named agent that is unknown or fails is a coverage gap (INCOMPLETE), never a failed run. The report names which extra lenses ran and how they were chosen. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. depth=light is a cheaper pass: one round of the diff-scoped lenses only (no negative-space, compat, invariants or failure-windows; tests and intent still run whenever the diff changes production code), no completeness critic, and only Medium and above verified; its verdict and report say light pass and name what it skipped, and the run record carries depth (default depth=full, the review as it was). The engine accepts only depth=light (any other value runs full): routing a "quick" or "light" request to it belongs to the calling skill or hook. The consumer repository\'s own reviewing agents can run as extra lenses in the same run: each reviews the whole change and its findings go through the same verification and verdict. On a light pass with extraLenses absent, the engine discovers them among the repository\'s .claude/agents (an agent that reviews and cannot edit: its tools grant no edit tool, or its disallowedTools take them all away; the report says when none was found); a full review runs them only when named. extraLenses=[<agentType>, ...] (an object argument, e.g. {extraLenses: ["reviewer"]}) names them at either depth, and extraLenses=[] turns them off; a named agent that is unknown or fails is a coverage gap (INCOMPLETE), never a failed run. The report names which extra lenses ran and how they were chosen. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -43,7 +43,7 @@ export const meta = {
  * @typedef {{ refuted: boolean, citedLineMatches: boolean, reachable: boolean, premiseSupported: boolean, reason: string }} VerdictAnswer  VERDICT_SCHEMA
  * @typedef {{ verdicts: Array<VerdictAnswer & { index: number }> }} BatchVerdictAnswer  BATCH_VERDICT_SCHEMA
  * @typedef {{ missingLenses: string[], notes: string }} CriticAnswer  CRITIC_SCHEMA
- * @typedef {{ agents: Array<{ name: string, description: string, tools: string }> }} AgentDefinitionsAnswer  AGENT_DEFINITIONS_SCHEMA
+ * @typedef {{ agents: Array<{ name: string, description: string, tools: string, disallowedTools: string }> }} AgentDefinitionsAnswer  AGENT_DEFINITIONS_SCHEMA
  * @typedef {{ changed: boolean, reason: string }} ChangedAnswer  CHANGED_SCHEMA
  * @typedef {{ posted: number, reason: string }} PrCommentsAnswer  PR_COMMENTS_SCHEMA
  * @typedef {{ status: 'resolved' | 'still-open' | 'cannot-tell' | 'regressed', currentLine: number, note: string, invariant: string, attack: string }} AdjudicateAnswer  ADJUDICATE_SCHEMA
@@ -2485,8 +2485,9 @@ function markVerdictLight(text) {
   return lines.join('\n')
 }
 
-/** @param {string[]} skippedLenses @returns {string} */
-function lightSection(skippedLenses) {
+/** @param {string[]} skippedLenses @param {boolean} [lensesRan] false on an exit before any lens ran @returns {string} */
+function lightSection(skippedLenses, lensesRan = true) {
+  if (!lensesRan) return `\n\n## Light pass -- no lens ran\n\u26a0\ufe0f This was a LIGHT pass (depth=light), and it ended before any lens ran, so it makes no statement about the code. Re-run once the cause above is fixed.\n`
   const lenses = skippedLenses.length
     ? `the whole-diff lenses ${skippedLenses.join(', ')} were NOT dispatched (tests and intent still run whenever the diff changes production code)`
     : 'no whole-diff lens was in the plan to skip'
@@ -2516,32 +2517,50 @@ function pickRepoReviewers(defs) {
   const REVIEW_WORDS = /\b(?:review|reviews|reviewer|reviewing|audit|audits|auditor|critic|critique|critiques)\b/i
   const NEGATED_CLAUSE = /\bnot\s+(?:for|to|a|an)\b[^.]*/gi
   const EDITING_WORDS = /\b(?:edit|edits|implement|implements|refactor|refactors|apply|applies|write|writes|fix|fixes)\b[^.]*\b(?:code|files?|changes?|fix|fixes|patch|patches)\b/i
-  const EDIT_TOOLS = /\b(?:Edit|Write|MultiEdit|NotebookEdit)\b/
   const list = Array.isArray(defs) ? /** @type {AgentDefinition[]} */ (defs) : []
   const picked = list.map(agentFields).filter(a => AGENT_TYPE_FORM.test(a.name) && !/^craft:/i.test(a.name)
-    && REVIEW_WORDS.test(a.duty.replace(NEGATED_CLAUSE, '')) && !EDITING_WORDS.test(a.duty.replace(NEGATED_CLAUSE, '')) && !EDIT_TOOLS.test(a.tools))
+    && REVIEW_WORDS.test(a.duty.replace(NEGATED_CLAUSE, '')) && !EDITING_WORDS.test(a.duty.replace(NEGATED_CLAUSE, '')) && !mayEdit(a))
   return [...new Set(picked.map(a => a.name))]
 }
 
-/** @param {AgentDefinition | null | undefined} d @returns {{ name: string, duty: string, tools: string }} */
+const EDIT_TOOL_NAMES = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
+
+/** @param {{ tools: string, disallowed: string }} a @returns {boolean} */
+function mayEdit(a) {
+  /** @param {string} s */
+  const names = s => s.split(/[^A-Za-z0-9_*]+/).filter(Boolean)
+  const granted = names(a.tools)
+  if (granted.length) return granted.some(t => t === '*' || EDIT_TOOL_NAMES.includes(t))
+  const denied = names(a.disallowed)
+  return !EDIT_TOOL_NAMES.every(t => denied.includes(t))
+}
+
+/** @param {AgentDefinition | null | undefined} d @returns {{ name: string, duty: string, tools: string, disallowed: string }} */
 function agentFields(d) {
-  const tools = d?.tools
-  return { name: String(d?.name ?? '').trim(), duty: String(d?.description ?? ''), tools: Array.isArray(tools) ? tools.join(' ') : String(tools ?? '') }
+  /** @param {unknown} v */
+  const text = v => (Array.isArray(v) ? v.join(' ') : String(v ?? ''))
+  return { name: String(d?.name ?? '').trim(), duty: String(d?.description ?? ''), tools: text(d?.tools), disallowed: text(d?.disallowedTools) }
+}
+
+/** @param {string[]} ran @param {string} rubric @returns {string} */
+function extraLensRanLine(ran, rubric) {
+  if (!ran.length) return 'Ran: none.'
+  return `Ran: ${ran.join(', ')}.${rubric ? ` Their findings were verified under the ${rubric} profile's rubric, whatever file they cite.` : ''}`
 }
 
 /**
  * The report's account of the extra lenses: which ran, how they were chosen, and each gap.
- * @param {{ how: string, ran: string[], failed: { agent: string, why: string }[], discovery: string }} o
+ * @param {{ how: string, ran: string[], failed: { agent: string, why: string }[], discovery: string, rubric?: string }} o
  * @returns {string}
  */
-function extraLensSection({ how, ran, failed, discovery }) {
+function extraLensSection({ how, ran, failed, discovery, rubric = '' }) {
   if (how === 'off') return ''
   if (how === 'discovered' && !ran.length && !failed.length) {
     return `\n\n## Extra lenses\nNo repo reviewer found: ${discovery || 'none of the repository\'s own agents describes itself as reviewing'} -- only the engine's own lenses ran. Name one with \`extraLenses: ["<agent>"]\`.\n`
   }
   const lines = [
     `Chosen: ${how === 'named' ? 'named by the caller (extraLenses)' : 'discovered among the repository\'s own agents'}.`,
-    `Ran: ${ran.length ? ran.join(', ') : 'none'}.`,
+    extraLensRanLine(ran, rubric),
     ...failed.map(x => `- \u26a0\ufe0f coverage gap: ${x.agent} -- ${x.why}; its review did not happen.`),
   ]
   return `\n\n## Extra lenses\n${lines.join('\n')}\n`
@@ -2556,6 +2575,8 @@ warnUnknownDepth()
 const extraLensRequest = parseExtraLenses(A['extraLenses'], lightPass)
 /** The whole-diff lenses a light pass did not dispatch, across profiles. @type {Set<string>} */
 const lightSkippedLenses = new Set()
+/** Whether any profile reached its lens phase: a light report on an earlier exit says no lens ran. */
+let lensPhaseReached = false
 /** The extra lenses that answered, and those that did not, each with the class of its failure. */
 const extraLensOutcome = { ran: /** @type {string[]} */ ([]), failed: /** @type {{ agent: string, why: string }[]} */ (extraLensRequest.refused.map(agent => ({ agent, why: 'not an agent type name' }))), discovery: '', reached: false }
 
@@ -3426,11 +3447,12 @@ const AGENT_DEFINITIONS_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name', 'description', 'tools'],
+        required: ['name', 'description', 'tools', 'disallowedTools'],
         properties: {
           name: { type: 'string', description: 'the frontmatter `name`, or the file name without .md when there is none' },
           description: { type: 'string', description: 'the frontmatter `description`, verbatim' },
           tools: { type: 'string', description: 'the frontmatter `tools` value verbatim, "" when absent' },
+          disallowedTools: { type: 'string', description: 'the frontmatter `disallowedTools` value verbatim, "" when absent' },
         },
       },
     },
@@ -4542,12 +4564,12 @@ const reviewerAgentSection = () => agentUnavailableSection(
 
 /** The extra lenses' account, once the first profile reached its lenses (realm @nick/craft, node #295). */
 function extraLensReport() {
-  return extraLensOutcome.reached ? extraLensSection({ how: extraLensRequest.how, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed, discovery: extraLensOutcome.discovery }) : ''
+  return extraLensOutcome.reached ? extraLensSection({ how: extraLensRequest.how, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed, discovery: extraLensOutcome.discovery, rubric: extraLensOutcome.ran.length ? active[0]?.id ?? '' : '' }) : ''
 }
 
 /** @param {string} reportText */
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses]) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
+  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses], lensPhaseReached) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
 }
 
 const LOGRUN_SCHEMA = {
@@ -5124,14 +5146,14 @@ async function ambiguousPathExit() {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (ambiguous path)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: [], notRun: ['an absolute `path` with no `repo` — ambiguous scope, nothing ran'], outputTokens: budget.spent(),
+    uncoveredFiles: [], notRun: ['an absolute `path` with no `repo` — ambiguous scope, nothing ran', ...extraLensesNotRun('the scope path is ambiguous')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
   return out([`## Verdict`, `⚠️ INCOMPLETE — ${msg}`].join('\n'))
 }
 async function detectDiedExit() {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
-    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun], outputTokens: budget.spent(),
+    languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun, ...extraLensesNotRun('change detection died')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
   return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
 }
@@ -5328,7 +5350,7 @@ async function unknownPinExit() {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    notRun: [`nothing ran — ${msg}`, ...scopeNotRun], outputTokens: budget.spent(),
+    notRun: [`nothing ran — ${msg}`, ...scopeNotRun, ...extraLensesNotRun('the language pin is unknown')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
   return out([`## Verdict`, `⛔ INCOMPLETE — ${msg}. NOTHING WAS REVIEWED; fix the \`languages\` argument and re-run.`].join('\n') + scopeSection())
 }
@@ -5359,7 +5381,7 @@ async function emptyDiffExit() {
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     base: baseRef || '',
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun], outputTokens: budget.spent(),
+    uncoveredFiles: [], notRun: [emptyMsg, ...scopeNotRun, ...extraLensesNotRun('the diff is empty')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${emptyMsg}`,
@@ -5371,7 +5393,7 @@ async function nothingToReviewExit() {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: changedFiles, notRun: [...scopeNotRun], outputTokens: budget.spent(),
+    uncoveredFiles: changedFiles, notRun: [...scopeNotRun, ...extraLensesNotRun('nothing reviewable changed')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `✅ Approve (NOTHING TO REVIEW) — ${okMsg}`,
@@ -5384,7 +5406,7 @@ async function noProfileExit() {
   await logRun({
     schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
-    uncoveredFiles: changedFiles, notRun: [msg, ...scopeNotRun], outputTokens: budget.spent(),
+    uncoveredFiles: changedFiles, notRun: [msg, ...scopeNotRun, ...extraLensesNotRun('no language profile covers the diff')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
   return out([
     `## Verdict`, `⚠️ INCOMPLETE — ${msg}`,
@@ -5576,6 +5598,7 @@ async function runExtraLenses(agents, priorSummary) {
 
 /** The extra lenses' findings: dispatched for the first profile only. @param {Profile} profile @param {Finding[]} pool @returns {Promise<Finding[]>} */
 function extraLensesFor(profile, pool) {
+  lensPhaseReached = true
   if (profile !== active[0]) return Promise.resolve([])
   extraLensOutcome.reached = true
   if (extraLensRequest.how === 'off') return Promise.resolve([])
@@ -5601,7 +5624,7 @@ async function chosenExtraLenses() {
 /** @returns {Promise<AgentDefinitionsAnswer | null>} */
 async function listRepoAgents() {
   try {
-    return await ragent(`List the agent definitions this repository itself declares: every \`.claude/agents/*.md\` file at the repository root (not plugin agents, not files elsewhere). For each, read its YAML frontmatter and return its \`name\` (the file name without .md when there is none), its \`description\` verbatim and its \`tools\` value verbatim ("" when absent). No such directory or no files -> {agents: []}. Use shell + read only; change nothing.`,
+    return await ragent(`List the agent definitions this repository itself declares: every \`.claude/agents/*.md\` file at the repository root (not plugin agents, not files elsewhere). For each, read its YAML frontmatter and return its \`name\` (the file name without .md when there is none), its \`description\` verbatim, and its \`tools\` and \`disallowedTools\` values verbatim ("" for each one absent). No such directory or no files -> {agents: []}. Use shell + read only; change nothing.`,
     { label: 'extra-lens-discovery', phase: 'Lenses', schema: AGENT_DEFINITIONS_SCHEMA, model: 'haiku', effort: 'low' })
   } catch (e) {
     log(`\u26a0\ufe0f extra-lens discovery threw: ${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 160)}`)
@@ -5611,7 +5634,26 @@ async function listRepoAgents() {
 
 /** Each failed or refused extra lens as a coverage gap of the first profile; a failure never fails the run. @param {Profile} profile @returns {string[]} */
 function extraLensGaps(profile) {
-  return profile === active[0] ? extraLensOutcome.failed.map(x => `extra lens ${x.agent} -- ${x.why}, so its review did not happen`) : []
+  return profile === active[0] ? extraLensOutcome.failed.map(extraLensGapLine) : []
+}
+
+/** @param {{ agent: string, why: string }} x */
+function extraLensGapLine(x) {
+  return `extra lens ${x.agent} -- ${x.why}, so its review did not happen`
+}
+
+/** @param {string} reason @returns {string[]} */
+function extraLensesNotRun(reason) {
+  if (extraLensOutcome.reached || extraLensRequest.how === 'off') return []
+  extraLensOutcome.reached = true
+  if (extraLensRequest.how === 'discovered') extraLensOutcome.discovery = `discovery did not run: ${reason}`
+  else extraLensOutcome.failed.push(...extraLensRequest.agents.map(agent => ({ agent, why: `not run: ${reason}` })))
+  return extraLensOutcome.failed.map(extraLensGapLine)
+}
+
+/** The record's depth and extra-lens fields, on every record this engine writes (#295). */
+function depthRecordFields() {
+  return { depth: reviewDepth, extraLenses: { how: extraLensRequest.how, requested: extraLensRequest.agents, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed } }
 }
 
 /** Adds the findings whose key is not yet seen. @param {Finding[]} found @param {Set<string>} seen @param {Finding[]} pool */
@@ -6759,8 +6801,7 @@ function reviewRecord(extra) {
     lensScope: fullRescan ? 'full' : 'delta',
     strict,
     fullEvery,
-    depth: reviewDepth,
-    extraLenses: { how: extraLensRequest.how, requested: extraLensRequest.agents, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed },
+    ...depthRecordFields(),
     ...agentUnavailableRecord(reviewerAgentUnavailable.map(x => x.agent),
       Object.entries(reviewerAgentFallbacks).map(([id, count]) => ({ agent: reviewerAgentNames[id] || id, count }))),
     base: baseRef || '',
@@ -6775,7 +6816,7 @@ function reviewRecord(extra) {
 }
 
 async function gateFailedExit() {
-  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map((/** @type {string} */ c) => `[${r.profile.id}] ${c}`)) }))
+  await logRun(reviewRecord({ verdict: 'Block', round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: null, notRun: [...scopeNotRun, ...extraLensesNotRun('the mechanical gate is red')], failedChecks: gateFailed.flatMap(r => (r.failedChecks || []).map((/** @type {string} */ c) => `[${r.profile.id}] ${c}`)) }))
   return out([
     `## Verdict`,
     `⛔ Block — mechanical gate is red (${gateFailed.map(r => r.profile.id).join(', ')}).`,
