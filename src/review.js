@@ -4928,7 +4928,7 @@ function announceDeadlineOverride() {
   }
 }
 announceDeadlineOverride()
-// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop loggerCommand shellSafe limitStopAdvice
+// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText DEATH_STREAK_STOP DEATHS_LIKELY makeLimitStop
 const LIMIT_ANSWER_MAX = 400
 
 const LIMIT_PATTERNS = [
@@ -4954,31 +4954,52 @@ function errorText(e) {
   return String((e && typeof e === 'object' && 'message' in e ? /** @type {{ message?: unknown }} */ (e).message : e) ?? '')
 }
 
+const DEATH_STREAK_STOP = 16
+
+const DEATHS_LIKELY = "most likely an account usage limit (the reason shows in the Workflow tool's failures list)"
+
 /**
- * The run's stop at a usage limit: `seen` the first limit message ('' until one arrives), `observe`
- * reads one agent outcome and answers whether it was a limit failure.
+ * The run's stop at a usage limit: `seen` what stopped it ('' until something did), `observeError` and
+ * `observeAnswer` read one agent outcome for the limit text and answer whether it was a limit failure,
+ * `observeDeath` counts one agent that came back with no answer and answers whether the run is now
+ * stopped, `observeReportedDeaths` takes a streak a nested run reported (deathsInReport), `observeLive`
+ * ends the streak, `cause` says which stop it was.
  * @param {(line: string) => void} say
- * @returns {{ seen: () => string, observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, note: () => string }}
+ * @returns {{ seen: () => string, cause: () => '' | 'limit' | 'deaths', observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, observeDeath: () => boolean, observeReportedDeaths: (text: string) => boolean, observeLive: () => void, note: () => string }}
  */
 function makeLimitStop(say) {
   let hit = ''
-  /** @param {string} text */
-  const take = text => {
+  /** @type {'' | 'limit' | 'deaths'} */
+  let cause = ''
+  let streak = 0
+  /** @param {'limit' | 'deaths'} why @param {string} text @returns {boolean} */
+  const stopOn = (why, text) => {
     if (!text) return false
     if (!hit) {
       hit = text
-      say(`\u26d4 usage limit reached (${text}) \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+      cause = why
+      say(`\u26d4 ${why === 'limit' ? `usage limit reached (${text})` : `${text} \u2014 ${DEATHS_LIKELY}`} \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
     }
     return true
   }
   return {
     seen: () => hit,
-    observeError: e => take(usageLimitText(errorText(e))),
-    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
-    note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
+    cause: () => cause,
+    observeError: e => stopOn('limit', usageLimitText(errorText(e))),
+    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && stopOn('limit', usageLimitText(answer)),
+    observeDeath: () => {
+      if (hit) return true
+      if (++streak < DEATH_STREAK_STOP) return false
+      return stopOn('deaths', `${streak} agents in a row died with no answer`)
+    },
+    observeReportedDeaths: text => stopOn('deaths', text),
+    observeLive: () => { streak = 0 },
+    note: () => (cause === 'limit' ? `stopped: usage limit reached (${hit})`
+      : cause === 'deaths' ? `stopped: ${hit}, ${DEATHS_LIKELY}` : ''),
   }
 }
-
+// <<< craft-inline
+// >>> craft-inline lib/limit-report.mjs loggerCommand shellSafe limitStopAdvice
 /**
  * The logger as a human runs it: CLAUDE_PLUGIN_ROOT, else this version's installed copy. Never a
  * craftRoot from the run's arguments, which a model composed: the advice is pasted into a shell.
@@ -4999,7 +5020,7 @@ function shellSafe(v) {
  * account, so the record may be lost to the same limit. An engine that writes phase checkpoints
  * (review) leaves them in `.partial` for `recover`; one that writes none has nothing to recover from,
  * and the honest advice is to rerun it.
- * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {{ seen: () => string, note: () => string }} stop  a makeLimitStop
  * @param {{ version: string, engine: string, checkpoints: boolean }} o
  * @returns {string}
  */
@@ -5073,8 +5094,9 @@ function honestVerdictLine(text, notRun) {
   return lines.join('\n')
 }
 // <<< craft-inline
-// The run's stop at a usage limit (realm @nick/craft, node #299): once one agent failed on it, ragent
-// dispatches no more review work; only the bookkeeping writes still go, so the record is attempted (on
+// The run's stop at a usage limit (realm @nick/craft, nodes #299, #300): once one agent failed on it, or
+// DEATH_STREAK_STOP agents in a row died with no answer (withBudget counts them), ragent dispatches no
+// more review work and re-dispatches none; only the bookkeeping writes still go, so the record is attempted (on
 // the same account, so under an account-wide limit it stays in `.partial` for `craft-log-run recover`).
 const limitStop = makeLimitStop(log)
 /** @param {AgentOpts} opts */
@@ -5134,6 +5156,7 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
       // A live answer enters the window as one observation of a reachable API: an outage that ended
       // slides out of the window and the re-dispatch comes back for the next isolated failure.
       if (breaker) breaker.recordLive()
+      limitStop.observeLive()
       return res
     }
     if (!redispatchAfterDeath(attempt, spentOut, budget, breaker, opts)) return null
@@ -5178,11 +5201,16 @@ function logDeadlineFire(o, budget) {
 }
 
 /**
- * After an attempt that came back empty: whether to re-dispatch (true) or treat the agent as dead (false).
+ * After an attempt that came back empty: counts the death toward the run's streak, then whether to
+ * re-dispatch (true) or treat the agent as dead (false).
  * @param {number} attempt @param {boolean} spentOut @param {ReturnType<typeof makeDeadlineBudget>} budget
  * @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {boolean}
  */
 function redispatchAfterDeath(attempt, spentOut, budget, breaker, opts) {
+  // A death, counted toward the run-wide streak (realm @nick/craft, nodes #299, #300): under an account
+  // limit agent() answers null with no text, so the streak is the only stop such a run can see. A
+  // stopped run re-dispatches no review work; a record write still gets its second attempt.
+  if (limitStop.observeDeath() && !opts.bookkeeping) return false
   if (attempt >= AGENT_TRIES) return false
   // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
   if (spentOut) {
@@ -5437,10 +5465,11 @@ function extraLensReport() {
   return extraLensOutcome.reached ? extraLensSection({ how: extraLensRequest.how, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed, discovery: extraLensOutcome.discovery, exit: extraLensOutcome.exit, rubric: extraLensOutcome.ran.length ? active[0]?.id ?? '' : '' }) : ''
 }
 
-/** The usage-limit stop and how to recover the record it may have cost, above the verdict; '' without a stop. */
+/** The usage-limit stop and how to recover the record it may have cost, above the verdict; '' without a stop. The heading says which stop: the limit text seen, or a streak of deaths. */
 function limitStopSection() {
   const advice = limitStopAdvice(limitStop, { version: CRAFT_VERSION, engine: 'review', checkpoints: true })
-  return advice ? `## \u26d4 Usage limit reached\n${advice}\n\n` : ''
+  if (!advice) return ''
+  return `## \u26d4 ${limitStop.cause() === 'deaths' ? 'Agents keep dying with no answer' : 'Usage limit reached'}\n${advice}\n\n`
 }
 
 /** @param {string} reportText */

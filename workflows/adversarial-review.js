@@ -1729,34 +1729,55 @@ function errorText(e) {
   return String((e && typeof e === 'object' && 'message' in e ? /** @type {{ message?: unknown }} */ (e).message : e) ?? '')
 }
 
+const DEATH_STREAK_STOP = 16
+
+const DEATHS_LIKELY = "most likely an account usage limit (the reason shows in the Workflow tool's failures list)"
+
 /**
- * The run's stop at a usage limit: `seen` the first limit message ('' until one arrives), `observe`
- * reads one agent outcome and answers whether it was a limit failure.
+ * The run's stop at a usage limit: `seen` what stopped it ('' until something did), `observeError` and
+ * `observeAnswer` read one agent outcome for the limit text and answer whether it was a limit failure,
+ * `observeDeath` counts one agent that came back with no answer and answers whether the run is now
+ * stopped, `observeReportedDeaths` takes a streak a nested run reported (deathsInReport), `observeLive`
+ * ends the streak, `cause` says which stop it was.
  * @param {(line: string) => void} say
- * @returns {{ seen: () => string, observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, note: () => string }}
+ * @returns {{ seen: () => string, cause: () => '' | 'limit' | 'deaths', observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, observeDeath: () => boolean, observeReportedDeaths: (text: string) => boolean, observeLive: () => void, note: () => string }}
  */
 function makeLimitStop(say) {
   let hit = ''
-  /** @param {string} text */
-  const take = text => {
+  /** @type {'' | 'limit' | 'deaths'} */
+  let cause = ''
+  let streak = 0
+  /** @param {'limit' | 'deaths'} why @param {string} text @returns {boolean} */
+  const stopOn = (why, text) => {
     if (!text) return false
     if (!hit) {
       hit = text
-      say(`\u26d4 usage limit reached (${text}) \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+      cause = why
+      say(`\u26d4 ${why === 'limit' ? `usage limit reached (${text})` : `${text} \u2014 ${DEATHS_LIKELY}`} \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
     }
     return true
   }
   return {
     seen: () => hit,
-    observeError: e => take(usageLimitText(errorText(e))),
-    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
-    note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
+    cause: () => cause,
+    observeError: e => stopOn('limit', usageLimitText(errorText(e))),
+    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && stopOn('limit', usageLimitText(answer)),
+    observeDeath: () => {
+      if (hit) return true
+      if (++streak < DEATH_STREAK_STOP) return false
+      return stopOn('deaths', `${streak} agents in a row died with no answer`)
+    },
+    observeReportedDeaths: text => stopOn('deaths', text),
+    observeLive: () => { streak = 0 },
+    note: () => (cause === 'limit' ? `stopped: usage limit reached (${hit})`
+      : cause === 'deaths' ? `stopped: ${hit}, ${DEATHS_LIKELY}` : ''),
   }
 }
 
 /**
  * An agent callback that dispatches nothing once the stop has seen a limit (answering null, as a dead
- * agent does), and turns a limit failure of its own into that stop and a null.
+ * agent does), turns a limit failure of its own into that stop and a null, and counts its null answers
+ * toward the death streak and its live ones against it.
  * @template P, O
  * @param {(prompt: P, opts: O) => Promise<unknown>} call
  * @param {ReturnType<typeof makeLimitStop>} stop
@@ -1767,14 +1788,16 @@ function stopAtLimit(call, stop) {
     if (stop.seen()) return null
     try {
       const res = await call(prompt, opts)
-      return stop.observeAnswer(res) ? null : res
+      if (stop.observeAnswer(res)) return null
+      if (res == null) stop.observeDeath()
+      else stop.observeLive()
+      return res
     } catch (e) {
       if (stop.observeError(e)) return null
       throw e
     }
   }
 }
-
 /**
  * The logger as a human runs it: CLAUDE_PLUGIN_ROOT, else this version's installed copy. Never a
  * craftRoot from the run's arguments, which a model composed: the advice is pasted into a shell.
@@ -1795,7 +1818,7 @@ function shellSafe(v) {
  * account, so the record may be lost to the same limit. An engine that writes phase checkpoints
  * (review) leaves them in `.partial` for `recover`; one that writes none has nothing to recover from,
  * and the honest advice is to rerun it.
- * @param {ReturnType<typeof makeLimitStop>} stop
+ * @param {{ seen: () => string, note: () => string }} stop  a makeLimitStop
  * @param {{ version: string, engine: string, checkpoints: boolean }} o
  * @returns {string}
  */
