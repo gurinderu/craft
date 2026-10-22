@@ -197,7 +197,8 @@ provisioner, a queue consumer with retries, or a sync daemon.
   retry? Or does it return `await_change` (an `AwaitChange` requeue, a `None` / no-requeue
   action) and wait for a change only another actor can make?
 - **Not this class**: an error that is swallowed and never surfaces is R13. R16 is the error that
-  IS handled, but whose handling drops the retry bound the happy path had.
+  IS handled, but whose handling drops the retry bound the happy path had. R2 asks for a wake
+  source per outcome in general; R16 is the error arm R2 tables usually leave out.
 - **Answer needed**: for EVERY error arm in the pass, the requeue it produces and the wake source
   behind it. Pay special attention to errors raised while writing the status that would have
   recorded the failure: the status write failed, so no status event fires either. "The object
@@ -214,6 +215,8 @@ provisioner, a queue consumer with retries, or a sync daemon.
 - **Question**: the pass holds (a finalizer, a hold condition, a "waiting for X" status, a
   deferred delete) or requeues until some other object reaches a state. Does this controller
   watch that other object, so that its change re-enqueues the waiting one?
+- **Not this class**: R2 asks whether any wake source meets the promised deadline. R17 is the hold
+  whose release depends on a specific other object, and whether that object is watched at all.
 - **Answer needed**: for each hold or wait, the object whose state releases it, and the watch /
   `owns` / `watches` mapping that maps a change of that object back to the waiting primary. If
   there is no such watch, the timer that re-checks it instead, with its period.
@@ -279,6 +282,8 @@ provisioner, a queue consumer with retries, or a sync daemon.
 ## Severity floor
 
 A finding on a deletion or recovery path (finalizer removal, teardown, a delete handler,
-crash or partial-failure recovery, an error / retry path) is at least **Medium**. These are the
-paths that run rarely, that tests exercise least, and where a defect strands or destroys state.
-Severity calibration never demotes one to Low.
+crash or partial-failure recovery) is at least **Medium**. These are the paths that run rarely,
+that tests exercise least, and where a defect strands or destroys state. The review workflow's
+`reconciler` and `failure-windows` lenses mark such a finding (`deletionOrRecoveryPath`), and the
+workflow raises one filed below Medium to Medium before verification. A verifier that judges the
+code unreachable in production can still lower it one notch.
