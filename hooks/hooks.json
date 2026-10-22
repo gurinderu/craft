@@ -1,5 +1,5 @@
 {
-  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools — at session start, on a request for review work, and to the subagent such work is handed to; and warn before a push to a branch under review whose head has no craft review verdict.",
+  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools — at session start, on a request for review work, and to the subagent such work is handed to; and, on a push to a branch under review whose head has no craft review verdict, ask for that review before the replies.",
   "hooks": {
     "PreToolUse": [
       {
