@@ -426,6 +426,12 @@ function missedStructuredOutput(res) {
   return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
+/** @param {unknown} res @returns {boolean} */
+function loggerAgentDied(res) {
+  const outcome = logRunOutcome(res)
+  return !outcome.ok && !/craft-log-run FAILED/.test(outcome.reason)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -443,6 +449,7 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const dispatch = logRunDispatch(record, { phase })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)

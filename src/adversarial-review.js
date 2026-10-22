@@ -1235,7 +1235,7 @@ function repoRefusal({ engine, repo, craftVersion, outputTokens, via = '' }) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly MISSED_STRUCTURED_OUTPUT missedStructuredOutput makeRunLogger telemetryLossNoter
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly MISSED_STRUCTURED_OUTPUT missedStructuredOutput loggerAgentDied makeRunLogger telemetryLossNoter
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1393,6 +1393,12 @@ function missedStructuredOutput(res) {
   return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
+/** @param {unknown} res @returns {boolean} */
+function loggerAgentDied(res) {
+  const outcome = logRunOutcome(res)
+  return !outcome.ok && !/craft-log-run FAILED/.test(outcome.reason)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -1410,6 +1416,7 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const dispatch = logRunDispatch(record, { phase })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
@@ -1759,8 +1766,108 @@ const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
 const notRunBlocking = () => notRun.filter(e => e.incomplete)
+// >>> craft-inline lib/usage-limit.mjs LIMIT_ANSWER_MAX LIMIT_PATTERNS usageLimitText errorText makeLimitStop stopAtLimit
+const LIMIT_ANSWER_MAX = 400
+
+const LIMIT_PATTERNS = [
+  /\bhit your (?:\w+[ -])?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session) limit (?:reached|exceeded|hit)\b/i,
+  /\breached (?:your|the) (?:\w+ )?(?:usage|rate) limit\b/i,
+  /\brate[ -]limit(?:ed)?\b[^\n]*\b(?:429|exceeded|reached|try again|resets?)\b/i,
+  /\b(?:usage|rate|weekly) limit\b[^\n]*\bresets?\b/i,
+]
+
+/**
+ * The usage/rate-limit message in a failure's text, trimmed to one line, or '' when the text is not one.
+ * @param {unknown} text an error message, or an agent's text answer
+ * @returns {string}
+ */
+function usageLimitText(text) {
+  const s = String(text ?? '')
+  if (!s.trim()) return ''
+  const line = s.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).find(l => LIMIT_PATTERNS.some(p => p.test(l)))
+  return line ? line.slice(0, 200) : ''
+}
+
+/** @param {unknown} e @returns {string} */
+function errorText(e) {
+  return String((e && typeof e === 'object' && 'message' in e ? /** @type {{ message?: unknown }} */ (e).message : e) ?? '')
+}
+
+/**
+ * The run's stop at a usage limit: `seen` the first limit message ('' until one arrives), `observe`
+ * reads one agent outcome and answers whether it was a limit failure.
+ * @param {(line: string) => void} say
+ * @returns {{ seen: () => string, observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, note: () => string }}
+ */
+function makeLimitStop(say) {
+  let hit = ''
+  /** @param {string} text */
+  const take = text => {
+    if (!text) return false
+    if (!hit) {
+      hit = text
+      say(`\u26d4 usage limit reached (${text}) \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+    }
+    return true
+  }
+  return {
+    seen: () => hit,
+    observeError: e => take(usageLimitText(errorText(e))),
+    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
+    note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
+  }
+}
+
+/**
+ * An agent callback that dispatches nothing once the stop has seen a limit (answering null, as a dead
+ * agent does), and turns a limit failure of its own into that stop and a null.
+ * @template P, O
+ * @param {(prompt: P, opts: O) => Promise<unknown>} call
+ * @param {ReturnType<typeof makeLimitStop>} stop
+ * @returns {(prompt: P, opts: O) => Promise<unknown>}
+ */
+function stopAtLimit(call, stop) {
+  return async (prompt, opts) => {
+    if (stop.seen()) return null
+    try {
+      const res = await call(prompt, opts)
+      return stop.observeAnswer(res) ? null : res
+    } catch (e) {
+      if (stop.observeError(e)) return null
+      throw e
+    }
+  }
+}
+// <<< craft-inline
+// >>> craft-inline lib/honest-verdict.mjs GREEN_WORD notRunList honestVerdict
+const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
+
+/** @param {unknown} notRun @returns {string[]} */
+function notRunList(notRun) {
+  return (Array.isArray(notRun) ? notRun : []).map(n => String(n ?? '').trim()).filter(Boolean)
+}
+
+/**
+ * The verdict a run may claim: unchanged when nothing failed to run; INCOMPLETE in place of a green
+ * one; a red one marked ` (INCOMPLETE)` once.
+ * @param {unknown} verdict the verdict over the findings, suffix included or not
+ * @param {unknown} notRun what did not run (any entry counts)
+ * @returns {string}
+ */
+function honestVerdict(verdict, notRun) {
+  const v = String(verdict ?? '').trim()
+  if (!notRunList(notRun).length) return v
+  if (!v || GREEN_WORD.test(v)) return 'INCOMPLETE'
+  return /INCOMPLETE/i.test(v) ? v : `${v} (INCOMPLETE)`
+}
+// <<< craft-inline
+// The run's stop at a usage limit (realm @nick/craft, node #299): the lens, verifier and critic dispatches
+// go through `reviewAgent`, which dispatches nothing once one agent failed on the limit.
+const advLimit = makeLimitStop(log)
+const reviewAgent = stopAtLimit(agent, advLimit)
 const runThrottled = makeThrottledRunner({
-  agent, parallel, log, markNotRun,
+  agent: reviewAgent, parallel, log, markNotRun,
   batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
   budget, budgetFloor: BUDGET_FLOOR,
 })
@@ -2280,10 +2387,10 @@ CONFIRMED findings (do not repeat them): ${JSON.stringify(confirmed.map(f => `${
 REFUTED claims (do NOT re-report these — they were adversarially disproven): ${JSON.stringify(refuted.map(f => `${f.title} @ ${f.file}:${f.line}`))}
 Dead lenses this run (their dimension is UNCOVERED — look there first): ${JSON.stringify(deadLenses)}
 If coverage is complete, return {"findings": []}.`
-  let critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
+  let critic = /** @type {FindingsResult | null} */ (await reviewAgent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
   if (!critic) {
     log('Coverage critic failed, retrying once')
-    critic = /** @type {FindingsResult | null} */ (await agent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
+    critic = /** @type {FindingsResult | null} */ (await reviewAgent(CRITIC_PROMPT, { label: 'coverage-critic-retry', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
   }
   if (!critic) {
     // Without this the critic's silence is indistinguishable from "coverage is complete": `?? []`
@@ -3432,8 +3539,13 @@ function priorDecisionsResult() {
 function verdictOf(found) {
   const baseVerdict = found.some(f => f.severity === 'critical' || f.severity === 'high') ? 'Block'
     : found.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
-  return notRunBlocking().length ? `${baseVerdict} (INCOMPLETE)` : baseVerdict
+  return honestVerdict(baseVerdict, notRunBlocking().map(e => e.label))
 }
+// A usage limit stopped the run: the stop is a blocking notRun entry, so the verdict is never Approve.
+function noteLimitStop() {
+  if (advLimit.seen()) markNotRun('usage-limit', advLimit.note())
+}
+noteLimitStop()
 const verdict = verdictOf(confirmed)
 log(`Verdict: ${verdict} — ${confirmed.length} confirmed, ${suspected.length} suspected`)
 for (const e of notRun) log(`${e.incomplete ? 'NOT RUN' : 'PARTIAL'}: ${e.note}`)

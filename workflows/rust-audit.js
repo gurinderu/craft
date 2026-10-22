@@ -1279,8 +1279,7 @@ function normalizeDimensionVerdict(v) {
  * @param {unknown[]} notRun
  */
 function auditVerdict(worst, notRun) {
-  if (!notRun.length || /INCOMPLETE/i.test(worst)) return worst
-  return `${worst} (INCOMPLETE)`
+  return honestVerdict(worst, notRun)
 }
 
 /**
@@ -1450,6 +1449,12 @@ function missedStructuredOutput(res) {
   return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
+/** @param {unknown} res @returns {boolean} */
+function loggerAgentDied(res) {
+  const outcome = logRunOutcome(res)
+  return !outcome.ok && !/craft-log-run FAILED/.test(outcome.reason)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -1467,6 +1472,7 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const dispatch = logRunDispatch(record, { phase })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
@@ -1893,9 +1899,120 @@ function dispatchDim(dimension, promise, opts = {}) {
   const threw = opts.threw || (msg => `${dimension}: agent threw — ${msg} — dimension NOT RUN`)
   return promise
     .then(r => dimResult(dimension, r, deadReason, opts.evidenceGate ?? true))
-    .catch((/** @type {unknown} */ e) => { log(threw((e && /** @type {{ message?: unknown }} */ (e).message) || e)); return null })
+    .catch((/** @type {unknown} */ e) => { auditLimit.observeError(e); log(threw((e && /** @type {{ message?: unknown }} */ (e).message) || e)); return null })
 }
 
+const LIMIT_ANSWER_MAX = 400
+
+const LIMIT_PATTERNS = [
+  /\bhit your (?:\w+[ -])?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session) limit (?:reached|exceeded|hit)\b/i,
+  /\breached (?:your|the) (?:\w+ )?(?:usage|rate) limit\b/i,
+  /\brate[ -]limit(?:ed)?\b[^\n]*\b(?:429|exceeded|reached|try again|resets?)\b/i,
+  /\b(?:usage|rate|weekly) limit\b[^\n]*\bresets?\b/i,
+]
+
+/**
+ * The usage/rate-limit message in a failure's text, trimmed to one line, or '' when the text is not one.
+ * @param {unknown} text an error message, or an agent's text answer
+ * @returns {string}
+ */
+function usageLimitText(text) {
+  const s = String(text ?? '')
+  if (!s.trim()) return ''
+  const line = s.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).find(l => LIMIT_PATTERNS.some(p => p.test(l)))
+  return line ? line.slice(0, 200) : ''
+}
+
+/** @param {unknown} e @returns {string} */
+function errorText(e) {
+  return String((e && typeof e === 'object' && 'message' in e ? /** @type {{ message?: unknown }} */ (e).message : e) ?? '')
+}
+
+/**
+ * The run's stop at a usage limit: `seen` the first limit message ('' until one arrives), `observe`
+ * reads one agent outcome and answers whether it was a limit failure.
+ * @param {(line: string) => void} say
+ * @returns {{ seen: () => string, observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, note: () => string }}
+ */
+function makeLimitStop(say) {
+  let hit = ''
+  /** @param {string} text */
+  const take = text => {
+    if (!text) return false
+    if (!hit) {
+      hit = text
+      say(`\u26d4 usage limit reached (${text}) \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+    }
+    return true
+  }
+  return {
+    seen: () => hit,
+    observeError: e => take(usageLimitText(errorText(e))),
+    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
+    note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
+  }
+}
+const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
+
+const VERDICT_WORD = /\b(Approve|Healthy|Clean|Block|Warning|Concerns|At-risk|UB-found|INCOMPLETE)\b/i
+
+const NOTE_MAX = 600
+
+/** @param {unknown} notRun @returns {string[]} */
+function notRunList(notRun) {
+  return (Array.isArray(notRun) ? notRun : []).map(n => String(n ?? '').trim()).filter(Boolean)
+}
+
+/**
+ * The verdict a run may claim: unchanged when nothing failed to run; INCOMPLETE in place of a green
+ * one; a red one marked ` (INCOMPLETE)` once.
+ * @param {unknown} verdict the verdict over the findings, suffix included or not
+ * @param {unknown} notRun what did not run (any entry counts)
+ * @returns {string}
+ */
+function honestVerdict(verdict, notRun) {
+  const v = String(verdict ?? '').trim()
+  if (!notRunList(notRun).length) return v
+  if (!v || GREEN_WORD.test(v)) return 'INCOMPLETE'
+  return /INCOMPLETE/i.test(v) ? v : `${v} (INCOMPLETE)`
+}
+
+/** The index of the line carrying the verdict word, or -1. @param {string[]} lines @returns {number} */
+function verdictLineAt(lines) {
+  const head = lines.findIndex(l => /verdict/i.test(l))
+  if (head < 0) return -1
+  const after = String(lines[head]).replace(/^[\s#*_>-]*verdict\b/i, '')
+  if (VERDICT_WORD.test(after)) return head
+  return lines.findIndex((l, i) => i > head && l.trim())
+}
+
+/**
+ * A rendered report whose verdict line no longer says Approve when something did not run: the first
+ * verdict word of the line under the verdict heading (or on it), when green, becomes INCOMPLETE and
+ * the line names what did not run. A red verdict line, and any report when everything ran, is
+ * returned as it came.
+ * @param {unknown} text
+ * @param {unknown} notRun
+ * @returns {string}
+ */
+function honestVerdictLine(text, notRun) {
+  const s = String(text ?? '')
+  const missing = notRunList(notRun)
+  if (!missing.length) return s
+  const lines = s.split('\n')
+  const at = verdictLineAt(lines)
+  if (at < 0) return s
+  const line = String(lines[at])
+  const word = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
+  if (!word || !GREEN_WORD.test(String(word[1]))) return s
+  const fixed = line.replace(/(?:(?:\u2705|\u26a0\ufe0f?)\s*)?\b(?:Approve|Healthy|Clean)\b(?:\s*\((?:INCOMPLETE|PARTIAL COVERAGE)\))?/i, '\u26a0\ufe0f INCOMPLETE')
+  const list = missing.join('; ')
+  const named = /did not run/i.test(fixed) ? '' : ` \u00b7 part of this review did not run: ${list.length > NOTE_MAX ? `${list.slice(0, NOTE_MAX)}\u2026` : list}`
+  lines[at] = `${fixed}${named}`
+  return lines.join('\n')
+}
+const auditLimit = makeLimitStop(log)
 /** @type {Array<() => Promise<DimResult | null | undefined> | null>} */
 const tasks = []
 /** @type {string[]} */
@@ -2044,6 +2161,7 @@ const results = (await parallel(tasks)).filter(r => !!r).map(r => ({ ...r, verdi
 
 const ran = new Set(results.map(r => r.dimension))
 const notRun = dispatched.filter(d => !ran.has(d))
+if (auditLimit.seen()) notRun.unshift(auditLimit.note())
 const couldNotRun = results.filter(r => /^\s*INCOMPLETE \(not run\)/i.test(String(r.verdict || ''))).map(r => r.dimension)
 const noEvidence = results.filter(r => /^\s*INCOMPLETE \(no evidence/i.test(String(r.verdict || ''))).map(r => r.dimension)
 const incompleteDimensions = [...notRun, ...results.filter(r => /^\s*INCOMPLETE/i.test(String(r.verdict || ''))).map(r => r.dimension)]
@@ -2060,7 +2178,7 @@ const listOrNone = names => names.length ? names.join(', ') : 'none'
 const stripped = results.map(stripInternal)
 
 phase('Synthesize')
-const report = await agent(
+const report = auditLimit.seen() ? null : await agent(
   `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, or could not run, mark the audit INCOMPLETE.
@@ -2118,5 +2236,6 @@ const auditRecord = {
 }
 await logRun(auditRecord)
 
+if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 ${auditLimit.note()}: the synthesis was not dispatched, so this audit has NO report. Nothing here is an approval; re-run it once the limit resets.\n`
 if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
-return `${telemetryLostSection(telemetryLost)}${agentSection()}${report}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${honestVerdictLine(report, incompleteDimensions)}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`

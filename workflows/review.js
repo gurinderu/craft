@@ -17,7 +17,7 @@ export const meta = {
  * @typedef {VerdictAnswer} Vote  one verifier verdict (model output, VERDICT_SCHEMA or one BATCH_VERDICT_SCHEMA entry)
  * @typedef {PriorRoundAnswer} PriorRound  the loaded prior round (loader agent output)
  * @typedef {ReturnType<typeof sliceDiff>[number]} Slice
- * @typedef {AgentOptions & { deadlineMs?: number | undefined, breaker?: ReturnType<typeof makeDeathBreaker> | null | undefined, inSessionDir?: boolean | undefined }} AgentOpts  agent() options plus the three this engine strips (inSessionDir: no `repo` cd, the agent works where the session started); closed, so a misspelt option is a type error
+ * @typedef {AgentOptions & { deadlineMs?: number | undefined, breaker?: ReturnType<typeof makeDeathBreaker> | null | undefined, inSessionDir?: boolean | undefined, bookkeeping?: boolean | undefined }} AgentOpts  agent() options plus the four this engine strips (inSessionDir: no `repo` cd, the agent works where the session started; bookkeeping: a record write, dispatched even after a usage limit); closed, so a misspelt option is a type error
  * @typedef {{ why?: string, file?: string, severity?: string, title?: string, line?: number, source?: string, ruleId?: string, toolRule?: string, fp?: string, symbol?: string, tier?: string, disposition?: string, whyRef?: { record?: unknown, fp?: unknown }, fix?: string, whereChecked?: string, blastRadius?: string, verifySkipped?: boolean, votesDiscarded?: number, carriedUnverified?: boolean, ledgerDupOfUnverifiedPrior?: boolean, [k: string]: unknown }} Finding  a finding as a model reports it (FindingAnswer, LedgerAnswer), then as the pipeline stamps it
  * @typedef {PreflightAnswer} Preflight  the preflight agent's answer (model output)
  * @typedef {{ baseRef?: unknown, preflight?: Preflight | null, isLibrary?: boolean, securitySensitive?: boolean }} Ctx  what a profile's gate prompt is built from
@@ -4395,6 +4395,117 @@ function announceDeadlineOverride() {
   }
 }
 announceDeadlineOverride()
+const LIMIT_ANSWER_MAX = 400
+
+const LIMIT_PATTERNS = [
+  /\bhit your (?:\w+[ -])?limit\b/i,
+  /\b(?:usage|weekly|daily|monthly|session) limit (?:reached|exceeded|hit)\b/i,
+  /\breached (?:your|the) (?:\w+ )?(?:usage|rate) limit\b/i,
+  /\brate[ -]limit(?:ed)?\b[^\n]*\b(?:429|exceeded|reached|try again|resets?)\b/i,
+  /\b(?:usage|rate|weekly) limit\b[^\n]*\bresets?\b/i,
+]
+
+/**
+ * The usage/rate-limit message in a failure's text, trimmed to one line, or '' when the text is not one.
+ * @param {unknown} text an error message, or an agent's text answer
+ * @returns {string}
+ */
+function usageLimitText(text) {
+  const s = String(text ?? '')
+  if (!s.trim()) return ''
+  const line = s.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).find(l => LIMIT_PATTERNS.some(p => p.test(l)))
+  return line ? line.slice(0, 200) : ''
+}
+
+/** @param {unknown} e @returns {string} */
+function errorText(e) {
+  return String((e && typeof e === 'object' && 'message' in e ? /** @type {{ message?: unknown }} */ (e).message : e) ?? '')
+}
+
+/**
+ * The run's stop at a usage limit: `seen` the first limit message ('' until one arrives), `observe`
+ * reads one agent outcome and answers whether it was a limit failure.
+ * @param {(line: string) => void} say
+ * @returns {{ seen: () => string, observeError: (e: unknown) => boolean, observeAnswer: (answer: unknown) => boolean, note: () => string }}
+ */
+function makeLimitStop(say) {
+  let hit = ''
+  /** @param {string} text */
+  const take = text => {
+    if (!text) return false
+    if (!hit) {
+      hit = text
+      say(`\u26d4 usage limit reached (${text}) \u2014 no further review agents are dispatched; the run reports what it has as INCOMPLETE`)
+    }
+    return true
+  }
+  return {
+    seen: () => hit,
+    observeError: e => take(usageLimitText(errorText(e))),
+    observeAnswer: answer => typeof answer === 'string' && answer.length <= LIMIT_ANSWER_MAX && take(usageLimitText(answer)),
+    note: () => (hit ? `stopped: usage limit reached (${hit})` : ''),
+  }
+}
+const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
+
+const VERDICT_WORD = /\b(Approve|Healthy|Clean|Block|Warning|Concerns|At-risk|UB-found|INCOMPLETE)\b/i
+
+const NOTE_MAX = 600
+
+/** @param {unknown} notRun @returns {string[]} */
+function notRunList(notRun) {
+  return (Array.isArray(notRun) ? notRun : []).map(n => String(n ?? '').trim()).filter(Boolean)
+}
+
+/**
+ * The verdict a run may claim: unchanged when nothing failed to run; INCOMPLETE in place of a green
+ * one; a red one marked ` (INCOMPLETE)` once.
+ * @param {unknown} verdict the verdict over the findings, suffix included or not
+ * @param {unknown} notRun what did not run (any entry counts)
+ * @returns {string}
+ */
+function honestVerdict(verdict, notRun) {
+  const v = String(verdict ?? '').trim()
+  if (!notRunList(notRun).length) return v
+  if (!v || GREEN_WORD.test(v)) return 'INCOMPLETE'
+  return /INCOMPLETE/i.test(v) ? v : `${v} (INCOMPLETE)`
+}
+
+/** The index of the line carrying the verdict word, or -1. @param {string[]} lines @returns {number} */
+function verdictLineAt(lines) {
+  const head = lines.findIndex(l => /verdict/i.test(l))
+  if (head < 0) return -1
+  const after = String(lines[head]).replace(/^[\s#*_>-]*verdict\b/i, '')
+  if (VERDICT_WORD.test(after)) return head
+  return lines.findIndex((l, i) => i > head && l.trim())
+}
+
+/**
+ * A rendered report whose verdict line no longer says Approve when something did not run: the first
+ * verdict word of the line under the verdict heading (or on it), when green, becomes INCOMPLETE and
+ * the line names what did not run. A red verdict line, and any report when everything ran, is
+ * returned as it came.
+ * @param {unknown} text
+ * @param {unknown} notRun
+ * @returns {string}
+ */
+function honestVerdictLine(text, notRun) {
+  const s = String(text ?? '')
+  const missing = notRunList(notRun)
+  if (!missing.length) return s
+  const lines = s.split('\n')
+  const at = verdictLineAt(lines)
+  if (at < 0) return s
+  const line = String(lines[at])
+  const word = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
+  if (!word || !GREEN_WORD.test(String(word[1]))) return s
+  const fixed = line.replace(/(?:(?:\u2705|\u26a0\ufe0f?)\s*)?\b(?:Approve|Healthy|Clean)\b(?:\s*\((?:INCOMPLETE|PARTIAL COVERAGE)\))?/i, '\u26a0\ufe0f INCOMPLETE')
+  const list = missing.join('; ')
+  const named = /did not run/i.test(fixed) ? '' : ` \u00b7 part of this review did not run: ${list.length > NOTE_MAX ? `${list.slice(0, NOTE_MAX)}\u2026` : list}`
+  lines[at] = `${fixed}${named}`
+  return lines.join('\n')
+}
+const limitStop = makeLimitStop(log)
 /** @param {AgentOpts} opts */
 function deadlineMsFor(opts) {
   const explicit = Number(opts.deadlineMs)
@@ -4410,7 +4521,8 @@ function deadlineMsFor(opts) {
  * @returns {Promise<T | null>}
  */
 async function ragent(prompt, opts = {}) {
-  const { deadlineMs: _deadlineMs, breaker, inSessionDir: _inSessionDir, ...agentOpts } = opts
+  const { deadlineMs: _deadlineMs, breaker, inSessionDir: _inSessionDir, bookkeeping, ...agentOpts } = opts
+  if (!bookkeeping && limitStop.seen()) return null
   const ms = deadlineMsFor(opts)
   const budget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
   try {
@@ -4424,7 +4536,8 @@ async function ragent(prompt, opts = {}) {
 async function withBudget(prompt, agentOpts, budget, breaker, opts) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
-    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), budget.hit])
+    const res = await raceLimited(prompt, o, budget, opts)
+    if (res === LIMIT_HIT) return null
     const spentOut = budget.belowFloor()
     if (res === DEADLINE_HIT) {
       logDeadlineFire(o, budget)
@@ -4435,6 +4548,18 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
       return res
     }
     if (!redispatchAfterDeath(attempt, spentOut, budget, breaker, opts)) return null
+  }
+}
+
+const LIMIT_HIT = { craftUsageLimit: true }
+/** One attempt raced against the deadline; LIMIT_HIT when it failed on a usage limit (thrown or answered). @param {string} prompt @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} budget @param {AgentOpts} opts @returns {Promise<unknown>} */
+async function raceLimited(prompt, o, budget, opts) {
+  try {
+    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), budget.hit])
+    return limitStop.observeAnswer(res) ? LIMIT_HIT : res
+  } catch (e) {
+    if (limitStop.observeError(e)) return LIMIT_HIT
+    throw e
   }
 }
 
@@ -4525,7 +4650,17 @@ function noteTelemetryLoss(what, why) {
   telemetryLost.push(line)
   log(`⚠️ telemetry lost: ${line}`)
 }
-const ragentQuietly = quietly(ragent)
+/**
+ * ragent for a bookkeeping write: still dispatched after a usage limit stopped the review work.
+ * @template [T=unknown]
+ * @param {string} p
+ * @param {AgentOpts & { schema?: Schema<T> | undefined }} o
+ * @returns {Promise<T | null>}
+ */
+function ragentBookkeeping(p, o) {
+  return ragent(p, { ...o, bookkeeping: true })
+}
+const ragentQuietly = quietly(ragentBookkeeping)
 /**
  * A quiet call's outcome split in two: the answer (null when the agent died OR threw), and the throw's
  * message ('' when it did not throw).
@@ -4802,6 +4937,12 @@ function missedStructuredOutput(res) {
   return String(threw ?? '').includes(MISSED_STRUCTURED_OUTPUT)
 }
 
+/** @param {unknown} res @returns {boolean} */
+function loggerAgentDied(res) {
+  const outcome = logRunOutcome(res)
+  return !outcome.ok && !/craft-log-run FAILED/.test(outcome.reason)
+}
+
 /**
  * @template O
  * @param {object} o
@@ -4819,6 +4960,7 @@ function makeRunLogger({ call, phase, target, noteLoss, prepare = record => reco
     const dispatch = logRunDispatch(record, { phase })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
+    else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
     const landed = logRunOutcome(res)
     if (!landed.ok) noteLoss('the run record', landed.reason, false)
     else if (landed.reason) noteLoss('the run directory (the record itself landed)', landed.reason, true)
@@ -6731,7 +6873,7 @@ async function reviewProfile(profile) {
   log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
     language: profile.id, branch, head, baseRef, round: thisRound,
-    verdict: finalVerdict(confirmed),
+    verdict: honestVerdict(finalVerdict(confirmed), notRun),
     findings: summarizeFindings(confirmed),
     verification: { candidates: deduped.length - unverified.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped, unverified: unverified.length },
   }, 'Verify')
@@ -7127,7 +7269,11 @@ const dropped = results.reduce((n, r) => n + r['dropped'], 0)
 const thinned = results
   .flatMap(r => [...r['confirmed'], ...r['suspected'], ...(r['refuted'] || []), ...(r['unverified'] || [])])
   .filter(f => (f.votesDiscarded || 0) > 0).length
-const notRun = [...scopeNotRun, ...results.flatMap(r => r['notRun'])]
+const notRun = [...limitNotRun(), ...scopeNotRun, ...results.flatMap(r => r['notRun'])]
+/** The usage-limit stop as a notRun entry, once it happened. @returns {string[]} */
+function limitNotRun() {
+  return limitStop.seen() ? [limitStop.note()] : []
+}
 const savedByFloor = results.flatMap(r => r['savedByFloor'] || [])
 const coverageNotes = uncoveredGap.length ? [uncoveredNotRunNote(uncoveredGap)] : []
 const incompleteNotes = [...notRun, ...coverageNotes]
@@ -7142,13 +7288,13 @@ function nothingSurvived() {
 }
 async function noFindingsExit() {
   const earlySuffix = verdictSuffix({ notRun, coverageNotes })
-  await logRun(reviewRecord({ verdict: `Approve${earlySuffix}`, round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: refuteRate(dropped, dropped) }, notRun }))
+  await logRun(reviewRecord({ verdict: honestVerdict(`Approve${earlySuffix}`, notRun), round: thisRound, findings: summarizeFindings([]), dimensions: [], verification: { candidates: dropped, confirmed: 0, refuteRate: refuteRate(dropped, dropped) }, notRun }))
   const verdictLine = earlySuffix
     ? `⚠️ Approve${earlySuffix} — gate ${mergedGateStatus}; no findings survived, but ${incompleteNotes.join('; ')} — this verdict covers ONLY what ran. Files listed as matching no language profile are outside this engine (${supportedLangLabel(PROFILES)}) and re-running will not review them — review them by hand or with a tool that speaks their language${notRun.length ? '; anything else in the list is a failure to fix and re-run' : ''}.`
     : `✅ Approve — gate ${mergedGateStatus}; no findings across ${active.map(p => p.id).join('+')}.`
-  return out([`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
+  return out(honestVerdictLine([`## Verdict`, verdictLine, ``, `## Gate`, mergedProvenance, carriedSection(),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
-  ].join('\n') + scopeSection())
+  ].join('\n'), notRun) + scopeSection())
 }
 /** @type {Array<Finding & { priorTier: string, priorDecision: string, priorKind: 'decision' | 'question' | 'rule' }>} */
 let priorRejected = []
@@ -7209,7 +7355,11 @@ function rereviewDataOf() {
     regressed: adjudicated.regressed, carried: adjudicated.carried, retired: adjudicated.retired, neu: confirmed,
   } : null
 }
-const incompleteClause = incompleteClauseOf()
+const neverApproveClause = neverApproveClauseOf()
+function neverApproveClauseOf() {
+  return notRun.length ? ' Part of this review did not run, so the verdict is never Approve: where it would be Approve, write "\u26a0\ufe0f INCOMPLETE" in its place.' : ''
+}
+const incompleteClause = incompleteClauseOf() + neverApproveClause
 function incompleteClauseOf() {
   return incompleteNotes.length
     ? ` Append " · ⚠️ ${notRun.length ? 'INCOMPLETE — part of this review did not run' : 'PARTIAL COVERAGE — a coverage hole a re-run will not fix'}: ${incompleteNotes.join('; ')}; findings may be undercounted." to the verdict line.`
@@ -7353,6 +7503,10 @@ function reportRevokedPremise() {
   }
 }
 reportRevokedPremise()
+function noteLateLimit() {
+  if (limitStop.seen() && !notRun.includes(limitStop.note())) notRun.unshift(limitStop.note())
+}
+noteLateLimit()
 /** @param {Finding} f @param {string | undefined} disposition @param {string} [tier] */
 const toLedgerEntry = (f, disposition, tier) => ({
   ...ledgerLocation(f),
@@ -7429,7 +7583,7 @@ async function persistLedgerShards() {
 }
 const ledgerFields = await persistLedgerShards()
 await logRun(reviewRecord({
-  verdict: recordVerdict + verdictSuffix({ notRun, coverageNotes, floorPremiseHeld }),
+  verdict: honestVerdict(recordVerdict + verdictSuffix({ notRun, coverageNotes, floorPremiseHeld }), notRun),
   savedByFloor,
   savedByFloorPremiseHeld: floorPremiseHeld,
   round: thisRound,
@@ -7451,14 +7605,15 @@ await logRun(reviewRecord({
 }))
 
 function fallbackReport() {
-  const cause = synthesisUnusable ? 'synthesis agent returned no usable report' : 'synthesis agent died twice'
+  const cause = fallbackCause()
   const emoji = { Block: '⛔ Block', Warning: '⚠️ Warning', Approve: '✅ Approve' }[isRereview ? recordVerdict : finalVerdict(confirmed)]
+  const verdictMark = fallbackVerdictMark(emoji)
   const ruleTag = (/** @type {Finding} */ f) => { const r = [f['ruleId'], f['toolRule'] ? `tool: ${f['toolRule']}` : ''].filter(Boolean).join(' · '); return r ? ` · [${r}]` : '' }
   const fmt = (/** @type {Finding} */ f) => `- ${f['severity']} · \`${f['file'] || '?'}:${f['line'] || 0}\`${ruleTag(f)} · ${f['title']} · ${f['why']} · Fix: ${f['fix']}${f['whereChecked'] ? ` · Premise checked at: ${f['whereChecked']}` : ''}`
   const bySev = (/** @type {Finding[]} */ a) => a.slice().sort((/** @type {Finding} */ x, /** @type {Finding} */ y) => (SEV_RANK[x['severity'] ?? ''] ?? 9) - (SEV_RANK[y['severity'] ?? ''] ?? 9))
   return [
     `## Verdict`,
-    `${emoji} — ${cause}; mechanical fallback report (findings listed unmerged).${fallbackIncompleteClause()}`,
+    `${verdictMark} \u2014 ${cause}; mechanical fallback report (findings listed unmerged).${fallbackIncompleteClause()}`,
     ``, `## Gate`, mergedProvenance, carriedSection(),
     ...fallbackRereviewTracks(bySev, fmt),
     ``, `## ${isRereview ? '🆕 New' : 'Confirmed'}`, ...(confirmed.length ? bySev(confirmed).map(fmt) : ['- none']),
@@ -7466,6 +7621,17 @@ function fallbackReport() {
     ...(unverified.length ? [``, `## Unverified (not checked)`, UNVERIFIED_PREAMBLE, ...bySev(unverified).map(fmt)] : []),
     ...(uncoveredFiles.length ? [``, `## Not reviewed (no language profile)`, ...uncoveredFiles.map((/** @type {string} */ f) => `- ${f}`)] : []),
   ].join('\n')
+}
+
+/** Why there is no synthesized report: the usage-limit stop first, then the synthesis agent's own failure. */
+function fallbackCause() {
+  if (limitStop.seen()) return limitStop.note()
+  return synthesisUnusable ? 'synthesis agent returned no usable report' : 'synthesis agent died twice'
+}
+
+/** Never Approve over what did not run (realm @nick/craft, node #299): the same rule as the record. @param {string | undefined} emoji */
+function fallbackVerdictMark(emoji) {
+  return honestVerdict(isRereview ? recordVerdict : finalVerdict(confirmed), notRun) === 'INCOMPLETE' ? '\u26a0\ufe0f INCOMPLETE' : emoji
 }
 
 /** The fallback verdict line's incompleteness clause, read from the live `notRun`. */
@@ -7505,4 +7671,4 @@ function verdictFindings() {
   const tiers = [...confirmed, ...suspected, ...unverified]
   return isRereview ? [...adjudicated.stillOpen, ...adjudicated.regressed, ...tiers] : tiers
 }
-return out(markVerdictIncomplete(report || fallbackReport()) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + projectRuleSection(priorRejected, ruleNotices) + contradictionSection(verdictFindings()) + doubtfulReport() + toolTitlesSection(verdictFindings()) + scopeSection())
+return out(markVerdictIncomplete(honestVerdictLine(report || fallbackReport(), notRun)) + floorPremiseSection() + priorRejectedSection([...priorRejected, ...carriedDeferred()]) + projectRuleSection(priorRejected, ruleNotices) + contradictionSection(verdictFindings()) + doubtfulReport() + toolTitlesSection(verdictFindings()) + scopeSection())
