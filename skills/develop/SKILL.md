@@ -140,10 +140,11 @@ The engine's argument for each round, as an object (never a string):
   request means `depth: 'light'` is the job of the skill or hook that launches it, not the engine's.
   `extraLenses` runs the repository's own reviewing agents as lenses in the same run, their
   findings verified and counted with the rest: on a light pass with the argument absent, the engine
-  finds them itself among the repository's `.claude/agents` (an agent that reviews and cannot edit;
-  the report says when there is none); a full review runs them only when named. `extraLenses: ['<agent>', ...]`
-  names them at either depth; `extraLenses: []` turns them off. A named agent that does not exist
-  or fails is a coverage gap in the report, and the run still completes.
+  finds them itself among the repository's `.claude/agents` (agents that review and have no edit
+  tool; each is told to stay read-only; the report says when there is none); a full review runs
+  them only when named. `extraLenses: ['<agent>', ...]` names them at either depth;
+  `extraLenses: []` turns them off. A named agent that does not exist or fails is a coverage gap in
+  the report, and the run still completes; on an empty or docs-only diff it is listed as not needed.
 
 One **round** is:
 
