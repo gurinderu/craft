@@ -5228,11 +5228,12 @@ const CHECKPOINT_SCHEMA = {
   },
 }
 let runDir = ''
+let startHead = ''
 let checkpointFailed = false
 let rejoinArmed = false
 /** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
 async function checkpoint(phase, payloadIn, group) {
-  const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn, workflowEngineRevision: ENGINE_REVISION }
+  const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn, startHead, workflowEngineRevision: ENGINE_REVISION }
   const asked = runDir
   const armRejoin = !runDir && checkpointFailed
   if (armRejoin) rejoinArmed = true
@@ -5467,7 +5468,7 @@ async function detectChanges() {
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`. If the tree has uncommitted changes, target those.'}
 2. List the changed file paths: \`git diff --name-only <base>...HEAD\`${pathArg ? ` -- ${shq(pathArg)}` : ''} (and include uncommitted changes from \`git status --porcelain\` if the tree is dirty).
 3. Capture the VERBATIM change description as \`spec\` — the authors' own written claims/invariants, checked against code later. If the current branch has an OPEN PR, run \`gh pr view --json body,title\` and use its title + body. Otherwise use the commit messages on the diff range: \`git log <base>..HEAD --format=%B\`. Do not summarize or paraphrase — copy the text as-is. Truncate to ~4000 chars. Empty string if there is no PR and no commit body (e.g. only uncommitted changes). If \`gh\` is missing/unauthenticated, fall through to the commit messages.
-4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). These two are a FALLBACK only: the logger reads both off the working copy with git at the moment a record is written, and its values win. Do not work to fill them — an empty string is a fine answer.
+4. Capture \`branch\` = \`git rev-parse --abbrev-ref HEAD\` (empty string if detached) and \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). The logger reads both off the working copy with git when a record is written, and its values win; \`head\` also tells it which commit the run started on, so an empty \`head\` files no verdict for that commit.
 5. Set \`baseIsHead\`: true when \`git rev-parse '<base>^{commit}'\` and \`git rev-parse HEAD\` print the same sha, else false. This one is NOT a fallback: the run reads it to tell a review launched on the trunk itself from any other empty diff.
 Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, head, and baseIsHead.`,
     { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
@@ -5488,6 +5489,7 @@ function detectedChange(detected) {
   return { baseRef, changedFiles, spec, branch, head }
 }
 const { baseRef, changedFiles, spec, branch, head } = detectedChange(detected)
+startHead = head
 
 async function loadPriorRound() {
   /** @type {PriorRound | null} */
