@@ -1751,33 +1751,47 @@ function stopAtLimit(call, stop) {
 }
 
 /**
- * The logger as a human runs it, located the way the engine's logger is (lib/run-logging.mjs,
- * loggerPrelude): an absolute craftRoot, else CLAUDE_PLUGIN_ROOT, else this version's installed copy.
+ * The logger as a human runs it: CLAUDE_PLUGIN_ROOT, else this version's installed copy. Never a
+ * craftRoot from the run's arguments, which a model composed: the advice is pasted into a shell.
  * @param {string} version
- * @param {string} [craftRoot]
  * @returns {string}
  */
-function loggerCommand(version, craftRoot = '') {
-  const root = craftRoot.startsWith('/') ? shq(craftRoot) : `"\${CLAUDE_PLUGIN_ROOT:-\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${version}}"`
-  return `node ${root}/lib/craft-log-run.mjs`
+function loggerCommand(version) {
+  return `node "\${CLAUDE_PLUGIN_ROOT:-\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/${shellSafe(version)}}"/lib/craft-log-run.mjs`
+}
+
+/** A version as it may stand inside double quotes: digits, letters, dots and dashes only. @param {string} v */
+function shellSafe(v) {
+  return String(v ?? '').replace(/[^\w.-]/g, '')
 }
 
 /**
  * What a human does about a run stopped at the usage limit, '' when it was not. The logger shares the
  * account, so the record may be lost to the same limit. An engine that writes phase checkpoints
- * (review) leaves them in `.partial` for `recover`; one that writes none leaves only its workflow
- * transcript, which `from-journal` rebuilds a partial record from.
+ * (review) leaves them in `.partial` for `recover`; one that writes none has nothing to recover from,
+ * and the honest advice is to rerun it.
  * @param {ReturnType<typeof makeLimitStop>} stop
- * @param {{ version: string, craftRoot?: string, engine: string, checkpoints: boolean }} o
+ * @param {{ version: string, engine: string, checkpoints: boolean }} o
  * @returns {string}
  */
-function limitStopAdvice(stop, { version, craftRoot = '', engine, checkpoints }) {
+function limitStopAdvice(stop, { version, engine, checkpoints }) {
   if (!stop.seen()) return ''
-  const cmd = loggerCommand(version, craftRoot)
+  const cmd = loggerCommand(version)
   const recovery = checkpoints
     ? `if it is reported lost, run this in the reviewed repository once the limit resets, to promote this run's .partial checkpoints into a partial record: \`${cmd} recover\``
-    : `${engine} writes no checkpoints, so if it is reported lost nothing of this run is in .partial; once the limit resets, a partial record can be rebuilt from this run's workflow transcript (its wf_* directory under the session's subagents/workflows), run in the reviewed repository: \`${cmd} from-journal <that directory> --name ${engine}\``
+    : `if it is reported lost, this run's record could not be written (${engine} writes no checkpoints): rerun the ${engine === 'rust-audit' ? 'audit' : 'review'} after the limit resets`
   return `${stop.note()}. The run record was attempted, but its logger runs on the same account; ${recovery}`
+}
+
+/**
+ * The limit message a nested review's report says it stopped on, or '': the parent reads the child's
+ * stop from the child's own words (`stopped: usage limit reached (<text>)`), not from its length.
+ * @param {unknown} report
+ * @returns {string}
+ */
+function limitInReport(report) {
+  const m = /stopped: usage limit reached \((.+?)\)(?=[.;:,]|\s|$)/m.exec(typeof report === 'string' ? report : '')
+  return m ? usageLimitText(m[1]) : ''
 }
 const GREEN_WORD = /^\s*(?:Approve|Healthy|Clean)\b/i
 
@@ -2080,18 +2094,18 @@ function pushReviewDims() {
         dispatched.push(`review:${c.name}`)
         continue
       }
-      tasks.push(() => dispatchDim(`review:${c.name}`,
+      tasks.push(() => auditLimit.seen() ? null : dispatchDim(`review:${c.name}`,
         nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
-          .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); return reviewResult(`review:${c.name}`, report) }),
+          .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); auditLimit.observeError(limitInReport(report)); return reviewResult(`review:${c.name}`, report) }),
         { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
           threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
       dispatched.push(`review:${c.name}`)
     }
   } else {
-    tasks.push(() => dispatchDim('review',
+    tasks.push(() => auditLimit.seen() ? null : dispatchDim('review',
       nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }
                                                   : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
-        .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); return reviewResult('review', report) }),
+        .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); auditLimit.observeError(limitInReport(report)); return reviewResult('review', report) }),
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
         threw: msg => `review failed: ${msg}`, evidenceGate: false }))
     dispatched.push('review')
@@ -2293,6 +2307,6 @@ const auditRecord = {
 }
 await logRun(auditRecord)
 
-if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 the synthesis did not run, so this audit has NO report; nothing here is an approval. ${limitStopAdvice(auditLimit, { version: CRAFT_VERSION, craftRoot: craftRootArg, engine: 'rust-audit', checkpoints: false })}\n`
+if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 the synthesis did not run, so this audit has NO report; nothing here is an approval. ${limitStopAdvice(auditLimit, { version: CRAFT_VERSION, engine: 'rust-audit', checkpoints: false })}\n`
 if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
 return `${telemetryLostSection(telemetryLost)}${agentSection()}${honestVerdictLine(report, incompleteDimensions)}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
