@@ -130,6 +130,17 @@ The engine's argument for each round, as an object (never a string):
   just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
   its `kind`, `title` and `scope`. The engine recalls the project's active decisions, questions and
   project rules for the diff's paths itself on every launch.
+- `craft:review` also takes `depth` and `extraLenses` (not in the table: the loop leaves both at
+  their defaults unless the human asks). `depth: 'light'` is a cheaper pass, not the light loop
+  above: one round of the diff-scoped lenses only (no intent, compat, invariants, negative-space or
+  failure-windows lens), no completeness critic, and only Medium and above verified; its verdict
+  says light pass and its report names what it skipped. The default, `depth: 'full'`, is the whole
+  review. `extraLenses` runs the repository's own reviewing agents as lenses in the same run, at
+  either depth, their findings verified and counted with the rest: absent, the engine finds them
+  itself among the repository's `.claude/agents` (an agent that reviews and does not edit; the
+  report says when there is none); `extraLenses: ['<agent>', ...]` names them; `extraLenses: []`
+  turns them off. A named agent that does not exist or fails is a coverage gap in the report, and
+  the run still completes.
 
 One **round** is:
 

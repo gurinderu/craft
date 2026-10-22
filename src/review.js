@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
   description: 'Elastic deep review of a diff — auto-detects the language(s) touched, scout-scaled lens fan-out, loop-until-dry, tool-grounded seed findings, adversarial + self-verification, synthesized into one Confirmed/Suspected/Unverified report with a verdict. Rust and Nix profiles built in.',
-  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
+  whenToUse: 'The single review path for any diff/PR before commit or merge. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. To post findings on a PR pass comment — never post findings by hand: only comments from the engine carry the marker that ties a later rejection to its finding. With comment only defects are posted: a doubtful finding (not confirmed, raised by the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking change, or outside the changed lines) is listed under Doubtful — for the reviewer, not posted, numbered as the run record keeps it; show that list to the human and, for each he chooses, post it as a question or a defect only through the craft:addressing-findings posting script. Auto-detects language; pin with args.languages (e.g. ["rust"] or ["nix"]). Scales depth to the diff automatically. To review ANOTHER repository pass repo=<absolute path> — without it every git command runs in the checkout the session itself sits in; path= is a repo-relative pathspec, NOT a way to select the repo. The performance / api-idioms / api-boundary lenses are an OPTIONAL pass that is OFF by default — request it with optional=true (or optional=performance,api-boundary); every report names what it skipped. priorDecisions — ONLY inside an object argument, {priorDecisions: [<decision, question and rule records the launcher holds beyond what the engine recalls, such as rejections read from PR threads>]}; as a string (key=value or JSON text) it is refused and nothing of it applied, and in a key=value string nothing after it is read as an option — sets aside a finding the project already rejected — listed under Rejected before with who, when, why and a link, never dropped — unless it is Critical/High or its scope changed since the commit of the decision; a finding an active question (a deferred finding) answers is listed under Known and deferred by the same rules; a finding a judge puts under an active project rule (a stance on a whole class of findings) is listed under Covered by project rules, out of the verdict and never posted, unless it is Critical; a malformed value applies nothing and is named in the report. depth=light is a cheaper pass: one round of the diff-scoped lenses only (no whole-diff lens: intent, compat, invariants, negative-space, failure-windows), no completeness critic, and only Medium and above verified; its verdict and report say light pass and name what it skipped, and the run record carries depth (default depth=full, the review as it was). The consumer repository\'s own reviewing agents run as extra lenses in the same run, at either depth: each reviews the whole change and its findings go through the same verification and verdict. Absent extraLenses, the engine discovers them among the repository\'s .claude/agents (an agent that reviews and does not edit; the report says when none was found); extraLenses=[<agentType>, ...] (an object argument, e.g. {extraLenses: ["reviewer"]}) names them instead, and extraLenses=[] turns them off; a named agent that is unknown or fails is a coverage gap (INCOMPLETE), never a failed run. The report names which extra lenses ran and how they were chosen. deadlineMs=<ms> is a diagnostic knob, not a review option: it replaces the per-phase wall-clock deadline table wholesale and will kill healthy lenses if set below their real duration.',
   phases: [
     { title: 'Scout', detail: 'cheap classification: resolve the diff base, detect language(s), classify size/categories, pick lenses (rigor is derived from the size, in code)', model: 'haiku' },
     { title: 'Gate', detail: 'per-language CI-aware mechanical gate + tool-grounded seed findings' },
@@ -43,6 +43,7 @@ export const meta = {
  * @typedef {{ refuted: boolean, citedLineMatches: boolean, reachable: boolean, premiseSupported: boolean, reason: string }} VerdictAnswer  VERDICT_SCHEMA
  * @typedef {{ verdicts: Array<VerdictAnswer & { index: number }> }} BatchVerdictAnswer  BATCH_VERDICT_SCHEMA
  * @typedef {{ missingLenses: string[], notes: string }} CriticAnswer  CRITIC_SCHEMA
+ * @typedef {{ agents: Array<{ name: string, description: string, tools: string }> }} AgentDefinitionsAnswer  AGENT_DEFINITIONS_SCHEMA
  * @typedef {{ changed: boolean, reason: string }} ChangedAnswer  CHANGED_SCHEMA
  * @typedef {{ posted: number, reason: string }} PrCommentsAnswer  PR_COMMENTS_SCHEMA
  * @typedef {{ status: 'resolved' | 'still-open' | 'cannot-tell' | 'regressed', currentLine: number, note: string, invariant: string, attack: string }} AdjudicateAnswer  ADJUDICATE_SCHEMA
@@ -2543,6 +2544,132 @@ function fullEveryArg() {
   return (A['fullEvery'] != null) ? Math.max(0, Number(A['fullEvery'])) : 3
 }
 
+// realm @nick/craft, node #295: `depth: 'light'` runs one round of the diff-scoped lenses and verifies
+// Medium and above only; `extraLenses: [<agentType>, ...]` runs the consumer's own agents as lenses
+// in the same run. The default depth, 'full', is the review as it was, plan for plan.
+// >>> craft-inline lib/review-depth.mjs parseDepth lightLenses LIGHT_VERIFIED_SEVERITIES depthVerifyTier lightUnverifiedWhy markVerdictLight lightSection
+/** @param {unknown} raw @returns {{ depth: 'full' | 'light', unknown: string }} */
+function parseDepth(raw) {
+  if (raw == null || raw === '') return { depth: 'full', unknown: '' }
+  const v = String(raw).trim().toLowerCase()
+  if (v === 'light') return { depth: 'light', unknown: '' }
+  return { depth: 'full', unknown: v === 'full' ? '' : String(raw).slice(0, 40) }
+}
+
+/**
+ * @param {string[]} lenses
+ * @param {readonly string[]} wholeDiff
+ * @param {string[]} fallback
+ * @returns {{ kept: string[], skipped: string[] }}
+ */
+function lightLenses(lenses, wholeDiff, fallback) {
+  /** @param {string} l */
+  const scoped = l => !wholeDiff.includes(l)
+  const kept = lenses.filter(scoped)
+  return { kept: kept.length ? kept : fallback.filter(scoped), skipped: lenses.filter(l => !scoped(l)) }
+}
+
+/** @type {readonly (string | undefined)[]} */
+const LIGHT_VERIFIED_SEVERITIES = ['Critical', 'High', 'Medium']
+
+/** @param {string} tier @param {string | undefined} severity @param {string} depth @returns {string} */
+function depthVerifyTier(tier, severity, depth) {
+  return depth === 'light' && !LIGHT_VERIFIED_SEVERITIES.includes(severity) ? 'skip' : tier
+}
+
+/** @param {string | undefined} severity */
+function lightUnverifiedWhy(severity) {
+  return `light pass: only Medium and above are verified, so no verifier was spent on this ${severity || 'unrated'} finding and nothing here has been checked against the code`
+}
+
+/** @param {string} text @returns {string} */
+function markVerdictLight(text) {
+  const lines = String(text).split('\n')
+  const head = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
+  const at = head < 0 ? -1 : lines.findIndex((l, i) => i > head && l.trim())
+  if (at < 0) return `Light pass (depth=light) -- see "Light pass" below for what it skipped.\n${text}`
+  if (/light pass/i.test(/** @type {string} */ (lines[at]))) return text
+  lines[at] = `${lines[at]} \u00b7 light pass (depth=light) -- see "Light pass" below for what it skipped`
+  return lines.join('\n')
+}
+
+/** @param {string[]} skippedLenses @returns {string} */
+function lightSection(skippedLenses) {
+  const lenses = skippedLenses.length
+    ? `the whole-diff lenses ${skippedLenses.join(', ')} were NOT dispatched`
+    : 'no whole-diff lens was in the plan to skip'
+  return `\n\n## Light pass -- what it skipped\n\u26a0\ufe0f This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: ${lenses}; the lenses ran ONE round (no loop-until-dry); the completeness critic did not run; Low and Info findings were not verified (each says so in its \`why\`). That is an absence of a result, not a clean one. Re-run without \`depth\` (or with \`depth=full\`) for the full review.\n`
+}
+// <<< craft-inline
+// >>> craft-inline lib/review-extra-lenses.mjs AGENT_TYPE_FORM EXTRA_LENSES_OFF parseExtraLenses pickRepoReviewers agentFields extraLensSection
+const AGENT_TYPE_FORM = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/
+
+/** @type {unknown[]} */
+const EXTRA_LENSES_OFF = ['', false, 'false', 'none']
+
+/** @param {unknown} raw @returns {{ how: 'discovered' | 'named' | 'off', agents: string[], refused: string[] }} */
+function parseExtraLenses(raw) {
+  if (raw == null) return { how: 'discovered', agents: [], refused: [] }
+  if (EXTRA_LENSES_OFF.includes(raw)) return { how: 'off', agents: [], refused: [] }
+  const items = Array.isArray(raw) ? /** @type {unknown[]} */ (raw) : String(raw).split(/[\s,]+/)
+  const names = items.map(x => String(x ?? '').trim()).filter(Boolean)
+  if (!names.length) return { how: 'off', agents: [], refused: [] }
+  return {
+    how: 'named',
+    agents: [...new Set(names.filter(n => AGENT_TYPE_FORM.test(n)))],
+    refused: names.filter(n => !AGENT_TYPE_FORM.test(n)).map(n => n.slice(0, 40)),
+  }
+}
+
+/** @param {unknown} defs @returns {string[]} */
+function pickRepoReviewers(defs) {
+  const REVIEW_WORDS = /\b(?:review|reviews|reviewer|reviewing|audit|audits|auditor|critic|critique|critiques)\b/i
+  const NEGATED_CLAUSE = /\bnot\s+(?:for|to|a|an)\b[^.]*/gi
+  const EDITING_WORDS = /\b(?:edit|edits|implement|implements|refactor|refactors|apply|applies|write|writes|fix|fixes)\b[^.]*\b(?:code|files?|changes?|fix|fixes|patch|patches)\b/i
+  const EDIT_TOOLS = /\b(?:Edit|Write|MultiEdit|NotebookEdit)\b/
+  const list = Array.isArray(defs) ? /** @type {AgentDefinition[]} */ (defs) : []
+  const picked = list.map(agentFields).filter(a => AGENT_TYPE_FORM.test(a.name) && !/^craft:/i.test(a.name)
+    && REVIEW_WORDS.test(a.duty.replace(NEGATED_CLAUSE, '')) && !EDITING_WORDS.test(a.duty.replace(NEGATED_CLAUSE, '')) && !EDIT_TOOLS.test(a.tools))
+  return [...new Set(picked.map(a => a.name))]
+}
+
+/** @param {AgentDefinition | null | undefined} d @returns {{ name: string, duty: string, tools: string }} */
+function agentFields(d) {
+  const tools = d?.tools
+  return { name: String(d?.name ?? '').trim(), duty: String(d?.description ?? ''), tools: Array.isArray(tools) ? tools.join(' ') : String(tools ?? '') }
+}
+
+/**
+ * The report's account of the extra lenses: which ran, how they were chosen, and each gap.
+ * @param {{ how: string, ran: string[], failed: { agent: string, why: string }[], discovery: string }} o
+ * @returns {string}
+ */
+function extraLensSection({ how, ran, failed, discovery }) {
+  if (how === 'off') return ''
+  if (how === 'discovered' && !ran.length && !failed.length) {
+    return `\n\n## Extra lenses\nNo repo reviewer found: ${discovery || 'none of the repository\'s own agents describes itself as reviewing'} -- only the engine's own lenses ran. Name one with \`extraLenses: ["<agent>"]\`.\n`
+  }
+  const lines = [
+    `Chosen: ${how === 'named' ? 'named by the caller (extraLenses)' : 'discovered among the repository\'s own agents'}.`,
+    `Ran: ${ran.length ? ran.join(', ') : 'none'}.`,
+    ...failed.map(x => `- \u26a0\ufe0f coverage gap: ${x.agent} -- ${x.why}; its review did not happen.`),
+  ]
+  return `\n\n## Extra lenses\n${lines.join('\n')}\n`
+}
+// <<< craft-inline
+const depthRequest = parseDepth(A['depth'])
+const reviewDepth = depthRequest.depth
+const lightPass = reviewDepth === 'light'
+function warnUnknownDepth() {
+  if (depthRequest.unknown) log(`\u26a0\ufe0f depth=${JSON.stringify(depthRequest.unknown)} is not a depth (full, light) -- running the full review`)
+}
+warnUnknownDepth()
+const extraLensRequest = parseExtraLenses(A['extraLenses'])
+/** The whole-diff lenses a light pass did not dispatch, across profiles. @type {Set<string>} */
+const lightSkippedLenses = new Set()
+/** The extra lenses that answered, and those that did not, each with the class of its failure. */
+const extraLensOutcome = { ran: /** @type {string[]} */ ([]), failed: /** @type {{ agent: string, why: string }[]} */ (extraLensRequest.refused.map(agent => ({ agent, why: 'not an agent type name' }))), discovery: '', reached: false }
+
 // A cold full-workspace build is the one step in this workflow that can run for an hour and take the
 // whole review down with it: a gate agent that sits in `cargo clippy` stops emitting, the harness
 // calls it stalled, re-dispatches it, and the replacement starts the same build from scratch. One
@@ -3568,6 +3695,28 @@ const CRITIC_SCHEMA = {
   properties: {
     missingLenses: { type: 'array', items: { type: 'string' }, description: 'lenses from the candidate list that should also run; empty if coverage is complete' },
     notes: { type: 'string', description: 'one line on anything else likely missed, or "coverage complete"' },
+  },
+}
+
+/** @type {Schema<AgentDefinitionsAnswer>} */
+const AGENT_DEFINITIONS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['agents'],
+  properties: {
+    agents: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'description', 'tools'],
+        properties: {
+          name: { type: 'string', description: 'the frontmatter `name`, or the file name without .md when there is none' },
+          description: { type: 'string', description: 'the frontmatter `description`, verbatim' },
+          tools: { type: 'string', description: 'the frontmatter `tools` value verbatim, "" when absent' },
+        },
+      },
+    },
   },
 }
 
@@ -4943,9 +5092,14 @@ const reviewerAgentSection = () => agentUnavailableSection(
 // Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
 // ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
 // on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
+/** The extra lenses' account, once the first profile reached its lenses (realm @nick/craft, node #295). */
+function extraLensReport() {
+  return extraLensOutcome.reached ? extraLensSection({ how: extraLensRequest.how, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed, discovery: extraLensOutcome.discovery }) : ''
+}
+
 /** @param {string} reportText */
 function out(reportText) {
-  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${reportText}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
+  return `${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses]) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
 }
 
 // ---- the one write path (shared with every other record-filing engine) ----
@@ -6193,6 +6347,109 @@ Return {lens, findings[]}.
 Observability: the review workflow records this run — do NOT write your own record.`
 }
 
+// A consumer's own agent run as an extra lens (realm @nick/craft, node #295): the whole change, no
+// slice and no profile pathspec, answering in the finding schema every lens answers in.
+/** @param {string} agentType @param {string} priorSummary */
+function extraLensPrompt(agentType, priorSummary) {
+  return `You are an additional review lens supplied by this project (agent type \`${agentType}\`), run beside the engine's own lenses over the same change. Review it with your own rubric.
+
+Diff base: ${lensBaseLabel()}. Review with \`git diff ${lensDiffRange()}${pathArg ? ` -- ${shq(pathArg)}` : ''}\` -- the whole change, every file in it.
+${reReviewBlock()}
+Report each finding located at file:line (file:"" line:0 only when truly not locatable), with severity (Critical, High, Medium, Low or Info), title, why, fix and blastRadius. Set \`source\` to "${agentType}", \`ruleId\` to "" unless your own rubric names one, and \`whereChecked\` to the file:line you actually opened for any premise not visible at the cited line ("" when there is none). Report what you suspect; verification happens downstream.
+ALREADY-FOUND (do not repeat; look for what these MISSED):
+${priorSummary}
+
+Return {lens: "${agentType}", findings[]}.
+
+Observability: the review workflow records this run -- do NOT write your own record.`
+}
+
+// Dispatches every requested extra lens once, in parallel, on its own agent type: no generic fallback,
+// since a generic subagent is not the consumer's reviewer. A throw, a null and an off-schema answer are
+// each recorded by class (the error text goes to the log only) and the lens contributes nothing.
+/** @param {string[]} agents @param {string} priorSummary @returns {Promise<Finding[]>} */
+async function runExtraLenses(agents, priorSummary) {
+  const settled = await parallel(agents.map(agentType => () => dispatchExtraLens(agentType, priorSummary)))
+  return settled.flatMap(r => r || [])
+}
+
+/** The extra lenses' findings: dispatched for the first profile only. @param {Profile} profile @param {Finding[]} pool @returns {Promise<Finding[]>} */
+function extraLensesFor(profile, pool) {
+  if (profile !== active[0]) return Promise.resolve([])
+  extraLensOutcome.reached = true
+  if (extraLensRequest.how === 'off') return Promise.resolve([])
+  const summary = priorFoundSummary(pool)
+  return chosenExtraLenses().then(agents => (agents.length ? runExtraLenses(agents, summary) : []))
+}
+
+// Named by the caller, or discovered: ONE cheap agent lists the repository's own agent definitions
+// and pickRepoReviewers keeps those that review and do not edit (realm @nick/craft, node #295).
+/** @returns {Promise<string[]>} */
+async function chosenExtraLenses() {
+  if (extraLensRequest.how === 'named') return extraLensRequest.agents
+  const listed = await listRepoAgents()
+  if (!listed) {
+    extraLensOutcome.discovery = 'the agent listing the repository\'s agent definitions did not answer'
+    return []
+  }
+  const defs = Array.isArray(listed.agents) ? listed.agents : []
+  const agents = pickRepoReviewers(defs)
+  extraLensOutcome.discovery = defs.length ? `${defs.length} agent definition(s) read, none describes itself as reviewing without editing` : 'the repository declares no agent under .claude/agents'
+  log(`extra lenses discovered: ${agents.length ? agents.join(', ') : 'none'} (of ${defs.length} repository agent definition(s))`)
+  return agents
+}
+
+// The repository's own agent definitions, or null when the listing agent died, threw or hit the budget:
+// discovery is best-effort and never fails the run.
+/** @returns {Promise<AgentDefinitionsAnswer | null>} */
+async function listRepoAgents() {
+  try {
+    return await ragent(`List the agent definitions this repository itself declares: every \`.claude/agents/*.md\` file at the repository root (not plugin agents, not files elsewhere). For each, read its YAML frontmatter and return its \`name\` (the file name without .md when there is none), its \`description\` verbatim and its \`tools\` value verbatim ("" when absent). No such directory or no files -> {agents: []}. Use shell + read only; change nothing.`,
+    { label: 'extra-lens-discovery', phase: 'Lenses', schema: AGENT_DEFINITIONS_SCHEMA, model: 'haiku', effort: 'low' })
+  } catch (e) {
+    log(`\u26a0\ufe0f extra-lens discovery threw: ${String((e && /** @type {{ message?: unknown }} */ (e).message) || e).slice(0, 160)}`)
+    return null
+  }
+}
+
+/** Each failed or refused extra lens as a coverage gap of the first profile; a failure never fails the run. @param {Profile} profile @returns {string[]} */
+function extraLensGaps(profile) {
+  return profile === active[0] ? extraLensOutcome.failed.map(x => `extra lens ${x.agent} -- ${x.why}, so its review did not happen`) : []
+}
+
+/** Adds the findings whose key is not yet seen. @param {Finding[]} found @param {Set<string>} seen @param {Finding[]} pool */
+function pushUnseen(found, seen, pool) {
+  for (const f of found) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
+}
+
+// A consumer repository's own agent type, launched by the name its repository gives it: the one launch not
+// under craft's prefix, marked for lib/launch-names.mjs (realm @nick/craft, node #295).
+/** @param {string} name */
+function consumerAgentType(name) {
+  return name
+}
+
+/** @param {string} agentType @param {string} priorSummary @returns {Promise<Finding[]>} */
+async function dispatchExtraLens(agentType, priorSummary) {
+  /** @type {FindingsAnswer | null} */
+  let res = null
+  try {
+    res = await ragent(extraLensPrompt(agentType, priorSummary), { label: `extra-lens:${agentType}`, phase: 'Lenses', schema: FINDINGS_SCHEMA, agentType: consumerAgentType(agentType) })
+  } catch (e) {
+    const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
+    log(`\u26a0\ufe0f extra lens ${agentType} threw: ${msg.slice(0, 160)}`)
+    extraLensOutcome.failed.push({ agent: agentType, why: isAgentTypeMissing(msg, agentType) ? 'the agent type is not registered in this session' : 'the agent failed before answering' })
+    return []
+  }
+  if (res == null || !Array.isArray(/** @type {{ findings?: unknown }} */ (res).findings)) {
+    extraLensOutcome.failed.push({ agent: agentType, why: res == null ? 'returned nothing (an unknown agent type on some runtimes, or a dead agent)' : 'answered off-schema (no findings array)' })
+    log(`\u26a0\ufe0f extra lens ${agentType} returned no findings array -- recorded as a coverage gap`)
+    return []
+  }
+  extraLensOutcome.ran.push(agentType)
+  return res.findings.map(f => ({ ...f, source: `extra:${agentType}`, foundInRound: 1 }))
+}
+
 // `profile` is threaded in for the exclusion catalog: it is per-profile (only the rust rubric ships
 // an fp-rules.md today), and naming a file the nix reviewer does not have would send it hunting.
 /** @param {Finding} f @param {number} idx @param {boolean} isTool @param {string} gateProvenance @param {Profile} profile */
@@ -6830,7 +7087,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const breaker = makeDeathBreaker()
   /** @type {{ individual: Finding[], batch: Finding[], skip: Finding[] }} */
   const route = { individual: [], batch: [], skip: [] }
-  for (const f of items) route[verifyTier(f)].push(f)
+  for (const f of items) route[/** @type {keyof typeof route} */ (depthVerifyTier(verifyTier(f), f['severity'], reviewDepth))].push(f)
 
   // What is ALREADY confirmed at a blocking severity, raised as the individual panel settles. A
   // batch thunk asks it at the moment it is about to dispatch, so the skip below can only ever rest
@@ -6845,7 +7102,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const unverified = route.skip.map(f => ({
     ...f,
     tier: 'unverified',
-    why: `${f['why']} (NOT VERIFIED: no verifier was spent on it — ${f['severity']} cannot change the verdict either way, so nothing here has been checked against the code)`,
+    why: lightPass ? `${f['why']} (NOT VERIFIED: ${lightUnverifiedWhy(f['severity'])})` : `${f['why']} (NOT VERIFIED: no verifier was spent on it — ${f['severity']} cannot change the verdict either way, so nothing here has been checked against the code)`,
   }))
 
   // Batched tier: group by file so one agent reads one file's context once.
@@ -7214,6 +7471,18 @@ function planFromScout(profile, scout) {
   return { plan, surfaceDropped }
 }
 
+// realm @nick/craft, node #295: the light pass keeps the diff-scoped lenses for one round; the
+// whole-diff lenses it drops are named on every report (lightSection).
+/** @param {Profile} profile @param {Plan} plan */
+function applyLightProfile(profile, plan) {
+  if (!lightPass) return
+  const { kept, skipped } = lightLenses(plan.lenses, WHOLE_DIFF_LENSES, blanketLenses(profile))
+  plan.lenses = kept
+  plan.maxRounds = 1
+  for (const l of skipped) lightSkippedLenses.add(l)
+  log(`[${profile.id}] light pass: ${kept.join(', ')}, one round${skipped.length ? `; whole-diff lenses skipped: ${skipped.join(', ')}` : ''}`)
+}
+
 /** @param {Profile} profile @param {ScoutAnswer | null} scout @param {Plan} plan */
 function logScoutPlan(profile, scout, plan) {
   log(`[${profile.id}] ${!scout ? '⚠️ scout did not return — conservative fallback plan' : (scout.notes || 'scout: classified')} · ${plan.sizeBucket}${plan.securitySensitive ? ' · SECURITY floor (all lenses, 3-vote)' : ''}${plan.lenses.includes('negative-space') ? ' · +negative-space' : ''}`)
@@ -7337,6 +7606,7 @@ async function reviewProfile(profile) {
     ? [`${profile.id} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one`]
     : []
   const { plan, surfaceDropped } = planFromScout(profile, scout)
+  applyLightProfile(profile, plan)
   // Only the UNIVERSE is recorded here: which optional lenses this profile could have bought. It rides
   // back on the profile's result; what ran is recorded at dispatch (`runLens`) and subtracted by
   // `optionalTally()`, because the plan is not final at this point — see the tally's definition.
@@ -7581,8 +7851,13 @@ async function reviewProfile(profile) {
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     return !fresh.length
   }
+  // The consumer's own agents (realm @nick/craft, node #295) run once, beside round 1, in the first
+  // profile only: they review the whole change, so a second profile would buy them twice.
+  const extraFindings = extraLensesFor(profile, pool)
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) dry = await lensRound(round)
+  pushUnseen(await extraFindings, seen, pool)
+  notRun.push(...extraLensGaps(profile))
 
   // ---- Resurrection sweep ----
   // A lens agent occasionally returns null on a transient API death / connection drop. That
@@ -7697,6 +7972,8 @@ async function reviewProfile(profile) {
   phase('Synthesize')
   // The completeness critic, when the plan is large or security-sensitive and the budget allows it.
   async function completenessCritic() {
+    // A light pass runs no critic: its follow-up lenses are the extra round the light pass forgoes (#295).
+    if (lightPass) return
     const criticInScope = plan.sizeBucket === 'large' || plan.securitySensitive
     if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
       await runCritic()
@@ -7872,6 +8149,9 @@ function reviewRecord(extra) {
     lensScope: fullRescan ? 'full' : 'delta',
     strict,
     fullEvery,
+    // The depth of the pass and the consumer's extra lenses, so light and full runs compare apart (#295).
+    depth: reviewDepth,
+    extraLenses: { how: extraLensRequest.how, requested: extraLensRequest.agents, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed },
     // One name and one shape with rust-audit, keyed by agent type (lib/agent-fallback.mjs, realm @nick/craft #151).
     ...agentUnavailableRecord(reviewerAgentUnavailable.map(x => x.agent),
       Object.entries(reviewerAgentFallbacks).map(([id, count]) => ({ agent: reviewerAgentNames[id] || id, count }))),
