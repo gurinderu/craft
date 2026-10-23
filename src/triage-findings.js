@@ -1,17 +1,17 @@
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'After a review or rust-audit produces many findings, or a PR has many inline comments, and you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against, which validation pins to.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against, which validation pins to.',
   phases: [
-    { title: 'Gather', detail: 'pull raw findings from the requested sources (rust-audit report, reviewer verdict, GitHub PR threads)' },
+    { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
     { title: 'Validate', detail: 'judge each finding against the code at a pinned ref: accept / reject / defer / needs-decision' },
     { title: 'Plan', detail: 'dedup, detect conflicts, group by file, order, render a writing-plans-format fix plan + triage ledger' },
   ],
 }
 
-// Locator args (not payload): pr (GitHub PR number), report (path to a rust-audit report or saved
-// verdict), base (ref to pin validation against), prBase (the commit the PR forks from — the merge-base
+// Locator args (not payload): pr (GitHub PR number), report (path to a report file from any review engine
+// or a saved verdict), base (ref to pin validation against), prBase (the commit the PR forks from — the merge-base
 // of trunk and the reviewed head — where "not this PR's" must be shown, realm @nick/craft, node #309), priorLedger (array of prior {stable_id, verdict,
 // reason} for idempotent re-runs), priorDecisions (the project's records the launcher already holds — they
 // merge into what this engine recalls itself, realm @nick/craft, node #218). At least one of pr/report must be given.
@@ -169,7 +169,7 @@ const RAW_SCHEMA = {
   additionalProperties: false,
   required: ['source', 'findings'],
   properties: {
-    source: { type: 'string', description: 'rust-audit | rust-reviewer | github-pr' },
+    source: { type: 'string', description: 'review | adversarial-review | rust-audit | rust-reviewer | nix-review | report | github-pr' },
     findings: {
       type: 'array',
       items: {
@@ -2729,7 +2729,7 @@ if (A['repo']) {
 
 phase('Gather')
 if (!pr && !report) {
-  throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a rust-audit report).')
+  throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a report file from any review engine).')
 }
 
 /**
@@ -2745,7 +2745,7 @@ function gatherPlan() {
   if (report) {
     requestedLocators.push('report')
     gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
-      `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to "rust-audit" (or "rust-reviewer" for a single reviewer verdict). Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's \`## Tool finding titles (verbatim)\` section (also nested under \`## Prior decisions in the nested reviews (verbatim)\`) lists titles, not findings: never extract its rows as findings. For a finding at a \`file:line\` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that \`file:line\` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.`,
+      `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: "review" (craft:review), "adversarial-review", "rust-audit", "rust-reviewer" (a single reviewer verdict) or "nix-review"; "report" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's \`## Tool finding titles (verbatim)\` section (also nested under \`## Prior decisions in the nested reviews (verbatim)\`) lists titles, not findings: never extract its rows as findings. For a finding at a \`file:line\` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that \`file:line\` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.`,
       { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
     )))
   }
@@ -2763,7 +2763,14 @@ const { gatherTasks, requestedLocators } = gatherPlan()
 const gatherResults = await parallel(gatherTasks)   // order preserved → align with requestedLocators
 const notRunSources = requestedLocators.filter((_, i) => !gatherResults[i])
 if (notRunSources.length) log(`WARNING: source(s) that produced nothing: ${notRunSources.join(', ')} — the triage covers fewer sources than asked.`)
-const gathered = gatherResults.filter(g => !!g)
+// A report's source is the engine that wrote it, as the gatherer read it; anything else is `report`. It opens
+// every stable id, so a rust-audit report keeps the ids it always had.
+const REPORT_SOURCES = ['review', 'adversarial-review', 'rust-audit', 'rust-reviewer', 'nix-review']
+/** @param {unknown} said @returns {string} */
+const reportSource = said => (typeof said === 'string' && REPORT_SOURCES.includes(said.trim()) ? said.trim() : 'report')
+const gathered = gatherResults
+  .map((g, i) => (g && requestedLocators[i] === 'report' ? { ...g, source: reportSource(g.source) } : g))
+  .filter(g => !!g)
 /** @type {SourcedFinding[]} */
 const raw = gathered.flatMap(g => (Array.isArray(g.findings) ? g.findings : []).map(f => ({ ...f, source: g.source })))
 log(`Gathered ${raw.length} raw finding(s) from ${gathered.length} source(s).`)

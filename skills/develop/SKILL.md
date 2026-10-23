@@ -15,7 +15,8 @@ skill that already exists for it.
 
 In the **main session**. The review engines are Workflow-tool scripts, and a subagent launched with
 the Agent tool has no Workflow tool — so never hand this skill, or a phase that launches an engine,
-to a subagent. Subagents may still do bulky work inside a phase (a coding role, a triage fan-out).
+to a subagent. Subagents may still do bulky work inside a phase (a coding role, the fix groups of a triage plan) —
+never the triage itself, which is the `craft:triage-findings` workflow.
 A session started with `claude --agent <role>` is a main session with that role's prompt: when the
 role's `tools` list is empty or names `Workflow` and `Skill`, it runs this cycle itself.
 
@@ -153,13 +154,22 @@ The engine's argument for each round, as an object (never a string):
 One **round** is:
 
 1. **Review** — launch the engine with the round's argument above.
-2. **Triage** — a large report → the `craft:triage-findings` workflow, with `prBase` = the output
-   of `git merge-base origin/<trunk> <reviewed head>` (the commit the branch forks from: only there
-   is a finding shown not to be this branch's; without it each such finding comes back as
-   `needs-decision`); a small one → inline, as `craft:addressing-findings` describes.
-3. **Address** — `craft:addressing-findings` works the findings through its step 6 (verify): fixes
-   the accepted ones, writes every rejection or justification as a decision and every deferral as an
-   open question in project memory at once, without asking. Stop it there: its re-review (step 7) is
+2. **Triage** — every report, whatever its size, → the `craft:triage-findings` workflow, launched
+   by this session (never a subagent), with `report` = the round's review report written to a file
+   in the session's temporary directory (it lives only in the session; the workflow's `pr` gather
+   reads only a PR's threads), plus `pr` whenever a PR exists, and `prBase` = the output of `git merge-base
+   origin/<trunk> <reviewed head>` (the commit the branch forks from: only there is a finding shown
+   not to be this branch's; without it each such finding comes back as `needs-decision`). This
+   session then writes every disposition to memory and files the workflow's `issues` before any
+   fixer starts (`craft:addressing-findings`, "Who triages"). Then, once per round, the
+   recurring-findings check that step 3 no longer reaches (addressing-findings' step 0): run
+   `node "<this skill's base directory>/../../lib/recurring-findings.mjs" --path <path> …` for the paths the round's findings touch, show each group, and offer
+   the author a lesson per group — recorded only on their yes (addressing-findings, "Recurring
+   findings").
+3. **Address** — `craft:addressing-findings`, entered at its step 5 with step 2's plan in hand (its
+   "Entered with a plan already made"): no second recall, triage or memory write — step 2 did them.
+   It fixes the accepted ones and verifies them (steps 5 and 6); a disposition that changes while
+   fixing is recorded then, once. Stop it there: its re-review (step 7) is
    this loop's next round, and its PR-thread replies (step 8) have no PR yet. Gate green and commit
    again before the next round.
 

@@ -39,7 +39,7 @@ test('a review request gets one synthetic part after its own, logged as chat.mes
   assert.deepEqual({ ...out.parts[1], text: undefined }, { id: 'prt_1-craft', sessionID: 's1', messageID: 'msg_1', type: 'text', text: undefined, synthetic: true })
   const text = String(out.parts[1]?.['text'])
   assert.match(text, /make one call: load the addressing-findings skill with the skill tool/)
-  assert.equal(text.split('\n').length, 7)
+  assert.equal(text.split('\n').length, 8)
   const again = output('s1', 'more findings')
   await message({ sessionID: 's1' }, again)
   assert.equal(again.parts.length, 1, 'once per session and class')
