@@ -27,7 +27,7 @@ Determine the perimeter from the root `Cargo.toml`: a `[workspace]` with multipl
 ```bash
 # crate graph
 cargo metadata --no-deps --format-version 1   # members + intra-workspace deps (preferred)
-cargo tree --workspace                         # fallback view of dependency edges
+cargo tree --workspace --locked                # fallback view of dependency edges
 # module graph
 cargo modules structure --package <pkg>        # if cargo-modules is installed
 ```

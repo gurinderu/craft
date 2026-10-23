@@ -14,7 +14,8 @@ rewrite it. Load the `rust-architecture-review` skill (call the `skill` tool wit
 ## Workflow
 
 1. **Build the graph.** Map the crate/module dependency graph (read `Cargo.toml`(s) and the
-   module tree; use `cargo metadata` if available).
+   module tree; use `cargo metadata --no-deps --format-version 1` if available — it does not
+   resolve dependencies, so it never writes `Cargo.lock`).
 2. **Judge in both directions.** Walk the rubric: too little structure (dependency cycles,
    inverted dependencies, layer leaks, god modules, anemic domain) AND too much (ghost
    abstractions, over-layering, generic soup).
