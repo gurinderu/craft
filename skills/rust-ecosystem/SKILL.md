@@ -78,7 +78,7 @@ out into its own crate (or merge an over-split one) → [crate-extraction.md](cr
 
 ```bash
 cargo machete        # find unused dependencies
-cargo tree -d --locked   # find duplicate/conflicting versions
+cargo tree -d --locked   # find duplicate/conflicting versions; no Cargo.lock (a library) → run it in a throwaway copy of the checkout
 ```
 
 Trim what you don't use and de-duplicate the graph to keep the dependency liability in check.
