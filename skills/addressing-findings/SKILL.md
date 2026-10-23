@@ -120,7 +120,7 @@ judged on the code, never on the reviewer's own label:
 
 | Class | What | Verdict |
 |---|---|---|
-| 1 | not this PR's — the problem stands at the base (the diff did not bring it), or lies outside the PR's task | a real problem: `defer`, carried by an issue (below) — checked at the merge-base (`git show <merge-base>:<path>` named in the premise), never on the reviewer's "pre-existing"; not a real problem: `reject`, no issue |
+| 1 | not this PR's — the problem stands at the base (the diff did not bring it), or lies outside the PR's task | a real problem: `defer`, carried by an issue (below) — checked at the `base` the triage was given and no other ref (`git show <base>:<path>` named in the premise; HEAD, another branch or the bare word merge-base shows nothing, and with no base given a human decides), never on the reviewer's "pre-existing"; not a real problem: `reject`, no issue |
 | 2 | inflated severity — the harm is unreachable or heals itself (a default requeue, only a metric) | judged on the merits, severity lowered |
 | 3 | a repeat — the same finding under a new id, or decided in another PR | settled by the sift |
 | 4 | a deliberate trade-off written in the project's docs or rules | `reject`, naming where it is written |
