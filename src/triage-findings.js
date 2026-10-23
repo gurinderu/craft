@@ -233,7 +233,7 @@ const PLAN_SCHEMA = {
 /** @typedef {RawFinding & { source: string }} SourcedFinding */
 /** @typedef {ReturnType<typeof siftFinding>} SiftFinding */
 /** @typedef {{ stable_id: string, verdict: string, reason: string, fix_pointer: string, premise_checked: string, noise_class?: number, severity?: string, action?: string }} Validation */
-/** @typedef {{ stable_id: string, verdict: string, reason: string, action?: string }} LedgerEntry */
+/** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string }} LedgerEntry */
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
 // What this script adds to the plan before returning it — not part of PLAN_SCHEMA.
 /** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
@@ -2553,7 +2553,7 @@ function collapseRepeats(findings) {
 
 /** The ledger row of a repeat. @param {{ f: SiftFinding, of: string }} r @returns {SiftEntry} */
 function repeatEntry(r) {
-  return { stable_id: r.f.stable_id, verdict: 'reject', reason: `${SIFT_MARK} — repeats ${r.of} in this batch (same site, same title words); judged there` }
+  return { stable_id: r.f.stable_id, verdict: 'reject', sifted: true, reason: `${SIFT_MARK} — repeats ${r.of} in this batch (same site, same title words); judged there` }
 }
 
 /**
@@ -2563,13 +2563,13 @@ function repeatEntry(r) {
  */
 function setAsideEntry(f) {
   const mark = String(f.memoryNote ?? '').replace(/^\s*·\s*/, '')
-  return { stable_id: f.stable_id, verdict: f.priorKind === 'question' ? 'defer' : 'reject', reason: `${SIFT_MARK} — ${mark} · ${f.priorMatch}` }
+  return { stable_id: f.stable_id, verdict: f.priorKind === 'question' ? 'defer' : 'reject', sifted: true, reason: `${SIFT_MARK} — ${mark} · ${f.priorMatch}` }
 }
 
 /** The ledger row of a finding going against a record. @param {SiftFinding & { memoryContradicts?: unknown }} f @returns {SiftEntry} */
 function conflictEntry(f) {
   const c = contradictionOf(f)
-  return { stable_id: f.stable_id, verdict: 'conflict', reason: `${SIFT_MARK} — goes against ${c?.kind ?? 'record'} ${c?.id ?? '?'} in project memory (${c?.why ?? ''}); a human decides whether the record still stands` }
+  return { stable_id: f.stable_id, verdict: 'conflict', sifted: true, reason: `${SIFT_MARK} — goes against ${c?.kind ?? 'record'} ${c?.id ?? '?'} in project memory (${c?.why ?? ''}); a human decides whether the record still stands` }
 }
 
 /**
@@ -2727,7 +2727,7 @@ function ledgerById(entries) {
   for (const e of entries) {
     if (!e || typeof e !== 'object') continue
     const x = /** @type {Record<string, unknown>} */ (e)
-    byId.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? '') })
+    byId.set(String(x['stable_id']), { stable_id: String(x['stable_id']), verdict: String(x['verdict'] ?? ''), reason: String(x['reason'] ?? ''), sifted: x['sifted'] === true })
   }
   return byId
 }
@@ -2802,8 +2802,14 @@ function validateOne(f) {
   // read. The marker in the reason is what distinguishes it — a fifth verdict would have to be
   // taught to VALIDATION_SCHEMA, PLAN_SCHEMA, the plan prompt and tallyVerdicts, all of which
   // enumerate the four, and a ledger entry the tally does not know is silently uncounted.
+  // ...nor is a row the sift set aside (a repeat, a record's answer): no validator judged it, and what
+  // settled it was the memory as it stood then. A finding here went past this run's sift — a decision
+  // superseded, its scope changed since its commit (realm @nick/craft, node #309), its copy gone — so
+  // carrying the old row would bury exactly what the sift raised again. The field is the test; the
+  // mark in the reason covers a ledger whose rows lost the field on the way back.
   const neverJudged = prior && String(prior.reason || '').includes(UNJUDGED_MARKER)
-  if (prior && !neverJudged && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
+  const siftedBefore = prior && (prior.sifted || String(prior.reason || '').includes(SIFT_MARK))
+  if (prior && !neverJudged && !siftedBefore && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
     // Carried verdicts skip the agent, so they carry no fresh premise check — say so rather than
     // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
@@ -2906,6 +2912,8 @@ function finalLedger(plan) {
  * @param {LedgerEntry[]} planLedger @returns {LedgerEntry[]}
  */
 function pinnedLedger(planLedger) {
+  /** A pinned row's own verdict and reason, and its `sifted` field when it has one. @param {{ stable_id: string }} e @param {LedgerEntry} v @returns {LedgerEntry} */
+  const restored = (e, v) => ({ ...e, verdict: v.verdict, reason: v.reason, ...(v.sifted ? { sifted: true } : {}) })
   // The prompt above ASKS the plan agent to copy the marker verbatim; asking is not a guarantee. A
   // summarising model paraphrases a one-line free-text reason as a matter of course, and the marker
   // is the ONLY thing that tells the next run this finding was never judged: lose it and the finding
@@ -2924,9 +2932,10 @@ function pinnedLedger(planLedger) {
     if (!v) return e
     seen.add(e.stable_id)
     const mark = v.reason.includes(UNJUDGED_MARKER) ? UNJUDGED_MARKER : SIFT_MARK
-    return String(e.reason || '').includes(mark) && e.verdict === v.verdict ? e : { ...e, verdict: v.verdict, reason: v.reason }
+    const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted
+    return kept ? e : restored(e, v)
   })
-  for (const [id, v] of pinned) if (!seen.has(id)) ledger.push({ stable_id: id, verdict: v.verdict, reason: v.reason })
+  for (const [id, v] of pinned) if (!seen.has(id)) ledger.push(restored({ stable_id: id }, v))
   return ledger
 }
 const ledger = finalLedger(plan)
