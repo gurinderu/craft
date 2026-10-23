@@ -102,7 +102,8 @@ decided in another PR is not decided again, and the opposite way:
 
 - **Repeats** — the same finding under another id in the same batch (same thread, or same file
   within a few lines and the same title words) is one finding: the most severe copy goes on, the
-  rest are rejected as its repeats.
+  rest are rejected as its repeats, each row naming that copy in `repeat_of` — in the review
+  ledger a repeat takes its copy's disposition, not its own `reject` (below).
 - **Answered by memory** — a finding an active decision answers is `reject`, one a deferred
   question answers `defer`, one a project rule covers `reject`; the ledger reason cites the
   record (who, when, link) and how it matched. Matching is the review engine's own: the anchor or
@@ -325,6 +326,12 @@ After **Triage (step 3)** and again after **Verify (step 6)**, write disposition
    - a fix that landed **and** was verified → `closed`
    - a finding kept (not fixed) but explicitly justified in the PR body → `justified`
    - triage `accept` (not yet fixed), `needs-decision`, `conflict` → leave `open`
+   - a `sifted` row is **never** mapped by its own `reject`: no one judged it on the code.
+     A repeat (`repeat_of` names its twin) takes its twin's disposition as the twin's row maps
+     — `closed` when the twin's fix landed and was verified **and** reached the repeat's line too
+     (else leave `open`), `deferred` when the twin is deferred, `rejected` only when the twin is
+     rejected. Any other sifted `reject` (a record's answer) → leave `open`: the next review sets
+     it aside again from the recalled record, and drops that once the record is withdrawn.
 3. **Match** a fix-loop finding to a review-ledger entry by `fp` when the finding carries one;
    otherwise by `file` + `ruleId` + a title match. If no entry matches, skip that finding silently.
 4. **Why:** this is exactly what lets the next round-aware re-review's *adjudicate track* **carry**

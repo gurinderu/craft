@@ -210,7 +210,7 @@ const PLAN_SCHEMA = {
 /** @typedef {RawFinding & { source: string }} SourcedFinding */
 /** @typedef {ReturnType<typeof siftFinding>} SiftFinding */
 /** @typedef {{ stable_id: string, verdict: string, reason: string, fix_pointer: string, premise_checked: string, noise_class?: number, severity?: string, action?: string }} Validation */
-/** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string }} LedgerEntry */
+/** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string, repeat_of?: string }} LedgerEntry */
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
 /** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
 
@@ -2482,9 +2482,15 @@ function collapseRepeats(findings) {
   return { kept, repeated }
 }
 
-/** The ledger row of a repeat. @param {{ f: SiftFinding, of: string }} r @returns {SiftEntry} */
+/**
+ * The ledger row of a repeat: `reject` here, since its twin alone is judged, and `repeat_of` naming that
+ * twin. The verdict is no disposition of its own: in the review ledger a repeat takes its twin's (closed,
+ * deferred, rejected), or a fix that missed the repeat's line would carry a real defect as dismissed
+ * (node #312).
+ * @param {{ f: SiftFinding, of: string }} r @returns {SiftEntry}
+ */
 function repeatEntry(r) {
-  return { stable_id: r.f.stable_id, verdict: 'reject', sifted: true, reason: `${SIFT_MARK} — repeats ${r.of} in this batch (same site, same title words); judged there` }
+  return { stable_id: r.f.stable_id, verdict: 'reject', sifted: true, repeat_of: r.of, reason: `${SIFT_MARK} — repeats ${r.of} in this batch (same site, same title words); judged there` }
 }
 
 /**
@@ -2824,8 +2830,8 @@ function finalLedger(plan) {
  * @param {LedgerEntry[]} planLedger @returns {LedgerEntry[]}
  */
 function pinnedLedger(planLedger) {
-  /** A pinned row's own verdict and reason, and its `sifted` field when it has one. @param {{ stable_id: string }} e @param {LedgerEntry} v @returns {LedgerEntry} */
-  const restored = (e, v) => ({ ...e, verdict: v.verdict, reason: v.reason, ...(v.sifted ? { sifted: true } : {}) })
+  /** A pinned row's own verdict and reason, its `sifted` field and a repeat's `repeat_of` (realm @nick/craft, node #312) when it has them. @param {{ stable_id: string }} e @param {LedgerEntry} v @returns {LedgerEntry} */
+  const restored = (e, v) => ({ ...e, verdict: v.verdict, reason: v.reason, ...(v.sifted ? { sifted: true } : {}), ...(v.repeat_of ? { repeat_of: v.repeat_of } : {}) })
   /** @type {Map<string, LedgerEntry>} */
   const pinned = new Map([...sifted, ...validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER))].map(v => [v.stable_id, v]))
   if (!pinned.size) return planLedger
@@ -2836,7 +2842,7 @@ function pinnedLedger(planLedger) {
     if (!v) return e
     seen.add(e.stable_id)
     const mark = v.reason.includes(UNJUDGED_MARKER) ? UNJUDGED_MARKER : SIFT_MARK
-    const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted
+    const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted && e.repeat_of === v.repeat_of
     return kept ? e : restored(e, v)
   })
   for (const [id, v] of pinned) if (!seen.has(id)) ledger.push(restored({ stable_id: id }, v))

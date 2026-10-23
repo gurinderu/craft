@@ -43,7 +43,8 @@ resolve the thread in step 8; reply uses `comments[0].databaseId`), `severity` =
 
 A persisted artifact (e.g. `triage-ledger.json` next to the plan) — one entry per finding keyed
 by `stable_id` with its final verdict + one-line reason, and `sifted: true` on a row the sift set
-aside before validation (a repeat, a record's answer). Read it at the start of a re-run so
+aside before validation (a repeat, a record's answer); a repeat's row also carries `repeat_of`, the
+`stable_id` of the copy it was collapsed onto and judged with. Read it at the start of a re-run so
 already-`reject`/`defer`/`needs-decision` findings are carried, not re-litigated, and so the
 re-review loop can tell a recurring finding from a new one — except a `sifted` row: the sift
 decides it again from the memory as it stands now, and no decision is recorded for it.
