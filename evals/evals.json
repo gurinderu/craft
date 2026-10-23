@@ -56,7 +56,7 @@
     "skills": ["addressing-findings"],
     "query": "The rust-audit report came back with about a dozen findings. Help me triage them and work through the fixes one by one.",
     "expected_behavior": [
-      "Selects addressing-findings (its gather → normalize → triage → fix → verify loop), optionally scaling to triage-findings.",
+      "Selects addressing-findings (its gather → normalize → triage → fix → verify loop) and triages through the triage-findings workflow in the main session, never in a subagent.",
       "Delegates the how-to-fix of each finding to the relevant topic skill.",
       "Does not itself re-run the review rubric; it consumes existing findings."
     ]

@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Fix loop for review findings — gather them from craft reviews, rust-audit reports and PR comments of any reviewer; triage always through the triage-findings workflow launched by the main session, never a subagent (it sifts out what project memory settled, files a finding the PR did not introduce as an issue); write each rejection or justification (PR-thread rejections included) as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking; let the human post or record each doubtful finding a review held back; offer a lesson per finding recurring across branches; subagents only fix the plan's file groups; verify, re-review the fix commits until green before any reply is posted. Without the Workflow tool (Codex, OpenCode) the main session sifts and triages itself. Use after a review or audit, on PR comments, or to decide what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Fix loop for review findings — gather them from craft reviews, rust-audit reports and PR comments of any reviewer; triage always through the triage-findings workflow launched by the main session, never a subagent (it sifts out what project memory settled, files a finding the PR did not introduce as an issue); write each rejection or justification (PR-thread rejections included) as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking; let the human post or record each doubtful finding a review held back; offer a lesson per finding recurring across branches; subagents only fix the plan's file groups; verify, re-review the fix commits until green before any reply is posted. Without the Workflow tool (Codex, OpenCode) the main session sifts by hand, then validates. Use after a review or audit, on PR comments, or to decide what to fix first. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -29,9 +29,15 @@ not one of them: it is the main session's (→ "Who triages").
                then findings that recur across branches shown, a lesson offered per group (→ below);
                a recall that fails or errors here is one line (`memory: recall failed — <why>`),
                never a reason to skip or replace the triage workflow, which recalls for itself
-1. Gather  ⫲ — collect findings from both sources, one subagent per source in parallel:
-               • craft: a rust-reviewer verdict / a rust-audit report
-               • GitHub: gh pr view / gh api → inline thread comments     (→ github.md)
+1. Gather    — name the sources for the triage workflow, which reads them itself:
+               • craft: a rust-reviewer verdict / a rust-audit report / a review engine's
+                 report → written to a file in the session's temporary directory if it lives
+                 only in the session, passed as `report`
+               • GitHub: the PR's number, passed as `pr` (it reads the inline thread
+                 comments; → github.md)
+               the PR-thread rejections are read here too (step 0). Only without the Workflow
+               tool does the session collect the findings itself, a subagent per source if
+               they are many
    Steps 2–4 are the `craft:triage-findings` workflow, launched by the main session
    (→ "Who triages"); the lines below say what it does, and what the main session does
    itself only where there is no Workflow tool.
@@ -105,7 +111,9 @@ A subagent launched with the Agent tool has no Workflow tool, so triage is **nev
 subagent** — not "triage and fix the review", not "triage these findings": the main session runs
 the workflow, then briefs subagents with the fix work only (step 5).
 
-Launch it with `prBase` = the output of `git merge-base origin/<trunk> <reviewed head>` (the commit
+Launch it with its sources — `report` = a path to the findings (a review report that lives only in
+the session is written to a file in the session's temporary directory first) and/or `pr` = the PR
+number when there is a PR; the workflow refuses to run with neither — and `prBase` = the output of `git merge-base origin/<trunk> <reviewed head>` (the commit
 the PR forks from): only there can a finding be shown not to be this PR's, and without it every
 such finding goes to you as `needs-decision`. `base` stays what it was — the ref the findings were
 generated against, which validation pins to. The workflow sifts by memory itself — it recalls the
@@ -117,16 +125,19 @@ for the findings that are not this PR's. A failed recall in this session (step 0
 workflow has no memory: say it in one line and launch the workflow anyway.
 
 **Right after it returns, the main session** — not a subagent — writes every disposition to memory
-(each `reject` and `justified` as a decision, each `defer` and `needs-decision` as a question, the
-PR-thread rejections as decisions, `sifted` rows excepted; → "Project memory"), files the `issues`
+(each `reject` as a decision, each `defer` and `needs-decision` as a question, the PR-thread
+rejections as decisions, `sifted` rows excepted; → "Project memory"; a finding kept but justified in
+the PR body is recorded as a decision later, when that is written), files the `issues`
 (→ "Not this PR's — an issue"), and only then hands the plan's file groups to fixers.
 
-**Without the Workflow tool** (Codex, OpenCode) there is no workflow to launch: the main session
-triages inline and does the sift's steps itself from this text — recall for every touched path
+**Without the Workflow tool** (Codex, OpenCode) there is no sift engine: the main session — still
+never a subagent — does the sift's steps itself from this text first: recall for every touched path
 (step 0); set aside a finding an active decision, deferred question or project rule answers,
 citing it; raise again every Critical/High one and every one whose record's code changed since its
-commit; collapse repeats; name each noise class; a finding the PR did not introduce → an issue.
-Say plainly in one line that triage ran inline because there is no Workflow tool.
+commit; collapse repeats. Then it validates what is left: inline, or in OpenCode with its
+`triage-findings` tool (which validates and plans but does not sift — never a replacement for the
+steps above); either way it names each noise class and turns a finding the PR did not introduce into
+an issue. Say plainly in one line that the sift ran by hand because there is no Workflow tool.
 
 ## The sift before triage (step 2b)
 

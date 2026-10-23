@@ -396,7 +396,7 @@ Where the harness ships craft's review agents (Claude Code, OpenCode), dispatch 
 - **`rust-security-scanner`** — security-sensitive changes (deps, `unsafe`, input handling) → `rust-security` verdict.
 - **`rust-miri`** — when the change touches `unsafe` (→ `rust-unsafe`).
 
-**Acting on the verdict** — working a set of findings to green (triage accept/reject/defer/needs-decision, order blocking → simple → complex, fix, verify, re-review, close the loop on GitHub) is its own discipline → `addressing-findings`; for a large batch it dispatches the `craft:triage-findings` workflow.
+**Acting on the verdict** — working a set of findings to green (triage accept/reject/defer/needs-decision, order blocking → simple → complex, fix, verify, re-review, close the loop on GitHub) is its own discipline → `addressing-findings`; its triage, whatever the batch size, is the `craft:triage-findings` workflow launched by the main session.
 
 ## Proving a claim — what proves what
 
