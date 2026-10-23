@@ -1,7 +1,7 @@
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk; on trunk or with no branch leave it out (one equal to `base` or HEAD counts as absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against, which validation pins to.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
@@ -2550,22 +2550,29 @@ function noiseClassOf(v) {
 }
 
 /**
- * The prBase class 1 is checked at, or '' when what was given is no fork point: a run on trunk, or
- * findings with no branch, give the reviewed head itself (`HEAD`, or the validation pin `base`), where
- * opening a file shows the code under review and proves nothing older than it. Compared as given; two
- * SHA-shaped refs where one starts with the other are one commit.
+ * The prBase class 1 is checked at, or '' when what was given is no fork point. It counts only beside
+ * the validation pin `base` (the reviewed head) and different from it: a run on trunk, or findings with
+ * no branch, give the reviewed head itself, where opening a file shows the code under review and proves
+ * nothing older than it — and with no `base` nothing tells a prBase from that head. `HEAD` never counts.
+ * Compared as given; two SHA-shaped refs where one starts with the other are one commit.
  * @param {string} prBase @param {string} base @returns {string}
  */
 function effectivePrBase(prBase, base) {
   const at = String(prBase ?? '').trim()
   const pin = String(base ?? '').trim()
-  if (!at || at === 'HEAD' || at === pin) return ''
+  return !at || !pin || at === 'HEAD' || sameCommit(at, pin) ? '' : at
+}
+
+/**
+ * Whether two refs name one commit as given: equal, or both SHA-shaped and one a prefix of the other.
+ * @param {string} a @param {string} b @returns {boolean}
+ */
+function sameCommit(a, b) {
+  if (a === b) return true
   const sha = /^[0-9a-f]{7,64}$/i
-  if (sha.test(at) && sha.test(pin)) {
-    const [a, b] = [at.toLowerCase(), pin.toLowerCase()]
-    if (a.startsWith(b) || b.startsWith(a)) return ''
-  }
-  return at
+  if (!sha.test(a) || !sha.test(b)) return false
+  const [x, y] = [a.toLowerCase(), b.toLowerCase()]
+  return x.startsWith(y) || y.startsWith(x)
 }
 
 /**

@@ -160,7 +160,7 @@ One **round** is:
    reads only a PR's threads), plus `pr` whenever a PR exists, and `prBase` = the output of `git merge-base
    origin/<trunk> <reviewed head>` (the commit the branch forks from: only there is a finding shown
    not to be this branch's; passed only when the reviewed head is a branch diverging from trunk,
-   left out on trunk; without it each such finding comes back as `needs-decision`). This
+   together with `base` = the reviewed head's SHA, and left out on trunk; without it each such finding comes back as `needs-decision`). This
    session then writes every disposition to memory and files the workflow's `issues` before any
    fixer starts (`craft:addressing-findings`, "Who triages"). Then, once per round, the
    recurring-findings check that step 3 no longer reaches (addressing-findings' step 0): run

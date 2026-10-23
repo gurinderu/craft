@@ -119,10 +119,11 @@ and `pr` = the PR number whenever there is a PR (it reads only the PR's inline t
 report's findings reach triage only through `report`); at least one — the workflow refuses to run
 with neither — and `prBase` = the output of `git merge-base origin/<trunk> <reviewed head>` (the commit
 the PR forks from), only when the reviewed head is a branch diverging from trunk (that merge-base
-differs from the head): only there can a finding be shown not to be this PR's. On trunk or with no
-branch (a `rust-audit` of trunk) leave `prBase` out — the workflow also treats one equal to `base`
-or `HEAD` as absent — and every such finding goes to you as `needs-decision`. `base` stays what it was — the ref the findings were
-generated against, which validation pins to. The workflow sifts by memory itself — it recalls the
+differs from the head), and with it `base` = the reviewed head's SHA: only there can a finding be
+shown not to be this PR's. On trunk or with no branch (a `rust-audit` of trunk) leave `prBase` out —
+the workflow counts it only beside a `base` it differs from, so one with no `base`, one equal to
+`base`, or `HEAD` is absent — and every such finding goes to you as `needs-decision`. `base` keeps
+its meaning — the ref the findings were generated against, the reviewed head, which validation pins to. The workflow sifts by memory itself — it recalls the
 project's records for the findings' paths and merges in what `priorDecisions` (an object argument,
 the step-0 records) adds; its ledger rows with `sifted: true` (their reason opens with `SIFTED
 BEFORE VALIDATION`) were settled by the sift — a repeat or a record's answer — not judged on the
