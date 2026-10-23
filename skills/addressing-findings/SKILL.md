@@ -120,7 +120,7 @@ judged on the code, never on the reviewer's own label:
 
 | Class | What | Verdict |
 |---|---|---|
-| 1 | not this PR's — the problem stands at the base (the diff did not bring it), or lies outside the PR's task | `defer`, carried by an issue (below) — checked at the merge-base, never on the reviewer's "pre-existing" |
+| 1 | not this PR's — the problem stands at the base (the diff did not bring it), or lies outside the PR's task | a real problem: `defer`, carried by an issue (below) — checked at the merge-base (`git show <merge-base>:<path>` named in the premise), never on the reviewer's "pre-existing"; not a real problem: `reject`, no issue |
 | 2 | inflated severity — the harm is unreachable or heals itself (a default requeue, only a metric) | judged on the merits, severity lowered |
 | 3 | a repeat — the same finding under a new id, or decided in another PR | settled by the sift |
 | 4 | a deliberate trade-off written in the project's docs or rules | `reject`, naming where it is written |
@@ -129,7 +129,7 @@ judged on the code, never on the reviewer's own label:
 
 ## Not this PR's — an issue
 
-A class-1 finding is not fixed in this branch and not asked about: it goes to an issue on the
+A real class-1 finding is not fixed in this branch and not asked about: it goes to an issue on the
 project's forge, filed by this loop without a question (the human closes what is not needed).
 Search the open issues first (`gh issue list --state open --search "<title words> in:title,body"`);
 one about the same concern → comment the finding there (`gh issue comment <n> --body …`), else

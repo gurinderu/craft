@@ -2543,16 +2543,18 @@ function noiseClassOf(v) {
 }
 
 /**
- * The verdict a noise class settles: class 1 (not this PR's) is a deferral carried by an issue on the
- * consumer's forge — but only when the validator recorded what it opened at the base, else nothing
- * settled it and a human decides; class 5 (not decidable from the code) is needs-decision. Every other
- * verdict stands as the validator gave it.
+ * The verdict a noise class settles: class 1 (not this PR's) on a finding the validator did not reject
+ * is a deferral carried by an issue on the consumer's forge — but only when premise_checked names the
+ * base it opened, else nothing settled it and a human decides; a class-1 `reject` stands (no real
+ * problem, no issue). Class 5 (not decidable from the code) is needs-decision. Every other verdict
+ * stands as the validator gave it.
  * @template {{ verdict: string, reason: string, premise_checked: string }} V @param {V} v
  * @returns {V & { action?: string }}
  */
 function classifiedVerdict(v) {
   const n = noiseClassOf(v)
-  if (n === 1 && !String(v.premise_checked ?? '').trim()) {
+  if (n === 1 && v.verdict === 'reject') return v
+  if (n === 1 && !/\bmerge-base\b|\bgit show [^\s:]+:\S/.test(String(v.premise_checked ?? ''))) {
     return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but nothing at the base was opened to show it — ${v.reason}` }
   }
   if (n === 1) return { ...v, verdict: 'defer', action: 'issue' }
@@ -2718,7 +2720,7 @@ Read the cited code, then decide ONE verdict:
 PREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: "a caller must already validate this" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified.
 
 NOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:
-1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word ("pre-existing", "out of scope"): find the base (\`gh pr view <n> --json baseRefName\` for a PR, else the remote's default branch), take \`git merge-base\` with the ref you validate, open the cited code there (\`git show <merge-base>:<path>\`) and record what you opened in premise_checked. Verdict defer — the triage carries it to an issue.
+1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word ("pre-existing", "out of scope"): find the base (\`gh pr view <n> --json baseRefName\` for a PR, else the remote's default branch), take \`git merge-base\` with the ref you validate, open the cited code there and record that command in premise_checked as \`git show <merge-base>:<path>\` — a premise naming neither a merge-base nor a \`git show <ref>:<path>\` reads as unchecked. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).
 2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.
 3 — a repeat of a finding already decided — reject, naming it.
 4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.
