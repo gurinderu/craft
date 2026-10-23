@@ -92,8 +92,8 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 many-comment PR) → dispatch the `craft:triage-findings` workflow, apply its plan, then run the
 re-review loop. The workflow sifts by memory itself — it recalls the project's records for the
 findings' paths and merges in what `priorDecisions` (an object argument, the step-0 records)
-adds; its ledger rows marked `SIFTED BEFORE VALIDATION` were settled from memory, not judged on
-the code. It returns `issues` (title, body) for the findings that are not this PR's.
+adds; its ledger rows with `sifted: true` (their reason opens with `SIFTED BEFORE VALIDATION`)
+were settled by the sift — a repeat or a record's answer — not judged on the code. It returns `issues` (title, body) for the findings that are not this PR's.
 
 ## The sift before triage (step 2b)
 
@@ -192,7 +192,11 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the review printed without a `tool:` rule — is told apart by its title alone: copy the title exactly
   as that source carries it, never reworded, since only the same title sets it aside when the judge
   gives no verdict (deadnix names the binding there)), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
-  body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
+  body — written right then, without asking. **Not** for a row the sift set aside — a ledger row with
+  `sifted: true` (rejected or deferred before, under a project rule, a repeat): a record already
+  decides it, and a new one at HEAD would renew a stale record's commit and blind the next sift's
+  check that the scope changed since it; tell such rows apart by that field, never by the reason's
+  wording. Re-recording one is right only when the human re-decides it. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
 - **A stance is a project rule, not a decision** — when the reason for a reject is a stance of the
   whole project rather than "this is not a bug here" ("we do not support rollback", "a new API
