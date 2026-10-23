@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.34.1](https://github.com/gurinderu/craft/compare/v0.34.0...v0.34.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **addressing-findings:** triage through the engine in the main session ([#259](https://github.com/gurinderu/craft/issues/259)) ([a00b43c](https://github.com/gurinderu/craft/commit/a00b43c4ef13159cc1be37f97690c229015d586a))
+* **triage:** no prBase on trunk; prBase counts only beside a different base ([#261](https://github.com/gurinderu/craft/issues/261)) ([85fde92](https://github.com/gurinderu/craft/commit/85fde926843278c94019842fb234275e69830071))
+
 ## [0.34.0](https://github.com/gurinderu/craft/compare/v0.33.0...v0.34.0) (2026-10-23)
 
 
