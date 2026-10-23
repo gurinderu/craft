@@ -95,10 +95,13 @@ its "Reviewer agent unavailable" section. Records written before this by `review
 `lib/analyze-runs.mjs` reads both shapes and ranks the result in its AGENT UNAVAILABLE section.
 `triage-findings` is not a review: it carries `verdict: ""` and `findings` summarizing the findings
 it *triaged* (total + severity mix of the gathered raw findings, not findings it produced). It adds
-`sources[]` (`{source, count}` per gathered source) and `triage {gathered, validated, accept,
-reject, defer, needs-decision, conflict}` (disposition tally from the plan ledger, or the solo
-validations when the plan phase produced nothing); `notRun[]` lists requested sources that failed to
-gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
+`sources[]` (`{source, count}` per gathered source), `triage {gathered, validated, accept,
+reject, defer, needs-decision, conflict, sifted, issues}` (disposition tally from the plan ledger, or
+the solo validations and the sifted rows when the plan phase produced nothing; `sifted {repeats,
+rejectedBefore, deferred, covered, conflict, reraised}` counts what the memory sift settled or raised
+again before validation; `issues` the findings deferred to an issue as not the PR's) and `memory`
+(where the sift's records came from, as `review` records it); `notRun[]` lists requested sources that
+failed to gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
 The `rust-security-scanner` agent additionally records `toolsRun[]` (which cargo tools actually ran).
 rust-review records also carry `gate {status, provenance}` (always) and `failedChecks[]`
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
