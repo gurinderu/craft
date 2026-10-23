@@ -155,14 +155,17 @@ One **round** is:
 
 1. **Review** — launch the engine with the round's argument above.
 2. **Triage** — every report, whatever its size, → the `craft:triage-findings` workflow, launched
-   by this session (never a subagent), with `pr` when the findings are a PR's threads, else
-   `report` = the review's findings written to a file in the session's temporary directory — in
-   this loop the round's report, which lives only in the session and is not on any PR (the workflow
-   refuses to run with neither) — and `prBase` = the output of `git merge-base
+   by this session (never a subagent), with `report` = the round's review report written to a file
+   in the session's temporary directory (it lives only in the session; the workflow's `pr` gather
+   reads only a PR's threads), plus `pr` whenever a PR exists, and `prBase` = the output of `git merge-base
    origin/<trunk> <reviewed head>` (the commit the branch forks from: only there is a finding shown
    not to be this branch's; without it each such finding comes back as `needs-decision`). This
    session then writes every disposition to memory and files the workflow's `issues` before any
-   fixer starts (`craft:addressing-findings`, "Who triages").
+   fixer starts (`craft:addressing-findings`, "Who triages"). Then, once per round, the
+   recurring-findings check that step 3 no longer reaches (addressing-findings' step 0): run
+   `node "<this skill's base directory>/../../lib/recurring-findings.mjs" --path <path> …` for the paths the round's findings touch, show each group, and offer
+   the author a lesson per group — recorded only on their yes (addressing-findings, "Recurring
+   findings").
 3. **Address** — `craft:addressing-findings`, entered at its step 5 with step 2's plan in hand (its
    "Entered with a plan already made"): no second recall, triage or memory write — step 2 did them.
    It fixes the accepted ones and verifies them (steps 5 and 6); a disposition that changes while

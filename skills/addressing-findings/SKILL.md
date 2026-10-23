@@ -29,12 +29,13 @@ not one of them: it is the main session's (→ "Who triages").
                then findings that recur across branches shown, a lesson offered per group (→ below);
                a recall that fails or errors here is one line (`memory: recall failed — <why>`),
                never a reason to skip or replace the triage workflow, which recalls for itself
-1. Gather    — name the source for the triage workflow, which reads it itself:
-               • GitHub: the PR's number, passed as `pr` when there is a PR (it reads the
-                 inline thread comments; → github.md)
-               • else craft: a rust-reviewer verdict / a rust-audit report / a review
-                 engine's report → written to a file in the session's temporary directory if
-                 it lives only in the session, passed as `report`
+1. Gather    — name the sources for the triage workflow, which reads them itself; at least one:
+               • a report: a review engine's report, a rust-audit report, a rust-reviewer
+                 verdict → whenever the findings live in one, written to a file in the
+                 session's temporary directory if it lives only in the session, passed as
+                 `report`
+               • GitHub: whenever there is a PR, its number, passed as `pr` (it reads the
+                 inline thread comments only; → github.md)
                the PR-thread rejections are read here too (step 0). Only without the Workflow
                tool does the session collect the findings itself, a subagent per source if
                they are many
@@ -111,11 +112,11 @@ A subagent launched with the Agent tool has no Workflow tool, so triage is **nev
 subagent** — not "triage and fix the review", not "triage these findings": the main session runs
 the workflow, then briefs subagents with the fix work only (step 5).
 
-Launch it with its source — `pr` = the PR number when there is a PR (it reads the threads itself),
-else `report` = a path to the review's findings (a report that lives only in the session is written
-to a file in the session's temporary directory first); both when the findings of a report not
-posted on the PR are worked together with its threads; the workflow refuses to run with neither —
-and `prBase` = the output of `git merge-base origin/<trunk> <reviewed head>` (the commit
+Launch it with its sources — `report` = a path to the findings whenever they live in a report (one
+that lives only in the session is written to a file in the session's temporary directory first),
+and `pr` = the PR number whenever there is a PR (it reads only the PR's inline threads, so a
+report's findings reach triage only through `report`); at least one — the workflow refuses to run
+with neither — and `prBase` = the output of `git merge-base origin/<trunk> <reviewed head>` (the commit
 the PR forks from): only there can a finding be shown not to be this PR's, and without it every
 such finding goes to you as `needs-decision`. `base` stays what it was — the ref the findings were
 generated against, which validation pins to. The workflow sifts by memory itself — it recalls the
