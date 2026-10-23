@@ -2635,13 +2635,14 @@ function classOneBaseLine(prBase) {
 }
 
 /**
- * Whether a premise shows a file opened at exactly `ref`: `git show <ref>:<path>`, the ref ending at
- * the colon, so neither another ref nor one that only starts with this one passes.
+ * Whether a premise shows a file opened at exactly `ref`: `git show <ref>:<path>`, at the start, after
+ * a space, or inside backticks, quotes or parentheses; the ref ends at the colon, so neither another
+ * ref nor one that only starts with this one passes.
  * @param {string} premise @param {string} ref @returns {boolean}
  */
 function openedAt(premise, ref) {
   const at = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?:^|\\s)git show ${at}:[^\\s:]`).test(premise)
+  return new RegExp(`(?:^|[\\s\`'"(])git show ${at}:[^\\s:\`'")]`).test(premise)
 }
 
 /**
