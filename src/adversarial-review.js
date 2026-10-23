@@ -2152,7 +2152,7 @@ const { deadLenses, all } = await runFinderLenses(plan.lenses)
 // AND similar titles — proximity alone never merges, so two distinct issues in one window
 // survive as two findings. Under-merge costs one cheap verify agent; over-merge silently
 // loses a finding — stay conservative.
-const normTokens = (/** @type {unknown} */ t) => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, ' ').split(' ').filter(w => w.length > 2))
+const normTokens = (/** @type {unknown} */ t) => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9\u0430-\u044f\u0451]+/gi, ' ').split(' ').filter(w => w.length > 2))
 /** @param {unknown} a @param {unknown} b */
 function titleSimilar(a, b) {
   const tokensA = normTokens(a), B = normTokens(b)
