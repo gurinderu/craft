@@ -178,6 +178,14 @@ one itself). Only a **lesson** waits for the author's yes (below).
   in which case say so and supersede the decision instead of applying it. A matching **active
   question** on the finding's title means it was deferred before: cite it, and either keep it
   deferred or answer it (a decision that supersedes it).
+- **No record for a row the sift set aside** — a ledger row with `sifted: true` gets neither
+  `record-decision` nor `record-question`, whatever its verdict (`reject` or `defer`). A row set aside
+  by a record (rejected or deferred before, under a project rule) is already answered by that record,
+  and a new one at HEAD would renew the stale record's commit and blind the next sift's check that the
+  scope changed since it. A row that repeats another finding of this batch is settled by the record
+  written for the finding it repeats (its reason names that id); a record of its own would duplicate
+  that one. Tell such rows apart by the field, never by the reason's wording. Recording one is right
+  only when the human re-decides it.
 - **On a disposition** — `record-decision` with title = the finding's title (for a gate tool's finding without toolRule, the title the report lists for its `file:line` under **Tool finding titles (verbatim)** — the one equal to the report line's text, or the only one listed there; when several are listed and none is equal, the report line's text, never a guess between them, and the finding then goes to the judge each round; when none is listed there (a PR thread, an older report), the review ledger row's `title` only when the ledger holds exactly one live gate-tool row without toolRule at that `file:line` (live: `disposition` other than `closed` — a `closed` row is a tombstone, not a row of a finding) — several there (two deadnix bindings on one line) is no source: never pick between them — else the report line's text, which then goes to the judge each round; any other finding's title as the report printed it; never from a refusal note, which clips titles), scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
@@ -192,11 +200,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
   the review printed without a `tool:` rule — is told apart by its title alone: copy the title exactly
   as that source carries it, never reworded, since only the same title sets it aside when the judge
   gives no verdict (deadnix names the binding there)), links = PR / thread / commit. Triggered by triage `reject` and a finding kept but `justified` in the PR
-  body — written right then, without asking. **Not** for a row the sift set aside — a ledger row with
-  `sifted: true` (rejected or deferred before, under a project rule, a repeat): a record already
-  decides it, and a new one at HEAD would renew a stale record's commit and blind the next sift's
-  check that the scope changed since it; tell such rows apart by that field, never by the reason's
-  wording. Re-recording one is right only when the human re-decides it. The PR-thread rejections `pr-rejections.mjs` prints
+  body — written right then, without asking. The PR-thread rejections `pr-rejections.mjs` prints
   (→ pr-rejections.md) are written the same way, each as it is.
 - **A stance is a project rule, not a decision** — when the reason for a reject is a stance of the
   whole project rather than "this is not a bug here" ("we do not support rollback", "a new API
