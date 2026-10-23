@@ -56,7 +56,7 @@ cross-linking is the collection's cohesion.
 | workflow | `review` | **Default diff-review path.** Auto-detects the language(s) in the diff (Rust/Nix), runs each language's gate + scout-scaled lens fan-out (loop-until-dry, adversarial + self-verification), and merges into one Confirmed/Suspected report + verdict |
 | workflow | `rust-review` / `nix-review` | Thin pins over `review` that force a single language (`workflow('review', {languages:['rust'\|'nix']})`) |
 | workflow | `rust-audit` | Full crate audit — per-crate review, inter-crate contracts, architecture, crate-decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health, run in parallel and synthesized into one report |
-| workflow | `triage-findings` | Validates review findings (craft agents + GitHub PR comments) in parallel, dedups/conflict-checks, and renders one ordered fix plan (checkbox-task format) + a triage ledger — no edits |
+| workflow | `triage-findings` | Sifts review findings (craft agents + GitHub PR comments) by project memory, validates the rest in parallel, dedups/conflict-checks, and renders one ordered fix plan (checkbox-task format) + a triage ledger — no edits |
 
 ## Layout
 
@@ -135,8 +135,10 @@ review, inter-crate contracts, architecture, crate-decomposition, security, Miri
 semver, build-matrix, deps, unused-crate detection (with verification), and test/doc health — and
 a final step synthesizes one severity-ranked report.
 
-`workflows/triage-findings.js` validates findings (craft agents + GitHub PR comments), dedups and
-conflict-checks them, and renders one ordered fix plan + a triage ledger — no edits.
+`workflows/triage-findings.js` gathers findings (craft agents + GitHub PR comments), sifts out what
+the project's memory already settled, validates the rest, dedups and conflict-checks them, and
+renders one ordered fix plan + a triage ledger (and the issues to file for findings the PR did not
+introduce) — no edits.
 
 Both review workflows and the standalone agents emit a structured run record after each run; see
 `docs/observability.md`.

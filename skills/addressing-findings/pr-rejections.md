@@ -2,21 +2,27 @@
 
 Run at the start of the fix loop (step 0, before recall) and again before every re-review
 (step 7). It turns what was already said on the PR — a reply opening with "not a bug", "by
-design" … — into `memory` `record-decision`s, so the next review sets those findings aside instead
-of raising them again. It reads; it never posts or resolves anything.
+design" … — into `memory` `record-decision`s, so the next review sets those findings aside and the
+next triage sifts them out instead of raising them again. It reads; it never posts or resolves
+anything.
 
 ## The rule — conservative on purpose
 
 A thread yields a decision **only** when all of these hold:
 
-1. **Its first comment is a craft finding**: the body the review engine posts — first line
-   `[Severity] title`, last line the `<!-- craft-finding -->` marker. A thread without the marker
-   (a human's comment, another bot's, a craft comment from before the marker existed) is never
-   recorded: it cannot be tied to a specific finding. **And its author is a maintainer**: the first
-   comment's `authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`. craft posts under the `gh`
-   account of the human running it, who maintains the repo; anyone else — the PR author included —
-   can paste the marker, so a marked comment from any other association is a forged finding: named
-   with why and counted, never recorded.
+1. **Its first comment is a finding** — of one of two kinds:
+   - **A craft finding**: the body the review engine posts — first line `[Severity] title`, last
+     line the `<!-- craft-finding -->` marker — **whose author is a maintainer**: the first
+     comment's `authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`. craft posts under the
+     `gh` account of the human running it, who maintains the repo; anyone else — the PR author
+     included — can paste the marker, so a marked comment from any other association is a forged
+     finding: named with why and counted, never recorded.
+   - **Another reviewer's remark**: a comment without the marker — a person's, or their own
+     tool's — from anyone. Its first line of text (heading and emphasis marks dropped, cut at a
+     word past 120 characters) stands for the title. One guard more: when the rejecting reply comes
+     from the remark's own author and that author is not an owner, member or collaborator, nothing
+     is recorded — an outsider cannot settle their own remark for the whole project. A remark
+     nobody rejected is not listed.
 2. **Its last word is a reply that rejects the finding**: it **opens** with `not a bug`, `not an
    issue`, `by design`, `won't fix` / `wontfix` / `will not fix`, `works as intended` / `working as
    intended` / `as intended`, `intentional` or `false positive` (optionally after `this is` /
@@ -30,7 +36,8 @@ A thread yields a decision **only** when all of these hold:
    rejection is not recorded; the script names each and counts them.
 4. **It can be anchored**: a path and the commit the finding was posted on.
 
-Every craft-finding thread that does not qualify is listed with why; nothing is guessed.
+Every craft-finding thread that does not qualify is listed with why, and every other reviewer's
+thread whose rejection is not recorded; nothing is guessed.
 
 ## Steps
 
@@ -66,7 +73,7 @@ node "<this skill's base directory>/../../lib/pr-rejections.mjs" "$f"
 ```
 
 The script prints `{ decisions, skipped }`. Each decision is already a `memory` record —
-`id`, `kind: decision`, `title` (the finding's), `body` (the reason), `scope` (the path), `date`,
+`id`, `kind: decision`, `title` (the finding's, or the remark's first line), `body` (the reason), `scope` (the path), `date`,
 `author` (who rejected), `commit` (the commit the thread was on), `line` (the thread's line on that
 commit, when it has one), `lens` (the lens that raised the finding, when its comment names it), `toolRule` (the gate tool's own rule the finding
 fired, when its comment names it),
