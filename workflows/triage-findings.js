@@ -1,7 +1,7 @@
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'After a review or rust-audit produces many findings, or a PR has many inline comments, and you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository).',
+  whenToUse: 'After a review or rust-audit produces many findings, or a PR has many inline comments, and you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against, which validation pins to.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (rust-audit report, reviewer verdict, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
@@ -137,6 +137,7 @@ function textArg(key) {
 const pr = textArg('pr')
 const report = textArg('report')
 const base = textArg('base')
+const prBase = textArg('prBase')
 /** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
 const craftRootArg = textArg('craftRoot')
@@ -210,7 +211,7 @@ const PLAN_SCHEMA = {
 /** @typedef {RawFinding & { source: string }} SourcedFinding */
 /** @typedef {ReturnType<typeof siftFinding>} SiftFinding */
 /** @typedef {{ stable_id: string, verdict: string, reason: string, fix_pointer: string, premise_checked: string, noise_class?: number, severity?: string, action?: string }} Validation */
-/** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string }} LedgerEntry */
+/** @typedef {{ stable_id: string, verdict: string, reason: string, sifted?: boolean, action?: string, repeat_of?: string }} LedgerEntry */
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
 /** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
 
@@ -2482,9 +2483,15 @@ function collapseRepeats(findings) {
   return { kept, repeated }
 }
 
-/** The ledger row of a repeat. @param {{ f: SiftFinding, of: string }} r @returns {SiftEntry} */
+/**
+ * The ledger row of a repeat: `reject` here, since its twin alone is judged, and `repeat_of` naming that
+ * twin. The verdict is no disposition of its own: in the review ledger a repeat takes its twin's (closed,
+ * deferred, rejected), or a fix that missed the repeat's line would carry a real defect as dismissed
+ * (node #312).
+ * @param {{ f: SiftFinding, of: string }} r @returns {SiftEntry}
+ */
 function repeatEntry(r) {
-  return { stable_id: r.f.stable_id, verdict: 'reject', sifted: true, reason: `${SIFT_MARK} — repeats ${r.of} in this batch (same site, same title words); judged there` }
+  return { stable_id: r.f.stable_id, verdict: 'reject', sifted: true, repeat_of: r.of, reason: `${SIFT_MARK} — repeats ${r.of} in this batch (same site, same title words); judged there` }
 }
 
 /**
@@ -2543,23 +2550,65 @@ function noiseClassOf(v) {
 }
 
 /**
+ * What the validator is told about where class 1 must be shown: the PR's fork point this triage was
+ * given, cited exactly as `classifiedVerdict` reads it, so the engine can tell the premise opened that
+ * commit rather than a ref the validator picked (node #309); with none, that a human decides.
+ * @param {string} prBase @returns {string}
+ */
+function classOneBaseLine(prBase) {
+  const at = String(prBase ?? '').trim()
+  return at
+    ? `the PR forks from \`${at}\` (prBase) — open the cited code there and record in premise_checked exactly \`git show ${at}:<path>\`; a premise naming any other ref (HEAD, the ref you validate against, a branch, a merge-base you computed) reads as unchecked and goes to a human`
+    : "no prBase (the PR's fork point) was given to this triage, so it cannot be checked here — name the class all the same; a human decides it"
+}
+
+/**
+ * Whether a premise shows a file opened at exactly `ref`: `git show <ref>:<path>`, at the start, after
+ * a space, or inside backticks, quotes or parentheses; the ref ends at the colon, so neither another
+ * ref nor one that only starts with this one passes.
+ * @param {string} premise @param {string} ref @returns {boolean}
+ */
+function openedAt(premise, ref) {
+  const needle = `git show ${ref}:`
+  for (let i = premise.indexOf(needle); i !== -1; i = premise.indexOf(needle, i + 1)) {
+    const before = i === 0 ? ' ' : premise.charAt(i - 1)
+    const after = premise.charAt(i + needle.length)
+    if (/[\s`'"(]/.test(before) && after !== '' && !/[\s:`'")]/.test(after)) return true
+  }
+  return false
+}
+
+/**
  * The verdict a noise class settles: class 1 (not this PR's) on a finding the validator accepted or
  * deferred is a deferral carried by an issue on the consumer's forge — but only when premise_checked
- * names the base it opened, else nothing settled it and a human decides; any other class-1 verdict
- * stands (a `reject`: no real problem, no issue; a `needs-decision`: still the human's). Class 5 (not
- * decidable from the code) is needs-decision. Every other verdict stands as the validator gave it.
+ * shows a file opened at `prBase`, the PR's fork point the triage was given, never a ref the validator
+ * picked — else nothing settled it and a human decides; with no prBase, always a human. Any other
+ * class-1 verdict stands (a `reject`: no real problem, no issue; a `needs-decision`: still the human's).
+ * Class 5 (not decidable from the code) is needs-decision. Every other verdict stands as given.
  * @template {{ verdict: string, reason: string, premise_checked: string }} V @param {V} v
+ * @param {string} [prBase] the commit the PR forks from; '' or absent when none was given
  * @returns {V & { action?: string }}
  */
-function classifiedVerdict(v) {
+function classifiedVerdict(v, prBase = '') {
   const n = noiseClassOf(v)
-  if (n === 1 && v.verdict !== 'accept' && v.verdict !== 'defer') return v
-  if (n === 1 && !/\bmerge-base\b|\bgit show [^\s:]+:\S/.test(String(v.premise_checked ?? ''))) {
-    return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but nothing at the base was opened to show it — ${v.reason}` }
-  }
-  if (n === 1) return { ...v, verdict: 'defer', action: 'issue' }
+  if (n === 1) return notThisPrs(v, String(prBase ?? '').trim())
   if (n === 5) return { ...v, verdict: 'needs-decision' }
   return v
+}
+
+/**
+ * A class-1 verdict settled: a real problem shown at `prBase` is a deferral with an issue, one not shown
+ * there a human's; a `reject` or `needs-decision` stands.
+ * @template {{ verdict: string, reason: string, premise_checked: string }} V @param {V} v @param {string} prBase
+ * @returns {V & { action?: string }}
+ */
+function notThisPrs(v, prBase) {
+  if (v.verdict !== 'accept' && v.verdict !== 'defer') return v
+  if (!prBase) return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but no prBase (the PR's fork point) was given to check it at — ${v.reason}` }
+  if (!openedAt(String(v.premise_checked ?? ''), prBase)) {
+    return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but nothing at the PR's fork point ${prBase} was opened to show it — ${v.reason}` }
+  }
+  return { ...v, verdict: 'defer', action: 'issue' }
 }
 
 /**
@@ -2685,6 +2734,7 @@ phase('Validate')
 const pin = base
   ? `Validate against ref \`${base}\` (the ref the findings were generated against), not the live working tree.`
   : 'Validate against the currently checked-out tree.'
+const classOneBase = classOneBaseLine(prBase)
 
 const UNJUDGED_MARKER = 'NOT JUDGED'
 
@@ -2728,7 +2778,7 @@ Read the cited code, then decide ONE verdict:
 PREMISE DISCIPLINE: name the ONE claim your verdict rests on. If it lives outside the cited location — the dependency behaves this way, this is reachable from untrusted input, a caller already guards it, the sibling path does X — OPEN that code (dependency sources included) and record the file:line in premise_checked. This binds **reject** exactly as much as accept: "a caller must already validate this" waved through without opening the caller is the same unfounded claim as the finding it dismisses, and it silently discards a real bug. If you cannot open it, do not guess — verdict needs-decision, saying which premise is unverified.
 
 NOISE CLASSES (noise_class; 0 when none applies — a defect of this change). They are judged on the code, never on the source's own label:
-1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word ("pre-existing", "out of scope"): find the base (\`gh pr view <n> --json baseRefName\` for a PR, else the remote's default branch), take \`git merge-base\` with the ref you validate, open the cited code there and record that command in premise_checked as \`git show <merge-base>:<path>\` — a premise naming neither a merge-base nor a \`git show <ref>:<path>\` reads as unchecked. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).
+1 — not this change's: the problem already stands at the PR's base (the diff did not bring it) or lies outside the change's task. Check it AT THE BASE, not by the reviewer's word ("pre-existing", "out of scope"): ${classOneBase}. Verdict defer when the problem is real — the triage carries it to an issue; reject when it is not (no issue is filed).
 2 — inflated severity: the claimed harm is unreachable or heals itself (a default requeue, only a metric). Judge the verdict on the merits and lower severity to what the code supports.
 3 — a repeat of a finding already decided — reject, naming it.
 4 — a deliberate trade-off written in the project's docs or rules — reject, naming where it is written.
@@ -2745,7 +2795,7 @@ Keep reason to one line. fix_pointer empty unless verdict is accept.`,
     return { stable_id: id, verdict: 'needs-decision', reason: `${UNJUDGED_MARKER} — the validator agent died; this finding was never checked against the code`, fix_pointer: '', premise_checked: '(validator died — nothing was opened)' }
   })
 }
-const validations = (await parallel(sift.toValidate.map(f => () => validateOne(f)))).filter(v => !!v).map(classifiedVerdict)
+const validations = (await parallel(sift.toValidate.map(f => () => validateOne(f)))).filter(v => !!v).map(v => classifiedVerdict(v, prBase))
 
 const accepted = validations.filter(v => v.verdict === 'accept')
 log(`Validated ${validations.length}: ${accepted.length} accept, ${validations.length - accepted.length} other.`)
@@ -2796,8 +2846,8 @@ function finalLedger(plan) {
  * @param {LedgerEntry[]} planLedger @returns {LedgerEntry[]}
  */
 function pinnedLedger(planLedger) {
-  /** A pinned row's own verdict and reason, and its `sifted` field when it has one. @param {{ stable_id: string }} e @param {LedgerEntry} v @returns {LedgerEntry} */
-  const restored = (e, v) => ({ ...e, verdict: v.verdict, reason: v.reason, ...(v.sifted ? { sifted: true } : {}) })
+  /** A pinned row's own verdict and reason, its `sifted` field and a repeat's `repeat_of` (realm @nick/craft, node #312) when it has them. @param {{ stable_id: string }} e @param {LedgerEntry} v @returns {LedgerEntry} */
+  const restored = (e, v) => ({ ...e, verdict: v.verdict, reason: v.reason, ...(v.sifted ? { sifted: true } : {}), ...(v.repeat_of ? { repeat_of: v.repeat_of } : {}) })
   /** @type {Map<string, LedgerEntry>} */
   const pinned = new Map([...sifted, ...validations.filter(v => String(v.reason || '').includes(UNJUDGED_MARKER))].map(v => [v.stable_id, v]))
   if (!pinned.size) return planLedger
@@ -2808,7 +2858,7 @@ function pinnedLedger(planLedger) {
     if (!v) return e
     seen.add(e.stable_id)
     const mark = v.reason.includes(UNJUDGED_MARKER) ? UNJUDGED_MARKER : SIFT_MARK
-    const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted
+    const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted && e.repeat_of === v.repeat_of
     return kept ? e : restored(e, v)
   })
   for (const [id, v] of pinned) if (!seen.has(id)) ledger.push(restored({ stable_id: id }, v))

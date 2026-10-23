@@ -6,3 +6,4 @@ node_modules/
 .stryker-tmp/
 reports/mutation/
 stryker-setup-*.js
+.vitest/

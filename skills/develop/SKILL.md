@@ -153,8 +153,10 @@ The engine's argument for each round, as an object (never a string):
 One **round** is:
 
 1. **Review** — launch the engine with the round's argument above.
-2. **Triage** — a large report → the `craft:triage-findings` workflow; a small one → inline, as
-   `craft:addressing-findings` describes.
+2. **Triage** — a large report → the `craft:triage-findings` workflow, with `prBase` = the output
+   of `git merge-base origin/<trunk> <reviewed head>` (the commit the branch forks from: only there
+   is a finding shown not to be this branch's; without it each such finding comes back as
+   `needs-decision`); a small one → inline, as `craft:addressing-findings` describes.
 3. **Address** — `craft:addressing-findings` works the findings through its step 6 (verify): fixes
    the accepted ones, writes every rejection or justification as a decision and every deferral as an
    open question in project memory at once, without asking. Stop it there: its re-review (step 7) is

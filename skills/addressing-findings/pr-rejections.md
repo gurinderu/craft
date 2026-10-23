@@ -19,10 +19,10 @@ A thread yields a decision **only** when all of these hold:
      finding: named with why and counted, never recorded.
    - **Another reviewer's remark**: a comment without the marker — a person's, or their own
      tool's — from anyone. Its first line of text (heading and emphasis marks dropped, cut at a
-     word past 120 characters) stands for the title. One guard more: when the rejecting reply comes
-     from the remark's own author and that author is not an owner, member or collaborator, nothing
-     is recorded — an outsider cannot settle their own remark for the whole project. A remark
-     nobody rejected is not listed.
+     word past 120 characters) stands for the title. The reply rule is narrower here (rule 3): only
+     an owner, member or collaborator settles such a remark — a PR author without that association
+     never does, not even when the remark came from another login, since one outsider can hold two
+     accounts and silence a remark for the whole project. A remark nobody rejected is not listed.
 2. **Its last word is a reply that rejects the finding**: it **opens** with `not a bug`, `not an
    issue`, `by design`, `won't fix` / `wontfix` / `will not fix`, `works as intended` / `working as
    intended` / `as intended`, `intentional` or `false positive` (optionally after `this is` /
@@ -30,10 +30,12 @@ A thread yields a decision **only** when all of these hold:
    by any later comment, a phrase mid-sentence ("this was not a bug before the refactor, fixed"),
    or "fixed in …" is not a rejection. **No reply is no rejection** — a thread resolved silently
    may have been fixed outside the hunk.
-3. **The replier may reject**: the PR author, or GitHub's `authorAssociation` of the reply is
-   `OWNER`, `MEMBER` or `COLLABORATOR`. craft posts its comments under your own `gh` account, so in
-   a self-review loop the poster is the PR author and their own reply counts. Anyone else's
-   rejection is not recorded; the script names each and counts them.
+3. **The replier may reject**: in a craft-finding thread, the PR author, or GitHub's
+   `authorAssociation` of the reply is `OWNER`, `MEMBER` or `COLLABORATOR`. craft posts its comments
+   under your own `gh` account, so in a self-review loop the poster is the PR author and their own
+   reply counts. In another reviewer's thread, only that association counts: the PR author's reply
+   is recorded only when they are an owner, member or collaborator. Anyone else's rejection is not
+   recorded; the script names each and counts them.
 4. **It can be anchored**: a path and the commit the finding was posted on.
 
 Every craft-finding thread that does not qualify is listed with why, and every other reviewer's
