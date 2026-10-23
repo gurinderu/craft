@@ -369,8 +369,10 @@ Before the loop works the findings, what was already rejected on the PR — a re
 "not a bug" / "by design" / "won't fix" … — is recorded as decisions with the author, the comment
 URL and the commit, without asking. That holds for a craft finding's thread and for any other
 reviewer's — a person's remark or their own tool's — so the same remark in the next PR is sifted
-out. Conservative: only when that explicit reply is the last word, from the PR author or an owner,
-member or collaborator of the repository; a thread resolved without a reply is never a rejection.
+out. Conservative: only when that explicit reply is the last word, from an owner, member or
+collaborator of the repository — or, in a craft finding's thread only, from the PR author; in
+another reviewer's thread a PR author without that association never settles the remark. A thread
+resolved without a reply is never a rejection.
 The rule, the `gh` query and the script → [pr-rejections.md](pr-rejections.md).
 
 ## Closing the loop on GitHub
