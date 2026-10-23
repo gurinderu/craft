@@ -2543,17 +2543,17 @@ function noiseClassOf(v) {
 }
 
 /**
- * The verdict a noise class settles: class 1 (not this PR's) on a finding the validator did not reject
- * is a deferral carried by an issue on the consumer's forge — but only when premise_checked names the
- * base it opened, else nothing settled it and a human decides; a class-1 `reject` stands (no real
- * problem, no issue). Class 5 (not decidable from the code) is needs-decision. Every other verdict
- * stands as the validator gave it.
+ * The verdict a noise class settles: class 1 (not this PR's) on a finding the validator accepted or
+ * deferred is a deferral carried by an issue on the consumer's forge — but only when premise_checked
+ * names the base it opened, else nothing settled it and a human decides; any other class-1 verdict
+ * stands (a `reject`: no real problem, no issue; a `needs-decision`: still the human's). Class 5 (not
+ * decidable from the code) is needs-decision. Every other verdict stands as the validator gave it.
  * @template {{ verdict: string, reason: string, premise_checked: string }} V @param {V} v
  * @returns {V & { action?: string }}
  */
 function classifiedVerdict(v) {
   const n = noiseClassOf(v)
-  if (n === 1 && v.verdict === 'reject') return v
+  if (n === 1 && v.verdict !== 'accept' && v.verdict !== 'defer') return v
   if (n === 1 && !/\bmerge-base\b|\bgit show [^\s:]+:\S/.test(String(v.premise_checked ?? ''))) {
     return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but nothing at the base was opened to show it — ${v.reason}` }
   }
