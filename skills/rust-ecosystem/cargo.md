@@ -90,7 +90,7 @@ root, since the resolver is workspace-global and is *not* inherited from member 
 | Command | Does |
 |---|---|
 | `cargo add` / `cargo remove` | edit dependencies (built-in) |
-| `cargo tree -d` | find duplicate/conflicting versions |
+| `cargo tree -d --locked` | find duplicate/conflicting versions (never rewrites Cargo.lock) |
 | `cargo hack` | feature-powerset / MSRV matrix checks |
 | `cargo deny check` | licenses, advisories, banned/duplicate deps |
 | `cargo machete` | unused dependencies |
