@@ -95,7 +95,8 @@ not one of them: it is the main session's (→ "Who triages").
                argument, each record with its `kind`, `title` and `scope`; the `id` may be left
                out, the engine derives it by the memory skill's rule) only ADDS records the store
                may not hold yet, never replaces that recall (→ `memory`, "Before a review");
-               new findings re-enter the loop (steps 3–6); the ledger dedups; repeat until
+               new findings go back through the triage workflow (steps 2–4), then steps
+               5–6; the ledger dedups; repeat until
                no Medium-or-higher finding is open (→ rust.md)
 8. Close loop— (GitHub) draft replies (what was fixed / why rejected + commit); drafts may be
                written during step 7, but none is posted before the re-review is green (or
@@ -117,9 +118,12 @@ that lives only in the session is written to a file in the session's temporary d
 and `pr` = the PR number whenever there is a PR (it reads only the PR's inline threads, so a
 report's findings reach triage only through `report`); at least one — the workflow refuses to run
 with neither — and `prBase` = the output of `git merge-base origin/<trunk> <reviewed head>` (the commit
-the PR forks from): only there can a finding be shown not to be this PR's, and without it every
-such finding goes to you as `needs-decision`. `base` stays what it was — the ref the findings were
-generated against, which validation pins to. The workflow sifts by memory itself — it recalls the
+the PR forks from), only when the reviewed head is a branch diverging from trunk (that merge-base
+differs from the head), and with it `base` = the reviewed head's SHA: only there can a finding be
+shown not to be this PR's. On trunk or with no branch (a `rust-audit` of trunk) leave `prBase` out —
+the workflow counts it only beside a `base` it differs from, so one with no `base`, one equal to
+`base`, or `HEAD` is absent — and every such finding goes to you as `needs-decision`. `base` keeps
+its meaning — the ref the findings were generated against, the reviewed head, which validation pins to. The workflow sifts by memory itself — it recalls the
 project's records for the findings' paths and merges in what `priorDecisions` (an object argument,
 the step-0 records) adds; its ledger rows with `sifted: true` (their reason opens with `SIFTED
 BEFORE VALIDATION`) were settled by the sift — a repeat or a record's answer — not judged on the
@@ -244,7 +248,7 @@ one itself). Only a **lesson** waits for the author's yes (below).
 - **On a disposition** — `record-decision` with title = the finding's title (for a gate tool's finding without toolRule, the title the report lists for its `file:line` under **Tool finding titles (verbatim)** — the one equal to the report line's text, or the only one listed there; when several are listed and none is equal, the report line's text, never a guess between them, and the finding then goes to the judge each round; when none is listed there (a PR thread, an older report), the review ledger row's `title` only when the ledger holds exactly one live gate-tool row without toolRule at that `file:line` (live: `disposition` other than `closed` — a `closed` row is a tombstone, not a row of a finding) — several there (two deadnix bindings on one line) is no source: never pick between them — else the report line's text, which then goes to the judge each round; any other finding's title as the report printed it; never from a refusal note, which clips titles), scope = its file path
   (the component, or `.`, for a locationless finding), body = the reason, author = who decided
   (the user, or the PR author whose reply it was), commit = `git rev-parse HEAD` at triage, line =
-  the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names, not the normalized finding's `source`, which is `rust-audit` / `github-pr`; or
+  the finding's line, lens = the lens that raised it (the review ledger row's `source` / `sources` — the engine's lens names; the record's `lens` comes from the finding's lens, never from the normalized finding's `source`, which names only where it came from: `review`, `adversarial-review`, `rust-audit`, `rust-reviewer`, `nix-review`, `report` or `github-pr`; or
   adversarial-review's `lens`; leave either out when the finding has none), toolRule = the gate
   tool's own rule name — a clippy lint, a semgrep rule id, a statix code — read, like the lens, from
   the review ledger row's `toolRule` (else from the report's brackets — only the part labelled `tool:`,

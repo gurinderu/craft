@@ -1,7 +1,7 @@
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against, which validation pins to.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
@@ -154,7 +154,9 @@ function textArg(key) {
 const pr = textArg('pr')
 const report = textArg('report')
 const base = textArg('base')
-const prBase = textArg('prBase')
+// prBase counts only when `base` is given too and they differ: absent when base is empty, when prBase is
+// `HEAD`, equal to base, or one SHA a prefix of the other (realm @nick/craft, node #309).
+const prBase = effectivePrBase(textArg('prBase'), base)
 /** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
@@ -2611,7 +2613,7 @@ async function siftByMemory(findings, records, checkScopes, judge, ruleJudge) {
   }
 }
 // <<< craft-inline
-// >>> craft-inline lib/triage-noise-class.mjs noiseClassOf classOneBaseLine openedAt classifiedVerdict notThisPrs issueOf
+// >>> craft-inline lib/triage-noise-class.mjs noiseClassOf effectivePrBase sameCommit classOneBaseLine openedAt classifiedVerdict notThisPrs issueOf
 /**
  * A validator's noise class (node #303), 0 when it named none or one outside 1..6.
  * @param {unknown} v @returns {number}
@@ -2619,6 +2621,32 @@ async function siftByMemory(findings, records, checkScopes, judge, ruleJudge) {
 function noiseClassOf(v) {
   const n = v && typeof v === 'object' ? Number(/** @type {Record<string, unknown>} */ (v)['noise_class']) : 0
   return Number.isInteger(n) && n >= 1 && n <= 6 ? n : 0
+}
+
+/**
+ * The prBase class 1 is checked at, or '' when what was given is no fork point. It counts only beside
+ * the validation pin `base` (the reviewed head) and different from it: a run on trunk, or findings with
+ * no branch, give the reviewed head itself, where opening a file shows the code under review and proves
+ * nothing older than it — and with no `base` nothing tells a prBase from that head. `HEAD` never counts.
+ * Compared as given; two SHA-shaped refs where one starts with the other are one commit.
+ * @param {string} prBase @param {string} base @returns {string}
+ */
+function effectivePrBase(prBase, base) {
+  const at = String(prBase ?? '').trim()
+  const pin = String(base ?? '').trim()
+  return !at || !pin || at === 'HEAD' || sameCommit(at, pin) ? '' : at
+}
+
+/**
+ * Whether two refs name one commit as given: equal, or both SHA-shaped and one a prefix of the other.
+ * @param {string} a @param {string} b @returns {boolean}
+ */
+function sameCommit(a, b) {
+  if (a === b) return true
+  const sha = /^[0-9a-f]{7,64}$/i
+  if (!sha.test(a) || !sha.test(b)) return false
+  const [x, y] = [a.toLowerCase(), b.toLowerCase()]
+  return x.startsWith(y) || y.startsWith(x)
 }
 
 /**
