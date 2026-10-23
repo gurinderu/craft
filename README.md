@@ -42,7 +42,7 @@ cross-linking is the collection's cohesion.
 | skill | `craft:distributed-races` | Controller / reconcile-loop correctness, any language — self-triggering status writes, wake source for every requeue outcome, another controller's stale cache, RBAC for new verbs, protection lifetime, migration window, retry bounds on error paths, resourceVersion and UID fences; read by the review workflow's `reconciler` lens |
 | skill | `craft:compatibility` | Backward compatibility, any language — old data under a new shape, rolling deploy in both directions, migrations, read-only aliases, CLI/config/env/Helm contract and defaults, CRD/API version lifecycle, proto/OpenAPI breaks, rollout order across components, renamed exported names, regression vs last release; read by the review workflow's `compat` lens |
 | skill | `craft:memory` | Semantic memory of the project's own facts — decisions on findings, project rules on classes of findings, lessons, open questions — `recall` / `record-decision` / `record-rule` / `record-lesson` / `record-question` over whatever store the project has (explicit setting, a memory MCP server found by capability, the harness's project memory, or `.craft/memory/` files); not craft's run records |
-| skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; scales to the `triage-findings` workflow |
+| skill | `craft:addressing-findings` | The fix loop for review findings — gather (craft agents + GitHub PR comments), normalize, triage (accept/reject/defer/needs-decision/conflict), order, fix (delegating how-to-fix to topic skills), verify, re-review, close the GitHub loop; triage always goes through the `triage-findings` workflow |
 | skill | `craft:develop` | The development cycle up to a PR with craft's own tools — the project's declared roles and rules take any phase they cover; recall project memory, make the change, review → triage → fix — the first round over the branch diff, each next over the delta the fixes changed — until a round brings no open Medium+ finding (at most 4 rounds, then stop and tell the human), one full review, one record of the cycle in the run store, then the PR; runs in the main session |
 | agent | `rust-reviewer` | Per-lens worker for the `review` workflow's rust profile; run directly for an ad-hoc whole-diff Rust review (establishes the CI-aware gate and returns a verdict) |
 | agent | `nix-reviewer` | Per-lens worker for the `review` workflow's nix profile; run directly for an ad-hoc whole-diff Nix review (nix flake check / statix / deadnix gate + verdict) |
@@ -139,8 +139,10 @@ a final step synthesizes one severity-ranked report.
 the project's memory already settled, validates the rest, dedups and conflict-checks them, and
 renders one ordered fix plan + a triage ledger (and the issues to file for findings the PR did not
 introduce) — no edits. A finding counts as not introduced by the PR only when it was shown at the
-commit the PR forks from: pass that as `prBase` (`git merge-base origin/<trunk> <reviewed head>`);
-without it such findings come back as `needs-decision`. `base` is the separate ref the findings were
+commit the PR forks from: pass that as `prBase` (`git merge-base origin/<trunk> <reviewed head>`)
+only when the reviewed head is a branch diverging from trunk, and leave it out on trunk or with no
+branch (one equal to `base` or `HEAD` counts as absent); without it such findings come back as
+`needs-decision`. `base` is the separate ref the findings were
 generated against, which validation pins to.
 
 Both review workflows and the standalone agents emit a structured run record after each run; see

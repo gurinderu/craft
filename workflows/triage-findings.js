@@ -1,7 +1,7 @@
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against, which validation pins to.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk; on trunk or with no branch leave it out (one equal to `base` or HEAD counts as absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against, which validation pins to.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
@@ -137,7 +137,7 @@ function textArg(key) {
 const pr = textArg('pr')
 const report = textArg('report')
 const base = textArg('base')
-const prBase = textArg('prBase')
+const prBase = effectivePrBase(textArg('prBase'), base)
 /** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
 const craftRootArg = textArg('craftRoot')
@@ -2547,6 +2547,25 @@ async function siftByMemory(findings, records, checkScopes, judge, ruleJudge) {
 function noiseClassOf(v) {
   const n = v && typeof v === 'object' ? Number(/** @type {Record<string, unknown>} */ (v)['noise_class']) : 0
   return Number.isInteger(n) && n >= 1 && n <= 6 ? n : 0
+}
+
+/**
+ * The prBase class 1 is checked at, or '' when what was given is no fork point: a run on trunk, or
+ * findings with no branch, give the reviewed head itself (`HEAD`, or the validation pin `base`), where
+ * opening a file shows the code under review and proves nothing older than it. Compared as given; two
+ * SHA-shaped refs where one starts with the other are one commit.
+ * @param {string} prBase @param {string} base @returns {string}
+ */
+function effectivePrBase(prBase, base) {
+  const at = String(prBase ?? '').trim()
+  const pin = String(base ?? '').trim()
+  if (!at || at === 'HEAD' || at === pin) return ''
+  const sha = /^[0-9a-f]{7,64}$/i
+  if (sha.test(at) && sha.test(pin)) {
+    const [a, b] = [at.toLowerCase(), pin.toLowerCase()]
+    if (a.startsWith(b) || b.startsWith(a)) return ''
+  }
+  return at
 }
 
 /**
