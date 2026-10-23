@@ -1,7 +1,7 @@
 ---
 name: addressing-findings
 description: >-
-  Fix loop for review findings — gather them from craft review agents, rust-audit reports, and GitHub PR comments, write each rejection or justification (PR-thread rejections included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, show the human the doubtful findings a review posting to a PR held back and post (marked) or record each as he chooses, offer (and record only on the author's yes) a lesson for each finding that recurs across branches, triage each against the code, order, fix, verify, and re-review the fix commits in the main session until green before any reply is posted. Use after a review or audit produces findings, working through PR comments, or deciding what to fix first. Its triage and re-review workflows need Claude Code's Workflow tool (not in Codex or OpenCode); the fix loop runs anywhere. Triggers: address review comments, fix the findings, triage findings, what to fix first.
+  Fix loop for review findings — gather them from craft reviews, rust-audit reports and PR comments of any reviewer, sift out before triage what project memory already settled, write each rejection or justification (PR-thread rejections of any reviewer's finding included) to project memory as a decision (a project-wide stance, on the human's word, as a project rule) and each deferral as an open question at once, without asking, file a finding the PR did not introduce as an issue (commenting an open one first), let the human post or record each doubtful finding a PR review held back, offer (record only on yes) a lesson per finding recurring across branches, triage against the code, fix, verify, re-review the fix commits until green before any reply is posted. Use after a review or audit, on PR comments, or to decide what to fix first. Triage and re-review workflows need Claude Code's Workflow tool; the loop runs anywhere. Triggers: address review comments, fix the findings, triage findings, what to fix first.
 ---
 
 # Addressing Findings
@@ -30,8 +30,16 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
                • craft: a rust-reviewer verdict / a rust-audit report
                • GitHub: gh pr view / gh api → inline thread comments     (→ github.md)
 2. Normalize — to the unified schema; tag source; compute stable_id        (→ schema.md)
+2b. Sift     — before any validator: repeats in the batch collapse onto one; a finding an
+               active decision, deferred question or project rule (step 0) already answers is
+               settled from memory — rejected / deferred, citing who, when and the link; a
+               Critical/High one, or one whose record's code changed since its commit, goes on
+               to triage; one that goes against a record is a `conflict` for the human
+               (→ "The sift before triage")
 3. Triage  ⫲ — per finding, validated against a pinned ref, one subagent per finding:
-               accept / reject / defer / needs-decision / conflict (+ reasoning)
+               accept / reject / defer / needs-decision / conflict (+ reasoning),
+               and its noise class (→ "Noise classes"); a finding the PR did not
+               introduce → an issue, no question asked (→ "Not this PR's — an issue")
 4. Order     — accepted only: blocking → simple → complex; group by file to cut churn
                (the grouping is what makes step 5 parallelisable — independent groups)
 5. Fix     ⫲ — list every place the violated property lives, then patch them  (→ below)
@@ -82,7 +90,54 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 
 **Scaling:** small batch → steps 2–4 inline. Large batch (a fat `rust-audit` report, a
 many-comment PR) → dispatch the `craft:triage-findings` workflow, apply its plan, then run the
-re-review loop.
+re-review loop. The workflow sifts by memory itself — it recalls the project's records for the
+findings' paths and merges in what `priorDecisions` (an object argument, the step-0 records)
+adds; its ledger rows marked `SIFTED BEFORE VALIDATION` were settled from memory, not judged on
+the code. It returns `issues` (title, body) for the findings that are not this PR's.
+
+## The sift before triage (step 2b)
+
+Before a single finding is validated, memory answers what it already settled — so a finding
+decided in another PR is not decided again, and the opposite way:
+
+- **Repeats** — the same finding under another id in the same batch (same thread, or same file
+  within a few lines and the same title words) is one finding: the most severe copy goes on, the
+  rest are rejected as its repeats.
+- **Answered by memory** — a finding an active decision answers is `reject`, one a deferred
+  question answers `defer`, one a project rule covers `reject`; the ledger reason cites the
+  record (who, when, link) and how it matched. Matching is the review engine's own: the anchor or
+  title in the record's scope, and a judge for the doubtful pairs — never a guess by topic.
+- **Raised again** — a Critical or High finding is never settled from memory, nor one whose
+  record's code changed since the record's commit (or that has no commit): it goes to triage
+  with the record cited.
+- **Against a record** — a finding that shows the code going against what a record settled is a
+  `conflict`: the human decides whether the record still stands.
+
+## Noise classes
+
+Triage names, besides the verdict, why a finding is noise rather than a defect of this change —
+judged on the code, never on the reviewer's own label:
+
+| Class | What | Verdict |
+|---|---|---|
+| 1 | not this PR's — the problem stands at the base (the diff did not bring it), or lies outside the PR's task | `defer`, carried by an issue (below) — checked at the merge-base, never on the reviewer's "pre-existing" |
+| 2 | inflated severity — the harm is unreachable or heals itself (a default requeue, only a metric) | judged on the merits, severity lowered |
+| 3 | a repeat — the same finding under a new id, or decided in another PR | settled by the sift |
+| 4 | a deliberate trade-off written in the project's docs or rules | `reject`, naming where it is written |
+| 5 | not decidable from the code — a rollout step, an unverifiable version | `needs-decision`, not a fix |
+| 6 | an optional nicety in tests or comments | planned apart from the defects |
+
+## Not this PR's — an issue
+
+A class-1 finding is not fixed in this branch and not asked about: it goes to an issue on the
+project's forge, filed by this loop without a question (the human closes what is not needed).
+Search the open issues first (`gh issue list --state open --search "<title words> in:title,body"`);
+one about the same concern → comment the finding there (`gh issue comment <n> --body …`), else
+`gh issue create --title … --body …` (the workflow's `issues` carry both). Then record the
+deferral in memory at once — `record-question`, `deferred: true`, links = the issue URL first, then
+the PR thread — and draft the thread's reply with the issue link: like every reply, it is posted
+only on the human's explicit OK (step 8). No `gh` or no forge → record the deferral, say in one
+line that no issue was filed and why.
 
 ## Triage outcomes
 
@@ -92,9 +147,9 @@ Validate each finding against the code (pinned to the ref it was generated again
 |---|---|---|
 | `accept` | real, in scope | into the plan |
 | `reject` | wrong / not a real problem | ledger + drafted pushback + a decision in `memory` |
-| `defer` | valid but out of scope now | ledger (stays deferred across runs) + an open question in `memory` |
+| `defer` | valid but out of scope now | ledger (stays deferred across runs) + an open question in `memory`; not this PR's → also an issue |
 | `needs-decision` | valid but needs a product/spec call, **or** has no resolvable location | → `specs` |
-| `conflict` | contradicts another finding | both surfaced for a human; never silently pick one |
+| `conflict` | contradicts another finding, or goes against a record in memory | surfaced for a human; never silently pick one |
 
 **Locationless findings** (file- or PR-level comments) get an explicit lane: resolve a concrete
 location during triage, else route to `needs-decision` — never drop them silently.
@@ -304,10 +359,11 @@ reject it on the record's own authority.
 
 Before the loop works the findings, what was already rejected on the PR — a reply that opens with
 "not a bug" / "by design" / "won't fix" … — is recorded as decisions with the author, the comment
-URL and the commit. Conservative: only a thread whose first comment is a craft finding, whose last
-word is that explicit reply, from the PR author or an owner, member or collaborator of the
-repository; a thread resolved without a reply is never a rejection. The rule, the `gh` query and
-the script → [pr-rejections.md](pr-rejections.md).
+URL and the commit, without asking. That holds for a craft finding's thread and for any other
+reviewer's — a person's remark or their own tool's — so the same remark in the next PR is sifted
+out. Conservative: only when that explicit reply is the last word, from the PR author or an owner,
+member or collaborator of the repository; a thread resolved without a reply is never a rejection.
+The rule, the `gh` query and the script → [pr-rejections.md](pr-rejections.md).
 
 ## Closing the loop on GitHub
 
