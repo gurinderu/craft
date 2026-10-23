@@ -2609,7 +2609,7 @@ async function siftByMemory(findings, records, checkScopes, judge, ruleJudge) {
   }
 }
 // <<< craft-inline
-// >>> craft-inline lib/triage-noise-class.mjs noiseClassOf classOneBaseLine openedAt classifiedVerdict issueOf
+// >>> craft-inline lib/triage-noise-class.mjs noiseClassOf classOneBaseLine openedAt classifiedVerdict notThisPrs issueOf
 /**
  * A validator's noise class (node #303), 0 when it named none or one outside 1..6.
  * @param {unknown} v @returns {number}
@@ -2655,15 +2655,24 @@ function openedAt(premise, base) {
  */
 function classifiedVerdict(v, base = '') {
   const n = noiseClassOf(v)
-  if (n === 1 && v.verdict !== 'accept' && v.verdict !== 'defer') return v
-  const at = String(base ?? '').trim()
-  if (n === 1 && !at) return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but no base was given to check it at — ${v.reason}` }
-  if (n === 1 && !openedAt(String(v.premise_checked ?? ''), at)) {
-    return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but nothing at the base ${at} was opened to show it — ${v.reason}` }
-  }
-  if (n === 1) return { ...v, verdict: 'defer', action: 'issue' }
+  if (n === 1) return notThisPrs(v, String(base ?? '').trim())
   if (n === 5) return { ...v, verdict: 'needs-decision' }
   return v
+}
+
+/**
+ * A class-1 verdict settled: a real problem shown at `base` is a deferral with an issue, one not shown
+ * there a human's; a `reject` or `needs-decision` stands.
+ * @template {{ verdict: string, reason: string, premise_checked: string }} V @param {V} v @param {string} base
+ * @returns {V & { action?: string }}
+ */
+function notThisPrs(v, base) {
+  if (v.verdict !== 'accept' && v.verdict !== 'defer') return v
+  if (!base) return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but no base was given to check it at — ${v.reason}` }
+  if (!openedAt(String(v.premise_checked ?? ''), base)) {
+    return { ...v, verdict: 'needs-decision', reason: `claimed not this PR's, but nothing at the base ${base} was opened to show it — ${v.reason}` }
+  }
+  return { ...v, verdict: 'defer', action: 'issue' }
 }
 
 /**
