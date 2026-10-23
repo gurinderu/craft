@@ -1560,7 +1560,7 @@ SLICE: ${LENS_BRIEF[lens]}
 Diff base: ${base}.
 ${intentArg ? `INTENT (what the change should do): ${intentArg}` : ''}
 CONTEXT EXPANSION (required): for each finding, read the surrounding code and trace callers of the changed symbols before judging — do not read the diff in isolation.
-WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Pin every such premise to a \`file:line\` you ACTUALLY OPENED, dependency sources included, and put them in \`whereChecked\`. An off-site premise you did not open is not admissible: open it, or drop the claim and report only what the cited line shows. Use "" only when the finding needs no off-site premise.
+WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Pin every such premise to a \`file:line\` you ACTUALLY OPENED, dependency sources included, and put them in \`whereChecked\`. An off-site premise you did not open is not admissible: open it, or drop the claim and report only what the cited line shows. Use "" only when the finding needs no off-site premise. ${DEPENDENCY_SOURCE_HOW}
 CONFIDENCE: report everything you suspect, located to file:line. Do NOT self-censor borderline findings — adversarial verification happens downstream.
 
 Return {findings: []-shaped JSON}.`
@@ -1672,6 +1672,11 @@ function makeThrottledRunner(deps) {
     return unfinished
   }
 }
+// <<< craft-inline
+
+// How to find a pinned dependency's source, shared with the other prompts that demand opening it.
+// >>> craft-inline lib/dependency-source.mjs DEPENDENCY_SOURCE_HOW
+const DEPENDENCY_SOURCE_HOW = 'Finding a dependency\'s source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package\'s `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project\'s lockfile, the code from the package manager\'s cache or the vendor directory.'
 // <<< craft-inline
 
 // ---- coverage honesty (VERBATIM mirror of lib/review-coverage.mjs — the sandbox can't import) ----

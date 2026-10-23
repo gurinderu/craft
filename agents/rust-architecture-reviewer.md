@@ -17,7 +17,7 @@ You judge the **whole graph**, not a diff. Diff-scoped mergeability review is `r
 
 2. **Build the graph (hybrid).** Use tools if present, fall back to source if not:
    ```bash
-   cargo metadata --no-deps --format-version 1 2>/dev/null || cargo tree --workspace 2>/dev/null || echo "cargo metadata/tree unavailable"
+   cargo metadata --no-deps --format-version 1 2>/dev/null || cargo tree --workspace --locked 2>/dev/null || echo "cargo metadata/tree unavailable"
    if command -v cargo-modules >/dev/null; then cargo modules structure 2>/dev/null; else echo "cargo-modules not installed — using source analysis"; fi
    ```
    Fallback: `Grep` over `use`, `mod`, `pub use`, and the `[dependencies]` tables

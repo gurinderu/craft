@@ -94,7 +94,7 @@ Review against the crate versions the project **actually pins**, not against cra
 A call that is idiomatic on `tokio 1.40` may be deprecated on the `1.20` this repo locks; a default
 may have flipped between minor versions. Before judging dependency usage:
 
-- Resolve the real versions — `cargo metadata --format-version 1` (or read `Cargo.lock`) — and match
+- Resolve the real versions — `cargo metadata --locked --format-version 1` (or read `Cargo.lock`) — and match
   the external crates the changed files `use` to their **locked** versions.
 - For any nontrivial dependency the diff touches, check the usage against **that** version's API:
   a since-deprecated/removed/renamed item, a changed default, a known footgun of that exact version.
