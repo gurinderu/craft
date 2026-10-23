@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.34.0](https://github.com/gurinderu/craft/compare/v0.33.0...v0.34.0) (2026-10-23)
+
+
+### Features
+
+* **triage:** sift findings by project memory before validation ([#257](https://github.com/gurinderu/craft/issues/257)) ([1aa44f2](https://github.com/gurinderu/craft/commit/1aa44f2ba03f882f1402f733e5d2decc7dd99bcf))
+
+
+### Bug Fixes
+
+* **opencode:** override toml to 5.0.1 to clear high DoS advisories ([#253](https://github.com/gurinderu/craft/issues/253)) ([4de9d34](https://github.com/gurinderu/craft/commit/4de9d34bf921c57bacb4c549d84a3e041ee404c1))
+* **triage:** close the release review's sift findings ([#258](https://github.com/gurinderu/craft/issues/258)) ([d627c65](https://github.com/gurinderu/craft/commit/d627c6544fce88dc15dc13b85c2d3a9d27f48e1b))
+
 ## [0.33.0](https://github.com/gurinderu/craft/compare/v0.32.2...v0.33.0) (2026-10-22)
 
 
