@@ -90,7 +90,10 @@ concrete, Rust-aware process and points at the topic skills for *how* to fix eac
 
 **Scaling:** small batch → steps 2–4 inline. Large batch (a fat `rust-audit` report, a
 many-comment PR) → dispatch the `craft:triage-findings` workflow, apply its plan, then run the
-re-review loop. The workflow sifts by memory itself — it recalls the project's records for the
+re-review loop. Pass `prBase` = the output of `git merge-base origin/<trunk> <reviewed head>` (the
+commit the PR forks from): only there can a finding be shown not to be this PR's, and without it
+every such finding goes to you as `needs-decision`. `base` stays what it was — the ref the findings
+were generated against, which validation pins to. The workflow sifts by memory itself — it recalls the project's records for the
 findings' paths and merges in what `priorDecisions` (an object argument, the step-0 records)
 adds; its ledger rows with `sifted: true` (their reason opens with `SIFTED BEFORE VALIDATION`)
 were settled by the sift — a repeat or a record's answer — not judged on the code. It returns `issues` (title, body) for the findings that are not this PR's.
@@ -102,7 +105,8 @@ decided in another PR is not decided again, and the opposite way:
 
 - **Repeats** — the same finding under another id in the same batch (same thread, or same file
   within a few lines and the same title words) is one finding: the most severe copy goes on, the
-  rest are rejected as its repeats.
+  rest are rejected as its repeats, each row naming that copy in `repeat_of` — in the review
+  ledger a repeat takes its copy's disposition, not its own `reject` (below).
 - **Answered by memory** — a finding an active decision answers is `reject`, one a deferred
   question answers `defer`, one a project rule covers `reject`; the ledger reason cites the
   record (who, when, link) and how it matched. Matching is the review engine's own: the anchor or
@@ -120,7 +124,7 @@ judged on the code, never on the reviewer's own label:
 
 | Class | What | Verdict |
 |---|---|---|
-| 1 | not this PR's — the problem stands at the base (the diff did not bring it), or lies outside the PR's task | a real problem: `defer`, carried by an issue (below) — checked at the merge-base (`git show <merge-base>:<path>` named in the premise), never on the reviewer's "pre-existing"; not a real problem: `reject`, no issue |
+| 1 | not this PR's — the problem stands at the base (the diff did not bring it), or lies outside the PR's task | a real problem: `defer`, carried by an issue (below) — checked at the PR's fork point the triage was given as `prBase` and no other ref (`git show <prBase>:<path>` named in the premise; HEAD, the validation `base`, another branch or the bare word merge-base shows nothing, and with no `prBase` given a human decides), never on the reviewer's "pre-existing"; not a real problem: `reject`, no issue |
 | 2 | inflated severity — the harm is unreachable or heals itself (a default requeue, only a metric) | judged on the merits, severity lowered |
 | 3 | a repeat — the same finding under a new id, or decided in another PR | settled by the sift |
 | 4 | a deliberate trade-off written in the project's docs or rules | `reject`, naming where it is written |
@@ -325,6 +329,12 @@ After **Triage (step 3)** and again after **Verify (step 6)**, write disposition
    - a fix that landed **and** was verified → `closed`
    - a finding kept (not fixed) but explicitly justified in the PR body → `justified`
    - triage `accept` (not yet fixed), `needs-decision`, `conflict` → leave `open`
+   - a `sifted` row is **never** mapped by its own `reject`: no one judged it on the code.
+     A repeat (`repeat_of` names its twin) takes its twin's disposition as the twin's row maps
+     — `closed` when the twin's fix landed and was verified **and** reached the repeat's line too
+     (else leave `open`), `deferred` when the twin is deferred, `rejected` only when the twin is
+     rejected. Any other sifted `reject` (a record's answer) → leave `open`: the next review sets
+     it aside again from the recalled record, and drops that once the record is withdrawn.
 3. **Match** a fix-loop finding to a review-ledger entry by `fp` when the finding carries one;
    otherwise by `file` + `ruleId` + a title match. If no entry matches, skip that finding silently.
 4. **Why:** this is exactly what lets the next round-aware re-review's *adjudicate track* **carry**
@@ -369,8 +379,10 @@ Before the loop works the findings, what was already rejected on the PR — a re
 "not a bug" / "by design" / "won't fix" … — is recorded as decisions with the author, the comment
 URL and the commit, without asking. That holds for a craft finding's thread and for any other
 reviewer's — a person's remark or their own tool's — so the same remark in the next PR is sifted
-out. Conservative: only when that explicit reply is the last word, from the PR author or an owner,
-member or collaborator of the repository; a thread resolved without a reply is never a rejection.
+out. Conservative: only when that explicit reply is the last word, from an owner, member or
+collaborator of the repository — or, in a craft finding's thread only, from the PR author; in
+another reviewer's thread a PR author without that association never settles the remark. A thread
+resolved without a reply is never a rejection.
 The rule, the `gh` query and the script → [pr-rejections.md](pr-rejections.md).
 
 ## Closing the loop on GitHub

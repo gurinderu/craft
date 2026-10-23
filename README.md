@@ -138,7 +138,10 @@ a final step synthesizes one severity-ranked report.
 `workflows/triage-findings.js` gathers findings (craft agents + GitHub PR comments), sifts out what
 the project's memory already settled, validates the rest, dedups and conflict-checks them, and
 renders one ordered fix plan + a triage ledger (and the issues to file for findings the PR did not
-introduce) — no edits.
+introduce) — no edits. A finding counts as not introduced by the PR only when it was shown at the
+commit the PR forks from: pass that as `prBase` (`git merge-base origin/<trunk> <reviewed head>`);
+without it such findings come back as `needs-decision`. `base` is the separate ref the findings were
+generated against, which validation pins to.
 
 Both review workflows and the standalone agents emit a structured run record after each run; see
 `docs/observability.md`.
