@@ -1989,7 +1989,7 @@ async function runFinderLenses(lenses) {
 phase('Review')
 const { deadLenses, all } = await runFinderLenses(plan.lenses)
 
-const normTokens = (/** @type {unknown} */ t) => new Set(String(t || '').toLowerCase().replace(/[^a-z0-9а-яё]+/gi, ' ').split(' ').filter(w => w.length > 2))
+const normTokens = (/** @type {unknown} */ t) => new Set(String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(w => w.length > 2))
 /** @param {unknown} a @param {unknown} b */
 function titleSimilar(a, b) {
   const tokensA = normTokens(a), B = normTokens(b)
