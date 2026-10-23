@@ -215,7 +215,7 @@ const PLAN_SCHEMA = {
 /** @typedef {{ plan_markdown: string, ledger: LedgerEntry[], summary: string }} PlanResult */
 /** @typedef {PlanResult & { notRun?: string[], telemetryLost?: string[], issues?: Array<{ stable_id: string, title: string, body: string }>, memory?: string, priorDecisionsNotApplied?: string[], ruleNotices?: string[] }} TriagePlan */
 
-const CRAFT_VERSION = '0.34.1' // x-release-please-version
+const CRAFT_VERSION = '0.35.0' // x-release-please-version
 
 /** @type {Severity[]} */
 const SEVERITIES = ['Critical', 'High', 'Medium', 'Low', 'Info']
