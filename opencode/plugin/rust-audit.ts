@@ -118,7 +118,7 @@ export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Pro
     {
       label: "deps",
       agent: "",
-      prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d --locked\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
+      prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d --locked\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Never run it without \`--locked\`: a plain \`cargo tree\` rewrites a stale or missing Cargo.lock. If \`--locked\` refuses, report "duplicates not inspected — no current Cargo.lock" and return verdict "INCOMPLETE (not run)" naming it, never "Approve" on \`cargo outdated\` alone. Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
       label: "unused-crates",

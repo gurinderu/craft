@@ -40,8 +40,8 @@ time).
 ```bash
 cargo add serde --features derive    # edit Cargo.toml for you (cargo-edit, now built in)
 cargo update                          # bump within semver ranges; updates Cargo.lock
-cargo tree                            # inspect the dependency graph
-cargo tree -d                         # find duplicate versions
+cargo tree --locked                   # inspect the dependency graph (never rewrites Cargo.lock)
+cargo tree -d --locked                # find duplicate versions
 ```
 
 Commit `Cargo.lock` for binaries (reproducible builds), not for libraries (let consumers
@@ -78,7 +78,7 @@ out into its own crate (or merge an over-split one) → [crate-extraction.md](cr
 
 ```bash
 cargo machete        # find unused dependencies
-cargo tree -d        # find duplicate/conflicting versions
+cargo tree -d --locked   # find duplicate/conflicting versions
 ```
 
 Trim what you don't use and de-duplicate the graph to keep the dependency liability in check.
