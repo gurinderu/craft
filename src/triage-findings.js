@@ -2641,8 +2641,13 @@ function classOneBaseLine(prBase) {
  * @param {string} premise @param {string} ref @returns {boolean}
  */
 function openedAt(premise, ref) {
-  const at = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?:^|[\\s\`'"(])git show ${at}:[^\\s:\`'")]`).test(premise)
+  const needle = `git show ${ref}:`
+  for (let i = premise.indexOf(needle); i !== -1; i = premise.indexOf(needle, i + 1)) {
+    const before = i === 0 ? ' ' : premise.charAt(i - 1)
+    const after = premise.charAt(i + needle.length)
+    if (/[\s`'"(]/.test(before) && after !== '' && !/[\s:`'")]/.test(after)) return true
+  }
+  return false
 }
 
 /**
