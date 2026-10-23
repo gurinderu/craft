@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/gurinderu/craft/compare/v0.34.1...v0.35.0) (2026-10-23)
+
+
+### Features
+
+* **triage:** tell validators where a pinned dependency's source lives ([#262](https://github.com/gurinderu/craft/issues/262)) ([302fbb7](https://github.com/gurinderu/craft/commit/302fbb7b7d411eb34c2d1d7f4aedb3ddbb29bfb5))
+
 ## [0.34.1](https://github.com/gurinderu/craft/compare/v0.34.0...v0.34.1) (2026-10-23)
 
 
