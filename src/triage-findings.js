@@ -2789,14 +2789,16 @@ const UNJUDGED_MARKER = 'NOT JUDGED'
 
 /** @type {string[]} */
 const deadValidations = []
-/** One finding's verdict: carried from the prior ledger when settled there, else judged by an agent. @param {SiftFinding} f @returns {Promise<Validation>} */
-function validateOne(f) {
-  const id = f.stable_id
-  const memoryNote = f.memoryNote.replace(/^\s*·\s*/, '')
+/**
+ * The prior ledger's row for a finding when it settled the finding, else undefined.
+ * @param {string} id @returns {LedgerEntry | undefined}
+ */
+function settledPrior(id) {
   const prior = priorById.get(id)
   // Idempotent re-run: carry a prior *settled* verdict rather than re-litigating it. `accept` is
   // re-validated (the code may have changed since); `conflict` is a cross-finding judgement, so it
   // is re-derived fresh in the Plan phase rather than carried as a stale solo verdict.
+  if (!prior || !['reject', 'defer', 'needs-decision'].includes(prior.verdict)) return undefined
   // ...but a finding whose validator DIED is not settled — nothing judged it. Its stand-in verdict
   // is `needs-decision` (the vocabulary downstream already understands), so without this it would
   // be carried forward as settled on the next run: no agent re-opens it, `deadValidations` stays
@@ -2804,14 +2806,20 @@ function validateOne(f) {
   // read. The marker in the reason is what distinguishes it — a fifth verdict would have to be
   // taught to VALIDATION_SCHEMA, PLAN_SCHEMA, the plan prompt and tallyVerdicts, all of which
   // enumerate the four, and a ledger entry the tally does not know is silently uncounted.
+  if (prior.reason.includes(UNJUDGED_MARKER)) return undefined
   // ...nor is a row the sift set aside (a repeat, a record's answer): no validator judged it, and what
   // settled it was the memory as it stood then. A finding here went past this run's sift — a decision
   // superseded, its scope changed since its commit (realm @nick/craft, node #309), its copy gone — so
   // carrying the old row would bury exactly what the sift raised again. The field is the test; the
   // mark in the reason covers a ledger whose rows lost the field on the way back.
-  const neverJudged = prior && String(prior.reason || '').includes(UNJUDGED_MARKER)
-  const siftedBefore = prior && (prior.sifted || String(prior.reason || '').includes(SIFT_MARK))
-  if (prior && !neverJudged && !siftedBefore && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
+  return prior.sifted || prior.reason.includes(SIFT_MARK) ? undefined : prior
+}
+/** One finding's verdict: carried from the prior ledger when settled there, else judged by an agent. @param {SiftFinding} f @returns {Promise<Validation>} */
+function validateOne(f) {
+  const id = f.stable_id
+  const memoryNote = f.memoryNote.replace(/^\s*·\s*/, '')
+  const prior = settledPrior(id)
+  if (prior) {
     // Carried verdicts skip the agent, so they carry no fresh premise check — say so rather than
     // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })

@@ -2690,14 +2690,22 @@ const UNJUDGED_MARKER = 'NOT JUDGED'
 
 /** @type {string[]} */
 const deadValidations = []
+/**
+ * The prior ledger's row for a finding when it settled the finding, else undefined.
+ * @param {string} id @returns {LedgerEntry | undefined}
+ */
+function settledPrior(id) {
+  const prior = priorById.get(id)
+  if (!prior || !['reject', 'defer', 'needs-decision'].includes(prior.verdict)) return undefined
+  if (prior.reason.includes(UNJUDGED_MARKER)) return undefined
+  return prior.sifted || prior.reason.includes(SIFT_MARK) ? undefined : prior
+}
 /** One finding's verdict: carried from the prior ledger when settled there, else judged by an agent. @param {SiftFinding} f @returns {Promise<Validation>} */
 function validateOne(f) {
   const id = f.stable_id
   const memoryNote = f.memoryNote.replace(/^\s*·\s*/, '')
-  const prior = priorById.get(id)
-  const neverJudged = prior && String(prior.reason || '').includes(UNJUDGED_MARKER)
-  const siftedBefore = prior && (prior.sifted || String(prior.reason || '').includes(SIFT_MARK))
-  if (prior && !neverJudged && !siftedBefore && ['reject', 'defer', 'needs-decision'].includes(prior.verdict)) {
+  const prior = settledPrior(id)
+  if (prior) {
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
   }
   return /** @type {Promise<Validation | null>} */ (agent(
