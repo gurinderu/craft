@@ -1,36 +1,36 @@
 ---
 'Nature': 'production; no relaxations'
-'Nature — источник': 'согласовано: владелец'
-'Граф': '@nick/craft (r209)'
-'Граф — источник': 'выведено'
-'Фокус-контур': '#1 «Контур craft»'
-'Фокус-контур — источник': 'выведено'
-'Репозиторий': 'github.com/gurinderu/craft'
-'Репозиторий — источник': 'выведено'
-'Роль агента': '#3 «Инженер craft» — adhikarin, contour steward; inbox iskron_orient(realm="r209", focus="#3")'
-'Роль агента — источник': 'выведено'
-'Роль владельца': '#2 «Владелец craft» — svatantra, address for posed_to beyond the mandate'
-'Роль владельца — источник': 'выведено'
-'Стек': 'Node.js 22 (CI pin), ESM JavaScript, no runtime dependencies; skills and agents are Markdown with YAML frontmatter'
-'Стек — источник': 'выведено'
-'Гейт': 'npm run gate'
-'Гейт — источник': 'выведено'
-'Потребители': 'Anyone who installs craft from .claude-plugin/marketplace.json; they learn of breakage only by its effects — a skill that never triggers, a review that silently drops a check, an agent advising on code it never read'
-'Потребители — источник': 'согласовано: владелец'
-'Цена поломки': 'External and silent: craft runs in repositories it never sees, and none of its failures fail loudly — a degraded check reads as a clean one'
-'Цена поломки — источник': 'согласовано: владелец'
-'Reality': 'Root REALITY.md; read before making behavioral claims'
-'Reality — источник': 'выведено'
-'Раскладка': 'One AGENTS.md; code map in the Project structure section and MAP.md; gotchas live in graph rules on the steps they constrain'
-'Раскладка — источник': 'выведено'
-'Кросс-проектная память': 'personal graph @nick/mind — for a user''s fact outside the project; no global instructions file; never the memory directory'
-'Кросс-проектная память — источник': 'согласовано: владелец — template default, case №19'
-'Фидбэк-рефлексия': 'yes — at merge and session close'
-'Фидбэк-рефлексия — источник': 'выведено: умолчание шаблона'
-'Interop с workflow-набором': 'нет — коэрсивного набора нет (superpowers отсутствует в кэше плагинов)'
-'Interop с workflow-набором — источник': 'выведено'
-'Согласование': 'пусто'
-'Согласование — источник': 'выведено'
+'Nature — source': 'agreed: owner'
+'Graph': '@nick/craft (r209)'
+'Graph — source': 'derived'
+'Focus holon': '#1 "Craft holon"'
+'Focus holon — source': 'derived'
+'Repository': 'github.com/gurinderu/craft — the holon''s repository attribute, from origin'
+'Repository — source': 'derived'
+'Agent role': '#3 "Craft engineer" — adhikarin, steward of the holon; inbox iskron_orient(realm="@nick/craft", focus="3")'
+'Agent role — source': 'derived'
+'Owner role': '#2 "Craft owner" — svatantra, the posed_to address beyond the mandate'
+'Owner role — source': 'derived'
+'Stack': 'Node.js 22 (CI pin), ESM JavaScript, no runtime dependencies; skills and agents are Markdown with YAML frontmatter'
+'Stack — source': 'derived'
+'Gate': 'npm run gate'
+'Gate — source': 'derived'
+'Consumers': 'Anyone who installs craft from .claude-plugin/marketplace.json; they learn of breakage only by its effects — a skill that never triggers, a review that silently drops a check, an agent advising on code it never read'
+'Consumers — source': 'agreed: owner'
+'Cost of breakage': 'External and silent: craft runs in repositories it never sees, and none of its failures fail loudly — a degraded check reads as a clean one'
+'Cost of breakage — source': 'agreed: owner'
+'Reality': 'REALITY.md at the root — read on occasion (the "Reality" section below)'
+'Reality — source': 'derived'
+'Layout': 'One AGENTS.md; code map in the Project structure section and MAP.md; gotchas live in realm rule nodes on the steps they constrain'
+'Layout — source': 'derived'
+'Cross-project memory': 'personal mind through minding — no stored address; no global instructions file; never the memory directory'
+'Cross-project memory — source': 'derived: template default'
+'Feedback reflection': 'yes — default'
+'Feedback reflection — source': 'derived: template default'
+'Workflow-suite interop': 'none — no coercive suite (superpowers absent from the plugin cache)'
+'Workflow-suite interop — source': 'derived'
+'Alignment': 'empty'
+'Alignment — source': 'derived'
 ---
 # `craft`
 The craft plugin ships engineering skills, review agents, and a review workflow engine to other repositories.
@@ -43,19 +43,19 @@ State lives in the **repo** or in the **realm** — nowhere else. The harness's 
 - **Retrieve state, do not recall it.** No source for "we decided…" — read the realm or the repo before acting.
 - **External design/spec files are drafts awaiting intake**: the realm holds the decisions.
 - **A node is not recorded until the thing pulling it is named** — which kriya breaks if it disappears? Three hiding places: the prose of this file; a `sinn` phenomenon for something that acts; a lone `context` arrow. A thing (a door, for instance) enters the realm as the place where a doer acts — an upadhi on the kriya.
-- **Whose fact is this?** — ask always, over the harness's memory instruction; before finishing, check that every durable fact from the conversation got an admissible place. A ritual, command or procedure of this repo → this file; a fact about the code, servers, deploys, dated obligations (date in the node's `attrs`) → `@nick/craft`; the meaning of code (decisions, rationale, links) → the realm always; file navigation → per the "Layout" slot; a decision → a node at once; a substantive question or obligation → a vimarsha; a one-off task, a question, an agreement → a word in the case (a case is a conversation); work progress and state → the realm, node modes. The person's own (machines, deadlines, people, opinions, how they like work organised, ideas without a project, portable methods) → the personal graph `@nick/mind` (cover, "Cross-project memory"; `minding` skill) the moment it is learned, even when its subject is development; about another project → that project's realm. A rule or method of this project itself — here, by authority, not in mind. A personal fact or "like last time" is needed — search before asking the human, then check by `minding` that applying it is admissible; purely project work with no personal content does not read mind. The personal does not override the project's obligations and does not pass into shared surfaces, a disclosing action included.
+- **Whose fact is this?** — ask always, over the harness's memory instruction; before finishing, check that every durable fact from the conversation got an admissible place. A ritual, command or procedure of this repo → this file; a fact about the code, servers, deploys, dated obligations (date in the node's `attrs`) → `@nick/craft`; the meaning of code (decisions, rationale, links) → the realm always; file navigation → per the "Layout" slot; a decision → a node at once; a substantive question or obligation → a vimarsha; a one-off task, a question, an agreement → a word in the case (a case is a conversation); work progress and state → the realm, node modes. The person's own (machines, deadlines, people, opinions, how they like work organised, ideas without a project, portable methods) → personal mind through `minding` the moment it is learned, even when its subject is development; about another project → that project's realm. A rule or method of this project itself — here, by authority, not in mind. A personal fact or "like last time" is needed — search before asking the human, then check by `minding` that applying it is admissible; purely project work with no personal content does not read mind. The personal does not override the project's obligations and does not pass into shared surfaces, a disclosing action included.
 - **Project instructions are held by committed working-tree files (AGENTS.md, the hooks file) and the project realm** — never a global instructions file (`~/.claude/CLAUDE.md`, `~/.config/opencode/AGENTS.md`…), harness memory, or user hooks. Personal preferences are applied by `minding` within authority and privacy, not copied into the project. Installing a delivery (bridge, plugin) is delivery, not configuration.
-- The memory directory is **evacuated and frozen**: the `PreToolUse` memory guard in `.claude/settings.json` blocks writes into `~/.claude/projects/*/memory/` (exit 2). Two arms: `Write|Edit|MultiEdit|NotebookEdit` tests `file_path` (or `notebook_path`) as a resolved path — symlinks followed, `..` applied, case-insensitive; `Bash` tests the command for a write shape aimed at that path (`>`/`>>`, heredoc, `tee`/`cp`/`mv`/`rm`/`touch`/`install`/`mkdir`). Reads are not blocked, nor is a write the regex cannot see (an editor, a path built at runtime) — the guard catches the reflex; it is not a sandbox.
+- The memory directory is **evacuated and frozen**: the `PreToolUse` memory guard in `.claude/settings.json` blocks writes into `~/.claude/projects/*/memory/` (exit 2), and `MEMORY.md` there is a one-line prohibition stub linking here; evacuate before freezing, delete nothing unread. Two arms: `Write|Edit|MultiEdit|NotebookEdit` tests `file_path` (or `notebook_path`) as a resolved path — Windows separators normalised, symlinks followed, `..` applied, case-insensitive; `Bash` tests the command for a write shape aimed at that path (`>`/`>>`, heredoc, `tee`/`cp`/`mv`/`rm`/`touch`/`install`/`mkdir`). Reads are not blocked, nor is a write the regex cannot see (an editor, a path built at runtime) — the guard catches the reflex; it is not a sandbox.
 
 ## Session lifecycle
 One line per rule; the full norm is the cross-cutting norms of the `iskron` skill.
 - **The realm is the work, git is how we got here.** SHAs, branches, PR numbers, "merged" never enter the realm (bodies, names, attributes); provenance goes in a write's `reasoning`. In a case they are written freely.
-- **Session start** — read the "Start" section of the `iskron` skill before acting; readiness means the realm and role are named and the greeting was delivered. The role's queue — `iskron_orient(focus=<role>)` on entry and on occasion; a frame goes to its addressee and the case's participants. Stand for watch duty (the word «вахта», `start`, a seat address from the window, or a frame) or before the first write to the realm or a case, using one `iskron_stand`; a reading session takes no seat. `start <realm> <role> <case №N>` enters that case; the first message restates the brief. A subagent uses its own satellite bridge (`iskron_stand` with `satellite_of`, then `join` and `leave` on that bridge); it must not write to the realm through the launcher's bridge. A subagent without its own bridge says so on the first line of its result and does not write to the realm. Use addresses from the cover; identify the owner by their role's sequence number, not `me`.
-- **Cleanup — with each finished piece** ("Уборка" in the cross-cutting norms of the `iskron` skill): your own worktree, the merged branch, your temporary files — in the same move; leave cases where your move is no longer awaited, closing your lines with their outcome, then `leave` (the lead — `propose_close` or a handover of the lead). Sit only where you await an answer or lead something unclosed.
-- **Realm craft — yourself**: reading, writing, weaving, integration belong to whoever decides ("Ремесло графа" in the cross-cutting norms of the `iskron` skill); to subagents — the bulky work: code, gate, review, verification; their advice is accepted only after checking it against the node's neighbourhood.
+- **Session start** — read the "Start" section of the `iskron` skill before acting; readiness means the realm and role are named and the greeting was delivered. The role's queue — `iskron_orient(focus=<role>)` on entry and on occasion; a frame goes to its addressee and the case's participants. Stand for watch duty (the watch word, `start`, a seat address from the window, or a frame) or before the first write to the realm or a case, using one `iskron_stand`; a reading session takes no seat. `start <realm> <role> <case №N>` enters that case; the first message restates the brief. A subagent uses its own satellite bridge (`iskron_stand` with `satellite_of`, then `join` and `leave` on that bridge); it must not write to the realm through the launcher's bridge. A subagent without its own bridge says so on the first line of its result and does not write to the realm. Use addresses from the cover; identify the owner by their role's sequence number, not `me`.
+- **Cleanup — with each finished piece** ("Cleanup" in the cross-cutting norms of the `iskron` skill): your own worktree, the merged branch, your temporary files — in the same move; leave cases where your move is no longer awaited, closing your lines with their outcome, then `leave` (the lead — `propose_close` or a handover of the lead). Sit only where you await an answer or lead something unclosed.
+- **Realm craft — with whoever decides**: reading for a decision, the decision, weaving, integration and acceptance belong to whoever decides ("Realm craft" in the cross-cutting norms of the `iskron` skill); to subagents on their own satellite bridge — the bulky work: code, gate, review, verification, finding and editing the many nodes a decision or correction touches, with references to the decision and the neighbourhood; the launcher checks their result and advice against the node's neighbourhood.
 - **Starting work: realm, then project, then code.** (1) realm reconnaissance (`entry`): what is recorded about the site of the change, open vimarshas, what was decided and rejected, what is recorded about the external surfaces; (2) the integration field (`integrity`, section below); (3) design (`design`), then code. Skip only on an explicit "just work" or another named protocol — the reconnaissance debt goes to reconcile; human silence is not permission. Work that bypasses the realm is an agent's worst failure.
 - **A decision goes into the realm the moment it is made**, wherever it came from (chat, socket, agents agreeing): epistemic no higher than `anumita`, ontic `anagata`, volitive `chanda`/`adhimoksha`; who decided and what counts as execution. A changed situation — the same, at once.
-- **Describe work before it begins.** One-off work — a word in a case: the brief, its restatement, the outcome as a word in the same case. If work arrives without a case, open one (`open_room` on the subject's node or `iskron_case(action="talk", about=<subject>)`) before making external changes. Record the transitions it changes in the realm (as design modes, or as a transformation for larger work), along with decisions. A vimarsha is a substantive question or obligation; a kriya is a repeatable transition. Ask what it consumes and produces on the next run; if there is no answer, it is a one-off task.
+- **Describe work before it begins — as what it is.** One-off work — a word in a case: the brief, its restatement, the outcome as a word in the same case. If work arrives without a case, open one (`open_room` on the subject's node or `iskron_case(action="talk", about=<subject>)`) before making external changes. Record the transitions it changes in the realm (as design modes, or as a transformation for larger work), along with decisions. A vimarsha is a substantive question or obligation; a kriya is a repeatable transition. Ask what it consumes and produces on the next run; if there is no answer, it is a one-off task.
 - **Work runs in the realm.** A substantive question or an obligation — a `posed_to` vimarsha with "Answered when"; a decision — a node; a handover — the relay and modes; after a work event (merge, rollout, decision) the realm catches up in the same move — landed, moved, released. A case is a conversation; a line is a report to the others of one movement: taken (`partial`, "on whom, waiting for what"), changed what, the path is wrong (`bad`, which), done (`ok`); a state summary is not a line (the `iskron` door, "A case is a conversation, not a log"). Awaiting an answer — `ask`; an assignment — `say` with `to`; a receipt — with `in_reply_to`; taken and outcome — the doer's lines under one key (the `iskron` door, "Waiting on a doer" and "A one-off task is a word in a case"); `partial` does not replace a card. A word to an agent — in the case; a channel only to a human without a seat in the case. Declining an assignment — a word; declining a vimarsha — editing it. Leaving — handover as a transformation seed and a word in the case, leading by agreement (`architect` skill).
 - **Merge → realm.** A push that opened or updated a PR shipped nothing. The sequence hangs on the merge event, not on a lull. Every act is mandatory — except for work by reference from an agent (a brief by references, a report in a case): there weaving, closing along the axis and reconciling are the setter's, and the doer's are the transformation seed and the delivery modes (`vahta` skill):
   - **Weave** (`weaving`): what shipped — into the target system (architecture, API, delivery, experience, integration) as nodes and edges, not a paragraph; repo mechanics stay in git. Zero nodes and arrows after a substantive wave — say plainly why.
@@ -70,7 +70,7 @@ One line per rule; the full norm is the cross-cutting norms of the `iskron` skil
 - **A claim you made is not a claim you accept.** A behavioural claim is closed by a cold `verifier`: the brief is the claim, the carrier and the falsifier from `REALITY.md`; wait for the verdict. No role available — observe the carrier yourself, never the source.
 - **Hook merge**: entries from different suites coexist in the hooks file — add alongside, never overwrite someone else's.
 - Start, push, merge and memory-write hooks are wired in `.claude/settings.json`, one line each, plus a pre-push branch-freshness probe. A visible refusal (git's `fatal:`/`error:`/`! [rejected]`; the forge's `error:`, `GraphQL:`, `X `, "not mergeable") wakes neither the push nor the merge hook, nor does a tags-only push. The merge hook wakes on `gh pr merge` by its outcome, on `checkout`/`switch` of `main` followed by a pull, and on a pull whose target copy is on `main`/`master` — `git pull`, `git -C <dir> pull` (the path bare or quoted), `cd <dir> && git pull` and a chain of such `cd`s (`&&` or `;`), `git -c <k=v> pull` (also with `-C`), with or without `rtk` — unless the pull reports "Already up to date" (realm `@nick/craft`, node #235). That local pull arm is craft's own, a separate entry beside the template's merge command: an `iskronify` re-projection of the hooks must carry it over.
-- **Keep this file honest.** The contract number is the number after «КОНТРАКТ AGENTS.md:» at the start of the `iskronify` skill description, present in every session's context: compare it with the stamp below without loading anything. Higher than the stamp, or the sources moved after its date (`git log -1 --format=%cd -- .github/workflows/ci.yml .claude-plugin/ lib/ package.json`) — run `iskronify` as the first move, in a clean tree and a work branch, by its "Who runs it" rule: the run's realm part — yourself, the bulky projection of files — the `designer` role; without subagents or the role — also yourself. The cover's slots are the YAML frontmatter; update them from the realm, the code and agents' answers in the alignment case without waiting for the human — to the human only the unresolved principled remainder; a new question about a slot is a word in the alignment case, not a node; a `slot: …` line only for an unresolved, waiting slot — a resolved one goes into the frontmatter as value and source, without a line. A line of this file diverges from the skill — say so aloud (in a case to the setter, otherwise to the human): the stamp is lower — the skill is right; equal — a template defect, feedback to the skill delivery's steward (`feedback` skill).
+- **Keep this file honest.** The contract number is the number that opens the `iskronify` skill description (right after its AGENTS.md-contract marker), present in every session's context: compare it with the stamp below without loading anything. Higher than the stamp, or the sources moved after its date (`git log -1 --format=%cd -- .github/workflows/ci.yml .claude-plugin/ lib/ package.json`) — run `iskronify` as the first move, in a clean tree and a work branch, by its "Who runs it" rule: the run's realm part — yourself, the bulky projection of files — the `designer` role; without subagents or the role — also yourself. The cover's slots are the YAML frontmatter; update them from the realm, the code and agents' answers in the alignment case without waiting for the human — to the human only the unresolved principled remainder; a new question about a slot is a word in the alignment case, not a node; a `slot: …` line only for an unresolved, waiting slot — a resolved one goes into the frontmatter as value and source, without a line. A line of this file diverges from the skill — say so aloud (in a case to the setter, otherwise to the human): the stamp is lower — the skill is right; equal — a template defect, feedback to the skill delivery's steward (`feedback` skill).
 - **Keep the toolchain fresh**: updates are on by default — take them as the channel delivers them. A channel without auto-update (an unpacked copy) — check the version before the session, or move.
 
 ### Stage self-check
@@ -85,13 +85,13 @@ Gate green and a coherent stage finished (a PR opened or updated, or you are abo
 - `NEEDS_CONTEXT` is a realm defect: design further, weave, pose vimarshas, review again.
 - A finding you disagree with is rejected with a recorded "why" (in the PR or on the node).
 - **Only Low findings left — no further round**: the PR is opened and merged as it stands; the Low findings are dropped, one line each in the PR body. A follow-up branch only for a Low that visibly hurts the plugin's consumer, named in the PR body with that reason (realm `@nick/craft`, #220).
-- A sub-agent helping a case is launched with the line `start <realm> <role> <case №N>` (`vahta` skill).
+- A sub-agent is launched with the line `start <realm> <role> <case №N>` of its child case (`iskron` skill).
 
 ### Branch discipline
 One branch until it merges — follow-ups go into it. **A branch lives in its own worktree** (`git worktree add <dir> -b <branch> origin/main`), not in the main copy: sessions share it, and a `checkout` there wipes someone else's work. After a merge: `git worktree remove` your tree, delete the merged branch (`git branch -d`) and others already in `main`, your temporary files; `git -C <main copy> pull` (the main copy stays on `main`); weave what shipped into the realm; the next branch from a fresh `origin/main`; confirm the cleanup before the next task. Do not touch other worktrees.
 
 ## Working principles
-1. **Think before code.** Name your assumptions; when unsure, ask *what exactly* is unclear. **A question to a human is asked in words, not with a picker tool** (conversation; in a case — an `ask` card, the `iskron` door, "A question to the human"; while there is no seat in a case — their standing bridge); the harness's option-picker tool never: it replaces the question with an answer. Object when you see a simpler move or a false premise. Touch the live system before trusting a type, a name, a doc. Beyond the mandate — a `posed_to` vimarsha to the owner role.
+1. **Think before code.** Name your assumptions; when unsure, ask *what exactly* is unclear. **A question to a human is asked in words, not with a picker tool**: in text — only to whoever is answering now; work runs in a case, and a question that outlives the turn is an `ask` card there (the `iskron` door, "A question to the human"; no case — take one; while there is no seat in the case — their standing bridge); the harness's option-picker tool never: it replaces the question with an answer. Object when you see a simpler move or a false premise. Touch the live system before trusting a type, a name, a doc. Beyond the mandate — a `posed_to` vimarsha to the owner role.
 2. **Simplicity first.** The minimum for the task; no speculative features, abstractions for one-offs, handling of the impossible. Validate at boundaries.
 3. **Stay inside the repo boundary.** Edits only in the working directory; outside it — reading carriers, the session's temporary directory and the delivery's home. Another holon — a vimarsha on its node (`anga` to the transformation) and a word to its steward in a case (`iskron_case(action="talk", about=<subject>)`). **Do not take someone else's code into context**: do not go into a repository outside the mandate — no reading, no clone, no subagent reconnaissance; what integration and research need comes from the realm (that repo's holon, its phenomena, relays, vimarshas) or a word to its steward, and what is in neither — a `posed_to` vimarsha to them.
 4. **A second implementation is an event to report.** Derive both places through `integrity`, name them to the human, propose reunification or a named fork; a new consumer gets its edges in the same move.
@@ -171,9 +171,9 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - `evals/` — the skill-triggering corpus (`evals.json`) and its README.
 - `opencode/` — the parallel OpenCode delivery: `agents/`, `commands/`, `plugin/` (TypeScript), `scripts/`.
 - `docs/` — `LESSONS.md`, `observability.md`.
-- `.claude-plugin/` — the plugin and marketplace manifests.
+- `.claude-plugin/` — the plugin and marketplace manifests; `.codex-plugin/` and `.agents/plugins/` — the Codex plugin manifest and marketplace.
 - `hooks/` — `hooks.json`: the SessionStart hook (Claude Code), run as `lib/session-start-hook.mjs`; the UserPromptSubmit and SubagentStart hooks, run as `lib/work-hook-entry.mjs`; the PreToolUse hook on Bash, run as `lib/push-hook-entry.mjs`.
-- `.claude/` — `settings.json` (hooks) and `agents/` (the six role agents for working on this repo; not shipped).
+- `.claude/` — `settings.json` (hooks) and `agents/` (the seven role agents for working on this repo: `reader`, `searcher`, `worker`, `designer`, `weaver`, `reviewer`, `verifier`; not shipped).
 - `MAP.md` — a map of the repo's contents; `README.md` — the human-facing entry point.
 
 ## Code conventions
@@ -203,4 +203,4 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (three jobs: `test` — `npm run gate` plus the shipped-dependency audit — and `semgrep` gate; `quality-delta` always ends green and is read, not waited on; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
 
-*(iskronify: contract 27, stamp 2026-10-19 — rerun when the installed iskronify description names a higher contract or when the sources this file was derived from move after this date.)*
+*(iskronify: contract 30, stamp 2026-10-23 — rerun when the installed iskronify description names a higher contract or when the sources this file was derived from move after this date.)*
