@@ -37,7 +37,7 @@ safetensors = "0.4"            # safe, zero-copy weights (never pickle)
 ```
 
 Versions drift fast in this ecosystem — resolve the ones actually pinned in the project
-(`cargo metadata`) and check the crate's current API rather than trusting memory (→ `rust-ecosystem`,
+(`cargo metadata --locked`) and check the crate's current API rather than trusting memory (→ `rust-ecosystem`,
 and context7 for live docs).
 
 ## Tensors are big — treat copies as bugs

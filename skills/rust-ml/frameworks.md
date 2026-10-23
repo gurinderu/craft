@@ -52,5 +52,5 @@ for **linfa/smartcore + ndarray** before a deep-learning framework.
 - **Build cost**: tch/ort link a large C++ library; candle/burn/dfdx are pure Rust (or optional CUDA).
   This decides your CI, container size, and cross-compilation story (→ `rust-ecosystem`).
 - **GPU target**: CUDA (candle/tch), Metal (candle), wgpu (burn) — match your deploy hardware.
-- **Versions move fast** — pin exact versions and verify the current API (`cargo metadata` + context7);
+- **Versions move fast** — pin exact versions and verify the current API (`cargo metadata --locked` + context7);
   do not trust an example from six months ago.
