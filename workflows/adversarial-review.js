@@ -1491,7 +1491,7 @@ SLICE: ${LENS_BRIEF[lens]}
 Diff base: ${base}.
 ${intentArg ? `INTENT (what the change should do): ${intentArg}` : ''}
 CONTEXT EXPANSION (required): for each finding, read the surrounding code and trace callers of the changed symbols before judging — do not read the diff in isolation.
-WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Pin every such premise to a \`file:line\` you ACTUALLY OPENED, dependency sources included, and put them in \`whereChecked\`. An off-site premise you did not open is not admissible: open it, or drop the claim and report only what the cited line shows. Use "" only when the finding needs no off-site premise.
+WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Pin every such premise to a \`file:line\` you ACTUALLY OPENED, dependency sources included, and put them in \`whereChecked\`. An off-site premise you did not open is not admissible: open it, or drop the claim and report only what the cited line shows. Use "" only when the finding needs no off-site premise. ${DEPENDENCY_SOURCE_HOW}
 CONFIDENCE: report everything you suspect, located to file:line. Do NOT self-censor borderline findings — adversarial verification happens downstream.
 
 Return {findings: []-shaped JSON}.`
@@ -1599,6 +1599,8 @@ function makeThrottledRunner(deps) {
     return unfinished
   }
 }
+
+const DEPENDENCY_SOURCE_HOW = 'Finding a dependency\'s source: open the version the project pins, not the newest or a remembered one. For a Rust crate, take the package\'s `manifest_path` from `cargo metadata --format-version 1` — its directory is the source of the version Cargo.lock pins; if that directory is missing, run `cargo fetch` first; in a vendored tree, the crate\'s directory under the vendor directory is the source. For another ecosystem, the same way: the version from the project\'s lockfile, the code from the package manager\'s cache or the vendor directory.'
 
 function noChangedFilesMessage() {
   return `NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a \`path\` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.`
