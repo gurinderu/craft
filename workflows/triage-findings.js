@@ -110,14 +110,14 @@ function normalizeKeyValueArgs(text, warn) {
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
  *
- * @param {unknown} args
+ * @param {unknown} rawArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Record<string, unknown>}
  */
-function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
-  if (typeof args !== 'string' || !args.trim()) return {}
-  const text = args.trim()
+function normalizeArgs(rawArgs, warn = () => {}) {
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return /** @type {Record<string, unknown>} */ (rawArgs)
+  if (typeof rawArgs !== 'string' || !rawArgs.trim()) return {}
+  const text = rawArgs.trim()
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -415,12 +415,12 @@ ${JSON.stringify(record, null, 2)}`
  * @param {{ phase?: string }} [opts]
  * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
-function logRunDispatch(record, { phase = '' } = {}) {
+function logRunDispatch(record, { phase: phaseTitle = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
   return {
     label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
-    phase,
+    phase: phaseTitle,
     schema: LOGRUN_SCHEMA,
     model: big ? 'sonnet' : 'haiku',
     effort: 'low',
@@ -476,11 +476,11 @@ function loggerAgentDied(res) {
  * @param {(record: Record<string, unknown>) => Record<string, unknown>} [o.prepare]
  * @returns {(record: Record<string, unknown>) => Promise<void>}
  */
-function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+function makeRunLogger({ call, phase: phaseTitle, target, noteLoss, prepare = record => record }) {
   return async recordIn => {
     const record = prepare(recordIn)
     const at = { ...target(), record }
-    const dispatch = logRunDispatch(record, { phase })
+    const dispatch = logRunDispatch(record, { phase: phaseTitle })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
     else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
@@ -1914,14 +1914,14 @@ async function matchFindings(findings, decisions, judge, reraisedSure = undefine
     return p && resolvePlan(f, p, byFinding.get(f))
   }
   /** @param {DecidableFinding} f @returns {Contradiction | undefined} */
-  const contradictionOf = f => (matchOf(f) ? undefined : against.get(f))
+  const judgedContradictionOf = f => (matchOf(f) ? undefined : against.get(f))
   /** The record the judge says `f`'s code goes against, matched or not — for a re-raised match. @param {DecidableFinding} f @returns {Contradiction | undefined} */
   const violationOf = f => against.get(f)
   const cutF = new Set(pairs.slice(sent.length, sent.length + CUT_NAMED_MAX).map(p => p.f))
   const unnamed = [...sent, ...pairs.slice(sent.length + CUT_NAMED_MAX)]
   const titleless = judge ? [...new Set(unnamed.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
-  return { matchOf, contradictionOf, violationOf, notes, refused }
+  return { matchOf, contradictionOf: judgedContradictionOf, violationOf, notes, refused }
 }
 
 /**
@@ -2474,12 +2474,12 @@ function collapseRepeats(findings) {
     if (seen.has(f.stable_id)) continue
     seen.add(f.stable_id)
     const at = kept.findIndex(k => repeatsFinding(k, f))
-    const k = kept[at]
-    if (!k) { kept.push(f); continue }
-    if (severityRank(f.severity) >= severityRank(k.severity)) { repeated.push({ f, of: k.stable_id }); continue }
+    const twin = kept[at]
+    if (!twin) { kept.push(f); continue }
+    if (severityRank(f.severity) >= severityRank(twin.severity)) { repeated.push({ f, of: twin.stable_id }); continue }
     kept[at] = f
-    for (const r of repeated) if (r.of === k.stable_id) r.of = f.stable_id
-    repeated.push({ f: k, of: f.stable_id })
+    for (const r of repeated) if (r.of === twin.stable_id) r.of = f.stable_id
+    repeated.push({ f: twin, of: f.stable_id })
   }
   return { kept, repeated }
 }
@@ -2677,24 +2677,24 @@ if (!pr && !report) {
  */
 function gatherPlan() {
   /** @type {Array<() => Promise<RawResult | null>>} */
-  const gatherTasks = []
+  const tasks = []
   /** @type {string[]} */
-  const requestedLocators = []
+  const locators = []
   if (report) {
-    requestedLocators.push('report')
-    gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
+    locators.push('report')
+    tasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
       `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: "review" (craft:review), "adversarial-review", "rust-audit", "rust-reviewer" (a single reviewer verdict) or "nix-review"; "report" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's \`## Tool finding titles (verbatim)\` section (also nested under \`## Prior decisions in the nested reviews (verbatim)\`) lists titles, not findings: never extract its rows as findings. For a finding at a \`file:line\` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that \`file:line\` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.`,
       { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
     )))
   }
   if (pr) {
-    requestedLocators.push('pr')
-    gatherTasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
+    locators.push('pr')
+    tasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
       `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
       { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
     )))
   }
-  return { gatherTasks, requestedLocators }
+  return { gatherTasks: tasks, requestedLocators: locators }
 }
 
 const { gatherTasks, requestedLocators } = gatherPlan()
@@ -2865,13 +2865,13 @@ function withIssueActions(rows) {
 /**
  * The ledger the record tallies, set back on the plan when a marker had to be re-injected or an issue
  * action attached.
- * @param {TriagePlan | null} plan @returns {LedgerEntry[]}
+ * @param {TriagePlan | null} planIn @returns {LedgerEntry[]}
  */
-function finalLedger(plan) {
-  if (!plan || !Array.isArray(plan.ledger)) return withIssueActions([...sifted, ...validations])
-  const ledger = withIssueActions(pinnedLedger(plan.ledger))
-  if (ledger !== plan.ledger) plan.ledger = ledger
-  return ledger
+function finalLedger(planIn) {
+  if (!planIn || !Array.isArray(planIn.ledger)) return withIssueActions([...sifted, ...validations])
+  const finalRows = withIssueActions(pinnedLedger(planIn.ledger))
+  if (finalRows !== planIn.ledger) planIn.ledger = finalRows
+  return finalRows
 }
 /**
  * The plan's ledger with every row this script settled itself restored: an unjudged one and a sifted one.
@@ -2885,7 +2885,7 @@ function pinnedLedger(planLedger) {
   if (!pinned.size) return planLedger
   /** @type {Set<string>} */
   const seen = new Set()
-  const ledger = planLedger.map(e => {
+  const pinnedRows = planLedger.map(e => {
     const v = e && pinned.get(e.stable_id)
     if (!v) return e
     seen.add(e.stable_id)
@@ -2893,8 +2893,8 @@ function pinnedLedger(planLedger) {
     const kept = String(e.reason || '').includes(mark) && e.verdict === v.verdict && e.sifted === v.sifted && e.repeat_of === v.repeat_of
     return kept ? e : restored(e, v)
   })
-  for (const [id, v] of pinned) if (!seen.has(id)) ledger.push(restored({ stable_id: id }, v))
-  return ledger
+  for (const [id, v] of pinned) if (!seen.has(id)) pinnedRows.push(restored({ stable_id: id }, v))
+  return pinnedRows
 }
 const ledger = finalLedger(plan)
 const issues = validations.filter(v => v.action === 'issue').flatMap(v => {
@@ -2920,25 +2920,25 @@ await logRun({
 
 if (!plan) return `${telemetryLostSection(telemetryLost)}Triage failed: the Plan-phase agent returned no result. Re-run, or triage the findings manually.`
 
-/** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} plan @returns {TriagePlan} */
-function bannered(plan) {
+/** The plan as its reader gets it: led by what did not run and by a write that did not land. @param {TriagePlan} planIn @returns {TriagePlan} */
+function bannered(planIn) {
   const incomplete = notRunSources.map(src => `source \`${src}\` produced nothing — its findings are NOT in this plan`)
     .concat(deadValidations.length ? [`${deadValidations.length} finding(s) were never judged against the code (validator died); they sit in the ledger as needs-decision, not in the plan`] : [])
   if (incomplete.length) {
     const banner = ['> **INCOMPLETE TRIAGE** — this plan does not cover everything that was asked for:', ...incomplete.map(l => `> - ${l}`), ''].join('\n')
-    plan.plan_markdown = `${banner}\n${plan.plan_markdown ?? ''}`
-    plan.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${plan.summary ?? ''}`
-    plan.notRun = incomplete
+    planIn.plan_markdown = `${banner}\n${planIn.plan_markdown ?? ''}`
+    planIn.summary = `INCOMPLETE: ${incomplete.join('; ')}\n\n${planIn.summary ?? ''}`
+    planIn.notRun = incomplete
   }
   const lostBanner = telemetryLostSection(telemetryLost)
   if (lostBanner) {
-    plan.plan_markdown = `${lostBanner}${plan.plan_markdown ?? ''}`
-    plan.telemetryLost = telemetryLost.slice()
+    planIn.plan_markdown = `${lostBanner}${planIn.plan_markdown ?? ''}`
+    planIn.telemetryLost = telemetryLost.slice()
   }
-  plan.memory = memoryLine(memory, false)
-  if (priorRefused.length) plan.priorDecisionsNotApplied = priorRefused
-  if (sift.notices.length) plan.ruleNotices = sift.notices
-  if (issues.length) plan.issues = issues
-  return plan
+  planIn.memory = memoryLine(memory, false)
+  if (priorRefused.length) planIn.priorDecisionsNotApplied = priorRefused
+  if (sift.notices.length) planIn.ruleNotices = sift.notices
+  if (issues.length) planIn.issues = issues
+  return planIn
 }
 return bannered(plan)
