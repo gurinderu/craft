@@ -14,6 +14,9 @@ applies it to an actual diff and reports back.
 scout-scales depth to the diff, fans out the lenses below, grounds findings in tool output, and
 adversarially verifies each one. This skill is the rubric the workflow and the `nix-reviewer`
 lens worker apply.
+If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
+`node "<this skill's base directory>/../../lib/engine-source-map.mjs" nix-review workflow.js:<line>:<column>`
+gives it in the plugin's source.
 
 The workflow recalls the project's active decisions, open questions and project rules for the diff's paths
 itself, on every launch; `priorDecisions` (the object argument, never a string, each record with
