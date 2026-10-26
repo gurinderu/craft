@@ -119,14 +119,14 @@ function normalizeKeyValueArgs(text, warn) {
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
  *
- * @param {unknown} args
+ * @param {unknown} rawArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Record<string, unknown>}
  */
-function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
-  if (typeof args !== 'string' || !args.trim()) return {}
-  const text = args.trim()
+function normalizeArgs(rawArgs, warn = () => {}) {
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return /** @type {Record<string, unknown>} */ (rawArgs)
+  if (typeof rawArgs !== 'string' || !rawArgs.trim()) return {}
+  const text = rawArgs.trim()
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -1369,10 +1369,10 @@ function normalizeDimensionVerdict(v) {
 // INCOMPLETE verdict in its own right.
 /**
  * @param {string} worst
- * @param {unknown[]} notRun
+ * @param {unknown[]} notRunIn
  */
-function auditVerdict(worst, notRun) {
-  return honestVerdict(worst, notRun)
+function auditVerdict(worst, notRunIn) {
+  return honestVerdict(worst, notRunIn)
 }
 
 // Drop internal (`_`-prefixed) keys so they never leak into the synthesis prompt.
@@ -1502,12 +1502,12 @@ ${JSON.stringify(record, null, 2)}`
  * @param {{ phase?: string }} [opts]
  * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
-function logRunDispatch(record, { phase = '' } = {}) {
+function logRunDispatch(record, { phase: phaseTitle = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
   return {
     label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
-    phase,
+    phase: phaseTitle,
     schema: LOGRUN_SCHEMA,
     model: big ? 'sonnet' : 'haiku',
     effort: 'low',
@@ -1563,11 +1563,11 @@ function loggerAgentDied(res) {
  * @param {(record: Record<string, unknown>) => Record<string, unknown>} [o.prepare]
  * @returns {(record: Record<string, unknown>) => Promise<void>}
  */
-function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+function makeRunLogger({ call, phase: phaseTitle, target, noteLoss, prepare = record => record }) {
   return async recordIn => {
     const record = prepare(recordIn)
     const at = { ...target(), record }
-    const dispatch = logRunDispatch(record, { phase })
+    const dispatch = logRunDispatch(record, { phase: phaseTitle })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
     else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
@@ -1631,10 +1631,10 @@ const logRun = makeRunLogger({
 // review engine (lib/agent-fallback.mjs, realm @nick/craft #116): a weaker audit must not read as a
 // normal one.
 // >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection agentUnavailableRecord readAgentUnavailableSection readAgentUnavailableLine
-/** @param {unknown} msg @param {string} [agent] */
-function isAgentTypeMissing(msg, agent) {
+/** @param {unknown} msg @param {string} [agentTypeName] */
+function isAgentTypeMissing(msg, agentTypeName) {
   const m = String(msg ?? '')
-  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agentTypeName && m.includes(agentTypeName)))
 }
 
 /**
@@ -1751,12 +1751,12 @@ async function genericAfterThrow(e, prompt, generic, at) {
   // wording costs one failed agent dispatch per dimension — the price of not guessing at the text.
   if (!isAgentTypeMissing(msg, at)) {
     if (!/not found/i.test(msg)) throw e
-    const fallback = await auditAgent(prompt, generic)
+    const genericAnswer = await auditAgent(prompt, generic)
     // Dead on both paths: the agent's error is the only one there is, so it is rethrown for the
     // dimension's NOT RUN line rather than lost to an anonymous "no result".
-    if (!fallback) throw e
+    if (!genericAnswer) throw e
     agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
-    return fallback
+    return genericAnswer
   }
   agentTypeMissing.set(at, msg)
   log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
@@ -1769,19 +1769,19 @@ async function genericAfterThrow(e, prompt, generic, at) {
 // nested report, so it reads the section back (readAgentUnavailableSection) and names the dimension.
 /** @type {{ dimension: string, missing: { agent: string, error: string }[], emptied: { agent: string, count: number, error?: string }[] }[]} */
 const nestedAgentNotes = []
-/** @param {string} dimension @param {unknown} report */
-function noteNestedAgents(dimension, report) {
-  const got = readAgentUnavailableSection(report)
+/** @param {string} dimension @param {unknown} reportIn */
+function noteNestedAgents(dimension, reportIn) {
+  const got = readAgentUnavailableSection(reportIn)
   if (got.missing.length || got.emptied.length) nestedAgentNotes.push({ dimension, ...got })
 }
 const agentSection = () => agentUnavailableSection(
   [
-    ...[...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
+    ...[...agentTypeMissing].map(([agentTypeName, error]) => ({ agent: agentTypeName, what: 'the audit dimensions that use it', error })),
     ...nestedAgentNotes.flatMap(n => n.missing.map(x => ({ agent: x.agent, what: `the lenses of the nested review ${n.dimension}`, error: x.error }))),
   ],
   [
-    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count, what: 'dimension dispatch(es)' })),
-    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
+    ...Object.entries(agentTypeEmptied).map(([agentTypeName, count]) => ({ agent: agentTypeName, count, what: 'dimension dispatch(es)' })),
+    ...[...agentTypeNotFound].map(([agentTypeName, x]) => ({ agent: agentTypeName, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
   ].filter(x => !agentTypeMissing.has(x.agent)).concat(
     nestedAgentNotes.flatMap(n => n.emptied.map(x => ({ ...x, what: `lens dispatch(es) of the nested review ${n.dimension}` })))),
 )
@@ -1792,8 +1792,8 @@ const agentSection = () => agentUnavailableSection(
 const agentRecord = () => agentUnavailableRecord(
   agentTypeMissing.keys(),
   [
-    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count })),
-    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count })),
+    ...Object.entries(agentTypeEmptied).map(([agentTypeName, count]) => ({ agent: agentTypeName, count })),
+    ...[...agentTypeNotFound].map(([agentTypeName, x]) => ({ agent: agentTypeName, count: x.count })),
   ],
 )
 
@@ -1989,8 +1989,8 @@ function honestVerdictLine(text, notRun) {
   const at = verdictLineAt(lines)
   if (at < 0) return s
   const line = String(lines[at])
-  const word = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
-  if (!word || !GREEN_WORD.test(String(word[1]))) return s
+  const verdictWord = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
+  if (!verdictWord || !GREEN_WORD.test(String(verdictWord[1]))) return s
   const fixed = line.replace(/(?:(?:\u2705|\u26a0\ufe0f?)\s*)?\b(?:Approve|Healthy|Clean)\b(?:\s*\((?:INCOMPLETE|PARTIAL COVERAGE)\))?/i, '\u26a0\ufe0f INCOMPLETE')
   const list = missing.join('; ')
   const named = /did not run/i.test(fixed) ? '' : ` \u00b7 part of this review did not run: ${list.length > NOTE_MAX ? `${list.slice(0, NOTE_MAX)}\u2026` : list}`
@@ -2122,9 +2122,9 @@ phase('Audit')
 // INCOMPLETE (the "Not reviewed" list, "Coverage gaps"), so a substring match over the whole report
 // scored a plain Approve as a Warning and any mention of the word as uncovered. A report with no
 // `## Verdict` heading is one we cannot read, and the non-permissive default applies.
-/** @param {unknown} report */
-function verdictLine(report) {
-  const text = String(report || '')
+/** @param {unknown} reportIn */
+function verdictLine(reportIn) {
+  const text = String(reportIn || '')
   const m = /^[ \t]*#{1,6}[ \t]*Verdict\b(.*)$/im.exec(text)
   if (!m) return null
   // The verdict is sometimes written INLINE on the heading (`## Verdict: ⛔ Block — 2 High`). Reading
@@ -2163,10 +2163,10 @@ function reviewSummary(line, verdict, incomplete) {
 
 /**
  * @param {string} dimension
- * @param {unknown} report
+ * @param {unknown} reportIn
  */
-function reviewResult(dimension, report) {
-  const line = verdictLine(report)
+function reviewResult(dimension, reportIn) {
+  const line = verdictLine(reportIn)
   // A coverage-hole clause voids an otherwise-green verdict whether the engine spelled it INCOMPLETE
   // (a genuine not-run) or PARTIAL COVERAGE (files no language profile covered) — review.js writes both
   // via verdictSuffix (lib/review-coverage.mjs), and the model may drop the ⚠️ glyph when it rewrites
@@ -2181,7 +2181,7 @@ function reviewResult(dimension, report) {
   // NOT found and holds only over what was actually looked at. Anything unreadable is Warning.
   const verdict = reviewVerdict(line, incomplete)
   const summary = reviewSummary(line, verdict, incomplete)
-  const kept = liftPriorDecisionSections(String(report || 'no report'))
+  const kept = liftPriorDecisionSections(String(reportIn || 'no report'))
   return {
     dimension,
     verdict,
@@ -2231,24 +2231,24 @@ function nestedPriorDecisionsSection(lifted) {
 // the fence's own comment states the rule and the fallback's single trigger.
 // >>> craft-inline lib/nested-workflow.mjs nestedWorkflow
 /**
- * @param {(name: string, args: unknown) => Promise<unknown>} workflow
+ * @param {(name: string, args: unknown) => Promise<unknown>} launchWorkflow  the sandbox's `workflow`
  * @param {string} name
- * @param {unknown} args
+ * @param {unknown} nestedArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Promise<unknown>} the nested run's result — `null` when it died
  */
-async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+async function nestedWorkflow(launchWorkflow, name, nestedArgs, warn = () => {}) {
   /** @param {unknown} e @returns {unknown} the refusal's message, or the thrown value itself */
   const messageOf = e => (e && /** @type {{ message?: unknown }} */ (e).message) || e
   /** @param {unknown} e */
   const unresolved = e => /no workflow with that name/i.test(String(messageOf(e)))
   try {
-    return await workflow(`craft:${name}`, args)
+    return await launchWorkflow(`craft:${name}`, nestedArgs)
   } catch (e) {
     if (!unresolved(e)) throw e
     warn(`nested workflow 'craft:${name}' did not resolve here — retrying as '${name}'`)
     try {
-      return await workflow(name, args)
+      return await launchWorkflow(name, nestedArgs)
     } catch (e2) {
       if (unresolved(e2)) {
         throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${String(messageOf(e2))})`)
@@ -2350,7 +2350,7 @@ function pushReviewDims() {
           // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
           // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
           // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
-          .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); auditLimit.observeError(limitInReport(report)); return reviewResult(`review:${c.name}`, report) }),
+          .then(/** @param {unknown} reportIn */ reportIn => { if (reportIn == null) return null; noteNestedAgents(`review:${c.name}`, reportIn); auditLimit.observeError(limitInReport(reportIn)); return reviewResult(`review:${c.name}`, reportIn) }),
         // A swallowed throw is a name that would not resolve OR a run that died; keep the
         // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
         // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
@@ -2368,7 +2368,7 @@ function pushReviewDims() {
                                                   : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
         // As at the per-crate site: report==null is a dead nested engine — resolve to null before
         // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
-        .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); auditLimit.observeError(limitInReport(report)); return reviewResult('review', report) }),
+        .then(/** @param {unknown} reportIn */ reportIn => { if (reportIn == null) return null; noteNestedAgents('review', reportIn); auditLimit.observeError(limitInReport(reportIn)); return reviewResult('review', reportIn) }),
       // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
       // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',

