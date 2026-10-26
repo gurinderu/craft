@@ -1,8 +1,9 @@
 // Knip: unused files, exports and dependencies across both deliveries.
 //
 // The engines (src/*.js, shipped as the generated workflows/*.js) are loaded by the harness's Workflow
-// tool, not imported, and are not plain JS (top-level return/await). They import nothing: the lib/
-// code they use is pasted in verbatim between `craft-inline` fences. The compiler below hands Knip, in place of each engine's body,
+// tool, not imported. One in the bundled form imports its lib/ code and is read as written. One in the
+// fenced form is not plain JS (top-level return/await) and imports nothing: the lib/ code it uses is
+// pasted in verbatim between `craft-inline` fences. The compiler below hands Knip, in place of each engine's body,
 // one `import { names } from '../lib/<source>'` per fence — read with the checker's own fence
 // regex — naming only the fence's names the engine actually references outside that source's own
 // regions. Listing a name in a fence only copies it into the engine; an inlined export no engine
@@ -11,6 +12,7 @@
 // Run it twice. `knip` counts tests as users, and is blind to the exports of any module a test
 // names with `new URL('./x.mjs', import.meta.url)` (Knip takes that as a whole-module reference).
 // `knip --production` drops tests and checks what the shipped entries (marked `!`) reach.
+import { isBundledForm } from './lib/engine-form.mjs'
 import { FENCE_CLOSE, FENCE_OPEN } from './lib/inline-regions.mjs'
 import { SHIPPED_NODE_ENTRIES } from './lib/shipped-entries.mjs'
 
@@ -28,7 +30,8 @@ function withoutComments(text) {
 
 /** @param {string} text @param {string} filename */
 export function fencesAsImports(text, filename) {
-  if (!/(^|[\\/])src[\\/][^\\/]+\.js$/.test(filename)) return text
+  // An engine in the bundled form (realm @nick/craft, #210) has no fences: its imports are real, read as written.
+  if (!/(^|[\\/])src[\\/][^\\/]+\.js$/.test(filename) || isBundledForm(text)) return text
   /** @type {{ source: string, names: string[] }[]} */
   const fences = []
   // Per line, the source of the fence it sits inside ('' outside every fence; fence lines are comments).

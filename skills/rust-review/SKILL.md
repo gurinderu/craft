@@ -42,6 +42,9 @@ triage the findings (`triage-findings`), fix them (`addressing-findings`), and r
 verdict is **Approve** (or **Warning** with each remaining item justified in the PR body). Only
 then open the PR. A one-shot review whose findings never loop back into fixes is not a gate; the
 PR isn't ready until the loop is green.
+If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
+`node "<this skill's base directory>/../../lib/engine-source-map.mjs" rust-review workflow.js:<line>:<column>`
+gives it in the plugin's source.
 
 ## Step 1 — Establish the gate (CI-aware)
 
