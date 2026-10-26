@@ -192,9 +192,10 @@ as a doubt.
 - A round **without a verdict** — the engine returned `INCOMPLETE`, died, or is not available — is
   not convergence and does not count as a clean round. Say what did not run. Retry the review once
   if the cause is transient (the retry is the same round); still no verdict → stop as above and
-  tell the human. An engine that died with `at workflow.js:<line>:<column>` and ships a map
-  (`workflows/<engine>.js.map`): `node "<this skill's base directory>/../../lib/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
-  gives the place in the plugin's source — quote it when you report the failure.
+  tell the human. A craft engine that died with `at workflow.js:<line>:<column>`:
+  `node "<this skill's base directory>/../../lib/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
+  gives the place in the plugin's source (or, for an engine without a map, the line of
+  `workflows/<engine>.js`) — quote it when you report the failure.
 
 A declared reviewer that reports no severities cannot show convergence by itself: ask it for
 severities on its findings, or treat each of its findings as Medium.
