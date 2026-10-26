@@ -97,7 +97,6 @@ export async function __run() {
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs).
 
-// How to find a pinned dependency's source, shared with the other prompts that demand opening it.
 /** @type {Record<string, unknown>} */
 const A = normalizeArgs(args, log)
 /** A string argument as given, or '' when it is absent or falsy. @param {string} argName */
@@ -150,12 +149,6 @@ let scopeDetail = ''
 // the drop happened before all of them. Appended to the synthesized report too rather than asked of
 // the synthesis model: what the review DID NOT cover is not something a prompt may forget.
 const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
-// The recalled rejections the launching session hands in as `priorDecisions` (realm @nick/craft, node #177 — the
-// memory skill's record shape) are read by lib/prior-decisions.mjs; the rules and why live in the module.
-
-// The PR comment body for a Confirmed finding, with the marker a later session reads back.
-// The lines the diff changed, and the sorting of findings before publication (realm @nick/craft, nodes #270, #277).
-
 // The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
 /** @param {unknown} abs @param {unknown} repo */
 function relativeToRepo(abs, repo) {
@@ -485,9 +478,6 @@ const optionalSection = () => {
 // surfaceGateSection() on every early exit too — where it is simply still empty.
 /** @type {Result[]} */
 const results = []
-// The merge and the record's `gate` / `surfaceGate` fields live in lib/profile-merge.mjs (tested
-// there).
-
 // Mirrors optionalDispatched: a surface-gated lens actually DISPATCHED in some profile, recorded by
 // runLens (the single dispatch point on every path). The gate is a PER-PROFILE decision reading each
 // profile's own scout, and negative-space is force-added to every plan — so on a mixed rust+nix diff a
@@ -534,12 +524,6 @@ const CRAFT_VERSION = '0.34.1' // x-release-please-version
 // Severity ordering, worst first.
 /** @type {Record<string, number>} */
 const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
-// The deletion/recovery-path severity floor, applied before dedup and verification routing: pure helpers,
-// tested as a real module in lib/path-severity-floor.mjs.
-
-// ---- adjudicate-track pure helpers ----
-// These live in lib/review-adjudicate.mjs — a real, linted module with real unit tests that IMPORT it.
-
 
 // ---- resilient agent call ----
 // agent() returns null when the subagent dies on a terminal API error (after the harness's own
@@ -592,14 +576,6 @@ function repoDirective() {
 // dispatch, in any phase, passes none and is neither counted nor allowed to reset anything. A lens
 // is deliberately not given one: there a suppressed re-dispatch costs a whole dimension of the
 // review, and the window is not the scarce thing.
-
-// ---- slicing the diff a lens reviews ----
-// Pure helper, tested as a real module in lib/lens-scope.mjs. The measurement that motivates it — lenses at 73.6% of a run, the whole diff
-// pulled by every lens on every round — lives there, with the risk it does not solve.
-
-// ---- one budget, shared by the attempts ----
-// Pure helper, tested as a real module in lib/agent-deadline.mjs. The rationale for a shared budget — and why the thresholds themselves must NOT
-// move — lives there.
 
 const DEFAULT_DEADLINE_MS = 1800000
 /** @type {Record<string, number>} */
@@ -826,9 +802,6 @@ function finalVerdict(confirmedIn) {
     && (f['severity'] === 'Critical' || f['severity'] === 'High' || f['severity'] === 'Medium'))) return 'Block'
   return reviewVerdict(confirmedIn)
 }
-// indexProjection is NOT mirrored here any more: lib/craft-log-run.mjs imports the real one and owns
-// the index line. A second copy in the workflow would be a copy nothing calls — free to drift out of
-// sync with the projection that actually gets written, which is the worst kind of dead code.
 // A phase checkpoint. Small by construction — counts, per-lens yields, the gate verdict — because
 // its job is to survive the run, not to duplicate the final record early. `runDir` is threaded back
 // out of the first call so every later checkpoint lands in the same directory without the sandbox
@@ -1953,16 +1926,6 @@ async function dedupPool(pool, profile) {
 // Staged verification: cull votes run on a cheap model (sonnet); a High/Critical additionally gets exactly
 // ONE authoritative opus vote, so the cheap model can neither confirm nor drop a high-stakes finding alone.
 const CULL_MODEL = 'sonnet'
-
-// ---- verification dispatch bounding ----
-// Pure helpers, tested as a real module in lib/review-waves.mjs.
-
-// ---- the same reasoning, carried to the tier where the money is ----
-// `verifyTier` skips Low/Info because no judgement on them can move the verdict. That is a statement
-// about `reviewVerdict`, not about severity — and once a Critical or High is CONFIRMED the verdict is
-// Block, at which point every Medium is verdict-neutral too. Medium is the whole batched population.
-// Pure helpers, tested as a real module in lib/verify-economy.mjs; the order discipline that makes this
-// legitimate lives there.
 
 // THE DEATH CLASS of a batch answer, or null when the verifier really did judge something. The
 // three classes are kept APART rather than collapsed into one boolean: they are three distinct ways

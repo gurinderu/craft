@@ -6,9 +6,8 @@
 // package fails only in the consumer's repo, at run time; in CI every devDependency is installed and
 // the rest of the gate stays green. Knip (even --production --strict), tsc and the unit tests let both
 // through (realm @nick/craft, #145). The engines (authored in src/*.js, shipped as workflows/*.js) run in the
-// Workflow sandbox, which has neither packages nor Node: one in the bundled form imports lib/ modules that
-// esbuild pastes in (realm @nick/craft, #210), so what it reaches may hold no npm package, no node: built-in and
-// no test. A fenced engine imports nothing; what is inlined into it is held by lib/inlined-sandbox-names.mjs.
+// Workflow sandbox, which has neither packages nor Node: each imports lib/ modules that esbuild bundles in
+// (realm @nick/craft, #210), so what it reaches may hold no npm package, no node: built-in and no test.
 //
 // Only imports that survive compilation are followed (tsPreCompilationDeps: false), and the TypeScript is
 // compiled under the plugin's own tsconfig. That matters: under its verbatimModuleSyntax `import type`
