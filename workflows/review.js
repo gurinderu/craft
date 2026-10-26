@@ -57,7 +57,7 @@ ${discovery===DISCOVERY_SKIPPED?"Discovery skipped: repo is not this session's p
 ${[`Chosen: ${how==="named"?"named by the caller (extraLenses)":"discovered among the session project's agents"}.`,extraLensRanLine(ran,rubric),...extraLensFailedLines(how,failed)].join(`
 `)}
 `}var LOGRUN_SCHEMA={type:"object",additionalProperties:!1,required:["ok"],properties:{ok:{type:"boolean",description:"true only if the script ran and printed no craft-log-run FAILED line"},error:{type:"string",description:"when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise"}}};function shq(s){return`'${String(s??"").replace(/'/g,"'\\''")}'`}function loggerPrelude(craftRoot,version="",repo=""){let preamble=`CRAFT_REPO="$(cd ${shq(repo||".")} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
-craft_usable() {   # a line that is exactly '}' at column 0 would end the extracted region early
+craft_usable() {   # its closing brace is indented one space, which the shell reads the same
   case "$1" in /*) ;; *) return 1 ;; esac
   [ -f "$1" ] || return 1
   [ -n "$CRAFT_REPO" ] || return 1   # belt to the braces below; see the note in the comment above
