@@ -112,6 +112,10 @@ live in that workflow; triage done anywhere else skips them, and project memory 
 A subagent launched with the Agent tool has no Workflow tool, so triage is **never handed to a
 subagent** — not "triage and fix the review", not "triage these findings": the main session runs
 the workflow, then briefs subagents with the fix work only (step 5).
+If `craft:triage-findings` or `craft:adversarial-review` fails with `at workflow.js:<line>:<column>`,
+that place is in the bundled engine:
+`node "<this skill's base directory>/../../lib/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
+gives it in the plugin's source.
 
 Launch it with its sources — `report` = a path to the findings whenever they live in a report (one
 that lives only in the session is written to a file in the session's temporary directory first),
