@@ -1,7 +1,6 @@
-import { normalizeArgs } from '../lib/workflow-args.mjs'
 import { DEPENDENCY_SOURCE_HOW } from '../lib/dependency-source.mjs'
-import { parsePriorDecisions, reraisedBySeverity, priorDecisionsRefusedSection } from '../lib/prior-decisions.mjs'
-import { MEMORY_RECALL_SCHEMA, memoryRecord, skippedMemory, mergeRecall, readLaunch, memorySection, recallDecisions } from '../lib/memory-recall.mjs'
+import { parsePriorDecisions, reraisedBySeverity } from '../lib/prior-decisions.mjs'
+import { MEMORY_RECALL_SCHEMA, memoryRecord, skippedMemory, mergeRecall, recallDecisions } from '../lib/memory-recall.mjs'
 import { isToolSource, toolDistinct, toolIdentity, holdsToolDistinct, MATCH_JUDGE_SCHEMA } from '../lib/prior-decision-match.mjs'
 import { toolTitlesSection } from '../lib/tool-titles.mjs'
 import { SCOPE_CHECK_SCHEMA, scopeCheckPrompt } from '../lib/prior-decision-scope.mjs'
@@ -13,24 +12,21 @@ import { findingCommentBody } from '../lib/finding-comment.mjs'
 import { DIFF_LINES_SCHEMA, diffLinesPrompt, readDiffLines } from '../lib/diff-lines.mjs'
 import { sortFindings, postable, doubtfulSection } from '../lib/finding-sort.mjs'
 import { contradictionRecord, contradictionSection } from '../lib/memory-contradiction.mjs'
-import { pathSegments } from '../lib/path-segments.mjs'
-import { parseDepth, lightLenses, lightForcedLenses, lightCalledForLenses, depthVerifyTier, lightUnverifiedWhy, markVerdictLight, lightSection } from '../lib/review-depth.mjs'
-import { parseExtraLenses, discoveryApplies, DISCOVERY_SKIPPED, pickRepoReviewers, extraLensSection } from '../lib/review-extra-lenses.mjs'
-import { probeDeclarationBlock, auditPreflightProbes } from '../lib/preflight-probes.mjs'
+import { lightLenses, lightForcedLenses, lightCalledForLenses, depthVerifyTier, lightUnverifiedWhy } from '../lib/review-depth.mjs'
+import { discoveryApplies, DISCOVERY_SKIPPED, pickRepoReviewers } from '../lib/review-extra-lenses.mjs'
+import { auditPreflightProbes } from '../lib/preflight-probes.mjs'
 import { isContractOrSchemaPath } from '../lib/contract-paths.mjs'
 import { changesProductionCode } from '../lib/test-paths.mjs'
-import { failedProfiles, gateRecord, savedSurfaceDrops, surfaceGateRecord, optionalTallyFrom } from '../lib/profile-merge.mjs'
-import { supportedLangLabel, resolveProfilePin, unknownPinMessage, noLanguageMessage, noChangedFilesMessage, baseIsHead, onTrunkMessage, coverageGapFiles, resolveCoverage, nothingToReviewMessage, uncoveredNotRunNote, verdictSuffix, telemetryLostSection, canonicalSeverity, priorFoundSummary } from '../lib/review-coverage.mjs'
+import { failedProfiles, gateRecord, surfaceGateRecord } from '../lib/profile-merge.mjs'
+import { supportedLangLabel, resolveProfilePin, unknownPinMessage, noLanguageMessage, noChangedFilesMessage, baseIsHead, onTrunkMessage, coverageGapFiles, resolveCoverage, nothingToReviewMessage, uncoveredNotRunNote, verdictSuffix, canonicalSeverity, priorFoundSummary } from '../lib/review-coverage.mjs'
 import { PATH_FLOOR_MARK, pathFloorNote, applyPathFloor } from '../lib/path-severity-floor.mjs'
 import { sanitizeAttack, baseWhy, isHighSeverity, classifyRedTeam, adjudicateOne, shouldRedTeam, withoutAbsorbed, absorbedPromptBlock, absorbAcross, markTrackedUnverified, redTeamInvariant } from '../lib/review-adjudicate.mjs'
 import { makeDeathBreaker } from '../lib/agent-retry.mjs'
 import { decodeGitPath, sliceDiff, sliceableLens, WHOLE_DIFF_LENSES, LENS_WINDOW_AGENTS, pathspecLiteral } from '../lib/lens-scope.mjs'
-import { makeDeadlineBudget, DEADLINE_HIT } from '../lib/agent-deadline.mjs'
-import { makeLimitStop, limitStopAdvice } from '../lib/usage-limit.mjs'
 import { honestVerdict, honestVerdictLine } from '../lib/honest-verdict.mjs'
-import { summarizeFindings, reviewVerdict, refuteRate, fingerprint, matchesPrior, rereviewVerdict, reReviewMemory, branchFromAbbrevRef, ENGINE_REVISION, basisVerdictFromRevisions } from '../lib/run-record.mjs'
-import { isAgentTypeMissing, agentUnavailableSection, agentUnavailableRecord } from '../lib/agent-fallback.mjs'
-import { shq, loggerPrelude, quietly, checkpointPrompt, makeRunLogger, telemetryLossNoter } from '../lib/run-logging.mjs'
+import { summarizeFindings, refuteRate, fingerprint, matchesPrior, rereviewVerdict, reReviewMemory, branchFromAbbrevRef, basisVerdictFromRevisions } from '../lib/run-record.mjs'
+import { isAgentTypeMissing, agentUnavailableRecord } from '../lib/agent-fallback.mjs'
+import { shq } from '../lib/run-logging.mjs'
 import { LEDGER_SHARD_PHASE, shardLedger, tombstoneRound, pruneTombstones, tombstoneBudget } from '../lib/ledger-shards.mjs'
 import { ledgerRecordFields } from '../lib/ledger-in-shards.mjs'
 import { withEarliestRound, roundYield, lensRoundYield, unattributedCount } from '../lib/lens-round-yield.mjs'
@@ -43,6 +39,9 @@ import { ledgerTruncated, ledgerDegraded, shouldFullRescan } from '../lib/rescan
 import { verifyPrompt, BATCH_SIZE, verifyTier, NOT_VERIFIED, votesAgree, tierFromVotes, batchVerifyPrompt } from '../lib/review-verify.mjs'
 import { sameSpotGroups } from '../lib/review-same-spot.mjs'
 import { toLedgerEntry } from '../lib/review-ledger-entry.mjs'
+import { openReviewRun } from '../lib/review-run.mjs'
+import { CONDITIONAL_LENSES, SURFACE_GATED_LENSES, OPTIONAL_LENSES } from '../lib/review-lens-tallies.mjs'
+import { PREFLIGHT_SCHEMA, preflightPrompt, preflightIsPartial } from '../lib/review-preflight-prompt.mjs'
 
 export const meta = {
   name: 'review',
@@ -64,10 +63,8 @@ export async function __run() {
  * @typedef {{ sizeBucket: string, lenses: string[], maxRounds: number, verifyVotes: number, lensModel: string, isLibrary: boolean, securitySensitive: boolean, intent: string, spec: string, churn: string[] }} Plan
  * @typedef {PriorRoundAnswer} PriorRound  the loaded prior round (loader agent output)
  * @typedef {ReturnType<typeof sliceDiff>[number]} Slice
- * @typedef {AgentOptions & { deadlineMs?: number | undefined, breaker?: ReturnType<typeof makeDeathBreaker> | null | undefined, inSessionDir?: boolean | undefined, bookkeeping?: boolean | undefined }} AgentOpts  agent() options plus the four this engine strips (inSessionDir: no `repo` cd, the agent works where the session started; bookkeeping: a record write, dispatched even after a usage limit); closed, so a misspelt option is a type error
  * @typedef {import('../lib/review-schemas.mjs').Finding} Finding
  * @typedef {import('../lib/review-profiles.mjs').Preflight} Preflight
- * @typedef {import('../lib/review-profiles.mjs').Ctx} Ctx
  * @typedef {import('../lib/review-profiles.mjs').Profile} Profile
  */
 /**
@@ -76,7 +73,6 @@ export async function __run() {
  */
 /**
  * The answers of the schema'd agents (lib/review-schemas.mjs).
- * @typedef {import('../lib/review-schemas.mjs').PreflightAnswer} PreflightAnswer
  * @typedef {import('../lib/review-schemas.mjs').LedgerAnswer} LedgerAnswer
  * @typedef {import('../lib/review-schemas.mjs').PriorRoundAnswer} PriorRoundAnswer
  * @typedef {import('../lib/review-schemas.mjs').DetectAnswer} DetectAnswer
@@ -86,433 +82,8 @@ export async function __run() {
  * @typedef {import('../lib/review-schemas.mjs').BatchVerdictAnswer} BatchVerdictAnswer
  * @typedef {import('../lib/review-schemas.mjs').AgentDefinitionsAnswer} AgentDefinitionsAnswer
  * @typedef {import('../lib/review-schemas.mjs').AdjudicateAnswer} AdjudicateAnswer
- * @typedef {import('../lib/review-schemas.mjs').CheckpointAnswer} CheckpointAnswer
  * @typedef {import('../lib/review-schemas.mjs').DedupAnswer} DedupAnswer
  */
-
-// ---- args ----
-// Three plausible spellings arrive here — a real object, a JSON string, and the `key=value` form the
-// skill's own invocation line advertises — and only the first used to work. The other two fell
-// through every `typeof args === 'object'` guard, so every option reverted to its default and the
-// run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
-// nobody asked about. Shared with every other engine (lib/workflow-args.mjs).
-
-/** @type {Record<string, unknown>} */
-const A = normalizeArgs(args, log)
-/** A string argument as given, or '' when it is absent or falsy. @param {string} argName */
-function argString(argName) {
-  return A[argName] ? String(A[argName]) : ''
-}
-const baseArg = argString('base')
-const intentArg = argString('intent')
-const postComments = !!A['comment']
-let pathArg = argString('path')   // optional crate-scope (audit per-crate fan-out)
-// Absolute path to the repo under review, when it is NOT the directory the session runs in. Without
-// it every agent runs `git diff` wherever the session happens to sit, so craft could only ever review
-// its own checkout — reviewing a PR in another repo silently reviewed craft instead.
-let repoArg = argString('repo')
-// `path` is a git PATHSPEC resolved against the reviewed repo; `repo` selects the repo. An ABSOLUTE
-// `path` is therefore ambiguous in the one way the sandbox cannot resolve: it is either a repo the
-// caller meant to select, or a directory INSIDE the repo they meant to narrow to — and with no disk
-// and no Node API here, nothing can tell those apart. Both wrong guesses are expensive and neither
-// is loud. Guessing "repo" turns a narrowing request into a confident WHOLE-repo review wearing the
-// narrow label; leaving it as a pathspec matches nothing, and the run comes back as an empty diff
-// that reads like "no changes" — measured 2026-09-17 at 57 agents and 2.04M tokens, every one of
-// the 14 lenses independently rediscovering that there was nothing to read.
-// So: resolve it when the prefix DECIDES it, and refuse to guess otherwise (realm @nick/craft, #65).
-// `~` counts as absolute here because the agent's shell expands it before git ever sees the pathspec.
-const ABSOLUTE_PATH = /^(\/|~(\/|$)|[A-Za-z]:[\\/])/
-let ambiguousPath = ''
-// A scope the caller asked for and did NOT get. It rides into `notRun` and therefore into the
-// verdict line, not only into `log()`: dropping a narrowing widens the review to the WHOLE repo, so
-// what was ordered and what was done diverge — and the person who reads the verdict is not the
-// person who reads the log. An INCOMPLETE marker is the honest rendering of "we reviewed something
-// else than you asked for", however green the findings are.
-/** @type {string[]} */
-let scopeNotRun = []
-// The reader-facing twin of `scopeNotRun`: the same refusal spelled with this run's own paths, for
-// the report. Kept apart because `notRun` is ranked by exact string (see the assignment below).
-let scopeDetail = ''
-// Containment decided on NORMALIZED SEGMENTS rather than on a raw string prefix. `repo=/r/` with
-// `path=/r/./crates/../crates/core` is the same request as `repo=/r` with `path=crates/core`, and a
-// prefix comparison reads it as "outside" — which silently WIDENS the review to the whole repository.
-// Segments also settle the sibling case (`/r-evil` is not inside `/r`) that a bare `startsWith`
-// accepts unless the separator is appended by hand.
-// WHAT STAYS OUTSIDE THIS GUARD, because the sandbox has no disk and no Node API: a SYMLINK cannot be
-// resolved (a path reaching the repo through a symlinked directory reads as outside), the comparison
-// is case-SENSITIVE while macOS and Windows filesystems are not (`/R/crates` under `repo=/r` reads as
-// outside), and a `..` that would climb above the first segment is kept as a literal segment, so such
-// a path matches nothing. All three misread in the SAME direction — the scope is dropped, and a
-// dropped scope is now reported in the verdict and in `notRun` — never in the direction of a
-// narrowing that looks honoured and is not.
-// The dropped scope, rendered into whichever report is returned — every early exit included, since
-// the drop happened before all of them. Appended to the synthesized report too rather than asked of
-// the synthesis model: what the review DID NOT cover is not something a prompt may forget.
-const scopeSection = () => (scopeNotRun.length ? `\n\n## Scope\n⚠️ ${scopeDetail || scopeNotRun.join('\n⚠️ ')}\n` : '')
-// The repo-relative spelling of `abs`, or null when `abs` is not inside `repo`.
-/** @param {unknown} abs @param {unknown} repo */
-function relativeToRepo(abs, repo) {
-  const r = pathSegments(repo)
-  const p = pathSegments(abs)
-  if (!r.length || p.length < r.length) return null
-  for (let i = 0; i < r.length; i++) if (p[i] !== r[i]) return null
-  return p.slice(r.length).join('/')
-}
-// Settles an absolute `path` against `repo` once, before anything is dispatched.
-function resolveScopePath() {
-  if (ABSOLUTE_PATH.test(pathArg)) {
-    const rel = repoArg ? relativeToRepo(pathArg, repoArg) : null
-    if (rel != null) {
-      // It names a directory inside the repo under review: that is a SCOPE, spelled absolutely. Keep
-      // the narrowing the caller asked for — dropping it here would silently widen the review.
-      log(`⚠️ path=${pathArg} is absolute but sits inside repo=${repoArg} — read as the repo-relative scope ${shq(rel)}.`)
-      pathArg = rel
-    } else if (repoArg) {
-      const msg = `the requested scope path=${pathArg} was DROPPED: it is ABSOLUTE and does not resolve inside repo=${repoArg}, and an absolute pathspec matches nothing (the review would have seen an EMPTY diff). The review below therefore covers the WHOLE repository, not the requested scope — re-run with a repo-relative path to narrow it.`
-      log(`⚠️ ${msg}`)
-      // TWO STRINGS ON PURPOSE. `msg` is for a reader — it names this run's path and repo, and it
-      // reaches the report's Scope section. `scopeNotRun` feeds the run record's `notRun`, which
-      // lib/analyze-runs.mjs ranks BY EXACT STRING to surface repeated fragility: a path in there
-      // makes every dispatch of the same shape its own count-1 row and sinks the real repeats. Same
-      // argument that moved the uncovered-files note out of `notRun` entirely.
-      scopeNotRun = ['the requested scope was DROPPED — an absolute `path` that does not resolve inside `repo`, so the review covered the whole repository instead']
-      scopeDetail = msg
-      pathArg = ''
-    } else {
-      // No `repo` to decide against. Refusing costs nothing and says exactly what to do; either guess
-      // costs a full run and reports a scope nobody asked for.
-      ambiguousPath = pathArg
-    }
-  }
-}
-resolveScopePath()
-// Where craft itself lives, so the logger can find lib/craft-log-run.mjs. As an installed plugin
-// CLAUDE_PLUGIN_ROOT is set for us; when the engine is launched by scriptPath from a checkout it is
-// NOT, and the `:-.` fallback would resolve against the REVIEWED repo — the script would simply not
-// be there and the whole record would be lost to a "Cannot find module". Pass craftRoot then.
-const craftRootArg = argString('craftRoot')
-// Every logger command runs as `cd <reviewed repo> && node <logger>`, so the `:-.` fallback would be
-// resolved AFTER the cd — against the reviewed repo, where the script is not. That lost every
-// checkpoint, the finalize record and the prior-round chain to "Cannot find module", silently.
-// Resolve the path to an absolute one FIRST, in a variable, then change directory. The prelude
-// itself is shared with every other record-filing engine (lib/run-logging.mjs).
-// A FUNCTION, not a constant, and the reason is mechanical: `CRAFT_VERSION` is declared far below
-// (release-please owns that line and its position), so computing the prelude here would either hit
-// the temporal dead zone or — as it did for one commit — quietly omit the version and leave this
-// engine's third logger command, the prior-round read, refusing exactly as before the fix while the
-// other two found their script. Deferring the call to use time is what lets all three agree.
-const loggerPreludeNow = () => loggerPrelude(craftRootArg, CRAFT_VERSION, repoArg)
-const LOGGER_PATH = '"$CRAFT_LOGGER"'
-const viaArg = argString('_via')   // set by a parent workflow (e.g. rust-audit)
-const strict = !!A['strict']   // harsh maintainability mode: confirmed maintainability findings become presumptive blockers
-// The project's recorded rejections, passed by the launcher: they ADD to what this engine recalls itself
-// once the diff's paths are known (recallMemory). Malformed → nothing of it applied, and every report says what was refused.
-// Set by a parent workflow (rust-audit) that already recalled for this run and forwards the merged
-// list: no recall here. `_memory` is that recall's outcome when it found none; `_memoryParts` how the
-// list splits into its recall's records and its launcher's.
-const recalledByLauncher = A['_recalled'] === true
-const launch = readLaunch(A['priorDecisions'], recalledByLauncher, argString('_memory'), A['_memoryParts'], parsePriorDecisions)
-let priorDecisionsIn = launch.prior
-// Where the decisions came from; every report names it.
-let memory = launch.memory
-for (const r of priorDecisionsIn.refused) log(`⚠️ priorDecisions: ${r}`)
-// The pin, RAW. Normalising it here as well as in `resolveProfilePin` is what made the helper's
-// hardening unreachable: an `Array.isArray` guard here turned a scalar `languages: 'rust'` into
-// `null` (pin silently dropped, review auto-detected instead), while a `.map(String)` turned
-// `[null]` into the string `'null'` — an "unknown id" that hard-aborted the run. One normalizer:
-// `resolveProfilePin` is the single place that decides what a pin means.
-const requestedLangs = A['languages']
-const freshArg = !!A['fresh']   // force a full first-pass review, ignore any prior round
-// Every Nth re-review re-scans the FULL base...HEAD diff instead of only the fix delta, so a defect in
-// code an intermediate round did not touch is re-discovered. Default 3; 1 = every re-review is a full
-// re-scan (stateless, like adversarial-review); 0 = never (pure incremental — the pre-guard behavior).
-const fullEvery = fullEveryArg()
-/** @returns {number} */
-function fullEveryArg() {
-  return (A['fullEvery'] != null) ? Math.max(0, Number(A['fullEvery'])) : 3
-}
-
-// realm @nick/craft, node #295: `depth: 'light'` runs one round of the diff-scoped lenses and verifies
-// Medium and above only; `extraLenses: [<agentType>, ...]` runs the consumer's own agents as lenses
-// in the same run. The default depth, 'full', is the review as it was, plan for plan.
-const depthRequest = parseDepth(A['depth'])
-const reviewDepth = depthRequest.depth
-const lightPass = reviewDepth === 'light'
-function warnUnknownDepth() {
-  if (depthRequest.unknown) log(`\u26a0\ufe0f depth=${JSON.stringify(depthRequest.unknown)} is not a depth (full, light) -- running the full review`)
-}
-warnUnknownDepth()
-const extraLensRequest = parseExtraLenses(A['extraLenses'], lightPass)
-/** The whole-diff lenses a light pass did not dispatch, across profiles. @type {Set<string>} */
-const lightSkippedLenses = new Set()
-/** The whole-diff lenses a light pass did dispatch, across profiles. @type {Set<string>} */
-const lightKeptLenses = new Set()
-/** Whether any profile reached its lens phase: a light report on an earlier exit says no lens ran. */
-let lensPhaseReached = false
-/** The extra lenses that answered, and those that did not, each with the class of its failure. */
-const extraLensOutcome = { ran: /** @type {string[]} */ ([]), failed: /** @type {{ agent: string, why: string }[]} */ (extraLensRequest.refused.map(agentTypeName => ({ agent: agentTypeName, why: 'not an agent type name' }))), discovery: '', reached: false, exit: /** @type {{ reason: string, needed: boolean } | null} */ (null) }
-
-
-// ---- preflight: resolve the environment ONCE, before anything expensive ----
-// This used to be improvised inside the gate agent, which learned it the expensive way — a measured
-// run spent 50s discovering it was outside the repo's dev shell and 113s discovering the crate cannot
-// compile without a database, and reported neither signal. Worse, every agent that later runs a tool
-// (the gate, a lens re-running clippy, a verifier doing its MECHANICAL CHECK) rediscovered the same
-// facts independently. Resolve them once, cheaply, and hand the answer to everyone downstream.
-// The probe budget and its audit live in lib/preflight-probes.mjs, a linted module with real unit tests.
-// The module's header carries why the audit is a DECLARATION audit and what that does and does not close.
-/** @type {Schema<PreflightAnswer>} */
-const PREFLIGHT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['runner', 'blockers', 'missingTools', 'ciCovers', 'probes', 'partial', 'notes'],
-  properties: {
-    runner: { type: 'string', description: 'prefix every build/lint command needs, e.g. "direnv exec . " or "nix develop -c " — empty string if commands run bare' },
-    blockers: { type: 'array', items: { type: 'string' }, description: 'reasons this tree CANNOT compile here, one per line, e.g. "sqlx query macros need a live Postgres; no offline .sqlx cache and no DATABASE_URL"' },
-    missingTools: { type: 'array', items: { type: 'string' }, description: 'gate tools not on PATH (cargo-audit, cargo-deny, semgrep, …)' },
-    ciCovers: { type: 'array', items: { type: 'string' }, description: 'signals a GREEN CI check already establishes for this exact HEAD, as "<signal> via <check name>" — e.g. "test via cargo nextest", "deny-bans via cargo-deny"' },
-    // `minItems`/`minimum` are load-bearing, not decoration: without them `probes: []` and a negative
-    // count were both VALID answers that the audit then read as clean — the cheapest possible path to
-    // a green audit. The schema now refuses the shape and `auditPreflightProbes` refuses it again.
-    probes: { type: 'array', minItems: 1, description: 'one entry per source consulted, with how many shell/API invocations it cost — audited against PROBE_BUDGETS; never empty, not even in a partial result, since it reports what was already done', items: { type: 'object', additionalProperties: false, required: ['source', 'calls'], properties: { source: { type: 'string', description: 'the probe-source id from the prompt\'s list, exactly' }, calls: { type: 'integer', minimum: 0, description: 'invocations spent on that source, including ones that returned nothing' } } } },
-    partial: { type: 'boolean', description: 'true if ANY of the four fields was left unfinished (ran out of time, a command failed, gh unavailable) — the matching field is then empty and notes says which and why' },
-    notes: { type: 'string' },
-  },
-}
-/** @param {Profile} profile @param {Ctx} ctx */
-function preflightPrompt(profile, ctx) {
-  return `You are the PREFLIGHT for a ${profile.lang} review: resolve, cheaply and once, what the later steps must not rediscover. Diff base: ${ctx.baseRef ? `\`${flattenField(ctx.baseRef)}\`` : 'uncommitted changes / most recent commit'}.
-
-This is reconnaissance, NOT the gate. Run nothing that compiles, builds, or takes more than a few seconds. Every answer below comes from reading the working tree or asking the API.
-
-1. RUNNER. Does this repo pin its toolchain and system libraries in a dev shell? Look for \`.envrc\`, \`flake.nix\`, \`shell.nix\`, \`.direnv/\`. If so and \`direnv\`/\`nix\` is on PATH, the prefix is \`direnv exec . \` (preferred when \`.envrc\` exists and is allowed) or \`nix develop -c \`. Verify it works with something instant — \`<prefix>rustc --version\` or \`<prefix>true\` — never with a build. Outside such a shell, system libraries (openssl, protobuf, pkg-config) are absent and any build dies in a C dependency unrelated to the diff. Empty string only if the repo genuinely needs no prefix.
-
-2. BLOCKERS — things that make a local build impossible no matter how long it runs, so nobody downstream wastes minutes proving it:
-${profile.id === 'rust'
-    ? `   - compile-time-checked SQL: \`sqlx\` in \`Cargo.lock\` with NO offline cache (no \`.sqlx/\` at the repo root or in the changed package) and no \`DATABASE_URL\` — every query macro tries to reach a live database and the crate fails to compile.
-   - a build script or macro that needs a generated file, a private registry token (\`CARGO_REGISTRIES_*\`), or a service that is not running.
-   - a toolchain the repo pins (\`rust-toolchain.toml\`) that is not installed and cannot be fetched offline.`
-    : `   - an input the flake cannot fetch offline, a private registry/token the evaluation needs, or a builder platform this machine is not (\`system\` mismatch).`}
-   Do this MECHANICALLY, not by judgement — these are \`grep\`/\`test\` questions with yes-or-no answers, and the one time this was left to inference the blocker was missed and the gate paid for a doomed compile anyway:
-${profile.id === 'rust'
-    ? `   \`\`\`
-   grep -q '^name = "sqlx"' Cargo.lock && echo SQLX
-   ls -d .sqlx */.sqlx **/.sqlx 2>/dev/null            # offline cache anywhere in the tree
-   [ -n "$DATABASE_URL" ] && echo HAS_DB_URL
-   \`\`\`
-   SQLX present, no \`.sqlx\` directory found and no \`DATABASE_URL\` ⇒ report the blocker. Run those three commands; do not reason about whether the crate "probably" builds.`
-    : `   Check the concrete inputs: \`nix flake metadata\` resolving offline, and whether the flake's \`system\` matches this machine.`}
-   Report each blocker as one plain line naming what cannot run and WHY. Report nothing you have not actually checked.
-
-3. MISSING TOOLS. Which of ${profile.id === 'rust' ? '`cargo-audit`, `cargo-deny`, `cargo-semver-checks`, `semgrep`' : '`statix`, `deadnix`, `nixpkgs-fmt`/`alejandra`, `nix-instantiate`'} are genuinely unavailable? ONE command answers it for every tool at once — run it exactly, do not probe tool-by-tool:
-   \`\`\`
-   for t in ${profile.id === 'rust' ? 'cargo-audit cargo-deny cargo-semver-checks semgrep' : 'statix deadnix nixpkgs-fmt alejandra nix-instantiate'}; do
-     p=$(command -v "$t" 2>/dev/null); [ -z "$p" ] && [ -x "$HOME/.cargo/bin/$t" ] && p="$HOME/.cargo/bin/$t"
-     echo "$t: \${p:-MISSING}"
-   done
-   \`\`\`
-   A dev shell usually has a NARROWER PATH than the login shell, so if the runner prefix from step 1 is non-empty, run the same loop once more under it and treat a tool as PRESENT if EITHER pass found it — that mistake silently dropped the entire \`cargo audit\` signal from a real run. Name the invocation that works (e.g. "cargo-audit: ~/.cargo/bin/cargo-audit, outside the dev shell"). Only a tool MISSING in both passes goes in \`missingTools\` — an absent tool is an intentional skip downstream, never a failure.
-
-4. CI COVERAGE. Which signals does a GREEN check already establish for THIS EXACT commit? TWO calls answer it, both SHA-scoped — the check-runs endpoint and the commit-status endpoint. Run those two, once each, and NOTHING else — in particular do NOT run \`gh pr checks\` and do NOT look the PR up by commit: those resolve by branch (empty on a review worktree or detached HEAD) or hand you a PR whose head may have moved past your commit, and both then need the SHA test this call satisfies by construction.
-   \`\`\`
-   SHA=$(git rev-parse HEAD)
-   gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" --jq '.check_runs[] | "\\(.name) \\(.status) \\(.conclusion)"'
-   gh api "repos/{owner}/{repo}/commits/$SHA/status" --jq '.statuses[] | "\\(.context) completed \\(.state)"'
-   \`\`\`
-   Owner/repo from \`git remote get-url origin\`. Both calls, once each: check-runs alone misses CI that reports through the older commit-status API, and that omission looks exactly like "no CI". Keep only \`completed\` rows whose conclusion/state is \`success\`.
-   Then read the workflow behind a green check to learn what it ACTUALLY runs, not what its name suggests: a job called \`cargo-deny\` running \`check bans\` covers bans and NOT advisories or licenses, and that distinction is the whole value of this step. HARD CAP — this is where the pass runs away with the clock: read AT MOST 2 workflow files, only for green checks that map to a gate signal (build/test/clippy/fmt or a security tool). Never enumerate \`.github/workflows/*\` wholesale. Past the cap, the remaining green checks go in \`notes\` BY NAME ONLY and NEVER in \`ciCovers\` — \`ciCovers\` means "do not re-run this locally", and a check whose workflow you did not open cannot support that: its name is a guess at what it ran, which is exactly what the \`cargo-deny\`/\`check bans\` example above shows going wrong. Only a signal you read the workflow for goes in \`ciCovers\`.
-   List one entry per covered signal, e.g. "test via cargo nextest", "deny-bans via cargo-deny (command: check bans)". If gh is missing, unauthenticated or offline, return an empty list and say so in notes.
-
-${probeDeclarationBlock()}
-
-BUDGET (hard): reconnaissance, target ~90 seconds, three minutes is the ceiling. Past the dispatch deadline nothing cuts you off — the caller simply STOPS WAITING for you and dispatches a second preflight, so everything you do after that point is discarded and paid for twice, and if the second pass is as slow the gate loses even the runner prefix. So at three minutes STOP and RETURN. A thorough preflight costing more than the steps it saves is a net loss (measured: the first version took 207s and made the gate+preflight pair SLOWER than the gate had been alone). Never run a build, a test, or a full lint here.
-
-PARTIAL RESULTS ARE THE EXPECTED SHAPE, NOT A FAILURE — but they must be legible as partial. Any of the four FINDINGS fields above (runner, blockers, missingTools, ciCovers) you did not finish: set \`partial: true\`, return the field EMPTY, and open \`notes\` with \`PARTIAL: <field> not established (<why>)\`, one clause per unfinished field. \`partial\` is the flag downstream reads — the note explains it, it does not replace it. An empty \`ciCovers\` with no such note means "CI covers nothing", and a downstream step will re-establish every signal locally on that reading — so never let "I ran out of time" arrive looking like "I checked and there was nothing".
-\`probes\` (step 5) IS EXPLICITLY EXCLUDED FROM THAT INSTRUCTION: it is not a finding but a report of what you ALREADY DID, so it can never be returned empty — a run cut short declares the calls it had already spent, and an empty \`probes\` is read as a violation, never as a disciplined pass.
-
-Return runner, blockers, missingTools, ciCovers, probes, partial, notes.`
-}
-// An unfinished preflight must not be recorded as a clean one. The schema carries an explicit
-// `partial` boolean precisely so this does not hang on the shape of prose: the earlier test was
-// anchored at the start of the note, so one clause of preamble before the marker
-// ("Ran out of time. PARTIAL: ciCovers …") produced status 'ok' over unfinished fields. The note is
-// still consulted, unanchored, as a fallback for a model that writes the prose but omits the flag.
-// The fallback matches only the MARKER the prompt mandates — uppercase `PARTIAL:` — never the bare
-// word: `notes` now also carries CI CHECK NAMES (the past-the-cap list), and a green check called
-// `partial-build` matched `/\bPARTIAL\b/i` and flipped a complete preflight to 'partial'.
-/** @param {Preflight | null | undefined} pf */
-function preflightIsPartial(pf) {
-  if (!pf) return false
-  if (pf.partial === true) return true
-  return /\bPARTIAL:/.test(flattenField(pf.notes || ''))
-}
-
-
-// Admitted by a code signal, never by a floor. See `blanketLenses()` in planFor: a blanket roster fill
-// says "nothing is known about this diff", which is not a reason to pay for the roster's most
-// expensive lens. `failure-windows` is gated on the scout having CHOSEN `reconciler` (controller
-// code); nothing else here yet, and the list exists so the next such lens has somewhere to be
-// declared rather than becoming a fourth blanket exception.
-const CONDITIONAL_LENSES = ['failure-windows']
-
-// realm @nick/craft #102: each expensive whole-repo lens fires only if the diff touches the surface its defect class needs; fail-open.
-// The map is lens → the `scout.surfaces` boolean that must not be affirmatively `false` for the lens
-// to run. A missing surfaces object, a missing key, or `true` all KEEP the lens (see the gate in
-// reviewProfile): a lens is dropped only where the scout said, in so many words, the surface is absent.
-// `wireForm` names every contract another version reads, calls or deploys against (stored and wire
-// data, CLI/config/env/chart surface, API/schema versions, exported names): the compat lens covers
-// all of them, so a narrower surface would gate it out of the diffs it now exists for.
-/** @type {Record<string, keyof NonNullable<ScoutAnswer['surfaces']>>} */
-const SURFACE_GATED_LENSES = { 'negative-space': 'crossBoundarySymbol', 'compat': 'wireForm', 'invariants': 'invariantType' }
-
-
-// ================= The optional pass =================
-// Three lenses that do not earn a place on every run. The basis is NOT equal across them: only
-// `ownership` (retired, not here) has three independent counts. The two earlier store-wide counts
-// named api-idioms and performance among the bottom four; `api-boundary` was not in them at all, so
-// for the composition of THIS trio the basis is ONE run — one diff, one repository, one domain
-// (realm @nick/craft, node #20, which requires that limit to be stated rather than dropped).
-// Measured over runs of the
-// budget-deterministic engine against a large Rust diff (14 lenses × 3 rounds, 215 findings):
-// `performance` (15 findings, 12 of them Low/Info), `api-idioms` (14/10) and `api-boundary` (11/7)
-// returned hundreds of CONFIRMED Medium-and-below findings and NOT ONE High in any of the three.
-// Deleting them would make the review worse — the findings are real. Paying three full agents for
-// them on every run is the part the numbers do not support. So they leave every automatic path and
-// stay reachable by an explicit request.
-//
-// The failure mode this must not become is the one this repo keeps hitting: a run that never looked
-// at performance reading as a run that found nothing wrong with it. So the skipped set is stated
-// MECHANICALLY — `optionalSection()`, appended by `out()` to every report the engine can return,
-// never asked of the synthesis model, which can die or simply not obey — and filed on the run
-// record as `optionalPass`.
-//
-// STRICT MODE AND THE SECURITY FLOOR TOUCH THIS IN NEITHER DIRECTION, and that is a decision, not
-// an omission.
-//   · `strict` is the harsh MAINTAINABILITY bar: it forces the maintainability lens and turns its
-//     confirmed findings into presumptive blockers. Letting it also buy three unrelated lenses
-//     would make one flag mean two things, and would deliver the optional pass to a caller who
-//     asked for something else.
-//   · The security-sensitive floor expands `blanketLenses()`, and `blanketLenses()` excludes the optional set
-//     exactly as it excludes CONDITIONAL_LENSES. A floor is a statement of IGNORANCE about the
-//     diff, and ignorance is not a reason to buy the three lenses that measured worst.
-//   · Neither may silently DISABLE it either: an explicit `optional=` request is honoured on every
-//     path, including a security-floored run and a strict one. The request is the only switch.
-const OPTIONAL_LENSES = ['performance', 'api-idioms', 'api-boundary']
-
-// `optional=true` / `--optional` / `optional=all` buys the whole set; `optional=performance,api-boundary`
-// (or a JSON array) buys those. Absent buys none.
-// An unrecognised name is REFUSED LOUDLY rather than dropped: `optional=perf` that quietly buys
-// nothing, on a run whose whole point was to buy something, is the exact silence this section exists
-// to prevent — and the run would then report the lens as skipped while the caller believed otherwise.
-/** The values that buy no optional lens, and those that buy the whole set (compared as `===` would). */
-/** @type {unknown[]} */
-const OPTIONAL_NONE = [undefined, null, '', false, 'false', 'none']
-/** @type {unknown[]} */
-const OPTIONAL_ALL = [true, 'true', 'all']
-/** @param {unknown} raw */
-function parseOptionalRequest(raw) {
-  if (OPTIONAL_NONE.includes(raw)) return { lenses: [], unknown: [] }
-  if (OPTIONAL_ALL.includes(raw)) return { lenses: [...OPTIONAL_LENSES], unknown: [] }
-  const names = (Array.isArray(raw) ? /** @type {unknown[]} */ (raw) : String(raw).split(/[\s,]+/)).map((/** @type {unknown} */ x) => String(x).trim()).filter(Boolean)
-  return { lenses: names.filter(n => OPTIONAL_LENSES.includes(n)), unknown: names.filter(n => !OPTIONAL_LENSES.includes(n)) }
-}
-const optionalRequest = parseOptionalRequest(A['optional'])
-function warnUnknownOptional() {
-  if (optionalRequest.unknown.length) {
-    log(`⚠️ optional=${JSON.stringify(A['optional'])} names ${optionalRequest.unknown.join(', ')}, which is not an optional lens — the optional roster is ${OPTIONAL_LENSES.join(', ')}. Only the recognised names were admitted.`)
-  }
-}
-warnUnknownOptional()
-const optionalRequested = optionalRequest.lenses
-// The optional tally is DERIVED, never accumulated. `ran`/`skipped` used to be snapshotted off the
-// plan the moment it was built — but the plan is not final there: the completeness critic composes
-// lenses much later, on the synthesis phase. Any such later road made the snapshot a LIE in the one
-// direction that matters, printing "not looked at" over a lens whose findings were in the report.
-// So the tally rests only on what cannot be second-guessed: which optional lenses each profile past
-// its mechanical gate could have bought at all (its `optionalScope`, returned on `results`), and
-// which ones were actually DISPATCHED (recorded by `runLens`, the single dispatch point for every
-// lens on every path — planned, resurrected, or critic-composed). optionalTallyFrom
-// (lib/profile-merge.mjs) subtracts, naming each lens once across profiles.
-/** @type {Set<string>} */
-const optionalDispatched = new Set()
-// An optional lens the completeness critic named as an uncovered surface. It is NOT bought (the
-// critic is the same model whose spend this pass deliberately took out of model hands), but the
-// signal is real and must reach the reader rather than die in the filter.
-/** @type {Set<string>} */
-const optionalNamedByCritic = new Set()
-const optionalTally = () => optionalTallyFrom(results, optionalDispatched, optionalRequested)
-// Appended by `out()`, so it reaches every report that has a skipped list to show — the synthesized
-// one and the mechanical fallback. The earliest exits (no diff) run before any profile is planned, so
-// the list is empty there. A red-gated profile contributes only lenses the caller explicitly requested
-// (it aborts before any lens could run), so a default run on which every profile carrying optional
-// lenses is red emits no section; a passing profile on a mixed red run still contributes its whole
-// scope, and the section then names the gate first. It says "absence of a result", never "no
-// problems found".
-const optionalSection = () => {
-  const skipped = optionalTally().skipped
-  if (!skipped.length) return ''
-  const named = skipped.filter(l => optionalNamedByCritic.has(l))
-  // A red mechanical gate blocks the whole review on its own, so "buy them with optional=…" is the
-  // wrong next step there: lenses the caller already requested need no new request, and the rest are
-  // beside the point until the gate is green (realm @nick/craft #109).
-  if (failedProfiles(results).length) {
-    const unrequested = skipped.filter(l => !optionalRequested.includes(l))
-    // The critic only ever names an unrequested lens, so it is already in the one optional= offer
-    // above; here it is a signal for the re-run, not a second instruction.
-    const criticHint = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was not dispatched; once the gate is green, weigh including it in that re-run.\n` : ''
-    return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n` + criticHint
-  }
-  const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : ''
-  return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
-    + criticLine
-}
-
-// realm @nick/craft #102. Mirrors optionalSection(): derived from the per-profile results of
-// reviewProfile's surface gate and appended by out(), so it reaches every report the engine can return, and stated
-// MECHANICALLY rather than asked of the synthesis model (which can die or not obey). A whole-repo
-// lens is dropped when the diff does not touch the surface its defect class needs — that is an
-// ABSENCE of a result for those areas, NOT an approval of them.
-// The drops themselves come back PER PROFILE on `results` (`surfaceDropped`) and are merged by
-// savedSurfaceDrops (lib/profile-merge.mjs), which keeps only profiles past their gate and subtracts
-// what ran elsewhere. Declared here, not where the profiles run, because out() reads it through
-// surfaceGateSection() on every early exit too — where it is simply still empty.
-/** @type {Result[]} */
-const results = []
-// Mirrors optionalDispatched: a surface-gated lens actually DISPATCHED in some profile, recorded by
-// runLens (the single dispatch point on every path). The gate is a PER-PROFILE decision reading each
-// profile's own scout, and negative-space is force-added to every plan — so on a mixed rust+nix diff a
-// lens the gate drops in one profile can still run in another. The per-profile drops alone would then
-// report a lens as saved while it actually ran, corrupting #102's savings measurement — the same
-// snapshot-is-a-lie failure `optionalTally()` already fixed. savedSurfaceDrops subtracts what ran.
-/** @type {Set<string>} */
-const surfaceGateDispatched = new Set()
-// Mirrors optionalNamedByCritic: a surface-gated lens the completeness critic named as an uncovered
-// surface. It is NOT re-dispatched (the diff's absent surface is the deliberate boundary, and the
-// critic is the same model whose spend this pass took out of model hands), but the signal is real and
-// must reach the reader rather than die in the filter.
-/** @type {Set<string>} */
-const surfaceGateNamedByCritic = new Set()
-// The run-level truth, DERIVED not accumulated (mirrors optionalTally): a lens counts as
-// surface-gate-dropped only if the gate dropped it in a profile PAST its mechanical gate AND it ran
-// in NO active profile.
-const surfaceGateTally = () => ({ dropped: savedSurfaceDrops(results, surfaceGateDispatched) })
-const surfaceGateSection = () => {
-  const gateDropped = surfaceGateTally().dropped
-  if (!gateDropped.length) return ''
-  // `dropped` already subtracts what ran, so a critic-named lens that ran somewhere is not a gap.
-  const named = gateDropped.filter(l => surfaceGateNamedByCritic.has(l))
-  return `\n\n## Not run — the diff does not touch the surface these lenses need\n⚠️ These whole-repo lenses were NOT dispatched, so this review makes NO statement about what they cover: ${gateDropped.join(', ')}. Each fires only when the diff touches the surface its defect class needs (a cross-boundary symbol, a wire/serialized form, an invariant-bearing type), and this diff does not. That is an absence of a result, not a clean one.\n`
-    + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still NOT dispatched — the surface gate is the deliberate boundary, not something a model re-opens mid-run — so treat this as a visible gap, not a clean pass.\n` : '')
-}
-
-
-// ================= Coverage honesty =================
-// A verdict must never claim more coverage than the run had. The engine only knows the profiles of
-// lib/review-profiles.mjs; everything else in a diff is UNREVIEWED, and saying so is the whole point of the
-// helpers this engine imports. They are pure, so they live in lib/review-coverage.mjs — a real, importable,
-// linted module with real unit tests. The language roster they need is the mutable PROFILES table, so it is
-// passed in as an argument rather than read: that argument is exactly what keeps them extractable.
-
 
 // The craft release that produced a run. Recorded on every run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, "did tightening that lens help?"
@@ -521,518 +92,13 @@ const surfaceGateSection = () => {
 // Pair it with craftCommit (the engine's git HEAD, added by the logger): the version identifies a
 // release, the commit separates two runs of the same release while the rubric is being edited.
 const CRAFT_VERSION = '0.34.1' // x-release-please-version
-// Severity ordering, worst first.
-/** @type {Record<string, number>} */
-const SEV_RANK = { Critical: 0, High: 1, Medium: 2, Low: 3, Info: 4 }
-
-// ---- resilient agent call ----
-// agent() returns null when the subagent dies on a terminal API error (after the harness's own
-// retries) or is skipped. A single quiet re-dispatch recovers most API deaths. Budget-exceeded
-// THROWS and is deliberately not caught — retrying it would just throw again.
-const AGENT_TRIES = 2
-// Every prompt in this workflow goes through ragent, so this is the one place that can retarget the
-// whole review at another checkout. Prepended (not appended) because it has to win over the git
-// commands the individual prompts spell out; shq() because the path is an argument to a real `cd`.
-const REPO_DIRECTIVE = repoDirective()
-function repoDirective() {
-  return repoArg
-    ? `WORKING DIRECTORY: this review targets the repository at ${shq(repoArg)} — NOT the directory you start in. Before ANY git / cargo / nix / file command, \`cd\` there (or pass \`git -C\`). Every file path in this review is relative to that root. If that directory does not exist or is not a git repository, say so and stop rather than reviewing whatever repo you happen to be sitting in.\n\n`
-    : ''
-}
-// ---- per-agent wall-clock deadline ----
-// The retry above only fires when agent() RESOLVES to null. An agent whose request hangs mid-response
-// never resolves and never throws, so nothing above catches it. A measured run lost 64 minutes — a
-// third of its wall clock — to six agents frozen inside one `parallel()` barrier, and then died
-// without writing anything. The fix is to stop WAITING, not to wait more cleverly.
-//
-// Honest limit: the sandbox exposes setTimeout/clearTimeout but no AbortController, so losing the
-// race abandons the wait without cancelling the agent — a hung one keeps its concurrency slot until
-// the harness reaps it. That is still the difference between a phase that proceeds shorthanded and a
-// review that stops dead, which is what actually happened.
-//
-// The clock starts at DISPATCH, so a deadline covers queue wait PLUS execution — not execution
-// alone. Calibrating against execution time was a real and expensive mistake: Verify sat at 15min
-// against an 811s measured maximum, then a ~130-thunk wave queued agents for a quarter of an hour
-// before they ran, the deadline fired on agents that were merely waiting, and 23 findings cost 172
-// verification agents. Dispatch is windowed now (VERIFY_WINDOW_AGENTS), which caps the queue term — and
-// these numbers are set against the SUM: ~24 agents dispatched in flight over an execution p90 of
-// ~360s is well under 15min of waiting, so 30min leaves real headroom above both parts. The window
-// bounds DISPATCH, not occupancy: the re-dispatch below leaves the abandoned agent holding its
-// harness slot, so occupancy can transiently reach ~48 — but only after a 30min deadline, so it
-// cannot rebuild the storm. Lenses get 90min for a blunter reason: a single lens legitimately ran
-// 46 minutes, so no threshold there can separate "hung" from "thorough" — it is a backstop against
-// an agent stuck for hours, nothing finer.
-
-// ---- re-dispatch breaker (verification only) ----
-// ARMED BY THE CALLER, NOT BY A PHASE LABEL, and that distinction is the whole scope of this thing.
-// What makes a dead dispatch worth suppressing is that it is dispatched THROUGH THE BOUNDED
-// VERIFICATION WINDOW (VERIFY_WINDOW_AGENTS): there a slot held by a dead agent is a slot DENIED to
-// a live one. `opts.phase` cannot say that — it is the key into PHASE_DEADLINE_MS, a deadline
-// bucket, and three dispatches wear `phase: 'Verify'` while running nowhere near the window: the
-// single haiku dedup agent (before the pool), the `<profile>-verify` checkpoint (after it), and
-// anything later that reuses the bucket. Keying on the label leaked both ways — a dead one of those
-// ate a window slot's worth of evidence, and a live one wrote reachability the pool never observed.
-// So `verifyPool` creates a breaker and hands it to exactly the dispatches it windows; every other
-// dispatch, in any phase, passes none and is neither counted nor allowed to reset anything. A lens
-// is deliberately not given one: there a suppressed re-dispatch costs a whole dimension of the
-// review, and the window is not the scarce thing.
-
-const DEFAULT_DEADLINE_MS = 1800000
-/** @type {Record<string, number>} */
-const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
-// A caller-supplied ceiling, applied to every phase that does not name its own. It only ever
-// REPLACES the per-phase table, never the explicit `deadlineMs` an individual dispatch passes —
-// preflight's 5min is a property of preflight, not a default to be overridden from the outside.
-const deadlineArg = deadlineArgMs()
-function deadlineArgMs() {
-  return Number(A['deadlineMs']) > 0 ? Number(A['deadlineMs']) : 0
-}
-// The CEILING on the smallest remainder a re-dispatch is allowed to be launched into — not the
-// floor itself, which is derived from the budget by `retryFloorFor` below. A POLICY DECISION, not a
-// measurement: nothing recorded derives it. It is set against the measured live distribution from
-// the other side — live verifiers answer in tens of seconds, so against an ordinary phase budget a
-// remainder under a minute is a poor bet and mostly buys a harness slot to time out in.
-// That reasoning is scale-bound, and the scaling below is the admission of it: under a budget of
-// 100s the floor is 50s, and a re-dispatch does then go out into a remainder this paragraph would
-// have called implausible. The trade is deliberate. A floor that cannot adapt is worse, because
-// against a budget shorter than itself it is true before anything has run and removes the retry
-// ladder entirely, which is a silent behaviour change rather than a judged bet.
-const RETRY_FLOOR_MS = 60000
-// The floor is RELATIVE to the budget it guards, never a flat minute. A flat minute against a
-// budget SHORTER than a minute is true before the first attempt even runs, so every agent in such a
-// run loses its re-dispatch — the whole retry ladder the death breaker is calibrated against
-// vanishes, and the transcript says "no wall clock left to wait in" over a budget that has barely
-// been touched. `deadlineMs=30000` is a documented diagnostic setting, so this is reachable, not
-// theoretical. Half the budget is the cap: it keeps the guard meaningful at every scale, since a
-// remainder under half of what the first attempt had is a poor bet whatever the absolute numbers.
-const retryFloorMs = (/** @type {unknown} */ totalMs) => Math.min(RETRY_FLOOR_MS, Math.floor((Number(totalMs) > 0 ? Number(totalMs) : 0) / 2))
-// SAID OUT LOUD, once, at the top of the run. This one argument replaces the WHOLE phase table,
-// including the 90 minutes a lens is legitimately allowed (one measured lens ran 46). Set too low it
-// kills live work by deadline, and a run full of deadline fires is indistinguishable, in the
-// transcript, from the API outage this code was written for — so the mistake would be diagnosed as
-// the very thing it imitates. Naming the override where a reader meets it first is the cheapest
-// defence there is; the transcript is the only carrier the run's clock is ever measured from.
-function announceDeadlineOverride() {
-  if (deadlineArg) {
-    // BOTH DIRECTIONS. The argument replaces the table, so it lengthens as readily as it shortens, and
-    // a phase given four times its budget changes what the run does just as surely — it is simply
-    // slower to notice. Naming only the cuts left the other half of the override unrecorded in the one
-    // place this run's clock is ever read from.
-    // Sub-minute values print as seconds. Rounding a 30s override to "0min" is the same defect the
-    // deadline log was fixed for, inverted — and worse here, because 30000 is exactly the documented
-    // diagnostic value this warning exists to explain, so the one reader it was written for is the one
-    // it would mislead.
-    const m = (/** @type {number} */ v) => (v >= 60000 ? `${Math.round(v / 60000)}min` : `${Math.max(1, Math.round(v / 1000))}s`)
-    const moved = (/** @type {number} */ dir) => Object.entries(PHASE_DEADLINE_MS).filter(([, v]) => (dir < 0 ? v > deadlineArg : v < deadlineArg)).map(([k, v]) => `${k} ${m(v)}→${m(deadlineArg)}`)
-    const shortened = moved(-1)
-    const lengthened = moved(1)
-    log(`⏱️ deadlineMs=${deadlineArg} replaces the per-phase deadline table for every phase that does not name its own`
-      + `${shortened.length ? ` — SHORTENING ${shortened.join(', ')}. A phase cut below the live distribution will fire its deadline on healthy agents, and a transcript full of deadline fires reads like an API outage.` : ''}`
-      + `${lengthened.length ? ` — LENGTHENING ${lengthened.join(', ')}.` : ''}`
-      // Scoped honestly: the floor is derived per dispatch, and a dispatch that names its own deadline
-      // (preflight's 5 minutes) is not overridden by this argument at all, so its floor stays the full
-      // minute. Stating the drop globally would hand the transcript's reader a calibration that holds
-      // for most agents and not all — and a wrong calibration is read with the same confidence as a
-      // right one.
-      + `${deadlineArg < RETRY_FLOOR_MS * 2 ? ` NOTE: for the phases this argument governs, the re-dispatch floor drops with it to ${Math.round(Math.floor(deadlineArg / 2) / 1000)}s, so a dead agent gets a much shorter second attempt than usual; a dispatch carrying its own deadline keeps its own floor.` : ''}`)
-  }
-}
-announceDeadlineOverride()
-// The run's stop at a usage limit (realm @nick/craft, node #299): once one agent failed on it, ragent
-// dispatches no more review work; only the bookkeeping writes still go, so the record is attempted (on
-// the same account, so under an account-wide limit it stays in `.partial` for `craft-log-run recover`).
-const limitStop = makeLimitStop(log)
-/** @param {AgentOpts} opts */
-function deadlineMsFor(opts) {
-  const explicit = Number(opts.deadlineMs)
-  if (Number.isFinite(explicit) && explicit > 0) return explicit
-  return deadlineArg || (PHASE_DEADLINE_MS[/** @type {string} */ (opts.phase)] ?? DEFAULT_DEADLINE_MS)
-}
-/**
- * With a tagged `schema`, the validated answer or `null` (dead, skipped, or past its deadline); without
- * one, the agent's final text or `null` — `unknown`, since nothing here validates it.
- * @template [T=unknown]
- * @param {string} prompt
- * @param {AgentOpts & { schema?: Schema<T> | undefined }} [opts]
- * @returns {Promise<T | null>}
- */
-async function ragent(prompt, opts = {}) {
-  // deadlineMs, breaker, inSessionDir and bookkeeping are ours, not agent()'s -- strip them so none reaches the harness
-  // as an unknown option.
-  const { deadlineMs: _deadlineMs, breaker, inSessionDir: _inSessionDir, bookkeeping, ...agentOpts } = opts
-  if (!bookkeeping && limitStop.seen()) return null
-  const ms = deadlineMsFor(opts)
-  // ONE budget for the whole call, not one per attempt. The worst case of a hanging dispatch is
-  // therefore `ms` of waiting in total rather than `ms` per attempt — which, in the Verify window,
-  // is the difference between one slot held for 30 minutes and one held for an hour.
-  // ARMED, not measured: the sandbox has no clock at all (see the module), so every attempt races
-  // the SAME timer rather than a fresh one computed from elapsed time.
-  const deadlineBudget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
-  try {
-    // The one place the sandbox's `unknown` becomes the schema's type: agent() validates against the
-    // schema it was handed, and `opts.schema` is that schema with the type it validates into.
-    return /** @type {T | null} */ (await withBudget(prompt, agentOpts, deadlineBudget, breaker, opts))
-  } finally {
-    // The armed timers outlive the answer otherwise, holding the run open for the whole deadline.
-    deadlineBudget.dispose()
-  }
-}
-
-/** @param {string} prompt @param {AgentOptions} agentOpts @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {Promise<unknown>} */
-async function withBudget(prompt, agentOpts, deadlineBudget, breaker, opts) {
-  for (let attempt = 1; ; attempt++) {
-    const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
-    // The SHARED deadline promise, not a per-attempt timer. A second attempt inherits what is left
-    // of the first one's wait by construction — there is nothing to subtract and no clock to read.
-    // inSessionDir: the one step that must read the session's own project, not the `repo` under review.
-    const res = await raceLimited(prompt, o, deadlineBudget, opts)
-    if (res === LIMIT_HIT) return null
-    // Asked AFTER the race, so it reflects the state the attempt actually ended in. A re-dispatch
-    // launched below the floor would fire the deadline before the agent could answer, costing a
-    // harness slot to produce nothing.
-    const spentOut = deadlineBudget.belowFloor()
-    if (res === DEADLINE_HIT) {
-      logDeadlineFire(o, deadlineBudget)
-      return null
-    }
-    if (res !== null && res !== undefined) {
-      // A live answer enters the window as one observation of a reachable API: an outage that ended
-      // slides out of the window and the re-dispatch comes back for the next isolated failure.
-      if (breaker) breaker.recordLive()
-      return res
-    }
-    if (!redispatchAfterDeath(attempt, spentOut, deadlineBudget, breaker, opts)) return null
-  }
-}
-
-const LIMIT_HIT = { craftUsageLimit: true }
-/** One attempt raced against the deadline; LIMIT_HIT when it failed on a usage limit (thrown or answered). @param {string} prompt @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget @param {AgentOpts} opts @returns {Promise<unknown>} */
-async function raceLimited(prompt, o, deadlineBudget, opts) {
-  try {
-    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), deadlineBudget.hit])
-    return limitStop.observeAnswer(res) ? LIMIT_HIT : res
-  } catch (e) {
-    if (limitStop.observeError(e)) return LIMIT_HIT
-    throw e
-  }
-}
-
-/** A deadline fire, logged against the budget it spent. @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget */
-function logDeadlineFire(o, deadlineBudget) {
-  // Deliberately neither counted by the breaker nor a reset of it: a deadline fire cannot be
-  // told apart from a live agent taking too long, and feeding that into the window would let slow
-  // work suppress the retry that real work depends on. The breaker reads deaths, never durations.
-  // THE BUDGET, NOT WHAT THIS ATTEMPT WAITED, and the log says which. With no clock there is no
-  // honest per-attempt figure — an earlier version printed one and it was wrong by most of the
-  // deadline on a second attempt. A number nobody computed is worse than a coarser number that
-  // is true, because the transcript is the only carrier this run's clock is ever measured from
-  // and a reader calibrates deadlines against what it says.
-  // Sub-minute budgets print as seconds rather than rounding up to "1min": `deadlineMs=30000` is
-  // a documented diagnostic value, and a log calling it "0min" or "1min" hides the very setting
-  // whose effects the reader is trying to see.
-  const ms = deadlineBudget.total()
-  const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min budget` : `${Math.max(1, Math.round(ms / 1000))}s budget`
-  // A DEADLINE FIRE NEVER RE-DISPATCHES, and this is an identity rather than a policy: the timer
-  // is armed ONCE, for the whole budget, when the budget is created — so its firing IS the budget
-  // running out, and one budget shared by the attempts leaves the next one nothing to wait in. The branch that used to re-dispatch here
-  // is unreachable under that arithmetic, so it is gone rather than left as reassuring dead text.
-  // The re-dispatch survives for the case it was always really for: the FAST death, which spends
-  // almost none of the budget. A hang is evidence about the request; a fast death is evidence
-  // about reachability, and only the second is worth asking twice.
-  log(`⏱️ agent '${o.label || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
-}
-
-/**
- * After an attempt that came back empty: whether to re-dispatch (true) or treat the agent as dead (false).
- * @param {number} attempt @param {boolean} spentOut @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget
- * @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {boolean}
- */
-function redispatchAfterDeath(attempt, spentOut, deadlineBudget, breaker, opts) {
-  if (attempt >= AGENT_TRIES) return false
-  // A death that arrived slowly can exhaust the budget too, and then the re-dispatch buys nothing.
-  if (spentOut) {
-    // Says how much was left and what it was measured against, rather than the flat "nothing left"
-    // that used to be printed over a remainder that was merely below the floor. The transcript is
-    // the only carrier this run's clock is ever measured from, and "spent" and "below the floor"
-    // are different events that a future reader has to be able to tell apart.
-    log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(deadlineBudget.total()) / 1000)}s floor left of its ${Math.round(deadlineBudget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
-    return false
-  }
-  // The dead-agent route, and the expensive one: `agent()` resolved null after the harness spent
-  // its own retry ladder on an unreachable API, and the re-dispatch below spends a second ladder
-  // inside the same verification window slot. On a one-off failure that is worth the clock; once
-  // half of the recent windowed dispatches are coming back empty it is not, and the breaker's
-  // window is what says which this is.
-  //
-  // The log says exactly what the breaker counted and nothing more. Only a FIRST attempt reaches
-  // this line (the line above returns on the last one), so the window holds one observation per
-  // dispatched unit of work — never per harness call. A message phrased as "the Nth death in a
-  // row" claimed both a consecutive run the window does not track and a count of dispatches it
-  // does not hold: with one re-dispatch per death, an outage of N observed deaths has already
-  // cost up to 2N−(suppressed) harness dispatches.
-  if (breaker && !breaker.deathAllowsRedispatch()) {
-    log(`⛔ agent '${opts.label || '?'}' returned no result — ${breaker.deaths()} of the last ${breaker.observed()} windowed verification dispatches returned nothing, so this one is NOT re-dispatched (the re-dispatch is for a one-off failure, and at this rate it is not one); treated as a dead agent, reported as unverified exactly like every other death`)
-    return false
-  }
-  log(`⚠️ agent '${opts.label || '?'}' returned no result (API death or skip) — re-dispatching once`)
-  return true
-}
-
-// ---- run-record helpers (lib/run-record.mjs) ----
-// Imported: summarizeFindings, reviewVerdict, fingerprint, shingleOverlap, matchesPrior,
-// rereviewVerdict and their kin. (selectPriorRound is NOT used here: round selection, ancestry and record
-// loading happen in `craft-log-run.mjs prior-round` — a haiku still runs the command and carries the bytes
-// back, but it decides nothing.)
-
-// finalVerdict is workflow-local — NOT part of lib/run-record.mjs.
-// In strict mode the maintainability bar is a presumption of block: any Confirmed
-// maintainability finding at Medium or above escalates the verdict to Block. Outside strict mode
-// the base verdict stands (maintainability findings are at most a Warning).
-// A finding counts as maintainability for the strict escalation if its own source is maintainability
-// OR a maintainability finding was merged into it during cross-lens dedup (dedupPool carries every
-// contributing source in `sources`). Without the second clause a maintainability finding absorbed
-// under a same-severity non-maintainability base would silently escape the strict Block.
-/** @param {Finding} f */
-function isMaintainability(f) {
-  return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && /** @type {unknown[]} */ (f['sources']).includes('maintainability'))
-}
-/** @param {Finding[]} confirmedIn */
-function finalVerdict(confirmedIn) {
-  if (strict && confirmedIn.some(f => isMaintainability(f)
-    && (f['severity'] === 'Critical' || f['severity'] === 'High' || f['severity'] === 'Medium'))) return 'Block'
-  return reviewVerdict(confirmedIn)
-}
-// A phase checkpoint. Small by construction — counts, per-lens yields, the gate verdict — because
-// its job is to survive the run, not to duplicate the final record early. `runDir` is threaded back
-// out of the first call so every later checkpoint lands in the same directory without the sandbox
-// needing a clock or a run id (it has neither).
-// Telemetry is written by an agent shelling out to lib/craft-log-run.mjs, so it fails for reasons the
-// run itself survives: a craftRoot that no longer exists, a dead logger agent, a damaged store. That
-// failure used to be pure silence — the review finished, the store stayed empty, and an empty store
-// is indistinguishable from "this review was never run" (realm @nick/craft, node #24).
-// The choice is deliberate and recorded (realm @nick/craft, node #34): a lost record NEVER fails the
-// run. Killing a three-hour review over a bookkeeping write would teach everyone to ignore the very
-// marker this exists to raise. It is reported instead, in the report a human actually reads.
-/** @type {string[]} */
-const telemetryLost = []
-/** @param {string} what @param {unknown} [why] */
-function noteTelemetryLoss(what, why) {
-  const line = `${what}${why ? ` — ${why}` : ''}`
-  telemetryLost.push(line)
-  log(`⚠️ telemetry lost: ${line}`)
-}
-// The bookkeeping calls — the run record, the phase checkpoints, the prior-round read — must not
-// take the run down when they throw. `quietly` is the shared wrapper (lib/run-logging.mjs); here it is bound to `ragent` so the retry-once behaviour still applies underneath.
-// The wrapper is generic over the callback, so what it yields is ragent's answer, null, or the throw.
-/**
- * ragent for a bookkeeping write: still dispatched after a usage limit stopped the review work.
- * @template [T=unknown]
- * @param {string} p
- * @param {AgentOpts & { schema?: Schema<T> | undefined }} o
- * @returns {Promise<T | null>}
- */
-function ragentBookkeeping(p, o) {
-  return ragent(p, { ...o, bookkeeping: true })
-}
-const ragentQuietly = quietly(ragentBookkeeping)
-/**
- * A quiet call's outcome split in two: the answer (null when the agent died OR threw), and the throw's
- * message ('' when it did not throw).
- * @template T
- * @param {T | { __threw: string } | null} res
- * @returns {{ answer: T | null, threw: string }}
- */
-function splitThrew(res) {
-  if (res && typeof res === 'object' && '__threw' in res) return { answer: null, threw: String(res.__threw) }
-  return { answer: /** @type {T | null} */ (res), threw: '' }
-}
-
-// Re-review memory outcome, surfaced in the user-facing report (realm @nick/craft #104). A DETACHED
-// HEAD makes the prior-round lookup return 'no-branch', so the run silently becomes round 1 with no
-// chaining and no signal. `reReviewMemory` (below) sets this note; it is null on every run that chained
-// normally or is a genuine first review, so the section is empty then. Declared before `out()` so an
-// early exit that returns before the prior-round read sees a plain null, never a temporal-dead-zone.
-/** @type {string | null} */
-let reReviewMemoryNote = null
-// Prepended by `out()` — near the top, above the verdict — because a re-review that quietly forgot its
-// memory must be visible before the verdict, not buried after it.
-const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review memory off\n${reReviewMemoryNote}\n\n` : '')
-// realm @nick/craft #113: a profile whose dedicated reviewer agent is not registered in this session
-// (typically: the craft plugin is not enabled in this project) runs every lens on the generic subagent.
-// The review still happens — but without the agent's rubric, and the operator otherwise sees only a
-// failed probe. Stated above the verdict, with the fix; recorded on the run record.
-/** @type {{ id: string, agent: string, error: string }[]} */
-const reviewerAgentUnavailable = []
-// The agent-type match and the section text are shared with rust-audit (lib/agent-fallback.mjs).
-/** @param {Profile} profile @param {unknown} error */
-function noteReviewerAgentMissing(profile, error) {
-  if (!reviewerAgentUnavailable.some(x => x.id === profile.id)) reviewerAgentUnavailable.push({ id: profile.id, agent: profile.reviewerAgent, error: String(error || '').slice(0, 160) })
-}
-// Lens dispatches that came back EMPTY from the reviewer agent and were re-run on the generic
-// subagent. On some runtimes that is how an unknown agent type looks; it can also be a transient
-// death, so it is not taken as "missing" — but it is said, per profile, rather than staying silent.
-/** @type {Record<string, number>} */
-const reviewerAgentFallbacks = {}
-/** @type {Record<string, string>} */
-const reviewerAgentNames = {}           // profile id -> its reviewer agent type, for the report line
-// Lens dispatches whose reviewer agent threw a "not found" isAgentTypeMissing does not recognise and the
-// generic subagent then answered: the sandbox's wording for an unregistered type is not yet observed (#152),
-// so the lens keeps its coverage rather than dying on a guess about the text. Also in the record count.
-/** @type {Record<string, { count: number, error: string }>} */
-const reviewerAgentNotFound = {}
-/** @param {Profile} profile */
-function noteReviewerAgentFallback(profile) {
-  reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
-  reviewerAgentNames[profile.id] = profile.reviewerAgent
-}
-/** @param {Profile} profile @param {string} error */
-function noteReviewerAgentNotFound(profile, error) {
-  const was = reviewerAgentNotFound[profile.id]
-  reviewerAgentNotFound[profile.id] = { count: (was?.count || 0) + 1, error }
-  reviewerAgentFallbacks[profile.id] = (reviewerAgentFallbacks[profile.id] || 0) + 1
-  reviewerAgentNames[profile.id] = profile.reviewerAgent
-}
-const reviewerAgentSection = () => agentUnavailableSection(
-  reviewerAgentUnavailable.map(x => ({ agent: x.agent, what: `every ${x.id} lens`, error: x.error })),
-  Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
-    .flatMap(([id, n]) => {
-      const agentName = reviewerAgentNames[id] || `${id} reviewer agent`
-      const nf = reviewerAgentNotFound[id]
-      return [
-        { agent: agentName, count: n - (nf?.count || 0), what: 'lens dispatch(es)' },
-        ...(nf ? [{ agent: agentName, count: nf.count, what: 'lens dispatch(es)', error: nf.error }] : []),
-      ]
-    }),
-)
-
-// Wraps every report the engine can return. Narrow on purpose: it fires only for a write that was
-// ATTEMPTED and did not land, never for telemetry that was never attempted — a marker that shows up
-// on healthy runs is a marker people stop reading, which is the symmetric half of the same defect.
-/** The extra lenses' account, once the first profile reached its lenses (realm @nick/craft, node #295). */
-function extraLensReport() {
-  return extraLensOutcome.reached ? extraLensSection({ how: extraLensRequest.how, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed, discovery: extraLensOutcome.discovery, exit: extraLensOutcome.exit, rubric: extraLensOutcome.ran.length ? active[0]?.id ?? '' : '' }) : ''
-}
-
-/** The usage-limit stop and how to recover the record it may have cost, above the verdict; '' without a stop. */
-function limitStopSection() {
-  const advice = limitStopAdvice(limitStop, { version: CRAFT_VERSION, engine: 'review', checkpoints: true })
-  return advice ? `## \u26d4 Usage limit reached\n${advice}\n\n` : ''
-}
-
-/** @param {string} reportText */
-function out(reportText) {
-  return `${limitStopSection()}${telemetryLostSection(telemetryLost)}${reReviewMemorySection()}${reviewerAgentSection()}${lightPass ? markVerdictLight(reportText) + lightSection([...lightSkippedLenses], lensPhaseReached, [...lightKeptLenses]) : reportText}${extraLensReport()}${optionalSection()}${surfaceGateSection()}${memorySection(memory)}${priorDecisionsRefusedSection(priorDecisionsIn.refused)}`
-}
-
-// ---- the one write path (shared with every other record-filing engine) ----
-// lib/run-logging.mjs, imported as run-record.mjs is. The ledger's own survival path, the shard cutter, is
-// lib/ledger-shards.mjs, where it is linted and unit-tested; what the final record says about its ledger once
-// the shards hold it is lib/ledger-in-shards.mjs (realm @nick/craft, node #245).
-
-/** @type {Schema<CheckpointAnswer>} */
-const CHECKPOINT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['runDir'],
-  properties: {
-    runDir: { type: 'string', description: 'the runDir the script printed; empty string if it failed' },
-    error: { type: 'string', description: 'when runDir is empty, the failing line verbatim; when the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
-  },
-}
-let runDir = ''
-// The head detect saw, set once detect answers; every checkpoint claims it (see checkpoint below).
-let startHead = ''
-let checkpointFailed = false
-let rejoinArmed = false
-// ARMED, not merely "something failed". `checkpointFailed` says a checkpoint died; this says the run
-// went on to ASK the logger to rejoin — `!runDir && checkpointFailed`, the only state in which a
-// directory can be adopted. Finalize used the coarser flag, so a run whose first checkpoint minted
-// its directory and whose third died declared an adoption that never happened: the CLI then dropped
-// the `ownDir` shortcut, read a mid-review branch move as "not this run's directory", and left the
-// run's own phases unfolded. Sticky, because an adoption is not undone by later checkpoints
-// succeeding — once a directory MIGHT be someone else's, it stays might-be for the finalize proof.
-// Resolves true only when the slice landed in the directory this run already had and asked for.
-/** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
-async function checkpoint(phaseTitle, payloadIn, group) {
-  // kind/name are what the checkpoint DIRECTORY is named after, and `recover` parses them back out of
-  // that name to rebuild a dead run's identity. A payload without them produced a real
-  // `…Z-unknown-unknown` directory on the first live run — recoverable, but recovered as a run of
-  // nothing. They belong on every slice, not just the final record.
-  // craftVersion rides on every slice: it is what the checkpoint's own logger lookup derives its
-  // version from, and a slice that cannot say which build wrote it is a slice `recover` cannot place.
-  // workflowEngineRevision: THIS engine's revision, the side that computes the fingerprints — what a
-  // later round decides their basis by (realm @nick/craft #111). Last, so no payload key shadows it.
-  // startHead: the head detect saw before scout, gate or any lens read the tree. The logger stamps the slice's
-  // own `head` from git, minutes later; it keys a push verdict to that head only when the two agree
-  // (lib/craft-log-run.mjs, reviewedTree), so a fix committed in between is never taken as reviewed.
-  const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn, startHead, workflowEngineRevision: ENGINE_REVISION }
-  // ragent does NOT catch a budget-exceeded throw (see its comment), and agent() throws for harness
-  // reasons too — so a rejection, not just a null, is a real outcome here. It has to land in the same
-  // place as every other failed write: the report. Letting it propagate would abort the whole review
-  // over a bookkeeping write, which is exactly what this whole path exists to prevent.
-  const asked = runDir
-  const armRejoin = !runDir && checkpointFailed
-  if (armRejoin) rejoinArmed = true
-  const { answer: res, threw } = splitThrew(await ragentQuietly(
-    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase: phaseTitle, dir: runDir, rejoin: armRejoin }),
-    { label: `checkpoint:${phaseTitle}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
-  ))
-  if (res?.runDir) return tookRunDir(phaseTitle, asked, res.runDir)
-  // Remember it: with no runDir to thread, every later checkpoint would mint a directory of its
-  // own and this run would fragment into orphan partials that `recover` promotes as unrelated
-  // half-runs. `--rejoin` lets the script re-enter the directory this run already has. It is opt-in
-  // for a reason — asking for it unconditionally would make a SECOND, concurrent review adopt this
-  // one's directory, and concurrent reviews on one machine are ordinary.
-  checkpointFailed = true
-  noteTelemetryLoss(`phase checkpoint '${phaseTitle}'`, threw || res?.error || 'the logger agent returned no runDir')
-  return false
-}
-// The directory a landed checkpoint returned, taken as the run's; true when it is the one the run asked for.
-/** @param {string} phaseTitle @param {string} asked @param {string} returned @returns {boolean} */
-function tookRunDir(phaseTitle, asked, returned) {
-  // A refused `--dir` does not fail the checkpoint: the script MINTS a fresh directory, prints a
-  // WARNING on stderr and returns a perfectly valid runDir on stdout. Taking it silently strands
-  // every slice written into the directory we asked for — finalize folds only the new one, its
-  // `kept` warning cannot fire (the old directory was never its target), and the report calls the
-  // run clean. The engine can see this without trusting the model to relay stderr: we know which
-  // directory we asked for, so a different one coming back IS the refusal.
-  if (asked && returned !== asked) {
-    noteTelemetryLoss(`phase checkpoint '${phaseTitle}'`, `the logger minted ${returned} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
-  }
-  runDir = returned
-  return !!asked && returned === asked
-}
-
-// Persisting the record is deterministic work, and it is now done by lib/craft-log-run.mjs. The model
-// is left in the loop only because the sandbox cannot reach a filesystem at all — its entire job is a
-// quoted heredoc into the script. It no longer computes ts/project/commit/dirty, chooses the filename,
-// hand-appends the index or hand-verifies the readback; that recipe is what once persisted a completed
-// review as `dimensions: [], verification: null`. Fewer decisions in the prompt is the whole fix.
-// The write itself is the one every engine binds (lib/run-logging.mjs, makeRunLogger); what is
-// review's own is bound here.
-const logRun = makeRunLogger({
-  // ragent underneath `quietly`, so the retry-once behaviour still applies to the record write.
-  call: ragentQuietly,
-  phase: 'Synthesize',
-  // `finalize`, not `write`: this is the one engine that checkpoints, so the script folds this run's
-  // phase slices into the record it writes. Read at each call — `runDir` and `rejoinArmed` move as
-  // the checkpoints run.
-  target: () => ({ craftRoot: craftRootArg, repo: repoArg, command: 'finalize', dir: runDir, rejoin: rejoinArmed }),
-  // Every review record — the early exits too, not only reviewRecord() — says which engine computed its
-  // fingerprints: a later round decides their basis by this (realm @nick/craft #111). Last, so no
-  // caller's field shadows it.
-  prepare: recordIn => ({ ...recordIn, workflowEngineRevision: ENGINE_REVISION }),
-  // Into the same telemetryLost list the checkpoints and the prior-round read note into, but through
-  // the shared note: a record that landed with its run directory refused is logged as landed, never
-  // as lost (realm @nick/craft #39). makeRunLogger always hands it a non-empty reason, so the line kept
-  // for the report is the one noteTelemetryLoss would keep.
-  noteLoss: telemetryLossNoter(telemetryLost, log),
-})
-
-/** @param {Finding} f */
-function key(f) {
-  return `${(f['file'] || '').toLowerCase()}:${f['line'] || 0}:${(f['title'] || '').toLowerCase().replace(/\s+/g, ' ').trim()}`
-}
+// The per-profile results, filled as the profiles run; the report wrapper reads them on every exit.
+/** @type {Result[]} */
+const results = []
+// The run: its options read from `args`, its one dispatch path, its telemetry and the wrapper every report goes
+// out through (lib/review-run.mjs). The sandbox globals are handed in; lib/ code never names them free.
+const reviewRun = openReviewRun({ args, agent, parallel, phase, log, budget }, CRAFT_VERSION, results)
+const { A, baseArg, intentArg, postComments, pathArg, repoArg, ambiguousPath, scopeNotRun, scopeSection, craftRootArg, loggerPreludeNow, LOGGER_PATH, viaArg, strict, recalledByLauncher, requestedLangs, freshArg, fullEvery, reviewDepth, lightPass, extraLensRequest, lightSkippedLenses, lightKeptLenses, extraLensOutcome, optionalRequested, optionalDispatched, optionalNamedByCritic, optionalTally, surfaceGateDispatched, surfaceGateNamedByCritic, SEV_RANK, REPO_DIRECTIVE, limitStop, ragent, ragentQuietly, splitThrew, isMaintainability, finalVerdict, noteTelemetryLoss, reviewerAgentUnavailable, noteReviewerAgentMissing, reviewerAgentFallbacks, reviewerAgentNames, noteReviewerAgentFallback, noteReviewerAgentNotFound, out, checkpoint, logRun, key, extraLensGaps, extraLensesNotRun, depthRecordFields } = reviewRun
 
 
 // ================= Detect base + languages =================
@@ -1043,7 +109,7 @@ phase('Scout')
 async function ambiguousPathExit() {
   const msg = `path=${ambiguousPath} is an absolute path and no \`repo\` was given, so it is ambiguous: it could name the REPOSITORY to review (pass it as \`repo\`) or a directory INSIDE the repository to narrow to (pass it relative to the repo root). Nothing ran — re-dispatch with one of those two spellings.`
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(reviewRun.memory),
     languages: [], verdict: 'INCOMPLETE (ambiguous path)', findings: summarizeFindings([]), dimensions: [], verification: null,
     // The CLASS, not this run's path — `notRun` is ranked by exact string (see `scopeNotRun`).
     // The path itself is in the verdict prose below, where nothing ranks it.
@@ -1053,7 +119,7 @@ async function ambiguousPathExit() {
 }
 async function detectDiedExit() {
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(reviewRun.memory),
     languages: [], verdict: 'INCOMPLETE (detect died)', findings: summarizeFindings([]), dimensions: [], verification: null, notRun: ['base/changed-files detection', ...scopeNotRun, ...extraLensesNotRun('change detection died')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
   return out([`## Verdict`, `⚠️ INCOMPLETE — the base-resolution agent died twice (API error); nothing was reviewed. Re-run the review.`].join('\n') + scopeSection())
@@ -1106,7 +172,7 @@ function detectedChange(detectedIn) {
   return { baseRef: detectedBase, changedFiles: detectedFiles, spec: detectedSpec, branch: detectedBranch, head: detectedHead }
 }
 const { baseRef, changedFiles, spec, branch, head } = detectedChange(detected)
-startHead = head
+reviewRun.startHead = head
 
 // Round detection: find the newest prior `review` run for this branch, and accept it as the prior
 // round ONLY if its head is an ANCESTOR of the current HEAD (a rebase/force-push makes a stale run
@@ -1222,7 +288,7 @@ const { priorRound, priorReason } = await loadPriorRound()
 const reReview = reReviewMemory(priorReason)
 function applyReReviewNote() {
   if (reReview.note) {
-    reReviewMemoryNote = reReview.note
+    reviewRun.reReviewMemoryNote = reReview.note
     log(`⚠️ ${reReview.note}`)
   }
 }
@@ -1372,7 +438,7 @@ const { pinned: pinnedLangs, unknown: unknownLangs } = resolveProfilePin(PROFILE
 async function unknownPinExit() {
   const msg = unknownPinMessage(PROFILES, unknownLangs)
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(reviewRun.memory),
     languages: [], verdict: 'INCOMPLETE (unknown language pin)', findings: summarizeFindings([]), dimensions: [], verification: null,
     notRun: [`nothing ran — ${msg}`, ...scopeNotRun, ...extraLensesNotRun('the language pin is unknown')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
@@ -1387,10 +453,11 @@ const detectedActive = Object.values(PROFILES).filter(p => (!pinnedLangs || pinn
 // nothing and returned a bare `✅ Approve — no findings across rust`.
 const coverage = resolveCoverage({ profiles: PROFILES, changedFiles, detectedActive, pinnedLangs })
 const active = coverage.active
+reviewRun.active = active
 // The coverage decision's early exits: an empty diff, nothing reviewable, or no profile for what changed.
 async function coverageExit() {
-  if (coverage.outcome === 'no-profile') memory = skippedMemory(memory, 'no language profile for the changed files')
-  else if (coverage.outcome !== 'review') memory = skippedMemory(memory, 'nothing to review')
+  if (coverage.outcome === 'no-profile') reviewRun.memory = skippedMemory(reviewRun.memory, 'no language profile for the changed files')
+  else if (coverage.outcome !== 'review') reviewRun.memory = skippedMemory(reviewRun.memory, 'nothing to review')
   if (coverage.outcome === 'empty') return emptyDiffExit()
   if (coverage.outcome === 'nothing-to-review') return nothingToReviewExit()
   if (coverage.outcome === 'no-profile') return noProfileExit()
@@ -1412,7 +479,7 @@ async function emptyDiffExit() {
   const onTrunk = launchedOnTrunk()
   const emptyMsg = onTrunk ? onTrunkMessage() : noChangedFilesMessage()
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(reviewRun.memory),
     // The base this run resolved, so a later reader of the store can see what the empty diff was taken against.
     base: baseRef || '',
     languages: [], verdict: 'INCOMPLETE (empty diff)', findings: summarizeFindings([]), dimensions: [], verification: null,
@@ -1428,7 +495,7 @@ async function nothingToReviewExit() {
   // marker that fires on every README-only change stops being read.
   const okMsg = nothingToReviewMessage(changedFiles.length)
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(reviewRun.memory),
     languages: [], verdict: 'Approve (nothing to review)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: changedFiles, notRun: [...scopeNotRun, ...extraLensesNotRun('nothing reviewable changed', false)], ...depthRecordFields(), outputTokens: budget.spent(),
   })
@@ -1441,7 +508,7 @@ async function nothingToReviewExit() {
 async function noProfileExit() {
   const msg = noLanguageMessage(PROFILES, changedFiles.length, coverage.material.length)
   await logRun({
-    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(memory),
+    schemaVersion: 1, runtime: 'claude-code', craftVersion: CRAFT_VERSION, kind: 'workflow', name: 'review', nested: !!viaArg, via: viaArg || null, memory: memoryRecord(reviewRun.memory),
     languages: [], verdict: 'INCOMPLETE (no language profile)', findings: summarizeFindings([]), dimensions: [], verification: null,
     uncoveredFiles: changedFiles, notRun: [msg, ...scopeNotRun, ...extraLensesNotRun('no language profile covers the diff')], ...depthRecordFields(), outputTokens: budget.spent(),
   })
@@ -1461,8 +528,8 @@ async function recallMemory() {
   if (recalledByLauncher || !changedFiles.length) return
   const r = await recallDecisions(p => ragent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, baseRef || '')
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
-  priorDecisionsIn = m.prior
-  memory = m.memory
+  reviewRun.priorDecisionsIn = m.prior
+  reviewRun.memory = m.memory
   for (const x of m.recalledRefused) log(`⚠️ priorDecisions: ${x}`)
 }
 await recallMemory()
@@ -1659,7 +726,7 @@ async function runExtraLenses(agents, priorSummary) {
 
 /** The extra lenses' findings: dispatched for the first profile only. @param {Profile} profile @param {Finding[]} pool @returns {Promise<Finding[]>} */
 function extraLensesFor(profile, pool) {
-  lensPhaseReached = true
+  reviewRun.lensPhaseReached = true
   if (profile !== active[0]) return Promise.resolve([])
   extraLensOutcome.reached = true
   if (extraLensRequest.how === 'off') return Promise.resolve([])
@@ -1705,39 +772,6 @@ Also report sessionCommonDir: the absolute, symlink-resolved git common dir of t
     return null
   }
 }
-
-// Each failed or refused NAMED extra lens as a coverage gap of the first profile. A discovered one that
-// could not run is said in the Extra lenses section only: discovery is on by default in a light pass,
-// and resolving a project agent from a plugin workflow is not observed (realm @nick/craft, node #178),
-// so its failure must not turn every such run INCOMPLETE.
-/** @param {Profile} profile @returns {string[]} */
-function extraLensGaps(profile) {
-  return profile === active[0] && extraLensRequest.how === 'named' ? extraLensOutcome.failed.map(extraLensGapLine) : []
-}
-
-/** @param {{ agent: string, why: string }} x */
-function extraLensGapLine(x) {
-  return `extra lens ${x.agent} -- ${x.why}, so its review did not happen`
-}
-
-// An exit before the lenses ran: the extra lenses did not run either, and the report and the record
-// say so with the reason (realm @nick/craft, node #295). A named one is a coverage gap; a discovery
-// that never ran is said in the Extra lenses section. Returns the gaps' notRun lines.
-/** @param {string} reason @returns {string[]} */
-function extraLensesNotRun(reason, needed = true) {
-  if (extraLensOutcome.reached || extraLensRequest.how === 'off') return []
-  extraLensOutcome.reached = true
-  extraLensOutcome.exit = { reason, needed }
-  // Nothing to review (an empty or docs-only diff): a named lens was not needed, which is no gap.
-  if (extraLensRequest.how === 'named' && needed) extraLensOutcome.failed.push(...extraLensRequest.agents.map(agentTypeName => ({ agent: agentTypeName, why: `not run: ${reason}` })))
-  return extraLensOutcome.failed.map(extraLensGapLine)
-}
-
-/** The record's depth and extra-lens fields, on every record this engine writes (#295). */
-function depthRecordFields() {
-  return { depth: reviewDepth, extraLenses: { how: extraLensRequest.how, requested: extraLensRequest.agents, ran: extraLensOutcome.ran, failed: extraLensOutcome.failed, ...(extraLensOutcome.exit ? { exit: extraLensOutcome.exit } : {}) } }
-}
-
 /** Adds the findings whose key is not yet seen. @param {Finding[]} found @param {Set<string>} seen @param {Finding[]} pool */
 function pushUnseen(found, seen, pool) {
   for (const f of found) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push(f) } }
@@ -3012,7 +2046,7 @@ function reviewRecord(extra) {
     nested: !!viaArg,
     via: viaArg || null,
     // What the recall step brought, or why none (realm @nick/craft, node #40).
-    memory: memoryRecord(memory),
+    memory: memoryRecord(reviewRun.memory),
     branch, head,
     languages: active.map(p => p.id),
     uncoveredFiles,
@@ -3142,7 +2176,7 @@ function deferralHeld(f) {
     return false
   }
   if (reraisedBySeverity(f['severity'])) return false
-  if (!deferralReleased(deferral, priorDecisionsIn.decisions)) return true
+  if (!deferralReleased(deferral, reviewRun.priorDecisionsIn.decisions)) return true
   log(`Re-review: the deferral on ${f['file']}:${f['line']} no longer holds — a record supersedes or answers its question ${deferral.id} — adjudicated like any prior`)
   return false
 }
@@ -3393,7 +2427,7 @@ function dropTombstonesForBasis() {
     // rather than being filled with a guessed boolean. It is a LOSS of re-review memory (the carried
     // tombstones are dropped for good), so it is stated where lost memory is stated, above the verdict.
     const note = `The prior round's answer carried no fingerprint-basis verdict (sameFpBasis), so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered. This is a transport or version-skew loss, not a fingerprint-basis change.`
-    reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
+    reviewRun.reReviewMemoryNote = reviewRun.reReviewMemoryNote ? `${reviewRun.reReviewMemoryNote}\n${note}` : note
     log(`⚠️ ${note}`)
   } else if (priorBasisVerdict === 'unknown') {
     // A round recovered from a stopped run whose checkpoints do not attest to one known basis, read
@@ -3405,7 +2439,7 @@ function dropTombstonesForBasis() {
     // the relay dropped the field, or a logger older than it answered — so the cause named is that.
     const why = unknownBasisWhy()
     const note = `The fingerprint basis of the prior round could not be established — ${why} — so its ${priorTombstones.length} resolved/dismissed finding(s) were not compared against this round and are no longer remembered.`
-    reReviewMemoryNote = reReviewMemoryNote ? `${reReviewMemoryNote}\n${note}` : note
+    reviewRun.reReviewMemoryNote = reviewRun.reReviewMemoryNote ? `${reviewRun.reReviewMemoryNote}\n${note}` : note
     log(`⚠️ ${note}`)
   } else {
     log('Re-review: the prior round was fingerprinted under a different, known basis — so the recidivism check is skipped and its ' + priorTombstones.length + ' carried tombstone(s) are dropped; the memory rebuilds from this round on (expected once, right after an upgrade that changed the basis)')
@@ -3603,7 +2637,7 @@ function takeTiers(t) {
 }
 async function setAsidePriorDecisions() {
   const live = adjudicated.stillOpen.length + adjudicated.regressed.length
-  const r = await applyPriorDecisions({ confirmed, suspected, unverified, stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed }, priorDecisionsIn.decisions, toCheck => ragent(
+  const r = await applyPriorDecisions({ confirmed, suspected, unverified, stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed }, reviewRun.priorDecisionsIn.decisions, toCheck => ragent(
     REPO_DIRECTIVE + scopeCheckPrompt(toCheck),
     { label: 'decision-scope', phase: 'Synthesize', schema: SCOPE_CHECK_SCHEMA, model: CULL_MODEL },
   ), 'why', prompt => ragent(prompt, { label: 'decision-match', phase: 'Synthesize', schema: MATCH_JUDGE_SCHEMA, model: CULL_MODEL, effort: 'low' }))
@@ -3613,7 +2647,7 @@ async function setAsidePriorDecisions() {
   priorRejected = r.setAside.map(f => /^(confirmed|suspected|unverified)$/.test(f.priorTier) ? f : { ...f, priorTier: 'confirmed' })
   for (const n of r.notes) log(`priorDecisions: ${n}`)
   // A decision whose commit this repo does not know is named with the refusals, apart from a changed scope.
-  priorDecisionsIn.refused.push(...r.refused)
+  reviewRun.priorDecisionsIn.refused.push(...r.refused)
 }
 await setAsidePriorDecisions()
 // ---- Project rules: a class of findings the project accepts, covered visibly (realm @nick/craft, node #273) ----
@@ -3625,13 +2659,13 @@ await setAsidePriorDecisions()
 let ruleNotices = []
 async function coverByProjectRules() {
   const live = adjudicated.stillOpen.length + adjudicated.regressed.length
-  const r = await applyProjectRules({ confirmed, suspected, unverified, stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed }, priorDecisionsIn.decisions, 'why', prompt => ragent(prompt, { label: 'rule-match', phase: 'Synthesize', schema: RULE_JUDGE_SCHEMA, model: CULL_MODEL, effort: 'low' }))
+  const r = await applyProjectRules({ confirmed, suspected, unverified, stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed }, reviewRun.priorDecisionsIn.decisions, 'why', prompt => ragent(prompt, { label: 'rule-match', phase: 'Synthesize', schema: RULE_JUDGE_SCHEMA, model: CULL_MODEL, effort: 'low' }))
   if (!r.rules) return
   takeTiers(r.tiers)
   priorRejectedLive += live - adjudicated.stillOpen.length - adjudicated.regressed.length
   priorRejected = priorRejected.concat(r.covered.map(f => /^(confirmed|suspected|unverified)$/.test(f.priorTier) ? f : { ...f, priorTier: 'confirmed' }))
   ruleNotices = r.notices
-  memory = { ...memory, covered: r.covered.length }
+  reviewRun.memory = { ...reviewRun.memory, covered: r.covered.length }
   for (const n of r.notes) log(`project rules: ${n}`)
 }
 await coverByProjectRules()
@@ -3961,7 +2995,7 @@ async function persistLedgerShards() {
   for (const shard of shards) {
     landed = (await checkpoint(`${LEDGER_SHARD_PHASE}-${String(shard.ledgerShard.index).padStart(2, '0')}`, { branch, head, ...shard }, 'Synthesize')) && landed
   }
-  return ledgerRecordFields(reviewLedger, shards, landed && !rejoinArmed)
+  return ledgerRecordFields(reviewLedger, shards, landed && !reviewRun.rejoinArmed)
 }
 const ledgerFields = await persistLedgerShards()
 await logRun(reviewRecord({
