@@ -37,12 +37,6 @@ export async function __run() {
 /**
  * @typedef {import('../lib/review-profile.mjs').ProfileReview} Result  one profile's facts from reviewProfile
  */
-/**
- * @template T
- */
-/**
- * The answers of the schema'd agents (lib/review-schemas.mjs).
- */
 
 // The craft release that produced a run. Recorded on every run record and index line so an
 // aggregate can be filtered to ONE engine version: without it, "did tightening that lens help?"
