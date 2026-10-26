@@ -792,7 +792,7 @@ const judge = (findings, sink) => judgeVotes(findings, sink, SEV_RANK)
 const votes = kept.map(() => [])
 const verifyJobs = buildVerifyJobs(kept, votes)
 log(`Verify plan: ${kept.length} findings -> ${verifyJobs.length} checks (${kept.filter(isEscalated).length} escalated to 3-lens panel), throttled to ${BATCH} concurrent`)
-// `runThrottled` records the unjudged checks in `notRun` itself (advisory) — see the region above.
+// `runThrottled` records the unjudged checks in `notRun` itself (advisory; lib/throttled-runner.mjs).
 /** @param {unknown[]} unverified */
 const warnUnverified = unverified => { if (unverified.length) log(`WARNING: ${unverified.length} checks got no verdict after retries`) }
 warnUnverified(await runThrottled(verifyJobs, 'Verify', 'Verify'))

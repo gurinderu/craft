@@ -53,7 +53,7 @@ A bump is cheap for re-review memory: the revision is **not** the finding-finger
 a prior round's fingerprints compare to this round's is decided by `FP_BASIS_SINCE` in the same file
 (the revisions at which each basis began), so a telemetry-only bump keeps every review loop's
 tombstones. Change that table, not only the revision, when `fingerprint()` changes what an `fp` means.
-The review engine decides that comparability itself, with its own inlined copy of the table — it is the side that computes the fingerprints — so a `review` record and each of its checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp. The analyzer's engine identity (`rN`) uses the engine's revision when a record carries it, and the logger's otherwise. The loader prints `priorFpRevisions` together with `priorFpRevisionsCheck` (the same list as a string), and the engine trusts the list only when the two still match after the model relay; a mismatch is recorded as `reReview.basisMismatch`.
+The review engine decides that comparability itself, with the same table bundled into it — it is the side that computes the fingerprints — so a `review` record and each of its checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp. The analyzer's engine identity (`rN`) uses the engine's revision when a record carries it, and the logger's otherwise. The loader prints `priorFpRevisions` together with `priorFpRevisionsCheck` (the same list as a string), and the engine trusts the list only when the two still match after the model relay; a mismatch is recorded as `reReview.basisMismatch`.
 
 `node lib/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.
@@ -66,7 +66,7 @@ loads the detail files anyway. This is also why every record-filing engine — `
 `lib/craft-log-run.mjs` rather than instructing a model to assemble the record: an engine that
 computes the fields from a prompt cannot produce this one at all, so every record it files is
 excluded from `--engine latest` by construction. The shared write path is `lib/run-logging.mjs`,
-inlined into each engine by the `craft-inline` gate.
+bundled into each engine.
 Records written before these fields carry `null` and are outside any filter.
 
 Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` and `adversarial-review` record `0` (`refuteRate()` in `lib/run-record.mjs`), and `lib/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
@@ -174,9 +174,9 @@ hand it to a cheap **logger agent** whose whole job is transport: it stages the 
 per-run `mktemp` file and runs `lib/craft-log-run.mjs`, which computes every field
 (`ts`/`project`/`commit`/`dirty`/`engineRevision`/`craftCommit`), names the file, appends the index
 line and verifies the readback. All four engines go through that one path — the prompt itself is
-built by `lib/run-logging.mjs` and inlined into each. A write that does not land is asserted, not
-inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `lib/run-record.mjs`; the workflow scripts inline verbatim
-copies (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
+built by `lib/run-logging.mjs` and bundled into each. A write that does not land is asserted, not
+inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `lib/run-record.mjs`; the engines import them and the build
+bundles them in (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
 section, suppressed when run as a workflow sub-agent.
 
 ### When a record is missing
@@ -193,7 +193,7 @@ directory could not be folded into it. A run with both keeps the louder heading.
 fixed string will therefore miss the other.
 
 `review.js`, `rust-audit` and `triage-findings` render that section (from `telemetryLostSection` in
-`lib/review-coverage.mjs`, inlined into each). `adversarial-review` returns a structured object
+`lib/review-coverage.mjs`, bundled into each). `adversarial-review` returns a structured object
 rather than report markdown, so it has **no section**: the same distinction reaches its `notRun`
 notes through `telemetryNotes()`.
 

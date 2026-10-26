@@ -79,7 +79,7 @@ craft/
 │   ├── rust-review.js
 │   ├── rust-audit.js
 │   └── triage-findings.js
-├── lib/                   # tested helpers shared (inlined) by the workflows
+├── lib/                   # tested helpers shared (bundled) by the workflows
 │   └── run-record.mjs
 └── skills/                # (abbreviated)
     ├── rust-review/
