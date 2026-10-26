@@ -152,14 +152,14 @@ function normalizeKeyValueArgs(text, warn) {
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
  *
- * @param {unknown} args
+ * @param {unknown} rawArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Record<string, unknown>}
  */
-function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
-  if (typeof args !== 'string' || !args.trim()) return {}
-  const text = args.trim()
+function normalizeArgs(rawArgs, warn = () => {}) {
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return /** @type {Record<string, unknown>} */ (rawArgs)
+  if (typeof rawArgs !== 'string' || !rawArgs.trim()) return {}
+  const text = rawArgs.trim()
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -170,9 +170,9 @@ function normalizeArgs(args, warn = () => {}) {
 const DEPENDENCY_SOURCE_HOW = 'Finding a dependency\'s source: open the version the project pins, never the newest or a remembered one, and never let a tool rewrite the lockfile to find it. For a Rust crate, take the package\'s `manifest_path` from `cargo metadata --locked --format-version 1` — its directory is the source of the version Cargo.lock pins (under `~/.cargo/registry`, a git checkout, or the vendored tree); if that directory is missing, run `cargo fetch --locked` first. A build or test command run before you may already have written Cargo.lock: take the lockfile cargo uses, `Cargo.lock` under the `workspace_root` from `cargo metadata --no-deps --format-version 1`, and unless `git ls-files --error-unmatch <that path>` succeeds and `git status --porcelain <that path>` is empty, the version it names is resolved today, not pinned — say so. If the reviewed checkout has no Cargo.lock (a library that does not commit one), nothing is pinned: resolve in a throwaway copy (`git worktree add --detach <tmp>` of the reviewed commit, or, when a Cargo.toml has uncommitted changes, a copy of the working tree without `target/` and `.git`), run `cargo metadata --format-version 1` there, open the sources it names, and always remove the copy (`git worktree remove <tmp>` when you added one); say the version is the one resolved today, not a pinned one, and never write Cargo.lock in the reviewed checkout. If Cargo.lock exists but `--locked` refuses (it is stale), the pinned version cannot be determined — do not run cargo without the flag: treat the premise as one you could not open. For a Nix flake input, open the input at the revision flake.lock pins, not a channel or its current head. For another ecosystem, the same way: the version from the project\'s lockfile, the code from the package manager\'s cache or the vendor directory.'
 /** @type {Record<string, unknown>} */
 const A = normalizeArgs(args, log)
-/** A string argument as given, or '' when it is absent or falsy. @param {string} key */
-function argString(key) {
-  return A[key] ? String(A[key]) : ''
+/** A string argument as given, or '' when it is absent or falsy. @param {string} argName */
+function argString(argName) {
+  return A[argName] ? String(A[argName]) : ''
 }
 const baseArg = argString('base')
 const intentArg = argString('intent')
@@ -1570,14 +1570,14 @@ async function matchFindings(findings, decisions, judge, reraisedSure = undefine
     return p && resolvePlan(f, p, byFinding.get(f))
   }
   /** @param {DecidableFinding} f @returns {Contradiction | undefined} */
-  const contradictionOf = f => (matchOf(f) ? undefined : against.get(f))
+  const judgedContradictionOf = f => (matchOf(f) ? undefined : against.get(f))
   /** The record the judge says `f`'s code goes against, matched or not — for a re-raised match. @param {DecidableFinding} f @returns {Contradiction | undefined} */
   const violationOf = f => against.get(f)
   const cutF = new Set(pairs.slice(sent.length, sent.length + CUT_NAMED_MAX).map(p => p.f))
   const unnamed = [...sent, ...pairs.slice(sent.length + CUT_NAMED_MAX)]
   const titleless = judge ? [...new Set(unnamed.filter(p => namesNoRule(p.f) && !cutF.has(p.f) && !byFinding.get(p.f)?.has(p.d) && !matchOf(p.f)).map(p => p.f))] : []
   if (titleless.length) refused.push(rulelessUnjudgedNote(titleless))
-  return { matchOf, contradictionOf, violationOf, notes, refused }
+  return { matchOf, contradictionOf: judgedContradictionOf, violationOf, notes, refused }
 }
 
 /**
@@ -2623,7 +2623,7 @@ const lightKeptLenses = new Set()
 /** Whether any profile reached its lens phase: a light report on an earlier exit says no lens ran. */
 let lensPhaseReached = false
 /** The extra lenses that answered, and those that did not, each with the class of its failure. */
-const extraLensOutcome = { ran: /** @type {string[]} */ ([]), failed: /** @type {{ agent: string, why: string }[]} */ (extraLensRequest.refused.map(agent => ({ agent, why: 'not an agent type name' }))), discovery: '', reached: false, exit: /** @type {{ reason: string, needed: boolean } | null} */ (null) }
+const extraLensOutcome = { ran: /** @type {string[]} */ ([]), failed: /** @type {{ agent: string, why: string }[]} */ (extraLensRequest.refused.map(agentTypeName => ({ agent: agentTypeName, why: 'not an agent type name' }))), discovery: '', reached: false, exit: /** @type {{ reason: string, needed: boolean } | null} */ (null) }
 
 const GATE_TIME_BUDGET = `
 TIME BUDGET (hard): wrap EVERY build/lint/test command in \`timeout\` so the shell kills it instead of
@@ -2986,8 +2986,8 @@ const optionalSection = () => {
   const named = skipped.filter(l => optionalNamedByCritic.has(l))
   if (failedProfiles(results).length) {
     const unrequested = skipped.filter(l => !optionalRequested.includes(l))
-    const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was not dispatched; once the gate is green, weigh including it in that re-run.\n` : ''
-    return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n` + criticLine
+    const criticHint = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was not dispatched; once the gate is green, weigh including it in that re-run.\n` : ''
+    return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. The mechanical gate is red, which blocks this review by itself — fix the gate first.${unrequested.length ? ` ${unrequested.join(', ')} ${unrequested.length === 1 ? 'is' : 'are'} off by default; add \`optional=${unrequested.join(',')}\` to the re-run only if you want ${unrequested.length === 1 ? 'it' : 'them'}.` : ''}\n` + criticHint
   }
   const criticLine = named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still not dispatched — the optional pass is bought by an explicit request, not by a model mid-run — so buy it deliberately with \`optional=${named.join(',')}\`.\n` : ''
   return `\n\n## Not looked at — the optional pass did not run\n⚠️ These lenses were NOT dispatched, so this review makes NO statement about what they cover: ${skipped.join(', ')}. That is an absence of a result, not a clean one. They are off by default because they returned no High findings on the run that was measured — one diff of one repository, so the basis is a single point, not a settled law; to buy them, re-run with \`optional=true\` (or \`optional=${skipped.join(',')}\`).\n`
@@ -3087,10 +3087,10 @@ const surfaceGateDispatched = new Set()
 const surfaceGateNamedByCritic = new Set()
 const surfaceGateTally = () => ({ dropped: savedSurfaceDrops(results, surfaceGateDispatched) })
 const surfaceGateSection = () => {
-  const dropped = surfaceGateTally().dropped
-  if (!dropped.length) return ''
-  const named = dropped.filter(l => surfaceGateNamedByCritic.has(l))
-  return `\n\n## Not run — the diff does not touch the surface these lenses need\n⚠️ These whole-repo lenses were NOT dispatched, so this review makes NO statement about what they cover: ${dropped.join(', ')}. Each fires only when the diff touches the surface its defect class needs (a cross-boundary symbol, a wire/serialized form, an invariant-bearing type), and this diff does not. That is an absence of a result, not a clean one.\n`
+  const gateDropped = surfaceGateTally().dropped
+  if (!gateDropped.length) return ''
+  const named = gateDropped.filter(l => surfaceGateNamedByCritic.has(l))
+  return `\n\n## Not run — the diff does not touch the surface these lenses need\n⚠️ These whole-repo lenses were NOT dispatched, so this review makes NO statement about what they cover: ${gateDropped.join(', ')}. Each fires only when the diff touches the surface its defect class needs (a cross-boundary symbol, a wire/serialized form, an invariant-bearing type), and this diff does not. That is an absence of a result, not a clean one.\n`
     + (named.length ? `\n⚠️ The completeness critic named ${named.join(', ')} as an uncovered surface for THIS diff. It was still NOT dispatched — the surface gate is the deliberate boundary, not something a model re-opens mid-run — so treat this as a visible gap, not a clean pass.\n` : '')
 }
 
@@ -3950,8 +3950,6 @@ function promptFields(f) {
   }
 }
 /** @param {unknown} s */
-function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
-/** @param {unknown} s */
 function isCommitish(s) {
   const v = String(s ?? '').trim()
   if (!v) return false
@@ -4441,6 +4439,7 @@ function makeDeadlineBudget(totalMs, { floorMs = 0, schedule, cancel } = {}) {
 }
 
 const DEADLINE_HIT = { craftDeadline: true }
+
 const DEFAULT_DEADLINE_MS = 1800000
 /** @type {Record<string, number>} */
 const PHASE_DEADLINE_MS = { Scout: 900000, Gate: 1800000, Lenses: 5400000, Verify: 1800000, Adjudicate: 1800000, Synthesize: 1800000 }
@@ -4596,8 +4595,8 @@ function honestVerdictLine(text, notRun) {
   const at = verdictLineAt(lines)
   if (at < 0) return s
   const line = String(lines[at])
-  const word = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
-  if (!word || !GREEN_WORD.test(String(word[1]))) return s
+  const verdictWord = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
+  if (!verdictWord || !GREEN_WORD.test(String(verdictWord[1]))) return s
   const fixed = line.replace(/(?:(?:\u2705|\u26a0\ufe0f?)\s*)?\b(?:Approve|Healthy|Clean)\b(?:\s*\((?:INCOMPLETE|PARTIAL COVERAGE)\))?/i, '\u26a0\ufe0f INCOMPLETE')
   const list = missing.join('; ')
   const named = /did not run/i.test(fixed) ? '' : ` \u00b7 part of this review did not run: ${list.length > NOTE_MAX ? `${list.slice(0, NOTE_MAX)}\u2026` : list}`
@@ -4623,38 +4622,38 @@ async function ragent(prompt, opts = {}) {
   const { deadlineMs: _deadlineMs, breaker, inSessionDir: _inSessionDir, bookkeeping, ...agentOpts } = opts
   if (!bookkeeping && limitStop.seen()) return null
   const ms = deadlineMsFor(opts)
-  const budget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
+  const deadlineBudget = makeDeadlineBudget(ms, { floorMs: retryFloorMs(ms) })
   try {
-    return /** @type {T | null} */ (await withBudget(prompt, agentOpts, budget, breaker, opts))
+    return /** @type {T | null} */ (await withBudget(prompt, agentOpts, deadlineBudget, breaker, opts))
   } finally {
-    budget.dispose()
+    deadlineBudget.dispose()
   }
 }
 
-/** @param {string} prompt @param {AgentOptions} agentOpts @param {ReturnType<typeof makeDeadlineBudget>} budget @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {Promise<unknown>} */
-async function withBudget(prompt, agentOpts, budget, breaker, opts) {
+/** @param {string} prompt @param {AgentOptions} agentOpts @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {Promise<unknown>} */
+async function withBudget(prompt, agentOpts, deadlineBudget, breaker, opts) {
   for (let attempt = 1; ; attempt++) {
     const o = attempt === 1 ? agentOpts : { ...agentOpts, label: `retry:${agentOpts.label || 'agent'}` }
-    const res = await raceLimited(prompt, o, budget, opts)
+    const res = await raceLimited(prompt, o, deadlineBudget, opts)
     if (res === LIMIT_HIT) return null
-    const spentOut = budget.belowFloor()
+    const spentOut = deadlineBudget.belowFloor()
     if (res === DEADLINE_HIT) {
-      logDeadlineFire(o, budget)
+      logDeadlineFire(o, deadlineBudget)
       return null
     }
     if (res !== null && res !== undefined) {
       if (breaker) breaker.recordLive()
       return res
     }
-    if (!redispatchAfterDeath(attempt, spentOut, budget, breaker, opts)) return null
+    if (!redispatchAfterDeath(attempt, spentOut, deadlineBudget, breaker, opts)) return null
   }
 }
 
 const LIMIT_HIT = { craftUsageLimit: true }
-/** One attempt raced against the deadline; LIMIT_HIT when it failed on a usage limit (thrown or answered). @param {string} prompt @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} budget @param {AgentOpts} opts @returns {Promise<unknown>} */
-async function raceLimited(prompt, o, budget, opts) {
+/** One attempt raced against the deadline; LIMIT_HIT when it failed on a usage limit (thrown or answered). @param {string} prompt @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget @param {AgentOpts} opts @returns {Promise<unknown>} */
+async function raceLimited(prompt, o, deadlineBudget, opts) {
   try {
-    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), budget.hit])
+    const res = await Promise.race([agent(`${opts.inSessionDir ? '' : REPO_DIRECTIVE}${prompt}`, o), deadlineBudget.hit])
     return limitStop.observeAnswer(res) ? LIMIT_HIT : res
   } catch (e) {
     if (limitStop.observeError(e)) return LIMIT_HIT
@@ -4662,22 +4661,22 @@ async function raceLimited(prompt, o, budget, opts) {
   }
 }
 
-/** A deadline fire, logged against the budget it spent. @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} budget */
-function logDeadlineFire(o, budget) {
-  const ms = budget.total()
+/** A deadline fire, logged against the budget it spent. @param {AgentOptions} o @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget */
+function logDeadlineFire(o, deadlineBudget) {
+  const ms = deadlineBudget.total()
   const waited = ms >= 60000 ? `${Math.round(ms / 60000)}min budget` : `${Math.max(1, Math.round(ms / 1000))}s budget`
   log(`⏱️ agent '${o.label || '?'}' exhausted its ${waited} with no response — abandoning the wait (the deadline is one budget shared by the attempts and a fire spends it, so there is nothing left to re-dispatch into; treated as a dead agent)`)
 }
 
 /**
  * After an attempt that came back empty: whether to re-dispatch (true) or treat the agent as dead (false).
- * @param {number} attempt @param {boolean} spentOut @param {ReturnType<typeof makeDeadlineBudget>} budget
+ * @param {number} attempt @param {boolean} spentOut @param {ReturnType<typeof makeDeadlineBudget>} deadlineBudget
  * @param {ReturnType<typeof makeDeathBreaker> | null | undefined} breaker @param {AgentOpts} opts @returns {boolean}
  */
-function redispatchAfterDeath(attempt, spentOut, budget, breaker, opts) {
+function redispatchAfterDeath(attempt, spentOut, deadlineBudget, breaker, opts) {
   if (attempt >= AGENT_TRIES) return false
   if (spentOut) {
-    log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(budget.total()) / 1000)}s floor left of its ${Math.round(budget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
+    log(`⏱️ agent '${opts.label || '?'}' returned no result with less than the ${Math.round(retryFloorMs(deadlineBudget.total()) / 1000)}s floor left of its ${Math.round(deadlineBudget.total() / 1000)}s deadline budget — NOT re-dispatching (a second attempt would time out before it could answer); treated as a dead agent`)
     return false
   }
   if (breaker && !breaker.deathAllowsRedispatch()) {
@@ -4735,11 +4734,11 @@ function refuteRate(refuted, candidates) {
 function isMaintainability(f) {
   return (f['source'] || '') === 'maintainability' || (Array.isArray(f['sources']) && /** @type {unknown[]} */ (f['sources']).includes('maintainability'))
 }
-/** @param {Finding[]} confirmed */
-function finalVerdict(confirmed) {
-  if (strict && confirmed.some(f => isMaintainability(f)
+/** @param {Finding[]} confirmedIn */
+function finalVerdict(confirmedIn) {
+  if (strict && confirmedIn.some(f => isMaintainability(f)
     && (f['severity'] === 'Critical' || f['severity'] === 'High' || f['severity'] === 'Medium'))) return 'Block'
-  return reviewVerdict(confirmed)
+  return reviewVerdict(confirmedIn)
 }
 /** @type {string[]} */
 const telemetryLost = []
@@ -4777,10 +4776,10 @@ let reReviewMemoryNote = null
 const reReviewMemorySection = () => (reReviewMemoryNote ? `## ⚠️ Re-review memory off\n${reReviewMemoryNote}\n\n` : '')
 /** @type {{ id: string, agent: string, error: string }[]} */
 const reviewerAgentUnavailable = []
-/** @param {unknown} msg @param {string} [agent] */
-function isAgentTypeMissing(msg, agent) {
+/** @param {unknown} msg @param {string} [agentTypeName] */
+function isAgentTypeMissing(msg, agentTypeName) {
   const m = String(msg ?? '')
-  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agentTypeName && m.includes(agentTypeName)))
 }
 
 /**
@@ -4841,11 +4840,11 @@ const reviewerAgentSection = () => agentUnavailableSection(
   reviewerAgentUnavailable.map(x => ({ agent: x.agent, what: `every ${x.id} lens`, error: x.error })),
   Object.entries(reviewerAgentFallbacks).filter(([id]) => !reviewerAgentUnavailable.some(x => x.id === id))
     .flatMap(([id, n]) => {
-      const agent = reviewerAgentNames[id] || `${id} reviewer agent`
+      const agentName = reviewerAgentNames[id] || `${id} reviewer agent`
       const nf = reviewerAgentNotFound[id]
       return [
-        { agent, count: n - (nf?.count || 0), what: 'lens dispatch(es)' },
-        ...(nf ? [{ agent, count: nf.count, what: 'lens dispatch(es)', error: nf.error }] : []),
+        { agent: agentName, count: n - (nf?.count || 0), what: 'lens dispatch(es)' },
+        ...(nf ? [{ agent: agentName, count: nf.count, what: 'lens dispatch(es)', error: nf.error }] : []),
       ]
     }),
 )
@@ -4875,6 +4874,9 @@ const LOGRUN_SCHEMA = {
     error: { type: 'string', description: 'when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise' },
   },
 }
+
+/** @param {unknown} s */
+function shq(s) { return `'${String(s ?? '').replace(/'/g, `'\\''`)}'` }
 
 /**
  * @param {string | undefined} craftRoot
@@ -4975,12 +4977,12 @@ ${JSON.stringify(record, null, 2)}`
  * @param {{ phase?: string }} [opts]
  * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
-function logRunDispatch(record, { phase = '' } = {}) {
+function logRunDispatch(record, { phase: phaseTitle = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
   return {
     label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
-    phase,
+    phase: phaseTitle,
     schema: LOGRUN_SCHEMA,
     model: big ? 'sonnet' : 'haiku',
     effort: 'low',
@@ -5013,9 +5015,9 @@ function quietly(call) {
 }
 
 /** @param {{ payload?: unknown, craftRoot?: string, repo?: string, phase?: string, dir?: string, rejoin?: boolean }} [opts] */
-function checkpointPrompt({ payload, craftRoot = '', repo = '', phase = '', dir = '', rejoin = false } = {}) {
+function checkpointPrompt({ payload, craftRoot = '', repo = '', phase: phaseTitle = '', dir = '', rejoin = false } = {}) {
   const version = payloadVersion(payload)
-  const flags = `--phase ${shq(phase)} ${engineRevisionFlag(payload)}${runDirFlags(dir, rejoin)}`
+  const flags = `--phase ${shq(phaseTitle)} ${engineRevisionFlag(payload)}${runDirFlags(dir, rejoin)}`
   return `You are the craft observability logger writing ONE phase checkpoint. Mechanical IO — do not analyze.
 
 Run exactly this, then return the runDir the script prints:
@@ -5058,11 +5060,11 @@ function loggerAgentDied(res) {
  * @param {(record: Record<string, unknown>) => Record<string, unknown>} [o.prepare]
  * @returns {(record: Record<string, unknown>) => Promise<void>}
  */
-function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+function makeRunLogger({ call, phase: phaseTitle, target, noteLoss, prepare = record => record }) {
   return async recordIn => {
     const record = prepare(recordIn)
     const at = { ...target(), record }
-    const dispatch = logRunDispatch(record, { phase })
+    const dispatch = logRunDispatch(record, { phase: phaseTitle })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
     else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
@@ -5232,25 +5234,25 @@ let runDir = ''
 let startHead = ''
 let checkpointFailed = false
 let rejoinArmed = false
-/** @param {string} phase @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
-async function checkpoint(phase, payloadIn, group) {
+/** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn @param {string} group @returns {Promise<boolean>} */
+async function checkpoint(phaseTitle, payloadIn, group) {
   const payload = { kind: 'workflow', name: 'review', craftVersion: CRAFT_VERSION, ...payloadIn, startHead, workflowEngineRevision: ENGINE_REVISION }
   const asked = runDir
   const armRejoin = !runDir && checkpointFailed
   if (armRejoin) rejoinArmed = true
   const { answer: res, threw } = splitThrew(await ragentQuietly(
-    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase, dir: runDir, rejoin: armRejoin }),
-    { label: `checkpoint:${phase}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
+    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase: phaseTitle, dir: runDir, rejoin: armRejoin }),
+    { label: `checkpoint:${phaseTitle}`, phase: group, schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   ))
-  if (res?.runDir) return tookRunDir(phase, asked, res.runDir)
+  if (res?.runDir) return tookRunDir(phaseTitle, asked, res.runDir)
   checkpointFailed = true
-  noteTelemetryLoss(`phase checkpoint '${phase}'`, threw || res?.error || 'the logger agent returned no runDir')
+  noteTelemetryLoss(`phase checkpoint '${phaseTitle}'`, threw || res?.error || 'the logger agent returned no runDir')
   return false
 }
-/** @param {string} phase @param {string} asked @param {string} returned @returns {boolean} */
-function tookRunDir(phase, asked, returned) {
+/** @param {string} phaseTitle @param {string} asked @param {string} returned @returns {boolean} */
+function tookRunDir(phaseTitle, asked, returned) {
   if (asked && returned !== asked) {
-    noteTelemetryLoss(`phase checkpoint '${phase}'`, `the logger minted ${returned} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
+    noteTelemetryLoss(`phase checkpoint '${phaseTitle}'`, `the logger minted ${returned} instead of the run's own ${asked} — earlier phase slices there will not be folded`)
   }
   runDir = returned
   return !!asked && returned === asked
@@ -5417,29 +5419,29 @@ function basisVerdictFromRevisions(revs, currentRev = ENGINE_REVISION) {
   if (bases.size !== 1) return { sameFpBasis: false, fpBasisKnown: false }
   return { sameFpBasis: fpBasisOf(list[0]) === fpBasisOf(currentRev), fpBasisKnown: true }
 }
-/** @param {PriorRound | null} priorRound */
-function ledgerTruncated(priorRound) {
-  if (!priorRound) return false
-  const count = Number(priorRound['ledgerCount'])
+/** @param {PriorRound | null} priorRoundIn */
+function ledgerTruncated(priorRoundIn) {
+  if (!priorRoundIn) return false
+  const count = Number(priorRoundIn['ledgerCount'])
   if (!Number.isFinite(count)) return false   // a record from before the count existed: nothing to check
-  return count !== (Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0)
+  return count !== (Array.isArray(priorRoundIn['ledger']) ? priorRoundIn['ledger'].length : 0)
 }
-/** @param {PriorRound | null} priorRound */
-function ledgerDegraded(priorRound) {
-  if (!priorRound) return false
-  if (ledgerTruncated(priorRound)) return true
-  const findings = Number(priorRound['priorFindings'] || 0)
-  const ledgerLen = Array.isArray(priorRound['ledger']) ? priorRound['ledger'].length : 0
+/** @param {PriorRound | null} priorRoundIn */
+function ledgerDegraded(priorRoundIn) {
+  if (!priorRoundIn) return false
+  if (ledgerTruncated(priorRoundIn)) return true
+  const findings = Number(priorRoundIn['priorFindings'] || 0)
+  const ledgerLen = Array.isArray(priorRoundIn['ledger']) ? priorRoundIn['ledger'].length : 0
   return findings > 0 && ledgerLen === 0
 }
 /** @param {{ priorRound: PriorRound | null, thisRound: number, fullEvery: number, degraded: boolean, journalSourced: boolean }} args */
-function shouldFullRescan({ priorRound, thisRound, fullEvery, degraded, journalSourced }) {
-  if (!priorRound) return true            // a first review is already a full base...HEAD scan
+function shouldFullRescan({ priorRound: priorRoundIn, thisRound: thisRoundIn, fullEvery: fullEveryIn, degraded, journalSourced }) {
+  if (!priorRoundIn) return true            // a first review is already a full base...HEAD scan
   if (degraded) return true               // nothing to carry — a delta-only scan would review almost nothing
   if (journalSourced) return true
-  const n = Number(fullEvery)
+  const n = Number(fullEveryIn)
   if (!Number.isFinite(n) || n < 1) return false
-  return Number(thisRound) % n === 0
+  return Number(thisRoundIn) % n === 0
 }
 
 phase('Scout')
@@ -5462,7 +5464,7 @@ async function detectDiedExit() {
 /** @returns {Promise<{ exit: string, detected: null } | { exit: null, detected: DetectAnswer }>} */
 async function detectChanges() {
   if (ambiguousPath) return { exit: await ambiguousPathExit(), detected: null }
-  const detected = await ragent(
+  const detectorAnswer = await ragent(
     `You are resolving the review base and the changed files. Use shell + read only — do NOT review.${pathArg ? `\n\nSCOPE: consider ONLY files under ${shq(pathArg)}; pass \`-- ${shq(pathArg)}\` to the git commands below.` : ''}
 1. Resolve the diff base. ${baseArg
     ? `Use \`${baseArg}\`.`
@@ -5474,41 +5476,41 @@ async function detectChanges() {
 Return baseRef (the ref you resolved, empty string if none), files (the changed paths), spec (the verbatim description), branch, head, and baseIsHead.`,
     { label: 'detect', schema: DETECT_SCHEMA, model: 'haiku', effort: 'low' },
   )
-  if (!detected) return { exit: await detectDiedExit(), detected: null }
-  return { exit: null, detected }
+  if (!detectorAnswer) return { exit: await detectDiedExit(), detected: null }
+  return { exit: null, detected: detectorAnswer }
 }
 const detection = await detectChanges()
 if (detection.exit !== null) return detection.exit
 const detected = detection.detected
-/** What the detect agent resolved, normalised: the base, the changed files, the spec and the run's identity. @param {DetectAnswer} detected */
-function detectedChange(detected) {
-  const baseRef = detected.baseRef ?? baseArg
-  const changedFiles = (Array.isArray(detected.files) ? detected.files : []).map(decodeGitPath)
-  const spec = (typeof detected.spec === 'string' ? detected.spec : '').slice(0, 4000)
-  const branch = branchFromAbbrevRef((typeof detected.branch === 'string' ? detected.branch : '').trim())
-  const head = (typeof detected.head === 'string' ? detected.head : '').trim()
-  return { baseRef, changedFiles, spec, branch, head }
+/** What the detect agent resolved, normalised: the base, the changed files, the spec and the run's identity. @param {DetectAnswer} detectedIn */
+function detectedChange(detectedIn) {
+  const detectedBase = detectedIn.baseRef ?? baseArg
+  const detectedFiles = (Array.isArray(detectedIn.files) ? detectedIn.files : []).map(decodeGitPath)
+  const detectedSpec = (typeof detectedIn.spec === 'string' ? detectedIn.spec : '').slice(0, 4000)
+  const detectedBranch = branchFromAbbrevRef((typeof detectedIn.branch === 'string' ? detectedIn.branch : '').trim())
+  const detectedHead = (typeof detectedIn.head === 'string' ? detectedIn.head : '').trim()
+  return { baseRef: detectedBase, changedFiles: detectedFiles, spec: detectedSpec, branch: detectedBranch, head: detectedHead }
 }
 const { baseRef, changedFiles, spec, branch, head } = detectedChange(detected)
 startHead = head
 
 async function loadPriorRound() {
   /** @type {PriorRound | null} */
-  let priorRound = null
+  let loadedPriorRound = null
   /** @type {string | null} */
-  let priorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
+  let loadedPriorReason = freshArg ? 'fresh' : viaArg ? 'nested' : null
   if (!freshArg && viaArg) {
     log(`Nested run (via ${viaArg}) — the round chain is the top-level run's: not read, and this run's row is not a candidate round for anyone (its siblings in the fan-out share this project and branch)`)
   }
-  if (!freshArg && !viaArg) ({ priorRound, priorReason } = await readPriorRound(priorReason))
-  announcePriorRound(priorRound)
-  return { priorRound, priorReason }
+  if (!freshArg && !viaArg) ({ priorRound: loadedPriorRound, priorReason: loadedPriorReason } = await readPriorRound(loadedPriorReason))
+  announcePriorRound(loadedPriorRound)
+  return { priorRound: loadedPriorRound, priorReason: loadedPriorReason }
 }
-/** @param {string | null} priorReason @returns {Promise<{ priorRound: PriorRound | null, priorReason: string | null }>} */
-async function readPriorRound(priorReason) {
+/** @param {string | null} priorReasonIn @returns {Promise<{ priorRound: PriorRound | null, priorReason: string | null }>} */
+async function readPriorRound(priorReasonIn) {
   let priorReadThrew = ''
   /** @type {PriorRound | null} */
-  let priorRound = await ragentQuietly(
+  let readRound = await ragentQuietly(
     `You are the craft prior-round loader. This is mechanical IO — you DECIDE nothing: selecting the round, checking ancestry and reading the record are all done by the script.
 
 Run exactly this:
@@ -5520,37 +5522,37 @@ ${loggerPreludeNow()}cd ${shq(repoArg || '.')} && node ${LOGGER_PATH} prior-roun
 It prints ONE line of JSON and always exits 0. Return that object VERBATIM — copy the \`ledger\` array byte for byte, do not summarize, re-key, truncate or "clean up" any entry. It prints \`ledgerCount\` alongside \`ledger\` — copy that number EXACTLY as printed; never recount, never adjust it to the array you are returning. Copy \`sameFpBasis\` exactly as printed too — it decides whether this round may compare fingerprints with the last one, and a dropped or flipped value loses the loop's memory. If the printed object has no \`sameFpBasis\`, leave it out; never invent one. The same holds for \`fpBasisKnown\`, \`priorFpRevisions\` (copy that array exactly) and \`priorFpRevisionsCheck\`. If the command prints nothing or cannot run, return {found:false, round:0, head:"", ledger:[], ledgerCount:0, priorFindings:0, journalSourced:false, sameFpBasis:false, fpBasisKnown:false, reason:"loader-did-not-run"}.`,
     { label: 'prior-round', schema: PRIOR_ROUND_SCHEMA, model: 'haiku', effort: 'low', phase: 'Scout' },
   ).then(res => { const { answer, threw } = splitThrew(res); priorReadThrew = threw; return answer })
-  if (!priorRound?.['found']) {
-    priorReason = rejectedPriorReason(priorRound, priorReadThrew)
-    priorRound = null
+  if (!readRound?.['found']) {
+    priorReasonIn = rejectedPriorReason(readRound, priorReadThrew)
+    readRound = null
   }
-  if (priorRound && !isCommitish(priorRound['head'])) {
-    log(`⚠️ prior-round head ${JSON.stringify(priorRound['head'])} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
-    priorRound['head'] = baseRef
+  if (readRound && !isCommitish(readRound['head'])) {
+    log(`⚠️ prior-round head ${JSON.stringify(readRound['head'])} is not a safe commit-ish — falling back to the base ref for the fix-range diff`)
+    readRound['head'] = baseRef
   }
-  return { priorRound, priorReason }
+  return { priorRound: readRound, priorReason: priorReasonIn }
 }
-/** @param {PriorRound | null} priorRound @param {string} priorReadThrew */
-function rejectedPriorReason(priorRound, priorReadThrew) {
-  const priorReason = priorRound?.['reason'] || 'no-prior-round'
-  if (priorRound?.['reason']) log(`No prior round: ${priorRound['reason']}`)
-  notePriorReadFailure(priorRound, priorReadThrew)
-  return priorReason
+/** @param {PriorRound | null} priorRoundIn @param {string} priorReadThrew */
+function rejectedPriorReason(priorRoundIn, priorReadThrew) {
+  const rejectedReason = priorRoundIn?.['reason'] || 'no-prior-round'
+  if (priorRoundIn?.['reason']) log(`No prior round: ${priorRoundIn['reason']}`)
+  notePriorReadFailure(priorRoundIn, priorReadThrew)
+  return rejectedReason
 }
-/** @param {PriorRound | null} priorRound @param {string} priorReadThrew */
-function notePriorReadFailure(priorRound, priorReadThrew) {
+/** @param {PriorRound | null} priorRoundIn @param {string} priorReadThrew */
+function notePriorReadFailure(priorRoundIn, priorReadThrew) {
   const READ_FAILURES = ['loader-did-not-run', 'git-unavailable']
-  const readFailed = !priorRound || !!priorReadThrew || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRound)['reason'] || '').startsWith(r))
+  const readFailed = !priorRoundIn || !!priorReadThrew || READ_FAILURES.some(r => String(/** @type {PriorRound} */ (priorRoundIn)['reason'] || '').startsWith(r))
   if (readFailed) {
-    noteTelemetryLoss('the prior-round ledger', priorReadThrew || priorRound?.['reason'] || 'the loader agent returned no result')
+    noteTelemetryLoss('the prior-round ledger', priorReadThrew || priorRoundIn?.['reason'] || 'the loader agent returned no result')
   }
 }
-/** @param {PriorRound | null} priorRound */
-function announcePriorRound(priorRound) {
-  if (priorRound && ledgerTruncated(priorRound)) {
-    log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRound['ledgerCount']} entr(ies), ${priorRound['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
+/** @param {PriorRound | null} priorRoundIn */
+function announcePriorRound(priorRoundIn) {
+  if (priorRoundIn && ledgerTruncated(priorRoundIn)) {
+    log(`⚠️ prior-round ledger arrived TRUNCATED: the loader printed ${priorRoundIn['ledgerCount']} entr(ies), ${priorRoundIn['ledger']?.length || 0} survived transport — treating the round as degraded and forcing a full re-scan.`)
   }
-  if (priorRound) log(`Re-review: prior round ${priorRound['round']} @ ${flattenField(priorRound['head'])} · ${priorRound['ledger']?.length || 0} ledger finding(s)`)
+  if (priorRoundIn) log(`Re-review: prior round ${priorRoundIn['round']} @ ${flattenField(priorRoundIn['head'])} · ${priorRoundIn['ledger']?.length || 0} ledger finding(s)`)
   else log(freshArg ? 'Fresh review (—fresh): prior round ignored' : 'First review for this branch (no prior round)')
 }
 const { priorRound, priorReason } = await loadPriorRound()
@@ -5638,13 +5640,13 @@ warnJournalSourced()
 const fullRescan = shouldFullRescan({ priorRound, thisRound, fullEvery, degraded: priorLedgerDegraded, journalSourced: priorRoundJournalSourced })
 const lensBase = lensScope()
 function lensScope() {
-  const lensBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
+  const scopeBase = (priorRound && !fullRescan) ? priorRound.head : baseRef
   if (priorRound) {
     log(`Re-review round ${thisRound} lens scope: ${fullRescan
       ? `FULL base...HEAD re-scan (fullEvery=${fullEvery}${priorLedgerDegraded ? ', ledger degraded' : ''}${priorRoundJournalSourced ? ', prior round journal-sourced' : ''}) — earlier misses in untouched code are re-checked`
       : `incremental delta ${flattenField(priorRound['head'])}...HEAD (fix commits only)`}`)
   }
-  return lensBase
+  return scopeBase
 }
 
 const { pinned: pinnedLangs, unknown: unknownLangs } = resolveProfilePin(PROFILES, requestedLangs)
@@ -5957,7 +5959,7 @@ function extraLensesNotRun(reason, needed = true) {
   if (extraLensOutcome.reached || extraLensRequest.how === 'off') return []
   extraLensOutcome.reached = true
   extraLensOutcome.exit = { reason, needed }
-  if (extraLensRequest.how === 'named' && needed) extraLensOutcome.failed.push(...extraLensRequest.agents.map(agent => ({ agent, why: `not run: ${reason}` })))
+  if (extraLensRequest.how === 'named' && needed) extraLensOutcome.failed.push(...extraLensRequest.agents.map(agentTypeName => ({ agent: agentTypeName, why: `not run: ${reason}` })))
   return extraLensOutcome.failed.map(extraLensGapLine)
 }
 
@@ -6003,9 +6005,9 @@ function verifyPrompt(f, idx, isTool, gateProvenance, profile) {
   const src = sanitizeAttack(f['source'])
   const why = sanitizeAttack(f['why'])
   const exclusionCatalog = exclusionCatalogText(profile)
-  const head = verifyHead(isTool, idx, src)
+  const verifiedHead = verifyHead(isTool, idx, src)
   const at = `${pf.file || '?'}:${f['line'] || 0}`
-  return `${head}
+  return `${verifiedHead}
 
 FINDING: [${pf.severity}] ${pf.title}
   at ${at}
@@ -6107,9 +6109,9 @@ const ROLLUP_MAX = 3
 function rollupPool(pool, profile) {
   const ids = profile.rollupRuleIds || []
   if (!ids.length) return pool
-  const { groups, out } = rollupGroups(pool, ids)
-  for (const [, g] of groups) out.push(...rolledUp(g, profile))
-  return out
+  const { groups, out: rolled } = rollupGroups(pool, ids)
+  for (const [, g] of groups) rolled.push(...rolledUp(g, profile))
+  return rolled
 }
 
 /**
@@ -6119,16 +6121,16 @@ function rollupPool(pool, profile) {
 function rollupGroups(pool, ids) {
   /** @type {Map<string, Finding[]>} */
   const groups = new Map()
-  const out = []
+  const loose = []
   for (const f of pool) {
     const id = f['ruleId'] || ''
-    if (!ids.includes(id)) { out.push(f); continue }
+    if (!ids.includes(id)) { loose.push(f); continue }
     const k = `${f['source'] || ''}::${id}`
     let g = groups.get(k)
     if (!g) { g = []; groups.set(k, g) }
     g.push(f)
   }
-  return { groups, out }
+  return { groups, out: loose }
 }
 
 /** A finding's severity rank, unknown severities last. @param {Finding} f */
@@ -6250,10 +6252,10 @@ async function dedupPool(pool, profile) {
     merged.push(mergedGroup(g.map((/** @type {number} */ i) => /** @type {Finding} */ (pool[i])), isToolSrc))
   }
   if (!merged.length) return pool
-  const out = pool.filter((/** @type {Finding} */ _f, /** @type {number} */ i) => !inGroup.has(i)).concat(merged)
+  const foldedPool = pool.filter((/** @type {Finding} */ _f, /** @type {number} */ i) => !inGroup.has(i)).concat(merged)
   const detFolded = detGroups.reduce((n, g) => n + g.length - 1, 0)
-  log(`[${profile.id}] Dedup before verify: ${pool.length} → ${out.length} (${pool.length - out.length} cross-lens duplicate(s) merged — ${detFolded} of them same-spot, caught deterministically)`)
-  return out
+  log(`[${profile.id}] Dedup before verify: ${pool.length} → ${foldedPool.length} (${pool.length - foldedPool.length} cross-lens duplicate(s) merged — ${detFolded} of them same-spot, caught deterministically)`)
+  return foldedPool
 }
 
 const CULL_MODEL = 'sonnet'
@@ -6491,7 +6493,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   const floor = makeVerdictFloor()
 
   /** @type {Finding[]} */
-  const unverified = route.skip.map(f => ({
+  const routedUnverified = route.skip.map(f => ({
     ...f,
     tier: 'unverified',
     why: lightPass ? `${f['why']} (NOT VERIFIED: ${lightUnverifiedWhy(f['severity'])})` : `${f['why']} (NOT VERIFIED: no verifier was spent on it — ${f['severity']} cannot change the verdict either way, so nothing here has been checked against the code)`,
@@ -6581,7 +6583,7 @@ async function verifyPool(items, plan, profile, gateProvenance) {
   return {
     confirmed: vp.filter(f => f.tier === 'confirmed'),
     suspected: vp.filter(f => f.tier === 'suspected'),
-    unverified: unverified.concat(deaths),
+    unverified: routedUnverified.concat(deaths),
     notRun: [...new Set([
       ...deaths.filter(f => !f.verifySkipped && !((f.votesDiscarded ?? 0) > 0)).map(f => `${profile.id} verification of ${f.file || '?'} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code`),
       ...deaths.filter(f => !f.verifySkipped && (f.votesDiscarded ?? 0) > 0).map(f => `${profile.id} verification of ${f.file || '?'} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code`),
@@ -6890,7 +6892,7 @@ async function reviewProfile(profile) {
   /** @type {Finding[]} */
   const pool = []
   for (const f of seedFindings) { const k = key(f); if (!seen.has(k)) { seen.add(k); pool.push({ ...f, foundInRound: 0 }) } }
-  const notRun = [...scoutNotRun]
+  const profileNotRun = [...scoutNotRun]
   /** @type {Set<string>} */
   const expectedDispatches = new Set()
   /** @type {Set<string>} */
@@ -6912,10 +6914,10 @@ async function reviewProfile(profile) {
       LENS_WINDOW_AGENTS,
       (run, i) => run().then(r => (r ? { ...r, __key: dispatchKey(/** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens, /** @type {(typeof dispatches)[number]} */ (dispatches[i]).slice), __lens: /** @type {(typeof dispatches)[number]} */ (dispatches[i]).lens } : null)),
     )
-    const results = settled.filter(r => r != null)
-    for (const r of results) returnedDispatches.add(r.__key)
+    const landedResults = settled.filter(r => r != null)
+    for (const r of landedResults) returnedDispatches.add(r.__key)
     const fresh = []
-    for (const r of results) {
+    for (const r of landedResults) {
       for (const f0 of (r.findings || [])) {
         const f = { ...f0, source: r.__lens, foundInRound: round }
         const k = key(f)
@@ -6923,7 +6925,7 @@ async function reviewProfile(profile) {
       }
     }
     pool.push(...fresh)
-    lensRounds.push({ round, agents: dispatches.length, returned: results.length, newFindings: fresh.length })
+    lensRounds.push({ round, agents: dispatches.length, returned: landedResults.length, newFindings: fresh.length })
     log(`[${profile.id}] Lenses round ${round}: +${fresh.length} new (pool ${pool.length})`)
     return !fresh.length
   }
@@ -6931,7 +6933,7 @@ async function reviewProfile(profile) {
   let dry = false
   for (let round = 1; round <= plan.maxRounds && !dry; round++) dry = await lensRound(round)
   pushUnseen(await extraFindings, seen, pool)
-  notRun.push(...extraLensGaps(profile))
+  profileNotRun.push(...extraLensGaps(profile))
 
   const lensesWithHoles = () => plan.lenses.filter(l => [...expectedDispatches].some(k => (k === l || k.startsWith(`${l} :: `)) && !returnedDispatches.has(k)))
   /** @param {FindingsAnswer & { __lens: string }} r */
@@ -6954,22 +6956,22 @@ async function reviewProfile(profile) {
         runLens(a.lens, lensPrompt(a.lens, priorSummary, profile, plan), 'Lenses', ` resurrect${sweep}`)
           .then(r => (r ? { ...r, __lens: a.lens } : null)),
       ))
-      const results = settled.filter(r => r != null)
-      for (const r of results) absorbResurrected(r)
+      const resurrected = settled.filter(r => r != null)
+      for (const r of resurrected) absorbResurrected(r)
       missing = lensesWithHoles()
     }
   }
   await resurrectionSweep()
 
   function reportDroppedLenses() {
-    const droppedLenses = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
-    if (droppedLenses.length) {
+    const neverReturned = [...expectedDispatches].filter(k => !returnedDispatches.has(k))
+    if (neverReturned.length) {
       const reasonFor = (/** @type {string} */ k) => lensFailures.get(k) || lensFailures.get(k.split(' :: ')[0] ?? k) || 'returned no result (skipped or died without an error)'
-      const reasons = droppedLenses.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
-      notRun.push(`${profile.id} lenses that never returned — ${reasons}`)
-      log(`⚠️ [${profile.id}] ${droppedLenses.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
+      const reasons = neverReturned.map(k => `${k}: ${reasonFor(k)}`).join(' · ')
+      profileNotRun.push(`${profile.id} lenses that never returned — ${reasons}`)
+      log(`⚠️ [${profile.id}] ${neverReturned.length} lens dispatch(es) never returned (${reasons}). Review marked INCOMPLETE.`)
     }
-    return droppedLenses
+    return neverReturned
   }
   const droppedLenses = reportDroppedLenses()
   const ranLenses = plan.lenses.filter(l => [...expectedDispatches].every(k => (k !== l && !k.startsWith(`${l} :: `)) || returnedDispatches.has(k)))
@@ -6977,22 +6979,22 @@ async function reviewProfile(profile) {
     language: profile.id, branch, head, baseRef, round: thisRound, ranLenses, droppedLenses, lensRounds,
     candidates: summarizeFindings(pool),
     candidatesBySource: pool.reduce((m, f) => ({ ...m, [f.source || 'unknown']: (m[f.source || 'unknown'] || 0) + 1 }), /** @type {Record<string, number>} */ ({})),
-    notRun,
+    notRun: profileNotRun,
   }, 'Lenses')
   if (!pool.length) {
-    return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun, criticNotes: '', probeViolations }
+    return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: [], suspected: [], unverified: [], dropped: 0, notRun: profileNotRun, criticNotes: '', probeViolations }
   }
 
   phase('Verify')
   const deduped = await dedupPool(rollupPool(applyPathFloor(pool), profile), profile)
-  let { confirmed, suspected, unverified, dropped, refuted, notRun: verifyNotRun, savedByFloor } = await verifyPool(deduped, plan, profile, toolProvenance)
-  notRun.push(...verifyNotRun)
-  log(`[${profile.id}] Verify: ${confirmed.length} confirmed · ${suspected.length} suspected · ${dropped} refuted · ${unverified.length} not verified`)
+  let { confirmed: profileConfirmed, suspected: profileSuspected, unverified: profileUnverified, dropped: profileDropped, refuted, notRun: verifyNotRun, savedByFloor: profileSavedByFloor } = await verifyPool(deduped, plan, profile, toolProvenance)
+  profileNotRun.push(...verifyNotRun)
+  log(`[${profile.id}] Verify: ${profileConfirmed.length} confirmed · ${profileSuspected.length} suspected · ${profileDropped} refuted · ${profileUnverified.length} not verified`)
   await checkpoint(`${profile.id}-verify`, {
     language: profile.id, branch, head, baseRef, round: thisRound,
-    verdict: honestVerdict(finalVerdict(confirmed), notRun),
-    findings: summarizeFindings(confirmed),
-    verification: { candidates: deduped.length - unverified.length, confirmed: confirmed.length, suspected: suspected.length, refuted: dropped, unverified: unverified.length },
+    verdict: honestVerdict(finalVerdict(profileConfirmed), profileNotRun),
+    findings: summarizeFindings(profileConfirmed),
+    verification: { candidates: deduped.length - profileUnverified.length, confirmed: profileConfirmed.length, suspected: profileSuspected.length, refuted: profileDropped, unverified: profileUnverified.length },
   }, 'Verify')
 
   phase('Synthesize')
@@ -7002,7 +7004,7 @@ async function reviewProfile(profile) {
     if (criticInScope && (!budget.total || budget.remaining() > 90000)) {
       await runCritic()
     } else if (criticInScope) {
-      notRun.push(`${profile.id} completeness-critic`)
+      profileNotRun.push(`${profile.id} completeness-critic`)
       log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] completeness critic. Review marked INCOMPLETE.`)
     }
   }
@@ -7010,18 +7012,18 @@ async function reviewProfile(profile) {
     const candidates = profile.lenses.filter((/** @type {string} */ l) => !plan.lenses.includes(l))
     const critic = await ragent(
       `You are a completeness critic for a ${profile.lang} review of the diff (base ${flattenField(baseRef) || 'HEAD'}).
-Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${confirmed.length}, Suspected: ${suspected.length}.
+Lenses already run: ${plan.lenses.join(', ')}. Confirmed: ${profileConfirmed.length}, Suspected: ${profileSuspected.length}.
 Name any review lens that was NOT run but SHOULD be, given what the diff touches — choose ONLY from: ${JSON.stringify(candidates)}.
 Also note in one line anything else likely missed (a changed file no finding touched, a claim left unverified). If coverage is complete, return missingLenses: [] and notes: "coverage complete".`,
       { label: `critic:${profile.id}`, phase: 'Synthesize', schema: CRITIC_SCHEMA, effort: 'low' },
     )
-    criticNotes = critic?.notes ?? ''
+    profileCriticNotes = critic?.notes ?? ''
     const named = (critic?.missingLenses ?? []).filter((/** @type {string} */ l) => candidates.includes(l))
     const followups = refuseCriticNames(named)
     if (followups.length && (!budget.total || budget.remaining() > 60000)) {
       await criticFollowups(followups)
     } else if (followups.length) {
-      notRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
+      profileNotRun.push(`${profile.id} critic follow-up lenses (${followups.join('/')})`)
       log(`Budget low (~${Math.round(budget.remaining() / 1000)}k left) — SKIPPED [${profile.id}] critic follow-up lenses. Review marked INCOMPLETE.`)
     }
   }
@@ -7045,27 +7047,27 @@ Also note in one line anything else likely missed (a changed file no finding tou
     ))
     const deadFollowups = followups.filter((/** @type {string} */ _l, /** @type {number} */ i) => !settledExtra[i])
     if (deadFollowups.length) {
-      notRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
+      profileNotRun.push(...deadFollowups.map((/** @type {string} */ l) => `${profile.id} critic follow-up lens ${l} — dispatched and returned no findings (died, or answered off-schema)`))
       log(`⚠️ [${profile.id}] critic follow-up lens(es) ${deadFollowups.join('/')} died before returning findings — recorded as not run; the review is INCOMPLETE`)
     }
     const extra = settledExtra.flatMap((r, i) => (r == null ? [] : (r.findings || []).map(f => ({ ...f, source: /** @type {string} */ (followups[i]) }))))
     const fresh = extra.filter(f => { const k = key(f); if (seen.has(k)) return false; seen.add(k); return true })
     if (fresh.length) {
       const v = await verifyPool(await dedupPool(applyPathFloor(fresh), profile), plan, profile, toolProvenance)
-      notRun.push(...(v.notRun || []))
-      savedByFloor = savedByFloor.concat(v.savedByFloor || [])
-      confirmed = confirmed.concat(v.confirmed)
-      suspected = suspected.concat(v.suspected)
-      unverified = unverified.concat(v.unverified)
-      dropped += v.dropped
+      profileNotRun.push(...(v.notRun || []))
+      profileSavedByFloor = profileSavedByFloor.concat(v.savedByFloor || [])
+      profileConfirmed = profileConfirmed.concat(v.confirmed)
+      profileSuspected = profileSuspected.concat(v.suspected)
+      profileUnverified = profileUnverified.concat(v.unverified)
+      profileDropped += v.dropped
       refuted = refuted.concat(v.refuted)
       log(`[${profile.id}] Critic follow-up: +${v.confirmed.length} confirmed · +${v.suspected.length} suspected · ${v.dropped} refuted · +${v.unverified.length} not verified`)
     }
   }
-  let criticNotes = ''
+  let profileCriticNotes = ''
   await completenessCritic()
 
-  return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, criticFollowupLenses, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed, suspected, unverified, dropped, refuted, notRun, savedByFloor, criticNotes, probeViolations }
+  return { profile, plan, surfaceDropped, optionalScope, ranLenses, lensRounds, criticFollowupLenses, gateStatus, gateProvenance, failedChecks, carriedChecks, confirmed: profileConfirmed, suspected: profileSuspected, unverified: profileUnverified, dropped: profileDropped, refuted, notRun: profileNotRun, savedByFloor: profileSavedByFloor, criticNotes: profileCriticNotes, probeViolations }
 }
 
 async function reviewActiveProfiles() {
@@ -7161,8 +7163,8 @@ let unverified = results.flatMap(r => r['unverified'] || [])
 const adjudicated = { resolved: [], stillOpen: [], regressed: [], carried: [], retired: [] }
 /** @type {LedgerAnswer[]} */
 const priorTombstones = []
-/** Priors carrying the unverified tier re-enter this round's unverified track. @param {Finding[]} priorUnverified @param {PriorRound} priorRound */
-function carryUnverifiedPriors(priorUnverified, priorRound) {
+/** Priors carrying the unverified tier re-enter this round's unverified track. @param {Finding[]} priorUnverified @param {PriorRound} priorRoundIn */
+function carryUnverifiedPriors(priorUnverified, priorRoundIn) {
   if (priorUnverified.length) {
     log(`${priorUnverified.length} prior finding(s) carry the unverified tier — never checked against the code, so nothing to adjudicate: carried forward as unverified rather than promoted to still-open`)
     unverified = unverified.concat(priorUnverified.map((/** @type {Finding} */ f) => ({
@@ -7171,7 +7173,7 @@ function carryUnverifiedPriors(priorUnverified, priorRound) {
       blastRadius: f['blastRadius'] || '',
       tier: 'unverified',
       carriedUnverified: true,
-      why: `${baseWhy(f['why'])} (STILL NOT VERIFIED: carried from round ${priorRound['round']}, where no verifier judged it; nothing has checked it against the code since)`,
+      why: `${baseWhy(f['why'])} (STILL NOT VERIFIED: carried from round ${priorRoundIn['round']}, where no verifier judged it; nothing has checked it against the code since)`,
     })))
   }
 }
@@ -7247,11 +7249,11 @@ METHOD: re-locate the symbol (grep it — the line has likely moved), read the c
 Return {defeated, attack} — defeated=true ONLY with a concrete attack that survives your own check against the code.`,
         { label: `redteam:${f['file']}:${f['line']}`, phase: 'Adjudicate', schema: ATTACK_SCHEMA, model: adjudModel },
       )
-      const { adj: out, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
+      const { adj: redTeamed, died, overturned: ov, invalid } = classifyRedTeam(f, adj, rt)
       if (died) { redTeamDied++; log(`⚠️ red-team for ${f['file']}:${f['line']} died — "resolved" stands on the adjudicator's own attack pass only`) }
       if (invalid) { invalidRedTeam++; log(`⚠️ red-team for ${f['file']}:${f['line']} claimed defeat with NO attack — invalid verdict discarded, keeping resolved`) }
       if (ov) overturned++
-      return out
+      return redTeamed
     }
     const checkResults = (await parallel(toCheck.map((/** @type {Finding} */ f) => () => {
       const pf = promptFields(f)
@@ -7602,14 +7604,14 @@ const allReviewFindings = confirmed.concat(suspected, unverified)
 const totalVerified = confirmed.length + suspected.length + dropped + priorRejected.filter(f => f.priorTier !== 'unverified').length - priorRejectedLive
 /** The verdict the record carries: the re-review tracks or the confirmed set, escalated by strict maintainability. */
 function decideRecordVerdict() {
-  let recordVerdict = isRereview
+  let decided = isRereview
     ? rereviewVerdict({ stillOpen: adjudicated.stillOpen, regressed: adjudicated.regressed, neu: confirmed })
     : finalVerdict(confirmed)
   if (isRereview && strict && [...adjudicated.stillOpen, ...adjudicated.regressed, ...confirmed]
     .some(f => isMaintainability(f) && (f.severity === 'Critical' || f.severity === 'High' || f.severity === 'Medium'))) {
-    recordVerdict = 'Block'
+    decided = 'Block'
   }
-  return recordVerdict
+  return decided
 }
 const recordVerdict = decideRecordVerdict()
 const floorPremiseHeld = !savedByFloor.length || recordVerdict === 'Block'
@@ -7768,9 +7770,9 @@ function fallbackRereviewTracks(bySev, fmt) {
 function markVerdictIncomplete(text) {
   if (floorPremiseHeld) return text
   const lines = String(text).split('\n')
-  const head = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
-  if (head < 0) return text
-  const at = lines.findIndex((l, i) => i > head && l.trim())
+  const headingAt = lines.findIndex(l => /^#+\s*Verdict\b/i.test(l.trim()))
+  if (headingAt < 0) return text
+  const at = lines.findIndex((l, i) => i > headingAt && l.trim())
   if (at < 0 || /INCOMPLETE/.test(/** @type {string} */ (lines[at]))) return text
   lines[at] = `${lines[at]} · ⚠️ INCOMPLETE — ${savedByFloor.length} verification(s) were skipped because the verdict stood at Block, and the run did not end at Block; those findings are unverified for a reason that did not apply.`
   return lines.join('\n')

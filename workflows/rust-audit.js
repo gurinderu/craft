@@ -110,14 +110,14 @@ function normalizeKeyValueArgs(text, warn) {
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
  *
- * @param {unknown} args
+ * @param {unknown} rawArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Record<string, unknown>}
  */
-function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
-  if (typeof args !== 'string' || !args.trim()) return {}
-  const text = args.trim()
+function normalizeArgs(rawArgs, warn = () => {}) {
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return /** @type {Record<string, unknown>} */ (rawArgs)
+  if (typeof rawArgs !== 'string' || !rawArgs.trim()) return {}
+  const text = rawArgs.trim()
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -1276,10 +1276,10 @@ function normalizeDimensionVerdict(v) {
 
 /**
  * @param {string} worst
- * @param {unknown[]} notRun
+ * @param {unknown[]} notRunIn
  */
-function auditVerdict(worst, notRun) {
-  return honestVerdict(worst, notRun)
+function auditVerdict(worst, notRunIn) {
+  return honestVerdict(worst, notRunIn)
 }
 
 /**
@@ -1404,12 +1404,12 @@ ${JSON.stringify(record, null, 2)}`
  * @param {{ phase?: string }} [opts]
  * @returns {{ label: string, phase: string, schema: typeof LOGRUN_SCHEMA, model: 'sonnet' | 'haiku', effort: 'low' }}
  */
-function logRunDispatch(record, { phase = '' } = {}) {
+function logRunDispatch(record, { phase: phaseTitle = '' } = {}) {
   const payloadKB = JSON.stringify(record).length / 1024
   const big = payloadKB > 24
   return {
     label: `log-run${big ? ` (${Math.round(payloadKB)}KB)` : ''}`,
-    phase,
+    phase: phaseTitle,
     schema: LOGRUN_SCHEMA,
     model: big ? 'sonnet' : 'haiku',
     effort: 'low',
@@ -1465,11 +1465,11 @@ function loggerAgentDied(res) {
  * @param {(record: Record<string, unknown>) => Record<string, unknown>} [o.prepare]
  * @returns {(record: Record<string, unknown>) => Promise<void>}
  */
-function makeRunLogger({ call, phase, target, noteLoss, prepare = record => record }) {
+function makeRunLogger({ call, phase: phaseTitle, target, noteLoss, prepare = record => record }) {
   return async recordIn => {
     const record = prepare(recordIn)
     const at = { ...target(), record }
-    const dispatch = logRunDispatch(record, { phase })
+    const dispatch = logRunDispatch(record, { phase: phaseTitle })
     let res = await call(logRunPrompt(at), dispatch)
     if (missedStructuredOutput(res)) res = await call(logRunPrompt({ ...at, retry: true }), dispatch)
     else if (loggerAgentDied(res)) res = await call(logRunPrompt({ ...at, retry: true }), { ...dispatch, model: 'sonnet' })
@@ -1515,10 +1515,10 @@ const logRun = makeRunLogger({
   noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 
-/** @param {unknown} msg @param {string} [agent] */
-function isAgentTypeMissing(msg, agent) {
+/** @param {unknown} msg @param {string} [agentTypeName] */
+function isAgentTypeMissing(msg, agentTypeName) {
   const m = String(msg ?? '')
-  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agent && m.includes(agent)))
+  return /not found/i.test(m) && (/agent type/i.test(m) || (!!agentTypeName && m.includes(agentTypeName)))
 }
 
 /**
@@ -1629,10 +1629,10 @@ async function genericAfterThrow(e, prompt, generic, at) {
   const msg = String((e && /** @type {{ message?: unknown }} */ (e).message) || e)
   if (!isAgentTypeMissing(msg, at)) {
     if (!/not found/i.test(msg)) throw e
-    const fallback = await auditAgent(prompt, generic)
-    if (!fallback) throw e
+    const genericAnswer = await auditAgent(prompt, generic)
+    if (!genericAnswer) throw e
     agentTypeNotFound.set(at, { count: (agentTypeNotFound.get(at)?.count || 0) + 1, error: msg })
-    return fallback
+    return genericAnswer
   }
   agentTypeMissing.set(at, msg)
   log(`⚠️ agent type '${at}' not registered here — falling back to the generic subagent for the rest of this audit`)
@@ -1642,27 +1642,27 @@ async function genericAfterThrow(e, prompt, generic, at) {
 }
 /** @type {{ dimension: string, missing: { agent: string, error: string }[], emptied: { agent: string, count: number, error?: string }[] }[]} */
 const nestedAgentNotes = []
-/** @param {string} dimension @param {unknown} report */
-function noteNestedAgents(dimension, report) {
-  const got = readAgentUnavailableSection(report)
+/** @param {string} dimension @param {unknown} reportIn */
+function noteNestedAgents(dimension, reportIn) {
+  const got = readAgentUnavailableSection(reportIn)
   if (got.missing.length || got.emptied.length) nestedAgentNotes.push({ dimension, ...got })
 }
 const agentSection = () => agentUnavailableSection(
   [
-    ...[...agentTypeMissing].map(([agent, error]) => ({ agent, what: 'the audit dimensions that use it', error })),
+    ...[...agentTypeMissing].map(([agentTypeName, error]) => ({ agent: agentTypeName, what: 'the audit dimensions that use it', error })),
     ...nestedAgentNotes.flatMap(n => n.missing.map(x => ({ agent: x.agent, what: `the lenses of the nested review ${n.dimension}`, error: x.error }))),
   ],
   [
-    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count, what: 'dimension dispatch(es)' })),
-    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
+    ...Object.entries(agentTypeEmptied).map(([agentTypeName, count]) => ({ agent: agentTypeName, count, what: 'dimension dispatch(es)' })),
+    ...[...agentTypeNotFound].map(([agentTypeName, x]) => ({ agent: agentTypeName, count: x.count, what: 'dimension dispatch(es)', error: x.error })),
   ].filter(x => !agentTypeMissing.has(x.agent)).concat(
     nestedAgentNotes.flatMap(n => n.emptied.map(x => ({ ...x, what: `lens dispatch(es) of the nested review ${n.dimension}` })))),
 )
 const agentRecord = () => agentUnavailableRecord(
   agentTypeMissing.keys(),
   [
-    ...Object.entries(agentTypeEmptied).map(([agent, count]) => ({ agent, count })),
-    ...[...agentTypeNotFound].map(([agent, x]) => ({ agent, count: x.count })),
+    ...Object.entries(agentTypeEmptied).map(([agentTypeName, count]) => ({ agent: agentTypeName, count })),
+    ...[...agentTypeNotFound].map(([agentTypeName, x]) => ({ agent: agentTypeName, count: x.count })),
   ],
 )
 
@@ -1844,8 +1844,8 @@ function honestVerdictLine(text, notRun) {
   const at = verdictLineAt(lines)
   if (at < 0) return s
   const line = String(lines[at])
-  const word = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
-  if (!word || !GREEN_WORD.test(String(word[1]))) return s
+  const verdictWord = VERDICT_WORD.exec(line.replace(/^[\s#*_>-]*verdict\b/i, ''))
+  if (!verdictWord || !GREEN_WORD.test(String(verdictWord[1]))) return s
   const fixed = line.replace(/(?:(?:\u2705|\u26a0\ufe0f?)\s*)?\b(?:Approve|Healthy|Clean)\b(?:\s*\((?:INCOMPLETE|PARTIAL COVERAGE)\))?/i, '\u26a0\ufe0f INCOMPLETE')
   const list = missing.join('; ')
   const named = /did not run/i.test(fixed) ? '' : ` \u00b7 part of this review did not run: ${list.length > NOTE_MAX ? `${list.slice(0, NOTE_MAX)}\u2026` : list}`
@@ -1938,9 +1938,9 @@ log(scoutNotes)
 
 phase('Audit')
 
-/** @param {unknown} report */
-function verdictLine(report) {
-  const text = String(report || '')
+/** @param {unknown} reportIn */
+function verdictLine(reportIn) {
+  const text = String(reportIn || '')
   const m = /^[ \t]*#{1,6}[ \t]*Verdict\b(.*)$/im.exec(text)
   if (!m) return null
   const inline = String(m[1] || '').replace(/^[\s:：—–-]+/, '').trim()
@@ -1972,14 +1972,14 @@ function reviewSummary(line, verdict, incomplete) {
 
 /**
  * @param {string} dimension
- * @param {unknown} report
+ * @param {unknown} reportIn
  */
-function reviewResult(dimension, report) {
-  const line = verdictLine(report)
+function reviewResult(dimension, reportIn) {
+  const line = verdictLine(reportIn)
   const incomplete = /INCOMPLETE|PARTIAL COVERAGE/i.test(line || '')
   const verdict = reviewVerdict(line, incomplete)
   const summary = reviewSummary(line, verdict, incomplete)
-  const kept = liftPriorDecisionSections(String(report || 'no report'))
+  const kept = liftPriorDecisionSections(String(reportIn || 'no report'))
   return {
     dimension,
     verdict,
@@ -2022,24 +2022,24 @@ function nestedPriorDecisionsSection(lifted) {
 }
 
 /**
- * @param {(name: string, args: unknown) => Promise<unknown>} workflow
+ * @param {(name: string, args: unknown) => Promise<unknown>} launchWorkflow  the sandbox's `workflow`
  * @param {string} name
- * @param {unknown} args
+ * @param {unknown} nestedArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Promise<unknown>} the nested run's result — `null` when it died
  */
-async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+async function nestedWorkflow(launchWorkflow, name, nestedArgs, warn = () => {}) {
   /** @param {unknown} e @returns {unknown} the refusal's message, or the thrown value itself */
   const messageOf = e => (e && /** @type {{ message?: unknown }} */ (e).message) || e
   /** @param {unknown} e */
   const unresolved = e => /no workflow with that name/i.test(String(messageOf(e)))
   try {
-    return await workflow(`craft:${name}`, args)
+    return await launchWorkflow(`craft:${name}`, nestedArgs)
   } catch (e) {
     if (!unresolved(e)) throw e
     warn(`nested workflow 'craft:${name}' did not resolve here — retrying as '${name}'`)
     try {
-      return await workflow(name, args)
+      return await launchWorkflow(name, nestedArgs)
     } catch (e2) {
       if (unresolved(e2)) {
         throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${String(messageOf(e2))})`)
@@ -2096,7 +2096,7 @@ function pushReviewDims() {
       }
       tasks.push(() => auditLimit.seen() ? null : dispatchDim(`review:${c.name}`,
         nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
-          .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents(`review:${c.name}`, report); auditLimit.observeError(limitInReport(report)); return reviewResult(`review:${c.name}`, report) }),
+          .then(/** @param {unknown} reportIn */ reportIn => { if (reportIn == null) return null; noteNestedAgents(`review:${c.name}`, reportIn); auditLimit.observeError(limitInReport(reportIn)); return reviewResult(`review:${c.name}`, reportIn) }),
         { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
           threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
       dispatched.push(`review:${c.name}`)
@@ -2105,7 +2105,7 @@ function pushReviewDims() {
     tasks.push(() => auditLimit.seen() ? null : dispatchDim('review',
       nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }
                                                   : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
-        .then(/** @param {unknown} report */ report => { if (report == null) return null; noteNestedAgents('review', report); auditLimit.observeError(limitInReport(report)); return reviewResult('review', report) }),
+        .then(/** @param {unknown} reportIn */ reportIn => { if (reportIn == null) return null; noteNestedAgents('review', reportIn); auditLimit.observeError(limitInReport(reportIn)); return reviewResult('review', reportIn) }),
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
         threw: msg => `review failed: ${msg}`, evidenceGate: false }))
     dispatched.push('review')

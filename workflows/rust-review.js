@@ -105,14 +105,14 @@ function normalizeKeyValueArgs(text, warn) {
  * `log`. It is called on the recovered forms too, deliberately: a run that silently accepted a
  * shape it had to repair teaches the next caller nothing.
  *
- * @param {unknown} args
+ * @param {unknown} rawArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Record<string, unknown>}
  */
-function normalizeArgs(args, warn = () => {}) {
-  if (args && typeof args === 'object' && !Array.isArray(args)) return /** @type {Record<string, unknown>} */ (args)
-  if (typeof args !== 'string' || !args.trim()) return {}
-  const text = args.trim()
+function normalizeArgs(rawArgs, warn = () => {}) {
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return /** @type {Record<string, unknown>} */ (rawArgs)
+  if (typeof rawArgs !== 'string' || !rawArgs.trim()) return {}
+  const text = rawArgs.trim()
   if (text.startsWith('[') || text.startsWith('"')) {
     warn(`⚠️ args arrived as a JSON value that is not an object (${text.slice(0, 40)}) — ALL options ignored, running with defaults`)
     return {}
@@ -122,24 +122,24 @@ function normalizeArgs(args, warn = () => {}) {
 }
 
 /**
- * @param {(name: string, args: unknown) => Promise<unknown>} workflow
+ * @param {(name: string, args: unknown) => Promise<unknown>} launchWorkflow  the sandbox's `workflow`
  * @param {string} name
- * @param {unknown} args
+ * @param {unknown} nestedArgs
  * @param {(msg: string) => void} [warn]
  * @returns {Promise<unknown>} the nested run's result — `null` when it died
  */
-async function nestedWorkflow(workflow, name, args, warn = () => {}) {
+async function nestedWorkflow(launchWorkflow, name, nestedArgs, warn = () => {}) {
   /** @param {unknown} e @returns {unknown} the refusal's message, or the thrown value itself */
   const messageOf = e => (e && /** @type {{ message?: unknown }} */ (e).message) || e
   /** @param {unknown} e */
   const unresolved = e => /no workflow with that name/i.test(String(messageOf(e)))
   try {
-    return await workflow(`craft:${name}`, args)
+    return await launchWorkflow(`craft:${name}`, nestedArgs)
   } catch (e) {
     if (!unresolved(e)) throw e
     warn(`nested workflow 'craft:${name}' did not resolve here — retrying as '${name}'`)
     try {
-      return await workflow(name, args)
+      return await launchWorkflow(name, nestedArgs)
     } catch (e2) {
       if (unresolved(e2)) {
         throw new Error(`nested workflow '${name}': neither 'craft:${name}' nor '${name}' resolved — the nested run did NOT happen (last refusal: ${String(messageOf(e2))})`)
