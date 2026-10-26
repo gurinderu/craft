@@ -20,7 +20,9 @@ gives no lens, review the whole diff against the full rubric.
 
 2. **Expand context before judging.** For each changed symbol in scope, trace its callers, impls,
    and error paths (Grep/Glob + LSP via `rust-navigation`) — do not read the diff in isolation. If
-   a finding depends on code outside the diff, say so.
+   a finding depends on code outside the diff, say so. **A brief that sets a CRATE SCOPE replaces this
+   step and step 3**: read code bodies only inside that crate, use only pub signatures and docs of any
+   other, and ask about their behaviour the way the brief says instead of tracing callers there.
 
 3. **Blast-radius.** For each changed **public** symbol you touch, note how many callers are
    affected and whether the change is breaking.
