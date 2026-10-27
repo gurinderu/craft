@@ -7,7 +7,8 @@ import { GREEN_VERDICT, demoteUnsupportedGreen } from '../lib/audit-evidence.mjs
 import { quietly, makeRunLogger, telemetryLossNoter } from '../lib/run-logging.mjs'
 import { telemetryLostSection } from '../lib/review-coverage.mjs'
 import { isAgentTypeMissing, agentUnavailableSection, agentUnavailableRecord, readAgentUnavailableSection } from '../lib/agent-fallback.mjs'
-import { makeLimitStop, stopAtLimit, limitStopAdvice, limitInReport } from '../lib/usage-limit.mjs'
+import { makeLimitStop, stopAtLimit } from '../lib/usage-limit.mjs'
+import { limitStopAdvice, limitInReport, deathsInReport } from '../lib/limit-report.mjs'
 import { honestVerdictLine } from '../lib/honest-verdict.mjs'
 import { nestedPriorDecisionsSection } from '../lib/prior-decision-report.mjs'
 import { nestedWorkflow } from '../lib/nested-workflow.mjs'
@@ -368,10 +369,11 @@ function baseInstruction() {
     : 'Try in order until one resolves: `git merge-base HEAD origin/main`, `git merge-base HEAD main`, `HEAD~1`.'
 }
 
-// The audit's stop at a usage limit (realm @nick/craft, node #299): the scout, memory recall, dimensions,
+// The audit's stop at a usage limit (realm @nick/craft, nodes #299, #300): the scout, memory recall, dimensions,
 // verification and synthesis dispatch through `auditAgent`, which dispatches nothing once one of them
-// failed on the limit (a throw or a short text answer). A nested review that reports its own stop
-// trips this one too (limitInReport), and no nested review launches once the stop is seen. The audit
+// failed on the limit (a throw or a short text answer), or once DEATH_STREAK_STOP of them in a row came
+// back null with no answer between them (node #300: the limit's usual shape, a bare null). A nested review that reports its own stop
+// trips this one too (limitInReport, or deathsInReport for its death streak), and no nested review launches once the stop is seen. The audit
 // then reports the stop as INCOMPLETE and still attempts its record.
 const auditLimit = makeLimitStop(log)
 const auditAgent = stopAtLimit(agent, auditLimit)
@@ -509,6 +511,20 @@ function dispatchDim(dimension, promise, opts = {}) {
     .catch((/** @type {unknown} */ e) => { auditLimit.observeError(e); log(threw((e && /** @type {{ message?: unknown }} */ (e).message) || e)); return null })
 }
 
+/**
+ * A nested review's report read into the audit's stop: a dead nested engine (null) is one death toward
+ * the streak, a report that came back is a live answer and carries back any stop the nested run reported.
+ * @param {string} dimension @param {unknown} reportIn
+ */
+function nestedReviewResult(dimension, reportIn) {
+  if (reportIn == null) { auditLimit.observeDeath(); return null }
+  auditLimit.observeLive()
+  noteNestedAgents(dimension, reportIn)
+  auditLimit.observeError(limitInReport(reportIn))
+  auditLimit.observeReportedDeaths(deathsInReport(reportIn))
+  return reviewResult(dimension, reportIn)
+}
+
 /** @type {Array<() => Promise<DimResult | null | undefined> | null>} */
 const tasks = []
 /** @type {string[]} */
@@ -533,10 +549,11 @@ function pushReviewDims() {
       }
       tasks.push(() => auditLimit.seen() ? null : dispatchDim(`review:${c.name}`,
         nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
-          // report==null is a dead nested engine (nested-workflow contract, line 875): resolve to null
-          // HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a report
-          // that came back — an unreadable verdict there is a real run, kept as a Warning in results.
-          .then(/** @param {unknown} reportIn */ reportIn => { if (reportIn == null) return null; noteNestedAgents(`review:${c.name}`, reportIn); auditLimit.observeError(limitInReport(reportIn)); return reviewResult(`review:${c.name}`, reportIn) }),
+          // report==null is a dead nested engine (nested-workflow contract, line 875), one death toward the
+          // streak: nestedReviewResult resolves it to null HERE so it lands in NOT RUN like any other
+          // death, and reviewResult only ever sees a report that came back — an unreadable verdict there
+          // is a real run, kept as a Warning in results.
+          .then(/** @param {unknown} reportIn */ reportIn => nestedReviewResult(`review:${c.name}`, reportIn)),
         // A swallowed throw is a name that would not resolve OR a run that died; keep the
         // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
         // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
@@ -554,7 +571,7 @@ function pushReviewDims() {
                                                   : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)
         // As at the per-crate site: report==null is a dead nested engine — resolve to null before
         // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
-        .then(/** @param {unknown} reportIn */ reportIn => { if (reportIn == null) return null; noteNestedAgents('review', reportIn); auditLimit.observeError(limitInReport(reportIn)); return reviewResult('review', reportIn) }),
+        .then(/** @param {unknown} reportIn */ reportIn => nestedReviewResult('review', reportIn)),
       // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
       // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
       { deadReason: 'nested review returned no result (died) — dimension NOT RUN',

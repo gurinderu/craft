@@ -6,7 +6,8 @@ import { quietly, checkpointPrompt, makeRunLogger, telemetryLossNoter } from '..
 import { makeThrottledRunner } from '../lib/throttled-runner.mjs'
 import { DEPENDENCY_SOURCE_HOW } from '../lib/dependency-source.mjs'
 import { noChangedFilesMessage, materialUncovered, nothingToReviewMessage } from '../lib/review-coverage.mjs'
-import { makeLimitStop, stopAtLimit, limitStopAdvice } from '../lib/usage-limit.mjs'
+import { makeLimitStop, stopAtLimit } from '../lib/usage-limit.mjs'
+import { limitStopAdvice } from '../lib/limit-report.mjs'
 import { honestVerdict } from '../lib/honest-verdict.mjs'
 import { judgeVotes } from '../lib/adversarial-judge.mjs'
 import { MATCH_JUDGE_SCHEMA } from '../lib/prior-decision-match.mjs'
@@ -398,9 +399,10 @@ const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
 const notRunBlocking = () => notRun.filter(e => e.incomplete)
-// The run's stop at a usage limit (realm @nick/craft, node #299): the lens, verifier and critic dispatches
+// The run's stop at a usage limit (realm @nick/craft, nodes #299, #300): the lens, verifier and critic dispatches
 // go through `reviewAgent`, and so do the memory recall and the decision and rule judges: it dispatches
-// nothing once one agent failed on the limit.
+// nothing once one agent failed on the limit, or once DEATH_STREAK_STOP of them in a row came back null
+// with no answer between them (node #300: the limit's usual shape, a bare null), retry rounds included.
 const advLimit = makeLimitStop(log)
 const reviewAgent = stopAtLimit(agent, advLimit)
 const runThrottled = makeThrottledRunner({
