@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.35.0](https://github.com/gurinderu/craft/compare/v0.34.1...v0.35.0) (2026-10-27)
+
+
+### Features
+
+* **review:** choose unit batches by cost estimate ([#277](https://github.com/gurinderu/craft/issues/277)) ([901b450](https://github.com/gurinderu/craft/commit/901b4501fcbf35a0f2c0523881e1f7ac9b5e0bf8))
+* **review:** experimental unit mode, off by default ([#275](https://github.com/gurinderu/craft/issues/275)) ([d1b207e](https://github.com/gurinderu/craft/commit/d1b207e455fa58b52e54fa42f7b3a8591a29fc84))
+* **triage:** tell validators where a pinned dependency's source lives ([#262](https://github.com/gurinderu/craft/issues/262)) ([302fbb7](https://github.com/gurinderu/craft/commit/302fbb7b7d411eb34c2d1d7f4aedb3ddbb29bfb5))
+
+
+### Bug Fixes
+
+* **analyze-runs:** slice unfinished runs by engine and hide rebuilt twins of finished runs ([#264](https://github.com/gurinderu/craft/issues/264)) ([550495f](https://github.com/gurinderu/craft/commit/550495f1e192636093cd68b80a19e2151375e7a2))
+* **opencode:** pin zod 4.6.6 through overrides for GHSA-mrhx-c7xc-m3w5 ([#265](https://github.com/gurinderu/craft/issues/265)) ([55c2a92](https://github.com/gurinderu/craft/commit/55c2a924ea84b0752f653cc6e68555002af2541d))
+* **test:** keep mutation runs from writing into the checkout ([#274](https://github.com/gurinderu/craft/issues/274)) ([1df7f0d](https://github.com/gurinderu/craft/commit/1df7f0dba256f850b9cd0a99b0624c2b0e97e43a))
+
 ## [0.34.1](https://github.com/gurinderu/craft/compare/v0.34.0...v0.34.1) (2026-10-23)
 
 

@@ -143,7 +143,7 @@ const PLAN_SCHEMA = {
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
 // fails the build if it drifts. The build lifts this line verbatim into the engine's banner.
-const CRAFT_VERSION = '0.34.1' // x-release-please-version
+const CRAFT_VERSION = '0.35.0' // x-release-please-version
 
 // Imported from lib/: the one write path (shared with every other record-filing engine); how to find a
 // pinned dependency's source; the banner that leads the plan when a write did not land, the same one
