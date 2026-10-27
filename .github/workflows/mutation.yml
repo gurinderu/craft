@@ -11,7 +11,7 @@ on:
     - cron: '17 3 * * 0'
   workflow_dispatch:
 
-# issues: write is this workflow's alone — the step that opens an issue for a red run needs it.
+# issues: write is this workflow's alone — the steps that open an issue for a red run need it.
 permissions:
   contents: read
   issues: write
@@ -29,20 +29,19 @@ jobs:
     # count now over the count then (`npx stryker run --dryRunOnly` logs `Instrumented … with <N> mutant(s)`)
     # and rounded up; the dated measurements are the realm's. Both stay under GitHub's 360-minute job cap so
     # a hung run is cut off sooner. The Stryker step has its own, shorter limit: a step that times out fails, so the steps
-    # after it still run — a job that times out is cancelled, and opens no issue.
+    # after it still run and report it. A job cut by its own timeout runs none of its steps after the cut; whether
+    # its result is then `failure` (reported by the job `report-lost-runner` below) or `cancelled` (reported by
+    # nothing) is unobserved.
     timeout-minutes: 275
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        id: setup_node
         with:
           node-version: '22'
       - name: Install dev tooling
-        id: install_tooling
         run: npm ci
       # inPlace mode runs the tsc-backed tests against the real tree, which read the plugin's tsc.
       - name: Install opencode plugin deps
-        id: install_plugin
         run: npm ci --prefix opencode/plugin
       # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
       # the child processes (git, tsc) its tests spawn.
@@ -63,19 +62,48 @@ jobs:
             reports/mutation/mutation.json
           if-no-files-found: warn
           retention-days: 90
-      # A red run — below lib/mutation-floor.json, timed out, or failed to install — is reported in one open
+      # A red Stryker step — below lib/mutation-floor.json, or cut by its own timeout — is reported in one open
       # issue: while one titled "Weekly mutation run failed (…)" is open, the run and its score are a comment
       # on it; only when none is open is one created, titled with the score (lib/mutation-issue.mjs).
-      # Only a failed setup, install or Stryker step reports: an upload that fails after a green Stryker step
-      # makes the job red too, and `failure()` alone would file it with a score above the floor. `failure()`
-      # stays in the condition, since without a status check function `success()` is implied.
+      # Only the Stryker step's own failure reports here: an upload that fails after a green Stryker step
+      # makes the job red too, and `failure()` alone would file it with a score above the floor; a failed setup
+      # or install leaves the Stryker step `skipped`, which the job `report-lost-runner` files, so filing it here
+      # too would file it twice. `failure()` stays in the condition, since without a status check function
+      # `success()` is implied.
       - name: Report the red run in an issue
-        if: >-
-          ${{ failure() && (steps.setup_node.conclusion == 'failure'
-          || steps.install_tooling.conclusion == 'failure'
-          || steps.install_plugin.conclusion == 'failure'
-          || steps.stryker.conclusion == 'failure') }}
+        if: ${{ failure() && steps.stryker.conclusion == 'failure' }}
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node lib/mutation-issue.mjs reports/mutation/mutation.json
+
+  # A runner lost mid-run ("The runner has received a shutdown signal") runs nothing after the step it cut:
+  # on run 40423145899 the Stryker step ended `cancelled`, every later step — the `always()` post-steps too —
+  # `skipped`, and the job `failure`, so no step of that job can report it. This job does, on its own runner.
+  # `!cancelled()` keeps out a run cancelled by a person (and lets this job run after a failed one, where the
+  # implied `success()` would skip it); `result == 'failure'` keeps out a green run. Inside, the script files
+  # whenever the Stryker step did not itself end `failure` (the step above's) or `success` (a later step
+  # failed): `cancelled` (a lost runner), `skipped` (a runner lost, or a step failed, during setup or install)
+  # or not found (renamed: mutation-issue.test.mjs ties the names to this file) — the issue names which.
+  # A job cut by its own timeout reaches this job only if its result is `failure`, which is unobserved.
+  report-lost-runner:
+    needs: mutation
+    if: ${{ !cancelled() && needs.mutation.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # actions: read lets `gh run view --json jobs` read the mutation job's step conclusions.
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Report a mutation job cut off before Stryker's own verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node lib/mutation-issue.mjs --lost-runner "${{ github.run_id }}"
