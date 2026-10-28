@@ -399,17 +399,20 @@ const markNotRun = (label, note, incomplete = true) => notRun.push({ label, note
 const notRunLabels = () => notRun.map(e => e.label)
 const notRunNotes = () => notRun.map(e => e.note)
 const notRunBlocking = () => notRun.filter(e => e.incomplete)
-// The run's stop at a usage limit (realm @nick/craft, nodes #299, #300): the lens, verifier and critic dispatches
-// go through `reviewAgent`, and so do the memory recall and the decision and rule judges: it dispatches
-// nothing once one agent failed on the limit, or once DEATH_STREAK_STOP of them in a row came back null
-// with no answer between them (node #300: the limit's usual shape, a bare null), retry rounds included.
+// The run's stop (realm @nick/craft, nodes #299, #300): the lens, verifier and critic dispatches go through
+// `reviewAgent`, and so do the memory recall and the decision and rule judges: it dispatches nothing once
+// one agent failed on the limit, or once a throttled pass (the finder lenses, verification, the gap
+// verification), its retry rounds included, settled with every agent of it dead (node #300: the limit's
+// usual shape, a bare null).
 const advLimit = makeLimitStop(log)
 const reviewAgent = stopAtLimit(agent, advLimit)
-const runThrottled = makeThrottledRunner({
+const runThrottledPass = makeThrottledRunner({
   agent: reviewAgent, parallel, log, markNotRun,
   batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
   budget, budgetFloor: BUDGET_FLOOR,
 })
+/** One throttled pass as one round of the stop. @type {typeof runThrottledPass} */
+const runThrottled = (jobs, tag, phaseTitle, opts) => advLimit.round(`the ${tag} pass`, () => runThrottledPass(jobs, tag, phaseTitle, opts))
 /**
  * Files the record of a run that ended before any lens ran.
  * @param {string} verdictIn @param {string[]} labels  its notRun classes
@@ -972,9 +975,10 @@ function verdictOf(found) {
     : found.some(f => f.severity === 'medium') ? 'Warning' : 'Approve'
   return honestVerdict(baseVerdict, notRunBlocking().map(e => e.label))
 }
-// A usage limit stopped the run: the stop is a blocking notRun entry, so the verdict is never Approve.
+// A usage limit or a dead round stopped the run: the stop is a blocking notRun entry, so the verdict is
+// never Approve, labelled by which stop it was.
 function noteLimitStop() {
-  if (advLimit.seen()) markNotRun('usage-limit', limitStopAdvice(advLimit, { version: CRAFT_VERSION, engine: 'adversarial-review', checkpoints: !!runDir }))
+  if (advLimit.seen()) markNotRun(advLimit.cause() === 'deaths' ? 'agents-died' : 'usage-limit', limitStopAdvice(advLimit, { version: CRAFT_VERSION, engine: 'adversarial-review', checkpoints: !!runDir }))
 }
 noteLimitStop()
 const verdict = verdictOf(confirmed)
