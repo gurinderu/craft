@@ -23,19 +23,19 @@ than filling it with the worst case.
 The review's levels are must-fix (Critical, High: blocks the merge), should-fix (Medium: warns)
 and optional (Low, Info: reported, never blocks).
 
-| Harm named | Highest allowed |
-|---|---|
-| Data loss or corruption that is not recoverable from a durable source | must-fix |
-| Security: a boundary crossed, a secret exposed, an authorisation skipped | must-fix |
-| Outage: a service, a controller or a tenant stops serving and does not resume by itself | must-fix |
-| An irreversible external effect: money moved, a message sent, an object deleted outside the system | must-fix |
-| A wedged or drifted state that an operator must recover by hand | should-fix |
-| State that heals by itself on a later pass, a slower or noisier retry cadence | optional |
-| Wrong text, a misleading comment or doc, a log line, a name | optional |
-| A missing test with no harm named for the behaviour it would pin | optional |
-| Maintainability: structure, size, duplication, idiom | optional |
+| `harmLevel` | Harm named | Highest allowed |
+|---|---|---|
+| `data-loss` | Data loss or corruption that is not recoverable from a durable source | must-fix |
+| `security` | Security: a boundary crossed, a secret exposed, an authorisation skipped | must-fix |
+| `outage` | Outage: a service, a controller or a tenant stops serving and does not resume by itself | must-fix |
+| `irreversible` | An irreversible external effect: money moved, a message sent, an object deleted outside the system | must-fix |
+| `operator-recovery` | A wedged or drifted state that an operator must recover by hand | should-fix |
+| `self-healing` | State that heals by itself on a later pass, a slower or noisier retry cadence | optional |
+| `text` | Wrong text, a misleading comment or doc, a log line, a name | optional |
+| `none` | No harm named: a missing test whose defect is not named, maintainability (structure, size, duplication, idiom), a remark | optional |
 
-Read the table top down and stop at the first row the finding honestly fills. A finding may sit
+Read the table top down and stop at the first row the finding honestly fills, and put its
+`harmLevel` on the finding. A finding may sit
 below its cap — reachability, an unlikely trigger or a small blast radius lower it — but never
 above.
 
@@ -57,11 +57,17 @@ Verification and synthesis can raise it when the harm is shown.
 
 - **The lens** sets severity from the harm it names, and writes the harm into the finding.
 - **The verifier** that finds the harm larger or smaller than claimed says so in its reason.
-- **The verdict and synthesis** refuse a severity above the cap: a must-fix with only an operator
-  recovery named is reported as should-fix, and the report says it was lowered and why.
+- **The engine** lowers a finding whose `harmLevel` allows less than its severity to that level's
+  ceiling, once, after verification and before anything counts it — so the verdict, the report and
+  the run record all see the capped severity: a must-fix with only an operator recovery named
+  counts and is reported as should-fix, and its reason says it was lowered and why. A finding with
+  no `harmLevel` is left as it is (a lint seed that names no harm reads as `none`). The run record
+  counts how many the cap lowered.
+- **Synthesis** never reports a finding above that cap.
 - A severity floor (for example, the deletion and recovery path floor of `distributed-races`)
   applies only when the finding names a harm of operator recovery or worse. A floor does not
   invent a harm the finding did not name.
 
 An explicit stricter bar set by the person who asked for the review (a strict maintainability
-review, say) overrides the optional cap for the lens it names, and the report says so.
+review, say) overrides the optional cap for the lens it names, and the report says so: in strict
+mode the engine does not cap maintainability findings.

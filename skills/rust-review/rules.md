@@ -40,9 +40,9 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **PER-003** | MEDIUM | N+1 queries / repeated work in a loop | `rust-performance` |
 | **API-001** | MEDIUM | Function > ~50 lines or nesting > 4 levels | `refactoring`, `rust-idioms` |
 | **API-002** | MEDIUM | Wildcard `_ =>` on a business enum (hides new variants) | `rust-idioms` |
-| **API-003** | MEDIUM | `pub` item without a `///` doc | `rust-idioms` |
-| **API-004** | MEDIUM | `#[allow(...)]` suppressing a lint without a justifying comment | `rust-idioms` |
-| **API-005** | MEDIUM | Crate-root `#![deny(warnings)]` / blanket lint-level attributes (brittle) | `rust-idioms` |
+| **API-003** | LOW | `pub` item without a `///` doc | `rust-idioms` |
+| **API-004** | LOW | `#[allow(...)]` suppressing a lint without a justifying comment | `rust-idioms` |
+| **API-005** | LOW | Crate-root `#![deny(warnings)]` / blanket lint-level attributes (brittle) | `rust-idioms` |
 | **API-006** | MEDIUM | Public-API guideline break (missing common-trait impls, `Deref`-as-inheritance, out-params, unsealed extensible trait, leaked unstable dep, absent `CHANGELOG`/metadata) — see `api-design.md` | per `api-design.md` |
 | **MNT-001** | LOW¹ | Missed code judo — a reframing would make the change dramatically simpler or delete a category of complexity | `refactoring` |
 | **MNT-002** | LOW¹ | File-size growth past ~700 lines — decomposition smell; split by responsibility | `refactoring` |

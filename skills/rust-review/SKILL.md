@@ -168,9 +168,6 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - Library returning `Box<dyn Error>` / `anyhow::Error` instead of a typed error (API-design concern → `rust-errors`)
 - Function > ~50 lines or nesting > 4 levels
 - Wildcard `_ =>` on a business enum (hides new variants — prefer exhaustive)
-- `pub` item without a `///` doc
-- `#[allow(...)]` suppressing a lint without a justifying comment
-- Crate-root `#![deny(warnings)]` (or other blanket lint-level attributes) — brittle: a new compiler/clippy lint becomes a hard build break for the crate and its dependents → move the denial to CI (`rust-idioms` anti-patterns)
 
 ### LOW — optional, never blocks (unless a harm is named)
 
@@ -181,6 +178,11 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 A missing test takes the severity of the defect it would catch once that defect and its harm are
 named — a missing cross-tenant denial test on a new authz-guarded endpoint is HIGH. With no harm
 named, it stays here.
+
+**Docs & lint hygiene** (no harm named, so optional)
+- `pub` item without a `///` doc
+- `#[allow(...)]` suppressing a lint without a justifying comment
+- Crate-root `#![deny(warnings)]` (or other blanket lint-level attributes) — brittle: a new compiler/clippy lint becomes a hard build break for the crate and its dependents → move the denial to CI (`rust-idioms` anti-patterns)
 
 **Maintainability & structural simplification** (fix → `refactoring`, `rust-idioms`)
 - **Missed code judo** — a reframing that uses the existing architecture more effectively would make this change *dramatically* simpler or delete a whole category of complexity (a layer, a branch family). Don't flag hypothetical rewrites; flag a concrete, behavior-preserving restructuring the author could have taken.
