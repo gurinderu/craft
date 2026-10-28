@@ -1,5 +1,5 @@
 ---
-'Nature': 'production; no relaxations'
+'Nature': 'production; one relaxation: the gate always runs whole, no affected-only mode (realm @nick/craft, #118)'
 'Nature — source': 'agreed: owner'
 'Graph': '@nick/craft (r209)'
 'Graph — source': 'derived'
@@ -197,7 +197,7 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - **Conventional commits** (`feat:`/`fix:`/`chore:`/`refactor:`/`docs:`/`test:`) — release-please parses them, so the prefix carries the version; branches `feat/…`, `fix/…`, `chore/…`; PR titles in the same format.
 - **PR body — short**: what changed and the case number, plus the lines the review rules above put there (dropped Low findings); work progress and case lines are not copied into the PR.
 - **No co-author trailer and no "Generated with Claude Code"** — neither on commits nor in PR bodies.
-- **The gate is one call**: `npm run gate`, always whole (it has no affected-only mode), on the batch's head before the push; do not assemble its steps by hand; read its raw exit code (the audit and semgrep rows need the network — offline they are CI's); there is no pre-commit hook. CI calls the same gate on the batch's PR and on `main`.
+- **The gate is one call**: `npm run gate`, always whole (the owner's accepted relaxation — no affected-only mode; realm @nick/craft, #118), on the batch's head before the push; do not assemble its steps by hand; read its raw exit code (the audit and semgrep rows need the network — offline they are CI's); there is no pre-commit hook. CI calls the same gate on the batch's PR and on `main`.
 - **Review, push, then PR** (realm `@nick/craft`, #127): the cold reviewer reads the local branch in its own worktree; push once its verdict is in and its blocking findings are closed, then open the PR (above). A batch's branch whose review is done does not live without a PR.
 - **Definition of done**: a PR into `main`, `gh pr checks <n> --watch` green (three jobs: `test` — `npm run gate` plus the shipped-dependency audit — and `semgrep` gate; `quality-delta` always ends green and is read, not waited on; a red one means reading the log for the failed step), merged without conflicts. release-please cuts releases in a separate PR — merging a feature is not a release; `CRAFT_VERSION` in `review.js` moves with the manifest.
 - **Never** `--no-verify`, `--force`, `--no-gpg-sign`, `git reset --hard` without an explicit instruction.
