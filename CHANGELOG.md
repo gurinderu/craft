@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.35.1](https://github.com/gurinderu/craft/compare/v0.35.0...v0.35.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **cost:** count transcript usage once per model message ([#281](https://github.com/gurinderu/craft/issues/281)) ([4128d92](https://github.com/gurinderu/craft/commit/4128d928648f19c4f24c3a559b7e6fad69a62a6c))
+* **review:** stop only when a whole dispatch round died ([#279](https://github.com/gurinderu/craft/issues/279)) ([1f17ada](https://github.com/gurinderu/craft/commit/1f17ada17af918d01889f3d3169fcff3c39bbaf3))
+
 ## [0.35.0](https://github.com/gurinderu/craft/compare/v0.34.1...v0.35.0) (2026-10-27)
 
 
