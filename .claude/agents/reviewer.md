@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: "Cold review of a PR or a large stage — reads the branch diff against trunk, the surrounding code, the focus holon with its steward role, and the realm nodes the change touches. Returns findings and an integration report: affected holons/roles, relays, open questions, neighbour readiness, whom to wake. No conversation history by design. Not for writing fixes and not for accepting behavioral claims — that is verifier."
+description: "Cold review of a finished batch — reads the diff of its branch, the surrounding code, the focus holon with its steward role, and the realm nodes the change touches. Returns findings and an integration report: affected holons/roles, relays, open questions, neighbour readiness, whom to wake. No conversation history by design. Not for writing fixes and not for accepting behavioral claims — that is verifier."
 model: opus
 mcpServers:
   - iskron-sub-reviewer:
