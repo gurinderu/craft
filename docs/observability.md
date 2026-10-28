@@ -144,9 +144,12 @@ node lib/craft-log-run.mjs enrich-cost --run-dir <run-dir> --record <detail-reco
 ```
 
 It sums every `agent-*.jsonl` under the run directory over the `type:"assistant"` records'
-`.message.usage` and folds a `cost` object into the record:
-`cost: {output, input, cacheRead, cacheWrite, total, agents}` — `total` is the four token sums,
-`agents` the transcript count — plus an optional `skipped`, present only when some matching transcript
+`.message.usage`, counting each model message once: the runtime writes one message as several lines
+sharing `message.id`, so the lines of one id count as one (the largest value of each token kind they
+carry), and a line without an id counts alone — then the cost is named `rule: "per-line"` instead,
+with a warning, since the sum may be overstated again. It folds a `cost` object into the record:
+`cost: {output, input, cacheRead, cacheWrite, total, agents, source, rule}` — `total` is the four
+token sums, `agents` the transcript count, `rule: "per-message"` the counting rule — plus an optional `skipped`, present only when some matching transcript
 could not be read (>0). The write is atomic (temp file + rename) and **idempotent**: `cost`
 is replaced on every run, never appended, so re-running after more transcripts land simply re-sums.
 It exits non-zero if the run directory is missing, holds no `agent-*.jsonl`, has every matching
@@ -163,9 +166,13 @@ enriched runs apart), the same "not measured is not zero" stance the pool split 
 object, none of the measured fields, a field that is not a non-negative number, a `source` that is not
 a string, or a `total` that is not the sum of its parts; **empty** means written but measured nothing
 (enrich-cost's flag for transcripts that parse yet carry no usage, realm #98 — even when some were
-skipped); **partial** means `skipped > 0`, a lower bound. Malformed, empty and partial costs stay out
-of the per-run averages and are counted in `costMalformedRuns` / `costEmptyRuns` / `costPartialRuns`,
-named on the report line. A record with no `total` uses the sum of its four token parts.
+skipped); **overcounted** means no `rule` (an older enrich-cost, which counted a message once per
+line and overstated the run about 1.8x; re-running enrich-cost on the record recounts it while its
+transcripts still exist) or `rule: "per-line"`; **unknown-rule** means a rule this reader does not
+know; **partial** means `skipped > 0`, a lower
+bound. Malformed, empty, overcounted, unknown-rule and partial costs stay out of the per-run averages and
+are counted in `costMalformedRuns` / `costEmptyRuns` / `costOvercountedRuns` / `costUnknownRuleRuns` /
+`costPartialRuns`, named on the report line. A record with no `total` uses the sum of its four token parts.
 
 ## How it is produced
 
@@ -254,7 +261,7 @@ older record — an unknown input is not the same input); a different configurat
 memory was not in full effect (`reReview` not chained, its prior ledger degraded or rebuilt from a stalled
 run, fingerprints not comparable, tombstones dropped); a later round whose recorded prior (`reReview.priorRound`
 / `priorHead`) is not this round; a different head, base or path; and no real `cost` (from
-`craft-log-run enrich-cost`) on both, or a cost that is malformed, empty (measured nothing — usage missing from the transcripts, realm #98) or partial (`cost.skipped`), or a malformed candidate, finding or lens-dispatch count. A cost with no `total` is compared on the sum of its four token parts. The totals are an unweighted sum
+`craft-log-run enrich-cost`) on both, or a cost that is malformed, empty (measured nothing — usage missing from the transcripts, realm #98), overcounted (summed per line: no `cost.rule`, or `per-line`), counted by an unknown rule, or partial (`cost.skipped`), or a malformed candidate, finding or lens-dispatch count. A cost with no `total` is compared on the sum of its four token parts. The totals are an unweighted sum
 of token kinds, so the report also prints output, input and cache-read deltas — read those as money, not
 the ratio alone. A record of the wrong shape is judged or named, never crashes the report. The
 configuration compared includes the lenses the completeness critic added and a digest of the `intent`
