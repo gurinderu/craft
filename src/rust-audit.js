@@ -521,9 +521,9 @@ function dispatchDim(dimension, promise, opts = {}) {
  * @returns {Promise<DimResult | null>}
  */
 function nestedReview(dimension, launched) {
-  auditLimit.observeDispatch()
+  const died = auditLimit.observeDispatch()
   return launched.then(/** @param {unknown} reportIn */ reportIn => {
-    if (reportIn == null || deathsInReport(reportIn)) auditLimit.observeDeath()
+    if (reportIn == null || deathsInReport(reportIn)) died()
     if (reportIn == null) return null
     noteNestedAgents(dimension, reportIn)
     auditLimit.observeError(limitInReport(reportIn))
