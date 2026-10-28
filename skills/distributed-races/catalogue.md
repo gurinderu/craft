@@ -285,5 +285,8 @@ A finding on a deletion or recovery path (finalizer removal, teardown, a delete 
 crash or partial-failure recovery) is at least **Medium**. These are the paths that run rarely,
 that tests exercise least, and where a defect strands or destroys state. The review workflow's
 `reconciler` and `failure-windows` lenses mark such a finding (`deletionOrRecoveryPath`), and the
-workflow raises one filed below Medium to Medium before verification. A verifier that judges the
-code unreachable in production can still lower it one notch.
+workflow raises one filed below Medium to Medium before verification — but only when the finding
+names a harm of operator recovery or worse (`harmLevel`, per the `review-rules` skill's
+`severity.md`). A finding on such a path that heals by itself, or names no harm, is not floored:
+the floor does not invent a harm. A verifier that judges the code unreachable in production can
+still lower a floored finding one notch.
