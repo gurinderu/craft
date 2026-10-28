@@ -172,7 +172,7 @@ const isEscalated = (/** @type {{ lens?: string, severity: string }} */ f) => f.
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
 // fails the build if it drifts. The build lifts this line verbatim into the engine's banner.
-const CRAFT_VERSION = '0.35.0' // x-release-please-version
+const CRAFT_VERSION = '0.35.1' // x-release-please-version
 
 // ---- the one write path (shared with every other record-filing engine): lib/run-logging.mjs ----
 
