@@ -1,7 +1,7 @@
 ---
 name: rust-review
 description: >-
-  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines, the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), how to dispatch the craft review agents, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode) and its review agents are not in Codex; the rubric applies anywhere. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
+  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines (language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), how to dispatch the craft review agents, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode) and its review agents are not in Codex; the rubric applies anywhere. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
 ---
 
 # Rust Review
@@ -111,7 +111,7 @@ Best-effort: skip if there are no external-crate changes. Choosing/pinning versi
 
 ## Step 2 — Severity checklist
 
-Review the diff against these tiers. This skill owns only the review *process*; cite the owning skill for each fix. Each item has a stable ID in the [rules.md](rules.md) catalog — cite it in a finding (e.g. `CON-003`) so the finding is addressable and dedup-able; novel issues without a catalog ID are still welcome.
+Review the diff against these tiers. This skill owns only the review *process*; cite the owning skill for each fix. Each item has a stable ID in the [rules.md](rules.md) catalog — cite it in a finding (e.g. `CON-003`) so the finding is addressable and dedup-able; novel issues without a catalog ID are still welcome. The tiers are defaults: every finding names its harm, and the harm cap of the `review-rules` skill (`severity.md`) bounds its severity — read that skill alongside this one for severity, finding classes and the search sweeps (sibling sweep, early-exit diff, attribution check).
 
 - Safety / injection / secrets / untrusted-input limits → `rust-security`
 - `unsafe` / missing `// SAFETY:` → `rust-unsafe`
@@ -157,10 +157,6 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - Inconsistent lock acquisition order (deadlock risk)
 - Missing `Send`/`Sync` where the type crosses threads
 
-**Test coverage** (cross-check with the `rust-testing` skill)
-- New error path or branch with no test
-- Bug fix landed without a regression test reproducing it
-
 ### MEDIUM — warn, may merge
 
 **Performance**
@@ -172,6 +168,18 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 - Library returning `Box<dyn Error>` / `anyhow::Error` instead of a typed error (API-design concern → `rust-errors`)
 - Function > ~50 lines or nesting > 4 levels
 - Wildcard `_ =>` on a business enum (hides new variants — prefer exhaustive)
+
+### LOW — optional, never blocks (unless a harm is named)
+
+**Test coverage** (cross-check with the `rust-testing` skill)
+- New error path or branch with no test
+- Bug fix landed without a regression test reproducing it
+
+A missing test takes the severity of the defect it would catch once that defect and its harm are
+named — a missing cross-tenant denial test on a new authz-guarded endpoint is HIGH. With no harm
+named, it stays here.
+
+**Docs & lint hygiene** (no harm named, so optional)
 - `pub` item without a `///` doc
 - `#[allow(...)]` suppressing a lint without a justifying comment
 - Crate-root `#![deny(warnings)]` (or other blanket lint-level attributes) — brittle: a new compiler/clippy lint becomes a hard build break for the crate and its dependents → move the denial to CI (`rust-idioms` anti-patterns)
@@ -184,7 +192,7 @@ Review the diff against these tiers. This skill owns only the review *process*; 
 
 ### Maintainability bar — presumption of block (strict mode)
 
-By default the maintainability items above are **MEDIUM** (warn, may merge). When the review is dispatched in **strict mode** (the `craft:rust-review` workflow's `strict` flag, or an explicit "harsh maintainability review" request), they invert to a **presumption of block**: each is treated as a blocker *unless the author has clearly justified it in the diff or brief*. In strict mode, Approve additionally requires:
+By default the maintainability items above are **LOW** (optional, never block). When the review is dispatched in **strict mode** (the `craft:rust-review` workflow's `strict` flag, or an explicit "harsh maintainability review" request), they invert to a **presumption of block**: each is treated as a blocker *unless the author has clearly justified it in the diff or brief*. In strict mode, Approve additionally requires:
 
 - no structural regression (a previously cohesive module didn't become more coupled or harder to scan);
 - no obvious simplification missed (the code-judo check above came up empty);
@@ -363,7 +371,8 @@ Every finding (lens or seed) is checked before it can be Confirmed:
   test/example-only (not production-reachable) does NOT drop it — it demotes the confirmed
   severity one notch.
 - **Exclusion catalog:** a rejection is a claim and carries the same burden as the finding. When
-  one of the false-positive precedents in [fp-rules.md](fp-rules.md) fires, cite its ID
+  one of the false-positive precedents in [fp-rules.md](fp-rules.md) — or in the language-independent
+  `fp-rules.md` of the `review-rules` skill, which shares its ID space — fires, cite its ID
   (`refuted per FP-006`) — and run the trace that rule demands, not the shape it matches. That file
   also lists the `KEEP-*` non-reasons: dismissals that sound decisive and have repeatedly killed
   real defects.
@@ -377,7 +386,7 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 | **Block** ⛔ | gate red (CI or local), or any **Confirmed** CRITICAL/HIGH |
 | **INCOMPLETE (not run)** 🚫 | gate NOT ESTABLISHED (Step 1, item 4) — nothing in it could execute — and nothing Confirmed CRITICAL/HIGH was found by reading |
 
-In **strict mode**, the maintainability bar applies: a Confirmed maintainability finding (code judo missed, file-size explosion, spaghetti branching, hacky abstraction) is a **presumptive Block** unless the author justified it — escalated from its default MEDIUM. Outside strict mode those findings stay MEDIUM (Warning at most).
+In **strict mode**, the maintainability bar applies: a Confirmed maintainability finding (code judo missed, file-size explosion, spaghetti branching, hacky abstraction) is a **presumptive Block** unless the author justified it — escalated from its default LOW. Outside strict mode those findings stay LOW (optional) unless a harm is named.
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md) catalog ID when the finding maps to one (e.g. `CON-003`); novel findings need no ID. Be specific and cite the line; a finding without a location isn't actionable.
 

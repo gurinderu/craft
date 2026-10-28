@@ -5,7 +5,12 @@ Stable IDs for the severity checklist in `SKILL.md`. A finding that maps to a ru
 append-only: never renumber or reuse a retired ID.
 
 This catalog **mirrors** the `SKILL.md` checklist — the checklist is the prose, this is the index.
-Severities match; `strict` mode escalates the `MNT-*` rules to a presumption of block. Not every
+Severities match; `strict` mode escalates the `MNT-*` rules to a presumption of block.
+
+The severity column is the rule's **default**, not a licence: the harm cap of the `review-rules`
+skill (`severity.md`) bounds every finding by the harm it names, and a finding is never rated above
+that cap whatever its row says. Finding classes, the sibling sweep and the other search moves are
+there too; this catalog keeps only what is specific to Rust. Not every
 finding maps to a catalog rule (novel issues are fine and encouraged — report them without an ID).
 
 | ID | Severity | Rule | Fix skill |
@@ -35,14 +40,14 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **PER-003** | MEDIUM | N+1 queries / repeated work in a loop | `rust-performance` |
 | **API-001** | MEDIUM | Function > ~50 lines or nesting > 4 levels | `refactoring`, `rust-idioms` |
 | **API-002** | MEDIUM | Wildcard `_ =>` on a business enum (hides new variants) | `rust-idioms` |
-| **API-003** | MEDIUM | `pub` item without a `///` doc | `rust-idioms` |
-| **API-004** | MEDIUM | `#[allow(...)]` suppressing a lint without a justifying comment | `rust-idioms` |
-| **API-005** | MEDIUM | Crate-root `#![deny(warnings)]` / blanket lint-level attributes (brittle) | `rust-idioms` |
+| **API-003** | LOW | `pub` item without a `///` doc | `rust-idioms` |
+| **API-004** | LOW | `#[allow(...)]` suppressing a lint without a justifying comment | `rust-idioms` |
+| **API-005** | LOW | Crate-root `#![deny(warnings)]` / blanket lint-level attributes (brittle) | `rust-idioms` |
 | **API-006** | MEDIUM | Public-API guideline break (missing common-trait impls, `Deref`-as-inheritance, out-params, unsealed extensible trait, leaked unstable dep, absent `CHANGELOG`/metadata) — see `api-design.md` | per `api-design.md` |
-| **MNT-001** | MEDIUM¹ | Missed code judo — a reframing would make the change dramatically simpler or delete a category of complexity | `refactoring` |
-| **MNT-002** | MEDIUM¹ | File-size growth past ~700 lines — decomposition smell; split by responsibility | `refactoring` |
-| **MNT-003** | MEDIUM¹ | Spaghetti branching — ad-hoc conditional spliced into a shared flow instead of behind a dedicated abstraction | `refactoring` |
-| **MNT-004** | MEDIUM¹ | Needless optionality / casts — superfluous `Option`, `as`-casts where `From`/`TryFrom` belongs, `Box<dyn Any>` downcasting | `rust-idioms` |
+| **MNT-001** | LOW¹ | Missed code judo — a reframing would make the change dramatically simpler or delete a category of complexity | `refactoring` |
+| **MNT-002** | LOW¹ | File-size growth past ~700 lines — decomposition smell; split by responsibility | `refactoring` |
+| **MNT-003** | LOW¹ | Spaghetti branching — ad-hoc conditional spliced into a shared flow instead of behind a dedicated abstraction | `refactoring` |
+| **MNT-004** | LOW¹ | Needless optionality / casts — superfluous `Option`, `as`-casts where `From`/`TryFrom` belongs, `Box<dyn Any>` downcasting | `rust-idioms` |
 | **INV-001** | HIGH | Operation accepts an entity in a transient/invalid lifecycle state (soft-delete / in-progress-mutation window) that the type's documented invariant forbids | `rust-architecture` |
 | **INV-002** | HIGH | Scope-boundary crossing (tenant/project/network/address-range) leaves a scoped reference dangling — carried over without re-validating or re-deriving it against the new scope | `rust-architecture` |
 | **INV-003** | MEDIUM | Raw value used where a documented derived/`effective_*` quantity is required | `rust-architecture` |
@@ -54,14 +59,19 @@ finding maps to a catalog rule (novel issues are fine and encouraged — report 
 | **REC-004** | MEDIUM | status/condition never cleared when its subject is gone, or written unconditionally (no `desired != current` guard) | `distributed-races` (R10) |
 | **REC-005** | MEDIUM | disabled feature still issues API calls, or its error aborts the primary reconcile | `distributed-races` (R11) |
 | **REC-006** | MEDIUM | non-idempotent apply — create/patch off a stale read, no 404/409 race tolerance | `distributed-races` (R12) |
-| **TST-001** | HIGH | New error path or branch with no test | `rust-testing` |
-| **TST-002** | HIGH | Bug fix landed without a regression test reproducing it | `rust-testing` |
-| **TST-003** | MEDIUM | Weak assertion — test passes whether or not the behavior holds (no `.never()`, asserts nothing meaningful) | `rust-testing` |
+| **TST-001** | LOW² | New error path or branch with no test | `rust-testing` |
+| **TST-002** | LOW² | Bug fix landed without a regression test reproducing it | `rust-testing` |
+| **TST-003** | LOW² | Weak assertion — test passes whether or not the behavior holds (no `.never()`, asserts nothing meaningful) | `rust-testing` |
 | **DEP-001** | MEDIUM | API used incorrectly **for the crate version actually pinned** (deprecated/removed/changed since) — see the dependency-context step in `SKILL.md` | `rust-ecosystem` |
 | **DEP-002** | HIGH | Known-vulnerable dependency version (RUSTSEC advisory) | `rust-security` |
 
-¹ `MNT-*` are MEDIUM by default; in **strict mode** they become a presumption of block unless the
-author justified the change in the diff or brief (see `SKILL.md` → Maintainability bar).
+¹ `MNT-*` are LOW by default (maintainability is optional under the harm cap); in **strict mode**
+they are reported at MEDIUM and become a presumption of block unless the author justified the
+change in the diff or brief (see `SKILL.md` → Maintainability bar).
+
+² `TST-*` are LOW by default. A missing or weak test takes the severity of the defect it would
+catch, once that defect and its harm are named (`review-rules` `severity.md`) — a missing
+cross-tenant denial test on a new authz-guarded endpoint names a security harm and is HIGH.
 
 ## Adding a rule
 

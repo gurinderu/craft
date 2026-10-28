@@ -5,7 +5,9 @@ Stable IDs for the severity checklist in `SKILL.md`. A finding that maps to a ru
 append-only: never renumber or reuse a retired ID.
 
 This catalog **mirrors** the `SKILL.md` checklist — the checklist is the prose, this is the index.
-Severities match. Not every finding maps to a catalog rule (novel issues are fine and encouraged —
+Severities match; each is the rule's **default**, bounded by the harm cap of the `review-rules`
+skill (`severity.md`) — a finding is never rated above the harm it names. Finding classes and the
+search sweeps live there too; this catalog keeps only what is specific to Nix. Not every finding maps to a catalog rule (novel issues are fine and encouraged —
 report them without an ID).
 
 | ID | Severity | Rule | Fix skill |
@@ -20,7 +22,7 @@ report them without an ID).
 | **DEV-001** | MEDIUM | `allowUnfree`/config set in `flake.nix` but not propagated to `nix develop` | `nix-dev-env` |
 | **MOD-001** | CRITICAL | Secret embedded as plaintext string inside a derivation or store path instead of managed by agenix/sops-nix | `nixos` |
 | **MOD-002** | MEDIUM | NixOS/HM option without a `type` or `default`; non-cross-platform assumption | `nixos` |
-| **MNT-001** | MEDIUM | Dead code (`deadnix`) / anti-idiom (`statix`) / needless `rec`/`with` | `nix-dev-env` |
+| **MNT-001** | LOW | Dead code (`deadnix`) / anti-idiom (`statix`) / needless `rec`/`with` | `nix-dev-env` |
 | **DEP-001** | MEDIUM | Flake input pin stale or floating where it should be locked | `nix-flakes` |
 
 ## Adding a rule

@@ -1,7 +1,7 @@
 ---
 name: nix-review
 description: >-
-  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
+  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules; language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
 ---
 
 # Nix Review
@@ -119,7 +119,9 @@ Best-effort: skip if there are no external-input changes.
 Review the diff against these tiers. This skill owns only the review *process*; cite the owning
 skill for each fix. Each item has a stable ID in the [rules.md](rules.md) catalog — cite it in a
 finding (e.g. `INJ-001`) so the finding is addressable and dedup-able; novel issues without a
-catalog ID are still welcome.
+catalog ID are still welcome. The tiers are defaults: every finding names its harm, and the harm
+cap of the `review-rules` skill (`severity.md`) bounds its severity — read that skill alongside this
+one for severity, finding classes and the search sweeps.
 
 - Purity / reproducibility → `nix-packaging`, `nix-flakes`
 - Command injection / untrusted interpolation → `nix-packaging`
@@ -166,11 +168,14 @@ catalog ID are still welcome.
 **Modules**
 - NixOS/HM option without a `type` or `default`; non-cross-platform assumption (`MOD-002`)
 
-**Maintainability**
-- Dead code (`deadnix`) / anti-idiom (`statix`) / needless `rec`/`with` (`MNT-001`)
-
 **Dependencies**
 - Flake input pin stale or floating where it should be locked (`DEP-001`)
+
+### LOW — optional, never blocks
+
+**Maintainability**
+- Dead code (`deadnix`) / anti-idiom (`statix`) / needless `rec`/`with` (`MNT-001`) — raised only
+  when a harm is named (`review-rules` `severity.md`)
 
 ## Review lenses
 
