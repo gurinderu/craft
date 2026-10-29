@@ -56,19 +56,24 @@ ${discovery===DISCOVERY_SKIPPED?"Discovery skipped: repo is not this session's p
 ## Extra lenses
 ${[`Chosen: ${how==="named"?"named by the caller (extraLenses)":"discovered among the session project's agents"}.`,extraLensRanLine(ran,rubric),...extraLensFailedLines(how,failed)].join(`
 `)}
-`}var LOGRUN_SCHEMA={type:"object",additionalProperties:!1,required:["ok"],properties:{ok:{type:"boolean",description:"true only if the script ran and printed no craft-log-run FAILED line"},error:{type:"string",description:"when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise"}}};function shq(s){return`'${String(s??"").replace(/'/g,"'\\''")}'`}function loggerPrelude(craftRoot,version="",repo=""){return`${pluginScriptPrelude(craftRoot,version,repo,"lib/craft-log-run.mjs","CRAFT_LOGGER")}[ -n "\${CRAFT_LOGGER:-}" ] || { echo "craft-log-run FAILED: no usable logger — no absolute craftRoot outside the reviewed repo, no CLAUDE_PLUGIN_ROOT, and no installed copy of "${version?shq(version):"'this version'"}" under the plugin cache; refusing to resolve against the reviewed repository"; exit 1; }
+`}var LOGRUN_SCHEMA={type:"object",additionalProperties:!1,required:["ok"],properties:{ok:{type:"boolean",description:"true only if the script ran and printed no craft-log-run FAILED line"},error:{type:"string",description:"when ok is false, the failing line verbatim; when ok is true AND the script printed a craft-log-run WARNING line, that line verbatim; empty otherwise"}}};function shq(s){return`'${String(s??"").replace(/'/g,"'\\''")}'`}function loggerPrelude(craftRoot,version="",repo=""){return`${pluginScriptPrelude(craftRoot,version,repo,"lib/craft-log-run.mjs","CRAFT_LOGGER")}[ -n "\${CRAFT_LOGGER:-}" ] || { printf '%s\\n' "craft-log-run FAILED: no usable logger — \${CRAFT_LOGGER_WHY}refusing to resolve against the reviewed repository"; exit 1; }
 `}function pluginScriptPrelude(craftRoot,version,repo,script,varName){let preamble=`CRAFT_REPO="$(cd ${shq(repo||".")} 2>/dev/null && pwd -P)" || CRAFT_REPO=""
 craft_usable() {
+  CRAFT_WHY="not absolute ($1)"
   case "$1" in /*) ;; *) return 1 ;; esac
+  CRAFT_WHY="no file at $1"
   [ -f "$1" ] || return 1
+  CRAFT_WHY="the reviewed repo "${shq(repo||".")}" did not resolve (CRAFT_REPO empty)"
   [ -n "$CRAFT_REPO" ] || return 1   # belt to the braces below; see the note in the comment above
   # A repo of "/" contains everything, so nothing can be outside it. The pattern below cannot say
   # that: "$CRAFT_REPO"/* becomes //* and matches no ordinary path, so every candidate reads as
   # outside and the guard inverts into an allow-all. Degenerate input, but the whole point of this
   # predicate is that it fails closed.
+  CRAFT_WHY="the reviewed repo is /"
   [ "$CRAFT_REPO" = "/" ] && return 1
   CRAFT_REAL="$1"
   CRAFT_HOPS=0
+  CRAFT_WHY="a symlink chain over 16 hops"
   while [ -L "$CRAFT_REAL" ]; do
     [ "$CRAFT_HOPS" -lt 16 ] || return 1
     CRAFT_LINK="$(readlink "$CRAFT_REAL")"
@@ -78,20 +83,27 @@ craft_usable() {
     esac
     CRAFT_HOPS=$((CRAFT_HOPS + 1))
   done
+  CRAFT_WHY="its directory did not resolve"
   CRAFT_DIR="$(cd "$(dirname "$CRAFT_REAL")" 2>/dev/null && pwd -P)" || return 1
   [ -n "$CRAFT_DIR" ] || return 1
   CRAFT_REAL="$CRAFT_DIR/$(basename "$CRAFT_REAL")"
+  CRAFT_WHY="inside the reviewed repo ($CRAFT_REAL in $CRAFT_REPO)"
   case "$CRAFT_REAL" in
     "$CRAFT_REPO"/*|"$CRAFT_REPO") return 1 ;;
   esac
+  CRAFT_WHY=""
   return 0
 }
 ${varName}=""
-`,tryCandidate=expr=>`if [ -z "\${${varName}:-}" ]; then
+${varName}_WHY=""
+`,noteWhy=(label,why)=>`${varName}_WHY="\${${varName}_WHY}"${shq(label)}": ${why}; "
+`,tryCandidate=(label,expr)=>`if [ -z "\${${varName}:-}" ]; then
   CRAFT_TRY=${expr}
-  craft_usable "$CRAFT_TRY" && ${varName}="$CRAFT_REAL"
+  if craft_usable "$CRAFT_TRY"; then ${varName}="$CRAFT_REAL"; else ${noteWhy(label,"$CRAFT_WHY").trimEnd()}; fi
 fi
-`,explicit=craftRoot?tryCandidate(`${shq(craftRoot)}"/${script}"`):"",fromEnv=tryCandidate(`"\${CLAUDE_PLUGIN_ROOT:-}/${script}"`),installed=version?tryCandidate(`"\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/"${shq(version)}"/${script}"`):"";return`${preamble}${explicit}${fromEnv}${installed}`}function payloadVersion(payload){return String((payload&&typeof payload=="object"?payload.craftVersion:void 0)??"")}function runDirFlags(dir,rejoin){return`${dir?`--dir ${shq(dir)} `:""}${rejoin?"--rejoin ":""}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `}function engineRevisionFlag(payload){let rev=payload&&typeof payload=="object"?payload.workflowEngineRevision:void 0;return Number.isInteger(rev)?`--engine-revision ${rev} `:""}function logRunPrompt({record,craftRoot="",repo="",command="write",dir="",rejoin=!1,retry=!1}={}){let version=payloadVersion(record),flags=`${retry?"--retry ":""}${runDirFlags(dir,rejoin)}`;return`You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
+`,explicit=craftRoot?tryCandidate("craftRoot",`${shq(craftRoot)}"/${script}"`):noteWhy("craftRoot","not passed"),fromEnv=`if [ -z "\${CLAUDE_PLUGIN_ROOT:-}" ]; then ${noteWhy("CLAUDE_PLUGIN_ROOT","unset").trimEnd()}; else
+${tryCandidate("CLAUDE_PLUGIN_ROOT",`"\${CLAUDE_PLUGIN_ROOT:-}/${script}"`)}fi
+`,installed=version?tryCandidate(`installed copy ${version}`,`"\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/craft/craft/"${shq(version)}"/${script}"`):noteWhy("installed copy","no version to look up");return`${preamble}${explicit}${fromEnv}${installed}`}function payloadVersion(payload){return String((payload&&typeof payload=="object"?payload.craftVersion:void 0)??"")}function runDirFlags(dir,rejoin){return`${dir?`--dir ${shq(dir)} `:""}${rejoin?"--rejoin ":""}\${CLAUDE_CODE_SESSION_ID:+--session "$CLAUDE_CODE_SESSION_ID"} `}function engineRevisionFlag(payload){let rev=payload&&typeof payload=="object"?payload.workflowEngineRevision:void 0;return Number.isInteger(rev)?`--engine-revision ${rev} `:""}function logRunPrompt({record,craftRoot="",repo="",command="write",dir="",rejoin=!1,retry=!1}={}){let version=payloadVersion(record),flags=`${retry?"--retry ":""}${runDirFlags(dir,rejoin)}`;return`You are the craft observability logger. Persist ONE run record. This is mechanical IO — do not analyze, summarise, reformat or "clean up" any part of it.
 
 Run exactly this:
 
