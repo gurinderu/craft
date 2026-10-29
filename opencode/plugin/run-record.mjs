@@ -781,6 +781,20 @@ async function sh(ctx, cmd) {
   }
 }
 
+// The index line goes through the same lock the Claude Code delivery's craft-log-run takes for every
+// writer of index.jsonl (lib/index-lock.mjs, realm @nick/craft, node #401): both deliveries share one
+// store. Loaded lazily, like the work hook's lib modules: a plugin copy without lib/ still appends, unlocked,
+// rather than lose the line. The lock waits SYNCHRONOUSLY, so while another writer holds it this blocks the
+// plugin's event loop, up to the lock's timeout (45 s). And unlike the Claude Code writer, which removes a
+// record whose index line failed, a failed append here leaves the detail file behind unindexed — this
+// writer is best-effort and never throws (realm @nick/craft, node #119).
+/** @param {string} dir @param {string} line */
+async function appendIndex(dir, line) {
+  const lock = await import('../../lib/index-lock.mjs').catch(() => null)
+  if (lock) lock.appendIndexLine(dir, line)
+  else appendFileSync(join(dir, 'index.jsonl'), `${line}\n`)
+}
+
 // Best-effort: stamp the runtime fields, write the detail file, append the index line. NEVER throws
 // into the caller — observability must not break a workflow run.
 /**
@@ -797,7 +811,7 @@ export async function writeRecord(ctx, record) {
     const full = { ...record, ts, project, commit, dirty }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, `${ts}-${full.kind}-${full.name}.json`), JSON.stringify(full, null, 2) + '\n')
-    appendFileSync(join(dir, 'index.jsonl'), JSON.stringify(indexProjection(full)) + '\n')
+    await appendIndex(dir, JSON.stringify(indexProjection(full)))
   } catch (e) {
     try { console.error(`craft observability: failed to write run record: ${/** @type {{ message?: unknown } | null | undefined} */ (e)?.message ?? e}`) } catch { /* ignore */ }
   }
