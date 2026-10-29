@@ -148,10 +148,15 @@ ended — the engine skills say so where they launch an engine. It finds the run
 `~/.claude/projects/<project>/<session>/subagents/workflows/<runId>/` (under `$CLAUDE_CONFIG_DIR` when
 set, or `--claude-home <dir>`), counting a directory a resumed session links in once, and refuses when
 it finds none or two. The records come from the run itself: each logger agent (labelled `log-run` or
-`log-run (<n>KB)`) whose command printed `wrote <file>` or `already filed <file>` names one. In the
-order they were filed, each record gets the cost of the agents that started after the previous
-record's logger, up to and including its own; agents that started after the last logger (a dead tail)
-go to the last record. Each cost then carries `source` (the run id) and
+`log-run (<n>KB)`) whose command printed `wrote <file>` or `already filed <file>` names one. The agents
+are split by engine first: an agent of a nested engine carries the phase `▸ craft:<engine>` (or
+`▸ craft:<engine> #<n>` for a further instance — rust-audit nests one review per crate, the
+rust-review and nix-review entries nest `review`), and an agent without it belongs to the top-level
+engine. A nested engine's record must be that engine's (its `name`), or the whole run is refused; a
+nested engine that filed no record counts under the top-level engine, with a warning. Within one
+engine, in the order its records were filed, each record gets the cost of the agents that started
+after the previous record's logger, up to and including its own; agents that started after the last
+logger (a dead tail) go to the last record. Each cost then carries `source` (the run id) and
 `slice: {index, of, tail?}` — record `index` of the `of` the run filed, and `tail`, the agents after
 the last logger, present only when there were any. A run that resumed and filed a second record no
 longer hands its first record a partial cost that says nothing of it. Every record is measured and read
