@@ -140,6 +140,35 @@ runs sandboxed with no filesystem, so no engine can ever record them from inside
 summed **after** the run instead, by the party that holds the runId (the launcher):
 
 ```bash
+node lib/craft-log-run.mjs enrich-cost --run-id <wf_…>
+```
+
+The launcher reads the run id (`wf_…`) off the Workflow completion and runs this once the run has
+ended — the engine skills say so where they launch an engine. It finds the run's transcript directory,
+`~/.claude/projects/<project>/<session>/subagents/workflows/<runId>/` (under `$CLAUDE_CONFIG_DIR` when
+set, or `--claude-home <dir>`), counting a directory a resumed session links in once, and refuses when
+it finds none or two. The records come from the run itself: each logger agent (labelled `log-run` or
+`log-run (<n>KB)`) whose command printed `wrote <file>` or `already filed <file>` names one. The agents
+are split by engine first: an agent of a nested engine carries the phase `▸ craft:<engine>` (or
+`▸ craft:<engine> #<n>` for a further instance — rust-audit nests one review per crate, the
+rust-review and nix-review entries nest `review`), and an agent without it belongs to the top-level
+engine. A nested engine's record must be that engine's (its `name`), or the whole run is refused; a
+nested engine that filed no record counts under the top-level engine, with a warning, and the cost it
+lands in names it: `absorbed: [{engine, instance, agents}]`. A record path a logger printed outside the
+store (`--store`, `~/.craft/runs` by default) refuses the whole run: nothing is written. (finalize's
+guard on `--dir` uses the same containment test but refuses only the directory — it still files the
+record.) Within one
+engine, in the order its records were filed, each record gets the cost of the agents that started
+after the previous record's logger, up to and including its own; agents that started after the last
+logger (a dead tail) go to the last record. Each cost then carries `source` (the run id) and
+`slice: {index, of, tail?}` — record `index` of the `of` the run filed, and `tail`, the agents after
+the last logger, present only when there were any. A run that resumed and filed a second record no
+longer hands its first record a partial cost that says nothing of it. Every record is measured and read
+before any is written, so a refusal leaves them all as they were.
+
+The older form names the directory and one record by hand and sums every transcript into it:
+
+```bash
 node lib/craft-log-run.mjs enrich-cost --run-dir <run-dir> --record <detail-record.json>
 ```
 
@@ -164,7 +193,7 @@ enriched runs apart), the same "not measured is not zero" stance the pool split 
 `lib/run-record.mjs`), which follows what enrich-cost writes — all four token parts, `agents`, a
 `total` equal to their sum, a `source`: **missing** means never enriched; **malformed** means not an
 object, none of the measured fields, a field that is not a non-negative number, a `source` that is not
-a string, or a `total` that is not the sum of its parts; **empty** means written but measured nothing
+a string, a `slice` that is not `{index, of, tail?}` with `1 ≤ index ≤ of`, or a `total` that is not the sum of its parts; **empty** means written but measured nothing
 (enrich-cost's flag for transcripts that parse yet carry no usage, realm #98 — even when some were
 skipped); **overcounted** means no `rule` (an older enrich-cost, which counted a message once per
 line and overstated the run about 1.8x; re-running enrich-cost on the record recounts it while its
@@ -274,12 +303,12 @@ the identity of the record it read, so two round-n records at the same head cann
 And a later round run soon after the first reads a prompt cache the first one warmed: the report prints
 how many minutes apart the rounds were next to the per-kind deltas, so read input and cache-write
 deltas with that in mind. `enrich-cost` records the run directory it summed (`cost.source`), and a pair
-whose two costs come from the same directory, or do not say, is not compared.
+whose two costs come from the same directory, or do not say, is not compared — unless they are two
+different slices of one run (`cost.slice`), which are disjoint sets of its transcripts.
 
 To take the measurement: on a clean working tree, run a review on a branch; then, **without committing
 or editing anything**, run it again with `fullEvery=1` so the second round scans the full diff too;
-enrich both records with `enrich-cost --run-dir <the workflow run's transcript directory> --record
-<record>`; and run `--round-pairs`.
+enrich both records with `enrich-cost --run-id <each run's wf_ id>`; and run `--round-pairs`.
 
 Known gap: `enrich-cost` sums `agent-*.jsonl` transcripts in the workflow run directory. Claude Code
 2.1.286 on Linux was observed to write only `agent-*.meta.json` and `journal.jsonl` there, so no record

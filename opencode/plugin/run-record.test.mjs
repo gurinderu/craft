@@ -1,6 +1,6 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readFileSync as readFile } from 'node:fs'
@@ -503,6 +503,25 @@ test('writeRecord writes a detail file and appends one index line', async () => 
     assert.equal(detail.length, 1)
   } finally {
     delete process.env['CRAFT_RUNS_DIR']
+  }
+})
+
+test('writeRecord appends under the store\'s index lock: it takes over a dead writer\'s stale lock', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'craft-obs-'))
+  process.env['CRAFT_RUNS_DIR'] = dir
+  const lock = join(dir, 'index.jsonl.lock')
+  writeFileSync(lock, 'dead\n')
+  const old = new Date(Date.now() - 60_000)
+  utimesSync(lock, old, old)
+  /** @type {import('./run-record.mjs').ShellCtx} */
+  const ctx = { worktree: '/proj', directory: '/proj', $: () => ({ quiet: async () => ({ stdout: '' }) }) }
+  try {
+    await writeRecord(ctx, buildAuditRecord({ results: [], baseRef: 'main', hasUnsafe: false, synthesisText: 'Approve' }))
+    assert.equal(readFileSync(join(dir, 'index.jsonl'), 'utf8').trim().split('\n').length, 1)
+    assert.equal(existsSync(lock), false, 'the stale lock was taken over and released: the append went through the lock')
+  } finally {
+    delete process.env['CRAFT_RUNS_DIR']
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 

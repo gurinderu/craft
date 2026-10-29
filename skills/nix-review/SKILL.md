@@ -17,6 +17,10 @@ lens worker apply.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
 `node "<this skill's base directory>/../../lib/engine-source-map.mjs" nix-review workflow.js:<line>:<column>`
 gives it in the plugin's source.
+Once a workflow run has ended (completed, failed or stopped — not while you may still resume it),
+fold its real cost into the records it filed:
+`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 The workflow recalls the project's active decisions, open questions and project rules for the diff's paths
 itself, on every launch; `priorDecisions` (the object argument, never a string, each record with

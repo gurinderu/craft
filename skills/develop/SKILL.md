@@ -101,6 +101,11 @@ engine is chosen by the stack of the branch diff (`git diff --name-only <base>..
 (`craft:review` on a diff with no Rust or Nix returns `INCOMPLETE (no language profile)` — do not
 use it there.)
 
+Once each engine run of this cycle has ended (completed, failed or stopped — not while you may still
+resume it), fold its real cost into the records it filed:
+`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
+
 **The loop is light by default.** The first round reviews the whole branch diff; every later round
 reviews only the delta the fixes changed, together with the findings that delta touched — not the
 whole diff again. The whole diff is reviewed once more, in phase 5. Only on the human's word ("full

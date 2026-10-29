@@ -116,6 +116,10 @@ If `craft:triage-findings` or `craft:adversarial-review` fails with `at workflow
 that place is in the bundled engine:
 `node "<this skill's base directory>/../../lib/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
 gives it in the plugin's source.
+Once a run of either has ended (completed, failed or stopped — not while you may still resume it),
+fold its real cost into the records it filed:
+`node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`, with the
+run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.
 
 Launch it with its sources — `report` = a path to the findings whenever they live in a report (one
 that lives only in the session is written to a file in the session's temporary directory first),
