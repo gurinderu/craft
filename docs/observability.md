@@ -155,7 +155,9 @@ rust-review and nix-review entries nest `review`), and an agent without it belon
 engine. A nested engine's record must be that engine's (its `name`), or the whole run is refused; a
 nested engine that filed no record counts under the top-level engine, with a warning, and the cost it
 lands in names it: `absorbed: [{engine, instance, agents}]`. A record path a logger printed outside the
-store (`--store`, `~/.craft/runs` by default) refuses the run, as finalize refuses such a `--dir`. Within one
+store (`--store`, `~/.craft/runs` by default) refuses the whole run: nothing is written. (finalize's
+guard on `--dir` uses the same containment test but refuses only the directory — it still files the
+record.) Within one
 engine, in the order its records were filed, each record gets the cost of the agents that started
 after the previous record's logger, up to and including its own; agents that started after the last
 logger (a dead tail) go to the last record. Each cost then carries `source` (the run id) and
