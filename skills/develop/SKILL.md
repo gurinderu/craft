@@ -141,7 +141,8 @@ The engine's argument for each round, as an object (never a string):
   above: one round of the diff-scoped lenses only (no negative-space or invariants lens; `tests`
   and `intent` still run whenever the diff changes production code, `reconciler` and
   `failure-windows` on controller code, `compat` on a public contract path),
-  no completeness critic, and only Medium and above verified; its verdict says light pass and its
+  no completeness critic, and only Medium and above verified (plus a Low/Info finding two or more
+  lenses reported with a must-fix harm claimed); its verdict says light pass and its
   report names what it skipped. The default, `depth: 'full'`, is the whole review. The engine
   accepts only `depth: 'light'`; any other value runs full. Deciding that a "quick" or "light"
   request means `depth: 'light'` is the job of the skill or hook that launches it, not the engine's.
