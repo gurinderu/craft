@@ -89,9 +89,9 @@ not one of them: it is the main session's (→ "Who triages").
                on the human's word, or as the final pass the repo's rules ask for. Never handed to a subagent (it has no Workflow tool). Without the Workflow
                tool (Codex, OpenCode) the re-review is this session's own review pass over the fix
                commits (`git diff <that commit>..HEAD`), with the `rust-review` or `nix-review`
-               rubric where it applies. Once that run has ended (completed, failed or
-               stopped — not while you may still resume it), fold its real cost into the
-               records it filed:
+               rubric where it applies. Once the `craft:review` or `craft:adversarial-review`
+               run has ended (completed, failed or stopped — not while you may still resume
+               it), fold its real cost into the records it filed:
                `node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`,
                with the run id the Workflow completion names. Best-effort: if it fails, say
                so in one line and go on.
