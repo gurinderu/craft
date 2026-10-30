@@ -1,6 +1,6 @@
-import { normalizeArgs, refuseUnknownOptions } from '../lib/workflow-args.mjs'
-import { readRepoArg, repoDirective } from '../lib/repo-arg.mjs'
-import { summarizeFindings, tallyVerdicts } from '../lib/run-record.mjs'
+import { normalizeArgs, unknownOptionsRefusal, UNKNOWN_OPTION_CLASS } from '../lib/workflow-args.mjs'
+import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.mjs'
+import { summarizeFindings, tallyVerdicts, argumentRefusal } from '../lib/run-record.mjs'
 import { quietly, makeRunLogger, telemetryLossNoter } from '../lib/run-logging.mjs'
 import { DEPENDENCY_SOURCE_HOW } from '../lib/dependency-source.mjs'
 import { telemetryLostSection } from '../lib/review-coverage.mjs'
@@ -40,13 +40,13 @@ export async function __run() {
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs).
 const A = normalizeArgs(args, log)
-// Every argument this engine cannot honour is refused here, before any agent, naming it (realm @nick/craft,
-// node #411): one dropped in silence used to come back as a normal-looking plan, or as a refusal only after
-// the launch.
-refuseUnknownOptions(A, ['pr', 'report', 'base', 'prBase', 'priorLedger', 'priorDecisions', 'craftRoot', 'repo'], 'triage-findings')
+// Every argument this engine cannot honour is refused, naming it, before any work agent (realm @nick/craft,
+// node #411): one dropped in silence used to come back as a normal-looking plan. Read here, filed and returned
+// once the logger exists (below).
+const unknownRefused = unknownOptionsRefusal(A, ['pr', 'report', 'base', 'prBase', 'priorLedger', 'priorDecisions', 'craftRoot', 'repo'], 'triage-findings')
 // The checkout every agent works in when it is not the session's own: the validators read its code, the
 // recall and the sift its memory, the PR gatherer its forge, and the logger files the record under it.
-const repoArg = readRepoArg(A['repo'])
+const { repo: repoArg, refused: repoRefused } = readRepoArg(A['repo'])
 const REPO_DIRECTIVE = repoDirective(repoArg, 'triage')
 /**
  * The sandbox's agent(), pointed at `repo` when one is given.
@@ -176,6 +176,20 @@ const logRun = makeRunLogger({
 })
 
 // ---- Gather --------------------------------------------------------------
+// A refused argument: the logger is the only agent — the record carries the refusal's class in notRun (realm
+// @nick/craft, node #159), and the report names the argument.
+/** The refusal's report once its record is filed, '' when every argument is honoured. @returns {Promise<string>} */
+async function refuseArgument() {
+  const why = unknownRefused || repoRefused
+  if (!why) return ''
+  const notRunClass = unknownRefused ? UNKNOWN_OPTION_CLASS : REPO_REFUSED_CLASS
+  const refused = argumentRefusal({ engine: 'triage-findings', why, notRunClass, craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  await logRun(refused.record)
+  return refused.report
+}
+const refusedReport = await refuseArgument()
+if (refusedReport) return refusedReport
+
 phase('Gather')
 if (!pr && !report) {
   throw new Error('triage-findings needs a source: pass args.pr (GitHub PR number) and/or args.report (path to a report file from any review engine).')
