@@ -132,7 +132,9 @@ shown not to be this PR's. On trunk or with no branch (a `rust-audit` of trunk) 
 the workflow counts it only beside a `base` it differs from, so one with no `base`, one equal to
 `base`, or `HEAD` is absent — and every such finding goes to you as `needs-decision`. `base` keeps
 its meaning — the ref the findings were generated against, the reviewed head, which validation pins to. When the
-findings are in another repository than the session's, add `repo` = its absolute path, as for the review. The workflow sifts by memory itself — it recalls the
+findings are in another repository than the session's, add `repo` = its path (absolute, or relative to the session's directory), as for the review; a `repo` no agent can
+`cd` to, or an argument the workflow does not take, is refused — it files an INCOMPLETE run record with only the
+logger run, no work agent. The workflow sifts by memory itself — it recalls the
 project's records for the findings' paths and merges in what `priorDecisions` (an object argument,
 the step-0 records) adds; its ledger rows with `sifted: true` (their reason opens with `SIFTED
 BEFORE VALIDATION`) were settled by the sift — a repeat or a record's answer — not judged on the

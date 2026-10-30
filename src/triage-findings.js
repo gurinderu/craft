@@ -15,7 +15,7 @@ import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf } from '.
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=<absolute path>` names, as in `craft:review`; an argument it does not take is refused before any agent runs. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=` names (an absolute path, or one relative to the session\'s directory), as in `craft:review`; an argument it does not take, or a repo= no agent can cd to, is refused: it files an INCOMPLETE run record with only the logger run, no work agent. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
@@ -180,10 +180,10 @@ const logRun = makeRunLogger({
 // @nick/craft, node #159), and the report names the argument.
 /** The refusal's report once its record is filed, '' when every argument is honoured. @returns {Promise<string>} */
 async function refuseArgument() {
-  const why = unknownRefused || repoRefused
-  if (!why) return ''
-  const notRunClass = unknownRefused ? UNKNOWN_OPTION_CLASS : REPO_REFUSED_CLASS
-  const refused = argumentRefusal({ engine: 'triage-findings', why, notRunClass, craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+  // Every refusal at once, so a caller fixing one does not meet the next on the re-launch.
+  const both = [[unknownRefused, UNKNOWN_OPTION_CLASS], [repoRefused, REPO_REFUSED_CLASS]].filter(([why]) => why)
+  if (!both.length) return ''
+  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
   await logRun(refused.record)
   return refused.report
 }
