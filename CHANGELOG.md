@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.36.0](https://github.com/gurinderu/craft/compare/v0.35.1...v0.36.0) (2026-10-29)
+
+
+### Features
+
+* **analyze:** match an external reviewer's PR findings against craft run ledgers ([#288](https://github.com/gurinderu/craft/issues/288)) ([f296c0c](https://github.com/gurinderu/craft/commit/f296c0c0d35bf2f2b60da42ac19c9deefa15c51e))
+* **cost:** enrich a run's records by its Workflow run id; recover spares a live run ([#291](https://github.com/gurinderu/craft/issues/291)) ([f429308](https://github.com/gurinderu/craft/commit/f429308a167de746e8af04fee36431918f877205))
+* **review:** language-independent review-rules skill, sibling sweep and harm-capped severity ([#284](https://github.com/gurinderu/craft/issues/284)) ([fb9bf8e](https://github.com/gurinderu/craft/commit/fb9bf8e68eddd09fcdbbf8f65f0cde1d6786a93f))
+* **review:** units probe runs a shipped CLI instead of reasoning over shell output ([#287](https://github.com/gurinderu/craft/issues/287)) ([b21c35b](https://github.com/gurinderu/craft/commit/b21c35bf6f4568d5bcda7de1c48d53585c95f1a5))
+
+
+### Bug Fixes
+
+* **logging,shell:** the logger refusal names its cause; one shell tokenizer ([#289](https://github.com/gurinderu/craft/issues/289)) ([853deeb](https://github.com/gurinderu/craft/commit/853deeb308df8db8e04122443e60605e5c684456))
+* **logging:** file a large run record in checkpoint-sized parts ([#292](https://github.com/gurinderu/craft/issues/292)) ([43c744f](https://github.com/gurinderu/craft/commit/43c744f050130aecd0252c6996bceac62f52b1ab))
+* **review:** post line comments without subject_type ([#286](https://github.com/gurinderu/craft/issues/286)) ([80bfec3](https://github.com/gurinderu/craft/commit/80bfec3800193dbcdf71342467362a2f6f0fc476))
+* **review:** unit-mode batches capped by a normal-review slice, one agent per lens ([#293](https://github.com/gurinderu/craft/issues/293)) ([fbb6902](https://github.com/gurinderu/craft/commit/fbb6902701bfd76a1fc64c2d6400d107f553ba66))
+* **shell:** a # that starts a word comments out the rest of its line ([#290](https://github.com/gurinderu/craft/issues/290)) ([1a58da9](https://github.com/gurinderu/craft/commit/1a58da983921329b21050324aa966127cec6cc7e))
+
 ## [0.35.1](https://github.com/gurinderu/craft/compare/v0.35.0...v0.35.1) (2026-10-28)
 
 
