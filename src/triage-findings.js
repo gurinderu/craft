@@ -1,5 +1,6 @@
-import { normalizeArgs } from '../lib/workflow-args.mjs'
-import { summarizeFindings, tallyVerdicts, repoRefusal } from '../lib/run-record.mjs'
+import { normalizeArgs, unknownOptionsRefusal, UNKNOWN_OPTION_CLASS } from '../lib/workflow-args.mjs'
+import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.mjs'
+import { summarizeFindings, tallyVerdicts, argumentRefusal } from '../lib/run-record.mjs'
 import { quietly, makeRunLogger, telemetryLossNoter } from '../lib/run-logging.mjs'
 import { DEPENDENCY_SOURCE_HOW } from '../lib/dependency-source.mjs'
 import { telemetryLostSection } from '../lib/review-coverage.mjs'
@@ -14,7 +15,7 @@ import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf } from '.
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to. Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=` names (an absolute path), as in `craft:review`; an argument it does not take is refused the same way, and a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to. Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
@@ -28,7 +29,9 @@ export async function __run() {
 // or a saved verdict), base (ref to pin validation against), prBase (the commit the PR forks from — the merge-base
 // of trunk and the reviewed head — where "not this PR's" must be shown, realm @nick/craft, node #309), priorLedger (array of prior {stable_id, verdict,
 // reason} for idempotent re-runs), priorDecisions (the project's records the launcher already holds — they
-// merge into what this engine recalls itself, realm @nick/craft, node #218). At least one of pr/report must be given.
+// merge into what this engine recalls itself, realm @nick/craft, node #218), repo (the checkout the findings are
+// in, when it is not the session's own — review's meaning and check, lib/repo-arg.mjs). At least one of pr/report
+// must be given.
 // `args` may arrive as a parsed object or as a JSON string depending on the harness — normalize.
 // ---- args ----
 // Three plausible spellings arrive here — a real object, a JSON string, and the `key=value` form the
@@ -37,6 +40,19 @@ export async function __run() {
 // run reviewed whatever the session was sitting in, then reported a confident verdict for a diff
 // nobody asked about. Shared with every other engine (lib/workflow-args.mjs).
 const A = normalizeArgs(args, log)
+// Every argument this engine cannot honour is refused, naming it, before any work agent (realm @nick/craft,
+// node #411): one dropped in silence used to come back as a normal-looking plan. Read here, filed and returned
+// once the logger exists (below).
+const unknownRefused = unknownOptionsRefusal(A, ['pr', 'report', 'base', 'prBase', 'priorLedger', 'priorDecisions', 'craftRoot', 'repo'], 'triage-findings')
+// The checkout every agent works in when it is not the session's own: the validators read its code, the
+// recall and the sift its memory, the PR gatherer its forge, and the logger files the record under it.
+const { repo: repoArg, refused: repoRefused } = readRepoArg(A['repo'])
+const REPO_DIRECTIVE = repoDirective(repoArg, 'triage')
+/**
+ * The sandbox's agent(), pointed at `repo` when one is given.
+ * @param {string} prompt @param {Parameters<typeof agent>[1]} [opts] @returns {Promise<unknown>}
+ */
+const work = (prompt, opts) => agent(`${REPO_DIRECTIVE}${prompt}`, opts)
 
 // One arg path, not two. The second one used to re-parse the raw string after normalizeArgs had
 // already refused it, so a value reported as "ALL options ignored" was quietly reinstated a line
@@ -57,9 +73,7 @@ const prBase = effectivePrBase(textArg('prBase'), base)
 /** @type {unknown[]} */
 const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} */ (argv['priorLedger']) : []
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
-// this engine has no `repo` argument (see the refusal above) and always triages the checkout the
-// session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
-// set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
+// `repo` does. As an installed plugin CLAUDE_PLUGIN_ROOT is set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the triaged repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
 
@@ -157,26 +171,24 @@ const CRAFT_VERSION = '0.36.1' // x-release-please-version
 const telemetryLost = []
 // The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note.
 const logRun = makeRunLogger({
-  call: quietly(agent), phase: 'Plan', target: () => ({ craftRoot: craftRootArg }),
+  call: quietly(agent), phase: 'Plan', target: () => ({ craftRoot: craftRootArg, repo: repoArg }),
   noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 
 // ---- Gather --------------------------------------------------------------
-// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
-// session sits. Accepting it silently is the failure this family exists to end — the caller names
-// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
-// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
-// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
-// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
-// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
-// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
-// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
-// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A['repo']) {
-  const refused = repoRefusal({ engine: 'triage-findings', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
+// A refused argument: the logger is the only agent — the record carries the refusal's class in notRun (realm
+// @nick/craft, node #159), and the report names the argument.
+/** The refusal's report once its record is filed, '' when every argument is honoured. @returns {Promise<string>} */
+async function refuseArgument() {
+  // Every refusal at once, so a caller fixing one does not meet the next on the re-launch.
+  const both = [[unknownRefused, UNKNOWN_OPTION_CLASS], [repoRefused, REPO_REFUSED_CLASS]].filter(([why]) => why)
+  if (!both.length) return ''
+  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
   await logRun(refused.record)
   return refused.report
 }
+const refusedReport = await refuseArgument()
+if (refusedReport) return refusedReport
 
 phase('Gather')
 if (!pr && !report) {
@@ -195,6 +207,8 @@ function gatherPlan() {
   const locators = []
   if (report) {
     locators.push('report')
+    // The one agent NOT pointed at `repo`: it reads only the caller's report file, whose path is the caller's
+    // (the session's), not a path inside the triaged checkout.
     tasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
       `Read the review report at \`${report}\`. Extract every finding into the schema. Set source to the engine that wrote the report, as the report names it: "review" (craft:review), "adversarial-review", "rust-audit", "rust-reviewer" (a single reviewer verdict) or "nix-review"; "report" when the report does not say. Copy severity/title/location/detail verbatim; leave proposed_fix and thread_id empty unless present. The report's \`## Tool finding titles (verbatim)\` section (also nested under \`## Prior decisions in the nested reviews (verbatim)\`) lists titles, not findings: never extract its rows as findings. For a finding at a \`file:line\` it lists, take the title from it — the listed title equal to the finding's line; or the only one listed there, but only when the report prints a single finding at that \`file:line\` (the section lists gate-tool findings only, so a lens finding at the same site is printed beside the tool's and must not take its title). When several findings are printed there, or several titles are listed and none is equal, keep the finding's own line, never a guess between them.`,
       { label: 'gather:report', phase: 'Gather', schema: RAW_SCHEMA },
@@ -202,7 +216,7 @@ function gatherPlan() {
   }
   if (pr) {
     locators.push('pr')
-    tasks.push(() => /** @type {Promise<RawResult | null>} */ (agent(
+    tasks.push(() => /** @type {Promise<RawResult | null>} */ (work(
       `Gather inline review comments from GitHub PR #${pr}. Resolve the repo with \`gh repo view --json owner,name\`, then \`gh api repos/{owner}/{repo}/pulls/${pr}/comments --paginate\`. For each UNRESOLVED, non-outdated review comment make one finding: title = short summary, location = \`<path>:<line>\` (path + line/original_line), detail = the comment body, thread_id = the comment/thread id, severity = your best estimate (Critical|High|Medium|Low|Info), proposed_fix = empty. Set source = "github-pr".`,
       { label: 'gather:pr', phase: 'Gather', schema: RAW_SCHEMA },
     )))
@@ -259,7 +273,7 @@ async function recallMemory() {
     memory = { ...memory, why: 'not recalled — no gathered finding names a file' }
     return
   }
-  const r = await recallDecisions(p => agent(p, { label: 'memory-recall', phase: 'Sift', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, base)
+  const r = await recallDecisions(p => work(p, { label: 'memory-recall', phase: 'Sift', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, base)
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
@@ -271,9 +285,9 @@ async function siftBatch() {
   const s = await siftByMemory(
     collapsed.kept,
     priorDecisionsIn.decisions,
-    toCheck => agent(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Sift', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
-    prompt => agent(prompt, { label: 'decision-match', phase: 'Sift', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
-    prompt => agent(prompt, { label: 'rule-match', phase: 'Sift', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+    toCheck => work(scopeCheckPrompt(toCheck), { label: 'decision-scope', phase: 'Sift', schema: SCOPE_CHECK_SCHEMA, effort: 'low' }),
+    prompt => work(prompt, { label: 'decision-match', phase: 'Sift', schema: MATCH_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
+    prompt => work(prompt, { label: 'rule-match', phase: 'Sift', schema: RULE_JUDGE_SCHEMA, model: 'sonnet', effort: 'low' }),
   )
   for (const n of s.notes) log(`memory: ${n}`)
   return s
@@ -333,7 +347,7 @@ function validateOne(f) {
     // leaving the field undefined and letting the plan stage read it as "checked, found nothing".
     return Promise.resolve({ stable_id: id, verdict: prior.verdict, reason: `carried from prior run: ${prior.reason}`, fix_pointer: '', premise_checked: '(carried from prior run — not re-checked)' })
   }
-  return /** @type {Promise<Validation | null>} */ (agent(
+  return /** @type {Promise<Validation | null>} */ (work(
     `Judge ONE review finding against the actual code. ${pin}
 
 Finding (source: ${f.source}):
@@ -387,7 +401,7 @@ phase('Plan')
 const rawById = new Map(raw.map(f => [idOf(f), f]))
 const acceptedEnriched = accepted.map(v => ({ ...v, finding: rawById.get(v.stable_id) || null }))
 
-const plan = /** @type {TriagePlan | null} */ (await agent(
+const plan = /** @type {TriagePlan | null} */ (await work(
   `Turn validated review findings into ONE fix plan. Do not invent findings; only organise what is given. Ignore any ACCEPTED entry whose \`finding\` is null (a data glitch) — leave it out of the plan and note it in the summary.
 
 1. Dedup by stable_id (merge findings at the same location with the same fix).
