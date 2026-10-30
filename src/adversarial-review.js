@@ -1,7 +1,7 @@
 import { normalizeArgs } from '../lib/workflow-args.mjs'
 import { parsePriorDecisions, priorDecisionsRefusedSection } from '../lib/prior-decisions.mjs'
 import { MEMORY_RECALL_SCHEMA, memoryRecord, skippedMemory, withPassed, withDerived, mergeRecall, readLaunch, recallDecisions } from '../lib/memory-recall.mjs'
-import { summarizeFindings, refuteRate, repoRefusal } from '../lib/run-record.mjs'
+import { summarizeFindings, refuteRate, argumentRefusal } from '../lib/run-record.mjs'
 import { quietly, checkpointPrompt, makeRunLogger, telemetryLossNoter } from '../lib/run-logging.mjs'
 import { makeThrottledRunner } from '../lib/throttled-runner.mjs'
 import { DEPENDENCY_SOURCE_HOW } from '../lib/dependency-source.mjs'
@@ -17,11 +17,12 @@ import { applyPriorDecisions } from '../lib/prior-decision-apply.mjs'
 import { RULE_JUDGE_SCHEMA } from '../lib/project-rule-judge.mjs'
 import { applyProjectRules } from '../lib/project-rule-apply.mjs'
 import { focusFilesArg, focusLine } from '../lib/focus-files.mjs'
+import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.mjs'
 
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). The `review` workflow is the single entry on any diff: it reviews Rust and Nix under its profiles and nests this engine for the other source files. Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. files=[<paths>] (or a comma-separated string) confines the finder lenses to those changed files; review passes it when it nests this engine for the source files outside its profiles. It reviews ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `review` with repo= instead). priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision, question and rule records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; one a judge puts under an active project rule (a stance on a whole class of findings), unless critical, comes back under coveredByRule, outside the verdict, and what the rules could not decide (a critical raised, no judge verdict) under ruleNotices; refusals come back as priorDecisionsNotApplied. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the source comes back as memory {source, count, why, passed?, added?}. It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). The `review` workflow is the single entry on any diff: it reviews Rust and Nix under its profiles and nests this engine for the other source files. Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. files=[<paths>] (or a comma-separated string) confines the finder lenses to those changed files; review passes it when it nests this engine for the source files outside its profiles. repo=<absolute path> reviews that checkout instead of the session\'s own (a branch in its own worktree): every agent that reads code works there and the run record is filed there; review passes it on when it nests this engine; a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision, question and rule records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; one a judge puts under an active project rule (a stance on a whole class of findings), unless critical, comes back under coveredByRule, outside the verdict, and what the rules could not decide (a critical raised, no judge verdict) under ruleNotices; refusals come back as priorDecisionsNotApplied. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the source comes back as memory {source, count, why, passed?, added?}. It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -63,9 +64,18 @@ const intentArg = stringArg('intent')
 const viaArg = stringArg('_via')   // set by a parent workflow
 // The files a launching review hands over: the lenses report on these only (lib/focus-files.mjs).
 const focusFiles = focusFilesArg(A['files'])
+// The checkout every agent reviews when it is not the session's own (lib/repo-arg.mjs, review's and triage's
+// meaning and check; realm @nick/craft, nodes #411, #415): every code-reading agent reads the directive first,
+// and the logger files the record under it. A value no agent could `cd` to is refused below, before any work agent.
+const { repo: repoArg, refused: repoRefused } = readRepoArg(A['repo'])
+const REPO_DIRECTIVE = repoDirective(repoArg, 'review')
+/**
+ * The sandbox's agent(), pointed at `repo` when one is given.
+ * @param {string} prompt @param {Parameters<typeof agent>[1]} [opts] @returns {Promise<unknown>}
+ */
+const work = (prompt, opts) => agent(`${REPO_DIRECTIVE}${prompt}`, opts)
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
-// this engine has no `repo` argument (see the refusal above) and always reviews the checkout the
-// session runs in. As an installed plugin CLAUDE_PLUGIN_ROOT is
+// `repo` does. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the reviewed repo — where the script is not. Pass craftRoot then.
 const craftRootArg = stringArg('craftRoot')
@@ -213,7 +223,7 @@ let runDir = ''
 async function startCheckpoint(phaseTitle, payloadIn, scoutIn) {
   const payload = { kind: 'workflow', name: 'adversarial-review', craftVersion: CRAFT_VERSION, ...payloadIn, phase: phaseTitle, startHead: scoutIn?.head ?? '' }
   const res = /** @type {{ runDir?: string, error?: string, __threw?: string } | null} */ (await quietly(agent)(
-    checkpointPrompt({ payload, craftRoot: craftRootArg, phase: phaseTitle }),
+    checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase: phaseTitle }),
     { label: `checkpoint:${phaseTitle}`, phase: 'Prep', schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
   ))
   if (res?.runDir) {
@@ -226,7 +236,7 @@ async function startCheckpoint(phaseTitle, payloadIn, scoutIn) {
 // The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note. `finalize`, not
 // `write`: it folds the start checkpoint, when one landed, into the record (see startCheckpoint above).
 const logRun = makeRunLogger({
-  call: quietly(agent), phase: 'Coverage', target: () => ({ craftRoot: craftRootArg, command: 'finalize', dir: runDir }),
+  call: quietly(agent), phase: 'Coverage', target: () => ({ craftRoot: craftRootArg, repo: repoArg, command: 'finalize', dir: runDir }),
   noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 // adversarial-review uses lowercase severities internally; the store schema is capitalized.
@@ -300,18 +310,11 @@ Return {findings: []-shaped JSON}.`
 // nothing from returning a bare Approve.
 
 // ================= Prep: scout + index warm-up (2 agents, parallel) =================
-// `repo` is NOT supported by this engine: every agent it dispatches runs git/cargo wherever the
-// session sits. Accepting it silently is the failure this family exists to end — the caller names
-// another repository, the engine reads its own, and the verdict looks entirely normal for the wrong
-// code (measured 2026-09-17 on `review`, before `repo` reached that engine's argument list: 57
-// agents, 2.04M tokens, nothing reviewed). Refuse before anything runs, and name what does work.
-// The comment above used to promise this argument while nothing read it (realm @nick/craft, #65).
-// MOVED here from the argument block, and the move IS the fix. Refused up there it returned before
-// `logRun` and its dependencies existed, so a repeatedly mis-dispatched engine filed no record at
-// all — and `notRun` fragility ranking, which is the one place a repeated wrong dispatch would show
-// up, never saw it. This is still before the first phase, so nothing has run when it refuses.
-if (A['repo']) {
-  const refused = repoRefusal({ engine: 'adversarial-review', repo: String(A['repo']), craftVersion: CRAFT_VERSION, outputTokens: budget.spent(), via: viaArg })
+// A `repo` no agent could `cd` to is refused here, between the logger's definition and the first phase: the
+// logger is the only agent, and the record carries the refusal's class in notRun, so a repeated wrong dispatch
+// reaches the `notRun` fragility ranking (realm @nick/craft, node #159).
+if (repoRefused) {
+  const refused = argumentRefusal({ engine: 'adversarial-review', why: repoRefused, notRun: [REPO_REFUSED_CLASS], craftVersion: CRAFT_VERSION, outputTokens: budget.spent(), via: viaArg })
   await logRun(refused.record)
   return refused.report + priorDecisionsRefusedSection(priorDecisionsIn.refused)
 }
@@ -321,7 +324,7 @@ const scoutBaseStep = () => diffBase ? `Use \`${diffBase}\`.` : 'Try in order: `
 
 phase('Prep')
 const [scoutRaw, warmupRaw] = await parallel([
-  () => agent(
+  () => work(
     `You are scouting a diff to plan an adversarial review. Use shell + read only — do NOT review yet.
 0. FIRST, before anything else: \`head\` = \`git rev-parse --short HEAD\` (empty string if not a git repo). It tells the logger which commit the run started on, so an empty \`head\` files no verdict for that commit.
 1. Resolve the diff base. ${scoutBaseStep()}
@@ -333,7 +336,7 @@ const [scoutRaw, warmupRaw] = await parallel([
    Decide "in play" from the diff: payments/amounts/ledger -> money; async/threads/locks/transactions -> concurrency; input parsing/auth/tenancy -> security; loops/queries -> performance; always consider 'correctness' and 'errors'. Include 'complexity' whenever the diff is medium/large (it self-skips if the repo is not indexed).`,
     { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
   ),
-  () => agent(
+  () => work(
     `You are warming up the codebase-memory index for a review. Use ToolSearch to load the codebase-memory MCP tools.
 1. Check list_projects / index_status for this repository.
 2. If the project is not indexed or the index is stale relative to the current HEAD, run index_repository with mode=fast on the repo root and wait for it.
@@ -409,7 +412,7 @@ const notRunBlocking = () => notRun.filter(e => e.incomplete)
 // verification), its retry rounds included, settled with every agent of it dead (node #300: the limit's
 // usual shape, a bare null).
 const advLimit = makeLimitStop(log)
-const reviewAgent = stopAtLimit(agent, advLimit)
+const reviewAgent = stopAtLimit(work, advLimit)
 const runThrottledPass = makeThrottledRunner({
   agent: reviewAgent, parallel, log, markNotRun,
   batch: BATCH, retryBatch: RETRY_BATCH, maxRetryRounds: MAX_RETRY_ROUNDS,
@@ -485,7 +488,7 @@ function inertDisagreement(cross, changedFiles) {
 // failure (a list shortened while the count stays honest), not a coordinated one.
 /** @param {string[]} changedFiles  the scout's list, every path inert */
 async function inertExit(changedFiles) {
-  const cross = /** @type {CrosscheckResult | null} */ (await agent(
+  const cross = /** @type {CrosscheckResult | null} */ (await work(
     `You are cross-checking a diff's file list. Run shell only — do NOT review, summarise, or judge anything.
 1. Resolve the diff base YOURSELF — do not take it from anyone else. ${crossBaseStep()}
 2. Run \`git diff --name-only <base>\` and \`git diff --name-only <base> | wc -l\`.
@@ -716,7 +719,7 @@ async function semanticDedup(keptIn) {
       },
     },
   }
-  const clusterer = /** @type {ClustersResult | null} */ (await agent(
+  const clusterer = /** @type {ClustersResult | null} */ (await work(
     `You are deduplicating review findings. Below is a numbered list. Return clusters of indices that describe THE SAME underlying defect — same root cause, one fix would resolve all of them — even when phrased in different vocabulary or cited at nearby-but-different lines (e.g. a check-site vs a write-site of one race).
 Merge ONLY when confident the fix is literally the same change. Two different problems in the same function are NOT a cluster. When in doubt, do not merge. Return {"clusters": []} if there are no duplicates.
 
@@ -847,7 +850,7 @@ Report each gap as a concrete located finding (file:line of the suspicious spot,
 CONFIRMED findings (do not repeat them): ${JSON.stringify(confirmedIn.map(f => `${f.title} @ ${f.file}:${f.line}`))}
 REFUTED claims (do NOT re-report these — they were adversarially disproven): ${JSON.stringify(refutedIn.map(f => `${f.title} @ ${f.file}:${f.line}`))}
 Dead lenses this run (their dimension is UNCOVERED — look there first): ${JSON.stringify(deadLenses)}
-If coverage is complete, return {"findings": []}.`
+${focusFiles.length ? `${focusLine(focusFiles)} — look for gaps in these files only.\n` : ''}If coverage is complete, return {"findings": []}.`
   let critic = /** @type {FindingsResult | null} */ (await reviewAgent(CRITIC_PROMPT, { label: 'coverage-critic', phase: 'Coverage', schema: FINDINGS, effort: 'high' }))
   if (!critic) {
     log('Coverage critic failed, retrying once')
