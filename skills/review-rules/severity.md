@@ -64,21 +64,24 @@ Two refinements:
 
 The cap decides severity, not whether to report. A lens still reports everything it suspects; a
 finding with a weak or unknown harm is reported low, with the unknown part said plainly.
-Verification and synthesis can raise it when the harm is shown.
+Verification raises it when the verifier confirms a must-fix harm; synthesis never raises it.
 
 ## Who enforces it
 
 - **The lens** sets severity from the harm it names, and writes the harm into the finding.
-- **The verifier** that finds the harm larger or smaller than claimed says so in its reason.
+- **The verifier** is shown the harm a finding claims (for a merged finding, every distinct harm its
+  lenses claimed, worst first) and says whether the code shows it (`harmSupported`) and which claim
+  held (`confirmedHarmLevel`). A finding a panel confirmed with a must-fix harm verified is raised
+  to High; one lowered because the path is unreachable or test-only is never raised.
 - **The engine** lowers a finding whose `harmLevel` allows less than its severity to that level's
   ceiling, once, after verification and before anything counts it — so the verdict, the report and
   the run record all see the capped severity: a must-fix with only an operator recovery named
   counts and is reported as should-fix, and its reason says it was lowered and why. A finding with
   no `harmLevel` is left as it is (a lint seed that names no harm reads as `none`, and so does a
   `repo-rule` finding citing no rule). The run record counts how many the cap lowered.
-- **Agreement**: a finding two or more different lenses reported independently, merged into one
-  before verification, is verified whatever its severity, and once confirmed it is raised to High
-  when the worst harm any of them named is must-fix.
+- **Agreement** buys verification, not severity: a finding two or more different lenses reported
+  independently, merged into one before verification, is verified whatever its severity when a harm
+  it claims is must-fix. Only the verified harm can raise it.
 - **Synthesis** never reports a finding above that cap.
 - A severity floor (for example, the deletion and recovery path floor of `distributed-races`)
   applies only when the finding names a harm of operator recovery or worse. A floor does not
