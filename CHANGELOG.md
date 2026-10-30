@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/gurinderu/craft/compare/v0.36.0...v0.36.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **review:** an unmet intent and a cited repo rule block; findings merge whole and verified harm sets severity ([#294](https://github.com/gurinderu/craft/issues/294)) ([1502634](https://github.com/gurinderu/craft/commit/1502634349e0f8989e51310b5a0c2e4217c26704))
+
 ## [0.36.0](https://github.com/gurinderu/craft/compare/v0.35.1...v0.36.0) (2026-10-29)
 
 
