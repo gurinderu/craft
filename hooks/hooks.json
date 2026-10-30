@@ -1,5 +1,5 @@
 {
-  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools — at session start, on a request for review work, and to the subagent such work is handed to; and, on a push to a branch under review whose head has no craft review verdict, ask for that review before the replies.",
+  "description": "craft: when the repo declares its own roles or work rules, tell the session how they run their cycle with craft's tools — at session start, on a request for review work, and to the subagent such work is handed to; and, on a push to a branch under review whose head has no craft review verdict, ask for that review before the replies; and, when the main session dispatches the repo's own reviewer agent, tell it to run the same range through craft's review engine as well and fold both verdicts under the repo's rules.",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,16 @@
           {
             "type": "command",
             "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/push-hook-entry.mjs\" || true",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/lib/reviewer-dispatch-hook-entry.mjs\" || true",
             "timeout": 10
           }
         ]

@@ -55,7 +55,7 @@ Then print one line per phase, before starting phase 2:
 
 ```
 develop: roles — 1 roles: craft (read) · 2 recall: craft:memory · 3 work: <role or rule | craft session>
-         · 4 review loop: <role/rule | craft:review | craft:adversarial-review> · 5 full review: <…>
+         · 4 review loop: <role/rule | craft:review> · 5 full review: <…>
          · 6 record: craft · 7 PR: <rule | craft default>
 ```
 
@@ -90,16 +90,10 @@ the tree is dirty.
 
 ## Phase 4 — Review loop until convergence
 
-The review here is the project's declared reviewer or review rule when there is one. Otherwise the
-engine is chosen by the stack of the branch diff (`git diff --name-only <base>...HEAD`):
-
-| Diff | Engine |
-|---|---|
-| Rust and/or Nix only | the `craft:review` workflow (auto-detects Rust/Nix) |
-| anything else, or mixed with other languages | the `craft:adversarial-review` workflow |
-
-(`craft:review` on a diff with no Rust or Nix returns `INCOMPLETE (no language profile)` — do not
-use it there.)
+The review here is the project's declared reviewer or review rule when there is one. Otherwise it is
+the `craft:review` workflow, whatever the stack of the branch diff: it reviews Rust and Nix under its
+own profiles and sends the source files outside them to a nested `craft:adversarial-review` run,
+with one verdict — the worse of the two — and one report, the nested part labelled.
 
 Once each engine run of this cycle has ended (completed, failed or stopped — not while you may still
 resume it), fold its real cost into the records it filed:
@@ -114,11 +108,11 @@ rounds") does every round review the whole branch diff. Before each round, note 
 
 The engine's argument for each round, as an object (never a string):
 
-| Round | `craft:review` | `craft:adversarial-review` |
-|---|---|---|
-| 1 | `{ base: <trunk>, fresh: true, fullEvery: 0 }` | `{ diffBase: <trunk> }` |
-| 2 and later, light | `{ base: <trunk>, fullEvery: 0 }` | `{ diffBase: <HEAD the previous round reviewed> }` |
-| 2 and later, full rounds | `{ base: <trunk>, fresh: true }` | `{ diffBase: <trunk> }` |
+| Round | `craft:review` |
+|---|---|
+| 1 | `{ base: <trunk>, fresh: true, fullEvery: 0 }` |
+| 2 and later, light | `{ base: <trunk>, fullEvery: 0 }` |
+| 2 and later, full rounds | `{ base: <trunk>, fresh: true }` |
 
 - `craft:review` keeps the loop's memory itself: `fresh` on round 1 starts a new chain (an older run
   on this branch is not this cycle's round), and each later round chains to the one before it,
@@ -128,11 +122,10 @@ The engine's argument for each round, as an object (never a string):
   newest earlier run on the branch, whatever made the findings. Findings from elsewhere (a human's
   PR review) take `craft:addressing-findings` step 7's arguments: the commit that review was made on
   as `base`, with `fresh: true`.
-- `craft:adversarial-review` keeps no memory between runs. Its light round reviews the delta only;
-  a finding of the previous round stays **open** unless the fix that addressed it is in that delta
-  and `craft:addressing-findings` verified it (its step 6), or a decision or deferred question set
-  it aside. Carry the open ones into the round's count yourself.
-- Add `priorDecisions: [...]` to either only for records the store may not hold yet — rejections
+- The nested `craft:adversarial-review` part keeps no memory between runs, so `craft:review` gives it
+  the whole branch diff of those files on every round, light ones included: a finding of its
+  previous round that is still there is found again, and one that is gone was fixed.
+- Add `priorDecisions: [...]` only for records the store may not hold yet — rejections
   just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
   its `kind`, `title` and `scope`. The engine recalls the project's active decisions, questions and
   project rules for the diff's paths itself on every launch.
@@ -216,10 +209,9 @@ review before a PR) when there is one; otherwise by stack, over the whole branch
 | Diff | Full review |
 |---|---|
 | touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` (it reviews the Rust part only) — and, when the diff also holds Nix, the `craft:nix-review` workflow with `{ base: <trunk>, strict: true }`; when it holds code other than Rust and Nix, the `craft:adversarial-review` workflow over it, `{ diffBase: <trunk> }` |
-| Nix only | the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` — the harsh maintainability bar over the whole diff (`fresh`: without it the run would chain to the loop and scan the last delta only) |
-| anything else | the `craft:adversarial-review` workflow, `{ diffBase: <trunk> }` |
+| anything else | the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` — the harsh maintainability bar over the Nix part, the source files outside its profiles through its nested adversarial review (`fresh`: without it the run would chain to the loop and scan the last delta only) |
 
-`adversarial-review` has no strict mode; `strict` belongs to `craft:review` only.
+`adversarial-review` has no strict mode; `strict` reaches `craft:review`'s own profiles only.
 
 Findings from the full review go through `craft:addressing-findings` like a loop round. An open
 Medium+ finding here reopens phase 4 within the same 4-round budget (the rounds already spent
@@ -235,9 +227,9 @@ verdict — file one record of it in craft's run store, from the reviewed reposi
 ```bash
 node "<this skill's base directory>/../../lib/craft-log-run.mjs" develop-cycle <<'JSON'
 {"mode": "light", "outcome": "converged",
- "rounds": [{"engine": "craft:adversarial-review", "scope": "full", "verdict": "Warning", "mediumPlus": 2},
-            {"engine": "craft:adversarial-review", "scope": "delta", "verdict": "Approve", "mediumPlus": 0}],
- "fullReviews": [{"afterRound": 2, "engine": "craft:adversarial-review", "verdict": "Approve", "mediumPlus": 0}]}
+ "rounds": [{"engine": "craft:review", "scope": "full", "verdict": "Warning", "mediumPlus": 2},
+            {"engine": "craft:review", "scope": "delta", "verdict": "Approve", "mediumPlus": 0}],
+ "fullReviews": [{"afterRound": 2, "engine": "craft:review", "verdict": "Approve", "mediumPlus": 0}]}
 JSON
 ```
 

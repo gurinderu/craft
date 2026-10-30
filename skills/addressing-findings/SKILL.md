@@ -77,19 +77,20 @@ not one of them: it is the main session's (→ "Who triages").
                lists a merge (trunk or another branch merged in since the review), the diff from
                that commit carries the merged code too, not the fix commits only: say so and ask
                the human: the whole PR (`base: <trunk>`, still `fresh: true`), or the fix
-               commits named, or a base after the merge. Run the `craft:review` workflow on a Rust or Nix diff with
+               commits named, or a base after the merge. Run the `craft:review` workflow, on a
+               diff in any language — it routes the source files outside its Rust and Nix
+               profiles to a nested adversarial review itself — with
                `{ base: <that commit>, fresh: true, fullEvery: 0 }` when the findings did not
                come from its last round on this branch (a human's PR review, any other review):
                `fresh` keeps it from chaining to an older run on the branch, which would widen
                the scan and carry that run's settled findings; when they did, chain as `develop`
-               does (Phase 4, a later light round). Run the `craft:adversarial-review` workflow on
-               any other diff with `{ diffBase: <that commit> }`. Add `repo` and `intent` as
+               does (Phase 4, a later light round). Add `repo` and `intent` as
                usual; one run per PR. The findings the fixes touch were checked in step 6;
                `craft:review` re-checks its previous round's where it chains. The whole diff only
                on the human's word, or as the final pass the repo's rules ask for. Never handed to a subagent (it has no Workflow tool). Without the Workflow
                tool (Codex, OpenCode) the re-review is this session's own review pass over the fix
                commits (`git diff <that commit>..HEAD`), with the `rust-review` or `nix-review`
-               rubric where it applies. Once the `craft:review` or `craft:adversarial-review`
+               rubric where it applies. Once the `craft:review`
                run has ended (completed, failed or stopped — not while you may still resume
                it), fold its real cost into the records it filed:
                `node "<this skill's base directory>/../../lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>`,
@@ -117,7 +118,7 @@ live in that workflow; triage done anywhere else skips them, and project memory 
 A subagent launched with the Agent tool has no Workflow tool, so triage is **never handed to a
 subagent** — not "triage and fix the review", not "triage these findings": the main session runs
 the workflow, then briefs subagents with the fix work only (step 5).
-If `craft:triage-findings` or `craft:adversarial-review` fails with `at workflow.js:<line>:<column>`,
+If `craft:triage-findings` or `craft:review` fails with `at workflow.js:<line>:<column>`,
 that place is in the bundled engine:
 `node "<this skill's base directory>/../../lib/engine-source-map.mjs" <engine> workflow.js:<line>:<column>`
 gives it in the plugin's source.
