@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.37.0](https://github.com/gurinderu/craft/compare/v0.36.1...v0.37.0) (2026-10-30)
+
+
+### Features
+
+* **review:** lenses learn the repository's rule files from the scout and grep them ([#300](https://github.com/gurinderu/craft/issues/300)) ([d2bade2](https://github.com/gurinderu/craft/commit/d2bade25f74dc6dd1ba090f320345771754433e6))
+* **review:** one review entry on any language; a project reviewer's dispatch runs it too ([#302](https://github.com/gurinderu/craft/issues/302)) ([0183c5f](https://github.com/gurinderu/craft/commit/0183c5f7c6fbc7e5888a6038a39e2e9cfeeb0287))
+
+
+### Bug Fixes
+
+* **logging:** a telemetry warning is read only off relayed logger-script lines ([#296](https://github.com/gurinderu/craft/issues/296)) ([927060d](https://github.com/gurinderu/craft/commit/927060dfe65d2e1bf8f6bd7dc5687c982edd3ddd))
+* **logging:** recover puts a record back from its parts ([#298](https://github.com/gurinderu/craft/issues/298)) ([28d627c](https://github.com/gurinderu/craft/commit/28d627c01a3acc243bc3110a8c96e5751a36e62e))
+* **logging:** teach enrich-cost after every review launch path ([#297](https://github.com/gurinderu/craft/issues/297)) ([856b04c](https://github.com/gurinderu/craft/commit/856b04c48fab24c045699542eacbca425171c0db))
+* **review:** a review with no profile still binds its verdict to the reviewed head ([#303](https://github.com/gurinderu/craft/issues/303)) ([b48279c](https://github.com/gurinderu/craft/commit/b48279cdfe94b40a20f83beaade806582574d37d))
+* **triage-findings:** take an absolute repo=, refuse an unusable one before any work agent ([#301](https://github.com/gurinderu/craft/issues/301)) ([d60539d](https://github.com/gurinderu/craft/commit/d60539d72d9cf7eba4a3b34ad27de0d5d8ec2d11))
+
 ## [0.36.1](https://github.com/gurinderu/craft/compare/v0.36.0...v0.36.1) (2026-10-30)
 
 
