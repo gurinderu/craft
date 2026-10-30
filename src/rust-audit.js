@@ -206,7 +206,7 @@ const UNUSED_VERDICT_SCHEMA = {
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
 // fails the build if it drifts. The build lifts this line verbatim into the engine's banner.
-const CRAFT_VERSION = '0.36.1' // x-release-please-version
+const CRAFT_VERSION = '0.37.0' // x-release-please-version
 
 // The unused-crates find→verify pipeline's bookkeeping (lib/audit-verification.mjs). In lib/ because its
 // interesting cases are the DEATH paths — a verifier that resolves null, one that throws, most of a fan-out
