@@ -29,6 +29,8 @@ and optional (Low, Info: reported, never blocks).
 | `security` | Security: a boundary crossed, a secret exposed, an authorisation skipped | must-fix |
 | `outage` | Outage: a service, a controller or a tenant stops serving and does not resume by itself | must-fix |
 | `irreversible` | An irreversible external effect: money moved, a message sent, an object deleted outside the system | must-fix |
+| `intent-unmet` | The change does not achieve its stated purpose: what the PR, the commit or the intent says it is for does not happen, even if the system keeps working as it did before the change | must-fix |
+| `repo-rule` | A rule written in the reviewed repository's own files is broken (AGENTS.md, CLAUDE.md, CONTRIBUTING, a documented project convention the lens read), the rule cited | must-fix |
 | `operator-recovery` | A wedged or drifted state that an operator must recover by hand | should-fix |
 | `self-healing` | State that heals by itself on a later pass, a slower or noisier retry cadence | optional |
 | `text` | Wrong text, a misleading comment or doc, a log line, a name | optional |
@@ -38,6 +40,17 @@ Read the table top down and stop at the first row the finding honestly fills, an
 `harmLevel` on the finding. A finding may sit
 below its cap — reachability, an unlikely trigger or a small blast radius lower it — but never
 above.
+
+Telling the two new rows apart from the rows below them:
+
+- **`intent-unmet`, not `self-healing`**: the question is whether the change does what it is for,
+  not whether the system recovers. A feature the change was meant to deliver faster, which instead
+  arrives only on the periodic pass that delivered it before the change, heals by itself and is
+  still `intent-unmet`: the change's headline mechanism never works.
+- **`repo-rule`, not `none`**: a maintainability remark (structure, idiom, an untyped error) is
+  `none` unless a rule written in the repository demands it. The finding then quotes the rule and
+  names its file in `repoRule` (`{file, text}`); a `repo-rule` finding without that citation is
+  read as `none` by the engine, so the harm stays named and a verifier can open the file and check.
 
 Two refinements:
 
@@ -61,8 +74,11 @@ Verification and synthesis can raise it when the harm is shown.
   ceiling, once, after verification and before anything counts it — so the verdict, the report and
   the run record all see the capped severity: a must-fix with only an operator recovery named
   counts and is reported as should-fix, and its reason says it was lowered and why. A finding with
-  no `harmLevel` is left as it is (a lint seed that names no harm reads as `none`). The run record
-  counts how many the cap lowered.
+  no `harmLevel` is left as it is (a lint seed that names no harm reads as `none`, and so does a
+  `repo-rule` finding citing no rule). The run record counts how many the cap lowered.
+- **Agreement**: a finding two or more different lenses reported independently, merged into one
+  before verification, is verified whatever its severity, and once confirmed it is raised to High
+  when the worst harm any of them named is must-fix.
 - **Synthesis** never reports a finding above that cap.
 - A severity floor (for example, the deletion and recovery path floor of `distributed-races`)
   applies only when the finding names a harm of operator recovery or worse. A floor does not
