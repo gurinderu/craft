@@ -42,6 +42,7 @@ export default {
         // Test infrastructure without a .test name: only tests reach it, by design.
         '!lib/engine-harness.mjs!',
         '!lib/sandbox-globals.mjs!',
+        '!lib/logger-replay.mjs!',
       ],
     },
     'opencode/plugin': {

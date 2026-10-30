@@ -66,7 +66,7 @@ let tombstonesDroppedForBasis = 0
 const coverage = await coveragePhase(reviewRun, { detected, baseRef, changedFiles, branch, head, routeNoProfile: !nestingBarred(reviewRun) })
 if (coverage.exit !== null) return coverage.exit
 // Source files outside every profile go to a nested adversarial review, one answer for both (lib/review-nested.mjs).
-const routed = await nestedPhase(reviewRun, workflow, 'adversarial-review', coverage, { baseRef, changedFiles, notes: detected?.notes || '' })
+const routed = await nestedPhase(reviewRun, workflow, 'adversarial-review', coverage, { baseRef, changedFiles, notes: detected?.notes || '', branch, head, round: thisRound })
 if (routed.exit !== null) return routed.exit
 const { active, uncoveredFiles, uncoveredGap } = routed
 
