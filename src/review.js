@@ -44,7 +44,7 @@ export async function __run() {
 // MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs` fails the build if it drifts.
 // Pair it with craftCommit (the engine's git HEAD, added by the logger): the version identifies a
 // release, the commit separates two runs of the same release while the rubric is being edited.
-const CRAFT_VERSION = '0.35.1' // x-release-please-version
+const CRAFT_VERSION = '0.36.0' // x-release-please-version
 // The per-profile results, filled as the profiles run; the report wrapper reads them on every exit.
 /** @type {Result[]} */
 const results = []
