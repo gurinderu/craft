@@ -15,7 +15,7 @@ import { effectivePrBase, classOneBaseLine, classifiedVerdict, issueOf } from '.
 export const meta = {
   name: 'triage-findings',
   description: 'Triage review findings (craft agents + GitHub PR comments) into one ordered, validated fix plan — no edits',
-  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=` names (an absolute path), as in `craft:review`; an argument it does not take, or a repo= no agent can cd to, is refused: it files an INCOMPLETE run record with only the logger run, no work agent. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to.',
+  whenToUse: 'For every batch of review findings, whatever its size — from the report file of any review engine or the inline comments of a PR — when you want them validated against the code, deduped, conflict-checked, and turned into an ordered fix plan. It reads the checkout the session runs in, or the one `repo=` names (an absolute path), as in `craft:review`; an argument it does not take is refused the same way, and a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. Pass `prBase` = `git merge-base origin/<trunk> <reviewed head>` (the commit the PR forks from) only when the reviewed head is a branch diverging from trunk, and with it `base` = the reviewed head\'s SHA; on trunk or with no branch leave prBase out. prBase counts only beside a `base` it differs from (with no base, or one equal to it, or HEAD, it is absent): a finding is deferred as not this PR\'s only when shown there, else it comes back needs-decision. `base` is the ref the findings were generated against — the reviewed head — which validation pins to.',
   phases: [
     { title: 'Gather', detail: 'pull raw findings from the requested sources (a report file from any review engine, GitHub PR threads)' },
     { title: 'Sift', detail: 'collapse repeats in the batch; recall the project memory and set aside what an active decision, deferred question or project rule already answers — no validator for those' },
@@ -43,7 +43,7 @@ const A = normalizeArgs(args, log)
 // Every argument this engine cannot honour is refused, naming it, before any work agent (realm @nick/craft,
 // node #411): one dropped in silence used to come back as a normal-looking plan. Read here, filed and returned
 // once the logger exists (below).
-const unknownRefused = unknownOptionsRefusal(A, ['pr', 'report', 'base', 'prBase', 'priorLedger', 'priorDecisions', 'craftRoot', 'repo', '_via'], 'triage-findings')
+const unknownRefused = unknownOptionsRefusal(A, ['pr', 'report', 'base', 'prBase', 'priorLedger', 'priorDecisions', 'craftRoot', 'repo'], 'triage-findings')
 // The checkout every agent works in when it is not the session's own: the validators read its code, the
 // recall and the sift its memory, the PR gatherer its forge, and the logger files the record under it.
 const { repo: repoArg, refused: repoRefused } = readRepoArg(A['repo'])
@@ -76,12 +76,6 @@ const priorLedger = Array.isArray(argv['priorLedger']) ? /** @type {unknown[]} *
 // `repo` does. As an installed plugin CLAUDE_PLUGIN_ROOT is set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
 // against the triaged repo — where the script is not. Pass craftRoot then.
 const craftRootArg = textArg('craftRoot')
-// The parent workflow that dispatched this run, '' when it was not nested; the run record names it.
-const viaArg = textArg('_via')
-/** The record's nesting fields. */
-function nesting() {
-  return { nested: !!viaArg, via: viaArg || null }
-}
 
 const RAW_SCHEMA = {
   type: 'object',
@@ -189,7 +183,7 @@ async function refuseArgument() {
   // Every refusal at once, so a caller fixing one does not meet the next on the re-launch.
   const both = [[unknownRefused, UNKNOWN_OPTION_CLASS], [repoRefused, REPO_REFUSED_CLASS]].filter(([why]) => why)
   if (!both.length) return ''
-  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: budget.spent(), via: viaArg })
+  const refused = argumentRefusal({ engine: 'triage-findings', why: both.map(([why]) => why).join(' '), notRun: both.map(([, cls]) => String(cls)), craftVersion: CRAFT_VERSION, outputTokens: budget.spent() })
   await logRun(refused.record)
   return refused.report
 }
@@ -491,7 +485,8 @@ await logRun({
   name: 'triage-findings',
   verdict: '',                         // triage yields per-finding dispositions, not an Approve/Block verdict
   findings: summarizeFindings(raw),    // total findings triaged + severity mix
-  ...nesting(),
+  nested: false,
+  via: null,
   sources: gathered.map(g => ({ source: g.source, count: Array.isArray(g.findings) ? g.findings.length : 0 })),
   triage: { gathered: raw.length, validated: validations.length, ...tallyVerdicts(ledger), sifted: { repeats: collapsed.repeated.length, ...sift.counts }, issues: issues.length },
   memory: memoryRecord(memory),
