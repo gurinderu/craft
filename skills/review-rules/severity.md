@@ -71,8 +71,11 @@ Verification raises it when the verifier confirms a must-fix harm; synthesis nev
 - **The lens** sets severity from the harm it names, and writes the harm into the finding.
 - **The verifier** is shown the harm a finding claims (for a merged finding, every distinct harm its
   lenses claimed, worst first) and says whether the code shows it (`harmSupported`) and which claim
-  held (`confirmedHarmLevel`). A finding a panel confirmed with a must-fix harm verified is raised
-  to High; one lowered because the path is unreachable or test-only is never raised.
+  held (`confirmedHarmLevel`). The harm a panel confirms becomes the finding's harm, with its own
+  text: when it is must-fix the finding is raised to High, and when it is lesser the cap lowers the
+  finding by it. A rejected harm leaves the base copy's own claim (the copy whose severity the
+  finding carries), never another copy's worse one. A finding lowered because the path is
+  unreachable or test-only is never raised.
 - **The engine** lowers a finding whose `harmLevel` allows less than its severity to that level's
   ceiling, once, after verification and before anything counts it — so the verdict, the report and
   the run record all see the capped severity: a must-fix with only an operator recovery named
