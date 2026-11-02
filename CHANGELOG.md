@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.1](https://github.com/gurinderu/craft/compare/v0.37.0...v0.37.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **review:** a suspected finding against a memory record goes to the reviewer, not posted as a defect ([#305](https://github.com/gurinderu/craft/issues/305)) ([3df6479](https://github.com/gurinderu/craft/commit/3df6479608041c6a7f7facb85f019826fe26a426))
+
 ## [0.37.0](https://github.com/gurinderu/craft/compare/v0.36.1...v0.37.0) (2026-10-30)
 
 
