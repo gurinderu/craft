@@ -177,8 +177,9 @@ One **round** is:
 
 A finding marked as going against a project-memory record (`craft:review`'s **Contradicts project
 memory** section; `craft:adversarial-review`'s `contradictsMemory` field, the same lines) is a defect: fix it, or change the record with the human's word — never reject it
-as a doubt. A not-confirmed one is the exception: it is listed under Doubtful too, the record named
-first — a doubt to check, not a certain defect.
+as a doubt. A line there marked `not confirmed` is the exception: a doubt to check (verify it before
+fixing), not a certain defect; in `craft:review` with `comment` it is also listed under Doubtful, the
+record named first.
 
 **Count the rounds, and stop on one of these — nothing else ends the loop:**
 

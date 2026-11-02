@@ -29,8 +29,9 @@ its `kind`) only adds records the store may not hold yet and never replaces that
 when and why, one it deferred under **Known and deferred**, and one a project rule covers (a judge agreed its
 concern is exactly what the rule accepts; never a Critical) under **Covered by project rules**, instead of
 being raised as new. A finding the same judges say goes against an active decision or rule stays in the
-verdict, listed under **Contradicts project memory** with the record's id; a confirmed one is a defect
-whatever other doubt sign it carries, a not-confirmed one is doubtful, the record named first.
+verdict, listed under **Contradicts project memory** with the record's id, and is a defect whatever
+other doubt sign it carries — unless its line is marked `not confirmed`: then it is a doubt to check
+(verify it before fixing), and with `comment` it is also listed under Doubtful, the record named first.
 
 With `comment` the workflow posts only defects on the PR; a doubtful finding (not confirmed, raised by
 the compat, intent or api-boundary lens, about rollback, rollout, old replicas, migration or a breaking
