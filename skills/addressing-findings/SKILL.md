@@ -445,7 +445,8 @@ answer on a question thread is read by the thread rules → [doubtful.md](doubtf
 
 A finding listed under **Contradicts project memory** (`adversarial-review`: its `contradictsMemory`
 field — that engine posts nothing, so it sorts nothing) goes against an active decision or project rule:
-it is a defect, never a doubt. Fix it, or — on the human's word — supersede the record it breaks; do not
+it is a defect, never a doubt — unless it is not confirmed: then it is listed under Doubtful too, the
+record named first. Fix it, or — on the human's word — supersede the record it breaks; do not
 reject it on the record's own authority.
 
 ## The author's rejections on the PR
