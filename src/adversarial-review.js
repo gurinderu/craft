@@ -663,9 +663,18 @@ function nearbySimilar(buckets, f, b) {
  */
 function absorbDuplicate(hit, f) {
   if (!hit.sources.includes(f.lens)) hit.sources.push(f.lens)
+  takeExternalSystem(hit, f)
   if (SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (f.severity)] < SEV_RANK[/** @type {keyof typeof SEV_RANK} */ (hit.severity)]) {
     Object.assign(hit, { title: f.title, line: f.line, severity: f.severity, description: f.description, fix: f.fix, lens: f.lens })
   }
+}
+/**
+ * The external system a merged-away duplicate named, kept on the finding it merged into when that names none: the
+ * report's "not recorded" line reads it (lib/review-external-sources.mjs).
+ * @param {RawFinding} into @param {RawFinding} from
+ */
+function takeExternalSystem(into, from) {
+  if (!into.externalSystem && from.externalSystem) into.externalSystem = from.externalSystem
 }
 /** @param {(RawFinding & { lens: string })[]} findings @returns {LensFinding[]} the pool after mechanical dedup, most severe first */
 function mechanicalDedup(findings) {
@@ -723,6 +732,7 @@ function mergeClusters(keptIn, clusters) {
 /** @param {LensFinding} head @param {LensFinding} dup */
 function mergeDuplicate(head, dup) {
   for (const s of dup.sources) if (!head.sources.includes(s)) head.sources.push(s)
+  takeExternalSystem(head, dup)
   head.description += `\n[merged duplicate] ${dup.title} @ ${dup.file}:${dup.line}: ${dup.description}`
 }
 /** @param {LensFinding[]} keptIn @returns {Promise<LensFinding[]>} the pool after the semantic clusterer, or `kept` itself when it merged nothing */
@@ -1022,9 +1032,11 @@ function tieredFindings() {
 // The findings going against memory, as review renders them; this engine posts nothing, so no sorting reads them.
 const contradicts = contradictionSection(tieredFindings()).trim()
 // What external sources the run read, could not read, and the systems a finding named that memory lacks; absent when none.
+// `externalSourcesPrepared` is the prep's answer per system, so a launching review takes it instead of preparing again.
 function externalSourcesResult() {
   const section = sources.section(tieredFindings()).trim()
-  return section ? { externalSources: section } : {}
+  const prepared = sources.outcome()
+  return { ...(section ? { externalSources: section } : {}), ...(prepared ? { externalSourcesPrepared: prepared } : {}) }
 }
 const candidates = kept.length + gaps.length
 const refutedTotal = refuted.length + refutedGaps
