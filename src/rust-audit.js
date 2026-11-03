@@ -1,5 +1,6 @@
 import { normalizeArgs } from '../lib/workflow-args.mjs'
 import { parsePriorDecisions } from '../lib/prior-decisions.mjs'
+import { asList } from '../lib/external-source-spec.mjs'
 import { MEMORY_RECALL_SCHEMA, recallText, memoryRecord, initialMemory, withPassed, withDerived, withDerivedIds, mergeAndRead, memorySection, recallDecisions } from '../lib/memory-recall.mjs'
 import { summarizeFindings, worstVerdict, repoRefusal } from '../lib/run-record.mjs'
 import { wrapVerdict, tallyVerification, unusedCratesResult, unusedEvidence } from '../lib/audit-verification.mjs'
@@ -76,6 +77,9 @@ let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
 // review names both parts (realm @nick/craft, node #218); a launcher's own split passes through.
 /** @type {unknown} */
 let nestedMemoryParts = recalledByLauncher ? A['_memoryParts'] : undefined
+// The external-system records this audit's recall returned (realm @nick/craft, node #431), forwarded with the
+// rest so each nested review prepares their source itself; a launcher's own pass through.
+let nestedExternals = recalledByLauncher ? asList(A['_externals']) : []
 // What every nested review inherits from this run: craftRoot (the logger's home) and the project's
 // prior decisions with the flag that they are already recalled.
 function nestedReviewArgs() {
@@ -85,6 +89,7 @@ function nestedReviewArgs() {
     ...(memory.source !== 'none' || nestedMemoryNote ? { _recalled: true } : {}),
     ...(nestedMemoryNote ? { _memory: nestedMemoryNote } : {}),
     ...(nestedMemoryParts != null ? { _memoryParts: nestedMemoryParts } : {}),
+    ...(nestedExternals.length ? { _externals: nestedExternals } : {}),
   }
 }
 
@@ -429,6 +434,7 @@ async function recallOnce() {
   // A passed copy dated later than the inactive record is forwarded, and named (realm @nick/craft, node #229).
   memory = { ...memory, why: [memory.why, ...blocked, ...overrides].join('; ') }
   nestedPriorDecisions = withDerivedIds(merged)
+  nestedExternals = asList(r.externals)
   // With the K this audit's line prints, so each nested line counts the same records (realm @nick/craft, node #244).
   nestedMemoryParts = { ...parts, accepted: passedAccepted }
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'

@@ -1,10 +1,10 @@
 ---
 name: memory
 description: >-
-  Semantic memory of the consumer project's own facts — decisions on review findings (rejected, justified), project rules (a stance covering a whole class of findings), lessons, open questions (deferred findings too) — kept across sessions in whatever store the project has: an explicit setting, a memory MCP server, the harness's project memory, or .craft/memory files. Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question. Use when a decision, rule, lesson or open question about this codebase should outlive the session, before working on a path to learn what was already decided about it, or before launching a craft review, whose engine recalls them itself (priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, was this already discussed, note this lesson, open question for later. Not for memory leaks or memory usage (rust-performance, rust-ownership), nor craft's own run records and review ledger.
+  Memory of the consumer project's own facts — decisions on review findings (rejected, justified), project rules (a stance on a whole class of findings), lessons, open questions (deferred findings too), external systems the code relies on — kept across sessions in whatever store the project has (a setting, a memory MCP server, harness project memory, .craft/memory files). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question, record-external. Use when such a fact about this codebase should outlive the session, before working on a path to learn what was decided about it, or before launching a craft review, whose engine recalls them itself (priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, was this already discussed, note this lesson, open question for later, record the external system. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and review ledger.
 ---
 
-# Memory — the project's decisions, rules, lessons and questions
+# Memory — the project's decisions, rules, lessons, questions and external systems
 
 Facts about the consumer's project that outlive a session: *why* a finding was rejected, which
 whole class of findings the project accepts, what a painful bug taught, what is still open. This skill is an **abstraction** over whatever store the
@@ -20,6 +20,7 @@ project already has; it never invents one. craft's machine memory — the run st
 | `record-rule` | title (the rule), scope, body (why), author, links; `lens` to narrow it | one `rule` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
+| `record-external` | system, repo, versionFrom, versionMatch, scope (the paths that rely on it), body (what the code relies on), links | one `external` record |
 
 A record answered or overturned is not edited away: write the new record with a link to the old
 one and set the old one's `status` to `superseded` (or `withdrawn` when it was simply wrong). An
@@ -30,7 +31,7 @@ answered question becomes a `decision` that supersedes it.
 ```
 { id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links[] }
   id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
-  kind    decision | rule | lesson | question
+  kind    decision | rule | lesson | question | external
   title   one line, ≤ 200 chars — the finding title verbatim, the rule's statement, the lesson, the question
   body    the reason / why the rule holds / the lesson / what would answer it — ≤ 1200 chars
   scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo (required on a rule)
@@ -43,7 +44,22 @@ answered question becomes a `decision` that supersedes it.
   lens    the review lens that raised the finding, as the review names it (absent when unknown); on a rule, the lens it is narrowed to
   toolRule  a gate tool's own rule name the finding fired (a clippy lint, a semgrep rule id, a statix code; deadnix and fmt print none, so theirs carry none), as the review prints it — what tells two gate-tool findings apart; not the catalog ruleId (absent when unknown)
   links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
+  system, repo, versionFrom, versionMatch   an `external` record only (below)
 ```
+
+**An external system** the consumer's code relies on — another project's controller, an API server,
+a service whose behaviour a review must check against its source (kube-ovn, KubeVirt, the
+apiserver), not a library dependency the lockfile already pins — is an `external` record: `title`
+= `system` = its name (letters, digits, `.`, `_`, `-`); `repo` = the git URL of its source
+(`https://…`, `ssh://…` or `git@host:path`); `versionFrom` = the repo-relative file that holds the
+version the consumer deploys (a chart's values, a manifest, `go.mod`, `Cargo.lock`); `versionMatch` =
+a regular expression with exactly one capture group that reads the tag or commit from that file;
+`scope` = the consumer's paths that rely on it; `body` = what the code relies on. The version itself
+is never recorded: it goes stale on every upgrade and is read from the file at review time. A review
+recalls these records with the others; its lenses on lifecycle, compatibility and races then read
+the system's source at that version from craft's cache (`~/.craft/sources`), and its report names a
+system a finding leaned on that has no record — `not recorded: <system>`: record it on the human's
+word with `record-external`. A review never writes one itself.
 
 **A decision on a review finding** carries all of `author`, `commit` and a link to where it was
 made (the PR thread, the review comment): the review engine names them when it sets the finding
@@ -208,7 +224,8 @@ passing to stand in for the engine's recall.
 
 1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions,
    questions and project rules (`kind: decision`, `kind: question`, `kind: rule`), **active** only;
-   never lessons.
+   never lessons. A review engine also recalls the `external` records, in a list of their own: they
+   set no finding aside and are never passed as `priorDecisions`.
 2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
    `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
