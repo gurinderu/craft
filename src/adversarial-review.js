@@ -18,11 +18,12 @@ import { RULE_JUDGE_SCHEMA } from '../lib/project-rule-judge.mjs'
 import { applyProjectRules } from '../lib/project-rule-apply.mjs'
 import { focusFilesArg, focusLine } from '../lib/focus-files.mjs'
 import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.mjs'
+import { ADVERSARIAL_EXTERNAL_LENSES, makeExternalSources } from '../lib/review-external-sources.mjs'
 
 export const meta = {
   name: 'adversarial-review',
   description: 'Adversarial multi-phase diff review with bounded verifier fan-out — scout-scaled lenses, throttled batches with retries, strict-majority verification, verified coverage gaps. A run whose scout, lenses or coverage critic died reports its verdict as INCOMPLETE with a not-run list, never as a clean approval; unjudged individual checks are recorded as advisory instead. Subscription-friendly: steady request rate, no burst.',
-  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). The `review` workflow is the single entry on any diff: it reviews Rust and Nix under its profiles and nests this engine for the other source files. Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. files=[<paths>] (or a comma-separated string) confines the finder lenses to those changed files; review passes it when it nests this engine for the source files outside its profiles. repo=<absolute path> reviews that checkout instead of the session\'s own (a branch in its own worktree): every agent that reads code works there and the run record is filed there; review passes it on when it nests this engine; a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision, question and rule records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; one a judge puts under an active project rule (a stance on a whole class of findings), unless critical, comes back under coveredByRule, outside the verdict, and what the rules could not decide (a critical raised, no judge verdict) under ruleNotices; refusals come back as priorDecisionsNotApplied. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the source comes back as memory {source, count, why, passed?, added?}. It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
+  whenToUse: 'Deep adversarial, language-agnostic review of any diff — mixed / non-Rust-Nix codebases, or when money-path (payments/ledger) invariants matter, or on a rate-limited subscription (steady request rate). The `review` workflow is the single entry on any diff: it reviews Rust and Nix under its profiles and nests this engine for the other source files. Distinct from `review --strict`, which is the harsh maintainability-block mode of the generic engine. files=[<paths>] (or a comma-separated string) confines the finder lenses to those changed files; review passes it when it nests this engine for the source files outside its profiles. repo=<absolute path> reviews that checkout instead of the session\'s own (a branch in its own worktree): every agent that reads code works there and the run record is filed there; review passes it on when it nests this engine; a repo= that is not an absolute path (or is blank, or holds a control character) is refused: it files an INCOMPLETE run record with only the logger run, no work agent. priorDecisions — ONLY inside an object argument, {priorDecisions: [<recalled decision, question and rule records>]}; as a string (key=value or JSON text) it is refused, nothing of it applied — applies the same rules as review: a matching finding below critical/high whose scope is unchanged since the commit of the decision is returned under rejectedBefore, marked, outside the verdict; one an active question (a deferred finding) answers comes back under knownDeferred by the same rules; one a judge puts under an active project rule (a stance on a whole class of findings), unless critical, comes back under coveredByRule, outside the verdict, and what the rules could not decide (a critical raised, no judge verdict) under ruleNotices; refusals come back as priorDecisionsNotApplied. The engine itself always recalls the active decisions, questions and project rules for the paths of the diff through the craft:memory skill (and the external systems the code relies on: with such a record for the diff\'s paths, the concurrency and errors lenses and the verifiers read that system\'s source at the version the consumer deploys from a cache in ~/.craft/sources, and the result\'s externalSources names what was read, what could not be, and any system a finding leaned on that memory lacks — record it with craft:memory record-external); priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the source comes back as memory {source, count, why, passed?, added?}. It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
     { title: 'Prep', detail: 'scout the diff (size, lens subset) + warm up the codebase-memory index', model: 'haiku' },
     { title: 'Review', detail: 'scout-picked finder lenses, throttled batches with retries; two-tier dedup (mechanical + thresholded semantic clusterer)' },
@@ -87,6 +88,8 @@ const RETRY_BATCH = 2                 // retry rounds run even quieter than the 
 const maxRetriesArg = () => A['maxRetries'] != null ? Math.max(0, Number(A['maxRetries'])) : 2
 const MAX_RETRY_ROUNDS = maxRetriesArg()
 const BUDGET_FLOOR = 40_000           // stop spawning agents below this many remaining tokens
+/** @returns {boolean} whether the budget still allows spawning agents (an unlimited one always does) */
+const budgetAllows = () => !budget.total || budget.remaining() > BUDGET_FLOOR
 
 // ---- schemas ----
 const FINDINGS = {
@@ -108,6 +111,7 @@ const FINDINGS = {
           description: { type: 'string' },
           fix: { type: 'string' },
           whereChecked: { type: 'string', description: 'OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise living OUTSIDE the cited line — a dependency\'s behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Comma-separate several. Empty string ONLY when the finding rests on no off-site claim at all' },
+          externalSystem: { type: 'string', description: 'the external system (another service, controller or API this code relies on) whose behaviour the finding\'s premise is about; omit when none' },
         },
       },
     },
@@ -165,7 +169,7 @@ const CROSSCHECK_SCHEMA = {
 // agent was skipped or died, so every read below goes through `Typedef | null`. The shapes are the
 // schemas' — model output, so the guards that re-check a field at runtime stay where they are.
 /**
- * @typedef {{ title: string, file: string, line: number, severity: string, description: string, fix: string, whereChecked: string }} RawFinding
+ * @typedef {{ title: string, file: string, line: number, severity: string, description: string, fix: string, whereChecked: string, externalSystem?: string }} RawFinding
  * @typedef {{ findings: RawFinding[] }} FindingsResult
  * @typedef {{ refuted: boolean, premiseSupported: boolean, reasoning: string, severity: string }} VerdictResult
  * @typedef {{ head: string, baseRef: string, sizeBucket: 'small' | 'medium' | 'large', lenses: string[], changedFiles: string[], notes: string }} ScoutResult
@@ -291,10 +295,16 @@ Diff base: ${base}.
 ${intentArg ? `INTENT (what the change should do): ${intentArg}` : ''}
 ${focusLine(focusFiles)}
 CONTEXT EXPANSION (required): for each finding, read the surrounding code and trace callers of the changed symbols before judging — do not read the diff in isolation.
-WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Pin every such premise to a \`file:line\` you ACTUALLY OPENED, dependency sources included, and put them in \`whereChecked\`. An off-site premise you did not open is not admissible: open it, or drop the claim and report only what the cited line shows. Use "" only when the finding needs no off-site premise. ${DEPENDENCY_SOURCE_HOW}
+WHERE-CHECKED (required field): a finding usually rests on a premise that is NOT visible at the line you cite — "the dependency rejects this", "this is reachable from untrusted input", "no caller guards it", "the sibling path does X". Pin every such premise to a \`file:line\` you ACTUALLY OPENED, dependency sources included, and put them in \`whereChecked\`. An off-site premise you did not open is not admissible: open it, or drop the claim and report only what the cited line shows. Use "" only when the finding needs no off-site premise. ${DEPENDENCY_SOURCE_HOW}${sourcesLine(lens)}
 CONFIDENCE: report everything you suspect, located to file:line. Do NOT self-censor borderline findings — adversarial verification happens downstream.
 
 Return {findings: []-shaped JSON}.`
+}
+
+/** The external systems' sources a lens of ADVERSARIAL_EXTERNAL_LENSES reads, on a line of its own; '' otherwise. @param {string} lens */
+function sourcesLine(lens) {
+  const block = sources.lensBlock(lens)
+  return block ? `\n${block}` : ''
 }
 
 // ---- throttled runner (lib/throttled-runner.mjs) ----
@@ -420,6 +430,10 @@ const runThrottledPass = makeThrottledRunner({
 })
 /** One throttled pass as one round of the stop. @type {typeof runThrottledPass} */
 const runThrottled = (jobs, tag, phaseTitle, opts) => advLimit.round(`the ${tag} pass`, () => runThrottledPass(jobs, tag, phaseTitle, opts))
+// The external systems' sources, as review reads them (lib/review-external-sources.mjs, realm @nick/craft, node #430):
+// the recall's `external` records, one prep agent before the lenses, a block for the lenses that judge another
+// system's behaviour and for every verifier, and a report field.
+const sources = makeExternalSources({ ragent: reviewAgent, plugin: { craftRoot: craftRootArg, version: CRAFT_VERSION, repo: repoArg }, logLine: log, lenses: ADVERSARIAL_EXTERNAL_LENSES, prepPhase: 'Prep' })
 /**
  * Files the record of a run that ended before any lens ran.
  * @param {string} verdictIn @param {string[]} labels  its notRun classes
@@ -541,12 +555,20 @@ async function recallMemory() {
   }
   const paths = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : []
   const r = await recallDecisions(p => reviewAgent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
+  sources.setRecords(r.externals)
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
   for (const x of m.recalledRefused) log(`WARNING: priorDecisions: ${x}`)
 }
 await recallMemory()
+// A launcher's recall brings its `external` records as `_externals`. Below the budget floor the prep is skipped as
+// the recall is: the lenses then read no external source.
+async function prepareSources() {
+  if (recalledByLauncher) sources.setRecords(A['_externals'])
+  if (budgetAllows()) await sources.prepare(plan.lenses)
+}
+await prepareSources()
 
 // ================= Review: throttled finder lenses =================
 /**
@@ -676,8 +698,6 @@ log(`Review: ${all.length} raw findings -> ${kept.length} after mechanical dedup
 // are likely; merges keep BOTH formulations so an over-eager merge degrades to a verbose
 // description instead of a lost finding.
 const DEDUP_THRESHOLD = 15
-/** @returns {boolean} whether the budget still allows spawning agents (an unlimited one always does) */
-const budgetAllows = () => !budget.total || budget.remaining() > BUDGET_FLOOR
 /**
  * Merges each cluster's duplicates into its most severe member, keeping both formulations.
  * @param {LensFinding[]} keptIn @param {number[][]} clusters @returns {Set<number>} the indices merged away
@@ -775,10 +795,12 @@ function buildVerifyJobs(findings, sink) {
   const jobs = []
   // `sink` is built as one array per finding, so `idx` from `findings.forEach` always has a slot.
   const slot = (/** @type {number} */ idx) => /** @type {unknown[]} */ (sink[idx])
+  const externalBlock = sources.verifyBlock().trim()
   findings.forEach((f, idx) => {
     const ctx = `FINDING [${f.severity}] ${f.title} @ ${f.file}:${f.line}\n` +
       `Independently reported by lenses: ${(f.sources || [f.lens]).join(', ')}\n${f.description}\nProposed fix: ${f.fix}\n` +
-      `Off-site evidence claimed: ${f.whereChecked || '(none — the finding claims to be self-contained at the cited line)'}`
+      `Off-site evidence claimed: ${f.whereChecked || '(none — the finding claims to be self-contained at the cited line)'}` +
+      (externalBlock ? `\n${externalBlock}` : '')
     /** @type {(lens: string, instr: string, effort: 'low' | 'high', tagged: boolean) => number} */
     const push = (lens, instr, effort, tagged) => jobs.push({
       prompt: `${instr}\n\n${ctx}`,
@@ -999,6 +1021,11 @@ function tieredFindings() {
 }
 // The findings going against memory, as review renders them; this engine posts nothing, so no sorting reads them.
 const contradicts = contradictionSection(tieredFindings()).trim()
+// What external sources the run read, could not read, and the systems a finding named that memory lacks; absent when none.
+function externalSourcesResult() {
+  const section = sources.section(tieredFindings()).trim()
+  return section ? { externalSources: section } : {}
+}
 const candidates = kept.length + gaps.length
 const refutedTotal = refuted.length + refutedGaps
 await logRun({
@@ -1027,5 +1054,6 @@ return {
   // Only when given: an invocation without priorDecisions returns exactly what it always did.
   ...priorDecisionsResult(),
   ...(contradicts ? { contradictsMemory: contradicts } : {}),
+  ...externalSourcesResult(),
 }
 }
