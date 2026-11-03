@@ -274,7 +274,11 @@ provisioner, a queue consumer with retries, or a sync daemon.
   with the file or section that establishes it. A claim checked only against memory, a comment or
   a different version is unverified.
 - **Where**: the dependency pin (lockfile, chart, image tag) for the version, then that system's
-  source or docs at that version.
+  source or docs at that version. When the review gives an **EXTERNAL SOURCES** block, that is where
+  the pinned source of each system listed there already is (a read-only copy at the deployed
+  version): read it there, cite `<dir>/<path>:<line>` in `whereChecked` and name the system in
+  `externalSystem`. A system not listed has no copy prepared: find its pin and source yourself, as
+  above.
 - **Finding**: name the claim, where the code relies on it, and that it was not checked against
   the pinned source. Report it as an open finding even when it might be true: a wrong claim
   about the external system turns every other answer in this catalogue into fiction.
