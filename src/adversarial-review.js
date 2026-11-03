@@ -567,6 +567,7 @@ await recallMemory()
 async function prepareSources() {
   if (recalledByLauncher) sources.setRecords(A['_externals'])
   if (budgetAllows()) await sources.prepare(plan.lenses)
+  else sources.skip(plan.lenses, 'budget below the floor')
 }
 await prepareSources()
 
