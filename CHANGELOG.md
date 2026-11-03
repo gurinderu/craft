@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.38.0](https://github.com/gurinderu/craft/compare/v0.37.1...v0.38.0) (2026-11-03)
+
+
+### Features
+
+* **adversarial-review:** lenses read an external system's source at the deployed version ([#310](https://github.com/gurinderu/craft/issues/310)) ([9033499](https://github.com/gurinderu/craft/commit/90334991a150cd1bd5a9ff6888465d7bf6a55fd5))
+* **logging:** the logger reads the run record from its own transcript; the model no longer copies it ([#307](https://github.com/gurinderu/craft/issues/307)) ([6450321](https://github.com/gurinderu/craft/commit/64503210a9980e1bdc5824ddba0d67fa911ebbc0))
+* **review:** lenses read an external system's source at the deployed version ([#309](https://github.com/gurinderu/craft/issues/309)) ([b1e28c9](https://github.com/gurinderu/craft/commit/b1e28c9240f537a9fba190fdd5d5630b96c23ec6))
+
 ## [0.37.1](https://github.com/gurinderu/craft/compare/v0.37.0...v0.37.1) (2026-11-02)
 
 
