@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.1](https://github.com/gurinderu/craft/compare/v0.39.0...v0.39.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **memory:** flake.lock is not a deployment manifest for external discovery ([#314](https://github.com/gurinderu/craft/issues/314)) ([aed4977](https://github.com/gurinderu/craft/commit/aed49778c86ba4c621ecc51683b4f44684aa06d8))
+
 ## [0.39.0](https://github.com/gurinderu/craft/compare/v0.38.0...v0.39.0) (2026-11-04)
 
 
