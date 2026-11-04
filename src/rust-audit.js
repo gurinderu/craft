@@ -79,7 +79,11 @@ let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
 let nestedMemoryParts = recalledByLauncher ? A['_memoryParts'] : undefined
 // The external-system records this audit's recall returned (realm @nick/craft, node #431), forwarded with the
 // rest so each nested review prepares their source itself; a launcher's own pass through.
-let nestedExternals = recalledByLauncher ? asList(A['_externals']) : []
+/** A launcher's forwarded list under `key`, when it recalled. @param {string} key */
+const fromLauncher = key => (recalledByLauncher ? asList(A[key]) : [])
+let nestedExternals = fromLauncher('_externals')
+// Every active external record whatever its scope, the nested reviews' filter of what is already recorded (node #435).
+let nestedKnownExternals = fromLauncher('_knownExternals')
 // What every nested review inherits from this run: craftRoot (the logger's home) and the project's
 // prior decisions with the flag that they are already recalled.
 function nestedReviewArgs() {
@@ -90,6 +94,7 @@ function nestedReviewArgs() {
     ...(nestedMemoryNote ? { _memory: nestedMemoryNote } : {}),
     ...(nestedMemoryParts != null ? { _memoryParts: nestedMemoryParts } : {}),
     ...(nestedExternals.length ? { _externals: nestedExternals } : {}),
+    ...(nestedKnownExternals.length ? { _knownExternals: nestedKnownExternals } : {}),
   }
 }
 
@@ -435,6 +440,7 @@ async function recallOnce() {
   memory = { ...memory, why: [memory.why, ...blocked, ...overrides].join('; ') }
   nestedPriorDecisions = withDerivedIds(merged)
   nestedExternals = asList(r.externals)
+  nestedKnownExternals = asList(r.knownExternals)
   // With the K this audit's line prints, so each nested line counts the same records (realm @nick/craft, node #244).
   nestedMemoryParts = { ...parts, accepted: passedAccepted }
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
