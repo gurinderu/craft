@@ -70,9 +70,10 @@ unknown`, versionFrom, versionMatch, a suggested scope): record it on the human'
 Finds the external systems the consumer deploys and memory has no record of, from its deployment
 manifests: a Helm chart's `Chart.yaml` (appVersion with its `sources:`, each dependency's version)
 and values (an image's repository and tag), a kustomization's `images:`, docker-compose and plain
-Kubernetes `image:` lines, `flake.lock` github/gitlab/git inputs (nixpkgs skipped), Terraform
-modules sourced `git::…?ref=…`. A library dependency a lockfile pins is not one, nor the
-repository's own application (a repo equal to its `origin` remote, or a chart naming no `sources:`).
+Kubernetes `image:` lines, Terraform modules sourced `git::…?ref=…`. A library dependency a
+lockfile pins is not one, nor a `flake.lock` input (build tooling — a flake input the code really
+talks to at run time is recorded by hand with `record-external`), nor the repository's own
+application (a repo equal to its `origin` remote, or a chart naming no `sources:`).
 Code derives every field; nothing is written without the human's answer.
 
 1. Recall the project's active `external` records, every scope.
