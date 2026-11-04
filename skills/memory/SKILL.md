@@ -1,7 +1,7 @@
 ---
 name: memory
 description: >-
-  Memory of the consumer project's own facts — decisions on review findings (rejected, justified), project rules (a stance on a whole class of findings), lessons, open questions (deferred findings too), external systems the code relies on — kept across sessions in whatever store the project has (a setting, a memory MCP server, harness project memory, .craft/memory files). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question, record-external. Use when such a fact about this codebase should outlive the session, before working on a path to learn what was decided about it, or before launching a craft review, whose engine recalls them itself (priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, was this already discussed, note this lesson, open question for later, record the external system. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and review ledger.
+  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too), external systems the code relies on — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question, record-external, discover-externals (systems found in deployment manifests, recorded on the human's yes). Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later, record the external system, find the external systems we deploy. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
 ---
 
 # Memory — the project's decisions, rules, lessons, questions and external systems
@@ -21,6 +21,7 @@ project already has; it never invents one. craft's machine memory — the run st
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
 | `record-external` | system, repo, versionFrom, versionMatch, scope (the paths that rely on it), body (what the code relies on), links | one `external` record |
+| `discover-externals` | — (the whole repository) | the candidates the deployment manifests name, shown; an `external` record for each the human confirms (below) |
 
 A record answered or overturned is not edited away: write the new record with a link to the old
 one and set the old one's `status` to `superseded` (or `withdrawn` when it was simply wrong). An
@@ -59,7 +60,37 @@ is never recorded: it goes stale on every upgrade and is read from the file at r
 recalls these records with the others; its lenses on lifecycle, compatibility and races then read
 the system's source at that version from craft's cache (`~/.craft/sources`), and its report names a
 system a finding leaned on that has no record — `not recorded: <system>`: record it on the human's
-word with `record-external`. A review never writes one itself.
+word with `record-external`. When the diff touches a deployment manifest naming a system no record
+covers, the report prints a `candidate:` line with every field filled (system, repo or `repo
+unknown`, versionFrom, versionMatch, a suggested scope): record it on the human's word with
+`record-external`, or run `discover-externals`. A review never writes one itself.
+
+## discover-externals
+
+Finds the external systems the consumer deploys and memory has no record of, from its deployment
+manifests: a Helm chart's `Chart.yaml` (appVersion with its `sources:`, each dependency's version)
+and values (an image's repository and tag), a kustomization's `images:`, docker-compose and plain
+Kubernetes `image:` lines, `flake.lock` github/gitlab/git inputs (nixpkgs skipped), Terraform
+modules sourced `git::…?ref=…`. A library dependency a lockfile pins is not one. Code derives every
+field; nothing is written without the human's answer.
+
+1. Recall the project's active `external` records, every scope.
+2. Run the discovery CLI over the repository, the recalled records on stdin as a JSON list of
+   `{system, repo, versionFrom}` so that what they cover is left out (none recalled: drop the pipe
+   and `--known -`):
+   `printf '%s' '<that list>' | node "<this skill's base directory>/../../lib/craft-externals.mjs" discover --repo-root "$(git rev-parse --show-toplevel)" --known -`.
+   It prints `{"candidates": [...]}`: `system`, `repo` (empty when no manifest names it;
+   `repoGuessed: true` when only an image on ghcr.io suggests it), `versionFrom`, `versionMatch`,
+   `version` (what the pattern reads today), `scope` (the manifest's directory, a suggestion) and
+   at times a `note`; `more` counts those past its bound (narrow by fixing these first). An
+   `{"error"}` is reported as it is; no candidates — say so.
+3. Show them to the human as a numbered list, every field, a guessed or unknown repo said plainly,
+   and ask which to record, and whether to correct `repo` (the git URL of the system's source) or
+   `scope` (the consumer's paths that rely on the system, not just the manifest's directory); ask
+   what the code relies on for `body`, or offer one line from what the manifest shows.
+4. Only after that answer, write each confirmed candidate with `record-external`: `system`,
+   `versionFrom` and `versionMatch` as printed, `repo` and `scope` as confirmed or corrected. A
+   declined or unanswered candidate is not written, nor one still without a repo: say which.
 
 **A decision on a review finding** carries all of `author`, `commit` and a link to where it was
 made (the PR thread, the review comment): the review engine names them when it sets the finding
