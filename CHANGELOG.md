@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.39.0](https://github.com/gurinderu/craft/compare/v0.38.0...v0.39.0) (2026-11-04)
+
+
+### Features
+
+* **memory:** discover external systems from deployment manifests ([#311](https://github.com/gurinderu/craft/issues/311)) ([887efdd](https://github.com/gurinderu/craft/commit/887efddc4d3e8598b551d97de24f1fd39bfaafff))
+
+
+### Bug Fixes
+
+* **review:** external candidates on inert diffs, no self candidates, nested discovery handoff ([#313](https://github.com/gurinderu/craft/issues/313)) ([22f4bf9](https://github.com/gurinderu/craft/commit/22f4bf9e24da5dc17f7bd6f57b48f31cf4a3c9c8))
+
 ## [0.38.0](https://github.com/gurinderu/craft/compare/v0.37.1...v0.38.0) (2026-11-03)
 
 
