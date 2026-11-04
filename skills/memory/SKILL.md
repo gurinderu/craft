@@ -20,7 +20,7 @@ project already has; it never invents one. craft's machine memory — the run st
 | `record-rule` | title (the rule), scope, body (why), author, links; `lens` to narrow it | one `rule` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
-| `record-external` | system, repo, versionFrom, versionMatch, scope (the paths that rely on it), body (what the code relies on), links | one `external` record |
+| `record-external` | system, repo, versionFrom and versionMatch — or version, only when no repo file names it — scope (the paths that rely on it), body (what the code relies on), links | one `external` record |
 | `discover-externals` | — (the whole repository) | the candidates the deployment manifests name, shown; an `external` record for each the human confirms (below) |
 
 A record answered or overturned is not edited away: write the new record with a link to the old
@@ -45,7 +45,7 @@ answered question becomes a `decision` that supersedes it.
   lens    the review lens that raised the finding, as the review names it (absent when unknown); on a rule, the lens it is narrowed to
   toolRule  a gate tool's own rule name the finding fired (a clippy lint, a semgrep rule id, a statix code; deadnix and fmt print none, so theirs carry none), as the review prints it — what tells two gate-tool findings apart; not the catalog ruleId (absent when unknown)
   links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
-  system, repo, versionFrom, versionMatch   an `external` record only (below)
+  system, repo, versionFrom, versionMatch, version   an `external` record only (below)
 ```
 
 **An external system** the consumer's code relies on — another project's controller, an API server,
@@ -55,8 +55,12 @@ apiserver), not a library dependency the lockfile already pins — is an `extern
 (`https://…`, `ssh://…` or `git@host:path`); `versionFrom` = the repo-relative file that holds the
 version the consumer deploys (a chart's values, a manifest, `go.mod`, `Cargo.lock`); `versionMatch` =
 a regular expression with exactly one capture group that reads the tag or commit from that file;
-`scope` = the consumer's paths that rely on it; `body` = what the code relies on. The version itself
-is never recorded: it goes stale on every upgrade and is read from the file at review time. A review
+`scope` = the consumer's paths that rely on it; `body` = what the code relies on. The version is read
+from the file at review time, so it follows every upgrade. Only when no file in the repository names
+it — an operator that talks to kube-ovn or KubeVirt but does not deploy them — ask the human for the
+deployed tag or commit and record it as `version` instead of `versionFrom` and `versionMatch` (never
+both). Tell the human plainly that a stated version goes stale silently on an upgrade and must be
+stated again then; the review report marks it `(recorded version, not read from a file)`. A review
 recalls these records with the others; its lenses on lifecycle, compatibility and races then read
 the system's source at that version from craft's cache (`~/.craft/sources`), and its report names a
 system a finding leaned on that has no record — `not recorded: <system>`: record it on the human's
@@ -78,7 +82,7 @@ Code derives every field; nothing is written without the human's answer.
 
 1. Recall the project's active `external` records, every scope.
 2. Run the discovery CLI over the repository, the recalled records on stdin as a JSON list of
-   `{system, repo, versionFrom}` so that what they cover is left out (none recalled: drop the pipe
+   `{system, repo, versionFrom, version}` so that what they cover is left out (none recalled: drop the pipe
    and `--known -`):
    `printf '%s' '<that list>' | node "<this skill's base directory>/../../lib/craft-externals.mjs" discover --repo-root "$(git rev-parse --show-toplevel)" --known -`.
    It prints `{"candidates": [...]}`: `system`, `repo` (empty when no manifest names it;

@@ -29,7 +29,7 @@ SKILL.md's ("Choosing the backend"); this file only says how to write and search
 - **Recall returns the record shape**: whatever the server stores, a recalled record handed on
   (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `author`,
   `commit`, `deferred`, `line`, `lens` and `toolRule` included when the item carries them, and an
-  `external` record's `system`, `repo`, `versionFrom` and `versionMatch`.
+  `external` record's `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version`.
 - **Ids — the convention for a server with its own ids**: `id` is the skill-rule id (SKILL.md,
   from kind + title + scope), and the server's own id goes into `links` as `store: <id>`. `kind`,
   `title` and `scope` are always handed on as stored, so the id can be derived again — a review
@@ -72,7 +72,7 @@ match. Use the harness's format, not a craft one:
     craft_line: 42          # the finding's line, when known
     craft_lens: safety      # the lens that raised it, when known; on a rule, the lens it is narrowed to
     craft_tool_rule: clippy::needless_pass_by_value  # the gate tool's own rule the finding fired, when known
-    # an external record only: craft_system, craft_repo, craft_version_from, craft_version_match
+    # an external record only: craft_system, craft_repo, craft_version_from and craft_version_match, or craft_version
     modified: 2026-10-06
   ---
 
@@ -94,7 +94,7 @@ match. Use the harness's format, not a craft one:
   → `scope`, `craft_status` → `status`, `modified` → `date`, `craft_author` → `author`,
   `craft_commit` → `commit`, `craft_deferred` → `deferred` (a boolean), `craft_line` → `line` (a
   number), `craft_lens` → `lens`, `craft_tool_rule` → `toolRule`, `craft_system` → `system`, `craft_repo` → `repo`,
-  `craft_version_from` → `versionFrom`, `craft_version_match` → `versionMatch`, the body, and the `Links:` lines → `links`.
+  `craft_version_from` → `versionFrom`, `craft_version_match` → `versionMatch`, `craft_version` → `version`, the body, and the `Links:` lines → `links`.
 - **Refused write** (a `PreToolUse` guard exiting non-zero, a permission denial, an index line or
   instruction saying "do not write here") → the backend is unavailable: do not retry, do not route
   around the guard; go to the next rule.
@@ -102,8 +102,8 @@ match. Use the harness's format, not a craft one:
 ## Files in the consumer repo
 
 `.craft/memory/<kind>/<id>.md` — `kind` ∈ `decision`, `rule`, `lesson`, `question`, `external`
-(an external record carries `system`, `repo`, `versionFrom` and `versionMatch` in its frontmatter beside
-`scope`):
+(an external record carries `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version` in
+its frontmatter beside `scope`):
 
 ```markdown
 ---
