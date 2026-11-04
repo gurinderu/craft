@@ -59,7 +59,7 @@ a regular expression with exactly one capture group that reads the tag or commit
 from the file at review time, so it follows every upgrade. Only when no file in the repository names
 it — an operator that talks to kube-ovn or KubeVirt but does not deploy them — ask the human for the
 deployed tag or commit and record it as `version` instead of `versionFrom` and `versionMatch` (never
-both). Tell the human plainly that a stated version goes stale silently on an upgrade and must be
+write both; a record that has both uses the file). Tell the human plainly that a stated version goes stale silently on an upgrade and must be
 stated again then; the review report marks it `(recorded version, not read from a file)`. A review
 recalls these records with the others; its lenses on lifecycle, compatibility and races then read
 the system's source at that version from craft's cache (`~/.craft/sources`), and its report names a
