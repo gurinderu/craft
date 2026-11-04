@@ -518,8 +518,25 @@ async function inertExit(changedFiles) {
   const msg = nothingToReviewMessage(changedFiles.length)
   log(msg)
   memory = skippedMemory(memory, 'nothing to review')
+  const found = await inertDiscovery(changedFiles)
   await fileEarlyExit('Approve', [])
-  return { verdict: 'Approve', confirmed: [], suspected: [], notRun: telemetryNotes(), summary: msg, scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] }, ...priorRefusedResult() }
+  return { verdict: 'Approve', confirmed: [], suspected: [], notRun: telemetryNotes(), summary: msg, scout: { size: plan.sizeBucket, lenses: [], deadLenses: [] }, ...priorRefusedResult(), ...found }
+}
+
+/**
+ * An inert diff that touched a deployment manifest (a `nix flake update`'s flake.lock) still gets its candidate
+ * lines: the discovery alone, no prep and no lens (realm @nick/craft, node #435). The fields of the result it adds.
+ * @param {string[]} changedFiles
+ */
+async function inertDiscovery(changedFiles) {
+  if (recalledByLauncher) {
+    sources.setRecords(A['_externals'])
+    sources.setKnown(A['_knownExternals'])
+  }
+  const recall = recalledByLauncher ? null : () => recallDecisions(p => reviewAgent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), changedFiles, plan.baseRef || '')
+  const section = (await sources.inert(changedFiles, recall, budgetAllows() ? '' : 'budget below the floor')).trim()
+  const read = sources.discovered()
+  return { ...(section ? { externalSources: section } : {}), ...(read.length ? { externalManifests: read } : {}) }
 }
 
 /**
@@ -1039,11 +1056,13 @@ function tieredFindings() {
 // The findings going against memory, as review renders them; this engine posts nothing, so no sorting reads them.
 const contradicts = contradictionSection(tieredFindings()).trim()
 // What external sources the run read, could not read, and the systems a finding named that memory lacks; absent when none.
-// `externalSourcesPrepared` is the prep's answer per system, so a launching review takes it instead of preparing again.
+// `externalSourcesPrepared` is the prep's answer per system, so a launching review takes it instead of preparing again;
+// `externalManifests` the touched manifests this run's discovery accounted for, which a launching review then leaves alone.
 function externalSourcesResult() {
   const section = sources.section(tieredFindings()).trim()
   const prepared = sources.outcome()
-  return { ...(section ? { externalSources: section } : {}), ...(prepared ? { externalSourcesPrepared: prepared } : {}) }
+  const read = sources.discovered()
+  return { ...(section ? { externalSources: section } : {}), ...(prepared ? { externalSourcesPrepared: prepared } : {}), ...(read.length ? { externalManifests: read } : {}) }
 }
 const candidates = kept.length + gaps.length
 const refutedTotal = refuted.length + refutedGaps
