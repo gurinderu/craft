@@ -556,16 +556,20 @@ async function recallMemory() {
   const paths = Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : []
   const r = await recallDecisions(p => reviewAgent(p, { label: 'memory-recall', phase: 'Prep', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), paths, plan.baseRef || '')
   sources.setRecords(r.externals)
+  sources.setKnown(r.knownExternals)
   const m = mergeRecall(r, A['priorDecisions'], parsePriorDecisions)
   priorDecisionsIn = m.prior
   memory = m.memory
   for (const x of m.recalledRefused) log(`WARNING: priorDecisions: ${x}`)
 }
 await recallMemory()
-// A launcher's recall brings its `external` records as `_externals`. Below the budget floor the prep and the discovery
+// A launcher's recall brings its `external` records as `_externals`, and every active one as `_knownExternals`. Below the budget floor the prep and the discovery
 // are skipped as the recall is: the lenses then read no external source, and the report says so.
 async function prepareSources() {
-  if (recalledByLauncher) sources.setRecords(A['_externals'])
+  if (recalledByLauncher) {
+    sources.setRecords(A['_externals'])
+    sources.setKnown(A['_knownExternals'])
+  }
   // The deployment manifests the diff touched: the same agent lists the systems they name (realm @nick/craft, node #435).
   sources.touch(Array.isArray(scout?.changedFiles) ? scout.changedFiles.filter(isPath) : [])
   if (budgetAllows()) await sources.prepare(plan.lenses)

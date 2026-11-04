@@ -82,8 +82,11 @@ field; nothing is written without the human's answer.
    It prints `{"candidates": [...]}`: `system`, `repo` (empty when no manifest names it;
    `repoGuessed: true` when only an image on ghcr.io suggests it), `versionFrom`, `versionMatch`,
    `version` (what the pattern reads today), `scope` (the manifest's directory, a suggestion) and
-   at times a `note`; `more` counts those past its bound (narrow by fixing these first). An
-   `{"error"}` is reported as it is; no candidates — say so.
+   at times a `note`; `more` counts those past its bound (narrow by fixing these first); `unread`
+   names each manifest it could not read, with why; `walkCut`, when present, says the walk stopped
+   at its bound and files past it were not read — tell the human the search was cut, never present
+   the list as complete, and offer a rerun with `--paths` naming the manifests that matter. An
+   `{"error"}` is reported as it is; no candidates — say so (and, with `walkCut`, that the walk was cut).
 3. Show them to the human as a numbered list, every field, a guessed or unknown repo said plainly,
    and ask which to record, and whether to correct `repo` (the git URL of the system's source) or
    `scope` (the consumer's paths that rely on the system, not just the manifest's directory); ask
