@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/gurinderu/craft/compare/v0.39.1...v0.40.0) (2026-11-04)
+
+
+### Features
+
+* **memory:** an external record may carry a human-stated version ([#316](https://github.com/gurinderu/craft/issues/316)) ([d632beb](https://github.com/gurinderu/craft/commit/d632bebaadd7a6e9281aaa7c52ae4ec9c73a7a57))
+
 ## [0.39.1](https://github.com/gurinderu/craft/compare/v0.39.0...v0.39.1) (2026-11-04)
 
 
