@@ -163,7 +163,7 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 
 ## Project structure
 - `skills/` — 37 skills, one directory each with a `SKILL.md`.
-- `agents/` — 5 Claude Code review agents (`rust-reviewer`, `nix-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`).
+- `agents/` — 5 Claude Code review agents (`rust-reviewer`, `nix-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`) and `engine-service`, the review engines' service-step agent.
 - `src/` — the engines as authored, scripts for the Workflow tool: `review.js` (the review engine, the hottest surface), `adversarial-review.js`, `rust-audit.js`, `triage-findings.js`, and the `rust-review.js`/`nix-review.js` entry points.
 - `workflows/` — the same engines as shipped: generated from `src/` by `npm run build:engines` and committed (the harness loads them from here); never edited by hand.
 - `lib/` — the CI checkers (`check-*.mjs`), the run-record write path (`run-record.mjs`, `run-logging.mjs`, `craft-log-run.mjs`), the modules the engines import, the engine harness (`engine-harness.mjs`), `analyze-runs.mjs`, and their tests.
