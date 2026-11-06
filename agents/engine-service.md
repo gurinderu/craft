@@ -1,6 +1,6 @@
 ---
 name: engine-service
-description: Runs one service step of a craft review engine — reading the diff, scouting, a checkpoint or run-record write, preparing external sources — exactly as its prompt says. Launched by the engines, not by hand; not for review judgement.
+description: Runs one service step of a craft review engine — reading the diff, a checkpoint or run-record write, preparing external sources — exactly as its prompt says. Launched by the engines, not by hand; not for review judgement.
 tools: Bash, Read, Write
 omitClaudeMd: true
 ---

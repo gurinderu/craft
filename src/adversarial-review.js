@@ -353,7 +353,7 @@ const [scoutRaw, warmupRaw] = await parallel([
    - medium: the categories plausibly in play.
    - large: all of them.
    Decide "in play" from the diff: payments/amounts/ledger -> money; async/threads/locks/transactions -> concurrency; input parsing/auth/tenancy -> security; loops/queries -> performance; always consider 'correctness' and 'errors'. Include 'complexity' whenever the diff is medium/large (it self-skips if the repo is not indexed).`,
-    { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE },
+    { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
   ),
   () => work(
     `You are warming up the codebase-memory index for a review. Use ToolSearch to load the codebase-memory MCP tools.
@@ -788,7 +788,7 @@ Merge ONLY when confident the fix is literally the same change. Two different pr
 
 FINDINGS:
 ${keptIn.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (lenses: ${f.sources.join(',')}) — ${f.description}`).join('\n')}`,
-    { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE },
+    { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low' },
   ))
   // Model output: a live clusterer whose `clusters` is not an array merged nothing — say so, never throw.
   const clusters = Array.isArray(clusterer?.clusters) ? clusterer.clusters : []
