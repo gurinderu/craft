@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "craft"
-version = "0.1.0"
+version = "0.40.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "craft-agent"
-version = "0.1.0"
+version = "0.40.1"
 dependencies = [
  "nix 0.31.3",
  "serde",
@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "craft-review"
-version = "0.1.0"
+version = "0.40.1"
 dependencies = [
  "anyhow",
  "jsonschema",
@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "craft-tui"
-version = "0.1.0"
+version = "0.40.1"
 dependencies = [
  "crossterm",
  "ratatui",
