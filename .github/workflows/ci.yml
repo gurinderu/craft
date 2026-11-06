@@ -76,7 +76,9 @@ jobs:
         working-directory: cli
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # The toolchain is pinned in cli/rust-toolchain.toml, which rustup honours for every cargo
+      # call under cli/; this step installs that same version with its components — move both together.
+      - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
