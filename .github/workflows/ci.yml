@@ -66,6 +66,31 @@ jobs:
             { echo '### npm audit (dev tooling): could not audit, not blocking'; echo '```'; tail -n 20 dev-audit.err; tail -n 20 dev-audit.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  # The Rust CLI in cli/ (realm @nick/craft, #445): format, lint at zero warnings (the workspace
+  # lints in cli/Cargo.toml become hard here), and the tests. A job of its own, not a gate step:
+  # `npm run gate` covers the Node side, and lib/gate-steps.test.mjs reads only the `test` job.
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      # The toolchain is pinned in cli/rust-toolchain.toml, which rustup honours for every cargo
+      # call under cli/; this step installs that same version with its components — move both together.
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: cargo fmt
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --locked
+
   # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
   # lib/, opencode/plugin/ and workflows/ (not opencode/install.sh or .github/). It found nothing real on adoption — it is here for code
   # not yet written (realm @nick/craft, #138). A separate job, not a step in `test`: it is a Python
