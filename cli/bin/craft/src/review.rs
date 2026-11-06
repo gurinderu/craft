@@ -1,5 +1,5 @@
-//! `craft review`: for now, one agent run end to end — spec, backend, progress view, result — to
-//! prove the pipe before the review pipeline lands.
+//! `craft review probe`: one agent run end to end — spec, backend, progress view, result — the
+//! pipe the step protocol (`craft review start`) leaves for later serve and compare use.
 
 use std::cell::Cell;
 use std::io::{IsTerminal, Write};
@@ -64,7 +64,7 @@ fn load_spec(path: Option<&Path>, base: &str) -> Result<AgentSpec> {
 
 /// The nearest directory above the executable that holds craft's plugin manifest: the checkout a
 /// development build sits in.
-fn find_craft_root() -> Option<PathBuf> {
+pub(crate) fn find_craft_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     exe.ancestors()
         .find(|dir| dir.join(".claude-plugin/plugin.json").is_file())

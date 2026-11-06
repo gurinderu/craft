@@ -110,6 +110,7 @@ under `content/`, inlined into the engines by the build.
 |---|---|---|
 | `review` | **auto-detects language(s)** → per-profile (rust/nix) scout + gate + scout-scaled lens fan-out → loop-until-dry → adversarial + self-verification → merge | one Confirmed/Suspected report + verdict across all detected languages (the generic engine; `PROFILES.{rust,nix}` inline) |
 | `rust-review` / `nix-review` | thin pins → `workflow('review', {languages:['rust'\|'nix']})` | single-language review via the engine above |
+| `cli-review` | experimental driver of the Rust CLI's step protocol: `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel; no review logic of its own | the verdict and the report the binary wrote |
 | `rust-audit` | per-crate review + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → sift by project memory → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
 | `adversarial-review` | scout + codebase-memory warm-up → throttled finder lenses → 1 combined verifier per finding (3-lens panel for critical/high) → completeness critic with verified gaps | language-agnostic adversarial diff review with bounded fan-out and steady request rate (subscription-friendly); Confirmed/Suspected report + Block/Warning/Approve verdict. Distinct from `review --strict` (maintainability-block mode of the generic engine) |
@@ -212,9 +213,12 @@ that shaped this layer has been removed.
 ## Rust CLI
 
 `cli/` is a Cargo workspace for `craft review` run from the terminal rather than from a harness:
-`bin/craft` (the command), `crates/craft-agent` (one agent run through a backend — the `claude`
-CLI today — and many under a concurrency cap), `crates/craft-review` (the review pipeline's
-skeleton: phases, agent specs, findings) and `crates/craft-tui` (progress as a phases → agents tree
+`bin/craft` (the command: `craft review start | submit | status`, the step protocol in which the
+binary decides the work and the host runs the agents, and `craft review probe`, one agent end to
+end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
+under a concurrency cap), `crates/craft-review` (the steps — one Rust correctness lens, then a
+verifier per finding or per batch, then a Markdown report — rendered from `content/`, which it
+compiles in, with the run's state in `state.json` of its run directory) and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise). The toolchain is pinned in `cli/rust-toolchain.toml`;
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, apart
 from `npm run gate`.

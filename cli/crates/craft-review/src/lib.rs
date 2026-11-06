@@ -1,6 +1,16 @@
-//! The review pipeline's skeleton: a review is a sequence of [`Phase`]s, each running agents
-//! described by an [`AgentSpec`], each agent returning [`Finding`]s. The prompts, schemas and
-//! rules that fill these come from craft's content, not from this crate.
+//! The review: what work it needs, step by step, without starting an agent itself ([`step`],
+//! realm @nick/craft, node #453), rendered from craft's content ([`content`], node #452). The
+//! types below are the pipeline's skeleton the single-agent probe still runs on.
+
+pub mod content;
+pub mod git;
+pub mod prompts;
+pub mod report;
+pub mod state;
+pub mod status;
+pub mod step;
+mod validate;
+mod verify;
 
 use serde::{Deserialize, Serialize};
 
