@@ -2,7 +2,7 @@
 //! the final text in `result`, the shaped answer in `structured_output` under `--json-schema`, a
 //! failed turn as `is_error` with a `subtype` other than `success`, the spend in `total_cost_usd`
 //! and per model in `modelUsage` (the session's own `usage`, snake case, beside it), and the
-//! refused tool uses in `permission_denials`.
+//! refused tool uses in `permission_denials`. The surface is pinned in (realm @nick/craft, node #449).
 
 use std::collections::BTreeMap;
 

@@ -9,15 +9,18 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use craft_agent::anthropic_api::AnthropicApi;
 use craft_agent::claude_code::ClaudeCode;
-use craft_agent::runner::{RunEvent, run_all};
+use craft_agent::runner::{Batch, RunEvent, run_until};
 use craft_agent::{AgentBackend, AgentRequest};
 use craft_review::AgentSpec;
 use craft_tui::ProgressEvent;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{Backend, ReviewArgs};
 
 const PHASE: &str = "probe";
+
+/// The exit status of a run the viewer stopped: 128 + SIGINT, as a shell reports it.
+const INTERRUPTED: u8 = 130;
 
 pub async fn run(args: ReviewArgs) -> Result<ExitCode> {
     let cwd = args
@@ -79,7 +82,8 @@ async fn run_one<B: AgentBackend + 'static>(
             .context("the progress view stopped early")?;
     }
     let bridge = tokio::spawn(bridge(run_rx, progress_tx, ids));
-    let view = tokio::spawn(view(progress_rx, args.plain));
+    let (stop_tx, stop_rx) = oneshot::channel();
+    let view = tokio::spawn(view(progress_rx, args.plain, stop_tx));
 
     let request = AgentRequest {
         label: spec.id.clone(),
@@ -89,18 +93,69 @@ async fn run_one<B: AgentBackend + 'static>(
         allowed_tools: spec.allowed_tools,
         cwd,
     };
-    let mut outcomes = run_all(Arc::new(backend), vec![request], args.concurrency, run_tx).await;
+    let batch = run_until(
+        Arc::new(backend),
+        vec![request],
+        args.concurrency,
+        run_tx,
+        stopped(stop_rx),
+    )
+    .await;
+    // Every runner event is sent by now, so the bridge and then the view end; the view has left
+    // the terminal by the time it returns.
     bridge.await.context("the progress bridge failed")?;
     view.await.context("the progress view failed")??;
 
-    let outcome = outcomes.pop().context("the runner returned no outcome")?;
-    match outcome {
-        Ok(reply) => {
-            let result = serde_json::json!({ "agent": spec.id, "reply": reply });
-            write_result(args.out.as_deref(), &result)?;
-            Ok(ExitCode::SUCCESS)
+    match batch {
+        Batch::Complete(mut outcomes) => {
+            let outcome = outcomes.pop().context("the runner returned no outcome")?;
+            match outcome {
+                Ok(reply) => {
+                    let result = serde_json::json!({ "agent": spec.id, "reply": reply });
+                    write_result(args.out.as_deref(), &result)?;
+                    Ok(ExitCode::SUCCESS)
+                }
+                Err(e) => Err(anyhow::Error::new(e).context(format!("agent {}", spec.id))),
+            }
         }
-        Err(e) => Err(anyhow::Error::new(e).context(format!("agent {}", spec.id))),
+        Batch::Stopped(slots) => {
+            let total = slots.len();
+            let finished: Vec<_> = slots.into_iter().flatten().collect();
+            writeln!(
+                std::io::stderr(),
+                "craft: stopped; {} of {total} agents had finished",
+                finished.len()
+            )?;
+            for outcome in finished {
+                match outcome {
+                    Ok(reply) => {
+                        let result = serde_json::json!({ "agent": spec.id, "reply": reply });
+                        write_result(args.out.as_deref(), &result)?;
+                    }
+                    Err(e) => writeln!(std::io::stderr(), "craft: agent {}: {e}", spec.id)?,
+                }
+            }
+            Ok(ExitCode::from(INTERRUPTED))
+        }
+    }
+}
+
+/// Resolves when the viewer stops the run: `q` or Ctrl-C in the live view, or SIGINT (the plain
+/// view leaves the terminal cooked, so Ctrl-C arrives as the signal). Never resolves once the
+/// view has ended on its own.
+async fn stopped(from_view: oneshot::Receiver<()>) {
+    tokio::select! {
+        sent = from_view => {
+            if sent.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
+        signal = tokio::signal::ctrl_c() => {
+            if signal.is_err() {
+                // No handler, no signal to wait for: only the view can stop the run.
+                std::future::pending::<()>().await;
+            }
+        }
     }
 }
 
@@ -130,13 +185,26 @@ async fn bridge(
     }
 }
 
-async fn view(events: mpsc::UnboundedReceiver<ProgressEvent>, plain: bool) -> Result<()> {
+/// Shows progress until the events end; a viewer's interrupt is passed on through `stop` and is
+/// not an error of the view.
+async fn view(
+    events: mpsc::UnboundedReceiver<ProgressEvent>,
+    plain: bool,
+    stop: oneshot::Sender<()>,
+) -> Result<()> {
     if plain || !std::io::stderr().is_terminal() {
         craft_tui::run_plain(events, &mut std::io::stderr()).await?;
-    } else {
-        craft_tui::run_tty(events).await?;
+        return Ok(());
     }
-    Ok(())
+    match craft_tui::run_tty(events).await {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+            // The run may have ended meanwhile; then nobody is left to stop.
+            let _ended = stop.send(());
+            Ok(())
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 fn write_result(out: Option<&Path>, result: &serde_json::Value) -> Result<()> {

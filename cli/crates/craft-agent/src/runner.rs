@@ -16,6 +16,14 @@ pub enum RunEvent {
     Failed { index: usize, error: String },
 }
 
+/// How a batch ended: every run done, or stopped with the runs that had finished by then.
+#[derive(Debug)]
+pub enum Batch {
+    Complete(Vec<Result<AgentReply, AgentError>>),
+    /// Request order; `None` for a run that was cut off or never started.
+    Stopped(Vec<Option<Result<AgentReply, AgentError>>>),
+}
+
 /// Runs every request, at most `concurrency` at once, and returns the outcomes in request order.
 /// Events go to `events`; a closed receiver does not stop the runs.
 ///
@@ -29,6 +37,38 @@ pub async fn run_all<B>(
 ) -> Vec<Result<AgentReply, AgentError>>
 where
     B: AgentBackend + 'static,
+{
+    match run_until(
+        backend,
+        requests,
+        concurrency,
+        events,
+        std::future::pending(),
+    )
+    .await
+    {
+        Batch::Complete(outcomes) => outcomes,
+        // `pending` never resolves, so nothing stops the batch.
+        Batch::Stopped(slots) => slots.into_iter().flatten().collect(),
+    }
+}
+
+/// [`run_all`], cut short when `stop` resolves first: every run still going is cancelled and
+/// awaited before this returns, so a backend's resources are dropped by then — the `claude-code`
+/// backend's subprocesses are killed (`kill_on_drop`).
+///
+/// # Panics
+/// Re-raises a panic from a backend's run.
+pub async fn run_until<B, S>(
+    backend: Arc<B>,
+    requests: Vec<AgentRequest>,
+    concurrency: NonZeroUsize,
+    events: mpsc::UnboundedSender<RunEvent>,
+    stop: S,
+) -> Batch
+where
+    B: AgentBackend + 'static,
+    S: Future<Output = ()>,
 {
     let permits = Arc::new(Semaphore::new(concurrency.get()));
     let mut tasks = JoinSet::new();
@@ -57,18 +97,27 @@ where
             (index, outcome)
         });
     }
+    drop(events);
     let mut slots: Vec<Option<Result<AgentReply, AgentError>>> = (0..count).map(|_| None).collect();
-    while let Some(joined) = tasks.join_next().await {
-        match joined {
-            Ok((index, outcome)) => {
-                if let Some(slot) = slots.get_mut(index) {
-                    *slot = Some(outcome);
+    let mut stop = std::pin::pin!(stop);
+    loop {
+        tokio::select! {
+            biased;
+            joined = tasks.join_next() => match joined {
+                Some(Ok((index, outcome))) => {
+                    if let Some(slot) = slots.get_mut(index) {
+                        *slot = Some(outcome);
+                    }
                 }
+                Some(Err(e)) => std::panic::resume_unwind(e.into_panic()),
+                None => return Batch::Complete(slots.into_iter().flatten().collect()),
+            },
+            () = &mut stop => {
+                tasks.shutdown().await;
+                return Batch::Stopped(slots);
             }
-            Err(e) => std::panic::resume_unwind(e.into_panic()),
         }
     }
-    slots.into_iter().flatten().collect()
 }
 
 #[cfg(test)]
@@ -80,7 +129,8 @@ mod tests {
     use super::*;
     use crate::Usage;
 
-    /// Sleeps, counting how many runs overlap; a label starting with `fail` fails.
+    /// Sleeps, counting how many runs overlap; a label starting with `fail` fails, one starting
+    /// with `slow` takes an hour.
     #[derive(Default)]
     struct Fake {
         active: AtomicUsize,
@@ -91,7 +141,12 @@ mod tests {
         async fn run(&self, request: &AgentRequest) -> Result<AgentReply, AgentError> {
             let now = self.active.fetch_add(1, Ordering::SeqCst) + 1;
             self.peak.fetch_max(now, Ordering::SeqCst);
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            let pause = if request.label.starts_with("slow") {
+                Duration::from_secs(3600)
+            } else {
+                Duration::from_millis(10)
+            };
+            tokio::time::sleep(pause).await;
             self.active.fetch_sub(1, Ordering::SeqCst);
             if request.label.starts_with("fail") {
                 return Err(AgentError::NotYet { backend: "fake" });
@@ -168,5 +223,50 @@ mod tests {
         .await;
         assert_eq!(out.len(), 2);
         assert!(out.iter().all(Result::is_ok));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stop_cancels_the_runs_still_going_and_keeps_the_finished() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let fake = Arc::new(Fake::default());
+        let batch = run_until(
+            Arc::clone(&fake),
+            vec![req("a"), req("slow-b")],
+            NonZeroUsize::new(2).unwrap(),
+            tx,
+            tokio::time::sleep(Duration::from_secs(1)),
+        )
+        .await;
+        let Batch::Stopped(slots) = batch else {
+            panic!("the batch was not stopped: {batch:?}");
+        };
+        assert_eq!(slots.len(), 2);
+        assert_eq!(
+            slots[0]
+                .as_ref()
+                .and_then(|o| o.as_ref().ok())
+                .and_then(|r| r.text.clone()),
+            Some("a".to_owned())
+        );
+        assert!(slots[1].is_none());
+        // The cancelled run was dropped mid-sleep, so it never left.
+        assert_eq!(fake.active.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stop_that_never_comes_lets_the_batch_complete() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let batch = run_until(
+            Arc::new(Fake::default()),
+            vec![req("a")],
+            NonZeroUsize::MIN,
+            tx,
+            std::future::pending(),
+        )
+        .await;
+        assert!(
+            matches!(batch, Batch::Complete(ref v) if v.len() == 1),
+            "{batch:?}"
+        );
     }
 }

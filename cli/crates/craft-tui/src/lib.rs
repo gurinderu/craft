@@ -37,8 +37,9 @@ pub async fn run_plain<W: Write>(
 
 const TICK: Duration = Duration::from_millis(250);
 
-/// Draws the tree on stderr's alternate screen until the channel closes; `q` or Ctrl-C stops it
-/// early with [`io::ErrorKind::Interrupted`]. The terminal is restored on every way out.
+/// Draws the tree on stderr's alternate screen until the channel closes; `q` or Ctrl-C ends the
+/// view early with [`io::ErrorKind::Interrupted`], and stopping the work it shows is the caller's
+/// move. The terminal is restored on every way out.
 ///
 /// # Errors
 /// A terminal that cannot be set up or drawn to, or the viewer's interrupt.

@@ -1,9 +1,13 @@
 //! The `claude-code` backend: each run is one `claude -p` subprocess, its prompt on stdin, its
 //! answer the single JSON object `--output-format json` prints (see [`crate::reply`]).
 //!
-//! What the subprocess reads: the project's settings, CLAUDE.md/AGENTS.md and skills, craft's own
-//! skills and agents (`--plugin-dir`) — and nothing of the user's: `--setting-sources
-//! project,local` leaves out `~/.claude` and keeps the OAuth login that `--bare` would drop.
+//! The CLI's flags and its reply are an external surface, pinned in (realm @nick/craft, node #449).
+//!
+//! What the subprocess is meant to read: the project's settings, CLAUDE.md/AGENTS.md and skills,
+//! and craft's own skills and agents (`--plugin-dir`). `--setting-sources project,local` is meant
+//! to keep the user-level settings and instructions under `~/.claude` out while keeping the OAuth
+//! login that `--bare` would drop — seen only in a probe, by the model's own report of what it had
+//! loaded, not verified.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -84,11 +88,22 @@ impl ClaudeCode {
                 source,
             })?;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(request.prompt.as_bytes()).await?;
-            stdin.shutdown().await?;
+            // A child that exits without reading its prompt breaks the pipe; its exit status and
+            // stderr, read below, say why, so the broken pipe is not the error reported.
+            if let Err(e) = feed(&mut stdin, request.prompt.as_bytes()).await
+                && e.kind() != std::io::ErrorKind::BrokenPipe
+            {
+                return Err(e.into());
+            }
         }
         Ok(child.wait_with_output().await?)
     }
+}
+
+/// Writes the prompt and closes stdin, so the child sees its end.
+async fn feed(stdin: &mut tokio::process::ChildStdin, prompt: &[u8]) -> std::io::Result<()> {
+    stdin.write_all(prompt).await?;
+    stdin.shutdown().await
 }
 
 impl AgentBackend for ClaudeCode {
