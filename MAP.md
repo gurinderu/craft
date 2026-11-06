@@ -224,7 +224,11 @@ engines cap it, then a Markdown report naming the head and whether the tree was 
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them) and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise). The toolchain is pinned in `cli/rust-toolchain.toml`;
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, apart
-from `npm run gate`.
+from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
+`cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
+binary at the archive root) and its `.sha256` to each release for Linux and macOS on x64 and arm64;
+`lib/craft-bin.mjs ensure` fetches the one for this platform and version into `~/.craft/bin/<version>/`,
+which the `cli-review` engine runs when no `craftBin` is given.
 
 ## Codex delivery
 

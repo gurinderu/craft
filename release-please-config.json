@@ -21,7 +21,9 @@
         { "type": "generic", "path": "src/triage-findings.js" },
         { "type": "generic", "path": "workflows/triage-findings.js" },
         { "type": "generic", "path": "src/cli-review.js" },
-        { "type": "generic", "path": "workflows/cli-review.js" }
+        { "type": "generic", "path": "workflows/cli-review.js" },
+        { "type": "toml", "path": "cli/Cargo.toml", "jsonpath": "$.workspace.package.version" },
+        { "type": "toml", "path": "cli/Cargo.lock", "jsonpath": "$.package[?(!@.source)].version" }
       ]
     }
   }
