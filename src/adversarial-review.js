@@ -19,7 +19,8 @@ import { applyProjectRules } from '../lib/project-rule-apply.mjs'
 import { focusFilesArg, focusLine } from '../lib/focus-files.mjs'
 import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.mjs'
 import { ADVERSARIAL_EXTERNAL_LENSES, makeExternalSources } from '../lib/review-external-sources.mjs'
-import { READ_ONLY_AGENT_TYPE } from '../lib/read-only-agent.mjs'
+import { READ_ONLY_AGENT_TYPE, makeReadOnlyFallback } from '../lib/read-only-agent.mjs'
+import { agentUnavailableRecord } from '../lib/agent-fallback.mjs'
 
 export const meta = {
   name: 'adversarial-review',
@@ -71,11 +72,13 @@ const focusFiles = focusFilesArg(A['files'])
 // and the logger files the record under it. A value no agent could `cd` to is refused below, before any work agent.
 const { repo: repoArg, refused: repoRefused } = readRepoArg(A['repo'])
 const REPO_DIRECTIVE = repoDirective(repoArg, 'review')
+// A read-only agent Explore did not answer is re-run once on the default type (lib/read-only-agent.mjs).
+const readOnly = makeReadOnlyFallback((/** @type {string} */ prompt, /** @type {NonNullable<Parameters<typeof agent>[1]>} */ opts) => agent(`${REPO_DIRECTIVE}${prompt}`, opts), log)
 /**
  * The sandbox's agent(), pointed at `repo` when one is given.
  * @param {string} prompt @param {Parameters<typeof agent>[1]} [opts] @returns {Promise<unknown>}
  */
-const work = (prompt, opts) => agent(`${REPO_DIRECTIVE}${prompt}`, opts)
+const work = (prompt, opts) => readOnly.run(prompt, opts ?? {})
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // `repo` does. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
@@ -254,6 +257,8 @@ const recordHead = () => ({
   nested: !!viaArg, via: viaArg || null,
   // What the recall step brought, or why none (realm @nick/craft, node #40).
   memory: memoryRecord(memory),
+  // A read-only agent re-run on the default type, in the shape review and rust-audit file (lib/agent-fallback.mjs, realm @nick/craft #151).
+  ...agentUnavailableRecord([], readOnly.fallbacks()),
 })
 
 // ---- lens catalog ----
