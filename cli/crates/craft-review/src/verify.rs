@@ -34,7 +34,7 @@ pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>> {
         let file = f.get("file").and_then(Value::as_str).unwrap_or("?");
         let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
         tasks.push(Task::new(
-            format!("verify:{i}"),
+            format!("verify-{i}"),
             format!("verify:{file}:{line}"),
             prompts::verify_prompt(&run.context, f)?,
             VERIFY_MODEL,
@@ -49,7 +49,7 @@ pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>> {
             .and_then(|f| f.get("file"))
             .and_then(Value::as_str);
         tasks.push(Task::new(
-            format!("verify-batch:{k}"),
+            format!("verify-batch-{k}"),
             format!("verify-batch:{}({})", first.unwrap_or("?"), group.len()),
             prompts::batch_verify_prompt(&run.context, &findings)?,
             VERIFY_MODEL,

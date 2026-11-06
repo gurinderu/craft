@@ -35,9 +35,10 @@ pub struct SubmitArgs {
     /// The run directory `start` printed.
     #[arg(long)]
     pub run: PathBuf,
-    /// A JSON object of answers by task id, as a file or `-` for stdin.
+    /// A JSON object of answers by task id, as a file or `-` for stdin, in place of the answer
+    /// files the tasks' agents wrote under the run's `answers/`.
     #[arg(long)]
-    pub answers: PathBuf,
+    pub answers: Option<PathBuf>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -89,20 +90,26 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
     print(&step::start(&opts)?)
 }
 
-pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
-    let text = if args.answers.as_os_str() == "-" {
+/// The answers a host passes itself (`--answers`), as a JSON object by task id.
+fn given_answers(path: &Path) -> Result<Map<String, Value>> {
+    let text = if path.as_os_str() == "-" {
         let mut s = String::new();
         std::io::stdin()
             .read_to_string(&mut s)
             .context("reading the answers from stdin")?;
         s
     } else {
-        std::fs::read_to_string(&args.answers)
-            .with_context(|| format!("reading the answers {}", args.answers.display()))?
+        std::fs::read_to_string(path)
+            .with_context(|| format!("reading the answers {}", path.display()))?
     };
-    let answers: Map<String, Value> =
-        serde_json::from_str(&text).context("the answers are not a JSON object")?;
-    print(&step::submit(&args.run, &answers)?)
+    serde_json::from_str(&text).context("the answers are not a JSON object")
+}
+
+pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
+    let given = args.answers.as_deref().map(given_answers).transpose()?;
+    let run = std::path::absolute(&args.run)
+        .with_context(|| format!("resolving {}", args.run.display()))?;
+    print(&step::submit(&run, given.as_ref())?)
 }
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {

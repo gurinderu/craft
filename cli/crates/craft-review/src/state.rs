@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::git::Diff;
 use crate::prompts::PromptContext;
 
 /// The state file's format; a run written by another format is refused, not misread.
-pub const STATE_VERSION: u32 = 1;
+pub const STATE_VERSION: u32 = 2;
 /// How many times an invalid or missing answer is asked for again before its task fails.
 pub const MAX_RETRIES: u32 = 2;
 
@@ -91,24 +91,16 @@ impl Task {
         }
     }
 
-    /// The task as the host receives it; a retry carries why the last answer was refused.
+    /// The task's prompt as its agent reads it; a retry's carries why the last answer was refused.
     #[must_use]
-    pub fn wire(&self) -> Value {
-        let prompt = match &self.error {
+    pub fn prompt_text(&self) -> String {
+        match &self.error {
             Some(e) => format!(
                 "{}\n\nYour previous answer was invalid: {e}. Answer again, matching the schema exactly.",
                 self.prompt
             ),
             None => self.prompt.clone(),
-        };
-        let mut t = json!({
-            "id": self.id, "label": self.label, "prompt": prompt,
-            "model": self.model, "schema": self.schema,
-        });
-        if let (Some(a), Some(obj)) = (&self.agent_type, t.as_object_mut()) {
-            obj.insert("agentType".into(), json!(a));
         }
-        t
     }
 }
 

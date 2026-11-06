@@ -9,6 +9,7 @@ use serde_json::{Map, Value, json};
 
 use crate::content;
 use crate::git;
+use crate::handoff;
 use crate::prompts::{self, LENS, PromptContext};
 use crate::report;
 use crate::state::{self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState};
@@ -76,25 +77,28 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
     } else {
         let prompt = prompts::lens_prompt(&run.context)?;
         let schema = content::schema("findings")?;
-        let id = format!("lens:{LENS}");
         run.tasks = vec![Task::new(
-            id.clone(),
-            id,
+            format!("lens-{LENS}"),
+            format!("lens:{LENS}"),
             prompt,
             LENS_MODEL,
             schema,
             TaskKind::Lens,
         )];
     }
+    handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;
     Ok(next(dir, &run))
 }
 
-/// Takes the answers to the pending tasks of the run in `dir` and hands out what comes next.
+/// Takes the answers to the pending tasks of the run in `dir` and hands out what comes next. The
+/// answers are read from the files their agents wrote (`handoff`), or taken from `given`, a map by
+/// task id, when the host passes them itself.
 ///
 /// # Errors
-/// When the run is done, an answer names no pending task, or the state cannot be read or written.
-pub fn submit(dir: &Path, answers: &Map<String, Value>) -> Result<Value> {
+/// When the run is done, a given answer names no pending task, or the state or a file cannot be read
+/// or written.
+pub fn submit(dir: &Path, given: Option<&Map<String, Value>>) -> Result<Value> {
     let mut run = state::load(dir)?;
     if run.phase == Phase::Done {
         bail!("the run in {} is done", dir.display());
@@ -104,7 +108,7 @@ pub fn submit(dir: &Path, answers: &Map<String, Value>) -> Result<Value> {
             .iter()
             .any(|t| t.id == id && t.state == TaskState::Pending)
     };
-    if let Some(id) = answers.keys().find(|id| !pending(id)) {
+    if let Some(id) = given.and_then(|g| g.keys().find(|id| !pending(id))) {
         bail!("answer for {id}, which is no pending task of this run");
     }
     for task in run
@@ -112,23 +116,30 @@ pub fn submit(dir: &Path, answers: &Map<String, Value>) -> Result<Value> {
         .iter_mut()
         .filter(|t| t.state == TaskState::Pending)
     {
-        match validate::check(task, answers.get(&task.id)) {
+        let checked = match given {
+            Some(g) => validate::check(task, g.get(&task.id)),
+            None => handoff::read_answer(dir, task).and_then(|a| validate::check(task, Some(&a))),
+        };
+        match checked {
             Ok(answer) => {
                 task.answer = Some(answer);
                 task.state = TaskState::Answered;
                 task.error = None;
+                continue;
             }
-            Err(e) if task.retries < MAX_RETRIES => {
-                task.retries += 1;
-                task.error = Some(e);
-            }
-            Err(e) => {
-                task.state = TaskState::Failed;
-                task.error = Some(e);
-            }
+            Err(e) => task.error = Some(e),
+        }
+        if given.is_none() {
+            handoff::set_aside(dir, task)?;
+        }
+        if task.retries < MAX_RETRIES {
+            task.retries += 1;
+        } else {
+            task.state = TaskState::Failed;
         }
     }
     advance(dir, &mut run)?;
+    handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;
     Ok(next(dir, &run))
 }
@@ -144,7 +155,7 @@ fn next(dir: &Path, run: &RunState) -> Value {
                 .tasks
                 .iter()
                 .filter(|t| t.state == TaskState::Pending)
-                .map(Task::wire)
+                .map(|t| handoff::wire(dir, t))
                 .collect();
             json!({"run": dir.display().to_string(), "tasks": tasks, "done": false})
         }

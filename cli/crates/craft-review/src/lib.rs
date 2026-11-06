@@ -4,6 +4,7 @@
 
 pub mod content;
 pub mod git;
+pub mod handoff;
 pub mod prompts;
 pub mod report;
 pub mod state;

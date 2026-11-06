@@ -1,89 +1,13 @@
 //! The step protocol end to end over a fixture repository with a real git diff.
-#![expect(
-    clippy::unwrap_used,
-    reason = "the fixture helpers fail the test loudly, like the tests they serve"
-)]
+
+mod common;
 
 use std::path::Path;
-use std::process::Command;
 
+use common::{answers, finding, fixture, ids, opts, prompt_of, verdict};
 use craft_review::status;
-use craft_review::step::{self, StartOptions};
-use serde_json::{Map, Value, json};
-
-fn git(dir: &Path, args: &[&str]) {
-    let ok = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@example.com")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@example.com")
-        .output()
-        .unwrap();
-    assert!(
-        ok.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&ok.stderr)
-    );
-}
-
-/// A repository whose `origin/main` is its first commit, with `src/lib.rs` added after it.
-fn fixture(rust: bool) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    let d = dir.path();
-    git(d, &["init", "-q", "-b", "main"]);
-    std::fs::write(d.join("README.md"), "x\n").unwrap();
-    git(d, &["add", "."]);
-    git(d, &["commit", "-qm", "init"]);
-    git(d, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    let (name, text) = if rust {
-        ("lib.rs", "pub fn f() -> u8 { 1 }\n")
-    } else {
-        ("notes.txt", "y\n")
-    };
-    std::fs::create_dir_all(d.join("src")).unwrap();
-    std::fs::write(d.join("src").join(name), text).unwrap();
-    git(d, &["add", "."]);
-    git(d, &["commit", "-qm", "feat: add f, which never fails"]);
-    dir
-}
-
-fn opts(repo: &Path, run: &Path) -> StartOptions {
-    StartOptions {
-        cwd: repo.to_path_buf(),
-        base: None,
-        run_dir: run.join("run"),
-        craft_root: Some("/craft".into()),
-        craft_version: Some("9.9.9".into()),
-    }
-}
-
-fn answers(pairs: Value) -> Map<String, Value> {
-    pairs.as_object().unwrap().clone()
-}
-
-fn finding(severity: &str, line: u32) -> Value {
-    json!({
-        "severity": severity, "title": format!("bad at {line}"), "file": "src/lib.rs", "line": line,
-        "why": "wrong", "fix": "fix it", "blastRadius": "", "source": "intent", "ruleId": "",
-        "whereChecked": "", "harmLevel": "intent-unmet", "harm": "callers get 1"
-    })
-}
-
-fn verdict(refuted: bool) -> Value {
-    json!({"refuted": refuted, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "seen"})
-}
-
-fn ids(step: &Value) -> Vec<String> {
-    step["tasks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| t["id"].as_str().unwrap().to_owned())
-        .collect()
-}
+use craft_review::step;
+use serde_json::{Map, json};
 
 #[test]
 fn start_renders_the_lens_over_the_diff() {
@@ -92,9 +16,21 @@ fn start_renders_the_lens_over_the_diff() {
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
     assert_eq!(s["done"], json!(false));
     let task = &s["tasks"][0];
-    assert_eq!(task["id"], json!("lens:intent"));
-    assert_eq!(task["model"], json!("opus"));
-    let prompt = task["prompt"].as_str().unwrap();
+    let run = out.path().join("run");
+    let at = |p: &str| json!(run.join(p).display().to_string());
+    assert_eq!(
+        task,
+        &json!({
+            "id": "lens-intent", "label": "lens:intent", "model": "opus",
+            "promptFile": at("tasks/lens-intent.md"),
+            "schemaFile": at("tasks/lens-intent.schema.json"),
+            "answerFile": at("answers/lens-intent.json"),
+        }),
+        "the task names its files and carries no prompt or schema text"
+    );
+    assert!(run.join("answers").is_dir());
+    let prompt = prompt_of(task);
+    let prompt = prompt.as_str();
     assert!(
         prompt.contains("--merge-base 'origin/main' -- '*.rs'"),
         "{prompt}"
@@ -108,9 +44,14 @@ fn start_renders_the_lens_over_the_diff() {
         !prompt.contains("{{"),
         "an unrendered placeholder: {prompt}"
     );
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(run.join("tasks/lens-intent.schema.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(
-        task["schema"]["properties"]["findings"]["items"]["type"],
-        json!("object")
+        schema["properties"]["findings"]["items"]["type"],
+        json!("object"),
+        "the schema file is whole, its references inlined"
     );
     assert!(out.path().join("run/state.json").is_file());
     let again = step::start(&opts(repo.path(), out.path())).unwrap_err();
@@ -128,19 +69,23 @@ fn a_full_loop_goes_lens_then_verify_then_done() {
     let run = Path::new(&run);
     let lens = json!({"lens": "intent", "findings": [finding("High", 1), finding("Medium", 1), finding("Low", 1)]});
     // An agent's final text carrying JSON is read as that JSON.
-    let s = step::submit(run, &answers(json!({"lens:intent": lens.to_string()}))).unwrap();
-    assert_eq!(ids(&s), ["verify:0", "verify-batch:0"]);
-    let batch_prompt = s["tasks"][1]["prompt"].as_str().unwrap();
+    let s = step::submit(
+        run,
+        Some(&answers(json!({"lens-intent": lens.to_string()}))),
+    )
+    .unwrap();
+    assert_eq!(ids(&s), ["verify-0", "verify-batch-0"]);
+    let batch_prompt = prompt_of(&s["tasks"][1]);
     assert!(batch_prompt.contains("--- FINDING 1 ---") && batch_prompt.contains("(0..1)"));
     let s = step::submit(
         run,
-        &answers(json!({
-            "verify:0": verdict(false),
-            "verify-batch:0": {"verdicts": [
+        Some(&answers(json!({
+            "verify-0": verdict(false),
+            "verify-batch-0": {"verdicts": [
                 {"index": 0, "refuted": false, "citedLineMatches": true, "reachable": false, "premiseSupported": true, "reason": "test-only"},
                 {"index": 1, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "no"}
             ]}
-        })),
+        }))),
     )
     .unwrap();
     assert_eq!(s["done"], json!(true));
@@ -163,7 +108,7 @@ fn a_full_loop_goes_lens_then_verify_then_done() {
         (st["phase"].clone(), st["tiers"]["refuted"].clone()),
         (json!("done"), json!(1))
     );
-    let late = step::submit(run, &Map::new()).unwrap_err();
+    let late = step::submit(run, Some(&Map::new())).unwrap_err();
     assert!(late.to_string().contains("is done"), "{late}");
 }
 
@@ -173,9 +118,13 @@ fn an_invalid_answer_is_asked_again_then_fails_the_task() {
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
-    let s = step::submit(&run, &answers(json!({"lens:intent": {"lens": "intent"}}))).unwrap();
-    assert_eq!(ids(&s), ["lens:intent"]);
-    let prompt = s["tasks"][0]["prompt"].as_str().unwrap();
+    let s = step::submit(
+        &run,
+        Some(&answers(json!({"lens-intent": {"lens": "intent"}}))),
+    )
+    .unwrap();
+    assert_eq!(ids(&s), ["lens-intent"]);
+    let prompt = prompt_of(&s["tasks"][0]);
     assert!(
         prompt.contains("Your previous answer was invalid: it does not match the schema"),
         "{prompt}"
@@ -184,18 +133,13 @@ fn an_invalid_answer_is_asked_again_then_fails_the_task() {
         prompt.contains("findings"),
         "the note names what is missing: {prompt}"
     );
-    let s = step::submit(&run, &Map::new()).unwrap();
-    assert!(
-        s["tasks"][0]["prompt"]
-            .as_str()
-            .unwrap()
-            .contains("no answer was submitted")
-    );
+    let s = step::submit(&run, Some(&Map::new())).unwrap();
+    assert!(prompt_of(&s["tasks"][0]).contains("no answer was submitted"));
     assert_eq!(
         status::status(&run).unwrap()["tasks"][0]["retries"],
         json!(2)
     );
-    let s = step::submit(&run, &answers(json!({"lens:intent": "not json"}))).unwrap();
+    let s = step::submit(&run, Some(&answers(json!({"lens-intent": "not json"})))).unwrap();
     assert_eq!(
         (s["done"].clone(), s["verdict"].clone()),
         (json!(true), json!("INCOMPLETE"))
@@ -209,15 +153,10 @@ fn a_batch_verdict_missing_an_index_is_asked_again() {
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let lens = json!({"lens": "intent", "findings": [finding("Medium", 1), finding("Medium", 2)]});
-    step::submit(&run, &answers(json!({"lens:intent": lens}))).unwrap();
+    step::submit(&run, Some(&answers(json!({"lens-intent": lens})))).unwrap();
     let one = json!({"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "r"}]});
-    let s = step::submit(&run, &answers(json!({"verify-batch:0": one}))).unwrap();
-    assert!(
-        s["tasks"][0]["prompt"]
-            .as_str()
-            .unwrap()
-            .contains("no verdict for index 1")
-    );
+    let s = step::submit(&run, Some(&answers(json!({"verify-batch-0": one})))).unwrap();
+    assert!(prompt_of(&s["tasks"][0]).contains("no verdict for index 1"));
 }
 
 #[test]
@@ -226,8 +165,8 @@ fn an_answer_for_no_pending_task_is_refused_and_changes_nothing() {
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
-    let err = step::submit(&run, &answers(json!({"verify:7": {}}))).unwrap_err();
-    assert!(err.to_string().contains("verify:7"));
+    let err = step::submit(&run, Some(&answers(json!({"verify-7": {}})))).unwrap_err();
+    assert!(err.to_string().contains("verify-7"));
     assert_eq!(
         status::status(&run).unwrap()["tasks"][0]["retries"],
         json!(0)
@@ -242,7 +181,9 @@ fn a_lens_with_no_findings_and_a_diff_with_no_rust_both_approve() {
     step::start(&opts(repo.path(), out.path())).unwrap();
     let s = step::submit(
         &run,
-        &answers(json!({"lens:intent": {"lens": "intent", "findings": []}})),
+        Some(&answers(
+            json!({"lens-intent": {"lens": "intent", "findings": []}}),
+        )),
     )
     .unwrap();
     assert_eq!(s["verdict"], json!("Approve"));
