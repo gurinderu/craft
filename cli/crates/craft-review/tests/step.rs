@@ -67,7 +67,7 @@ fn a_full_loop_goes_lens_then_verify_then_done() {
         .unwrap()
         .to_owned();
     let run = Path::new(&run);
-    let lens = json!({"lens": "intent", "findings": [finding("High", 1), finding("Medium", 1), finding("Low", 1)]});
+    let lens = json!({"lens": "intent", "findings": [finding("High", 1), finding("Medium", 1), finding("Medium", 1), finding("Low", 1)]});
     // An agent's final text carrying JSON is read as that JSON.
     let s = step::submit(
         run,
@@ -100,7 +100,11 @@ fn a_full_loop_goes_lens_then_verify_then_done() {
         "an unreachable Medium is demoted: {report}"
     );
     assert!(
-        report.contains("3 finding(s) reported: 2 confirmed, 0 suspected, 1 refuted"),
+        report.contains("4 finding(s) reported: 2 confirmed, 0 suspected, 1 refuted, 1 unverified"),
+        "the Low went unverified: {report}"
+    );
+    assert!(
+        report.contains("1 Low/Info finding(s) NOT VERIFIED"),
         "{report}"
     );
     let st = status::status(run).unwrap();
@@ -110,6 +114,29 @@ fn a_full_loop_goes_lens_then_verify_then_done() {
     );
     let late = step::submit(run, Some(&Map::new())).unwrap_err();
     assert!(late.to_string().contains("is done"), "{late}");
+}
+
+#[test]
+fn a_run_of_low_and_info_findings_ends_unverified_with_no_verifier() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    let lens = json!({"lens": "intent", "findings": [finding("Low", 1), finding("Info", 1)]});
+    let s = step::submit(&run, Some(&answers(json!({"lens-intent": lens})))).unwrap();
+    assert_eq!(
+        (s["done"].clone(), s["verdict"].clone()),
+        (json!(true), json!("Approve"))
+    );
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    assert!(
+        report.contains("2 finding(s) reported: 0 confirmed, 0 suspected, 0 refuted, 2 unverified"),
+        "{report}"
+    );
+    assert!(
+        report.contains("2 Low/Info finding(s) NOT VERIFIED"),
+        "{report}"
+    );
 }
 
 #[test]

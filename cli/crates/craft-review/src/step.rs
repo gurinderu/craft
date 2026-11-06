@@ -194,7 +194,11 @@ fn advance(dir: &Path, run: &mut RunState) -> Result<()> {
             if run.findings.is_empty() {
                 return finish(dir, run, false);
             }
+            run.notes.extend(verify::skipped_note(run));
             run.tasks = verify::tasks(run)?;
+            if run.tasks.is_empty() {
+                return finish(dir, run, false);
+            }
             run.phase = Phase::Verify;
             Ok(())
         }

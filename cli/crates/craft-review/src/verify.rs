@@ -16,32 +16,53 @@ pub(crate) const CRITICAL_TIER_RULES: &[&str] = &[
     "ERR-002",
 ];
 
-/// Whether `f` gets a verifier of its own: Critical or High, or citing a rule that blocks on sight.
-pub(crate) fn alone(f: &Value) -> bool {
-    let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
-    let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
-    sev == "Critical" || sev == "High" || CRITICAL_TIER_RULES.contains(&rule)
+/// How a finding is verified, as `verifyTier` in `lib/review-verify.mjs` routes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Route {
+    /// A verifier of its own: Critical or High, or citing a rule that blocks on sight.
+    Individual,
+    /// One verifier judges a batch of them: Medium.
+    Batch,
+    /// No verifier: a Low or Info citing no rule that blocks on sight cannot move the verdict, so
+    /// it stays unverified.
+    Skip,
 }
 
-/// One verifier per finding [`alone`] picks, and one per batch of the rest.
+impl Route {
+    /// The route as the engines name it.
+    #[cfg(test)]
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Individual => "individual",
+            Self::Batch => "batch",
+            Self::Skip => "skip",
+        }
+    }
+}
+
+/// The route `f` takes: Critical and High alone, Medium batched, Low and Info skipped unless they
+/// cite a rule that blocks on sight.
+pub(crate) fn route(f: &Value) -> Route {
+    let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
+    let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
+    match sev {
+        "Critical" | "High" => Route::Individual,
+        "Medium" => Route::Batch,
+        _ if CRITICAL_TIER_RULES.contains(&rule) => Route::Individual,
+        _ => Route::Skip,
+    }
+}
+
+/// One verifier per finding routed alone, one per batch of the batched; none for the skipped.
 pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>> {
     let mut tasks = Vec::new();
     let mut rest = Vec::new();
     for (i, f) in run.findings.iter().enumerate() {
-        if !alone(f) {
-            rest.push(i);
-            continue;
+        match route(f) {
+            Route::Individual => tasks.push(individual(run, i, f)?),
+            Route::Batch => rest.push(i),
+            Route::Skip => {}
         }
-        let file = f.get("file").and_then(Value::as_str).unwrap_or("?");
-        let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
-        tasks.push(Task::new(
-            format!("verify-{i}"),
-            format!("verify:{file}:{line}"),
-            prompts::verify_prompt(&run.context, f)?,
-            VERIFY_MODEL,
-            content::schema("verdict")?,
-            TaskKind::Verify { finding: i },
-        ));
     }
     for (k, group) in rest.chunks(BATCH_SIZE).enumerate() {
         let findings: Vec<&Value> = group.iter().filter_map(|&i| run.findings.get(i)).collect();
@@ -61,6 +82,35 @@ pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>> {
         ));
     }
     Ok(tasks)
+}
+
+/// The verifier of finding `i` alone.
+fn individual(run: &RunState, i: usize, f: &Value) -> Result<Task> {
+    let file = f.get("file").and_then(Value::as_str).unwrap_or("?");
+    let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
+    Ok(Task::new(
+        format!("verify-{i}"),
+        format!("verify:{file}:{line}"),
+        prompts::verify_prompt(&run.context, f)?,
+        VERIFY_MODEL,
+        content::schema("verdict")?,
+        TaskKind::Verify { finding: i },
+    ))
+}
+
+/// The note a run carries when some findings were routed past verification, as the engine's log
+/// says it.
+pub(crate) fn skipped_note(run: &RunState) -> Option<String> {
+    let n = run
+        .findings
+        .iter()
+        .filter(|f| route(f) == Route::Skip)
+        .count();
+    (n > 0).then(|| {
+        format!(
+            "{n} Low/Info finding(s) NOT VERIFIED: no verifier was spent on them, since Low and Info cannot change the verdict either way; they are reported as unverified"
+        )
+    })
 }
 
 /// Each answered verifier's verdict onto its finding; a failed one leaves its findings unverified.

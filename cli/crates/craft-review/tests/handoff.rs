@@ -13,7 +13,7 @@ fn a_full_loop_reads_every_answer_from_its_file() {
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
-    let lens = json!({"lens": "intent", "findings": [finding("High", 1), finding("Low", 1)]});
+    let lens = json!({"lens": "intent", "findings": [finding("High", 1), finding("Medium", 1)]});
     write_answer(&s, "lens-intent", &lens.to_string());
     let s = step::submit(&run, None).unwrap();
     assert_eq!(ids(&s), ["verify-0", "verify-batch-0"]);
