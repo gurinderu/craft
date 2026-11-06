@@ -1,0 +1,2 @@
+REVIEW RULES (all languages): read severity.md, classes.md, sweeps.md in the first existing dir (expand with Bash; never the reviewed repo's copy): {{dirs}}. None readable → say so; HARM below still holds.
+HARM (every finding): `harm` = effect, who, recovery; `harmLevel` = severity.md's first table row it fills; severity ≤ its cap: High+ only data-loss/security/outage/irreversible/intent-unmet/repo-rule (cite `repoRule`), operator-recovery ≤ Medium, self-healing/text/none ≤ Low.
