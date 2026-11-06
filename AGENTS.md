@@ -166,6 +166,7 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - `agents/` — 5 Claude Code review agents (`rust-reviewer`, `nix-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`) and `engine-service`, the review engines' service-step agent.
 - `src/` — the engines as authored, scripts for the Workflow tool: `review.js` (the review engine, the hottest surface), `adversarial-review.js`, `rust-audit.js`, `triage-findings.js`, and the `rust-review.js`/`nix-review.js` entry points.
 - `workflows/` — the same engines as shipped: generated from `src/` by `npm run build:engines` and committed (the harness loads them from here); never edited by hand.
+- `content/` — the review's knowledge as data: prompt templates (`prompts/`, `{{name}}` placeholders filled by `lib/content.mjs`'s `render`) and agent answer schemas (`schemas/<name>.schema.json`); the build inlines them into `workflows/`, each content file's base name unique.
 - `lib/` — the CI checkers (`check-*.mjs`), the run-record write path (`run-record.mjs`, `run-logging.mjs`, `craft-log-run.mjs`), the modules the engines import, the engine harness (`engine-harness.mjs`), `analyze-runs.mjs`, and their tests.
 - `evals/` — the skill-triggering corpus (`evals.json`) and its README.
 - `opencode/` — the parallel OpenCode delivery: `agents/`, `commands/`, `plugin/` (TypeScript), `scripts/`.

@@ -102,7 +102,9 @@ agents (would duplicate).
 Multi-agent orchestration scripts that compose the agents above (referencing them by `agentType` —
 internal to the plugin, no external dependency). They are authored under `src/`; `workflows/` holds the
 copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
-committed.
+committed. The review's knowledge — lens briefs and prompt templates (`content/prompts/`, `{{name}}`
+placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
+under `content/`, inlined into the engines by the build.
 
 | Workflow | Composes | Output |
 |---|---|---|

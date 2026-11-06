@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdicts"
+  ],
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "description": "one entry per pair",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pair",
+          "same",
+          "violates",
+          "why"
+        ],
+        "properties": {
+          "pair": {
+            "type": "integer",
+            "description": "the PAIR number"
+          },
+          "same": {
+            "type": "boolean",
+            "description": "true only when the record and the finding are about the same defect"
+          },
+          "violates": {
+            "type": "boolean",
+            "description": "true only when the finding shows the code going against what the record settled; then same is false"
+          },
+          "why": {
+            "type": "string",
+            "description": "one line: what makes them the same, different, or the code against the record"
+          }
+        }
+      }
+    }
+  }
+}

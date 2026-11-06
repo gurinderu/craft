@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "groups"
+  ],
+  "properties": {
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "description": "each inner array = indices of findings that describe the SAME underlying defect; singletons omitted; empty if all distinct"
+    }
+  }
+}

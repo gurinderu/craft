@@ -1,0 +1,1 @@
+If `cargo mutants` is installed, you MAY run it time-boxed on the changed files to surface contracts no test would catch a regression on; skip silently if absent. A surviving mutant is a TEST finding at Low unless you name the defect it lets through and the harm of that defect (review-rules severity.md).
