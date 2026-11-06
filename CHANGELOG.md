@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.41.0](https://github.com/gurinderu/craft/compare/v0.40.1...v0.41.0) (2026-11-06)
+
+
+### Features
+
+* **cli:** scaffold the craft Rust CLI workspace ([#321](https://github.com/gurinderu/craft/issues/321)) ([0e1c558](https://github.com/gurinderu/craft/commit/0e1c5583906e1c2b2daec0d3278c8ee076d23298))
+* **cli:** the review step protocol and the cli-review workflow driver ([#323](https://github.com/gurinderu/craft/issues/323)) ([b1e6b11](https://github.com/gurinderu/craft/commit/b1e6b116fefaf98e0a8949439d79c81742520ea2))
+* **release:** build the craft CLI per release and fetch it in cli-review ([#324](https://github.com/gurinderu/craft/issues/324)) ([e589792](https://github.com/gurinderu/craft/commit/e589792d9f549f582151e6d7c992eb6ff9a59f3a))
+
 ## [0.40.1](https://github.com/gurinderu/craft/compare/v0.40.0...v0.40.1) (2026-11-06)
 
 
