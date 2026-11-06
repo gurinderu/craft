@@ -209,6 +209,16 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 a symlink `install.sh`). Single source of truth: the skills are not duplicated. The design spec
 that shaped this layer has been removed.
 
+## Rust CLI
+
+`cli/` is a Cargo workspace for `craft review` run from the terminal rather than from a harness:
+`bin/craft` (the command), `crates/craft-agent` (one agent run through a backend — the `claude`
+CLI today — and many under a concurrency cap), `crates/craft-review` (the review pipeline's
+skeleton: phases, agent specs, findings) and `crates/craft-tui` (progress as a phases → agents tree
+on a terminal, one line per event otherwise). The toolchain is pinned in `cli/rust-toolchain.toml`;
+CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, apart
+from `npm run gate`.
+
 ## Codex delivery
 
 `.codex-plugin/plugin.json` and the marketplace `.agents/plugins/marketplace.json` deliver the same

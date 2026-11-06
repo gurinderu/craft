@@ -1,0 +1,18 @@
+[package]
+name = "craft-tui"
+description = "Review progress in the terminal: a phases-to-agents tree with status, tokens and cost, or plain lines for CI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true
+tokio = { workspace = true, features = ["macros", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+
+[lints]
+workspace = true
