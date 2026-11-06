@@ -19,6 +19,7 @@ import { applyProjectRules } from '../lib/project-rule-apply.mjs'
 import { focusFilesArg, focusLine } from '../lib/focus-files.mjs'
 import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.mjs'
 import { ADVERSARIAL_EXTERNAL_LENSES, makeExternalSources } from '../lib/review-external-sources.mjs'
+import { READ_ONLY_AGENT_TYPE } from '../lib/read-only-agent.mjs'
 
 export const meta = {
   name: 'adversarial-review',
@@ -344,7 +345,7 @@ const [scoutRaw, warmupRaw] = await parallel([
    - medium: the categories plausibly in play.
    - large: all of them.
    Decide "in play" from the diff: payments/amounts/ledger -> money; async/threads/locks/transactions -> concurrency; input parsing/auth/tenancy -> security; loops/queries -> performance; always consider 'correctness' and 'errors'. Include 'complexity' whenever the diff is medium/large (it self-skips if the repo is not indexed).`,
-    { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
+    { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', agentType: READ_ONLY_AGENT_TYPE },
   ),
   () => work(
     `You are warming up the codebase-memory index for a review. Use ToolSearch to load the codebase-memory MCP tools.
@@ -779,7 +780,7 @@ Merge ONLY when confident the fix is literally the same change. Two different pr
 
 FINDINGS:
 ${keptIn.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (lenses: ${f.sources.join(',')}) — ${f.description}`).join('\n')}`,
-    { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low' },
+    { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low', agentType: READ_ONLY_AGENT_TYPE },
   ))
   // Model output: a live clusterer whose `clusters` is not an array merged nothing — say so, never throw.
   const clusters = Array.isArray(clusterer?.clusters) ? clusterer.clusters : []
