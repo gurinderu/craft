@@ -28,10 +28,12 @@
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
     "noUncheckedSideEffectImports": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true
   },
   "include": [
     "**/*.mjs",
+    "content-modules.d.ts",
     "../opencode/plugin/run-record.mjs",
     "../.dependency-cruiser.mjs"
   ],

@@ -1,0 +1,1 @@
+maintainability: dead code (deadnix), anti-idioms (statix), needless rec/with, over-abstraction (MNT-*). SEVERITY: Low (optional) by default; raise one only when you name a concrete harm it causes (review-rules severity.md).

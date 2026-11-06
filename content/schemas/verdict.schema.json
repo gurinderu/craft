@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "refuted",
+    "citedLineMatches",
+    "reachable",
+    "premiseSupported",
+    "reason"
+  ],
+  "properties": {
+    "refuted": {
+      "type": "boolean",
+      "description": "true if the finding does not hold up"
+    },
+    "citedLineMatches": {
+      "type": "boolean",
+      "description": "true if the cited file:line actually contains what the finding claims"
+    },
+    "reachable": {
+      "type": "boolean",
+      "description": "true if the path is reachable in production (not test/example-only)"
+    },
+    "premiseSupported": {
+      "type": "boolean",
+      "description": "true if the load-bearing premise is either self-contained at the cited line or actually shown by the code at whereChecked; false if it is an off-site claim with no evidence that checks out"
+    },
+    "harmSupported": {
+      "type": "boolean",
+      "description": "true only if the code shows the claimed harm (effect, who, recovery) as stated"
+    },
+    "confirmedHarmLevel": {
+      "type": "string",
+      "enum": [
+        "data-loss",
+        "security",
+        "outage",
+        "irreversible",
+        "intent-unmet",
+        "repo-rule",
+        "operator-recovery",
+        "self-healing",
+        "text",
+        "none"
+      ],
+      "description": "when several harms are listed: the worst listed one the code shows; omit otherwise"
+    },
+    "reason": {
+      "type": "string"
+    }
+  }
+}

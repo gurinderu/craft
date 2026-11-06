@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "provenance",
+    "failedChecks",
+    "carriedChecks",
+    "seedFindings",
+    "notes"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "unknown"
+      ]
+    },
+    "provenance": {
+      "type": "string",
+      "description": "e.g. \"build/test/clippy/fmt via CI #123; audit/deny local\""
+    },
+    "failedChecks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "carriedChecks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "red checks that are REAL but not attributable to this diff (pre-existing dependency advisories on a diff that touches no manifest). Reported, never gate-failing."
+    },
+    "seedFindings": {
+      "type": "array",
+      "items": {
+        "$ref": "finding-item.schema.json"
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

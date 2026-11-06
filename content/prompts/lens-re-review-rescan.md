@@ -1,0 +1,1 @@
+RE-REVIEW (full re-scan): review the WHOLE diff (base {{base}}...HEAD), not just the latest fixes — an earlier round may have missed a defect in code it did not touch. Prior findings are adjudicated separately and any you re-surface are de-duplicated downstream, so spend your effort on defects that are NOT already obviously known.

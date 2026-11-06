@@ -1,0 +1,1 @@
+STRICT MODE: apply the maintainability bar as a *presumption of block* — it overrides the harm cap for this lens: report each maintainability issue at Medium, and each is a blocker unless the author clearly justified it in the diff or brief. Be harsh, but stay grounded — every finding still needs a concrete cited file:line and survives refutation; do not invent issues.

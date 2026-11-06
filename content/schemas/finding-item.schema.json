@@ -1,0 +1,131 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "severity",
+    "title",
+    "file",
+    "line",
+    "why",
+    "fix",
+    "blastRadius",
+    "source",
+    "ruleId",
+    "whereChecked"
+  ],
+  "properties": {
+    "severity": {
+      "type": "string",
+      "enum": [
+        "Critical",
+        "High",
+        "Medium",
+        "Low",
+        "Info"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "description": "one-line what is wrong"
+    },
+    "file": {
+      "type": "string",
+      "description": "path; empty string if not applicable"
+    },
+    "line": {
+      "type": "integer",
+      "description": "1-based line; 0 if not applicable"
+    },
+    "why": {
+      "type": "string",
+      "description": "why it matters"
+    },
+    "whereChecked": {
+      "type": "string",
+      "description": "OFF-SITE EVIDENCE: the file:line you actually opened to establish a load-bearing premise that lives OUTSIDE the cited defect site — a dependency's behaviour, reachability from an entry point, the absence of a guard in a caller, what a sibling path does. Several may be comma-separated, each with a few words on what it shows. Empty string ONLY when the finding is fully self-contained at the cited file:line and rests on no off-site claim"
+    },
+    "fix": {
+      "type": "string",
+      "description": "direction of the fix"
+    },
+    "blastRadius": {
+      "type": "string",
+      "description": "callers affected / breaking-change note; empty if n/a"
+    },
+    "source": {
+      "type": "string",
+      "description": "lens name or tool name that produced this"
+    },
+    "ruleId": {
+      "type": "string",
+      "description": "catalog rule ID from the active profile's rules.md (e.g. \"CON-003\" for rust, \"PUR-001\" for nix) if the finding maps to one; empty string otherwise"
+    },
+    "toolRule": {
+      "type": "string",
+      "description": "gate seeds only: the tool's own rule name copied from the tool output line that names it (clippy lint \"clippy::needless_pass_by_value\", semgrep rule id, statix code, semver-checks check name) — never from memory; omit when the output names none or the finding is not a tool's"
+    },
+    "fp": {
+      "type": "string",
+      "description": "line-tolerant fingerprint; empty if not from a ledger"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "enclosing fn/type name; empty if unknown"
+    },
+    "tier": {
+      "type": "string",
+      "description": "confirmed|suspected|unverified|refuted; empty if n/a"
+    },
+    "disposition": {
+      "type": "string",
+      "description": "open|closed|rejected|justified|deferred|covered; empty if n/a"
+    },
+    "deletionOrRecoveryPath": {
+      "type": "boolean",
+      "description": "reconciler and failure-windows lenses only: true when the defect sits on a deletion or recovery path (finalizer removal, teardown, a delete handler, crash or partial-failure recovery); omit otherwise"
+    },
+    "externalSystem": {
+      "type": "string",
+      "description": "the external system (another project's controller, API server or service, not a library dependency) whose behaviour the finding's premise rests on, by its name; omit when none"
+    },
+    "harm": {
+      "type": "string",
+      "description": "the harm this finding names: its effect, who is affected, and how they recover (by itself, by retry, by an operator's hand, not at all)"
+    },
+    "harmLevel": {
+      "type": "string",
+      "enum": [
+        "data-loss",
+        "security",
+        "outage",
+        "irreversible",
+        "intent-unmet",
+        "repo-rule",
+        "operator-recovery",
+        "self-healing",
+        "text",
+        "none"
+      ],
+      "description": "the `harmLevel` column of the first row of the review-rules severity.md table (read top down, worst first) the harm honestly fills; the engine caps severity at that row's ceiling"
+    },
+    "repoRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "text"
+      ],
+      "description": "harmLevel repo-rule only: the reviewed repository's written rule this finding breaks — omit otherwise",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "the repository file that states the rule (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, a documented convention), as a path from the repo root"
+        },
+        "text": {
+          "type": "string",
+          "description": "the rule, quoted from that file"
+        }
+      }
+    }
+  }
+}

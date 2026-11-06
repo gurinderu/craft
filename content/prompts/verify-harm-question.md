@@ -1,0 +1,1 @@
+harmSupported: does the code show the FIRST claimed harm — its effect, who is affected, and the recovery — as stated? If several are listed and a later one holds instead, set harmSupported=true and confirmedHarmLevel to the worst listed one that holds. false when no claim holds or none is listed; never name a level that is not listed.

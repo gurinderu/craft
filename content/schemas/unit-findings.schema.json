@@ -1,0 +1,69 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lens",
+    "findings"
+  ],
+  "properties": {
+    "lens": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "finding-item.schema.json"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "unit",
+          "symbol",
+          "path",
+          "ask",
+          "findingTitle",
+          "findingFile",
+          "blocking",
+          "answered",
+          "answer"
+        ],
+        "properties": {
+          "unit": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "ask": {
+            "type": "string"
+          },
+          "findingTitle": {
+            "type": "string",
+            "description": "title of the finding that depends on the answer; \"\" if none"
+          },
+          "findingFile": {
+            "type": "string",
+            "description": "file of the finding that depends on the answer; \"\" if none"
+          },
+          "blocking": {
+            "type": "boolean",
+            "description": "true if written to the channel and waited on"
+          },
+          "answered": {
+            "type": "boolean"
+          },
+          "answer": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lens",
+    "findings"
+  ],
+  "properties": {
+    "lens": {
+      "type": "string"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "finding-item.schema.json"
+      }
+    }
+  }
+}
