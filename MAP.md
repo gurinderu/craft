@@ -92,6 +92,7 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 | `rust-architecture-reviewer` | whole crate/module dependency graph audit | `rust-architecture-review` |
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |
+| `engine-service` | the `review` and `adversarial-review` engines' service steps (reading the diff, checkpoints and the run record, preparing external sources); defined with `omitClaudeMd: true`, so that it is not handed the project's instructions; not for review judgement | — |
 
 clippy/test/coverage stay as commands inside `rust-reviewer` / the testing tooling — not separate
 agents (would duplicate).
