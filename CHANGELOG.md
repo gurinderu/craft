@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.1](https://github.com/gurinderu/craft/compare/v0.40.0...v0.40.1) (2026-11-06)
+
+
+### Performance Improvements
+
+* **review:** service steps run on a minimal craft agent without project instructions ([#318](https://github.com/gurinderu/craft/issues/318)) ([406292a](https://github.com/gurinderu/craft/commit/406292a4b05a9f522dd0d25a82a85a39c0c98a4b))
+
 ## [0.40.0](https://github.com/gurinderu/craft/compare/v0.39.1...v0.40.0) (2026-11-04)
 
 
