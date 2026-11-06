@@ -66,6 +66,7 @@ mod unix {
     use std::time::{Duration, Instant};
 
     use nix::sys::signal::{Signal, killpg};
+    use nix::sys::wait::{WaitPidFlag, waitpid};
     use nix::unistd::Pid;
 
     /// How long the group has between SIGTERM and SIGKILL.
@@ -87,6 +88,13 @@ mod unix {
         let thread = std::thread::spawn(move || {
             let deadline = Instant::now() + GRACE;
             while Instant::now() < deadline {
+                // The leader is craft's own child, and until reaped it stays a zombie that still
+                // counts as a member, so a group that obeyed SIGTERM would look alive for the whole
+                // grace: reap it here. It is already reaped (ECHILD) when its run ended normally;
+                // tokio's orphan queue, which holds it after a stop, drops a child found gone.
+                // Reaping by pid shares the reuse caveat above: only a new child of craft could
+                // take that pid within the grace.
+                let _reaped = waitpid(pgid, Some(WaitPidFlag::WNOHANG));
                 // Signal 0 only asks whether the group still has a member.
                 if killpg(pgid, None).is_err() {
                     return;

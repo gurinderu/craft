@@ -1,9 +1,9 @@
 //! A stopping signal to craft's group during a run, end to end: the built `craft` against a
-//! stand-in `claude` that starts a grandchild. A terminal's Ctrl-C (SIGINT), `kill %1` or a
-//! supervisor (SIGTERM) and a closed terminal (SIGHUP) all signal craft's whole group; the agent
-//! runs in a group of its own, so only craft hears it, stops the run with 128 + the signal's
-//! number, and takes the agent and its grandchild down with it before it exits — even when they
-//! ignore SIGTERM and only the SIGKILL after the grace ends them.
+//! stand-in `claude` that starts a grandchild. A terminal's Ctrl-C (SIGINT) and `Ctrl-\` (SIGQUIT),
+//! `kill %1` or a supervisor (SIGTERM) and a closed terminal (SIGHUP) all signal craft's whole
+//! group; the agent runs in a group of its own, so only craft hears it, stops the run with 128 +
+//! the signal's number, and takes the agent and its grandchild down with it before it exits — even
+//! when they ignore SIGTERM and only the SIGKILL after the grace ends them.
 #![cfg(target_os = "linux")]
 
 use std::os::unix::fs::PermissionsExt;
@@ -49,8 +49,12 @@ fn wait_until(what: &str, within: Duration, mut done: impl FnMut() -> bool) {
 }
 
 /// Runs craft as the leader of a group, as a shell's job is; once the agent is up, sends `signal`
-/// to the whole group, as a terminal or `kill %1` does, and returns once craft has exited.
-fn signal_craft(signal: &str, prelude: &str) -> std::io::Result<(tempfile::TempDir, Output)> {
+/// to the whole group, as a terminal or `kill %1` does, and returns once craft has exited, with
+/// how long that took after the signal.
+fn signal_craft(
+    signal: &str,
+    prelude: &str,
+) -> std::io::Result<(tempfile::TempDir, Output, Duration)> {
     let dir = tempfile::tempdir()?;
     let claude = stand_in(dir.path(), prelude)?;
     let mut craft = Command::new(env!("CARGO_BIN_EXE_craft"))
@@ -67,6 +71,7 @@ fn signal_craft(signal: &str, prelude: &str) -> std::io::Result<(tempfile::TempD
     wait_until("the agent started", Duration::from_secs(10), || {
         pid_file.exists()
     });
+    let signalled = Instant::now();
     let sent = Command::new("kill")
         .args([&format!("-{signal}"), "--", &format!("-{}", craft.id())])
         .status()?;
@@ -76,7 +81,8 @@ fn signal_craft(signal: &str, prelude: &str) -> std::io::Result<(tempfile::TempD
     wait_until("craft exited", Duration::from_secs(10), || {
         craft.try_wait().is_ok_and(|s| s.is_some())
     });
-    Ok((dir, craft.wait_with_output()?))
+    let took = signalled.elapsed();
+    Ok((dir, craft.wait_with_output()?, took))
 }
 
 /// craft exited with `code`, and the agent and its grandchild were gone (or zombies) by then.
@@ -104,24 +110,32 @@ const IGNORES_SIGTERM: &str = "trap '' TERM";
 
 #[test]
 fn ctrl_c_in_the_terminal_stops_the_run_as_interrupted() {
-    let (dir, out) = signal_craft("INT", "").unwrap();
+    let (dir, out, took) = signal_craft("INT", "").unwrap();
     assert_stopped(dir.path(), &out, 130);
+    // An agent that obeys SIGTERM is not waited on for the two-second grace.
+    assert!(took < Duration::from_secs(1), "took {took:?}");
 }
 
 #[test]
 fn ctrl_c_outlasts_an_agent_that_ignores_sigterm() {
-    let (dir, out) = signal_craft("INT", IGNORES_SIGTERM).unwrap();
+    let (dir, out, _took) = signal_craft("INT", IGNORES_SIGTERM).unwrap();
     assert_stopped(dir.path(), &out, 130);
 }
 
 #[test]
 fn sigterm_stops_the_run_and_outlasts_an_agent_that_ignores_it() {
-    let (dir, out) = signal_craft("TERM", IGNORES_SIGTERM).unwrap();
+    let (dir, out, _took) = signal_craft("TERM", IGNORES_SIGTERM).unwrap();
     assert_stopped(dir.path(), &out, 143);
 }
 
 #[test]
 fn sighup_stops_the_run() {
-    let (dir, out) = signal_craft("HUP", "").unwrap();
+    let (dir, out, _took) = signal_craft("HUP", "").unwrap();
     assert_stopped(dir.path(), &out, 129);
+}
+
+#[test]
+fn ctrl_backslash_stops_the_run_as_quit() {
+    let (dir, out, _took) = signal_craft("QUIT", "").unwrap();
+    assert_stopped(dir.path(), &out, 131);
 }

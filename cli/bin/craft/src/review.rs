@@ -28,6 +28,9 @@ const TERMINATED: u8 = 143;
 /// The exit status of a run stopped by SIGHUP: 128 + 1.
 #[cfg(unix)]
 const HUNG_UP: u8 = 129;
+/// The exit status of a run stopped by SIGQUIT (`Ctrl-\`): 128 + 3.
+#[cfg(unix)]
+const QUIT: u8 = 131;
 
 pub async fn run(args: ReviewArgs) -> Result<ExitCode> {
     let cwd = args
@@ -151,8 +154,8 @@ async fn run_one<B: AgentBackend + 'static>(
     }
 }
 
-/// Resolves when the run is to stop — `q` or Ctrl-C in the live view, or SIGINT, SIGTERM or SIGHUP
-/// — with the exit status to report. The plain view leaves the terminal cooked, so Ctrl-C
+/// Resolves when the run is to stop — `q` or Ctrl-C in the live view, or SIGINT, SIGTERM, SIGHUP or
+/// SIGQUIT — with the exit status to report. The plain view leaves the terminal cooked, so Ctrl-C
 /// arrives as the signal — as it also does after the live view has ended on its own (with an
 /// error, say), which is why the signals are still awaited then. The agents run in process groups
 /// of their own, so a signal to craft's group reaches craft alone.
@@ -195,11 +198,13 @@ fn stop_signal() -> impl Future<Output = Option<u8>> {
     let mut interrupt = signal(SignalKind::interrupt()).ok();
     let mut terminate = signal(SignalKind::terminate()).ok();
     let mut hangup = signal(SignalKind::hangup()).ok();
+    let mut quit = signal(SignalKind::quit()).ok();
     async move {
         tokio::select! {
             Some(()) = arrival(&mut interrupt) => Some(INTERRUPTED),
             Some(()) = arrival(&mut terminate) => Some(TERMINATED),
             Some(()) = arrival(&mut hangup) => Some(HUNG_UP),
+            Some(()) = arrival(&mut quit) => Some(QUIT),
             else => None,
         }
     }
