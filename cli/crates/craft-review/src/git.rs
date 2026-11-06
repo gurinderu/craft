@@ -15,6 +15,11 @@ pub struct Diff {
     pub base: String,
     /// The commit `git merge-base <base> HEAD` names.
     pub merge_base: String,
+    /// The commit `HEAD` named when the run started.
+    pub head: String,
+    /// Whether tracked files differed from `HEAD` when the run started (untracked ones aside): the
+    /// review then read uncommitted work, which `head` alone does not name.
+    pub dirty: bool,
     /// Every changed path, repository-relative.
     pub files: Vec<String>,
     /// `git diff --stat`'s summary.
@@ -90,6 +95,10 @@ pub fn read_diff(cwd: &Path, base: Option<&str>) -> Result<Diff> {
         bail!("the base {base} is not a commit in {}", cwd.display());
     }
     let merge_base = git(cwd, &["merge-base", &base, "HEAD"])?.trim().to_owned();
+    let head = git(cwd, &["rev-parse", "HEAD"])?.trim().to_owned();
+    let dirty = !git(cwd, &["status", "--porcelain", "--untracked-files=no"])?
+        .trim()
+        .is_empty();
     let files = git(cwd, &["diff", "--name-only", "--merge-base", &base])?
         .lines()
         .map(str::to_owned)
@@ -99,6 +108,8 @@ pub fn read_diff(cwd: &Path, base: Option<&str>) -> Result<Diff> {
     Ok(Diff {
         base,
         merge_base,
+        head,
+        dirty,
         files,
         stat: stat.trim_end().to_owned(),
         log: log.trim().to_owned(),

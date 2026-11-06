@@ -6,60 +6,16 @@ use serde_json::Value;
 use crate::prompts::LENS;
 use crate::state::RunState;
 
-/// Where a finding stands after verification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tier {
-    /// The verifier found the claim at the cited line and its premise held.
-    Confirmed,
-    /// The claim stands at the line but its off-site premise was not shown.
-    Suspected,
-    Refuted,
-    /// No verdict came back.
-    Unverified,
-}
+pub use crate::settle::Tier;
+use crate::settle::{settle, tier};
 
-/// The tier a verdict gives its finding, as `votePanel` in `lib/review-verify.mjs` decides it
-/// for a panel of one.
-#[must_use]
-pub fn tier(vote: Option<&Value>) -> Tier {
-    let Some(v) = vote else {
-        return Tier::Unverified;
-    };
-    let says = |k: &str| v.get(k).and_then(Value::as_bool);
-    match (
-        says("refuted"),
-        says("citedLineMatches"),
-        says("premiseSupported"),
-    ) {
-        (Some(false), Some(true), Some(true)) => Tier::Confirmed,
-        (Some(false), Some(true), Some(false)) => Tier::Suspected,
-        (Some(_), Some(_), Some(_)) => Tier::Refuted,
-        _ => Tier::Unverified,
-    }
-}
-
-/// A finding's severity, one notch lower when the verifier found its path unreachable in
-/// production, as `DEMOTE` in `lib/review-verify.mjs`.
-#[must_use]
-pub fn severity(finding: &Value, vote: Option<&Value>) -> String {
-    let s = finding
-        .get("severity")
-        .and_then(Value::as_str)
-        .unwrap_or("Info");
-    let unreachable = vote
-        .and_then(|v| v.get("reachable"))
-        .and_then(Value::as_bool)
-        == Some(false);
-    if !unreachable {
-        return s.to_owned();
-    }
-    match s {
-        "Critical" => "High",
-        "High" => "Medium",
-        "Medium" => "Low",
-        _ => "Info",
-    }
-    .to_owned()
+/// Each finding as its verdict settled it: its tier and its final severity, capped by its harm.
+fn settled(state: &RunState) -> impl Iterator<Item = (Tier, Value)> + '_ {
+    state
+        .findings
+        .iter()
+        .enumerate()
+        .map(|(i, f)| settle(f, state.votes.get(i).and_then(Option::as_ref)))
 }
 
 /// How many findings are confirmed, suspected, refuted and unverified, in that order.
@@ -89,11 +45,10 @@ fn gating(severity: &str) -> bool {
 #[must_use]
 pub fn verdict(state: &RunState, lens_failed: bool) -> &'static str {
     let mut worst = "Approve";
-    for (i, f) in state.findings.iter().enumerate() {
-        let vote = state.votes.get(i).and_then(Option::as_ref);
-        let sev = severity(f, vote);
-        match tier(vote) {
-            Tier::Unverified if gating(&sev) => return "INCOMPLETE",
+    for (t, f) in settled(state) {
+        let sev = field(&f, "severity");
+        match t {
+            Tier::Unverified if gating(sev) => return "INCOMPLETE",
             Tier::Confirmed if sev == "Critical" || sev == "High" => worst = "Block",
             Tier::Confirmed if sev == "Medium" && worst == "Approve" => worst = "Warning",
             Tier::Confirmed | Tier::Suspected | Tier::Refuted | Tier::Unverified => {}
@@ -111,25 +66,31 @@ fn field<'a>(v: &'a Value, k: &str) -> &'a str {
 pub fn markdown(state: &RunState, verdict: &str) -> String {
     let d = &state.diff;
     let mut out = format!("# craft review: {verdict}\n\n");
-    let short = d.merge_base.get(..12).unwrap_or(&d.merge_base);
+    let short = |sha: &str| sha.get(..12).unwrap_or(sha).to_owned();
+    let tree = if d.dirty {
+        ", with uncommitted changes"
+    } else {
+        ", clean tree"
+    };
     out.push_str(&format!(
-        "Base `{}` (merge-base `{short}`), {} changed file(s), {} Rust; lens: Rust {LENS}.\n\n",
+        "Head `{}`{tree}; base `{}` (merge-base `{}`), {} changed file(s), {} Rust; lens: Rust {LENS}.\n\n",
+        d.head,
         d.base,
+        short(&d.merge_base),
         d.files.len(),
         state.rust_files.len()
     ));
     let mut confirmed = String::new();
-    for (i, f) in state.findings.iter().enumerate() {
+    for (i, (t, f)) in settled(state).enumerate() {
         let vote = state.votes.get(i).and_then(Option::as_ref);
-        let t = tier(vote);
         if t == Tier::Confirmed {
             let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
             confirmed.push_str(&format!(
                 "- **{}** `{}:{line}` — {}\n  - Why: {}\n  - Verifier: {}\n",
-                severity(f, vote),
-                field(f, "file"),
-                field(f, "title"),
-                field(f, "why").replace('\n', " "),
+                field(&f, "severity"),
+                field(&f, "file"),
+                field(&f, "title"),
+                field(&f, "why").replace('\n', " "),
                 vote.map_or("", |v| field(v, "reason")).replace('\n', " "),
             ));
         }

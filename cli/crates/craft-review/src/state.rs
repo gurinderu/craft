@@ -11,7 +11,7 @@ use crate::git::Diff;
 use crate::prompts::PromptContext;
 
 /// The state file's format; a run written by another format is refused, not misread.
-pub const STATE_VERSION: u32 = 2;
+pub const STATE_VERSION: u32 = 3;
 /// How many times an invalid or missing answer is asked for again before its task fails.
 pub const MAX_RETRIES: u32 = 2;
 

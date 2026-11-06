@@ -32,8 +32,8 @@ pub struct StartOptions {
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
 ///
 /// # Errors
-/// When the repository or base cannot be read, the run directory holds a run already, or the
-/// state cannot be written.
+/// When the repository or base cannot be read, the run directory holds a run already or a
+/// non-empty `tasks/` or `answers/`, or the state cannot be written.
 pub fn start(opts: &StartOptions) -> Result<Value> {
     let cwd = opts
         .cwd
@@ -43,6 +43,12 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
     let dir = &opts.run_dir;
     if state::state_path(dir).exists() {
         bail!("{} holds a run already", dir.display());
+    }
+    // A leftover task or answer file would be read as this run's.
+    for sub in [handoff::tasks_dir(dir), handoff::answers_dir(dir)] {
+        if sub.read_dir().is_ok_and(|mut d| d.next().is_some()) {
+            bail!("{} holds files of another run", sub.display());
+        }
     }
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let context = PromptContext {

@@ -24,7 +24,7 @@ pub fn status(dir: &Path) -> Result<Value> {
         .collect();
     let mut s = json!({
         "run": dir.display().to_string(), "phase": run.phase, "done": run.phase == Phase::Done,
-        "base": run.diff.base, "mergeBase": run.diff.merge_base,
+        "base": run.diff.base, "mergeBase": run.diff.merge_base, "head": run.diff.head, "dirty": run.diff.dirty,
         "files": run.diff.files.len(), "rustFiles": run.rust_files.len(),
         "findings": run.findings.len(),
         "tiers": {"confirmed": confirmed, "suspected": suspected, "refuted": refuted, "unverified": unverified},

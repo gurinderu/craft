@@ -5,8 +5,12 @@
 pub mod content;
 pub mod git;
 pub mod handoff;
+mod harm;
+#[cfg(test)]
+mod parity;
 pub mod prompts;
 pub mod report;
+pub mod settle;
 pub mod state;
 pub mod status;
 pub mod step;

@@ -9,21 +9,22 @@ use crate::state::{RunState, Task, TaskKind, TaskState};
 
 const VERIFY_MODEL: &str = "sonnet";
 /// How many findings one batch verifier judges, as `BATCH_SIZE` in `lib/review-verify.mjs`.
-const BATCH_SIZE: usize = 6;
+pub(crate) const BATCH_SIZE: usize = 6;
 /// Rules that block on sight: a finding citing one is verified on its own whatever its severity.
-const CRITICAL_TIER_RULES: &[&str] = &[
+pub(crate) const CRITICAL_TIER_RULES: &[&str] = &[
     "SAF-001", "SAF-002", "SAF-003", "SAF-004", "SAF-005", "SAF-006", "SAF-008", "ERR-001",
     "ERR-002",
 ];
 
-/// One verifier per Critical or High finding (or one citing a blocking rule), and one per batch of
-/// the rest.
+/// Whether `f` gets a verifier of its own: Critical or High, or citing a rule that blocks on sight.
+pub(crate) fn alone(f: &Value) -> bool {
+    let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
+    let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
+    sev == "Critical" || sev == "High" || CRITICAL_TIER_RULES.contains(&rule)
+}
+
+/// One verifier per finding [`alone`] picks, and one per batch of the rest.
 pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>> {
-    let alone = |f: &Value| {
-        let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
-        let rule = f.get("ruleId").and_then(Value::as_str).unwrap_or("");
-        sev == "Critical" || sev == "High" || CRITICAL_TIER_RULES.contains(&rule)
-    };
     let mut tasks = Vec::new();
     let mut rest = Vec::new();
     for (i, f) in run.findings.iter().enumerate() {
