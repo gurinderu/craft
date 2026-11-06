@@ -16,6 +16,7 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
+use crate::process_group::{self, GroupGuard};
 use crate::{AgentBackend, AgentError, AgentReply, AgentRequest, reply};
 
 /// Runs agents through the `claude` CLI.
@@ -75,18 +76,21 @@ impl ClaudeCode {
     }
 
     async fn spawn(&self, request: &AgentRequest) -> Result<std::process::Output, AgentError> {
-        let mut child = Command::new(&self.command)
+        let mut command = Command::new(&self.command);
+        command
             .args(self.argv(request))
             .current_dir(&request.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|source| AgentError::Spawn {
-                command: self.command.display().to_string(),
-                source,
-            })?;
+            .stderr(Stdio::piped());
+        process_group::isolate(&mut command);
+        let mut child = command.spawn().map_err(|source| AgentError::Spawn {
+            command: self.command.display().to_string(),
+            source,
+        })?;
+        // Lives until this future ends or is dropped (a timeout, a stop): then the child and all
+        // it started are stopped.
+        let _group = GroupGuard::new(child.id());
         if let Some(mut stdin) = child.stdin.take() {
             // A child that exits without reading its prompt breaks the pipe; its exit status and
             // stderr, read below, say why, so the broken pipe is not the error reported.

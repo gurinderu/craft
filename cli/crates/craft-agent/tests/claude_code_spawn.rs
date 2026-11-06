@@ -1,15 +1,12 @@
 //! The claude-code backend against a stand-in `claude`: a shell script that answers with the real
-//! reply fixture, or fails, or hangs, or is stopped.
+//! reply fixture, or fails, or hangs. What a stop leaves behind: `claude_code_stop.rs`.
 
-use std::num::NonZeroUsize;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use craft_agent::anthropic_api::AnthropicApi;
 use craft_agent::claude_code::ClaudeCode;
-use craft_agent::runner::{Batch, run_until};
 use craft_agent::{AgentBackend, AgentError, AgentRequest};
 
 /// Held by each test for its whole run: a script written while another test forks keeps a write
@@ -107,67 +104,6 @@ async fn a_child_that_exits_unread_still_reports_its_exit_and_stderr() {
         matches!(err, AgentError::Exit { code: Some(4), ref stderr } if stderr == "nope"),
         "{err}"
     );
-}
-
-#[tokio::test]
-async fn a_stop_kills_the_running_agent_and_returns_promptly() {
-    let _serial = SERIAL.lock().await;
-    let dir = tempfile::tempdir().unwrap();
-    let pid_file = dir.path().join("pid");
-    let cmd = script(
-        dir.path(),
-        "echo $$ > pid.tmp; mv pid.tmp pid; exec sleep 30",
-    )
-    .unwrap();
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let stop = {
-        let pid_file = pid_file.clone();
-        async move {
-            while !pid_file.exists() {
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        }
-    };
-    let began = Instant::now();
-    let batch = run_until(
-        Arc::new(backend(cmd, Duration::from_secs(60))),
-        vec![request(dir.path())],
-        NonZeroUsize::MIN,
-        tx,
-        stop,
-    )
-    .await;
-    assert!(
-        began.elapsed() < Duration::from_secs(10),
-        "{:?}",
-        began.elapsed()
-    );
-    assert!(
-        matches!(batch, Batch::Stopped(ref slots) if slots.len() == 1 && slots[0].is_none()),
-        "{batch:?}"
-    );
-    let pid = std::fs::read_to_string(&pid_file).unwrap();
-    let stat = PathBuf::from(format!("/proc/{}/stat", pid.trim()));
-    // Killed: gone, or a zombie until tokio reaps it.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        match std::fs::read_to_string(&stat) {
-            Err(_) => break,
-            Ok(s)
-                if s.rsplit(')')
-                    .next()
-                    .unwrap_or("")
-                    .trim_start()
-                    .starts_with('Z') =>
-            {
-                break;
-            }
-            Ok(s) => {
-                assert!(Instant::now() < deadline, "still running: {s}");
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        }
-    }
 }
 
 #[tokio::test]

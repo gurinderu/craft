@@ -55,7 +55,8 @@ where
 
 /// [`run_all`], cut short when `stop` resolves first: every run still going is cancelled and
 /// awaited before this returns, so a backend's resources are dropped by then — the `claude-code`
-/// backend's subprocesses are killed (`kill_on_drop`).
+/// backend's subprocess and the processes it started are sent SIGTERM, then SIGKILL after a short
+/// grace (on unix; elsewhere only the subprocess itself is killed).
 ///
 /// # Panics
 /// Re-raises a panic from a backend's run.

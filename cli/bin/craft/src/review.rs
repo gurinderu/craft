@@ -140,22 +140,32 @@ async fn run_one<B: AgentBackend + 'static>(
     }
 }
 
-/// Resolves when the viewer stops the run: `q` or Ctrl-C in the live view, or SIGINT (the plain
-/// view leaves the terminal cooked, so Ctrl-C arrives as the signal). Never resolves once the
-/// view has ended on its own.
+/// Resolves when the viewer stops the run: `q` or Ctrl-C in the live view, or SIGINT. The plain
+/// view leaves the terminal cooked, so Ctrl-C arrives as the signal — as it also does after the
+/// live view has ended on its own (with an error, say), which is why the signal is still awaited
+/// then. The agents run in process groups of their own, so a terminal's SIGINT reaches craft alone.
 async fn stopped(from_view: oneshot::Receiver<()>) {
+    stopped_by(from_view, tokio::signal::ctrl_c()).await;
+}
+
+async fn stopped_by(
+    from_view: oneshot::Receiver<()>,
+    interrupt: impl Future<Output = std::io::Result<()>>,
+) {
+    let interrupt = async {
+        if interrupt.await.is_err() {
+            // No handler, no signal to wait for: only the view can stop the run.
+            std::future::pending::<()>().await;
+        }
+    };
+    let mut interrupt = std::pin::pin!(interrupt);
     tokio::select! {
         sent = from_view => {
             if sent.is_err() {
-                std::future::pending::<()>().await;
+                interrupt.await;
             }
         }
-        signal = tokio::signal::ctrl_c() => {
-            if signal.is_err() {
-                // No handler, no signal to wait for: only the view can stop the run.
-                std::future::pending::<()>().await;
-            }
-        }
+        () = &mut interrupt => {}
     }
 }
 
@@ -217,5 +227,36 @@ fn write_result(out: Option<&Path>, result: &serde_json::Value) -> Result<()> {
             writeln!(stdout, "{text}")?;
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn an_interrupt_still_stops_the_run_after_the_view_ended() {
+        let (stop_tx, stop_rx) = oneshot::channel::<()>();
+        drop(stop_tx);
+        let (signal_tx, signal_rx) = oneshot::channel::<()>();
+        let stop = tokio::spawn(stopped_by(stop_rx, async move {
+            signal_rx.await.map_err(std::io::Error::other)
+        }));
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(!stop.is_finished(), "stopped with no interrupt");
+        signal_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), stop)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_view_stops_the_run() {
+        let (stop_tx, stop_rx) = oneshot::channel();
+        stop_tx.send(()).unwrap();
+        stopped_by(stop_rx, std::future::pending()).await;
     }
 }
