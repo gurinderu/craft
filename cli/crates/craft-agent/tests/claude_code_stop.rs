@@ -1,5 +1,5 @@
-//! A stopped or timed-out claude-code run takes everything its subprocess started with it: a
-//! stand-in `claude` starts a grandchild, and both must be gone soon after.
+//! A stopped or timed-out claude-code run takes its subprocess's process group with it: a
+//! stand-in `claude` starts a grandchild in that group, and both must be gone soon after.
 #![cfg(target_os = "linux")]
 
 use std::num::NonZeroUsize;

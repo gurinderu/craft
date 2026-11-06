@@ -1,19 +1,23 @@
-//! A terminal's Ctrl-C during a run, end to end: the built `craft` against a stand-in `claude`
-//! that starts a grandchild. The terminal signals its whole foreground group; the agent runs in a
-//! group of its own, so only craft hears it, stops the run as interrupted (130), and takes the
-//! agent and what it started down with it.
+//! A stopping signal to craft's group during a run, end to end: the built `craft` against a
+//! stand-in `claude` that starts a grandchild. A terminal's Ctrl-C (SIGINT), `kill %1` or a
+//! supervisor (SIGTERM) and a closed terminal (SIGHUP) all signal craft's whole group; the agent
+//! runs in a group of its own, so only craft hears it, stops the run with 128 + the signal's
+//! number, and takes the agent and its grandchild down with it before it exits — even when they
+//! ignore SIGTERM and only the SIGKILL after the grace ends them.
 #![cfg(target_os = "linux")]
 
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-fn stand_in(dir: &Path) -> std::io::Result<PathBuf> {
+/// Starts a grandchild and records both pids, the child's last; `prelude` runs first.
+fn stand_in(dir: &Path, prelude: &str) -> std::io::Result<PathBuf> {
     let path = dir.join("claude");
-    let body =
-        "#!/bin/sh\nsleep 300 &\necho $! > grandchild\necho $$ > pid.tmp; mv pid.tmp pid\nwait\n";
+    let body = format!(
+        "#!/bin/sh\n{prelude}\nsleep 300 &\necho $! > grandchild\necho $$ > pid.tmp; mv pid.tmp pid\nwait\n"
+    );
     std::fs::write(&path, body)?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
     Ok(path)
@@ -44,11 +48,11 @@ fn wait_until(what: &str, within: Duration, mut done: impl FnMut() -> bool) {
     }
 }
 
-#[test]
-fn ctrl_c_in_the_terminal_stops_the_run_as_interrupted() {
-    let dir = tempfile::tempdir().unwrap();
-    let claude = stand_in(dir.path()).unwrap();
-    // craft leads a group, as a shell's foreground job does.
+/// Runs craft as the leader of a group, as a shell's job is; once the agent is up, sends `signal`
+/// to the whole group, as a terminal or `kill %1` does, and returns once craft has exited.
+fn signal_craft(signal: &str, prelude: &str) -> std::io::Result<(tempfile::TempDir, Output)> {
+    let dir = tempfile::tempdir()?;
+    let claude = stand_in(dir.path(), prelude)?;
     let mut craft = Command::new(env!("CARGO_BIN_EXE_craft"))
         .args(["review", "--plain", "--cwd"])
         .arg(dir.path())
@@ -58,31 +62,66 @@ fn ctrl_c_in_the_terminal_stops_the_run_as_interrupted() {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
     let pid_file = dir.path().join("pid");
     wait_until("the agent started", Duration::from_secs(10), || {
         pid_file.exists()
     });
-    // What the terminal does on Ctrl-C: SIGINT to every process of the foreground group.
-    let status = Command::new("kill")
-        .args(["-INT", "--", &format!("-{}", craft.id())])
-        .status()
-        .unwrap();
-    assert!(status.success());
-    wait_until("craft exited", Duration::from_secs(10), || {
-        craft.try_wait().unwrap().is_some()
-    });
-    let out = craft.wait_with_output().unwrap();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(130), "{stderr}");
-    assert!(stderr.contains("craft: stopped"), "{stderr}");
-    for name in ["pid", "grandchild"] {
-        let pid = pid_in(dir.path(), name).unwrap();
-        wait_until(
-            &format!("{name} {pid} gone"),
-            Duration::from_secs(5),
-            || gone(pid),
-        );
+    let sent = Command::new("kill")
+        .args([&format!("-{signal}"), "--", &format!("-{}", craft.id())])
+        .status()?;
+    if !sent.success() {
+        return Err(std::io::Error::other(format!("kill -{signal}: {sent}")));
     }
+    wait_until("craft exited", Duration::from_secs(10), || {
+        craft.try_wait().is_ok_and(|s| s.is_some())
+    });
+    Ok((dir, craft.wait_with_output()?))
+}
+
+/// craft exited with `code`, and the agent and its grandchild were gone (or zombies) by then.
+fn assert_stopped(dir: &Path, out: &Output, code: i32) {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(code), "{stderr}");
+    assert!(stderr.contains("craft: stopped"), "{stderr}");
+    // Well under the two-second grace: without craft waiting it out, a SIGTERM-ignoring group
+    // would never see its SIGKILL. The margin is only for reaping by init.
+    for name in ["pid", "grandchild"] {
+        let pid = pid_in(dir, name);
+        assert!(pid.is_some(), "no {name} pid");
+        if let Some(pid) = pid {
+            wait_until(
+                &format!("{name} {pid} gone"),
+                Duration::from_millis(500),
+                || gone(pid),
+            );
+        }
+    }
+}
+
+/// An ignored signal stays ignored across fork and exec, so the grandchild ignores it too.
+const IGNORES_SIGTERM: &str = "trap '' TERM";
+
+#[test]
+fn ctrl_c_in_the_terminal_stops_the_run_as_interrupted() {
+    let (dir, out) = signal_craft("INT", "").unwrap();
+    assert_stopped(dir.path(), &out, 130);
+}
+
+#[test]
+fn ctrl_c_outlasts_an_agent_that_ignores_sigterm() {
+    let (dir, out) = signal_craft("INT", IGNORES_SIGTERM).unwrap();
+    assert_stopped(dir.path(), &out, 130);
+}
+
+#[test]
+fn sigterm_stops_the_run_and_outlasts_an_agent_that_ignores_it() {
+    let (dir, out) = signal_craft("TERM", IGNORES_SIGTERM).unwrap();
+    assert_stopped(dir.path(), &out, 143);
+}
+
+#[test]
+fn sighup_stops_the_run() {
+    let (dir, out) = signal_craft("HUP", "").unwrap();
+    assert_stopped(dir.path(), &out, 129);
 }

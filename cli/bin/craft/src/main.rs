@@ -66,6 +66,11 @@ async fn main() -> ExitCode {
     let outcome = match cli.command {
         Command::Review(args) => review::run(args).await,
     };
+    // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
+    // groups, so their SIGKILL is sent before craft is gone.
+    if let Err(e) = tokio::task::spawn_blocking(craft_agent::settle_stops).await {
+        std::panic::resume_unwind(e.into_panic());
+    }
     match outcome {
         Ok(code) => code,
         Err(e) => {

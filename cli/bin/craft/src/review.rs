@@ -1,6 +1,7 @@
 //! `craft review`: for now, one agent run end to end — spec, backend, progress view, result — to
 //! prove the pipe before the review pipeline lands.
 
+use std::cell::Cell;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -21,6 +22,12 @@ const PHASE: &str = "probe";
 
 /// The exit status of a run the viewer stopped: 128 + SIGINT, as a shell reports it.
 const INTERRUPTED: u8 = 130;
+/// The exit status of a run stopped by SIGTERM: 128 + 15.
+#[cfg(unix)]
+const TERMINATED: u8 = 143;
+/// The exit status of a run stopped by SIGHUP: 128 + 1.
+#[cfg(unix)]
+const HUNG_UP: u8 = 129;
 
 pub async fn run(args: ReviewArgs) -> Result<ExitCode> {
     let cwd = args
@@ -82,6 +89,9 @@ async fn run_one<B: AgentBackend + 'static>(
             .context("the progress view stopped early")?;
     }
     let bridge = tokio::spawn(bridge(run_rx, progress_tx, ids));
+    // Before any agent starts, so no stopping signal finds craft without a handler while an
+    // agent's group is up.
+    let signal = stop_signal();
     let (stop_tx, stop_rx) = oneshot::channel();
     let view = tokio::spawn(view(progress_rx, args.plain, stop_tx));
 
@@ -93,12 +103,13 @@ async fn run_one<B: AgentBackend + 'static>(
         allowed_tools: spec.allowed_tools,
         cwd,
     };
+    let stopped_with = Cell::new(INTERRUPTED);
     let batch = run_until(
         Arc::new(backend),
         vec![request],
         args.concurrency,
         run_tx,
-        stopped(stop_rx),
+        async { stopped_with.set(stopped_by(stop_rx, signal).await) },
     )
     .await;
     // Every runner event is sent by now, so the bridge and then the view end; the view has left
@@ -135,38 +146,69 @@ async fn run_one<B: AgentBackend + 'static>(
                     Err(e) => writeln!(std::io::stderr(), "craft: agent {}: {e}", spec.id)?,
                 }
             }
-            Ok(ExitCode::from(INTERRUPTED))
+            Ok(ExitCode::from(stopped_with.get()))
         }
     }
 }
 
-/// Resolves when the viewer stops the run: `q` or Ctrl-C in the live view, or SIGINT. The plain
-/// view leaves the terminal cooked, so Ctrl-C arrives as the signal — as it also does after the
-/// live view has ended on its own (with an error, say), which is why the signal is still awaited
-/// then. The agents run in process groups of their own, so a terminal's SIGINT reaches craft alone.
-async fn stopped(from_view: oneshot::Receiver<()>) {
-    stopped_by(from_view, tokio::signal::ctrl_c()).await;
-}
-
+/// Resolves when the run is to stop — `q` or Ctrl-C in the live view, or SIGINT, SIGTERM or SIGHUP
+/// — with the exit status to report. The plain view leaves the terminal cooked, so Ctrl-C
+/// arrives as the signal — as it also does after the live view has ended on its own (with an
+/// error, say), which is why the signals are still awaited then. The agents run in process groups
+/// of their own, so a signal to craft's group reaches craft alone.
 async fn stopped_by(
     from_view: oneshot::Receiver<()>,
-    interrupt: impl Future<Output = std::io::Result<()>>,
-) {
-    let interrupt = async {
-        if interrupt.await.is_err() {
+    signal: impl Future<Output = Option<u8>>,
+) -> u8 {
+    let signal = async {
+        match signal.await {
+            Some(code) => code,
             // No handler, no signal to wait for: only the view can stop the run.
-            std::future::pending::<()>().await;
+            None => std::future::pending().await,
         }
     };
-    let mut interrupt = std::pin::pin!(interrupt);
+    let mut signal = std::pin::pin!(signal);
     tokio::select! {
         sent = from_view => {
             if sent.is_err() {
-                interrupt.await;
+                signal.await
+            } else {
+                INTERRUPTED
             }
         }
-        () = &mut interrupt => {}
+        code = &mut signal => code,
     }
+}
+
+/// Registers the stopping signals now and resolves with 128 + the number of the first to arrive;
+/// `None` when none could be registered. Each would otherwise end craft by default, with no drop
+/// run, and leave the agents' groups behind.
+#[cfg(unix)]
+fn stop_signal() -> impl Future<Output = Option<u8>> {
+    use tokio::signal::unix::{Signal, SignalKind, signal};
+    async fn arrival(signal: &mut Option<Signal>) -> Option<()> {
+        match signal {
+            Some(signal) => signal.recv().await,
+            None => None,
+        }
+    }
+    let mut interrupt = signal(SignalKind::interrupt()).ok();
+    let mut terminate = signal(SignalKind::terminate()).ok();
+    let mut hangup = signal(SignalKind::hangup()).ok();
+    async move {
+        tokio::select! {
+            Some(()) = arrival(&mut interrupt) => Some(INTERRUPTED),
+            Some(()) = arrival(&mut terminate) => Some(TERMINATED),
+            Some(()) = arrival(&mut hangup) => Some(HUNG_UP),
+            else => None,
+        }
+    }
+}
+
+/// Off unix only Ctrl-C stops the run.
+#[cfg(not(unix))]
+fn stop_signal() -> impl Future<Output = Option<u8>> {
+    async { tokio::signal::ctrl_c().await.ok().map(|()| INTERRUPTED) }
 }
 
 /// Runner events by index → view events by agent id.
@@ -242,21 +284,25 @@ mod tests {
         drop(stop_tx);
         let (signal_tx, signal_rx) = oneshot::channel::<()>();
         let stop = tokio::spawn(stopped_by(stop_rx, async move {
-            signal_rx.await.map_err(std::io::Error::other)
+            signal_rx.await.ok().map(|()| 143)
         }));
         tokio::time::sleep(Duration::from_secs(1)).await;
         assert!(!stop.is_finished(), "stopped with no interrupt");
         signal_tx.send(()).unwrap();
-        tokio::time::timeout(Duration::from_secs(1), stop)
+        let code = tokio::time::timeout(Duration::from_secs(1), stop)
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(code, 143);
     }
 
     #[tokio::test]
     async fn the_view_stops_the_run() {
         let (stop_tx, stop_rx) = oneshot::channel();
         stop_tx.send(()).unwrap();
-        stopped_by(stop_rx, std::future::pending()).await;
+        assert_eq!(
+            stopped_by(stop_rx, std::future::pending()).await,
+            INTERRUPTED
+        );
     }
 }

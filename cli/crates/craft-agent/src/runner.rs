@@ -55,8 +55,10 @@ where
 
 /// [`run_all`], cut short when `stop` resolves first: every run still going is cancelled and
 /// awaited before this returns, so a backend's resources are dropped by then — the `claude-code`
-/// backend's subprocess and the processes it started are sent SIGTERM, then SIGKILL after a short
-/// grace (on unix; elsewhere only the subprocess itself is killed).
+/// backend's process group (the subprocess and what stays in its group) is sent SIGTERM, then
+/// SIGKILL after a short grace, which [`crate::settle_stops`] waits out before the process exits
+/// (on unix; elsewhere only the subprocess itself is killed). What claude starts in a session of
+/// its own, as it does each Bash-tool command, is left to claude.
 ///
 /// # Panics
 /// Re-raises a panic from a backend's run.

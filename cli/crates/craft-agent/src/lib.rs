@@ -13,6 +13,7 @@ pub mod runner;
 use std::future::Future;
 use std::path::PathBuf;
 
+pub use process_group::settle_stops;
 pub use reply::{AgentReply, Usage};
 
 /// One agent to run.

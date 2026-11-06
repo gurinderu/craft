@@ -88,8 +88,8 @@ impl ClaudeCode {
             command: self.command.display().to_string(),
             source,
         })?;
-        // Lives until this future ends or is dropped (a timeout, a stop): then the child and all
-        // it started are stopped.
+        // Lives until this future ends or is dropped (a timeout, a stop): then the child's process
+        // group is stopped.
         let _group = GroupGuard::new(child.id());
         if let Some(mut stdin) = child.stdin.take() {
             // A child that exits without reading its prompt breaks the pipe; its exit status and
