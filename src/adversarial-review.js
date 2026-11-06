@@ -19,7 +19,7 @@ import { applyProjectRules } from '../lib/project-rule-apply.mjs'
 import { focusFilesArg, focusLine } from '../lib/focus-files.mjs'
 import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.mjs'
 import { ADVERSARIAL_EXTERNAL_LENSES, makeExternalSources } from '../lib/review-external-sources.mjs'
-import { READ_ONLY_AGENT_TYPE, makeReadOnlyFallback } from '../lib/read-only-agent.mjs'
+import { SERVICE_AGENT_TYPE, makeDefaultTypeFallback } from '../lib/service-agent.mjs'
 import { agentUnavailableRecord } from '../lib/agent-fallback.mjs'
 
 export const meta = {
@@ -72,13 +72,15 @@ const focusFiles = focusFilesArg(A['files'])
 // and the logger files the record under it. A value no agent could `cd` to is refused below, before any work agent.
 const { repo: repoArg, refused: repoRefused } = readRepoArg(A['repo'])
 const REPO_DIRECTIVE = repoDirective(repoArg, 'review')
-// A read-only agent Explore did not answer is re-run once on the default type (lib/read-only-agent.mjs).
-const readOnly = makeReadOnlyFallback((/** @type {string} */ prompt, /** @type {NonNullable<Parameters<typeof agent>[1]>} */ opts) => agent(`${REPO_DIRECTIVE}${prompt}`, opts), log)
+// A service step the service agent did not answer is re-run once on the default type (lib/service-agent.mjs).
+// The start checkpoint goes through it too, without the directive: its prompt carries its own `cd`. The run record
+// does not: makeRunLogger re-asks a dead writer itself, marked `--retry`, on the default type (lib/run-logging.mjs).
+const service = makeDefaultTypeFallback((/** @type {string} */ prompt, /** @type {NonNullable<Parameters<typeof agent>[1]>} */ opts) => agent(prompt, opts), log)
 /**
  * The sandbox's agent(), pointed at `repo` when one is given.
  * @param {string} prompt @param {Parameters<typeof agent>[1]} [opts] @returns {Promise<unknown>}
  */
-const work = (prompt, opts) => readOnly.run(prompt, opts ?? {})
+const work = (prompt, opts) => service.run(`${REPO_DIRECTIVE}${prompt}`, opts ?? {})
 // Where craft itself lives, so the logger can find lib/craft-log-run.mjs. It selects NO repository:
 // `repo` does. As an installed plugin CLAUDE_PLUGIN_ROOT is
 // set for us; launched by scriptPath from a checkout it is NOT, and the fallback would resolve
@@ -230,9 +232,9 @@ let runDir = ''
 /** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn @param {ScoutResult | null} scoutIn  its `head` is the start head */
 async function startCheckpoint(phaseTitle, payloadIn, scoutIn) {
   const payload = { kind: 'workflow', name: 'adversarial-review', craftVersion: CRAFT_VERSION, ...payloadIn, phase: phaseTitle, startHead: scoutIn?.head ?? '' }
-  const res = /** @type {{ runDir?: string, error?: string, __threw?: string } | null} */ (await quietly(agent)(
+  const res = /** @type {{ runDir?: string, error?: string, __threw?: string } | null} */ (await quietly(service.run)(
     checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase: phaseTitle }),
-    { label: `checkpoint:${phaseTitle}`, phase: 'Prep', schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low' },
+    { label: `checkpoint:${phaseTitle}`, phase: 'Prep', schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE },
   ))
   if (res?.runDir) {
     runDir = res.runDir
@@ -244,7 +246,7 @@ async function startCheckpoint(phaseTitle, payloadIn, scoutIn) {
 // The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note. `finalize`, not
 // `write`: it folds the start checkpoint, when one landed, into the record (see startCheckpoint above).
 const logRun = makeRunLogger({
-  call: quietly(agent), phase: 'Coverage', target: () => ({ craftRoot: craftRootArg, repo: repoArg, command: 'finalize', dir: runDir }),
+  call: quietly(agent), serviceAgent: true, phase: 'Coverage', target: () => ({ craftRoot: craftRootArg, repo: repoArg, command: 'finalize', dir: runDir }),
   noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 // adversarial-review uses lowercase severities internally; the store schema is capitalized.
@@ -257,8 +259,8 @@ const recordHead = () => ({
   nested: !!viaArg, via: viaArg || null,
   // What the recall step brought, or why none (realm @nick/craft, node #40).
   memory: memoryRecord(memory),
-  // A read-only agent re-run on the default type, in the shape review and rust-audit file (lib/agent-fallback.mjs, realm @nick/craft #151).
-  ...agentUnavailableRecord([], readOnly.fallbacks()),
+  // A service step re-run on the default type, in the shape review and rust-audit file (lib/agent-fallback.mjs, realm @nick/craft #151).
+  ...agentUnavailableRecord([], service.fallbacks()),
 })
 
 // ---- lens catalog ----
@@ -350,7 +352,7 @@ const [scoutRaw, warmupRaw] = await parallel([
    - medium: the categories plausibly in play.
    - large: all of them.
    Decide "in play" from the diff: payments/amounts/ledger -> money; async/threads/locks/transactions -> concurrency; input parsing/auth/tenancy -> security; loops/queries -> performance; always consider 'correctness' and 'errors'. Include 'complexity' whenever the diff is medium/large (it self-skips if the repo is not indexed).`,
-    { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', agentType: READ_ONLY_AGENT_TYPE },
+    { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE },
   ),
   () => work(
     `You are warming up the codebase-memory index for a review. Use ToolSearch to load the codebase-memory MCP tools.
@@ -785,7 +787,7 @@ Merge ONLY when confident the fix is literally the same change. Two different pr
 
 FINDINGS:
 ${keptIn.map((f, i) => `${i}. [${f.severity}] ${f.title} @ ${f.file}:${f.line} (lenses: ${f.sources.join(',')}) — ${f.description}`).join('\n')}`,
-    { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low', agentType: READ_ONLY_AGENT_TYPE },
+    { label: 'dedup-semantic', phase: 'Review', schema: CLUSTERS_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE },
   ))
   // Model output: a live clusterer whose `clusters` is not an array merged nothing — say so, never throw.
   const clusters = Array.isArray(clusterer?.clusters) ? clusterer.clusters : []
