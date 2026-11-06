@@ -165,7 +165,7 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 ## Project structure
 - `skills/` — 37 skills, one directory each with a `SKILL.md`.
 - `agents/` — 5 Claude Code review agents (`rust-reviewer`, `nix-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`) and `engine-service`, the review engines' service-step agent.
-- `src/` — the engines as authored, scripts for the Workflow tool: `review.js` (the review engine, the hottest surface), `adversarial-review.js`, `rust-audit.js`, `triage-findings.js`, and the `rust-review.js`/`nix-review.js` entry points.
+- `src/` — the engines as authored, scripts for the Workflow tool: `review.js` (the review engine, the hottest surface), `adversarial-review.js`, `rust-audit.js`, `triage-findings.js`, the `rust-review.js`/`nix-review.js` entry points, and `cli-review.js` (the experimental driver of the Rust CLI's step protocol).
 - `workflows/` — the same engines as shipped: generated from `src/` by `npm run build:engines` and committed (the harness loads them from here); never edited by hand.
 - `content/` — the review's knowledge as data: prompt templates (`prompts/`, `{{name}}` placeholders filled by `lib/content.mjs`'s `render`) and agent answer schemas (`schemas/<name>.schema.json`); the build inlines them into `workflows/`, each content file's base name unique.
 - `cli/` — the `craft` Rust CLI, a cargo workspace: `bin/craft` (the command), `crates/craft-agent` (agent backends and the concurrency runner), `crates/craft-tui` (the progress view), `crates/craft-review` (the pipeline's types).

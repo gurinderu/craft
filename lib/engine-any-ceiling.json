@@ -1,5 +1,6 @@
 {
   "src/adversarial-review.js": 0,
+  "src/cli-review.js": 0,
   "src/nix-review.js": 0,
   "src/review.js": 0,
   "src/rust-audit.js": 0,

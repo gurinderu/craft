@@ -1,6 +1,7 @@
 //! `craft`: the command line over craft's review.
 
 mod review;
+mod steps;
 
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -17,8 +18,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Review the changes between a base and HEAD.
-    Review(ReviewArgs),
+    /// Review the changes between a base and HEAD, step by step: each step prints the agents the
+    /// host is to run, and the next takes their answers.
+    #[command(subcommand)]
+    Review(ReviewCommand),
+}
+
+#[derive(Subcommand)]
+enum ReviewCommand {
+    /// Open a run: compute the diff and print the first tasks.
+    Start(steps::StartArgs),
+    /// Hand in the answers to a run's pending tasks and print what comes next.
+    Submit(steps::SubmitArgs),
+    /// Print where a run stands.
+    Status(steps::StatusArgs),
+    /// Run one probe agent end to end through a backend, with the progress view.
+    Probe(ReviewArgs),
 }
 
 /// Which way an agent is run.
@@ -64,7 +79,10 @@ pub struct ReviewArgs {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let outcome = match cli.command {
-        Command::Review(args) => review::run(args).await,
+        Command::Review(ReviewCommand::Probe(args)) => review::run(args).await,
+        Command::Review(ReviewCommand::Start(args)) => steps::start(&args),
+        Command::Review(ReviewCommand::Submit(args)) => steps::submit(&args),
+        Command::Review(ReviewCommand::Status(args)) => steps::status(&args),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.

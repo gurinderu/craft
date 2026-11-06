@@ -1,6 +1,6 @@
 [package]
 name = "craft-review"
-description = "The review pipeline's types: phases, the agents they run, the findings they return. No review logic yet."
+description = "The review step by step: the work a review needs, rendered from craft's content, its state between steps, its report."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,12 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+jsonschema.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
