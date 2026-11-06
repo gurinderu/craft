@@ -24,9 +24,14 @@ jobs:
 
   # The craft CLI built for each platform lib/craft-bin.mjs fetches, attached to the release just cut as
   # craft-<target>.tar.gz (the binary `craft` at the archive root) and its .sha256. The CLI's version is the
-  # plugin's (release-please moves cli/Cargo.toml and cli/Cargo.lock with the manifest), so the binary a
+  # plugin's (release-please moves cli/Cargo.toml and cli/Cargo.lock with the manifest; the lock's filter was
+  # observed on release-please 17.3.0, the one this action's v4.4.1 bundles — re-check it when the action moves,
+  # and ci.yml's rust job, run with --locked on main, fails on a lock left behind), so the binary a
   # plugin version fetches is the one built from that version's tag. Each runner builds for its own host:
-  # the step below refuses a runner whose host is not the matrix target, so no archive is mislabelled.
+  # the step below refuses a runner whose host is not the matrix target, so no archive is mislabelled. Linux
+  # builds are static musl (any distro's libc, however old); the runner's host is gnu on the same arch, so for
+  # musl the guard compares the target with its gnu twin. musl needs no musl-tools: no crate compiles C code,
+  # and Rust links the musl targets with its own self-contained C runtime.
   cli-binaries:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
@@ -36,9 +41,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             runner: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
           - target: aarch64-apple-darwin
             runner: macos-15
@@ -57,20 +62,25 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
+          targets: ${{ matrix.target }}
       - name: host is the matrix target
         env:
           TARGET: ${{ matrix.target }}
         run: |
           host="$(rustc -vV | sed -n 's/^host: //p')"
-          [ "$host" = "$TARGET" ] || { echo "::error::runner host $host is not $TARGET"; exit 1; }
+          want="$TARGET"
+          case "$TARGET" in *-linux-musl) want="${TARGET%-musl}-gnu" ;; esac
+          [ "$host" = "$want" ] || { echo "::error::runner host $host is not $want (for $TARGET)"; exit 1; }
       - name: cargo build
-        run: cargo build --release --locked
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --locked --target "$TARGET"
       - name: package
         env:
           TARGET: ${{ matrix.target }}
         run: |
           archive="craft-$TARGET.tar.gz"
-          tar -czf "$archive" -C target/release craft
+          tar -czf "$archive" -C "target/$TARGET/release" craft
           if command -v sha256sum >/dev/null; then sha256sum "$archive" > "$archive.sha256"; else shasum -a 256 "$archive" > "$archive.sha256"; fi
           cat "$archive.sha256"
       - name: upload to the release
