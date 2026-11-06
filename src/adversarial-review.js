@@ -246,7 +246,8 @@ async function startCheckpoint(phaseTitle, payloadIn, scoutIn) {
 // The shared run-record writer (lib/run-logging.mjs), bound to this engine's phase and loss note. `finalize`, not
 // `write`: it folds the start checkpoint, when one landed, into the record (see startCheckpoint above).
 const logRun = makeRunLogger({
-  call: quietly(agent), serviceAgent: true, phase: 'Coverage', target: () => ({ craftRoot: craftRootArg, repo: repoArg, command: 'finalize', dir: runDir }),
+  // service.route: once the service agent failed to launch, the record's first ask goes to the default type too.
+  call: quietly((/** @type {string} */ prompt, /** @type {NonNullable<Parameters<typeof agent>[1]>} */ opts) => agent(prompt, service.route(opts))), serviceAgent: true, phase: 'Coverage', target: () => ({ craftRoot: craftRootArg, repo: repoArg, command: 'finalize', dir: runDir }),
   noteLoss: telemetryLossNoter(telemetryLost, log),
 })
 // adversarial-review uses lowercase severities internally; the store schema is capitalized.
