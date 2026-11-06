@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdicts"
+  ],
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "description": "one entry per finding in the batch, keyed by its index — every index must appear",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "refuted",
+          "citedLineMatches",
+          "reachable",
+          "premiseSupported",
+          "reason"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "refuted": {
+            "type": "boolean"
+          },
+          "citedLineMatches": {
+            "type": "boolean"
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "premiseSupported": {
+            "type": "boolean"
+          },
+          "harmSupported": {
+            "type": "boolean",
+            "description": "true only if the code shows the claimed harm (effect, who, recovery) as stated"
+          },
+          "confirmedHarmLevel": {
+            "type": "string",
+            "enum": [
+              "data-loss",
+              "security",
+              "outage",
+              "irreversible",
+              "intent-unmet",
+              "repo-rule",
+              "operator-recovery",
+              "self-healing",
+              "text",
+              "none"
+            ],
+            "description": "when several harms are listed: the worst listed one the code shows; omit otherwise"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

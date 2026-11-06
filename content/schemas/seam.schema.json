@@ -1,0 +1,56 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "findings",
+    "dispositions",
+    "answered"
+  ],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "finding-item.schema.json"
+      }
+    },
+    "dispositions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lens",
+          "findingFile",
+          "findingTitle",
+          "action",
+          "why"
+        ],
+        "properties": {
+          "lens": {
+            "type": "string"
+          },
+          "findingFile": {
+            "type": "string"
+          },
+          "findingTitle": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "confirm",
+              "drop",
+              "convert"
+            ]
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "answered": {
+      "type": "number"
+    }
+  }
+}

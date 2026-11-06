@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "defeated",
+    "attack"
+  ],
+  "properties": {
+    "defeated": {
+      "type": "boolean",
+      "description": "true only if a concrete input/state defeats the fix"
+    },
+    "attack": {
+      "type": "string",
+      "description": "the concrete input/state and why it slips past the fix; empty if none found"
+    }
+  }
+}
