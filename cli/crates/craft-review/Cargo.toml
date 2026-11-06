@@ -1,0 +1,14 @@
+[package]
+name = "craft-review"
+description = "The review pipeline's types: phases, the agents they run, the findings they return. No review logic yet."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

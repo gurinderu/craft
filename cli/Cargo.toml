@@ -1,0 +1,103 @@
+[workspace]
+resolver = "3"
+members = [
+    "bin/craft",
+    "crates/craft-agent",
+    "crates/craft-review",
+    "crates/craft-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1.0"
+clap = { version = "4.6", features = ["derive", "env"] }
+crossterm = "0.29"
+ratatui = "0.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.27"
+thiserror = "2.0"
+tokio = { version = "1.53", default-features = false }
+
+craft-agent = { path = "crates/craft-agent" }
+craft-review = { path = "crates/craft-review" }
+craft-tui = { path = "crates/craft-tui" }
+
+# Lints every member opts into with `[lints] workspace = true`. All are `warn`:
+# CI's `-D warnings` makes them hard, and `warn` (unlike `forbid`) still lets a
+# site carry `#[expect(lint, reason = "…")]`. Tests are relaxed in `clippy.toml`.
+[workspace.lints.clippy]
+# Don't panic
+string_slice = "warn"
+indexing_slicing = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+get_unwrap = "warn"
+unwrap_in_result = "warn"
+unchecked_time_subtraction = "warn"
+panic_in_result_fn = "warn"
+# Don't fail silently
+let_underscore_future = "warn"
+let_underscore_must_use = "warn"
+unused_result_ok = "warn"
+map_err_ignore = "warn"
+assertions_on_result_states = "warn"
+# Don't do bad async stuff
+await_holding_lock = "warn"
+await_holding_refcell_ref = "warn"
+if_let_mutex = "warn"
+large_futures = "warn"
+# Don't do unsafe things with memory
+mem_forget = "warn"
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+# Don't do potentially incorrect things with numbers
+float_cmp = "warn"
+float_cmp_const = "warn"
+lossy_float_literal = "warn"
+cast_sign_loss = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_precision_loss = "warn"
+invalid_upcast_comparisons = "warn"
+# Don't do bad things that are easy to avoid
+rc_mutex = "warn"
+debug_assert_with_mut_call = "warn"
+iter_not_returning_iterator = "warn"
+dbg_macro = "warn"
+# Don't allow your way around these lints
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+# Keep a unit readable in one sitting
+cognitive_complexity = "warn"
+too_many_lines = "warn"
+# Leave the process and the terminal only by the front door: exits through
+# `main`, prints through a named writer.
+exit = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+# Don't write the long way round what has a direct form
+rest_pat_in_fully_bound_structs = "warn"
+string_add = "warn"
+verbose_file_reads = "warn"
+redundant_clone = "warn"
+# Don't let a wildcard hide a variant added tomorrow
+match_wildcard_for_single_variants = "warn"
+wildcard_enum_match_arm = "warn"
+missing_asserts_for_indexing = "warn"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+let_underscore_drop = "warn"
+elided_lifetimes_in_paths = "warn"
+unit_bindings = "warn"
+trivial_numeric_casts = "warn"
