@@ -214,12 +214,11 @@ const telemetryNotes = () => telemetryLost.map(l => (
     ? `⚠️ telemetry: ${l} — the record for this run is in the store; what the directory held may not be.`
     : `⚠️ telemetry lost: ${l} — this run may be missing or incomplete in the run store. Read this verdict, not the store, for what it did.`))
 
-// ---- the start checkpoint: the head the run read, observed by code ----
+// ---- the start checkpoint: the identity the run started on, observed by code ----
 // ONE phase slice, written after the scout and before any lens or the memory recall reads the diff. The logger
-// stamps the slice's `head` and tracked dirtiness from git; `startHead` is the head the scout saw first. The
-// record is filed with `finalize`, which folds this slice and files `reviewedHead`/`reviewedDirty` only when the
-// two name one commit (lib/craft-log-run.mjs, reviewedTree) — the rule craft:review's checkpoints go through, so a
-// push verdict is keyed to the commit this run read, never to one committed while it ran (realm @nick/craft, node #299).
+// stamps the slice's branch and `head` from git; the record is filed with `finalize`, which folds this slice and
+// files the run under that start identity, not under whatever is checked out when it ends — the identity the
+// re-review chain selects on (lib/craft-log-run.mjs, startIdentity).
 const CHECKPOINT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -230,9 +229,9 @@ const CHECKPOINT_SCHEMA = {
   },
 }
 let runDir = ''
-/** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn @param {ScoutResult | null} scoutIn  its `head` is the start head */
-async function startCheckpoint(phaseTitle, payloadIn, scoutIn) {
-  const payload = { kind: 'workflow', name: 'adversarial-review', craftVersion: CRAFT_VERSION, ...payloadIn, phase: phaseTitle, startHead: scoutIn?.head ?? '' }
+/** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn */
+async function startCheckpoint(phaseTitle, payloadIn) {
+  const payload = { kind: 'workflow', name: 'adversarial-review', craftVersion: CRAFT_VERSION, ...payloadIn, phase: phaseTitle }
   const res = /** @type {{ runDir?: string, error?: string, __threw?: string } | null} */ (await quietly(service.run)(
     checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase: phaseTitle }),
     { label: `checkpoint:${phaseTitle}`, phase: 'Prep', schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE },
@@ -561,7 +560,7 @@ async function coverageGuard(scoutIn) {
 }
 const early = await coverageGuard(scout)
 if (early) return early
-await startCheckpoint('prep', { size: plan.sizeBucket, lenses: plan.lenses }, scout)
+await startCheckpoint('prep', { size: plan.sizeBucket, lenses: plan.lenses })
 // ONE read-only agent recalls the decisions through the craft:memory skill for the diff's paths (realm
 // @nick/craft, node #203); its answer is parsed like a passed list and the passed records merge into it.
 async function recallMemory() {
