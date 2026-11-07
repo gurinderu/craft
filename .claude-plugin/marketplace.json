@@ -10,7 +10,11 @@
   "plugins": [
     {
       "name": "craft",
-      "source": "./integrations/claude-code",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/gurinderu/craft.git",
+        "ref": "claude-code-plugin"
+      },
       "description": "Opinionated engineering skills and agents for Claude Code — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native), language-agnostic engineering skills (specs, debugging, refactoring, onboarding), and code-review / security / Miri agents. Self-contained, no plugin dependencies.",
       "category": "development",
       "license": "MIT"
