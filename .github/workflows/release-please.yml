@@ -98,7 +98,7 @@ jobs:
 
   # The Claude Code plugin without symlinks, rebuilt from the release's tag as the next commit of the
   # claude-code-plugin branch (the first such release creates it) — claude-code-plugin.yml. The marketplace entry
-  # moves to this branch in a follow-up once it exists; until then it installs ./integrations/claude-code.
+  # installs the plugin from this branch.
   claude-code-plugin:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}

@@ -3,11 +3,11 @@ name: claude-code-plugin
 # The Claude Code plugin without symlinks, for consumers whose clone does not make them (core.symlinks=false, the
 # Windows default, turns each of integrations/claude-code's links into a one-line text file the harness then caches
 # as it is). One ref's delivery, every link dereferenced, becomes the next commit of the claude-code-plugin branch,
-# which the marketplace entry's staged `url` source is to name (lib/materialize-claude-code.mjs). Its plugin.json carries that
+# which the marketplace entry's `url` source names (lib/materialize-claude-code.mjs). Its plugin.json carries that
 # ref's version, so an install or update moves with release-please.
 #
-# release-please.yml calls this with the tag of each release it cuts; the first release to carry this file creates
-# the branch. GitHub dispatches only a workflow whose file is on the default branch, so by hand (`gh workflow run
+# release-please.yml calls this with the tag of each release it cuts; the first release to carry this file (0.42.0)
+# created the branch. GitHub dispatches only a workflow whose file is on the default branch, so by hand (`gh workflow run
 # claude-code-plugin.yml -f ref=vX.Y.Z`) it only re-publishes the branch from a release tag once this file is on
 # main. Either way the ref must be a release tag (vX.Y.Z) whose plugin.json carries that version: a branch or a
 # commit would ship unreleased content under the last release's version, so the job refuses it before materializing.
