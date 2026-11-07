@@ -1,29 +1,19 @@
-//! What a finished run says: each finding's tier from its verdict, the run's verdict, and the
-//! Markdown report.
+//! What a finished run says: the run's verdict from its settled findings, and the Markdown report.
 
 use serde_json::Value;
 
 use crate::state::RunState;
 
-pub use crate::settle::Tier;
-use crate::settle::{settle, tier};
+mod light;
 
-/// Each finding as its verdict settled it, with that verdict: its tier and its final severity,
-/// capped by its harm.
-fn settled(state: &RunState) -> impl Iterator<Item = (Tier, Value, Option<&Value>)> + '_ {
-    state.findings.iter().enumerate().map(|(i, f)| {
-        let vote = state.votes.get(i).and_then(Option::as_ref);
-        let (t, f) = settle(f, vote);
-        (t, f, vote)
-    })
-}
+pub use crate::settle::Tier;
 
 /// How many findings are confirmed, suspected, refuted and unverified, in that order.
 #[must_use]
 pub fn tier_counts(state: &RunState) -> [usize; 4] {
     let mut n = [0_usize; 4];
-    for i in 0..state.findings.len() {
-        let slot = match tier(state.votes.get(i).and_then(Option::as_ref)) {
+    for f in &state.settled {
+        let slot = match Tier::of(f) {
             Tier::Confirmed => 0,
             Tier::Suspected => 1,
             Tier::Refuted => 2,
@@ -36,24 +26,25 @@ pub fn tier_counts(state: &RunState) -> [usize; 4] {
     n
 }
 
-fn gating(severity: &str) -> bool {
-    matches!(severity, "Critical" | "High" | "Medium")
-}
-
-/// The run's verdict: INCOMPLETE when a gating finding went unverified; else Block on a confirmed
-/// Critical or High, Warning on a confirmed Medium, Approve otherwise — and, when something the
-/// review needed did not run (`not_run`), INCOMPLETE in place of Approve and a red verdict marked
-/// ` (INCOMPLETE)`, as `honestVerdict`.
+/// The run's verdict: a coverage exit's own; else Block on a confirmed Critical or High, Warning on
+/// a confirmed Medium, Approve otherwise — and, when something the review needed did not run
+/// (`not_run`, where every finding verification failed to judge is named), INCOMPLETE in place of
+/// Approve and a red verdict marked ` (INCOMPLETE)`, as `honestVerdict`.
 #[must_use]
 pub fn verdict(state: &RunState) -> String {
+    if let Some(exit) = &state.exit {
+        return exit.verdict.clone();
+    }
     let mut worst = "Approve";
-    for (t, f, _) in settled(state) {
-        let sev = field(&f, "severity");
-        match t {
-            Tier::Unverified if gating(sev) => return "INCOMPLETE".into(),
-            Tier::Confirmed if sev == "Critical" || sev == "High" => worst = "Block",
-            Tier::Confirmed if sev == "Medium" && worst == "Approve" => worst = "Warning",
-            Tier::Confirmed | Tier::Suspected | Tier::Refuted | Tier::Unverified => {}
+    for f in state
+        .settled
+        .iter()
+        .filter(|f| Tier::of(f) == Tier::Confirmed)
+    {
+        match field(f, "severity") {
+            "Critical" | "High" => worst = "Block",
+            "Medium" if worst == "Approve" => worst = "Warning",
+            _ => {}
         }
     }
     match (state.not_run.is_empty(), worst) {
@@ -72,7 +63,7 @@ fn one_line(s: &str) -> String {
 }
 
 /// One finding as a report entry.
-fn entry(f: &Value, vote: Option<&Value>) -> String {
+fn entry(f: &Value) -> String {
     let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
     let by = match f.get("sources").and_then(Value::as_array) {
         Some(s) => s
@@ -89,7 +80,7 @@ fn entry(f: &Value, vote: Option<&Value>) -> String {
         field(f, "title"),
         one_line(field(f, "why")),
     );
-    if let Some(v) = vote.map(|v| field(v, "reason")).filter(|r| !r.is_empty()) {
+    if let Some(v) = Some(field(f, "verifierReason")).filter(|r| !r.is_empty()) {
         e.push_str(&format!("  - Verifier: {}\n", one_line(v)));
     }
     e
@@ -138,12 +129,6 @@ fn header(state: &RunState) -> String {
             plan.surface_dropped.join(", ")
         ));
     }
-    if !plan.light_skipped.is_empty() {
-        out.push_str(&format!(
-            "Light pass: whole-diff lenses NOT dispatched: {}; one round; Low and Info not verified.\n",
-            plan.light_skipped.join(", ")
-        ));
-    }
     for y in &state.rounds.yields {
         out.push_str(&format!(
             "- Round {}: {} lens(es) dispatched, {} returned, {} new finding(s).\n",
@@ -154,10 +139,49 @@ fn header(state: &RunState) -> String {
     out
 }
 
-/// The Markdown report of a finished run: the findings grouped by tier, worst first in each.
+/// The Markdown report of a finished run: the verdict, then the findings grouped by tier, worst
+/// first in each.
 #[must_use]
 pub fn markdown(state: &RunState, verdict: &str) -> String {
-    let mut out = format!("# craft review: {verdict}\n\n{}", header(state));
+    let line = state.exit.as_ref().map_or(verdict, |e| e.line.as_str());
+    let line = if state.light {
+        light::mark(line)
+    } else {
+        line.to_owned()
+    };
+    let mut out = format!(
+        "# craft review\n\n## Verdict\n\n{line}\n\n{}",
+        header(state)
+    );
+    if let Some(listed) = state.exit.as_ref().and_then(|e| e.listed.as_ref()) {
+        out.push_str(&format!("## {listed}\n\n"));
+        for f in &state.diff.files {
+            out.push_str(&format!("- {f}\n"));
+        }
+        out.push('\n');
+    }
+    if state.exit.is_none() {
+        findings(state, &mut out);
+    }
+    out.push_str("\n## Not run\n\n");
+    for n in &state.not_run {
+        out.push_str(&format!("- {n}\n"));
+    }
+    out.push_str(&format!("- {}\n", light::cli_not_run()));
+    if !state.notes.is_empty() {
+        out.push_str("\n## Notes\n\n");
+        for n in &state.notes {
+            out.push_str(&format!("- {n}\n"));
+        }
+    }
+    if state.light {
+        out.push_str(&light::section(state));
+    }
+    out
+}
+
+/// The findings by tier and their count.
+fn findings(state: &RunState, out: &mut String) {
     let tiers = [
         (Tier::Confirmed, "Confirmed"),
         (Tier::Suspected, "Suspected"),
@@ -165,9 +189,11 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         (Tier::Refuted, "Refuted"),
     ];
     for (want, name) in tiers {
-        let mut list: Vec<(usize, String)> = settled(state)
-            .filter(|(t, _, _)| *t == want)
-            .map(|(_, f, v)| (crate::dedup::sev_rank(&f), entry(&f, v)))
+        let mut list: Vec<(usize, String)> = state
+            .settled
+            .iter()
+            .filter(|f| Tier::of(f) == want)
+            .map(|f| (crate::dedup::sev_rank(f), entry(f)))
             .collect();
         list.sort_by_key(|(rank, _)| *rank);
         out.push_str(&format!("## {name} findings\n\n"));
@@ -182,15 +208,6 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     let [c, s, r, u] = tier_counts(state);
     out.push_str(&format!(
         "{} finding(s) reported: {c} confirmed, {s} suspected, {r} refuted, {u} unverified.\n",
-        state.findings.len()
+        state.settled.len()
     ));
-    for (title, list) in [("Not run", &state.not_run), ("Notes", &state.notes)] {
-        if !list.is_empty() {
-            out.push_str(&format!("\n## {title}\n\n"));
-            for n in list {
-                out.push_str(&format!("- {n}\n"));
-            }
-        }
-    }
-    out
 }

@@ -13,7 +13,7 @@ use crate::prompts::PromptContext;
 use crate::rounds::Rounds;
 
 /// The state file's format; a run written by another format is refused, not misread.
-pub const STATE_VERSION: u32 = 4;
+pub const STATE_VERSION: u32 = 5;
 /// How many times an invalid or missing answer is asked for again before its task fails.
 pub const MAX_RETRIES: u32 = 2;
 
@@ -33,10 +33,19 @@ pub enum Phase {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TaskKind {
     Scout,
-    Lens { lens: String, round: u32 },
+    Lens {
+        lens: String,
+        round: u32,
+    },
     Dedup,
-    Verify { finding: usize },
-    VerifyBatch { findings: Vec<usize> },
+    /// Vote `voter` of finding `finding`'s panel.
+    Verify {
+        finding: usize,
+        voter: u32,
+    },
+    VerifyBatch {
+        findings: Vec<usize>,
+    },
 }
 
 /// Whether a task still waits for its answer.
@@ -70,6 +79,10 @@ pub struct Task {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<Value>,
+    /// The last answer refused for not matching the schema, kept so a verifier that ran out of
+    /// retries counts as an off-schema vote rather than a dead one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<Value>,
 }
 
 impl Task {
@@ -94,6 +107,7 @@ impl Task {
             retries: 0,
             error: None,
             answer: None,
+            refused: None,
         }
     }
 
@@ -132,8 +146,11 @@ pub struct RunState {
     /// What verification judges: the pool after the floor, the roll-up and the dedup, each a
     /// finding object as its schema shapes it.
     pub findings: Vec<Value>,
-    /// The verifier's verdict on each finding, by index; `None` while none is in.
-    pub votes: Vec<Option<Value>>,
+    /// The findings as verification settled them, each with its `tier`; empty until it has.
+    pub settled: Vec<Value>,
+    /// Why the run ended before any lens ran: the coverage exit's verdict and message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit: Option<crate::coverage::Exit>,
     /// What happened on the way, for the report.
     pub notes: Vec<String>,
     /// What did not run that the review needed: any entry makes the verdict INCOMPLETE.

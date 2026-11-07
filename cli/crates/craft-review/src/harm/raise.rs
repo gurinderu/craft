@@ -92,19 +92,36 @@ fn must_fix(c: &Claim) -> bool {
     ceiling(level) == Some("Critical")
 }
 
-/// The harm one verifier confirmed on `f`: the claim it names (`confirmedHarmLevel`, else the
-/// worst claimed) when `harmSupported` is true, as `panelHarm` decides for a panel of one.
-pub(crate) fn verified(f: &Value, vote: &Value) -> Option<String> {
+/// The harm a panel confirmed on `f` (`panelHarm`): the worst claim a strict majority of the
+/// shaped votes support, a vote naming a claim (`confirmedHarmLevel`, else the worst claimed, when
+/// `harmSupported` is true) supporting it and every lesser one.
+pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
     let cs = claims(f);
-    if vote.get("harmSupported").and_then(Value::as_bool) != Some(true) {
+    if cs.is_empty() || votes.is_empty() {
         return None;
     }
-    let named = match vote.get("confirmedHarmLevel") {
-        None | Some(Value::Null) => cs.first().map(|c| c.level.as_str()),
-        Some(v) => v.as_str(),
-    }?;
+    let backed: Vec<usize> = votes
+        .iter()
+        .filter(|v| v.get("harmSupported").and_then(Value::as_bool) == Some(true))
+        .filter_map(|v| {
+            let named = match v.get("confirmedHarmLevel") {
+                None | Some(Value::Null) => cs.first().map(|c| c.level.as_str()),
+                Some(n) => n.as_str(),
+            }?;
+            cs.iter()
+                .any(|c| c.level == named)
+                .then(|| level_rank(named))
+        })
+        .collect();
+    let need = votes.len() / 2 + 1;
     cs.iter()
-        .find(|c| c.level == named)
+        .find(|c| {
+            backed
+                .iter()
+                .filter(|b| **b <= level_rank(&c.level))
+                .count()
+                >= need
+        })
         .map(|c| c.level.clone())
 }
 

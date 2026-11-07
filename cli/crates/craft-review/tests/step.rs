@@ -165,12 +165,13 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
 
     // The model groups nothing; the same-spot pass merges the High pair.
     let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
-    assert_eq!(ids(&s), ["verify-2", "verify-batch-0"]);
+    assert_eq!(ids(&s), ["verify-2-v0", "verify-2-v1", "verify-batch-0"]);
     assert_eq!(status::status(&run).unwrap()["phase"], json!("verify"));
     let s = submit(
         &run,
         json!({
-            "verify-2": verdict(false),
+            "verify-2-v0": verdict(false),
+            "verify-2-v1": verdict(false),
             "verify-batch-0": {"verdicts": [{"index": 0, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "documented"}]},
         }),
     );
@@ -336,7 +337,7 @@ fn an_answer_for_no_pending_task_is_refused_and_changes_nothing() {
 }
 
 #[test]
-fn lenses_with_no_findings_and_a_diff_with_no_rust_both_approve() {
+fn lenses_with_no_findings_and_a_diff_of_inert_files_both_approve() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let (run, _) = small_run(repo.path(), out.path());
@@ -348,7 +349,7 @@ fn lenses_with_no_findings_and_a_diff_with_no_rust_both_approve() {
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
     assert_eq!(
         (s["done"].clone(), s["verdict"].clone()),
-        (json!(true), json!("Approve"))
+        (json!(true), json!("Approve (nothing to review)"))
     );
 }
 
@@ -374,6 +375,17 @@ fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
         json!(["invariants", "negative-space", "compat"])
     );
     assert_eq!(st["plan"]["maxRounds"], json!(1));
+    let low = titled("Low", 2, "naming");
+    let s = submit(&run, round1(&[low]));
+    assert_eq!(s["verdict"], json!("Approve"));
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    for want in [
+        "## Verdict\n\nApprove · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
+        "(NOT VERIFIED: light pass: only Medium and above are verified, so no verifier was spent on this Low finding and nothing here has been checked against the code)",
+        "## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: the whole-diff lenses invariants, negative-space, compat were NOT dispatched (it DID run intent, which the diff called for);",
+    ] {
+        assert!(report.contains(want), "{want}: {report}");
+    }
 }
 
 #[test]

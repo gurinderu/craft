@@ -87,10 +87,16 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<()> {
                 ));
             }
             run.findings = merged;
-            start_verify(dir, run)
+            start_verify(dir, run, &profile)
         }
         Phase::Verify => {
-            verify::collect_votes(run);
+            // A split or thinned deciding pair buys the rest of its panel before anything settles.
+            let more = verify::escalation(run)?;
+            if !more.is_empty() {
+                run.tasks.extend(more);
+                return Ok(());
+            }
+            verify::settle_run(run, &profile.id);
             finish(dir, run)
         }
         Phase::Done => Ok(()),
@@ -124,7 +130,7 @@ fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()> {
     }
     run.findings = dedup::prepare(&run.rounds.pool, profile);
     if run.findings.len() < 2 {
-        return start_verify(dir, run);
+        return start_verify(dir, run, profile);
     }
     run.tasks = vec![Task::new(
         format!("dedup-{}", profile.id),
@@ -139,11 +145,11 @@ fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()> {
 }
 
 /// Hands the pool to its verifiers, or ends the run when none is to be spent.
-fn start_verify(dir: &Path, run: &mut RunState) -> Result<()> {
-    run.votes = vec![None; run.findings.len()];
+fn start_verify(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()> {
     run.notes.extend(verify::skipped_note(run));
     run.tasks = verify::tasks(run)?;
     if run.tasks.is_empty() {
+        verify::settle_run(run, &profile.id);
         return finish(dir, run);
     }
     run.phase = Phase::Verify;

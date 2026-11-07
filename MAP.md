@@ -111,7 +111,7 @@ under `content/`, inlined into the engines by the build; the Rust profile's rost
 |---|---|---|
 | `review` | **auto-detects language(s)** → per-profile (rust/nix) scout + gate + scout-scaled lens fan-out → loop-until-dry → adversarial + self-verification → merge | one Confirmed/Suspected report + verdict across all detected languages (the generic engine; `PROFILES.{rust,nix}` inline) |
 | `rust-review` / `nix-review` | thin pins → `workflow('review', {languages:['rust'\|'nix']})` | single-language review via the engine above |
-| `cli-review` | experimental driver of the Rust CLI's step protocol, not yet observed in a live session; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own | the verdict the binary printed and the path of the report it wrote |
+| `cli-review` | experimental driver of the Rust CLI's step protocol: the protocol was observed end to end in a live session (craft 0.41.0, a Rust diff, finished with Approve), the full-lens review that followed it not yet; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own | the verdict the binary printed and the path of the report it wrote |
 | `rust-audit` | per-crate review + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → sift by project memory → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
 | `adversarial-review` | scout + codebase-memory warm-up → throttled finder lenses → 1 combined verifier per finding (3-lens panel for critical/high) → completeness critic with verified gaps | language-agnostic adversarial diff review with bounded fan-out and steady request rate (subscription-friendly); Confirmed/Suspected report + Block/Warning/Approve verdict. Distinct from `review --strict` (maintainability-block mode of the generic engine) |
@@ -214,13 +214,16 @@ that shaped this layer has been removed.
 ## Rust CLI
 
 `cli/` is a Cargo workspace for `craft review`, designed so the binary decides a review's work and
-a host (the `cli-review` engine above) runs its agents; not yet observed end to end
-in a live session: `bin/craft` (the command: `craft review start | submit | status`, the step
+a host (the `cli-review` engine above) runs its agents. The step protocol was observed end to end
+in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
+now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
 protocol, and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
 under a concurrency cap), `crates/craft-review` (the steps — a scout whose answer plans the lenses of the Rust profile
 (`content/profiles/rust.json`), the lenses round after round until one finds nothing new or the plan's rounds are spent, the
-floor, roll-up and dedup of their pool, then a verifier per finding or per batch, each finding's severity capped by the harm
-it names as the engines cap it, then a Markdown report of the findings by tier, the lenses that ran and the rounds — rendered
+floor, roll-up and dedup of their pool, then verification as the engine buys it — a batch vote per file group of Mediums, one
+vote per other finding routed alone, and for a Critical or High a cheap vote plus an authoritative one, the rest of the
+plan's panel bought only when those two disagree — each finding's severity capped by the harm it names as the engines cap it,
+then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
 from `content/`, which it compiles in, its plans, prompts and verification rules held to the engines' by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them) and `crates/craft-tui` (progress as a phases → agents tree

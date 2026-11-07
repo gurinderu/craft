@@ -29,9 +29,10 @@ fn a_full_loop_reads_every_answer_from_its_file() {
     assert_eq!(ids(&s), ["dedup-rust"]);
     write_answer(&s, "dedup-rust", r#"{"groups": []}"#);
     let s = step::submit(&run, None).unwrap();
-    assert_eq!(ids(&s), ["verify-0", "verify-batch-0"]);
-    assert!(prompt_of(&s["tasks"][1]).contains("--- FINDING 0 ---"));
-    write_answer(&s, "verify-0", &verdict(false).to_string());
+    assert_eq!(ids(&s), ["verify-0-v0", "verify-0-v1", "verify-batch-0"]);
+    assert!(prompt_of(&s["tasks"][2]).contains("--- FINDING 0 ---"));
+    write_answer(&s, "verify-0-v0", &verdict(false).to_string());
+    write_answer(&s, "verify-0-v1", &verdict(false).to_string());
     let batch = json!({"verdicts": [{"index": 0, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "no"}]});
     write_answer(&s, "verify-batch-0", &batch.to_string());
     let s = step::submit(&run, None).unwrap();
@@ -39,7 +40,13 @@ fn a_full_loop_reads_every_answer_from_its_file() {
         (s["done"].clone(), s["verdict"].clone()),
         (json!(true), json!("Block"))
     );
-    for id in ["lens-errors-r1", "dedup-rust", "verify-0", "verify-batch-0"] {
+    for id in [
+        "lens-errors-r1",
+        "dedup-rust",
+        "verify-0-v0",
+        "verify-0-v1",
+        "verify-batch-0",
+    ] {
         assert!(
             run.join(format!("answers/{id}.json")).is_file(),
             "{id}'s accepted answer is kept"

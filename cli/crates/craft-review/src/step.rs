@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value, json};
 
 use crate::content;
+use crate::coverage;
 use crate::git;
 use crate::handoff;
 use crate::phases::{advance, finish};
@@ -78,14 +79,20 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
         plan: None,
         rounds: Rounds::default(),
         findings: Vec::new(),
-        votes: Vec::new(),
+        settled: Vec::new(),
         notes: Vec::new(),
         not_run: Vec::new(),
         verdict: None,
+        exit: None,
     };
-    if run.rust_files.is_empty() {
-        run.notes
-            .push("the diff changes no file the Rust profile reviews: nothing to review".into());
+    run.exit = coverage::exit(
+        &run.diff,
+        run.rust_files.len(),
+        &profile.lang,
+        opts.base.is_some(),
+    );
+    if let Some(exit) = &run.exit {
+        run.not_run.extend(exit.not_run.clone());
         finish(dir, &mut run)?;
     } else {
         run.tasks = vec![Task::new(
@@ -127,18 +134,30 @@ pub fn submit(dir: &Path, given: Option<&Map<String, Value>>) -> Result<Value> {
         .iter_mut()
         .filter(|t| t.state == TaskState::Pending)
     {
-        let checked = match given {
-            Some(g) => validate::check(task, g.get(&task.id)),
-            None => handoff::read_answer(dir, task).and_then(|a| validate::check(task, Some(&a))),
+        let submitted = match given {
+            Some(g) => g
+                .get(&task.id)
+                .cloned()
+                .ok_or_else(|| "no answer was submitted".to_owned()),
+            None => handoff::read_answer(dir, task),
         };
+        let checked = submitted
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|a| validate::check(task, Some(a)));
         match checked {
             Ok(answer) => {
                 task.answer = Some(answer);
                 task.state = TaskState::Answered;
                 task.error = None;
+                task.refused = None;
                 continue;
             }
-            Err(e) => task.error = Some(e),
+            Err(e) => {
+                task.error = Some(e);
+                // An answer that came back but off its schema is a live vote, not a dead one.
+                task.refused = submitted.ok().map(|a| validate::normalize(&a));
+            }
         }
         if given.is_none() {
             handoff::set_aside(dir, task)?;

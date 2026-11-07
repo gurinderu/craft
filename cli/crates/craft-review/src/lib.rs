@@ -5,6 +5,7 @@
 //! still runs on.
 
 pub mod content;
+pub mod coverage;
 mod dedup;
 pub mod git;
 pub mod handoff;
