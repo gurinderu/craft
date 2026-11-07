@@ -80,9 +80,12 @@ fn start(exe: &Path, repo: &Path, run: &Path, root: Option<&Path>) -> (String, V
     );
     let step: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(step["tasks"][0]["id"], "scout-rust");
+    // The project's memory is recalled beside the scout by default.
+    assert_eq!(step["tasks"][1]["id"], "memory-recall");
     // The scout's answer, through the binary, brings the lenses that name the review rules.
     let scout = r#"{"scout-rust": {"sizeBucket": "small", "lenses": ["errors"], "isLibrary": false,
-        "securitySensitive": false, "intent": "", "churn": [], "repoRules": [], "notes": ""}}"#;
+        "securitySensitive": false, "intent": "", "churn": [], "repoRules": [], "notes": ""},
+        "memory-recall": {"backend": "none", "why": "no memory configured", "decisions": []}}"#;
     let answers = run.with_extension("answers.json");
     std::fs::write(&answers, scout).unwrap();
     let out = Command::new(exe)

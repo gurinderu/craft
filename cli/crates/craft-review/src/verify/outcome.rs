@@ -5,7 +5,7 @@
 use serde_json::Value;
 
 use super::{Route, culls, is_high, panel, returned, route_in};
-use crate::settle::{self, Tier, finalize, not_verified, tier_from_votes};
+use crate::settle::{self, Tier, finalize_in, not_verified, tier_from_votes};
 use crate::state::{RunState, Task, TaskKind, TaskState, finding_profile};
 
 /// The note a skipped finding carries, as `routedUnverified` words it.
@@ -159,7 +159,11 @@ pub(crate) fn settle_run(run: &mut RunState) {
         })
         .collect();
     run.notes.extend(failed);
-    let settled: Vec<Value> = out.into_iter().flatten().map(|f| finalize(&f)).collect();
+    let settled: Vec<Value> = out
+        .into_iter()
+        .flatten()
+        .map(|f| finalize_in(&f, run.context.strict))
+        .collect();
     let gaps = not_run(run, &settled);
     for g in gaps {
         if !run.not_run.contains(&g) {

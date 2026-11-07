@@ -43,6 +43,18 @@ pub struct StartArgs {
     /// (~/.craft/runs/cli by default) when absent.
     #[arg(long)]
     pub runs: Option<PathBuf>,
+    /// Strict mode: a confirmed maintainability finding at Medium or above is a presumptive
+    /// blocker, and the maintainability lens always runs.
+    #[arg(long)]
+    pub strict: bool,
+    /// The launcher's own decision, question and rule records (`priorDecisions`), a JSON list, as
+    /// a file or `-` for stdin; they add to what the run recalls from the project's memory.
+    #[arg(long)]
+    pub prior_decisions: Option<PathBuf>,
+    /// Recall nothing from the project's memory: only the records `--prior-decisions` passes
+    /// apply (a launcher that recalled them itself).
+    #[arg(long)]
+    pub no_recall: bool,
 }
 
 /// How deep a review goes.
@@ -116,23 +128,34 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         fresh: args.fresh,
         full_every: args.full_every,
         runs: args.runs.clone(),
+        strict: args.strict,
+        recall: !args.no_recall,
+        // An unreadable list is refused and named in the report; the review still runs.
+        prior_decisions: args
+            .prior_decisions
+            .as_deref()
+            .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
     };
     print(&step::start(&opts)?)
 }
 
-/// The answers a host passes itself (`--answers`), as a JSON object by task id.
-fn given_answers(path: &Path) -> Result<Map<String, Value>> {
+/// A JSON value the host passes, as a file or `-` for stdin.
+fn json_input(path: &Path) -> Result<Value> {
     let text = if path.as_os_str() == "-" {
         let mut s = String::new();
         std::io::stdin()
             .read_to_string(&mut s)
-            .context("reading the answers from stdin")?;
+            .context("reading stdin")?;
         s
     } else {
-        std::fs::read_to_string(path)
-            .with_context(|| format!("reading the answers {}", path.display()))?
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?
     };
-    serde_json::from_str(&text).context("the answers are not a JSON object")
+    serde_json::from_str(&text).with_context(|| format!("{} is not JSON", path.display()))
+}
+
+/// The answers a host passes itself (`--answers`), as a JSON object by task id.
+fn given_answers(path: &Path) -> Result<Map<String, Value>> {
+    serde_json::from_value(json_input(path)?).context("the answers are not a JSON object")
 }
 
 pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {

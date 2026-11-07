@@ -225,7 +225,10 @@ any other language, `content/profiles/`), a scout per profile whose answer plans
 lenses round after round until each profile's round finds nothing new or its plan's rounds are spent, the
 floor, roll-up and dedup of their one pool, then verification as the engine buys it — a batch vote per file group of Mediums, one
 vote per other finding routed alone, and for a Critical or High a cheap vote plus an authoritative one, the rest of the
-plan's panel bought only when those two disagree — each finding's severity capped by the harm it names as the engines cap it,
+plan's panel bought only when those two disagree — each finding's severity capped by the harm it names as the engines cap it
+(strict mode spares a maintainability finding and blocks on a confirmed one at Medium or above), a finding the project's
+memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
+under its own section when the code in its record's scope is unchanged since the record's commit,
 then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
 from `content/`, which it compiles in, its plans, prompts and verification rules held to the engines' by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and

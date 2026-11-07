@@ -211,10 +211,20 @@ fn reach_demoted(f: &Value) -> Value {
 /// (`capByHarm(harmRaise(f))`).
 #[must_use]
 pub fn finalize(f: &Value) -> Value {
+    finalize_in(f, false)
+}
+
+/// [`finalize`] in a run that is `strict` or not: strict mode spares a maintainability finding the
+/// harm cap, so it keeps the severity its lens raised it to (`capExempt`).
+#[must_use]
+pub(crate) fn finalize_in(f: &Value, strict: bool) -> Value {
     let level = f
         .get("harmVerified")
         .and_then(Value::as_str)
         .filter(|_| Tier::of(f) == Tier::Confirmed);
     let raised = level.map_or_else(|| f.clone(), |l| harm::raise::raise(f, l));
+    if strict && crate::strict::is_maintainability(&raised) {
+        return raised;
+    }
     harm::cap(&raised)
 }

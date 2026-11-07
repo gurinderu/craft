@@ -41,13 +41,21 @@ pub fn scout_prompt(
             ("securityHints", profile.security_hints.clone()),
             ("conditionalLenses", json(profile.lenses.iter().filter(|l| l.conditional).map(|l| l.id.clone()).collect())),
             ("scoutRules", content::text(&profile.scout_rules)?),
-            ("strict", String::new()),
+            ("strict", strict_line(ctx)?),
             ("isLibrary", is_library.into()),
             ("intent", "infer the change's purpose from the diff and any PR/commit messages; empty string if unclear.".into()),
             ("repoRulesStep", content::prompt("scout-repo-rules", &vars([("max", REPO_RULES_MAX.to_string())]))?),
         ]),
     )?;
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
+}
+
+/// The scout's STRICT MODE line, which makes it always pick `maintainability`; empty otherwise.
+fn strict_line(ctx: &PromptContext) -> Result<String, ContentError> {
+    if !ctx.strict {
+        return Ok(String::new());
+    }
+    Ok(format!("\n   {}", content::text("scout-strict")?))
 }
 
 fn field<'a>(f: &'a Value, k: &str) -> &'a str {

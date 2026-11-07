@@ -9,6 +9,7 @@ use super::{
     prior_found_summary, repo_directive, scout_prompt,
 };
 use crate::ledger::LedgerRow;
+use crate::memory::Memory;
 use crate::plan::Plan;
 use crate::profile::Profile;
 
@@ -32,6 +33,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
         craft_root: input["craftRoot"].as_str().map(str::to_owned),
         craft_version: input["craftVersion"].as_str().map(str::to_owned),
         re_review: ReScope::First,
+        strict: false,
     };
     let p = &input["plan"];
     let plan = Plan {
@@ -82,6 +84,41 @@ fn every_prompt_renders_as_the_engines_render_it() {
         want["dedup"].as_str().unwrap()
     );
     rereview(&ctx, &plan, &prior, input, want);
+    strict_and_recall(&ctx, &plan, &prior, input, want);
+}
+
+/// Strict mode's scout and maintainability lens, and the memory recall over the input's paths and
+/// over none.
+fn strict_and_recall(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &Value) {
+    let dir = repo_directive(&ctx.repo);
+    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+    let strict = PromptContext {
+        strict: true,
+        ..ctx.clone()
+    };
+    let rust = Profile::load("rust").unwrap();
+    let scout = body(scout_prompt(&strict, &rust, &[]).unwrap());
+    assert_eq!(scout, want["strict"]["scout"].as_str().unwrap());
+    let pathspec = rust.pathspec(&[]);
+    let at = LensIn {
+        profile: &rust,
+        lens: "maintainability",
+        plan,
+        pathspec: &pathspec,
+        prior,
+    };
+    let lens = body(lens_prompt(&strict, &at).unwrap());
+    assert_eq!(lens, want["strict"]["maintainability"].as_str().unwrap());
+    let base = input["base"].as_str().unwrap();
+    let paths = strings(&input["recallPaths"]);
+    for (case, paths) in [("paths", paths), ("none", Vec::new())] {
+        let task = Memory::recall_task(&ctx.repo, &paths, base).unwrap();
+        assert_eq!(
+            body(task.prompt),
+            want["memoryRecall"][case].as_str().unwrap(),
+            "recall: {case}"
+        );
+    }
 }
 
 /// A re-review round's scout and `errors` lens, over the fix commits and as a full re-scan, and

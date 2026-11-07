@@ -12,6 +12,7 @@ use crate::coverage;
 use crate::finished;
 use crate::git;
 use crate::handoff;
+use crate::memory::Memory;
 use crate::phases::{advance, finish};
 use crate::profile::Profile;
 use crate::prompts::{self, PromptContext, ReScope, SPEC_MAX};
@@ -73,6 +74,13 @@ pub struct StartOptions {
     pub full_every: u32,
     /// Where earlier runs are looked for; the run directory's parent when `None`.
     pub runs: Option<PathBuf>,
+    /// Strict mode: the maintainability bar is a presumption of block.
+    pub strict: bool,
+    /// The launcher's own records (`priorDecisions`) as given, added to what the run recalls; `Err`
+    /// names why the host's list could not be read, which refuses it and runs the review anyway.
+    pub prior_decisions: Option<Result<Value, String>>,
+    /// Recall the project's memory beside the scouts; without it only `prior_decisions` apply.
+    pub recall: bool,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -116,6 +124,8 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         &branch_diff.base,
     )?;
     let spec = branch_diff.log.chars().take(SPEC_MAX).collect();
+    // The memory is recalled for the branch's paths, not only those a re-review's fix commits touch.
+    let (recall_paths, recall_base) = (branch_diff.files.clone(), branch_diff.base.clone());
     let (diff, re_review) = rereview::scope(&cwd, &mut chain, branch_diff)?;
     let context = PromptContext {
         repo: cwd.display().to_string(),
@@ -124,6 +134,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         craft_root: opts.craft_root.clone(),
         craft_version: opts.craft_version.clone(),
         re_review,
+        strict: opts.strict,
     };
     let tracks: Vec<Track> = coverage::assign(&diff.files, &profiles)
         .into_iter()
@@ -131,6 +142,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         .collect();
     let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
     let uncovered = coverage::uncovered(&diff.files, taken);
+    let memory = Memory::open(opts.prior_decisions.clone());
     let mut run = RunState {
         version: STATE_VERSION,
         tasks: Vec::new(),
@@ -149,6 +161,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         verdict: None,
         exit: None,
         chain,
+        memory: memory.recalling(opts.recall),
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -162,6 +175,11 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         run.not_run.extend(exit.not_run.clone());
     } else {
         run.tasks = scouts(&run, &profiles)?;
+        let recall = opts.recall && !recall_paths.is_empty();
+        if recall {
+            let task = Memory::recall_task(&run.context.repo, &recall_paths, &recall_base)?;
+            run.tasks.push(task);
+        }
     }
     run.tasks.extend(adjudicators);
     if run.tasks.is_empty() {

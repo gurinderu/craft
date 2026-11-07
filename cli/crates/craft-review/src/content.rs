@@ -194,6 +194,9 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/lens-re-review-rescan.md",
     "prompts/adjudicate.md",
     "prompts/carry-check.md",
+    "prompts/scout-strict.md",
+    "prompts/lens-strict-maintainability.md",
+    "prompts/memory-recall.md",
     "schemas/scout.schema.json",
     "schemas/dedup.schema.json",
     "schemas/findings.schema.json",
@@ -202,6 +205,7 @@ const FILES: &[(&str, &str)] = content_files![
     "schemas/batch-verdict.schema.json",
     "schemas/adjudicate.schema.json",
     "schemas/changed.schema.json",
+    "schemas/memory-recall.schema.json",
 ];
 
 /// The raw text of the content file at `path` under `content/`.

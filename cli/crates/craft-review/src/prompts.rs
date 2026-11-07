@@ -41,6 +41,10 @@ pub struct PromptContext {
     /// as a first review.
     #[serde(default, skip_serializing_if = "ReScope::is_first")]
     pub re_review: ReScope,
+    /// Strict mode: the maintainability bar is a presumption of block (`strict` in
+    /// `lib/review-run-args.mjs`). Optional, so a state written before it reads as a default review.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub strict: bool,
 }
 
 /// What a round's lenses review, as `reReviewBlock` in `lib/review-lens-prompts.mjs` frames it.
@@ -102,7 +106,7 @@ fn plugin_candidates(ctx: &PromptContext, file: &str) -> String {
 }
 
 /// Every prompt starts here: the agents run where the host session runs, not in the repository.
-fn repo_directive(repo: &str) -> String {
+pub(crate) fn repo_directive(repo: &str) -> String {
     format!(
         "WORKING DIRECTORY: this review targets the repository at {} — NOT the directory you start \
          in. Before ANY git / cargo / nix / file command, `cd` there (or pass `git -C`). Every file \
