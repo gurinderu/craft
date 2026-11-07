@@ -67,8 +67,10 @@ Return {exitCode, stdout, stderr}: the last command's exit status, and its stdou
 \`\`\`sh
 ${locate}if [ -z "\${CRAFT_FETCHER:-}" ]; then printf '%s\\n' "no usable ${FETCHER} — \${CRAFT_FETCHER_WHY}" >&2; exit 1; fi
 CRAFT_BIN_PATH="$(node "$CRAFT_FETCHER" ensure --version ${shq(version)})" || exit $?
-printf 'root=%s\\nbin=%s\\n' "$(dirname "$(dirname "$CRAFT_FETCHER")")" "$CRAFT_BIN_PATH"
-\`\`\``,"two lines, root=<the plugin root> and bin=<the binary's path>,")}function resolvedBin(got){let out=commandOutput(got);if("error"in out)return out;let bin=printedPath(out.stdout,"bin"),root=printedPath(out.stdout,"root");return bin&&root?{bin:shq(bin),root}:{error:`the fetch printed no absolute root= and bin= lines: ${out.stdout.slice(0,200)}`}}var printedPath=(stdout,key)=>absolutePath(stdout.split(`
+CRAFT_ROOT_PATH="$(dirname "$(dirname "$CRAFT_FETCHER")")"
+if command -v cygpath >/dev/null 2>&1; then CRAFT_ROOT_PATH="$(cygpath -m "$CRAFT_ROOT_PATH")"; fi
+printf 'root=%s\\nbin=%s\\n' "$CRAFT_ROOT_PATH" "$CRAFT_BIN_PATH"
+\`\`\``,"two lines, root=<the plugin root> and bin=<the binary's path>,")}function resolvedBin(got){let out=commandOutput(got);if("error"in out)return out;let bin=printedPath(out.stdout,"bin"),root=printedPath(out.stdout,"root");return bin&&root?{bin:shq(bin),root:driveRoot(root,bin)}:{error:`the fetch printed no absolute root= and bin= lines: ${out.stdout.slice(0,200)}`}}var driveRoot=(root,bin)=>{let m=/^[A-Za-z]:[\\/]/.test(bin)?/^\/([A-Za-z])(\/.*)?$/.exec(root):null;return m?.[1]?`${m[1].toUpperCase()}:${m[2]??"/"}`:root},printedPath=(stdout,key)=>absolutePath(stdout.split(`
 `).map(l=>l.trim()).find(l=>l.startsWith(`${key}=`))?.slice(key.length+1)),rootPrompt=o=>servicePrompt(`Run this ONCE, exactly as written, in one Bash call:
 
 \`\`\`sh

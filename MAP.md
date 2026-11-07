@@ -250,9 +250,10 @@ diff itself.
 `integrations/` holds one directory per harness. `integrations/claude-code/` is the Claude Code plugin: its
 manifest, `agents/`, `hooks/` and the built `workflows/`, with `skills`, `lib`, `content`, `src` and `README.md` as
 symlinks to the shared ones at the root; a load in place (`--plugin-dir`) follows them into the checkout. The root
-marketplace (`.claude-plugin/marketplace.json`) installs it from the `claude-code-plugin` branch, which each
+marketplace (`.claude-plugin/marketplace.json`) installs it in place today (`./integrations/claude-code`, the
+links followed where the clone made them: Linux, macOS). Staged: the `claude-code-plugin` branch, which each
 release rebuilds from this directory with the links dereferenced into real files
-(`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls
-and which can be dispatched by hand to seed the branch), so a clone without symlinks (Windows) installs it whole;
-the entry is a `url` source over HTTPS. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
+(`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls;
+the first release carrying it creates the branch); a follow-up then moves the entry to a `url` source over HTTPS on
+that branch, so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` is planned.

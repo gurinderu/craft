@@ -3,12 +3,13 @@ name: claude-code-plugin
 # The Claude Code plugin without symlinks, for consumers whose clone does not make them (core.symlinks=false, the
 # Windows default, turns each of integrations/claude-code's links into a one-line text file the harness then caches
 # as it is). One ref's delivery, every link dereferenced, becomes the next commit of the claude-code-plugin branch,
-# which the marketplace entry's `url` source names (lib/materialize-claude-code.mjs). Its plugin.json carries that
+# which the marketplace entry's staged `url` source is to name (lib/materialize-claude-code.mjs). Its plugin.json carries that
 # ref's version, so an install or update moves with release-please.
 #
-# release-please.yml calls this with the tag of each release it cuts. By hand (`gh workflow run
-# claude-code-plugin.yml --ref <branch> -f ref=<ref>`) it seeds the branch before its first release, or rebuilds it:
-# `ref` is what is materialized, whichever branch the dispatch runs the workflow file from.
+# release-please.yml calls this with the tag of each release it cuts; the first release to carry this file creates
+# the branch. GitHub dispatches only a workflow whose file is on the default branch, so by hand (`gh workflow run
+# claude-code-plugin.yml -f ref=<ref>`) it only re-publishes the branch from a ref once this file is on main —
+# never to seed it ahead of a release, which would ship unreleased content under the last release's version.
 on:
   workflow_call:
     inputs:
@@ -41,6 +42,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -67,6 +69,9 @@ jobs:
           git archive "refs/heads/$BRANCH" | tar -x -C "$tree"
           links="$(find "$tree" -type l)"
           [ -z "$links" ] || { echo "::error::symlinks in the materialized tree:"; echo "$links"; exit 1; }
-          npx --yes @anthropic-ai/claude-code plugin validate "$tree/.claude-plugin/plugin.json" --strict
+          npx --yes @anthropic-ai/claude-code@2.1.319 plugin validate "$tree/.claude-plugin/plugin.json" --strict
+      # The checkout keeps no credential; the token reaches git for this push alone.
       - name: push
-        run: git push origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
+        env:
+          TOKEN: ${{ github.token }}
+        run: git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$BRANCH:refs/heads/$BRANCH"
