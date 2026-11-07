@@ -164,7 +164,8 @@ pub(crate) fn panel(run: &RunState, i: usize) -> Vec<(u32, Option<Value>)> {
             | TaskKind::Lens { .. }
             | TaskKind::Dedup
             | TaskKind::Adjudicate { .. }
-            | TaskKind::CarryCheck { .. } => None,
+            | TaskKind::CarryCheck { .. }
+            | TaskKind::Recall { .. } => None,
         })
         .collect()
 }

@@ -21,6 +21,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run,
         "lensScope": if run.context.re_review == ReScope::Fixes { "delta" } else { "full" },
         "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
+        "memory": run.memory.source.record(), "strict": run.context.strict,
     });
     if let (Some(obj), false) = (done.as_object_mut(), run.degraded.is_empty()) {
         obj.insert("degraded".into(), json!(run.degraded));

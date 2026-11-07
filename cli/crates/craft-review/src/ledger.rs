@@ -32,6 +32,31 @@ pub struct LedgerRow {
     /// Every lens and tool that reported the finding, kept when it carries them (`ledgerSources`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sources: Option<Vec<Value>>,
+    /// The question that set a `deferred` row's finding aside (`ledgerDeferral`; realm @nick/craft,
+    /// node #204): the next round reads the deferral here, never from the mark in `why`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deferral: Option<Deferral>,
+}
+
+/// A question's deferral as a ledger row carries it (`deferralOf` in `lib/ledger-deferral.mjs`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Deferral {
+    pub id: String,
+    pub reason: String,
+    pub who: String,
+    pub when: String,
+    pub link: String,
+    pub commit: String,
+}
+
+impl Deferral {
+    /// The deferral a finding carries, `None` when it names no question (`deferralOn`).
+    #[must_use]
+    pub fn on(v: Option<&Value>) -> Option<Self> {
+        let d: Self = serde_json::from_value(v?.clone()).ok()?;
+        (!d.id.is_empty()).then_some(d)
+    }
 }
 
 impl LedgerRow {
@@ -52,6 +77,7 @@ impl LedgerRow {
             why: text("why"),
             tool_rule: text("toolRule"),
             sources: f.get("sources").and_then(Value::as_array).cloned(),
+            deferral: Deferral::on(f.get("deferral")),
         }
     }
 
@@ -69,6 +95,12 @@ impl LedgerRow {
             }
             if let Some(s) = &self.sources {
                 obj.insert("sources".into(), Value::Array(s.clone()));
+            }
+            if let Some(d) = &self.deferral {
+                obj.insert(
+                    "deferral".into(),
+                    serde_json::to_value(d).unwrap_or(Value::Null),
+                );
             }
         }
         f
@@ -92,7 +124,7 @@ fn shingle(title: &str) -> Vec<String> {
 }
 
 /// How much two titles share, as `shingleOverlap`: common words over the larger set.
-fn overlap(a: &str, b: &str) -> f64 {
+pub(crate) fn overlap(a: &str, b: &str) -> f64 {
     let (mut sa, mut sb) = (shingle(a), shingle(b));
     sa.dedup();
     sb.dedup();

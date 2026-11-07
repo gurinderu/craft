@@ -29,7 +29,7 @@ fn chained(rows: Vec<LedgerRow>) -> Chain {
         }),
         ..Chain::default()
     };
-    take_ledger(&mut c, rows);
+    take_ledger(&mut c, rows, &|_| false);
     c
 }
 
@@ -450,6 +450,7 @@ fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_si
     let next = chained(serde_json::from_str(&filed).unwrap());
     assert_eq!(next.priors[0].fate, Fate::Pending);
     let ctx = crate::prompts::PromptContext {
+        strict: false,
         repo: "/r".into(),
         base: "abc".into(),
         spec: String::new(),

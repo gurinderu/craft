@@ -775,6 +775,44 @@
           "negative-space"
         ]
       }
+    },
+    {
+      "name": "strict mode adds maintainability whatever the scout picked",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "intent",
+          "tests",
+          "maintainability"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      },
+      "strict": true
     }
   ]
 }
