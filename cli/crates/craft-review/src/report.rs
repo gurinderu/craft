@@ -160,6 +160,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         }
         out.push('\n');
     }
+    degraded(state, &mut out);
     if state.exit.is_none() {
         findings(state, &mut out);
     }
@@ -178,6 +179,18 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         out.push_str(&light::section(state));
     }
     out
+}
+
+/// How the run was weaker than asked, as its host said: before the findings, so they are read with it.
+fn degraded(state: &RunState, out: &mut String) {
+    if state.degraded.is_empty() {
+        return;
+    }
+    out.push_str("## Degraded\n\nThe host ran part of this review weaker than it asked:\n\n");
+    for d in &state.degraded {
+        out.push_str(&format!("- {}\n", one_line(d)));
+    }
+    out.push('\n');
 }
 
 /// The findings by tier and their count.

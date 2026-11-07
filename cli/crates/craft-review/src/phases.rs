@@ -136,7 +136,7 @@ fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()> {
         format!("dedup-{}", profile.id),
         format!("dedup:{}", profile.id),
         prompts::dedup_prompt(&run.context, &run.findings)?,
-        &profile.dedup_model,
+        profile.dedup_model,
         content::schema("dedup")?,
         TaskKind::Dedup,
     )];

@@ -11,7 +11,7 @@ fn lens_task(lens: &str, round: u32, answer: Option<Value>) -> Task {
         format!("lens-{lens}-r{round}"),
         "l".into(),
         "p".into(),
-        "opus",
+        Model::Opus,
         json!({}),
         TaskKind::Lens {
             lens: lens.into(),
