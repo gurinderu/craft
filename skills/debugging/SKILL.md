@@ -1,0 +1,62 @@
+---
+name: debugging
+description: >-
+  Rust debugging toolbox — reproducing, localizing, and explaining a bug (minimal repro, git bisect / cargo bisect-rustc, dbg!/tracing/RUST_BACKTRACE, Miri/loom for heisenbugs, rust-gdb/rr). Use for any Rust bug, panic, test failure, crash, or flaky behavior. Triggers: bisect, cargo bisect-rustc, heisenbug, RUST_BACKTRACE, loom, rr, why is this failing.
+---
+
+# Debugging (Rust)
+
+The **Rust-specific toolbox** for reproducing, localizing, and explaining a Rust bug. Full detail
+in [techniques.md](techniques.md).
+
+## Read the error first
+
+The single highest-yield habit: read the whole error message and stack trace before doing
+anything. Rust's errors (and `RUST_BACKTRACE=1` / `=full`) are unusually precise — they usually
+name the file, line, and often the cause. Don't pattern-match the first word and jump.
+
+## The 3-strike rule: stop fixing, question the design
+
+If the same error survives three honest attempts, the bug is one level up from where you're
+patching. Count the strikes — it's what stops you thrashing at attempt seven.
+
+| Strike | What it suggests | Move |
+|---|---|---|
+| 1 | maybe a slip | apply the obvious local fix |
+| 2 | maybe the wrong method | try a different approach, same layer |
+| 3 | the approach itself is wrong | escalate — question the design, not the line |
+
+A bug that took the third strike taught something the code does not say — once the root cause is
+known, keep it with `memory` record-lesson (scope = the module, body = cause and the trap).
+
+Escalating means handing the problem to the skill that owns that design decision:
+
+- `E0382`/`E0597` still failing after clone/borrow churn → the ownership *model* is wrong → `rust-ownership`
+- a `Result`/`unwrap` you keep re-shaping → the error *strategy* is wrong → `rust-errors`
+- "cannot be sent between threads" you keep bound-chasing → the concurrency *design* → `rust-concurrency`
+- a panic that should have been unreachable → the *type* should forbid the state → `rust-traits`
+
+## Rust toolbox (→ techniques.md)
+
+- **Shrink the repro** — delta-debug the input; a failing `proptest`/`quickcheck` hands you a
+  minimal counterexample (→ `rust-testing`).
+- **Bisect** — `git bisect run <cmd>` for the offending commit; `cargo bisect-rustc` for a
+  toolchain regression.
+- **Instrument** — escalate `dbg!` → `eprintln!` → `tracing::debug!(?x)` → `assert!`;
+  `RUST_BACKTRACE=1` for the panic path. Remove `dbg!`/`eprintln!` before committing; keep
+  `tracing` (→ `rust-cloud-native`).
+- **Heisenbugs** — non-determinism is shared state / ordering / timing: run under **Miri** (data
+  races — the `craft:rust-miri` agent) or `loom`; `cargo nextest`'s process isolation surfaces
+  test-order leaks; inject the clock with `tokio::time::pause` (→ `rust-concurrency`).
+- **Heavy tools** — `rust-gdb`/`rust-lldb`, and `rr` for deterministic record/replay of rare
+  failures.
+
+## Boundaries
+
+- Full technique detail → [techniques.md](techniques.md).
+- Confirming the fix — the Rust "what proves what" commands → `rust-review`.
+- A panic-where-a-`Result`-belonged / error-design issue → `rust-errors`.
+- Intermittent / ordering / data-race bugs → `rust-concurrency` (and Miri via the `craft:rust-miri`
+  agent).
+- "Slow", not "wrong" → `rust-performance` (profile, don't guess).
+- Symptom-patching (e.g. `unwrap_or_default()` to hide a `None`) is a finding in → `rust-review`.

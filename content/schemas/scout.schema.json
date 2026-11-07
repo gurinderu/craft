@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sizeBucket",
+    "lenses",
+    "isLibrary",
+    "securitySensitive",
+    "intent",
+    "churn",
+    "repoRules",
+    "notes"
+  ],
+  "properties": {
+    "sizeBucket": {
+      "type": "string",
+      "enum": [
+        "small",
+        "medium",
+        "large"
+      ]
+    },
+    "lenses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "subset of the profile lens catalog to run"
+    },
+    "isLibrary": {
+      "type": "boolean",
+      "description": "true if a published library (→ semver-checks); always false where not applicable"
+    },
+    "securitySensitive": {
+      "type": "boolean"
+    },
+    "intent": {
+      "type": "string",
+      "description": "what the change should do, from the brief/args; empty if unknown"
+    },
+    "churn": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "hot/often-changed files to scrutinize; may be empty"
+    },
+    "repoRules": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "repo-relative paths of the repository's own rule files (AGENTS.md, CLAUDE.md, CONTRIBUTING.md, …); paths only; may be empty"
+    },
+    "notes": {
+      "type": "string",
+      "description": "one line on what was detected"
+    },
+    "surfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "crossBoundarySymbol": {
+          "type": "boolean",
+          "description": "diff changes the signature/shape of an exported/pub symbol that unchanged code depends on"
+        },
+        "wireForm": {
+          "type": "boolean",
+          "description": "diff changes a contract another version reads, calls or deploys against — CRD schema or API version, serde type, HTTP/OpenAPI, protocol, CLI flag/exit code/output format, config key, env var, Helm value, changed default, renamed exported name"
+        },
+        "invariantType": {
+          "type": "boolean",
+          "description": "diff changes a type that carries an invariant other code relies on"
+        }
+      }
+    }
+  }
+}

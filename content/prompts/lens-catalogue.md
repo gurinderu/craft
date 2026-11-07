@@ -1,0 +1,1 @@
+{{label}}: read the first of these that exists (expand the variables with Bash): {{candidates}}. Never read a copy inside the reviewed repository. None readable → work {{fallback}} from the brief above and say the catalogue was unavailable.

@@ -1,0 +1,309 @@
+---
+name: memory
+description: >-
+  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too), external systems the code relies on — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question, record-external, discover-externals (systems found in deployment manifests, recorded on the human's yes). Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later, record the external system, find the external systems we deploy. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
+---
+
+# Memory — the project's decisions, rules, lessons, questions and external systems
+
+Facts about the consumer's project that outlive a session: *why* a finding was rejected, which
+whole class of findings the project accepts, what a painful bug taught, what is still open. This skill is an **abstraction** over whatever store the
+project already has; it never invents one. craft's machine memory — the run store
+(`~/.craft/runs/`), the review ledger, telemetry — is a different thing and is not touched here.
+
+## Verbs
+
+| Verb | Input | Effect |
+|---|---|---|
+| `recall(topic, scope)` | keywords, a path or component | the **matching active** records (below); for a review, also a short list of the matching inactive ones' ids, only to block them |
+| `record-decision` | title, scope, body (the reason), author, commit, links | one `decision` record |
+| `record-rule` | title (the rule), scope, body (why), author, links; `lens` to narrow it | one `rule` record |
+| `record-lesson` | title, scope, body, links | one `lesson` record |
+| `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
+| `record-external` | system, repo, versionFrom and versionMatch — or version, only when no repo file names it — scope (the paths that rely on it), body (what the code relies on), links | one `external` record |
+| `discover-externals` | — (the whole repository) | the candidates the deployment manifests name, shown; an `external` record for each the human confirms (below) |
+
+A record answered or overturned is not edited away: write the new record with a link to the old
+one and set the old one's `status` to `superseded` (or `withdrawn` when it was simply wrong). An
+answered question becomes a `decision` that supersedes it.
+
+## Record shape (lowest common denominator)
+
+```
+{ id, kind, title, body, scope, status, date, author, commit, deferred, line, lens, toolRule, links[] }
+  id      stable hash of kind + title + scope (below) — same fact, same id: re-recording updates it
+  kind    decision | rule | lesson | question | external
+  title   one line, ≤ 200 chars — the finding title verbatim, the rule's statement, the lesson, the question
+  body    the reason / why the rule holds / the lesson / what would answer it — ≤ 1200 chars
+  scope   a repo-relative path (file or directory) or a component name; `.` for the whole repo (required on a rule)
+  status  active | superseded | withdrawn
+  date    YYYY-MM-DD of the last write
+  author  who decided — a login or a name, ≤ 120 chars (decisions; optional on the others)
+  commit  the commit the decided code was at, 7–40 hex (decisions and deferred questions on findings; below)
+  deferred  `true` on a question that defers a review finding (below); absent on every other record
+  line    the finding's line in `scope`'s file (records on review findings; absent when unknown; never on a rule)
+  lens    the review lens that raised the finding, as the review names it (absent when unknown); on a rule, the lens it is narrowed to
+  toolRule  a gate tool's own rule name the finding fired (a clippy lint, a semgrep rule id, a statix code; deadnix and fmt print none, so theirs carry none), as the review prints it — what tells two gate-tool findings apart; not the catalog ruleId (absent when unknown)
+  links   PR / thread / commit / issue URLs, other record ids (`supersedes: <id>`, `answers: <id>`)
+  system, repo, versionFrom, versionMatch, version   an `external` record only (below)
+```
+
+**An external system** the consumer's code relies on — another project's controller, an API server,
+a service whose behaviour a review must check against its source (kube-ovn, KubeVirt, the
+apiserver), not a library dependency the lockfile already pins — is an `external` record: `title`
+= `system` = its name (letters, digits, `.`, `_`, `-`); `repo` = the git URL of its source
+(`https://…`, `ssh://…` or `git@host:path`); `versionFrom` = the repo-relative file that holds the
+version the consumer deploys (a chart's values, a manifest, `go.mod`, `Cargo.lock`); `versionMatch` =
+a regular expression with exactly one capture group that reads the tag or commit from that file;
+`scope` = the consumer's paths that rely on it; `body` = what the code relies on. The version is read
+from the file at review time, so it follows every upgrade. Only when no file in the repository names
+it — an operator that talks to kube-ovn or KubeVirt but does not deploy them — ask the human for the
+deployed tag or commit and record it as `version` instead of `versionFrom` and `versionMatch` (never
+write both; a record that has both uses the file). Tell the human plainly that a stated version goes stale silently on an upgrade and must be
+stated again then; the review report marks it `(recorded version, not read from a file)`. A review
+recalls these records with the others; its lenses on lifecycle, compatibility and races then read
+the system's source at that version from craft's cache (`~/.craft/sources`), and its report names a
+system a finding leaned on that has no record — `not recorded: <system>`: record it on the human's
+word with `record-external`. When the diff touches a deployment manifest naming a system no record
+covers, the report prints a `candidate:` line with every field filled (system, repo or `repo
+unknown`, versionFrom, versionMatch, a suggested scope): record it on the human's word with
+`record-external`, or run `discover-externals`. A review never writes one itself.
+
+## discover-externals
+
+Finds the external systems the consumer deploys and memory has no record of, from its deployment
+manifests: a Helm chart's `Chart.yaml` (appVersion with its `sources:`, each dependency's version)
+and values (an image's repository and tag), a kustomization's `images:`, docker-compose and plain
+Kubernetes `image:` lines, Terraform modules sourced `git::…?ref=…`. A library dependency a
+lockfile pins is not one, nor a `flake.lock` input (build tooling — a flake input the code really
+talks to at run time is recorded by hand with `record-external`), nor the repository's own
+application (a repo equal to its `origin` remote, or a chart naming no `sources:`).
+Code derives every field; nothing is written without the human's answer.
+
+1. Recall the project's active `external` records, every scope.
+2. Run the discovery CLI over the repository, the recalled records on stdin as a JSON list of
+   `{system, repo, versionFrom, version}` so that what they cover is left out (none recalled: drop the pipe
+   and `--known -`):
+   `printf '%s' '<that list>' | node "<this skill's base directory>/../../lib/craft-externals.mjs" discover --repo-root "$(git rev-parse --show-toplevel)" --known -`.
+   It prints `{"candidates": [...]}`: `system`, `repo` (empty when no manifest names it;
+   `repoGuessed: true` when only an image on ghcr.io suggests it), `versionFrom`, `versionMatch`,
+   `version` (what the pattern reads today), `scope` (the manifest's directory, a suggestion) and
+   at times a `note`; `more` counts those past its bound (narrow by fixing these first); `unread`
+   names each manifest it could not read, with why; `walkCut`, when present, says the walk stopped
+   at its bound and files past it were not read — tell the human the search was cut, never present
+   the list as complete, and offer a rerun with `--paths` naming the manifests that matter. An
+   `{"error"}` is reported as it is; no candidates — say so (and, with `walkCut`, that the walk was cut).
+3. Show them to the human as a numbered list, every field, a guessed or unknown repo said plainly,
+   and ask which to record, and whether to correct `repo` (the git URL of the system's source) or
+   `scope` (the consumer's paths that rely on the system, not just the manifest's directory); ask
+   what the code relies on for `body`, or offer one line from what the manifest shows.
+4. Only after that answer, write each confirmed candidate with `record-external`: `system`,
+   `versionFrom` and `versionMatch` as printed, `repo` and `scope` as confirmed or corrected. A
+   declined or unanswered candidate is not written, nor one still without a repo: say which.
+
+**A decision on a review finding** carries all of `author`, `commit` and a link to where it was
+made (the PR thread, the review comment): the review engine names them when it sets the finding
+aside, and it sets a finding aside only while the code in `scope` is unchanged since `commit`. A
+decision without a `commit` is still recorded, but a review raises its finding again every time.
+The title is the finding's title as the review printed it — for a gate tool's finding without `toolRule`, as the report lists it under **Tool finding titles (verbatim)** at its `file:line` (none listed: the review ledger row's title only when it holds exactly one live such row at that `file:line` (live: `disposition` other than `closed` — a `closed` row is a tombstone and does not count), never a pick between several; else the report line, which then goes to the judge each round) — never from a refusal note, which clips it; `line`, `lens` and `toolRule` are the
+finding's anchor. The review rewords titles every round, so the engine matches a record to a finding by its
+file inside `scope`, its line and its lens: within 3 lines and the same lens it matches outright;
+a near miss (within 15 lines, the same lens, or shared title words) goes to a judge, an older record
+without `line` and `lens` included. Only when the judge gives no verdict does a near-verbatim title
+match on its own. A line counts only
+when `scope` is the finding's own file: under a directory or `.` scope only the lens and the title
+words count, so give the file as scope whenever the finding has one. A gate tool's finding (lens
+`tool` or the tool's name — clippy-pedantic, semgrep, statix…) matches outright only when `toolRule`
+is the same as well: a record with another `toolRule` is not a candidate at all (two different lints a
+line apart are two findings, even under one catalog ruleId), and one without `toolRule` goes to the judge.
+A gate tool's finding without `toolRule` (deadnix and fmt always) is told apart by its title alone: when
+the judge gives no verdict, only a record from a tool lens (or with no lens) with the very
+same title (case and spacing aside) in its scope — and, when both lines compare in one file, within 15 lines — sets it aside, never
+shared title words. So record such a finding's title verbatim, with its file as scope and its line.
+
+**A project rule covers a class of findings, not one.** When a finding is rejected for a reason that
+is a stance of the whole project — "we do not support rollback", "a new API without consumers may
+break", "crd-client is released on demand" — and not "this is not a bug here", record a `rule`, on
+the human's word: title = the rule as one statement, scope = the folder, component or `.` it holds
+for (a rule without a scope is refused), body = why, author, date and links; `lens` (e.g. `compat`)
+narrows it to findings of that lens. It carries no `line` and no `commit`: it does not anchor to one
+finding, and the code changing under it does not lift it. A review applies it after judging: for a
+finding inside the scope (and of the lens, when given) a judge asks whether the concern the finding
+raises is exactly what the rule declares acceptable. A covered finding leaves the verdict and the PR
+comments and is listed under **Covered by project rules** with the rule's id, its statement and the
+judge's why (`adversarial-review`: its `coveredByRule` and `ruleNotices` fields). A finding a judge (the
+decisions' or the rules') says goes against an active record is not set aside: it stays in the verdict marked
+with the record (`memoryContradicts`), listed under **Contradicts project memory** (`adversarial-review`: its
+`contradictsMemory` field), and — in `review` with `comment`, the one that posts — goes to the PR as a defect
+even when a doubt sign holds; a line there marked `not confirmed` is a doubt to check (verify it before
+fixing), not a certain defect, and in `review` with `comment` it is also listed under Doubtful, the record
+named first. A Critical finding is raised even under a rule, named there as raised; a finding the
+judge gave no verdict on stays in the verdict, named there too. A rule is retired like any record:
+`superseded` or `withdrawn`. A stance recorded as a decision on one finding does not cover the next
+finding of its class.
+
+**A deferred finding is an open question, not a decision**: valid, but not answered now. It is a
+`question` record with the same anchors — title = the finding's title (from the same source as a decision's), scope = its file, body = what
+would answer it, `author`, `commit`, `line`, `lens` and `toolRule` = the finding's, links = the PR and the comment — and `deferred: true`, the field
+that makes it a deferral. A question without `deferred: true` (a needs-decision question) is context
+only: a review sets nothing aside by it. A deferral without a `commit` sets nothing aside either —
+its finding is raised again and the review names why. A review lists its finding under
+**Known and deferred** by the same rules as a decision (below); an answer later becomes a `decision`
+that supersedes it. A deferral recorded earlier as a `decision` keeps working as a decision.
+
+**id** = `<kind>-` + the first 10 hex chars of `sha256("<kind>\n<title>\n<scope>")`, with `title`
+trimmed, inner whitespace collapsed and lower-cased, and `scope` without a leading `./` or a
+trailing `/` (e.g. `printf '%s\n%s\n%s' decision 'unwrap in parser is fine' src/parse.rs |
+sha256sum | cut -c1-10`). Re-recording the same kind + title + scope **updates** that record
+(body, date, links) instead of adding a duplicate.
+
+**Bounds — what happens when one is reached.** These are refusals, never silent truncation:
+
+- `title` over 200 chars → shorten it to the claim yourself before writing; a title cut mid-word
+  by a tool is a different id on the next run.
+- `body` over 1200 chars → **do not write**. Summarise the reason to the limit and put the long
+  form where it already lives (the PR thread, the commit) into `links`. A record that would not
+  fit is reported to the caller as not written, with why.
+- Index line over 150 chars (harness project memory, below) → the index line shortens its title
+  with `…`; the record file keeps the full title, so nothing is lost and the id is unchanged.
+- `recall` over 10 matches → return the 10 most specific (exact path before directory before
+  component, newer before older) and say `N more — narrow the scope or the topic`; never drop the
+  rest silently.
+
+## Choosing the backend
+
+Run once per session, before the first verb; print the result as **one line**:
+`memory backend: <X> (<why>)`. The order is fixed — the first rule that applies wins, and the
+reason names the rule.
+
+1. **Explicit setting.** Env `CRAFT_MEMORY`, else a line `craft-memory: <value>` in the consumer's
+   `AGENTS.md` or `CLAUDE.md` (repo root). Values: `mcp` (optionally `mcp <server>` or
+   `mcp <server> <store>`), `harness`, `repo`, `none`. The store is the address of a graph, project
+   or workspace on that server: what its tools take as their scope parameter, whatever it is called
+   there; when the server ships its own skill, hand the store to that skill as its scope. Every
+   recall and record then uses that store and no other, even when the consumer's instructions name
+   another store of the same server for the rest of its work. The setting **pins** the backend: if
+   the pinned one is unavailable (the server missing, or the store refused or unknown to it), the
+   result is `none` with that reason, never a silent fall-through to another store or to rule 2.
+   `<server>` matches a connected server by its own name as its tools are prefixed, ignoring case
+   (it is enough that it appears in the tool prefix, such as `mcp__<...>__`). The line names the
+   store: `memory backend: mcp <server> <store> (craft-memory in AGENTS.md)`. An unknown value,
+   including one with more words than `mcp <server> <store>`, gives `none (CRAFT_MEMORY=<v> is not mcp|harness|repo|none)`. A
+   consumer sets it with one line in its `AGENTS.md`: `craft-memory: mcp <server> <store>`.
+2. **A connected memory / knowledge-graph MCP server, found by capability.** Look at the tools the
+   session actually has (deferred ones included). A server qualifies when its own tool set offers
+   **both** a text or semantic *search* over stored items **and** a *create/record* of a new item
+   (an entity, node, note, observation, memory). Judge by what the tools do — their descriptions
+   and parameters — never by a server or tool name; a search-only or write-only server does not
+   qualify. Several qualify → the one whose store is scoped to this project (a project, workspace
+   or graph parameter that names this repo); still a tie → the first by server name, and the line
+   lists the others. **If that server ships its own skill or writing instructions, follow them**
+   for how a decision, lesson or question becomes an item there — do not map the fields above
+   yourself; the record shape is then only what you hand it.
+3. **The harness's project memory — the default.** In Claude Code: the project memory directory
+   the harness names in this session's instructions; an agent without it in context (a workflow's
+   agent, a subagent) derives it from the repository's main checkout root, never a worktree or
+   subdirectory — path rule in
+   [backends.md](backends.md). Written without asking (it is private to the
+   user and tied to this project). A refused write — a `PreToolUse` guard, a permission denial,
+   the consumer's instructions forbidding that directory — means **unavailable**: go to 4. Format
+   → [backends.md](backends.md).
+4. **Files in the consumer repo**, `.craft/memory/<kind>/<id>.md` — only when `.craft/memory/`
+   already exists, or a decisions/ADR directory exists (`docs/adr/`, `docs/decisions/`, `adr/`,
+   `doc/adr/`, `decisions/`), or the user says yes. Ask **once**, saying the files will be
+   committed and visible to everyone with the repo: yes → create `.craft/memory/` (its existence
+   is the remembered yes); no → `none` for this session, and offer the line
+   `craft-memory: none` for `AGENTS.md` so later sessions do not ask again (written only on their
+   word).
+5. **None.** Write nothing, say so in the line, and offer to set one up (rule 1 or 4).
+
+**Privacy.** A consumer's facts go only to a store tied to this project. An MCP server whose store
+is global or shared across projects (no project scoping visible in its tools) needs the user's
+consent before the first write — without it, treat the server as not qualifying and continue at
+rule 3. Never put secrets, credentials or personal data in a record, whatever the backend.
+
+## recall
+
+1. **Scope match.** A record matches a touched path when its `scope` equals the path, is a
+   directory containing it, or names the component the path belongs to; `.` matches everything
+   and ranks last.
+2. **Keyword match.** `topic` keywords against `title` and `body`; with both scope and topic,
+   a record must match the scope and at least one keyword.
+3. **Only matches come back.** Use the backend's search (the MCP search tool, `grep -l` over the
+   memory files, the harness index `MEMORY.md`) — never load the whole store into
+   context.
+4. **Active only by default.** `superseded` and `withdrawn` stay hidden unless the caller asks for
+   history; a superseded record shown on request carries its successor's id. A review engine's
+   recall also returns the matching `superseded` and `withdrawn` records apart, in an `inactive`
+   list of `{id, storeId, kind, title, scope, status, date}` (`date` the store's last write of that
+   record) — read only, never applied: the engine holds back any record handed to it that one of them
+   names (by `id`, the store's own id, or kind + title + scope) and says so once — unless the handed
+   record's `date` is later than the inactive one's and than every active recalled record whose
+   `supersedes:`/`answers:` link names it: that newer record is applied (the successor's link no
+   longer drops it) and the override named once. Same day, older, or a date missing or malformed on
+   either side: held back, named — "held by <id>" when an active successor holds it. A timestamp
+   without a zone is UTC; a date against a timestamp compares by the timestamp's UTC day.
+5. **A recalled decision is context, not a verdict.** Check it still holds against the code as it
+   is now: the reason was "the input is always validated upstream" and the validation is gone →
+   say so, and supersede the decision instead of applying it. Recall inside a review engine is
+   read-only: its agent supersedes nothing — it returns such a decision in a `stale` list with the
+   reason, the report names it on the `memory:` line, and superseding stays with
+   `craft:addressing-findings`.
+
+## Before a review — `priorDecisions`
+
+A craft review workflow (`review`, `rust-review`, `nix-review`, `adversarial-review`, or
+`rust-audit`, which recalls once and hands the result to its nested reviews) **always recalls
+itself**: one read-only agent runs this recall (or, if the skill is unavailable, the backend order
+above) on every launch. Passing `priorDecisions` never replaces that recall — the passed records
+are **added** to the recalled ones (one per `id`; on a clash the recalled record wins, being the
+store's current state; a passed record the store withdrew or superseded is held back and named, unless it is dated later), and the report's `memory:` line names both parts (`adversarial-review`:
+its `memory` field). A session recalls for its own work as below; it passes records only when it
+holds some the store may not — rejections just read from PR threads, say — and never relies on
+passing to stand in for the engine's recall.
+
+1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions,
+   questions and project rules (`kind: decision`, `kind: question`, `kind: rule`), **active** only;
+   never lessons. A review engine also recalls the `external` records, in a list of their own: they
+   set no finding aside and are never passed as `priorDecisions`.
+2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
+   `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
+   `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
+   nothing summarised; `kind` on every record, or a question or a rule passed without it is read by its id
+   (`question-…`, `rule-…`), and anything else as a decision. A record built by hand may leave `id` out when
+   it carries `kind`, `title` and `scope`: the engine derives the id by the rule above and its
+   `memory:` line says for how many records it did. Never as a string: a `key=value` line cannot delimit the value (a reason holding
+   `comment=true` would become an option), so the engine refuses any string and applies nothing.
+   Nothing to add → pass nothing (an empty list adds nothing and skips nothing).
+3. The engine never drops a finding silently: one a decision answers is listed under **Rejected
+   before** with the decision's reason, author, date and link, outside the verdict; one an open
+   question answers, under **Known and deferred** with what would answer it, the author, date and
+   link, also outside the verdict (the review ledger keeps it `deferred`, and a re-review carries it
+   like a rejection); one a project rule covers, under **Covered by project rules** (above). A question without `deferred: true` records no deferral: it sets nothing aside
+   and labels nothing; a deferral without a `commit` is raised again and named. Either is raised
+   again as a normal finding when it is Critical/High, when the code in the decision's scope changed
+   since its `commit`, when the decision has no `commit`, or when the repository does not know that
+   `commit` (a squash-merged branch, another clone — named under **Prior decisions not applied**).
+   More than 100 decisions, or a record that does not fit (a missing title or reason, no `id` and
+   no `kind` or `scope` to derive one from, a field past
+   its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
+   characters other than letters, digits and `._@+/ -`),
+   is refused and named — the report's **Prior decisions not applied** section (`adversarial-review`:
+   its `priorDecisionsNotApplied` and `rejectedBefore` fields) — narrow the recall.
+
+## Subagents
+
+Subagents usually lack the MCP tools (`tools:` in their frontmatter) and the harness memory, so
+they cannot `recall` themselves. **Known limit:** the launcher recalls and puts the matching
+records, verbatim with their ids, into the subagent's brief; a subagent that reaches a decision
+returns it in its result and the launcher records it.
+
+## Boundaries
+
+- The run store, the review ledger's `disposition` field and telemetry → `addressing-findings`
+  ("Writing dispositions to the review ledger") and craft's run records; this skill does not read
+  or write them.
+- A decision that needs a product/spec call to be made at all → `specs`; this skill only keeps
+  the open question and, later, the answer.
+- Per-backend mechanics (file formats, the index line, the MCP field hand-off) →
+  [backends.md](backends.md).
