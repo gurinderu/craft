@@ -1,5 +1,6 @@
-//! The planner held to the engines' by `content/parity/plan-cases.json`, whose expected plans
-//! `lib/review-profile-parity.test.mjs` checks against `lib/review-plan.mjs`.
+//! The planner held to the engines' by `content/parity/plan-cases.json` (each case of its profile,
+//! Rust when it names none), whose expected plans `lib/review-profile-parity.test.mjs` checks against
+//! `lib/review-plan.mjs`.
 
 use serde_json::{Value, json};
 
@@ -14,11 +15,15 @@ const CASES: &str = include_str!(concat!(
 #[test]
 fn every_case_plans_as_the_engines_plan_it() {
     let cases: Value = serde_json::from_str(CASES).unwrap();
-    let profile = Profile::rust().unwrap();
     let all = cases["cases"].as_array().unwrap();
     assert!(all.len() > 5);
+    assert!(
+        all.iter().any(|c| c["profile"] == "nix"),
+        "the Nix profile is held too"
+    );
     for c in all {
         let name = c["name"].as_str().unwrap();
+        let profile = Profile::load(c["profile"].as_str().unwrap_or("rust")).unwrap();
         let files: Vec<String> = serde_json::from_value(c["changedFiles"].clone()).unwrap();
         let scout = Some(&c["scout"]).filter(|s| !s.is_null());
         let got = plan(PlanInput {

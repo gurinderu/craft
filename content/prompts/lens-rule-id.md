@@ -1,0 +1,1 @@
+RULE ID (required field): set `ruleId` to the matching catalog ID from the {{rubricSkill}} skill's rules.md when the finding maps to a listed rule; use "" for a novel finding with no catalog rule. Do not force a bad fit.

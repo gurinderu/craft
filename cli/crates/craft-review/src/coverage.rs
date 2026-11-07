@@ -1,15 +1,18 @@
 //! The coverage exits a run takes before any lens, as `resolveCoverage` and the exits of
 //! `lib/review-coverage-phase.mjs` decide them from the changed files alone: an empty diff and a
-//! diff whose reviewable files the Rust profile does not cover are INCOMPLETE, never an Approve; a
-//! diff of nothing but prose, assets, lockfiles and generated output is an honest green.
+//! diff whose reviewable files no profile takes (project configuration alone, once the general
+//! profile takes every other file carrying code) are INCOMPLETE, never an Approve; a diff of
+//! nothing but prose, assets, lockfiles and generated output is an honest green.
 
 use serde::{Deserialize, Serialize};
 
 use crate::git::Diff;
 
+mod assign;
 mod gap;
 
-pub use gap::{gap, note, uncovered};
+pub use assign::{assign, supported};
+pub use gap::{gap, is_ancillary, is_project_config, note, uncovered};
 
 /// A run that ended before any lens ran: its verdict, the line under it, and the files it lists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,9 +89,9 @@ fn same_commit(a: &str, b: &str) -> bool {
 const NO_CHANGED_FILES: &str = "NOTHING WAS REVIEWED — the diff came back EMPTY: no changed file was detected against the resolved base. Either there is genuinely nothing to review here (an already-merged branch, or a `path` scope that matches nothing) or the base/scope is wrong and detection failed. No lens ran, so this is not an approval — check the base and re-run.";
 const ON_TRUNK: &str = "NOTHING WAS REVIEWED — HEAD IS the resolved base: this checkout has no commit of its own beyond the trunk (the review ran on the trunk itself, or on a branch not yet ahead of it), so the diff against the trunk is empty by construction. Re-run it from the branch's own checkout or worktree, or pass `base` naming what to compare against. No lens ran, so this is not an approval.";
 
-/// The exit `diff` takes when the profile covers none of its files, `None` when it covers one.
-/// `explicit_base`: the caller named the base, so HEAD at it is their choice, not a launch on the
-/// trunk.
+/// The exit `diff` takes when no profile covers any of its files, `None` when one covers one.
+/// `lang` names what the profiles review ([`supported`]). `explicit_base`: the caller named the
+/// base, so HEAD at it is their choice, not a launch on the trunk.
 #[must_use]
 pub fn exit(diff: &Diff, covered: usize, lang: &str, explicit_base: bool) -> Option<Exit> {
     if covered > 0 {
@@ -119,7 +122,7 @@ pub fn exit(diff: &Diff, covered: usize, lang: &str, explicit_base: bool) -> Opt
         });
     }
     let msg = format!(
-        "NOTHING WAS REVIEWED — none of the {} changed file(s) match a supported language profile (this engine reviews {lang} only), and {material} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.",
+        "NOTHING WAS REVIEWED — none of the {} changed file(s) match a supported language profile (this engine reviews {lang}), and {material} of them carry reviewable content that therefore went unreviewed. This is not an approval: no lens ran and no finding could have been produced.",
         files.len()
     );
     Some(Exit {

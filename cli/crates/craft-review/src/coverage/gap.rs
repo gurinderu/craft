@@ -1,7 +1,11 @@
 //! What a run that did review code still left out, as `materialUncovered`, `coverageGapFiles`,
 //! `isAncillaryConfig` and `uncoveredNotRunNote` in `lib/review-coverage.mjs`: the changed files no
 //! profile covers that carry something to review, and of them the ones that void a green verdict —
-//! all but project configuration and build recipes, which no lens ever claimed to read.
+//! all but project configuration and build recipes, which no lens ever claimed to read. The CLI
+//! also names the package manifests and toolchain files of other ecosystems
+//! ([`is_project_config`]) so its general profile does not send them to code lenses; they stay
+//! material, as the engines keep them ("when in doubt, material"), so a run that leaves one
+//! unreviewed is no green verdict.
 
 use super::is_inert;
 
@@ -11,6 +15,15 @@ const ANCILLARY_NAMES: &[&str] = &[
     "deny.toml", "rustfmt.toml", "clippy.toml", "rust-toolchain.toml", "rust-toolchain",
     ".editorconfig", ".dockerignore", ".npmrc", ".nvmrc", ".prettierrc", ".eslintrc",
     "codecov.yml", "renovate.json", "dependabot.yml", ".pre-commit-config.yaml",
+];
+/// Package manifests, toolchain and compose files of other ecosystems, beyond the engines' list.
+#[rustfmt::skip]
+const PROJECT_CONFIG: &[&str] = &[
+    "package.json", "tsconfig.json", "jsconfig.json", "deno.json", "biome.json", ".babelrc",
+    "babel.config.json", ".eslintrc.json", ".prettierrc.json", "lerna.json", "nx.json", "turbo.json",
+    "pnpm-workspace.yaml", "pyproject.toml", "setup.cfg", "tox.ini", "requirements.txt", "pipfile",
+    "go.mod", "go.work", "gemfile", "composer.json", "docker-compose.yml", "docker-compose.yaml",
+    "compose.yml", "compose.yaml", ".gitlab-ci.yml", ".travis.yml", "netlify.toml", "vercel.json",
 ];
 const ANCILLARY_DIRS: &[&str] = &[
     ".github",
@@ -33,6 +46,20 @@ pub fn is_ancillary(f: &str) -> bool {
         .split_last()
         .is_some_and(|(_, d)| d.iter().any(|s| ANCILLARY_DIRS.contains(s)));
     ANCILLARY_NAMES.contains(&base) || in_ci_dir || base.ends_with(".dockerfile")
+}
+
+/// Whether a changed file is project configuration no code lens reads: the ancillary files, and
+/// the manifests and toolchain files of [`PROJECT_CONFIG`] with their named variants
+/// (`tsconfig.build.json`, `docker-compose.prod.yml`). Unlike [`is_ancillary`], it says nothing
+/// of whether leaving the file unreviewed voids a green verdict.
+#[must_use]
+pub fn is_project_config(f: &str) -> bool {
+    let lower = f.to_lowercase();
+    let base = lower.rsplit('/').next().unwrap_or("");
+    let yaml = base.ends_with(".yml") || base.ends_with(".yaml");
+    let variant = (base.starts_with("tsconfig.") && base.ends_with(".json"))
+        || (base.starts_with("docker-compose.") && yaml);
+    is_ancillary(f) || PROJECT_CONFIG.contains(&base) || variant
 }
 
 /// The changed files `covers` leaves out that carry something to review, in diff order.
@@ -76,7 +103,7 @@ pub fn note(gap: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{gap, is_ancillary, note, uncovered};
+    use super::{gap, is_ancillary, is_project_config, note, uncovered};
 
     fn owned(files: &[&str]) -> Vec<String> {
         files.iter().map(|f| (*f).to_owned()).collect()
@@ -91,7 +118,7 @@ mod tests {
             "clippy.toml",
             "sub/.GitLab/x.yml",
         ] {
-            assert!(is_ancillary(f), "{f}");
+            assert!(is_ancillary(f) && is_project_config(f), "{f}");
         }
         for f in [
             "src/main.py",
@@ -101,6 +128,34 @@ mod tests {
         ] {
             assert!(!is_ancillary(f), "{f}");
         }
+    }
+
+    #[test]
+    fn manifests_are_project_configuration_but_stay_material() {
+        for f in [
+            "package.json",
+            "web/tsconfig.build.json",
+            "pyproject.toml",
+            "go.mod",
+            "deploy/docker-compose.prod.yaml",
+            "compose.yml",
+        ] {
+            assert!(is_project_config(f) && !is_ancillary(f), "{f}");
+        }
+        for f in [
+            "src/package.ts",
+            "tsconfig.ts",
+            "config/app.json",
+            "src/main.py",
+        ] {
+            assert!(!is_project_config(f), "{f}");
+        }
+        let left = owned(&["package.json", "Makefile"]);
+        assert_eq!(
+            gap(&left),
+            owned(&["package.json"]),
+            "a manifest voids green"
+        );
     }
 
     #[test]

@@ -21,6 +21,7 @@ import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.
 import { ADVERSARIAL_EXTERNAL_LENSES, makeExternalSources } from '../lib/review-external-sources.mjs'
 import { SERVICE_AGENT_TYPE, makeDefaultTypeFallback } from '../lib/service-agent.mjs'
 import { agentUnavailableRecord } from '../lib/agent-fallback.mjs'
+import { LENS_BRIEF } from '../lib/adversarial-lenses.mjs'
 
 export const meta = {
   name: 'adversarial-review',
@@ -263,17 +264,7 @@ const recordHead = () => ({
   ...agentUnavailableRecord([], service.fallbacks()),
 })
 
-// ---- lens catalog ----
-/** @type {Record<string, string>} */
-const LENS_BRIEF = {
-  correctness: 'logic and spec conformance: does the change do what it is supposed to? Wrong behavior behind correct-looking code, off-by-one, inverted conditions, missed requirements, broken invariants.',
-  security: 'security: injection, authz/authn gaps, tenant isolation breaks, secrets in code, unsafe deserialization, path traversal, SSRF, untrusted input reaching sinks.',
-  money: 'money-path invariants: float arithmetic on amounts, lost cents in splits/rounding, missing idempotency on payment operations, double-charge/double-credit windows, currency mixups, ledger imbalance.',
-  concurrency: 'concurrency: races on shared state, check-then-act windows, missing transactions/locks, lock ordering, blocking calls in async contexts, unbounded queues.',
-  errors: 'error handling: swallowed errors, panic/crash on recoverable failures, missing rollback/cleanup on the error path, error messages leaking internals.',
-  performance: 'performance: N+1 queries, work inside hot loops, unbounded memory growth, missing pagination/limits, accidental O(n^2).',
-  complexity: 'complexity metrics from the codebase-memory graph (metrics-or-nothing; skipped when the repo is not indexed).',
-}
+// ---- lens catalog (lib/adversarial-lenses.mjs, shared with the CLI's general profile) ----
 const ALL_LENSES = Object.keys(LENS_BRIEF)
 
 /** @param {string} lens */

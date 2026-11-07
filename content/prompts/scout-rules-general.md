@@ -1,0 +1,1 @@
+Decide what is "in play" from the diff: payments/amounts/ledger → money; async/threads/locks/transactions → concurrency; input parsing/auth/tenancy → security; loops/queries → performance; always consider errors. ('correctness' is enforced by the engine and added automatically — do not count it toward your choices.)

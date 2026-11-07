@@ -2,11 +2,9 @@
 
 use serde_json::Value;
 
-use super::{
-    FP_RULES, PromptContext, REVIEW_RULES_DIR, RUBRIC_SKILL, flatten, plugin_candidates,
-    repo_directive,
-};
+use super::{PromptContext, REVIEW_RULES_DIR, flatten, plugin_candidates, repo_directive};
 use crate::content::{self, ContentError, vars};
+use crate::profile::Profile;
 
 /// The fields that state one finding to a verifier, its model-authored text flattened.
 fn finding_fields(f: &Value, self_contained: &str) -> Vec<(&'static str, String)> {
@@ -67,22 +65,37 @@ fn finding_fields(f: &Value, self_contained: &str) -> Vec<(&'static str, String)
     ]
 }
 
-/// The verifier prompt for one finding, to voter `voter` of its panel (skeptic #`voter + 1`).
-///
-/// # Errors
-/// When a content file is missing or a placeholder has no value.
-pub fn verify_prompt(ctx: &PromptContext, f: &Value, voter: u32) -> Result<String, ContentError> {
+/// The exclusions a verifier of `profile`'s finding reads: the shared catalogue, then the
+/// profile's own when it ships one, as `sharedExclusionsLine` and `exclusionCatalogText` join them.
+fn exclusions(ctx: &PromptContext, profile: &Profile) -> Result<String, ContentError> {
     let shared = content::prompt(
         "verify-shared-exclusions",
         &vars([("dirs", plugin_candidates(ctx, REVIEW_RULES_DIR))]),
     )?;
+    if profile.fp_rules.is_empty() {
+        return Ok(format!("\n{shared}\n"));
+    }
     let catalog = content::prompt(
         "verify-exclusion-catalog",
         &vars([
-            ("rubricSkill", RUBRIC_SKILL.into()),
-            ("fpRules", FP_RULES.into()),
+            ("rubricSkill", profile.rubric_skill.clone()),
+            ("fpRules", profile.fp_rules.clone()),
         ]),
     )?;
+    Ok(format!("\n{shared}\n\n{catalog}\n"))
+}
+
+/// The verifier prompt for `profile`'s finding `f`, to voter `voter` of its panel (skeptic
+/// #`voter + 1`).
+///
+/// # Errors
+/// When a content file is missing or a placeholder has no value.
+pub fn verify_prompt(
+    ctx: &PromptContext,
+    profile: &Profile,
+    f: &Value,
+    voter: u32,
+) -> Result<String, ContentError> {
     let mut v = vars([
         (
             "head",
@@ -96,7 +109,7 @@ pub fn verify_prompt(ctx: &PromptContext, f: &Value, voter: u32) -> Result<Strin
             "toolFallback",
             " If no tool applies, judge it yourself.".into(),
         ),
-        ("exclusions", format!("\n{shared}\n\n{catalog}\n")),
+        ("exclusions", exclusions(ctx, profile)?),
         ("sources", String::new()),
         (
             "refutedRule",
@@ -117,11 +130,15 @@ pub fn verify_prompt(ctx: &PromptContext, f: &Value, voter: u32) -> Result<Strin
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
 }
 
-/// The verifier prompt for a batch of findings, each judged on its own.
+/// The verifier prompt for a batch of `profile`'s findings, each judged on its own.
 ///
 /// # Errors
 /// When a content file is missing or a placeholder has no value.
-pub fn batch_verify_prompt(ctx: &PromptContext, group: &[&Value]) -> Result<String, ContentError> {
+pub fn batch_verify_prompt(
+    ctx: &PromptContext,
+    profile: &Profile,
+    group: &[&Value],
+) -> Result<String, ContentError> {
     let self_contained = "(none — claims to be self-contained at the cited line)";
     let findings = group
         .iter()
@@ -141,7 +158,7 @@ pub fn batch_verify_prompt(ctx: &PromptContext, group: &[&Value]) -> Result<Stri
         "verify-batch",
         &vars([
             ("count", group.len().to_string()),
-            ("lang", "Rust".into()),
+            ("lang", profile.lang.clone()),
             ("sources", String::new()),
             ("dependencySource", content::text("dependency-source")?),
             ("harmQuestion", content::text("verify-harm-question")?),
