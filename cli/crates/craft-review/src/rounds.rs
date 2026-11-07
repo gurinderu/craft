@@ -6,12 +6,11 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::agent::Model;
-use crate::content;
+use crate::content::{self, ContentError};
 use crate::harm::raise::{claim_count, group_claims};
 use crate::plan::Plan;
 use crate::profile::Profile;
@@ -70,7 +69,7 @@ pub fn tasks(
     profile: &Profile,
     plan: &Plan,
     rounds: &Rounds,
-) -> Result<Vec<Task>> {
+) -> Result<Vec<Task>, ContentError> {
     let prior = prompts::prior_found_summary(&rounds.pool);
     let round = rounds.round;
     plan.lenses

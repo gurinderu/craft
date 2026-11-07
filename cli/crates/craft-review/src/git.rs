@@ -1,10 +1,26 @@
 //! What changed: the base a review measures against and the diff from it, read with `git`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+
+/// Why the change could not be read.
+#[derive(Debug, thiserror::Error)]
+pub enum GitError {
+    #[error("running git")]
+    Spawn(#[source] std::io::Error),
+    #[error("git {command} failed: {stderr}")]
+    Failed { command: String, stderr: String },
+    #[error("git printed non-UTF-8 output")]
+    NotUtf8(#[source] std::string::FromUtf8Error),
+    #[error(
+        "no base given and origin has no default branch (origin/HEAD, origin/main, origin/master)"
+    )]
+    NoDefaultBase,
+    #[error("the base {base} is not a commit in {}", repo.display())]
+    NotACommit { base: String, repo: PathBuf },
+}
 
 /// The change under review: from the merge-base of `base` and `HEAD` to the working tree, as the
 /// lens prompts' `git diff --merge-base <base>` shows it.
@@ -29,18 +45,20 @@ pub struct Diff {
 }
 
 /// Runs `git` in `cwd` and returns its stdout.
-fn git(cwd: &Path, args: &[&str]) -> Result<String> {
+fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
     let out = Command::new("git")
         .arg("-C")
         .arg(cwd)
         .args(args)
         .output()
-        .context("running git")?;
+        .map_err(GitError::Spawn)?;
     if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        bail!("git {} failed: {}", args.join(" "), err.trim());
+        return Err(GitError::Failed {
+            command: args.join(" "),
+            stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+        });
     }
-    String::from_utf8(out.stdout).context("git printed non-UTF-8 output")
+    String::from_utf8(out.stdout).map_err(GitError::NotUtf8)
 }
 
 fn verifies(cwd: &Path, rev: &str) -> bool {
@@ -59,8 +77,8 @@ fn verifies(cwd: &Path, rev: &str) -> bool {
 /// The remote default branch: what `origin/HEAD` points at, else `origin/main` or `origin/master`.
 ///
 /// # Errors
-/// When none of them exists.
-pub fn default_base(cwd: &Path) -> Result<String> {
+/// [`GitError::NoDefaultBase`] when none of them exists.
+pub fn default_base(cwd: &Path) -> Result<String, GitError> {
     if let Ok(head) = git(
         cwd,
         &[
@@ -79,20 +97,23 @@ pub fn default_base(cwd: &Path) -> Result<String> {
         .into_iter()
         .find(|r| verifies(cwd, r))
         .map(str::to_owned)
-        .context("no base given and origin has no default branch (origin/HEAD, origin/main, origin/master)")
+        .ok_or(GitError::NoDefaultBase)
 }
 
 /// Reads the change in `cwd` against `base`, or the remote default branch when `None`.
 ///
 /// # Errors
 /// When `cwd` is not a repository, the base does not resolve, or `git` fails.
-pub fn read_diff(cwd: &Path, base: Option<&str>) -> Result<Diff> {
+pub fn read_diff(cwd: &Path, base: Option<&str>) -> Result<Diff, GitError> {
     let base = match base {
         Some(b) => b.to_owned(),
         None => default_base(cwd)?,
     };
     if base.starts_with('-') || !verifies(cwd, &base) {
-        bail!("the base {base} is not a commit in {}", cwd.display());
+        return Err(GitError::NotACommit {
+            base,
+            repo: cwd.to_owned(),
+        });
     }
     let merge_base = git(cwd, &["merge-base", &base, "HEAD"])?.trim().to_owned();
     let head = git(cwd, &["rev-parse", "HEAD"])?.trim().to_owned();

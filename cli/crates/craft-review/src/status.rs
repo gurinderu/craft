@@ -2,11 +2,10 @@
 
 use std::path::Path;
 
-use anyhow::Result;
 use serde_json::{Value, json};
 
 use crate::report;
-use crate::state::{self, Phase, RunState};
+use crate::state::{self, Phase, RunState, StateError};
 
 /// The phase as a reader names it: `scout`, `lenses round N`, `dedup`, `verify` or `done`.
 fn phase_label(run: &RunState) -> String {
@@ -23,7 +22,7 @@ fn phase_label(run: &RunState) -> String {
 ///
 /// # Errors
 /// When the state cannot be read.
-pub fn status(dir: &Path) -> Result<Value> {
+pub fn status(dir: &Path) -> Result<Value, StateError> {
     let run = state::load(dir)?;
     let [confirmed, suspected, refuted, unverified] = report::tier_counts(&run);
     let tasks: Vec<Value> = run
