@@ -58,5 +58,5 @@ cat <<EOF
 Done.
   • Restart opencode (or reopen the project) so it rescans skills/agents/commands/plugins.
   • If opencode does not auto-install the plugin's deps, add @opencode-ai/plugin and
-    @opencode-ai/sdk to "$TARGET/package.json" and restart. See opencode/README.md.
+    @opencode-ai/sdk to "$TARGET/package.json" and restart. See integrations/opencode/README.md.
 EOF

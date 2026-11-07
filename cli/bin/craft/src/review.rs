@@ -40,7 +40,10 @@ pub async fn run(args: ReviewArgs) -> Result<ExitCode> {
     let spec = load_spec(args.spec.as_deref(), &args.base)?;
     match args.backend {
         Backend::ClaudeCode => {
-            let craft_root = args.craft_root.clone().or_else(find_craft_root);
+            let craft_root = match &args.craft_root {
+                Some(given) => Some(plugin_dir(given)),
+                None => find_craft_root(),
+            };
             let backend = ClaudeCode {
                 command: args.claude.clone(),
                 plugin_dirs: craft_root.into_iter().collect(),
@@ -67,6 +70,16 @@ fn load_spec(path: Option<&Path>, base: &str) -> Result<AgentSpec> {
 pub(crate) fn find_craft_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     exe.ancestors().find_map(prompts::plugin_root_at)
+}
+
+/// The plugin directory an explicit `--craft-root` names: the plugin root at or above it, found as
+/// the walk from the executable finds one (a checkout root names its `integrations/claude-code`),
+/// else the path as given.
+fn plugin_dir(given: &Path) -> PathBuf {
+    given
+        .ancestors()
+        .find_map(prompts::plugin_root_at)
+        .unwrap_or_else(|| given.to_path_buf())
 }
 
 async fn run_one<B: AgentBackend + 'static>(
@@ -280,6 +293,32 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    fn manifest_at(dir: &Path) {
+        std::fs::create_dir_all(dir.join(".claude-plugin")).unwrap();
+        std::fs::write(dir.join(".claude-plugin/plugin.json"), "{}").unwrap();
+    }
+
+    #[test]
+    fn a_checkout_root_names_its_claude_code_delivery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let delivery = tmp.path().join("integrations/claude-code");
+        manifest_at(&delivery);
+        assert_eq!(plugin_dir(tmp.path()), delivery);
+    }
+
+    #[test]
+    fn an_installed_plugin_root_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        manifest_at(tmp.path());
+        assert_eq!(plugin_dir(tmp.path()), tmp.path());
+    }
+
+    #[test]
+    fn a_path_with_no_plugin_root_is_passed_as_given() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(plugin_dir(tmp.path()), tmp.path());
+    }
 
     #[tokio::test(start_paused = true)]
     async fn an_interrupt_still_stops_the_run_after_the_view_ended() {
