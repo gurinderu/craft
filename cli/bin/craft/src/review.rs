@@ -12,7 +12,7 @@ use craft_agent::anthropic_api::AnthropicApi;
 use craft_agent::claude_code::ClaudeCode;
 use craft_agent::runner::{Batch, RunEvent, run_until};
 use craft_agent::{AgentBackend, AgentRequest};
-use craft_review::AgentSpec;
+use craft_review::{AgentSpec, prompts};
 use craft_tui::ProgressEvent;
 use tokio::sync::{mpsc, oneshot};
 
@@ -62,13 +62,11 @@ fn load_spec(path: Option<&Path>, base: &str) -> Result<AgentSpec> {
         .with_context(|| format!("parsing the agent spec {}", path.display()))
 }
 
-/// The nearest directory above the executable that holds craft's plugin manifest: the checkout a
-/// development build sits in.
+/// The nearest plugin root above the executable: for a development build, the Claude Code delivery
+/// (`integrations/claude-code`) of the checkout it sits in.
 pub(crate) fn find_craft_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    exe.ancestors()
-        .find(|dir| dir.join(".claude-plugin/plugin.json").is_file())
-        .map(Path::to_path_buf)
+    exe.ancestors().find_map(prompts::plugin_root_at)
 }
 
 async fn run_one<B: AgentBackend + 'static>(
