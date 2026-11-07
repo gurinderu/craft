@@ -10,6 +10,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::agent::Model;
 use crate::content;
 use crate::harm::raise::{claim_count, group_claims};
 use crate::plan::Plan;
@@ -59,7 +60,8 @@ pub fn key(f: &Value) -> String {
     format!("{}:{line}:{title}", s("file"))
 }
 
-/// One task per planned lens for `round`, each told what the pool holds.
+/// One task per planned lens for `round`, each told what the pool holds and run on the profile's
+/// lens agent.
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the findings schema read.
@@ -74,8 +76,8 @@ pub fn tasks(
     plan.lenses
         .iter()
         .map(|lens| {
-            let model = profile.lens(lens).map_or("opus", |l| l.model.as_str());
-            Ok(Task::new(
+            let model = profile.lens(lens).map_or(Model::Opus, |l| l.model);
+            let mut task = Task::new(
                 format!("lens-{lens}-r{round}"),
                 format!("lens:{}:{lens} r{round}", profile.id),
                 prompts::lens_prompt(ctx, profile, lens, plan, &prior)?,
@@ -85,7 +87,11 @@ pub fn tasks(
                     lens: lens.clone(),
                     round,
                 },
-            ))
+            );
+            // Only the lenses run on the profile's agent, as the engine dispatches them
+            // (lib/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
+            task.agent_type = profile.lens_agent;
+            Ok(task)
         })
         .collect()
 }

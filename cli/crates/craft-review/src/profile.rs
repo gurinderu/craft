@@ -4,6 +4,7 @@
 
 use serde::Deserialize;
 
+use crate::agent::{AgentKind, Model};
 use crate::content::{self, ContentError};
 
 /// What files a profile reviews: a changed path ending in one of `suffixes` or named one of `names`.
@@ -28,7 +29,7 @@ pub struct Lens {
     pub id: String,
     /// Its brief, `content/prompts/<brief>.md`.
     pub brief: String,
-    pub model: String,
+    pub model: Model,
     /// In the optional pass: admitted only on an explicit request.
     #[serde(default)]
     pub optional: bool,
@@ -62,8 +63,12 @@ pub struct Profile {
     pub safety_lens: String,
     /// The scout's rules, `content/prompts/<scoutRules>.md`.
     pub scout_rules: String,
-    pub scout_model: String,
-    pub dedup_model: String,
+    pub scout_model: Model,
+    pub dedup_model: Model,
+    /// The agent its lens tasks run on, named without a host's prefix (`rust-reviewer`): each host's
+    /// driver maps it to its own agent type. Absent, they run on the host's default agent.
+    #[serde(default)]
+    pub lens_agent: Option<AgentKind>,
     pub rollup_rule_ids: Vec<String>,
     /// The roster a scout picks from.
     pub lenses: Vec<Lens>,
@@ -133,19 +138,4 @@ impl Profile {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_rust_profile_reads_and_every_brief_is_carried() {
-        let p = Profile::rust().unwrap();
-        assert_eq!(p.id, "rust");
-        assert!(p.offers("intent") && !p.offers("negative-space"));
-        assert!(p.lens("negative-space").is_some());
-        for l in p.lenses.iter().chain(&p.floor_lenses) {
-            content::text(&l.brief).unwrap();
-        }
-        content::text(&p.scout_rules).unwrap();
-        assert!(p.covers("a/Cargo.toml") && p.covers("src/x.rs") && !p.covers("x.rsx"));
-    }
-}
+mod tests;

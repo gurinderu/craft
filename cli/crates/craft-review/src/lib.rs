@@ -4,6 +4,7 @@
 //! verifiers ([`phases`]). The types below are the pipeline's skeleton the single-agent probe
 //! still runs on.
 
+pub mod agent;
 pub mod content;
 pub mod coverage;
 mod dedup;
