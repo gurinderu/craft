@@ -9,6 +9,7 @@ use serde_json::{Map, Value, json};
 use crate::Error;
 use crate::content;
 use crate::coverage;
+use crate::finished;
 use crate::git;
 use crate::handoff;
 use crate::phases::{advance, finish};
@@ -107,12 +108,14 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         .filter(|f| profile.covers(f))
         .cloned()
         .collect();
+    let uncovered = coverage::uncovered(&diff.files, |f| profile.covers(f));
     let mut run = RunState {
         version: STATE_VERSION,
         tasks: Vec::new(),
         context,
         diff,
         rust_files,
+        uncovered,
         light: opts.light,
         phase: Phase::Scout,
         plan: None,
@@ -232,16 +235,12 @@ pub fn submit_noting(
     Ok(next(dir, &run))
 }
 
-/// What the host is to do next: the pending tasks, or the finished run's report and verdict.
+/// What the host is to do next: the pending tasks, or the finished run's report, verdict and what
+/// its run record carries (`finished`). Each names the head the run read, for the host's start
+/// checkpoint.
 fn next(dir: &Path, run: &RunState) -> Value {
     match &run.verdict {
-        Some(v) if run.phase == Phase::Done => {
-            let mut done = json!({"run": dir.display().to_string(), "done": true, "report": state::report_path(dir).display().to_string(), "verdict": v});
-            if let (Some(obj), false) = (done.as_object_mut(), run.degraded.is_empty()) {
-                obj.insert("degraded".into(), json!(run.degraded));
-            }
-            done
-        }
+        Some(v) if run.phase == Phase::Done => finished::step(dir, run, v),
         Some(_) | None => {
             let tasks: Vec<Value> = run
                 .tasks
@@ -249,7 +248,7 @@ fn next(dir: &Path, run: &RunState) -> Value {
                 .filter(|t| t.state == TaskState::Pending)
                 .map(|t| handoff::wire(dir, t))
                 .collect();
-            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false})
+            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head})
         }
     }
 }
