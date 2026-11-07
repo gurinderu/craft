@@ -434,3 +434,40 @@ fn a_finding_is_absorbed_only_into_a_prior_that_gates_this_run() {
         }
     }
 }
+
+#[test]
+fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_site() {
+    let mut c = chained(vec![row("open one", "R1", "open", "confirmed")]);
+    judge(
+        &mut c,
+        &[adjudicated(0, said("still-open", 3, "still there"))],
+    );
+    let mut found = vec![settled("R1", 3, "Medium", "confirmed")];
+    absorb(&mut c, &mut found);
+    assert_eq!(c.absorbed, 1);
+    // Filed as round.json files it, and read back by the next round.
+    let filed = serde_json::to_string(&ledger(&c, &found)).unwrap();
+    let next = chained(serde_json::from_str(&filed).unwrap());
+    assert_eq!(next.priors[0].fate, Fate::Pending);
+    let ctx = crate::prompts::PromptContext {
+        repo: "/r".into(),
+        base: "abc".into(),
+        spec: String::new(),
+        craft_root: None,
+        craft_version: None,
+        re_review: crate::prompts::ReScope::Fixes,
+    };
+    let profiles = crate::profile::Profile::all().unwrap();
+    let t = tasks(&ctx, &next, &profiles).unwrap();
+    assert_eq!(t.len(), 1);
+    assert_eq!(t[0].kind, TaskKind::Adjudicate { prior: 0 });
+    let p = &t[0].prompt;
+    assert!(
+        p.contains("ALSO REPORTED AT THIS SITE") && p.contains("  - src/lib.rs:3: R1 at 3"),
+        "{p}"
+    );
+    assert!(
+        p.contains("why it mattered: w fix incomplete: still there\n"),
+        "{p}"
+    );
+}

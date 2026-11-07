@@ -24,6 +24,14 @@ pub struct LedgerRow {
     pub rule_id: String,
     pub title: String,
     pub why: String,
+    /// A gate tool's own rule, kept so the next round still tells two of the tool's findings apart
+    /// (`ledgerToolRule`; realm @nick/craft, node #238); absent when the finding names none, and in
+    /// a record written before it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub tool_rule: String,
+    /// Every lens and tool that reported the finding, kept when it carries them (`ledgerSources`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<Value>>,
 }
 
 impl LedgerRow {
@@ -42,17 +50,28 @@ impl LedgerRow {
             rule_id: text("ruleId"),
             title: text("title"),
             why: text("why"),
+            tool_rule: text("toolRule"),
+            sources: f.get("sources").and_then(Value::as_array).cloned(),
         }
     }
 
     /// The row as a finding a report or a matcher reads.
     #[must_use]
     pub fn finding(&self) -> Value {
-        serde_json::json!({
+        let mut f = serde_json::json!({
             "file": self.file, "line": self.line, "symbol": self.symbol, "severity": self.severity,
             "tier": self.tier, "source": self.source, "ruleId": self.rule_id, "title": self.title,
             "why": self.why,
-        })
+        });
+        if let Some(obj) = f.as_object_mut() {
+            if !self.tool_rule.is_empty() {
+                obj.insert("toolRule".into(), Value::String(self.tool_rule.clone()));
+            }
+            if let Some(s) = &self.sources {
+                obj.insert("sources".into(), Value::Array(s.clone()));
+            }
+        }
+        f
     }
 }
 
@@ -239,6 +258,37 @@ mod tests {
             &bare,
             true
         ));
+    }
+
+    #[test]
+    fn a_tools_rule_survives_the_ledger_and_keeps_two_findings_apart() {
+        let seed = |rule: &str| {
+            json!({"file": "a.rs", "line": 3, "symbol": "f", "ruleId": "R1", "title": "t", "severity": "Low",
+                   "tier": "confirmed", "source": "clippy", "sources": ["clippy", "errors"], "toolRule": rule})
+        };
+        let filed = serde_json::to_string(&vec![LedgerRow::open(&seed("clippy::a"))]).unwrap();
+        let back: Vec<LedgerRow> = serde_json::from_str(&filed).unwrap();
+        let host = back[0].finding();
+        assert_eq!(
+            (&host["toolRule"], &host["sources"]),
+            (&json!("clippy::a"), &json!(["clippy", "errors"]))
+        );
+        assert!(
+            !repeats(&seed("clippy::b"), &host, true),
+            "another rule of the tool"
+        );
+        assert!(
+            repeats(&seed("a"), &host, true),
+            "the same rule, its prefix aside"
+        );
+        let old: LedgerRow = serde_json::from_str(r#"{"file":"a.rs","ruleId":"R1"}"#).unwrap();
+        assert_eq!(
+            (old.tool_rule.as_str(), old.sources),
+            ("", None),
+            "a record written before them reads"
+        );
+        let plain = serde_json::to_value(LedgerRow::default()).unwrap();
+        assert!(plain.get("toolRule").is_none() && plain.get("sources").is_none());
     }
 
     #[test]
