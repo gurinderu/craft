@@ -4,7 +4,8 @@
 mod common;
 
 use common::{
-    answers, fixture, ids, lens, opts, prompt_of, scout, small_run, submit, titled, verdict,
+    answers, assert_contains_all, fixture, ids, lens, opts, prompt_of, scout, small_run, submit,
+    titled, verdict,
 };
 use craft_review::Error;
 use craft_review::git::GitError;
@@ -150,19 +151,19 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
         ["lens-errors-r1", "lens-intent-r1", "lens-tests-r1"]
     );
     assert_eq!(s["tasks"][0]["label"], json!("lens:rust:errors r1"));
-    let p = prompt_of(&s["tasks"][1]);
-    for want in [
-        "You are the **intent** review lens for a Rust diff",
-        "INTENT (what the change should do): add f, which never fails",
-        "HOT FILES (scrutinize harder): src/lib.rs",
-        "REPO RULES `AGENTS.md`",
-        "ALREADY-FOUND (do not re-report these PLACES",
-        "none yet",
-        "feat: add f, which never fails",
-        "--merge-base 'origin/main' -- '*.rs'",
-    ] {
-        assert!(p.contains(want), "{want}: {p}");
-    }
+    assert_contains_all(
+        &prompt_of(&s["tasks"][1]),
+        &[
+            "You are the **intent** review lens for a Rust diff",
+            "INTENT (what the change should do): add f, which never fails",
+            "HOT FILES (scrutinize harder): src/lib.rs",
+            "REPO RULES `AGENTS.md`",
+            "ALREADY-FOUND (do not re-report these PLACES",
+            "none yet",
+            "feat: add f, which never fails",
+            "--merge-base 'origin/main' -- '*.rs'",
+        ],
+    );
     let st = status::status(&run).unwrap();
     assert_eq!(
         (st["phase"].clone(), st["round"].clone()),
@@ -189,19 +190,20 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
         (json!(true), json!("Block"))
     );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
-    for want in [
-        "Plan: medium diff, full review, at most 2 round(s). Lenses planned: errors, intent, tests; ran: errors, intent, tests.",
-        "- Round 1: 3 lens(es) dispatched, 3 returned, 4 new finding(s).",
-        "- Round 2: 3 lens(es) dispatched, 3 returned, 0 new finding(s).",
-        "## Confirmed findings\n\n- **High** `src/lib.rs:1` — f returns 1 where 0 is claimed (errors, intent)",
-        "(same defect also reported by: intent)",
-        "## Unverified findings\n\n- **Low** `src/lib.rs:1` — naming (intent)",
-        "## Refuted findings\n\n- **Medium** `src/lib.rs:1` — no doc (errors)",
-        "3 finding(s) reported: 1 confirmed, 0 suspected, 1 refuted, 1 unverified.",
-        "dedup before verification: 4 → 3 (1 cross-lens duplicate(s) merged)",
-    ] {
-        assert!(report.contains(want), "{want}: {report}");
-    }
+    assert_contains_all(
+        &report,
+        &[
+            "Plan: medium diff, full review, at most 2 round(s). Lenses planned: errors, intent, tests; ran: errors, intent, tests.",
+            "- Round 1: 3 lens(es) dispatched, 3 returned, 4 new finding(s).",
+            "- Round 2: 3 lens(es) dispatched, 3 returned, 0 new finding(s).",
+            "## Confirmed findings\n\n- **High** `src/lib.rs:1` — f returns 1 where 0 is claimed (errors, intent)",
+            "(same defect also reported by: intent)",
+            "## Unverified findings\n\n- **Low** `src/lib.rs:1` — naming (intent)",
+            "## Refuted findings\n\n- **Medium** `src/lib.rs:1` — no doc (errors)",
+            "3 finding(s) reported: 1 confirmed, 0 suspected, 1 refuted, 1 unverified.",
+            "dedup before verification: 4 → 3 (1 cross-lens duplicate(s) merged)",
+        ],
+    );
     assert_eq!(status::status(&run).unwrap()["phase"], json!("done"));
     let late = step::submit(&run, Some(&Map::new())).unwrap_err();
     assert!(matches!(late, Error::Step(StepError::Done(_))), "{late}");
