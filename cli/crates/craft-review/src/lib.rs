@@ -1,6 +1,6 @@
 //! The review: what work it needs, step by step, without starting an agent itself ([`step`],
 //! realm @nick/craft, node #453), rendered from craft's content ([`content`], node #452) for the
-//! language profile it reads as data ([`profile`]): a scout, the lens rounds, the dedup, the
+//! language profiles it reads as data ([`profile`]): a scout per profile, the lens rounds, one dedup, the
 //! verifiers ([`phases`]). The types below are the pipeline's skeleton the single-agent probe
 //! still runs on.
 

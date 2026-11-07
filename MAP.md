@@ -104,8 +104,10 @@ internal to the plugin, no external dependency). They are authored under `src/`;
 copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
 committed. The review's knowledge — lens briefs and prompt templates (`content/prompts/`, `{{name}}`
 placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
-under `content/`, inlined into the engines by the build; the Rust profile's roster is also data
-(`content/profiles/rust.json`, read by the Rust CLI), held to the engine's own by a parity test.
+under `content/`, inlined into the engines by the build; the Rust and Nix profiles' rosters are also data
+(`content/profiles/rust.json`, `content/profiles/nix.json`, read by the Rust CLI), held to the engine's own by a
+parity test, and so is the CLI's general profile (`content/profiles/general.json`: adversarial-review's lenses, whose
+briefs that engine reads from the same files).
 
 | Workflow | Composes | Output |
 |---|---|---|
@@ -218,9 +220,10 @@ a host (the `cli-review` engine above) runs its agents. The step protocol was ob
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
 protocol, and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
-under a concurrency cap), `crates/craft-review` (the steps — a scout whose answer plans the lenses of the Rust profile
-(`content/profiles/rust.json`), the lenses round after round until one finds nothing new or the plan's rounds are spent, the
-floor, roll-up and dedup of their pool, then verification as the engine buys it — a batch vote per file group of Mediums, one
+under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, or the general lenses for source in
+any other language, `content/profiles/`), a scout per profile whose answer plans its lenses over its own files, the
+lenses round after round until each profile's round finds nothing new or its plan's rounds are spent, the
+floor, roll-up and dedup of their one pool, then verification as the engine buys it — a batch vote per file group of Mediums, one
 vote per other finding routed alone, and for a Critical or High a cheap vote plus an authoritative one, the rest of the
 plan's panel bought only when those two disagree — each finding's severity capped by the harm it names as the engines cap it,
 then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered

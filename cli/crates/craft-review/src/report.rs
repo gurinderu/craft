@@ -3,9 +3,11 @@
 use serde_json::Value;
 
 use crate::coverage;
-use crate::state::RunState;
+use crate::state::{RunState, Track};
 
 mod light;
+#[cfg(test)]
+mod tests;
 
 pub use crate::settle::Tier;
 
@@ -51,7 +53,7 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
         (Some(exit), _) => exit.line.clone(),
         (None, true) => verdict.to_owned(),
         (None, false) => format!(
-            "{verdict} — {}: this verdict covers only the files the Rust profile reviewed",
+            "{verdict} — {}: this verdict covers only the files its language profiles reviewed",
             coverage::note(&gap)
         ),
     };
@@ -118,7 +120,7 @@ fn entry(f: &Value) -> String {
     e
 }
 
-/// The header lines: what was reviewed, the plan and the lens rounds.
+/// The header lines: what was reviewed, each profile's plan and the lens rounds.
 fn header(state: &RunState) -> String {
     let d = &state.diff;
     let short = |sha: &str| sha.get(..12).unwrap_or(sha).to_owned();
@@ -127,25 +129,63 @@ fn header(state: &RunState) -> String {
     } else {
         ", clean tree"
     };
+    let taken: Vec<String> = state
+        .tracks
+        .iter()
+        .map(|t| format!("{} {}", t.files.len(), lang(&t.profile)))
+        .collect();
     let mut out = format!(
-        "Head `{}`{tree}; base `{}` (merge-base `{}`), {} changed file(s), {} Rust.\n\n",
+        "Head `{}`{tree}; base `{}` (merge-base `{}`), {} changed file(s){}.\n\n",
         d.head,
         d.base,
         short(&d.merge_base),
         d.files.len(),
-        state.rust_files.len()
+        if taken.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", taken.join(", "))
+        }
     );
-    let Some(plan) = &state.plan else {
+    for t in &state.tracks {
+        plan_lines(state, t, &mut out);
+    }
+    if state.tracks.iter().all(|t| t.plan.is_none()) {
         return out;
+    }
+    for y in &state.rounds.yields {
+        out.push_str(&format!(
+            "- Round {}: {} lens(es) dispatched, {} returned, {} new finding(s).\n",
+            y.round, y.agents, y.returned, y.new_findings
+        ));
+    }
+    out.push('\n');
+    out
+}
+
+/// What a report calls a profile's files: its language.
+fn lang(profile: &str) -> String {
+    crate::profile::Profile::load(profile).map_or_else(|_| profile.to_owned(), |p| p.lang)
+}
+
+/// One track's plan: its size, depth, rounds, the lenses planned and those that ran, and what the
+/// scout's surfaces dropped; named by its profile when the run has more than one.
+fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
+    let Some(plan) = &t.plan else {
+        return;
     };
     let depth = if state.light {
         "light pass"
     } else {
         "full review"
     };
-    let ran = state.rounds.ran(plan);
+    let whose = if state.tracks.len() > 1 {
+        format!(" ({})", t.profile)
+    } else {
+        String::new()
+    };
+    let ran = state.rounds.ran(&t.profile, plan);
     out.push_str(&format!(
-        "Plan: {} diff, {depth}, at most {} round(s). Lenses planned: {}; ran: {}.\n",
+        "Plan{whose}: {} diff, {depth}, at most {} round(s). Lenses planned: {}; ran: {}.\n",
         plan.size_bucket,
         plan.max_rounds,
         plan.lenses.join(", "),
@@ -157,18 +197,10 @@ fn header(state: &RunState) -> String {
     ));
     if !plan.surface_dropped.is_empty() {
         out.push_str(&format!(
-            "Dropped by the scout's surfaces: {}.\n",
+            "Dropped by the scout's surfaces{whose}: {}.\n",
             plan.surface_dropped.join(", ")
         ));
     }
-    for y in &state.rounds.yields {
-        out.push_str(&format!(
-            "- Round {}: {} lens(es) dispatched, {} returned, {} new finding(s).\n",
-            y.round, y.agents, y.returned, y.new_findings
-        ));
-    }
-    out.push('\n');
-    out
 }
 
 /// The Markdown report of a finished run: the verdict, then the findings grouped by tier, worst

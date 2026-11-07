@@ -1,7 +1,9 @@
 //! How a run moves on once no task of its phase is pending, as `reviewProfile` in
-//! `lib/review-profile.mjs` orders it: the scout's answer plans the lenses; the lens rounds run
-//! until one adds nothing new or the plan's rounds are spent; the pool goes through the floor, the
-//! roll-up and the dedup; the verifiers judge it; the verdicts make the report.
+//! `lib/review-profile.mjs` orders it for each profile: each profile's scout plans its lenses; the
+//! lens rounds run until each profile's last round adds nothing new or its plan's rounds are spent;
+//! the one pool goes through the floor, the roll-up and the dedup; the verifiers judge it; the
+//! verdicts make one report. The profiles of a mixed diff share each phase (realm @nick/craft,
+//! node #421): one dedup and one verification over all their findings, one verdict.
 
 use std::path::Path;
 
@@ -10,7 +12,7 @@ use serde_json::Value;
 use crate::Error;
 use crate::content;
 use crate::dedup;
-use crate::plan::{self, Plan, PlanInput};
+use crate::plan::{self, PlanInput};
 use crate::profile::Profile;
 use crate::prompts;
 use crate::report;
@@ -19,7 +21,7 @@ use crate::state::{self, Phase, RunState, Task, TaskKind, TaskState};
 use crate::step::StepError;
 use crate::verify;
 
-/// The answer of the phase's single task (the scout, the dedup), when it gave a valid one.
+/// The answer of the phase's single task (the dedup), when it gave a valid one.
 fn only_answer(run: &RunState) -> Option<Value> {
     run.tasks
         .first()
@@ -27,11 +29,17 @@ fn only_answer(run: &RunState) -> Option<Value> {
         .and_then(|t| t.answer.clone())
 }
 
-fn why_failed(run: &RunState) -> String {
-    run.tasks
-        .first()
-        .and_then(|t| t.error.clone())
+fn why_failed(task: Option<&Task>) -> String {
+    task.and_then(|t| t.error.clone())
         .unwrap_or_else(|| "no answer".into())
+}
+
+/// The profiles taking part in the run, in its tracks' order.
+fn profiles_of(run: &RunState) -> Result<Vec<Profile>, Error> {
+    run.tracks
+        .iter()
+        .map(|t| Profile::load(&t.profile).map_err(Error::from))
+        .collect()
 }
 
 /// Moves the run on once no task is pending.
@@ -42,53 +50,23 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     if run.tasks.iter().any(|t| t.state == TaskState::Pending) {
         return Ok(());
     }
-    let profile = Profile::rust()?;
+    let profiles = profiles_of(run)?;
     match run.phase {
         Phase::Scout => {
-            let scout = only_answer(run);
-            if scout.is_none() {
-                run.not_run.push(format!(
-                    "{} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one ({})",
-                    profile.id,
-                    why_failed(run)
-                ));
-            }
-            let planned = plan::plan(PlanInput {
-                profile: &profile,
-                scout: scout.as_ref(),
-                changed_files: &run.diff.files,
-                spec: &run.context.spec,
-                light: run.light,
-            });
-            run.plan = Some(planned);
-            next_round(run, &profile)
+            plan_tracks(run, &profiles);
+            next_round(dir, run, &profiles)
         }
         Phase::Lenses => {
-            let dry = run.rounds.absorb(&run.tasks);
-            let max = run.plan.as_ref().map_or(1, |p| p.max_rounds);
-            if !dry && run.rounds.round < max {
-                return next_round(run, &profile);
+            let added = run.rounds.absorb(&run.tasks);
+            for t in run.tracks.iter_mut().filter(|t| t.live()) {
+                t.rounds += 1;
+                t.dry = added.get(&t.profile).copied().unwrap_or(0) == 0;
             }
-            end_rounds(dir, run, &profile)
+            next_round(dir, run, &profiles)
         }
         Phase::Dedup => {
-            let answer = only_answer(run);
-            if answer.is_none() {
-                run.notes.push(format!(
-                    "the dedup pass gave no valid answer ({}): only same-spot duplicates were merged",
-                    why_failed(run)
-                ));
-            }
-            let (merged, folded) = dedup::merge(&run.findings, answer.as_ref());
-            if folded > 0 {
-                run.notes.push(format!(
-                    "dedup before verification: {} → {} ({folded} cross-lens duplicate(s) merged)",
-                    run.findings.len(),
-                    merged.len()
-                ));
-            }
-            run.findings = merged;
-            start_verify(dir, run, &profile)
+            dedup_answered(run);
+            start_verify(dir, run)
         }
         Phase::Verify => {
             // A split or thinned deciding pair buys the rest of its panel before anything settles.
@@ -97,47 +75,87 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
                 run.tasks.extend(more);
                 return Ok(());
             }
-            verify::settle_run(run, &profile.id);
+            verify::settle_run(run);
             finish(dir, run)
         }
         Phase::Done => Ok(()),
     }
 }
 
-fn plan_of(run: &RunState) -> Result<&Plan, StepError> {
-    run.plan.as_ref().ok_or(StepError::NoPlan)
+/// Plans each track from its scout's answer, the conservative fallback where it gave none.
+fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
+    for (track, p) in run.tracks.iter_mut().zip(profiles) {
+        let task = run
+            .tasks
+            .iter()
+            .find(|t| matches!(&t.kind, TaskKind::Scout { profile } if *profile == track.profile));
+        let scout = task
+            .filter(|t| t.state == TaskState::Answered)
+            .and_then(|t| t.answer.as_ref());
+        if scout.is_none() {
+            run.not_run.push(format!(
+                "{} scout classification — the plan is the conservative fallback (all lenses, 3-vote, 2 rounds), not a scouted one ({})",
+                p.id,
+                why_failed(task)
+            ));
+        }
+        track.plan = Some(plan::plan(PlanInput {
+            profile: p,
+            scout,
+            changed_files: &run.diff.files,
+            spec: &run.context.spec,
+            light: run.light,
+        }));
+    }
 }
 
-/// Hands out the next lens round.
-fn next_round(run: &mut RunState, profile: &Profile) -> Result<(), Error> {
+/// Hands out the next lens round, of every track still live; after the last, ends the rounds.
+fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
+    if !run.tracks.iter().any(state::Track::live) {
+        return end_rounds(dir, run, profiles);
+    }
     run.rounds.round += 1;
-    run.tasks = rounds::tasks(&run.context, profile, plan_of(run)?, &run.rounds)?;
+    let mut tasks = Vec::new();
+    for (track, p) in run.tracks.iter().zip(profiles).filter(|(t, _)| t.live()) {
+        let plan = track.plan.as_ref().ok_or(StepError::NoPlan)?;
+        tasks.extend(rounds::tasks(
+            &run.context,
+            p,
+            plan,
+            &track.files,
+            &run.rounds,
+        )?);
+    }
+    run.tasks = tasks;
     run.phase = Phase::Lenses;
     Ok(())
 }
 
 /// After the last round: the lenses that never returned, then the pool to the dedup.
-fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<(), Error> {
-    let holes = run.rounds.holes();
-    if !holes.is_empty() {
-        run.not_run.push(format!(
-            "{} lenses that never returned — {}",
-            profile.id,
-            holes.join(" · ")
-        ));
+fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
+    for p in profiles {
+        let holes = run.rounds.holes(&p.id);
+        if !holes.is_empty() {
+            run.not_run.push(format!(
+                "{} lenses that never returned — {}",
+                p.id,
+                holes.join(" · ")
+            ));
+        }
     }
     if run.rounds.pool.is_empty() {
         return finish(dir, run);
     }
-    run.findings = dedup::prepare(&run.rounds.pool, profile);
-    if run.findings.len() < 2 {
-        return start_verify(dir, run, profile);
-    }
+    run.findings = dedup::prepare(&run.rounds.pool, profiles);
+    let Some(first) = profiles.first().filter(|_| run.findings.len() >= 2) else {
+        return start_verify(dir, run);
+    };
+    let ids: Vec<&str> = profiles.iter().map(|p| p.id.as_str()).collect();
     run.tasks = vec![Task::new(
-        format!("dedup-{}", profile.id),
-        format!("dedup:{}", profile.id),
+        format!("dedup-{}", ids.join("-")),
+        format!("dedup:{}", ids.join("-")),
         prompts::dedup_prompt(&run.context, &run.findings)?,
-        profile.dedup_model,
+        first.dedup_model,
         content::schema("dedup")?,
         TaskKind::Dedup,
     )];
@@ -145,12 +163,32 @@ fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<(), E
     Ok(())
 }
 
+/// Merges the pool by the dedup's answer and the same-spot groups.
+fn dedup_answered(run: &mut RunState) {
+    let answer = only_answer(run);
+    if answer.is_none() {
+        run.notes.push(format!(
+            "the dedup pass gave no valid answer ({}): only same-spot duplicates were merged",
+            why_failed(run.tasks.first())
+        ));
+    }
+    let (merged, folded) = dedup::merge(&run.findings, answer.as_ref());
+    if folded > 0 {
+        run.notes.push(format!(
+            "dedup before verification: {} → {} ({folded} cross-lens duplicate(s) merged)",
+            run.findings.len(),
+            merged.len()
+        ));
+    }
+    run.findings = merged;
+}
+
 /// Hands the pool to its verifiers, or ends the run when none is to be spent.
-fn start_verify(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<(), Error> {
+fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     run.notes.extend(verify::skipped_note(run));
     run.tasks = verify::tasks(run)?;
     if run.tasks.is_empty() {
-        verify::settle_run(run, &profile.id);
+        verify::settle_run(run);
         return finish(dir, run);
     }
     run.phase = Phase::Verify;

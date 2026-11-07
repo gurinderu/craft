@@ -5,7 +5,8 @@
 use serde_json::Value;
 
 use super::{
-    PromptContext, dedup_prompt, lens_prompt, prior_found_summary, repo_directive, scout_prompt,
+    LensIn, PromptContext, dedup_prompt, lens_prompt, prior_found_summary, repo_directive,
+    scout_prompt,
 };
 use crate::plan::Plan;
 use crate::profile::Profile;
@@ -45,19 +46,34 @@ fn every_prompt_renders_as_the_engines_render_it() {
         surface_dropped: Vec::new(),
         light_skipped: Vec::new(),
     };
-    let profile = Profile::rust().unwrap();
     let pool = input["pool"].as_array().unwrap();
     let dir = repo_directive(&ctx.repo);
     let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
     let prior = prior_found_summary(pool);
     assert_eq!(prior, want["prior"].as_str().unwrap());
-    assert_eq!(
-        body(scout_prompt(&ctx, &profile).unwrap()),
-        want["scout"].as_str().unwrap()
-    );
-    for lens in strings(&input["lenses"]) {
-        let got = body(lens_prompt(&ctx, &profile, &lens, &plan, &prior).unwrap());
-        assert_eq!(got, want["lenses"][&lens].as_str().unwrap(), "{lens}");
+    // Each profile the engines share: its scout and the lenses the input names, from its globs.
+    for (id, lenses, want) in [
+        ("rust", &input["lenses"], want),
+        ("nix", &input["nixLenses"], &want["nix"]),
+    ] {
+        let profile = Profile::load(id).unwrap();
+        assert_eq!(
+            body(scout_prompt(&ctx, &profile, &[]).unwrap()),
+            want["scout"].as_str().unwrap(),
+            "{id}"
+        );
+        let pathspec = profile.pathspec(&[]);
+        for lens in strings(lenses) {
+            let at = LensIn {
+                profile: &profile,
+                lens: &lens,
+                plan: &plan,
+                pathspec: &pathspec,
+                prior: &prior,
+            };
+            let got = body(lens_prompt(&ctx, &at).unwrap());
+            assert_eq!(got, want["lenses"][&lens].as_str().unwrap(), "{id}: {lens}");
+        }
     }
     assert_eq!(
         body(dedup_prompt(&ctx, pool).unwrap()),

@@ -2,13 +2,21 @@
 //! `markVerdictLight` and `lightSection` in `lib/review-depth.mjs` word them (realm @nick/craft,
 //! node #295), and the parts of craft:review this CLI does not run.
 
+use crate::plan::Plan;
 use crate::profile::Profile;
 use crate::state::RunState;
+
+/// Adds `l` to `list` unless it is there.
+fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
+    if !list.contains(&l) {
+        list.push(l);
+    }
+}
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
 const CLI_NOT_RUN: [&str; 6] = [
-    "clippy gate seeds",
+    "the gate and its tool seeds (clippy and semgrep for Rust; nix flake check, statix and deadnix for Nix)",
     "the completeness critic",
     "unit slicing and the contract lens",
     "extra and role lenses",
@@ -21,7 +29,7 @@ const CLI_NOT_RUN: [&str; 6] = [
 /// INCOMPLETE.
 pub(super) fn cli_not_run() -> String {
     format!(
-        "not part of this CLI's review (it runs the Rust profile's lenses, the dedup and the verification only; a re-run will not add these): {}",
+        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup and the verification only; a re-run will not add these): {}",
         CLI_NOT_RUN.join(" · ")
     )
 }
@@ -36,26 +44,35 @@ pub(super) fn mark(line: &str) -> String {
 
 /// What the light pass did not do, stated on every report it returns.
 pub(super) fn section(state: &RunState) -> String {
-    let Some(plan) = state.plan.as_ref().filter(|_| state.exit.is_none()) else {
+    let plans: Vec<(&str, &Plan)> = state
+        .tracks
+        .iter()
+        .filter_map(|t| Some((t.profile.as_str(), t.plan.as_ref()?)))
+        .collect();
+    if plans.is_empty() || state.exit.is_some() {
         return "\n\n## Light pass -- no lens ran\n⚠️ This was a LIGHT pass (depth=light), and it ended before any lens ran, so it makes no statement about the code. Re-run once the cause above is fixed.\n".into();
-    };
-    let lenses = if plan.light_skipped.is_empty() {
+    }
+    let mut skipped: Vec<&str> = Vec::new();
+    let mut kept: Vec<&str> = Vec::new();
+    for (profile, plan) in &plans {
+        let whole = Profile::load(profile)
+            .map(|p| p.flagged(|l| l.whole_diff))
+            .unwrap_or_default();
+        for l in &plan.light_skipped {
+            push_once(&mut skipped, l);
+        }
+        for l in plan.lenses.iter().filter(|l| whole.contains(l)) {
+            push_once(&mut kept, l);
+        }
+    }
+    let lenses = if skipped.is_empty() {
         "no whole-diff lens was in the plan to skip".to_owned()
     } else {
         format!(
             "the whole-diff lenses {} were NOT dispatched",
-            plan.light_skipped.join(", ")
+            skipped.join(", ")
         )
     };
-    let whole = Profile::rust()
-        .map(|p| p.flagged(|l| l.whole_diff))
-        .unwrap_or_default();
-    let kept: Vec<&str> = plan
-        .lenses
-        .iter()
-        .filter(|l| whole.contains(l))
-        .map(String::as_str)
-        .collect();
     let kept = if kept.is_empty() {
         String::new()
     } else {

@@ -141,7 +141,11 @@ pub fn small_run(repo: &Path, out: &Path) -> (std::path::PathBuf, Value) {
     let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
     assert_eq!(
         ids(&s),
-        ["lens-errors-r1", "lens-intent-r1", "lens-tests-r1"]
+        [
+            "lens-rust-errors-r1",
+            "lens-rust-intent-r1",
+            "lens-rust-tests-r1"
+        ]
     );
     (run, s)
 }

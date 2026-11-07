@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::{Route, culls, is_high, panel, returned, route_in};
 use crate::settle::{self, Tier, finalize, not_verified, tier_from_votes};
-use crate::state::{RunState, Task, TaskKind, TaskState};
+use crate::state::{RunState, Task, TaskKind, TaskState, finding_profile};
 
 /// The note a skipped finding carries, as `routedUnverified` words it.
 fn skipped(f: &Value, light: bool) -> Value {
@@ -29,7 +29,7 @@ fn skipped(f: &Value, light: bool) -> Value {
 /// otherwise on every vote that came back. Any other finding routed alone has one vote.
 fn individual(run: &RunState, i: usize, f: &Value) -> Value {
     let votes = panel(run, i);
-    let n1 = culls(run);
+    let n1 = culls(run, f);
     let opening: Vec<Option<Value>> = votes
         .iter()
         .filter(|(k, _)| *k == 0 || (is_high(f) && *k == n1))
@@ -122,7 +122,7 @@ fn reason(run: &RunState, i: usize) -> Option<Value> {
 
 /// Settles the pool into `run.settled`, notes each verifier that gave no valid answer, and adds
 /// what did not run to `run.not_run`.
-pub(crate) fn settle_run(run: &mut RunState, profile: &str) {
+pub(crate) fn settle_run(run: &mut RunState) {
     let mut out: Vec<Option<Value>> = vec![None; run.findings.len()];
     for (i, f) in run.findings.iter().enumerate() {
         let one = match route_in(f, run.light) {
@@ -160,7 +160,7 @@ pub(crate) fn settle_run(run: &mut RunState, profile: &str) {
         .collect();
     run.notes.extend(failed);
     let settled: Vec<Value> = out.into_iter().flatten().map(|f| finalize(&f)).collect();
-    let gaps = not_run(run, &settled, profile);
+    let gaps = not_run(run, &settled);
     for g in gaps {
         if !run.not_run.contains(&g) {
             run.not_run.push(g);
@@ -170,14 +170,16 @@ pub(crate) fn settle_run(run: &mut RunState, profile: &str) {
 }
 
 /// What verification did not do, derived from the tiers as `verifyPool`'s `notRun`: findings a
-/// verifier was routed to and none judged, and refutations a thinned panel made.
-fn not_run(run: &RunState, settled: &[Value], profile: &str) -> Vec<String> {
+/// verifier was routed to and none judged, and refutations a thinned panel made; each named by
+/// its finding's profile.
+fn not_run(run: &RunState, settled: &[Value]) -> Vec<String> {
     let file = |f: &Value| {
-        f.get("file")
+        let at = f
+            .get("file")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            .unwrap_or("?")
-            .to_owned()
+            .unwrap_or("?");
+        format!("{} verification of {at}", finding_profile(run, f))
     };
     let discarded = |f: &Value| f.get("votesDiscarded").and_then(Value::as_u64).unwrap_or(0) > 0;
     let routed = settled
@@ -191,13 +193,13 @@ fn not_run(run: &RunState, settled: &[Value], profile: &str) -> Vec<String> {
         .collect();
     let mut out = Vec::new();
     for f in deaths.iter().filter(|f| !discarded(f)) {
-        out.push(format!("{profile} verification of {} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code", file(f)));
+        out.push(format!("{} — the verifier(s) died before returning a verdict, so those finding(s) were never checked against the code", file(f)));
     }
     for f in deaths.iter().filter(|f| discarded(f)) {
-        out.push(format!("{profile} verification of {} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code", file(f)));
+        out.push(format!("{} — every returned vote answered OFF-SCHEMA and was discarded before the arithmetic, so those finding(s) were never checked against the code", file(f)));
     }
     for f in routed.filter(|f| Tier::of(f) == Tier::Refuted && discarded(f)) {
-        out.push(format!("{profile} verification of {} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence", file(f)));
+        out.push(format!("{} — a finding was REFUTED and deleted from the run by a THINNED PANEL (at least one returned vote answered off-schema and was discarded), so the deletion rests on partial evidence", file(f)));
     }
     let mut seen = Vec::new();
     out.retain(|s| {

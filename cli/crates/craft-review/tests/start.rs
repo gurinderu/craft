@@ -82,7 +82,7 @@ fn a_confirmed_high_naming_a_self_healing_harm_is_capped_and_does_not_block() {
     f["harmLevel"] = json!("self-healing");
     let s = submit(
         &run,
-        json!({"lens-errors-r1": lens("errors", &[]), "lens-intent-r1": lens("intent", &[f]), "lens-tests-r1": lens("tests", &[])}),
+        json!({"lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[f]), "lens-rust-tests-r1": lens("tests", &[])}),
     );
     assert_eq!(
         ids(&s),
@@ -143,20 +143,20 @@ fn start_with(name: &str, base: Option<&str>) -> (serde_json::Value, String) {
 }
 
 #[test]
-fn a_diff_the_rust_profile_covers_nothing_of_takes_the_engines_coverage_exit() {
-    let (v, report) = exit_of("main.py", None);
+fn a_diff_no_profile_takes_takes_the_engines_coverage_exit() {
+    let (v, report) = exit_of("Dockerfile", None);
     assert_eq!(v, json!("INCOMPLETE (no language profile)"));
     assert!(
-        report.contains("## Verdict\n\n⚠️ INCOMPLETE — NOTHING WAS REVIEWED — none of the 1 changed file(s) match a supported language profile (this engine reviews Rust only), and 1 of them carry reviewable content"),
-        "{report}"
+        report.contains("## Verdict\n\n⚠️ INCOMPLETE — NOTHING WAS REVIEWED — none of the 1 changed file(s) match a supported language profile (this engine reviews Rust, Nix and source in any other language, but no project configuration or build recipe), and 1 of them carry reviewable content"),
+        "project configuration alone is still no profile's: {report}"
     );
     assert!(
-        report.contains("## Not reviewed (no language profile)\n\n- main.py"),
+        report.contains("## Not reviewed (no language profile)\n\n- Dockerfile"),
         "{report}"
     );
 
-    let s = start_over("main.py");
-    assert_eq!(s["uncovered"], json!(["main.py"]));
+    let s = start_over("Dockerfile");
+    assert_eq!(s["uncovered"], json!(["Dockerfile"]));
     let line = s["line"].as_str().unwrap();
     assert!(
         line.starts_with("⚠️ INCOMPLETE — NOTHING WAS REVIEWED — none of the 1 changed file(s) match a supported language profile"),
@@ -197,37 +197,19 @@ fn mixed_run(extra: &[&str]) -> (serde_json::Value, String) {
     let (run, _) = small_run(repo.path(), out.path());
     let s = submit(
         &run,
-        json!({"lens-errors-r1": lens("errors", &[]), "lens-intent-r1": lens("intent", &[]), "lens-tests-r1": lens("tests", &[])}),
+        json!({"lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-tests-r1": lens("tests", &[])}),
     );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     (s, report)
 }
 
 #[test]
-fn changed_code_no_profile_covers_is_listed_and_marks_the_verdict_partial_coverage() {
-    let (s, report) = mixed_run(&["app.py", "Makefile", "NOTES.md"]);
-    assert_eq!(s["verdict"], json!("Approve (PARTIAL COVERAGE)"));
+fn project_configuration_is_listed_as_not_reviewed_but_is_no_hole() {
+    let (s, report) = mixed_run(&["Makefile", "NOTES.md"]);
     assert_eq!(
-        s["uncovered"],
-        json!(["Makefile", "app.py"]),
-        "the uncovered files carrying something to review, config included, the inert left out"
-    );
-    let line = "Approve (PARTIAL COVERAGE) — 1 changed file(s) matched no language profile and were NOT reviewed (app.py): this verdict covers only the files the Rust profile reviewed";
-    assert_eq!(s["line"], json!(line));
-    assert!(
-        report.contains(&format!("## Verdict\n\n{line}\n")),
-        "{report}"
-    );
-    assert!(
-        report.contains("## Not reviewed (no language profile)\n\n- Makefile\n- app.py\n"),
-        "{report}"
-    );
-
-    let (s, report) = mixed_run(&["Makefile"]);
-    assert_eq!(
-        (&s["verdict"], &s["line"]),
-        (&json!("Approve"), &json!("Approve")),
-        "project configuration is listed, but no hole in the review of the code"
+        (&s["verdict"], &s["line"], &s["uncovered"]),
+        (&json!("Approve"), &json!("Approve"), &json!(["Makefile"])),
+        "project configuration is listed, the inert left out, and no hole in the review of the code"
     );
     assert!(
         report.contains("## Not reviewed (no language profile)\n\n- Makefile\n"),
