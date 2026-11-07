@@ -16,12 +16,16 @@ pub(super) fn take_ledger(chain: &mut Chain, ledger: Vec<LedgerRow>) {
                 chain.tombstones.push(row);
                 continue;
             }
-            "open" if row.tier == "unverified" => Fate::Unverified,
-            // A deferral the CLI cannot see (its ledger keeps no question behind it) holds nothing:
-            // the row is adjudicated like any prior, as the engine does with a `deferred` row
-            // without a `deferral`.
-            "open" | "deferred" => Fate::Pending,
-            _ => Fate::Carried,
+            // The unverified tier is taken out first, whatever the row's disposition, as
+            // `carryUnverifiedPriors` does: nothing checked it, so there is nothing to adjudicate or
+            // carry-check, and it is carried forward unverified.
+            _ if row.tier == "unverified" => Fate::Unverified,
+            // Only the author's dismissals are carry-checked, as `isSettledPrior` settles them.
+            "rejected" | "justified" => Fate::Carried,
+            // Everything else is adjudicated: `open`; a `deferred` row, whose question the CLI cannot
+            // see (the engine adjudicates a `deferred` row without a `deferral` like any prior); and
+            // a disposition this CLI does not know.
+            _ => Fate::Pending,
         };
         chain.priors.push(PriorFinding {
             row,

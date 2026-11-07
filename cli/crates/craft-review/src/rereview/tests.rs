@@ -64,9 +64,25 @@ fn the_prior_ledger_splits_into_findings_to_judge_carry_and_tombstones() {
         row("b", "R2", "open", "unverified"),
         row("c", "R3", "rejected", "confirmed"),
         row("d", "R4", "closed", "confirmed"),
+        row("e", "R5", "rejected", "unverified"),
+        row("f", "R6", "justified", "suspected"),
+        row("g", "R7", "deferred", "confirmed"),
+        row("h", "R8", "covered", "confirmed"),
     ]);
     let fates: Vec<Fate> = c.priors.iter().map(|p| p.fate).collect();
-    assert_eq!(fates, [Fate::Pending, Fate::Unverified, Fate::Carried]);
+    assert_eq!(
+        fates,
+        [
+            Fate::Pending,
+            Fate::Unverified,
+            Fate::Carried,
+            Fate::Unverified,
+            Fate::Carried,
+            Fate::Pending,
+            Fate::Pending
+        ],
+        "the unverified tier first, whatever the disposition; only rejected and justified carry-checked"
+    );
     assert_eq!(c.tombstones.len(), 1);
 }
 
@@ -129,6 +145,7 @@ fn a_verified_repeat_is_absorbed_onto_its_prior_and_a_returning_one_is_marked() 
         row("fixed one", "R2", "closed", "confirmed"),
     ]);
     c.tombstones[0].why = "resolved in round 4".into();
+    judge(&mut c, &[adjudicated(0, said("still-open", 3, ""))]);
     let mut found = vec![
         settled("R1", 3, "High", "confirmed"),
         settled("R2", 5, "High", "suspected"),
@@ -364,4 +381,56 @@ fn the_ledger_carries_the_open_the_settled_and_the_tombstones() {
         capped.iter().filter(|r| r.disposition == "closed").count(),
         TOMBSTONES_MAX
     );
+}
+
+/// Every fate a prior can meet, at every tier, located or not.
+fn every_prior() -> Vec<PriorFinding> {
+    let fates = [
+        Fate::Pending,
+        Fate::Resolved,
+        Fate::StillOpen,
+        Fate::Regressed,
+        Fate::Carried,
+        Fate::Unverified,
+        Fate::Retired,
+    ];
+    let mut out = Vec::new();
+    for fate in fates {
+        for tier in ["confirmed", "suspected", "unverified"] {
+            for located in [false, true] {
+                out.push(PriorFinding {
+                    row: row("p", "R1", "open", tier),
+                    fate,
+                    located,
+                });
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn a_finding_is_absorbed_only_into_a_prior_that_gates_this_run() {
+    for prior in every_prior() {
+        let mut c = chained(Vec::new());
+        c.priors = vec![prior.clone()];
+        for tier in ["confirmed", "suspected", "unverified", "refuted"] {
+            let mut found = vec![settled("R1", 3, "Low", tier)];
+            let before = c.absorbed;
+            absorb(&mut c, &mut found);
+            let host = &c.priors[0];
+            if c.absorbed > before {
+                assert!(
+                    host.gates(),
+                    "{prior:?} absorbed a {tier} finding without gating"
+                );
+            }
+            let judged = matches!(tier, "confirmed" | "suspected");
+            assert_eq!(
+                c.absorbed > before,
+                judged && host.gates(),
+                "{prior:?}: a {tier} finding"
+            );
+        }
+    }
 }

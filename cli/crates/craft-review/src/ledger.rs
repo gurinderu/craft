@@ -162,13 +162,16 @@ fn fold_symbol(symbol: &str) -> String {
     s.trim().to_owned()
 }
 
-/// Whether `f` is the defect the tombstone `t` closed, as the fingerprint matches it for a finding
-/// with a rule: file, folded symbol and rule equal. A finding without a rule has no stable identity
-/// and matches none.
+/// Whether `f` is the defect the tombstone `t` closed, as `flagReturningDefects` matches it: the
+/// same fingerprint (file, folded symbol and rule; `fingerprint` in `lib/run-record.mjs` keys no
+/// line, so without a symbol it is file and rule) and not told apart by a tool. A finding without a
+/// rule has no stable identity and matches none. The match only labels a finding (REGRESSION, or a
+/// re-raised dismissal); it neither moves it nor changes what the verdict counts.
 #[must_use]
 pub fn returns_as(f: &Value, t: &LedgerRow) -> bool {
     let rule = text(f, "ruleId");
     !rule.is_empty()
+        && !tool::distinct(f, &t.finding())
         && rule == t.rule_id
         && text(f, "file") == t.file
         && fold_symbol(text(f, "symbol")) == fold_symbol(&t.symbol)

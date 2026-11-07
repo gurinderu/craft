@@ -9,7 +9,7 @@
 use serde_json::Value;
 
 use super::judge::field;
-use super::{Chain, Fate};
+use super::{Chain, Fate, PriorFinding};
 use crate::absorbed;
 use crate::dedup::sev_rank;
 use crate::ledger;
@@ -19,17 +19,18 @@ use crate::report::Tier;
 /// `ledgerDupOfUnverifiedPrior`.
 pub(super) const LEDGER_DUP: &str = "ledgerDupOfUnverifiedPrior";
 
-/// The order a finding's host is looked for in, as the engine's live priors are ordered.
-fn host_rank(f: Fate) -> Option<u8> {
-    match f {
-        Fate::StillOpen | Fate::Pending => Some(0),
-        Fate::Regressed => Some(1),
-        // A still-open prior is adjudicated by the next round, and handed every site absorbed into it.
-        // Neither a carried nor a retired prior absorbs a judged finding: nothing adjudicates either
-        // again, so a finding absorbed into one would leave the report unjudged. It stays a finding
-        // and counts by its severity this round, as the engine's re-raised dismissal does.
-        Fate::Carried | Fate::Retired | Fate::Resolved | Fate::Unverified => None,
+/// Whether `p` may host an absorbed finding, and in which order hosts are tried (still open before
+/// regressed, as the engine's live priors are ordered). THE INVARIANT: a host gates the verdict in
+/// this run at its own severity (`PriorFinding::gates`: still open or regressed, its tier checked) —
+/// and so the next round adjudicates it, handed every site absorbed into it. Any other prior
+/// (carried, retired, resolved, unverified, or open with an unverified tier) absorbs no judged
+/// finding: one absorbed there would leave the report unjudged, so it stays a finding and counts by
+/// its severity.
+fn host_rank(p: &PriorFinding) -> Option<u8> {
+    if !p.gates() {
+        return None;
     }
+    Some(u8::from(p.fate == Fate::Regressed))
 }
 
 /// Where a settled finding goes: absorbed into the prior at `index`, kept as more severe than it,
@@ -79,15 +80,9 @@ pub fn absorb(chain: &mut Chain, settled: &mut Vec<Value>) -> Vec<String> {
         return Vec::new();
     }
     let mut hosts: Vec<usize> = (0..chain.priors.len())
-        .filter(|i| {
-            chain
-                .priors
-                .get(*i)
-                .and_then(|p| host_rank(p.fate))
-                .is_some()
-        })
+        .filter(|i| chain.priors.get(*i).and_then(host_rank).is_some())
         .collect();
-    hosts.sort_by_key(|i| chain.priors.get(*i).and_then(|p| host_rank(p.fate)));
+    hosts.sort_by_key(|i| chain.priors.get(*i).and_then(host_rank));
     let (mut severer, mut tracked) = (0, 0);
     let mut kept = Vec::with_capacity(settled.len());
     for mut f in settled.drain(..) {
