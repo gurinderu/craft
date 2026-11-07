@@ -7,13 +7,18 @@ fn f(title: &str, line: u32) -> Value {
 }
 
 fn lens_task(lens: &str, round: u32, answer: Option<Value>) -> Task {
+    profile_task("rust", lens, round, answer)
+}
+
+fn profile_task(profile: &str, lens: &str, round: u32, answer: Option<Value>) -> Task {
     let mut t = Task::new(
-        format!("lens-{lens}-r{round}"),
+        format!("lens-{profile}-{lens}-r{round}"),
         "l".into(),
         "p".into(),
         Model::Opus,
         json!({}),
         TaskKind::Lens {
+            profile: profile.into(),
             lens: lens.into(),
             round,
         },
@@ -59,9 +64,10 @@ fn a_round_pools_new_findings_by_the_dispatched_lens_and_notes_exact_copies() {
         ),
         lens_task("tests", 1, None),
     ]);
-    assert!(!dry);
+    assert_eq!(dry["rust"], 2);
     assert_eq!(r.pool.len(), 2);
     assert_eq!(r.pool[0]["source"], "errors");
+    assert_eq!(r.pool[0]["profile"], "rust");
     assert_eq!(r.pool[0]["foundInRound"], 1);
     assert_eq!(
         r.pool[0]["sources"],
@@ -77,7 +83,8 @@ fn a_round_pools_new_findings_by_the_dispatched_lens_and_notes_exact_copies() {
             new_findings: 2
         }]
     );
-    assert_eq!(r.holes(), ["tests: it does not match the schema"]);
+    assert_eq!(r.holes("rust"), ["tests: it does not match the schema"]);
+    assert!(r.holes("nix").is_empty());
 
     r.round = 2;
     let dry = r.absorb(&[
@@ -88,15 +95,61 @@ fn a_round_pools_new_findings_by_the_dispatched_lens_and_notes_exact_copies() {
         ),
         lens_task("tests", 2, Some(json!({"lens": "tests", "findings": []}))),
     ]);
-    assert!(dry, "a round that adds nothing new is dry");
+    assert_eq!(dry["rust"], 0, "a round that adds nothing new is dry");
     assert!(
-        r.holes().is_empty(),
+        r.holes("rust").is_empty(),
         "a lens that answered in a later round closed its hole"
     );
     assert_eq!(
         r.pool[0]["foundInRound"], 1,
         "a re-surfaced finding keeps its first round"
     );
+}
+
+#[test]
+fn each_profile_counts_its_own_new_findings_and_holes() {
+    let mut r = Rounds {
+        round: 1,
+        ..Rounds::default()
+    };
+    let added = r.absorb(&[
+        profile_task(
+            "rust",
+            "errors",
+            1,
+            Some(json!({"lens": "x", "findings": [f("A", 1)]})),
+        ),
+        profile_task(
+            "general",
+            "errors",
+            1,
+            Some(json!({"lens": "x", "findings": [f("a", 1), f("B", 2)]})),
+        ),
+        profile_task("nix", "intent", 1, None),
+    ]);
+    assert_eq!(
+        added.into_iter().collect::<Vec<_>>(),
+        [("general".into(), 1), ("nix".into(), 0), ("rust".into(), 1)],
+        "an exact copy another profile's lens found first is not new to this one"
+    );
+    assert_eq!(r.holes("nix"), ["intent: it does not match the schema"]);
+    assert!(r.holes("general").is_empty() && r.holes("rust").is_empty());
+    let plan_of = |lenses: &[&str]| crate::plan::Plan {
+        size_bucket: "small".into(),
+        lenses: lenses.iter().map(|l| (*l).to_owned()).collect(),
+        max_rounds: 1,
+        verify_votes: 1,
+        is_library: false,
+        security_sensitive: false,
+        intent: String::new(),
+        spec: String::new(),
+        churn: Vec::new(),
+        repo_rules: Vec::new(),
+        surface_dropped: Vec::new(),
+        light_skipped: Vec::new(),
+    };
+    assert_eq!(r.ran("general", &plan_of(&["errors", "money"])), ["errors"]);
+    assert!(r.ran("nix", &plan_of(&["intent"])).is_empty());
 }
 
 #[test]

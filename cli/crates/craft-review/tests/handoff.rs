@@ -20,11 +20,11 @@ fn a_full_loop_reads_every_answer_from_its_file() {
     medium["title"] = json!("another");
     write_answer(
         &s,
-        "lens-errors-r1",
+        "lens-rust-errors-r1",
         &lens("errors", &[finding("High", 1), medium]).to_string(),
     );
-    write_answer(&s, "lens-intent-r1", &lens("intent", &[]).to_string());
-    write_answer(&s, "lens-tests-r1", &lens("tests", &[]).to_string());
+    write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
+    write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
     let s = step::submit(&run, None).unwrap();
     assert_eq!(ids(&s), ["dedup-rust"]);
     write_answer(&s, "dedup-rust", r#"{"groups": []}"#);
@@ -41,7 +41,7 @@ fn a_full_loop_reads_every_answer_from_its_file() {
         (json!(true), json!("Block"))
     );
     for id in [
-        "lens-errors-r1",
+        "lens-rust-errors-r1",
         "dedup-rust",
         "verify-0-v0",
         "verify-0-v1",
@@ -105,9 +105,9 @@ fn answers_given_by_the_host_override_the_files() {
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
     let (_, s) = small_run(repo.path(), out.path());
-    write_answer(&s, "lens-errors-r1", "not json");
+    write_answer(&s, "lens-rust-errors-r1", "not json");
     let empty = json!({
-        "lens-errors-r1": lens("errors", &[]), "lens-intent-r1": lens("intent", &[]), "lens-tests-r1": lens("tests", &[]),
+        "lens-rust-errors-r1": lens("errors", &[]), "lens-rust-intent-r1": lens("intent", &[]), "lens-rust-tests-r1": lens("tests", &[]),
     });
     let s = step::submit(&run, Some(&answers(empty))).unwrap();
     assert_eq!(s["verdict"], json!("Approve"));

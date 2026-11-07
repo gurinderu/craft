@@ -18,7 +18,8 @@ fn phase_label(run: &RunState) -> String {
     }
 }
 
-/// Where the run in `dir` stands: its phase, plan, rounds, counts and every task's state.
+/// Where the run in `dir` stands: its phase, each profile's files and plan, the rounds, the counts
+/// and every task's state.
 ///
 /// # Errors
 /// When the state cannot be read.
@@ -32,16 +33,22 @@ pub fn status(dir: &Path) -> Result<Value, StateError> {
             json!({"id": t.id, "label": t.label, "state": t.state, "retries": t.retries, "error": t.error})
         })
         .collect();
-    let plan = run.plan.as_ref().map(|p| {
-        json!({"sizeBucket": p.size_bucket, "lenses": p.lenses, "maxRounds": p.max_rounds, "light": run.light,
-               "ran": run.rounds.ran(p), "surfaceDropped": p.surface_dropped, "lightSkipped": p.light_skipped})
-    });
+    let profiles: Vec<Value> = run
+        .tracks
+        .iter()
+        .map(|t| {
+            let plan = t.plan.as_ref().map(|p| {
+                json!({"sizeBucket": p.size_bucket, "lenses": p.lenses, "maxRounds": p.max_rounds, "light": run.light,
+                       "ran": run.rounds.ran(&t.profile, p), "surfaceDropped": p.surface_dropped, "lightSkipped": p.light_skipped})
+            });
+            json!({"profile": t.profile, "files": t.files.len(), "rounds": t.rounds, "dry": t.dry, "plan": plan})
+        })
+        .collect();
     let mut s = json!({
         "run": dir.display().to_string(), "phase": phase_label(&run), "round": run.rounds.round,
         "done": run.phase == Phase::Done,
         "base": run.diff.base, "mergeBase": run.diff.merge_base, "head": run.diff.head, "dirty": run.diff.dirty,
-        "files": run.diff.files.len(), "rustFiles": run.rust_files.len(),
-        "plan": plan, "rounds": run.rounds.yields, "pool": run.rounds.pool.len(),
+        "files": run.diff.files.len(), "profiles": profiles, "rounds": run.rounds.yields, "pool": run.rounds.pool.len(),
         "findings": run.findings.len(),
         "tiers": {"confirmed": confirmed, "suspected": suspected, "refuted": refuted, "unverified": unverified},
         "tasks": tasks, "notRun": run.not_run, "notes": run.notes,

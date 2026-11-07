@@ -4,7 +4,7 @@ use super::*;
 
 fn f(sev: &str, source: &str, title: &str, line: u32) -> Value {
     json!({"severity": sev, "title": title, "file": "src/a.rs", "line": line, "why": "w", "source": source,
-           "ruleId": "", "whereChecked": "", "foundInRound": line % 2 + 1})
+           "ruleId": "", "whereChecked": "", "foundInRound": line % 2 + 1, "profile": "rust"})
 }
 
 #[test]
@@ -23,7 +23,7 @@ fn a_rule_flood_is_rolled_up_past_three_worst_first() {
         })
         .collect();
     pool.push(f("High", "errors", "keep", 9));
-    let out = prepare(&pool, &p);
+    let out = prepare(&pool, std::slice::from_ref(&p));
     assert_eq!(out.len(), 5);
     assert_eq!(out[0]["title"], "keep", "the rest first, in order");
     assert_eq!(out[1]["title"], "t5", "the worst instance leads its group");

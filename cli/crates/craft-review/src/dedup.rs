@@ -41,23 +41,34 @@ pub(crate) fn with_earliest_round(mut f: Value, members: &[&Value]) -> Value {
     f
 }
 
-/// The pool through the path floor and the roll-up, as `rollupPool(applyPathFloor(pool))`.
+/// Whether `f`'s rule is one its profile rolls up.
+fn rolls_up(f: &Value, profiles: &[Profile]) -> bool {
+    let rule = text(f, "ruleId");
+    profiles
+        .iter()
+        .find(|p| p.id == text(f, "profile"))
+        .is_some_and(|p| p.rollup_rule_ids.iter().any(|i| i == rule))
+}
+
+/// The pool through the path floor and the roll-up, as `rollupPool(applyPathFloor(pool))` does
+/// per profile: a finding is rolled up under its own profile's rules, with its lens's findings of
+/// that rule.
 #[must_use]
-pub fn prepare(pool: &[Value], profile: &Profile) -> Vec<Value> {
+pub fn prepare(pool: &[Value], profiles: &[Profile]) -> Vec<Value> {
     let floored: Vec<Value> = pool.iter().map(raise_path_floor).collect();
-    let ids = &profile.rollup_rule_ids;
-    if ids.is_empty() {
-        return floored;
-    }
     let mut out = Vec::new();
     let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
     for f in floored {
-        let rule = text(&f, "ruleId");
-        if !ids.iter().any(|i| i == rule) {
+        if !rolls_up(&f, profiles) {
             out.push(f);
             continue;
         }
-        let k = format!("{}::{rule}", text(&f, "source"));
+        let k = format!(
+            "{}::{}::{}",
+            text(&f, "profile"),
+            text(&f, "source"),
+            text(&f, "ruleId")
+        );
         match groups.iter_mut().find(|(g, _)| *g == k) {
             Some((_, g)) => g.push(f),
             None => groups.push((k, vec![f])),

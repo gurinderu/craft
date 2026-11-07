@@ -1,0 +1,32 @@
+{
+  "id": "nix",
+  "lang": "Nix",
+  "detect": { "suffixes": [".nix"], "names": ["flake.lock"] },
+  "diffGlobs": ["'*.nix'", "'flake.lock'"],
+  "rubricSkill": "nix-review",
+  "fpRules": "",
+  "navSkill": "",
+  "securityHints": "secrets handling (agenix/sops-nix), fetchers/hashes, module security options, or build-script interpolation",
+  "usesLibrary": false,
+  "alwaysLenses": ["intent"],
+  "safetyLens": "injection",
+  "scoutRules": "scout-rules-nix",
+  "scoutModel": "haiku",
+  "dedupModel": "haiku",
+  "lensAgent": "nix-reviewer",
+  "rollupRuleIds": [],
+  "negativeSpace": { "newSurface": "flake output / module option / package attr / overlay / renamed binding", "shapeUses": "imports, or overrides" },
+  "lenses": [
+    { "id": "purity", "brief": "lens-briefs/nix-purity", "model": "opus" },
+    { "id": "reproducibility", "brief": "lens-briefs/nix-reproducibility", "model": "opus" },
+    { "id": "injection", "brief": "lens-briefs/nix-injection", "model": "opus" },
+    { "id": "packaging", "brief": "lens-briefs/nix-packaging", "model": "opus" },
+    { "id": "dev-env", "brief": "lens-briefs/nix-dev-env", "model": "opus" },
+    { "id": "modules", "brief": "lens-briefs/nix-modules", "model": "opus" },
+    { "id": "maintainability", "brief": "lens-briefs/nix-maintainability", "model": "opus" },
+    { "id": "intent", "brief": "lens-briefs/nix-intent", "model": "opus", "wholeDiff": true }
+  ],
+  "floorLenses": [
+    { "id": "negative-space", "brief": "lens-briefs/nix-negative-space", "model": "opus", "surface": "crossBoundarySymbol", "wholeDiff": true }
+  ]
+}

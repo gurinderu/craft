@@ -99,7 +99,7 @@ fn start(exe: &Path, repo: &Path, run: &Path, root: Option<&Path>) -> (String, V
         String::from_utf8_lossy(&out.stderr)
     );
     let step: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(step["tasks"][0]["id"], "lens-errors-r1");
+    assert_eq!(step["tasks"][0]["id"], "lens-rust-errors-r1");
     let prompt = std::fs::read_to_string(step["tasks"][0]["promptFile"].as_str().unwrap()).unwrap();
     let state: Value =
         serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();

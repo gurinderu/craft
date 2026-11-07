@@ -15,6 +15,7 @@
   "dedupModel": "haiku",
   "lensAgent": "rust-reviewer",
   "rollupRuleIds": ["API-001", "API-003", "API-004", "API-005"],
+  "negativeSpace": { "newSurface": "enum variant / status value / DB column / table / migration / public fn / route / struct field", "shapeUses": "lists, updates, deletes, cascades, serializes, orders, or authorizes" },
   "lenses": [
     { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus" },

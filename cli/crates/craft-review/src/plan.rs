@@ -193,8 +193,8 @@ fn required(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut Pla
     }
 }
 
-/// The security floor, negative-space where new surface appears, and compat on large diffs and
-/// contract paths.
+/// The security floor, negative-space where new surface appears (on a profile that has the lens),
+/// and compat on large diffs and contract paths.
 fn floors(p: &Profile, files: &[String], plan: &mut Plan) {
     if plan.security_sensitive {
         for l in blanket(p) {
@@ -204,7 +204,7 @@ fn floors(p: &Profile, files: &[String], plan: &mut Plan) {
         plan.max_rounds = plan.max_rounds.max(2);
     }
     let large = plan.size_bucket == "large";
-    if plan.security_sensitive || large {
+    if (plan.security_sensitive || large) && p.lens("negative-space").is_some() {
         push_missing(&mut plan.lenses, "negative-space");
     }
     if (large || files.iter().any(|f| is_contract_path(f))) && p.offers("compat") {
