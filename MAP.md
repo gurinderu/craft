@@ -100,7 +100,7 @@ agents (would duplicate).
 ## Workflows
 
 Multi-agent orchestration scripts that compose the agents above (referencing them by `agentType` —
-internal to the plugin, no external dependency). They are authored under `src/`; `workflows/` holds the
+internal to the plugin, no external dependency). They are authored under `src/`; `integrations/claude-code/workflows/` holds the
 copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
 committed. The review's knowledge — lens briefs and prompt templates (`content/prompts/`, `{{name}}`
 placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
@@ -205,7 +205,7 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 
 ## opencode adapter
 
-`opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
+`integrations/opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
 (skills shared verbatim by symlink; 4 translated agent files; a TS/Bun plugin hosting the
 `rust-audit` and `triage-findings` workflows and craft's work hook on `chat.message` and `event`;
 a symlink `install.sh`). Single source of truth: the skills are not duplicated. The design spec
@@ -238,6 +238,17 @@ which the `cli-review` engine runs when no `craftBin` is given.
 ## Codex delivery
 
 `.codex-plugin/plugin.json` and the marketplace `.agents/plugins/marketplace.json` deliver the same
-`skills/` and `hooks/hooks.json` to the Codex CLI. Codex has no Workflow tool, so the workflow
-engines and the review agents under `agents/` are not shipped there; the hooks tell a Codex session
-to review the diff itself.
+`skills/` and hooks file (`integrations/claude-code/hooks/hooks.json`, named by the manifest's `hooks`) to the
+Codex CLI. Its plugin root is the repository root: Codex leaves symlinks out of the copy it installs
+(`integrations/codex/README.md`). Codex has no Workflow tool, so the workflow engines and the review agents
+under `integrations/claude-code/agents/` are not shipped there; the hooks tell a Codex session to review the
+diff itself.
+
+## Deliveries
+
+`integrations/` holds one directory per harness. `integrations/claude-code/` is the Claude Code plugin the
+root marketplace (`.claude-plugin/marketplace.json`) names: its manifest, `agents/`, `hooks/` and the built
+`workflows/`, with `skills`, `lib`, `content`, `src` and `README.md` as symlinks to the shared ones at the root; an
+install copies them as real directories, and a load in place (`--plugin-dir`, a local marketplace) follows
+them into the checkout. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
+Codex delivery's place at the root, and `integrations/pi/` is planned.
