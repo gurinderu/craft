@@ -6,9 +6,20 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use crate::report;
-use crate::state::{self, Phase};
+use crate::state::{self, Phase, RunState};
 
-/// Where the run in `dir` stands: its phase, counts and every task's state.
+/// The phase as a reader names it: `scout`, `lenses round N`, `dedup`, `verify` or `done`.
+fn phase_label(run: &RunState) -> String {
+    match run.phase {
+        Phase::Scout => "scout".into(),
+        Phase::Lenses => format!("lenses round {}", run.rounds.round),
+        Phase::Dedup => "dedup".into(),
+        Phase::Verify => "verify".into(),
+        Phase::Done => "done".into(),
+    }
+}
+
+/// Where the run in `dir` stands: its phase, plan, rounds, counts and every task's state.
 ///
 /// # Errors
 /// When the state cannot be read.
@@ -22,13 +33,19 @@ pub fn status(dir: &Path) -> Result<Value> {
             json!({"id": t.id, "label": t.label, "state": t.state, "retries": t.retries, "error": t.error})
         })
         .collect();
+    let plan = run.plan.as_ref().map(|p| {
+        json!({"sizeBucket": p.size_bucket, "lenses": p.lenses, "maxRounds": p.max_rounds, "light": run.light,
+               "ran": run.rounds.ran(p), "surfaceDropped": p.surface_dropped, "lightSkipped": p.light_skipped})
+    });
     let mut s = json!({
-        "run": dir.display().to_string(), "phase": run.phase, "done": run.phase == Phase::Done,
+        "run": dir.display().to_string(), "phase": phase_label(&run), "round": run.rounds.round,
+        "done": run.phase == Phase::Done,
         "base": run.diff.base, "mergeBase": run.diff.merge_base, "head": run.diff.head, "dirty": run.diff.dirty,
         "files": run.diff.files.len(), "rustFiles": run.rust_files.len(),
+        "plan": plan, "rounds": run.rounds.yields, "pool": run.rounds.pool.len(),
         "findings": run.findings.len(),
         "tiers": {"confirmed": confirmed, "suspected": suspected, "refuted": refuted, "unverified": unverified},
-        "tasks": tasks, "notes": run.notes,
+        "tasks": tasks, "notRun": run.not_run, "notes": run.notes,
     });
     if let (Some(v), Some(obj)) = (&run.verdict, s.as_object_mut()) {
         obj.insert("verdict".into(), json!(v));

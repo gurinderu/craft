@@ -67,11 +67,11 @@ fn finding_fields(f: &Value, self_contained: &str) -> Vec<(&'static str, String)
     ]
 }
 
-/// The verifier prompt for one finding.
+/// The verifier prompt for one finding, to voter `voter` of its panel (skeptic #`voter + 1`).
 ///
 /// # Errors
 /// When a content file is missing or a placeholder has no value.
-pub fn verify_prompt(ctx: &PromptContext, f: &Value) -> Result<String, ContentError> {
+pub fn verify_prompt(ctx: &PromptContext, f: &Value, voter: u32) -> Result<String, ContentError> {
     let shared = content::prompt(
         "verify-shared-exclusions",
         &vars([("dirs", plugin_candidates(ctx, REVIEW_RULES_DIR))]),
@@ -86,7 +86,10 @@ pub fn verify_prompt(ctx: &PromptContext, f: &Value) -> Result<String, ContentEr
     let mut v = vars([
         (
             "head",
-            content::prompt("verify-head-skeptic", &vars([("n", "1".into())]))?,
+            content::prompt(
+                "verify-head-skeptic",
+                &vars([("n", (voter + 1).to_string())]),
+            )?,
         ),
         ("gate", String::new()),
         (

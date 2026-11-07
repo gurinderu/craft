@@ -1,0 +1,541 @@
+{
+  "cases": [
+    {
+      "name": "a small diff keeps the picks and adds intent and tests",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "intent",
+          "tests"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "a test-only small diff does not force tests",
+      "changedFiles": [
+        "tests/a.rs"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "safety"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "safety",
+          "intent"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "no scout answer: the conservative plan",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": null,
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "safety",
+          "errors",
+          "concurrency",
+          "reconciler",
+          "compat",
+          "maintainability",
+          "tests",
+          "intent",
+          "invariants",
+          "negative-space"
+        ],
+        "maxRounds": 2,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": true,
+        "intent": "",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "security-sensitive floors the roster, votes and rounds",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": true,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "errors",
+          "intent",
+          "tests",
+          "safety",
+          "concurrency",
+          "reconciler",
+          "compat",
+          "maintainability",
+          "invariants",
+          "negative-space"
+        ],
+        "maxRounds": 2,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": true,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "large adds negative-space and compat, three rounds",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "safety",
+          "errors",
+          "concurrency",
+          "maintainability",
+          "invariants"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "large",
+        "lenses": [
+          "safety",
+          "errors",
+          "concurrency",
+          "maintainability",
+          "invariants",
+          "intent",
+          "tests",
+          "negative-space",
+          "compat"
+        ],
+        "maxRounds": 3,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "reconciler brings failure-windows",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "reconciler",
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "reconciler",
+          "errors",
+          "intent",
+          "tests",
+          "failure-windows"
+        ],
+        "maxRounds": 2,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "optional and unknown picks are not admitted",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "performance",
+          "api-idioms",
+          "api-boundary",
+          "bogus",
+          "failure-windows"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "failure-windows",
+          "intent",
+          "tests"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "a surface said absent drops its lens",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "compat",
+          "invariants",
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n",
+        "surfaces": {
+          "wireForm": false,
+          "invariantType": false,
+          "crossBoundarySymbol": false
+        }
+      },
+      "expected": {
+        "sizeBucket": "large",
+        "lenses": [
+          "errors",
+          "intent",
+          "tests"
+        ],
+        "maxRounds": 3,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [
+          "compat",
+          "invariants",
+          "negative-space"
+        ],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "a contract path forces compat and its surfaces on",
+      "changedFiles": [
+        "src/lib.rs",
+        "charts/app/values.yaml"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n",
+        "surfaces": {
+          "wireForm": false,
+          "crossBoundarySymbol": false
+        }
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "intent",
+          "tests",
+          "compat"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "an unknown size reads as medium, and repo rules are kept safe",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "huge",
+        "lenses": [
+          "errors"
+        ],
+        "isLibrary": true,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [
+          "src/lib.rs"
+        ],
+        "repoRules": [
+          "./AGENTS.md",
+          "/etc/passwd",
+          "../x",
+          "CLAUDE.md",
+          "AGENTS.md"
+        ],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "errors",
+          "intent",
+          "tests"
+        ],
+        "maxRounds": 2,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": true,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [
+          "src/lib.rs"
+        ],
+        "repoRules": [
+          "AGENTS.md",
+          "CLAUDE.md"
+        ],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "light: whole-diff lenses skipped, intent and tests kept, one round",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "light": true,
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "safety",
+          "invariants",
+          "compat",
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "large",
+        "lenses": [
+          "safety",
+          "errors",
+          "intent",
+          "tests"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": [
+          "invariants",
+          "compat",
+          "negative-space"
+        ]
+      }
+    },
+    {
+      "name": "light on controller code keeps reconciler and failure-windows",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "light": true,
+      "scout": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "reconciler"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "reconciler",
+          "intent",
+          "tests",
+          "failure-windows"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "light over tests only falls back to the scoped roster",
+      "changedFiles": [
+        "tests/a.rs"
+      ],
+      "light": true,
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "invariants"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "safety",
+          "errors",
+          "concurrency",
+          "reconciler",
+          "maintainability",
+          "tests"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": [
+          "invariants",
+          "intent"
+        ]
+      }
+    }
+  ]
+}

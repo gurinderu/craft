@@ -1,0 +1,1 @@
+repoRules: the repository's own rule files at HEAD — AGENTS.md, CLAUDE.md, CONTRIBUTING.md, .github/copilot-instructions.md and the like (`git ls-files`: the root, .github/, and the directories of the changed files). Return repo-relative paths, at most {{max}}; do not read them. Empty when there are none.

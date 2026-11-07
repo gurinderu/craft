@@ -1,0 +1,50 @@
+//! The planner held to the engines' by `content/parity/plan-cases.json`, whose expected plans
+//! `lib/review-profile-parity.test.mjs` checks against `lib/review-plan.mjs`.
+
+use serde_json::{Value, json};
+
+use super::{PlanInput, plan};
+use crate::profile::Profile;
+
+const CASES: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../content/parity/plan-cases.json"
+));
+
+#[test]
+fn every_case_plans_as_the_engines_plan_it() {
+    let cases: Value = serde_json::from_str(CASES).unwrap();
+    let profile = Profile::rust().unwrap();
+    let all = cases["cases"].as_array().unwrap();
+    assert!(all.len() > 5);
+    for c in all {
+        let name = c["name"].as_str().unwrap();
+        let files: Vec<String> = serde_json::from_value(c["changedFiles"].clone()).unwrap();
+        let scout = Some(&c["scout"]).filter(|s| !s.is_null());
+        let got = plan(PlanInput {
+            profile: &profile,
+            scout,
+            changed_files: &files,
+            spec: "feat: x",
+            light: c["light"] == json!(true),
+        });
+        let want = &c["expected"];
+        let got_json = json!({
+            "sizeBucket": got.size_bucket, "lenses": got.lenses, "maxRounds": got.max_rounds,
+            "verifyVotes": got.verify_votes, "isLibrary": got.is_library,
+            "securitySensitive": got.security_sensitive, "intent": got.intent, "churn": got.churn,
+            "repoRules": got.repo_rules, "surfaceDropped": got.surface_dropped,
+            "lightSkipped": got.light_skipped,
+        });
+        for (k, v) in got_json.as_object().unwrap() {
+            assert_eq!(v, &want[k], "{name}: {k}");
+        }
+        for l in &got.lenses {
+            assert_eq!(
+                json!(profile.lens(l).unwrap().model),
+                want["lensModel"],
+                "{name}: {l}"
+            );
+        }
+    }
+}
