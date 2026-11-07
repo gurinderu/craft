@@ -5,10 +5,36 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use crate::state::{RunState, Task, TaskState};
+
+/// Why a task's files could not be laid out or moved.
+#[derive(Debug, thiserror::Error)]
+pub enum HandoffError {
+    #[error("creating {}", path.display())]
+    NoDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("task id {0:?} cannot be a file name")]
+    UnsafeId(String),
+    #[error(transparent)]
+    Encode(#[from] serde_json::Error),
+    #[error("writing {}", path.display())]
+    Unwritable {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("moving {} aside", path.display())]
+    Unmovable {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 /// `<run>/tasks`: each pending task's `<id>.md` prompt and `<id>.schema.json` schema.
 #[must_use]
@@ -51,7 +77,7 @@ fn file_safe(id: &str) -> bool {
 ///
 /// # Errors
 /// When a task id is not file-safe or a file cannot be written.
-pub(crate) fn write_pending(dir: &Path, run: &RunState) -> Result<()> {
+pub(crate) fn write_pending(dir: &Path, run: &RunState) -> Result<(), HandoffError> {
     let pending: Vec<&Task> = run
         .tasks
         .iter()
@@ -61,21 +87,20 @@ pub(crate) fn write_pending(dir: &Path, run: &RunState) -> Result<()> {
         return Ok(());
     }
     for d in [tasks_dir(dir), answers_dir(dir)] {
-        std::fs::create_dir_all(&d).with_context(|| format!("creating {}", d.display()))?;
+        std::fs::create_dir_all(&d).map_err(|source| HandoffError::NoDir { path: d, source })?;
     }
     for task in pending {
         if !file_safe(&task.id) {
-            bail!("task id {:?} cannot be a file name", task.id);
+            return Err(HandoffError::UnsafeId(task.id.clone()));
         }
-        let prompt = prompt_file(dir, &task.id);
-        std::fs::write(&prompt, task.prompt_text())
-            .with_context(|| format!("writing {}", prompt.display()))?;
-        let schema = schema_file(dir, &task.id);
-        std::fs::write(
-            &schema,
-            format!("{}\n", serde_json::to_string_pretty(&task.schema)?),
-        )
-        .with_context(|| format!("writing {}", schema.display()))?;
+        let schema = format!("{}\n", serde_json::to_string_pretty(&task.schema)?);
+        for (path, text) in [
+            (prompt_file(dir, &task.id), task.prompt_text()),
+            (schema_file(dir, &task.id), schema),
+        ] {
+            std::fs::write(&path, text)
+                .map_err(|source| HandoffError::Unwritable { path, source })?;
+        }
     }
     Ok(())
 }
@@ -123,13 +148,13 @@ pub(crate) fn read_answer(dir: &Path, task: &Task) -> Result<Value, String> {
 ///
 /// # Errors
 /// When the file exists and cannot be moved.
-pub(crate) fn set_aside(dir: &Path, task: &Task) -> Result<()> {
+pub(crate) fn set_aside(dir: &Path, task: &Task) -> Result<(), HandoffError> {
     let from = answer_file(dir, &task.id);
     if !from.exists() {
         return Ok(());
     }
     let to = answers_dir(dir).join(format!("{}.rejected-{}.json", task.id, task.retries));
-    std::fs::rename(&from, &to).with_context(|| format!("moving {} aside", from.display()))
+    std::fs::rename(&from, &to).map_err(|source| HandoffError::Unmovable { path: from, source })
 }
 
 #[cfg(test)]

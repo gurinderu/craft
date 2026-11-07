@@ -8,6 +8,7 @@ pub mod agent;
 pub mod content;
 pub mod coverage;
 mod dedup;
+mod error;
 pub mod git;
 pub mod handoff;
 mod harm;
@@ -28,6 +29,8 @@ mod validate;
 mod verify;
 
 use serde::{Deserialize, Serialize};
+
+pub use error::Error;
 
 /// One step of a review: its agents run concurrently, and the next phase waits for them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

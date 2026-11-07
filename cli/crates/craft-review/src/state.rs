@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -17,6 +16,33 @@ use crate::rounds::Rounds;
 pub const STATE_VERSION: u32 = 5;
 /// How many times an invalid or missing answer is asked for again before its task fails.
 pub const MAX_RETRIES: u32 = 2;
+
+/// Why a run's state could not be read or written.
+#[derive(Debug, thiserror::Error)]
+pub enum StateError {
+    #[error("reading the run state {}", path.display())]
+    Unreadable {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("parsing the run state {}", path.display())]
+    Malformed {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the run state {} is format {found}, this craft reads {STATE_VERSION}", path.display())]
+    Version { path: PathBuf, found: u32 },
+    #[error(transparent)]
+    Encode(#[from] serde_json::Error),
+    #[error("writing {}", path.display())]
+    Unwritable {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 /// Where a run stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,18 +208,22 @@ pub fn report_path(dir: &Path) -> PathBuf {
 ///
 /// # Errors
 /// When there is no state file, it is not JSON of this format, or its version differs.
-pub fn load(dir: &Path) -> Result<RunState> {
+pub fn load(dir: &Path) -> Result<RunState, StateError> {
     let path = state_path(dir);
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading the run state {}", path.display()))?;
-    let state: RunState = serde_json::from_str(&text)
-        .with_context(|| format!("parsing the run state {}", path.display()))?;
-    anyhow::ensure!(
-        state.version == STATE_VERSION,
-        "the run state {} is format {}, this craft reads {STATE_VERSION}",
-        path.display(),
-        state.version
-    );
+    let text = std::fs::read_to_string(&path).map_err(|source| StateError::Unreadable {
+        path: path.clone(),
+        source,
+    })?;
+    let state: RunState = serde_json::from_str(&text).map_err(|source| StateError::Malformed {
+        path: path.clone(),
+        source,
+    })?;
+    if state.version != STATE_VERSION {
+        return Err(StateError::Version {
+            path,
+            found: state.version,
+        });
+    }
     Ok(state)
 }
 
@@ -201,10 +231,13 @@ pub fn load(dir: &Path) -> Result<RunState> {
 ///
 /// # Errors
 /// When the file cannot be written.
-pub fn save(dir: &Path, state: &RunState) -> Result<()> {
+pub fn save(dir: &Path, state: &RunState) -> Result<(), StateError> {
     let path = state_path(dir);
     let tmp = dir.join("state.json.tmp");
-    std::fs::write(&tmp, format!("{}\n", serde_json::to_string_pretty(state)?))
-        .with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).with_context(|| format!("writing {}", path.display()))
+    let text = format!("{}\n", serde_json::to_string_pretty(state)?);
+    std::fs::write(&tmp, text).map_err(|source| StateError::Unwritable {
+        path: tmp.clone(),
+        source,
+    })?;
+    std::fs::rename(&tmp, &path).map_err(|source| StateError::Unwritable { path, source })
 }
