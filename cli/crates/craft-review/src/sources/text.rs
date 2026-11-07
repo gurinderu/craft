@@ -88,6 +88,13 @@ pub fn section(s: &Sources, findings: &[Value]) -> String {
             s.skipped
         ));
     }
+    if !s.out_of_budget.is_empty() {
+        lines.push(format!(
+            "- ⚠️ {}: not prepared — {} — reviewed without external context",
+            s.out_of_budget.join(", "),
+            super::runner::OUT_OF_BUDGET
+        ));
+    }
     lines.extend(s.failed.iter().map(|f| {
         format!(
             "- ⚠️ {}: {} — reviewed without external context",

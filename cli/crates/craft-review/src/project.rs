@@ -148,16 +148,36 @@ pub fn load(path: &Path) -> Result<Option<ProjectProfile>, ProjectError> {
     Ok(Some(p))
 }
 
-/// Writes `profile` to `path` whole: a sibling file renamed into place.
+/// What the profile at `path` holds now, as TOML: empty when there is none. A section this binary
+/// does not know (a later format's) is kept on a write.
+fn kept(path: &Path) -> Result<toml::Table, ProjectError> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => toml::from_str(&text).map_err(|e| ProjectError::Malformed {
+            path: path.to_owned(),
+            why: format!("{} — fix or remove it before writing", e.message()),
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(toml::Table::new()),
+        Err(source) => Err(ProjectError::Read {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
+
+/// Writes `profile` to `path`, the sections it does not know kept: a sibling file renamed into
+/// place.
 ///
 /// # Errors
-/// When the directory or the file cannot be written.
+/// When the profile there is not TOML, or the directory or the file cannot be written.
 pub fn save(path: &Path, profile: &ProjectProfile) -> Result<(), ProjectError> {
     let write = |source| ProjectError::Write {
         path: path.to_owned(),
         source,
     };
-    let body = toml::to_string(profile).map_err(|e| ProjectError::Invalid(e.to_string()))?;
+    let invalid = |e: &dyn std::fmt::Display| ProjectError::Invalid(e.to_string());
+    let mut table = kept(path)?;
+    table.extend(toml::Table::try_from(profile).map_err(|e| invalid(&e))?);
+    let body = toml::to_string(&table).map_err(|e| invalid(&e))?;
     let text = format!(
         "# craft's review profile for one repository, kept by its reviewer (`craft init`); never \
          commit it to the project.\n{body}"

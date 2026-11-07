@@ -152,7 +152,14 @@ fn a_review_prepares_the_profiles_sources_and_its_reconciler_lens_reads_them() {
         "--no-recall",
     ];
     json_of(&craft(t, &start));
-    let dir = t.join("cache/example.com/org/sys@v1.2.3");
+    let mut copies = std::fs::read_dir(t.join("cache/example.com/org")).unwrap();
+    let dir = copies.next().unwrap().unwrap().path();
+    assert!(copies.next().is_none(), "one copy, no temporary left");
+    let leaf = dir.file_name().unwrap().to_string_lossy().into_owned();
+    assert!(
+        leaf.starts_with("sys.") && leaf.ends_with("@v1.2.3"),
+        "{leaf}"
+    );
     assert!(dir.join("api.go").is_file());
     let answers = t.join("answers.json");
     let scout = r#"{"scout-rust": {"sizeBucket": "small", "lenses": ["reconciler"], "isLibrary": false,

@@ -72,6 +72,14 @@ fn cache(t: &Path) -> PathBuf {
     t.join("cache")
 }
 
+/// Where `URL` at `rev` lands in the cache under `t`.
+fn copy_at(t: &Path, rev: &str) -> PathBuf {
+    let parts = repo_parts(URL).unwrap();
+    cache_segments(&parts, URL, rev)
+        .iter()
+        .fold(cache(t), |d, s| d.join(s))
+}
+
 #[test]
 fn a_tag_is_fetched_into_its_cache_directory_without_git_and_reused_without_a_remote() {
     let (t, _) = remote();
@@ -80,7 +88,7 @@ fn a_tag_is_fetched_into_its_cache_directory_without_git_and_reused_without_a_re
         Ok(&cache(t.path())),
         &git_to(Some(t.path())),
     );
-    let dir = cache(t.path()).join("example.com/org/sys@v1.2.3");
+    let dir = copy_at(t.path(), "v1.2.3");
     assert_eq!(got.failed, []);
     assert_eq!(got.prepared[0].dir, dir.display().to_string());
     assert!(dir.join("main.go").is_file() && !dir.join(".git").exists());
@@ -113,7 +121,7 @@ fn a_branch_is_refused_before_anything_is_cloned() {
             .error
             .contains("dev is not a tag or a commit — a branch would be cached stale")
     );
-    assert!(!cache(t.path()).join("example.com/org/sys@dev").exists());
+    assert!(!copy_at(t.path(), "dev").exists());
 }
 
 #[test]
@@ -141,10 +149,12 @@ fn an_unreachable_source_is_named_and_the_review_goes_on_without_it() {
 #[test]
 fn a_dead_runs_temporary_copy_is_swept_and_a_young_one_left() {
     let (t, _) = remote();
-    let parent = cache(t.path()).join("example.com/org");
+    let at = copy_at(t.path(), "v1.2.3");
+    let parent = at.parent().unwrap();
+    let leaf = at.file_name().unwrap().to_string_lossy().into_owned();
     let (old, young) = (
-        parent.join("sys@v1.2.3.tmp-1-a"),
-        parent.join("sys@v1.2.3.tmp-2-b"),
+        parent.join(format!("{leaf}.tmp-1-a")),
+        parent.join(format!("{leaf}.tmp-2-b")),
     );
     for d in [&old, &young] {
         std::fs::create_dir_all(d).unwrap();
@@ -207,13 +217,43 @@ fn urls_revisions_and_cache_segments_are_checked_as_the_engine_checks_them() {
         assert!(ref_fault(bad).is_some(), "{bad}");
     }
     assert!(is_commit_id(&"a".repeat(40)) && !is_commit_id("abc"));
+}
+
+#[test]
+fn the_cache_key_is_readable_and_tells_every_repository_apart() {
     let parts = super::spec::RepoParts {
         host: "github.com".into(),
         path: "k8s/api server".into(),
     };
+    let segs = cache_segments(&parts, "https://github.com/k8s/api server", "release/1.2");
+    assert_eq!(segs[..2], ["github.com", "k8s"]);
+    assert!(
+        segs[2].starts_with("api_server.") && segs[2].ends_with("@release~1.2"),
+        "{segs:?}"
+    );
+    // Two repositories the readable part spells alike never share a directory: by scheme and
+    // port, by user, by a character `segment` replaces.
+    for (a, b) in [
+        ("https://h.example/a/b", "ssh://h.example:2222/a/b"),
+        ("git@h.example:a/b", "deploy@h.example:a/b"),
+        ("https://h.example/a~b/c", "https://h.example/a_b/c"),
+    ] {
+        let (pa, pb) = (repo_parts(a).unwrap(), repo_parts(b).unwrap());
+        assert_eq!(
+            (&pa.host, pa.path.replace('~', "_")),
+            (&pb.host, pb.path.replace('~', "_"))
+        );
+        assert_ne!(
+            cache_segments(&pa, a, "v1"),
+            cache_segments(&pb, b, "v1"),
+            "{a} {b}"
+        );
+    }
+    let same = repo_parts("https://h.example/a/b.git").unwrap();
     assert_eq!(
-        cache_segments(&parts, "release/1.2"),
-        ["github.com", "k8s", "api_server@release~1.2"]
+        cache_segments(&same, "https://h.example/a/b.git", "v1"),
+        cache_segments(&same, "https://h.example/a/b", "v1"),
+        "the .git spelling is the same repository"
     );
 }
 
@@ -278,4 +318,47 @@ fn a_profile_that_cannot_be_read_is_named_and_the_review_goes_on_without_sources
             "- ⚠️ reviewed without external context — the review profile could not be read"
         )
     );
+}
+
+#[test]
+fn the_budget_names_the_points_it_left_no_time_for_and_still_takes_a_cached_copy() {
+    let (t, _) = remote();
+    let mut g = git_to(None);
+    // A remote that never answers: ssh hangs past the budget.
+    g.env.push(("GIT_SSH_COMMAND".into(), "sleep 30;:".into()));
+    g.budget = std::time::Duration::from_secs(1);
+    let slow = |name: &str| IntegrationPoint {
+        name: name.into(),
+        repo: format!("ssh://slow.example/org/{name}.git"),
+        rev: "v1.2.3".into(),
+    };
+    let cached = copy_at(t.path(), "v1.2.3");
+    std::fs::create_dir_all(&cached).unwrap();
+    let started = std::time::Instant::now();
+    let points = [slow("a"), slow("b"), point("v1.2.3"), slow("c")];
+    let got = prepare(&points, Ok(&cache(t.path())), &g);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(got.out_of_budget, ["a", "b", "c"]);
+    assert_eq!((got.prepared.len(), got.failed.len()), (1, 0), "{got:?}");
+    assert!(section(&got, &[]).contains(
+        "- ⚠️ a, b, c: not prepared — the preparation's budget ran out — reviewed without external context"
+    ));
+}
+
+#[test]
+fn a_hooks_repository_variables_do_not_reach_the_preparation() {
+    let (t, _) = remote();
+    let mut g = git_to(Some(t.path()));
+    let elsewhere = t.path().join("elsewhere");
+    for v in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"] {
+        g.env.push((v.into(), elsewhere.clone().into_os_string()));
+    }
+    let got = prepare(&[point("v1.2.3")], Ok(&cache(t.path())), &g);
+    assert_eq!(got.failed, []);
+    assert!(Path::new(&got.prepared[0].dir).join("main.go").is_file());
+    assert!(!elsewhere.exists());
 }

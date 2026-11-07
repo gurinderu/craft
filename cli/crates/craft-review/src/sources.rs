@@ -56,6 +56,9 @@ pub struct Sources {
     /// Why the profile could not be read.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub skipped: String,
+    /// The systems the preparation's budget left no time for.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub out_of_budget: Vec<String>,
 }
 
 impl Sources {
@@ -120,7 +123,8 @@ pub fn for_repo(cwd: &Path, setup: &SourcesSetup) -> Sources {
     }
 }
 
-/// Each point's source in `cache`, or why not, one by one.
+/// Each point's source in `cache`, or why not, one by one, within the git's budget: a point it
+/// leaves no time for is named, and one already in the cache is still taken.
 #[must_use]
 pub fn prepare(points: &[IntegrationPoint], cache: Result<&Path, &str>, git: &Git) -> Sources {
     let mut out = Sources {
@@ -134,13 +138,15 @@ pub fn prepare(points: &[IntegrationPoint], cache: Result<&Path, &str>, git: &Gi
             return out;
         }
     };
+    let git = git.budgeted();
     for p in points {
-        match prepare_one(p, root, git) {
+        match prepare_one(p, root, &git) {
             Ok((rev, dir)) => out.prepared.push(Prepared {
                 system: p.name.clone(),
                 rev,
                 dir: dir.display().to_string(),
             }),
+            Err(error) if error == runner::OUT_OF_BUDGET => out.out_of_budget.push(p.name.clone()),
             Err(error) => out.failed.push(Failed {
                 system: p.name.clone(),
                 error,
@@ -156,7 +162,7 @@ fn prepare_one(p: &IntegrationPoint, root: &Path, git: &Git) -> Result<(String, 
     }
     let parts = spec::repo_parts(&p.repo)?;
     let target_of = |rev: &str| {
-        spec::cache_segments(&parts, rev)
+        spec::cache_segments(&parts, &p.repo, rev)
             .iter()
             .fold(root.to_path_buf(), |d, s| d.join(s))
     };

@@ -47,6 +47,26 @@ fn a_profile_round_trips_through_its_file_and_keeps_unknown_sections_readable() 
     // A later format's section the binary does not know yet: its points still read.
     std::fs::write(&path, format!("{text}\n[lenses]\nskip = [\"compat\"]\n")).unwrap();
     assert_eq!(load(&path).unwrap().unwrap().integrations, [kube_ovn()]);
+    // Written again: the points replaced, that section kept.
+    save(
+        &path,
+        &ProjectProfile::new("/r/.git".into(), Vec::new()).unwrap(),
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("[lenses]") && text.contains("skip = [\"compat\"]"),
+        "{text}"
+    );
+    assert_eq!(load(&path).unwrap().unwrap().integrations, []);
+    // A file that is not TOML is not overwritten.
+    std::fs::write(&path, "not = = toml").unwrap();
+    save(
+        &path,
+        &ProjectProfile::new(String::new(), Vec::new()).unwrap(),
+    )
+    .unwrap_err();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "not = = toml");
 }
 
 #[test]

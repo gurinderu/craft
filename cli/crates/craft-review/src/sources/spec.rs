@@ -2,6 +2,8 @@
 //! them (realm @nick/craft, node #430): its name, its repository URL and the revision, and the
 //! cache directory they give.
 
+use sha2::{Digest, Sha256};
+
 /// How many systems one review prepares; past it they are named and dropped.
 pub const SYSTEMS_MAX: usize = 8;
 /// The bound of a revision.
@@ -146,15 +148,22 @@ fn segment(s: &str) -> String {
         .collect()
 }
 
-/// The cache-relative directory of a system at a revision, `<host>/<path>@<ref>`, a `/` in the
+/// The cache-relative directory of a system at a revision, `<host>/<path>.<hash>@<ref>`: the hash
+/// of the whole URL (its scheme, user and port too, which the readable part drops, and the
+/// characters `segment` replaces), so two repositories never share a directory; a `/` in the
 /// revision spelled `~` (git refuses `~` in a ref name, so two revisions never share one).
 #[must_use]
-pub fn cache_segments(parts: &RepoParts, rev: &str) -> Vec<String> {
+pub fn cache_segments(parts: &RepoParts, url: &str, rev: &str) -> Vec<String> {
+    let url = url.trim_end_matches('/');
+    let digest = Sha256::digest(url.strip_suffix(".git").unwrap_or(url).as_bytes());
+    let hash: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
     let mut segs: Vec<String> = std::iter::once(parts.host.as_str())
         .chain(parts.path.split('/'))
         .map(segment)
         .collect();
     if let Some(last) = segs.last_mut() {
+        last.push('.');
+        last.push_str(&hash);
         last.push('@');
         last.push_str(&rev.replace('/', "~"));
     }
