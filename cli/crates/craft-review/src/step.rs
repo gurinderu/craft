@@ -99,7 +99,7 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
             format!("scout-{}", profile.id),
             format!("scout:{}", profile.id),
             prompts::scout_prompt(&run.context, &profile)?,
-            &profile.scout_model,
+            profile.scout_model,
             content::schema("scout")?,
             TaskKind::Scout,
         )];

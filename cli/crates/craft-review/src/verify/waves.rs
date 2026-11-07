@@ -7,16 +7,17 @@ use anyhow::Result;
 use serde_json::Value;
 
 use super::{BATCH_SIZE, Route, route_in};
+use crate::agent::Model;
 use crate::content;
 use crate::prompts;
 use crate::settle;
 use crate::state::{RunState, Task, TaskKind, TaskState};
 
 /// The cheap model of the cull votes and the batches, as `CULL_MODEL`.
-const CULL_MODEL: &str = "sonnet";
+const CULL_MODEL: Model = Model::Sonnet;
 /// The model of a Critical or High panel's one authoritative vote: the plan's `lensModel`, a
 /// constant in `lib/review-plan.mjs`.
-const AUTH_MODEL: &str = "opus";
+const AUTH_MODEL: Model = Model::Opus;
 
 /// Whether `f` gets the authoritative vote and may escalate: a Critical or High.
 pub(super) fn is_high(f: &Value) -> bool {

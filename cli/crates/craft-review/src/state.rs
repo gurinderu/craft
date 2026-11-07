@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::agent::{AgentKind, Model};
 use crate::git::Diff;
 use crate::plan::Plan;
 use crate::prompts::PromptContext;
@@ -65,10 +66,11 @@ pub struct Task {
     pub id: String,
     pub label: String,
     pub prompt: String,
-    pub model: String,
+    pub model: Model,
     pub schema: Value,
+    /// The agent it runs on; `None`, the host's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_type: Option<String>,
+    pub agent_type: Option<AgentKind>,
     #[serde(flatten)]
     pub kind: TaskKind,
     pub state: TaskState,
@@ -91,7 +93,7 @@ impl Task {
         id: String,
         label: String,
         prompt: String,
-        model: &str,
+        model: Model,
         schema: Value,
         kind: TaskKind,
     ) -> Self {
@@ -99,7 +101,7 @@ impl Task {
             id,
             label,
             prompt,
-            model: model.to_owned(),
+            model,
             schema,
             agent_type: None,
             kind,
