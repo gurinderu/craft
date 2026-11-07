@@ -4,9 +4,9 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value, json};
 
+use crate::Error;
 use crate::content;
 use crate::coverage;
 use crate::git;
@@ -17,6 +17,39 @@ use crate::prompts::{self, PromptContext, SPEC_MAX};
 use crate::rounds::Rounds;
 use crate::state::{self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState};
 use crate::validate;
+
+/// Why a run could not be opened or moved on, beyond its parts' own errors.
+#[derive(Debug, thiserror::Error)]
+pub enum StepError {
+    #[error("reading the repository {}", path.display())]
+    NoRepo {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{} holds a run already", .0.display())]
+    RunExists(PathBuf),
+    #[error("{} holds files of another run", .0.display())]
+    Leftovers(PathBuf),
+    #[error("creating {}", path.display())]
+    NoDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("the run in {} is done", .0.display())]
+    Done(PathBuf),
+    #[error("answer for {0}, which is no pending task of this run")]
+    UnknownTask(String),
+    #[error("the run has no plan")]
+    NoPlan,
+    #[error("writing {}", path.display())]
+    NoReport {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 /// What `start` needs.
 #[derive(Debug, Clone, Default)]
@@ -37,23 +70,29 @@ pub struct StartOptions {
 /// # Errors
 /// When the repository or base cannot be read, the run directory holds a run already or a
 /// non-empty `tasks/` or `answers/`, or the state cannot be written.
-pub fn start(opts: &StartOptions) -> Result<Value> {
+pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     let cwd = opts
         .cwd
         .canonicalize()
-        .with_context(|| format!("reading the repository {}", opts.cwd.display()))?;
+        .map_err(|source| StepError::NoRepo {
+            path: opts.cwd.clone(),
+            source,
+        })?;
     let diff = git::read_diff(&cwd, opts.base.as_deref())?;
     let dir = &opts.run_dir;
     if state::state_path(dir).exists() {
-        bail!("{} holds a run already", dir.display());
+        return Err(StepError::RunExists(dir.clone()).into());
     }
     // A leftover task or answer file would be read as this run's.
     for sub in [handoff::tasks_dir(dir), handoff::answers_dir(dir)] {
         if sub.read_dir().is_ok_and(|mut d| d.next().is_some()) {
-            bail!("{} holds files of another run", sub.display());
+            return Err(StepError::Leftovers(sub).into());
         }
     }
-    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    std::fs::create_dir_all(dir).map_err(|source| StepError::NoDir {
+        path: dir.clone(),
+        source,
+    })?;
     let profile = Profile::rust()?;
     let context = PromptContext {
         repo: cwd.display().to_string(),
@@ -117,7 +156,7 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
 /// # Errors
 /// When the run is done, a given answer names no pending task, or the state or a file cannot be read
 /// or written.
-pub fn submit(dir: &Path, given: Option<&Map<String, Value>>) -> Result<Value> {
+pub fn submit(dir: &Path, given: Option<&Map<String, Value>>) -> Result<Value, Error> {
     submit_noting(dir, given, &[])
 }
 
@@ -130,10 +169,10 @@ pub fn submit_noting(
     dir: &Path,
     given: Option<&Map<String, Value>>,
     degraded: &[String],
-) -> Result<Value> {
+) -> Result<Value, Error> {
     let mut run = state::load(dir)?;
     if run.phase == Phase::Done {
-        bail!("the run in {} is done", dir.display());
+        return Err(StepError::Done(dir.to_owned()).into());
     }
     for note in degraded.iter().map(|n| n.trim()).filter(|n| !n.is_empty()) {
         if !run.degraded.iter().any(|d| d == note) {
@@ -146,7 +185,7 @@ pub fn submit_noting(
             .any(|t| t.id == id && t.state == TaskState::Pending)
     };
     if let Some(id) = given.and_then(|g| g.keys().find(|id| !pending(id))) {
-        bail!("answer for {id}, which is no pending task of this run");
+        return Err(StepError::UnknownTask(id.clone()).into());
     }
     for task in run
         .tasks

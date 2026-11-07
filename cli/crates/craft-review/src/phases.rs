@@ -5,9 +5,9 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
 use serde_json::Value;
 
+use crate::Error;
 use crate::content;
 use crate::dedup;
 use crate::plan::{self, Plan, PlanInput};
@@ -16,6 +16,7 @@ use crate::prompts;
 use crate::report;
 use crate::rounds;
 use crate::state::{self, Phase, RunState, Task, TaskKind, TaskState};
+use crate::step::StepError;
 use crate::verify;
 
 /// The answer of the phase's single task (the scout, the dedup), when it gave a valid one.
@@ -37,7 +38,7 @@ fn why_failed(run: &RunState) -> String {
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the report written.
-pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<()> {
+pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     if run.tasks.iter().any(|t| t.state == TaskState::Pending) {
         return Ok(());
     }
@@ -103,12 +104,12 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<()> {
     }
 }
 
-fn plan_of(run: &RunState) -> Result<&Plan> {
-    run.plan.as_ref().context("the run has no plan")
+fn plan_of(run: &RunState) -> Result<&Plan, StepError> {
+    run.plan.as_ref().ok_or(StepError::NoPlan)
 }
 
 /// Hands out the next lens round.
-fn next_round(run: &mut RunState, profile: &Profile) -> Result<()> {
+fn next_round(run: &mut RunState, profile: &Profile) -> Result<(), Error> {
     run.rounds.round += 1;
     run.tasks = rounds::tasks(&run.context, profile, plan_of(run)?, &run.rounds)?;
     run.phase = Phase::Lenses;
@@ -116,7 +117,7 @@ fn next_round(run: &mut RunState, profile: &Profile) -> Result<()> {
 }
 
 /// After the last round: the lenses that never returned, then the pool to the dedup.
-fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()> {
+fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<(), Error> {
     let holes = run.rounds.holes();
     if !holes.is_empty() {
         run.not_run.push(format!(
@@ -145,7 +146,7 @@ fn end_rounds(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()> {
 }
 
 /// Hands the pool to its verifiers, or ends the run when none is to be spent.
-fn start_verify(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()> {
+fn start_verify(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<(), Error> {
     run.notes.extend(verify::skipped_note(run));
     run.tasks = verify::tasks(run)?;
     if run.tasks.is_empty() {
@@ -160,11 +161,11 @@ fn start_verify(dir: &Path, run: &mut RunState, profile: &Profile) -> Result<()>
 ///
 /// # Errors
 /// When the report cannot be written.
-pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<()> {
+pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     let verdict = report::verdict(run);
     let path = state::report_path(dir);
     std::fs::write(&path, report::markdown(run, &verdict))
-        .with_context(|| format!("writing {}", path.display()))?;
+        .map_err(|source| StepError::NoReport { path, source })?;
     run.verdict = Some(verdict);
     run.phase = Phase::Done;
     Ok(())

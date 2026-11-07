@@ -4,7 +4,8 @@
 mod common;
 
 use common::{finding, fixture, git, ids, lens, opts, small_run, submit, verdict};
-use craft_review::step;
+use craft_review::Error;
+use craft_review::step::{self, StepError};
 use serde_json::json;
 
 #[test]
@@ -17,7 +18,11 @@ fn a_run_dir_with_leftover_tasks_or_answers_is_refused() {
         std::fs::write(left.join("verify-0.json"), "{}").unwrap();
         let err = step::start(&opts(repo.path(), out.path())).unwrap_err();
         assert!(
-            err.to_string().contains("holds files of another run"),
+            matches!(&err, Error::Step(StepError::Leftovers(d)) if d.ends_with(sub)),
+            "{err}"
+        );
+        assert!(
+            err.to_string().ends_with("holds files of another run"),
             "{err}"
         );
         assert!(!out.path().join("run/state.json").exists());

@@ -6,8 +6,10 @@ mod common;
 use common::{
     answers, fixture, ids, lens, opts, prompt_of, scout, small_run, submit, titled, verdict,
 };
+use craft_review::Error;
+use craft_review::git::GitError;
 use craft_review::status;
-use craft_review::step;
+use craft_review::step::{self, StepError};
 use serde_json::{Map, Value, json};
 
 #[test]
@@ -56,7 +58,14 @@ fn start_renders_the_scout_over_the_diff() {
     );
     assert_eq!(status::status(&run).unwrap()["phase"], json!("scout"));
     let again = step::start(&opts(repo.path(), out.path())).unwrap_err();
-    assert!(again.to_string().contains("holds a run already"), "{again}");
+    assert!(
+        matches!(again, Error::Step(StepError::RunExists(_))),
+        "{again}"
+    );
+    assert!(
+        again.to_string().ends_with("holds a run already"),
+        "{again}"
+    );
 }
 
 /// The three lens answers of a small run's round 1.
@@ -195,6 +204,7 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
     }
     assert_eq!(status::status(&run).unwrap()["phase"], json!("done"));
     let late = step::submit(&run, Some(&Map::new())).unwrap_err();
+    assert!(matches!(late, Error::Step(StepError::Done(_))), "{late}");
     assert!(late.to_string().contains("is done"), "{late}");
 }
 
@@ -329,7 +339,14 @@ fn an_answer_for_no_pending_task_is_refused_and_changes_nothing() {
     let run = out.path().join("run");
     step::start(&opts(repo.path(), out.path())).unwrap();
     let err = step::submit(&run, Some(&answers(json!({"verify-7": {}})))).unwrap_err();
-    assert!(err.to_string().contains("verify-7"));
+    assert!(
+        matches!(&err, Error::Step(StepError::UnknownTask(id)) if id == "verify-7"),
+        "{err}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "answer for verify-7, which is no pending task of this run"
+    );
     assert_eq!(
         status::status(&run).unwrap()["tasks"][0]["retries"],
         json!(0)
@@ -393,10 +410,13 @@ fn a_base_that_is_no_commit_is_refused() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let mut o = opts(repo.path(), out.path());
-    o.base = Some("--output=/tmp/x".into());
-    let err = step::start(&o).unwrap_err();
-    assert!(err.to_string().contains("is not a commit"), "{err}");
-    o.base = Some("nope".into());
-    let err = step::start(&o).unwrap_err();
-    assert!(err.to_string().contains("is not a commit"), "{err}");
+    for base in ["--output=/tmp/x", "nope"] {
+        o.base = Some(base.into());
+        let err = step::start(&o).unwrap_err();
+        assert!(
+            matches!(&err, Error::Git(GitError::NotACommit { base: b, .. }) if b == base),
+            "{err}"
+        );
+        assert!(err.to_string().contains("is not a commit"), "{err}");
+    }
 }

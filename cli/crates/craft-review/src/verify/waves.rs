@@ -3,12 +3,11 @@
 //! model — with the rest of its panel bought only when the pair does not agree; per batch of the
 //! batched, one vote.
 
-use anyhow::Result;
 use serde_json::Value;
 
 use super::{BATCH_SIZE, Route, route_in};
 use crate::agent::Model;
-use crate::content;
+use crate::content::{self, ContentError};
 use crate::prompts;
 use crate::settle;
 use crate::state::{RunState, Task, TaskKind, TaskState};
@@ -36,7 +35,7 @@ pub(super) fn culls(run: &RunState) -> u32 {
 /// The first wave of verification, as `verifyPool` dispatches it: per finding routed alone, one
 /// cull vote, and for a Critical or High the deciding pair — that cull plus one authoritative vote
 /// on the lens model; per batch of the batched (grouped by file, at most `BATCH_SIZE`), one vote.
-pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>> {
+pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>, ContentError> {
     let mut tasks = Vec::new();
     let mut rest = Vec::new();
     let n1 = culls(run);
@@ -97,7 +96,7 @@ fn by_file(run: &RunState, batched: &[usize]) -> Vec<Vec<usize>> {
 
 /// The second wave: the remaining cull votes of each Critical or High panel whose deciding pair did
 /// not come back as two agreeing judgements, as `verifyPool` buys them; none once bought.
-pub(crate) fn escalation(run: &RunState) -> Result<Vec<Task>> {
+pub(crate) fn escalation(run: &RunState) -> Result<Vec<Task>, ContentError> {
     let n1 = culls(run);
     let mut tasks = Vec::new();
     for (i, f) in run.findings.iter().enumerate() {
@@ -120,7 +119,7 @@ pub(crate) fn escalation(run: &RunState) -> Result<Vec<Task>> {
 
 /// Vote `k` on finding `i`: a cull vote on the cheap model below `culls`, the authoritative one on
 /// the lens model at it.
-fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task> {
+fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task, ContentError> {
     let file = f.get("file").and_then(Value::as_str).unwrap_or("?");
     let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
     let auth = is_high(f) && k == culls(run);
