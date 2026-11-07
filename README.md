@@ -65,7 +65,7 @@ cross-linking is the collection's cohesion.
 ```
 craft/
 ├── .claude-plugin/
-│   └── marketplace.json   # single-plugin marketplace (source: integrations/claude-code)
+│   └── marketplace.json   # single-plugin marketplace (source: the claude-code-plugin branch)
 ├── .codex-plugin/plugin.json      # the Codex plugin manifest (root skills/ and lib/, the Claude Code hooks file)
 ├── .agents/plugins/marketplace.json  # the Codex marketplace (source: .)
 ├── integrations/          # one directory per harness craft is delivered to
@@ -95,13 +95,10 @@ craft/
 /plugin install craft@craft
 ```
 
-The marketplace installs the plugin from `integrations/claude-code` in the repository; the install follows its
-symlinks to the shared skills, `lib`, `content` and `src`, which works where the clone makes symlinks (Linux,
-macOS). Windows, where a clone makes none by default (`core.symlinks=false`), is not supported yet: each release
-also rebuilds the `claude-code-plugin` branch from `integrations/claude-code` with its symlinks replaced by real
-files, and once a release has published it, the marketplace entry moves to that branch (a `url` source over
-HTTPS), from which Windows installs it whole. Its install has been observed from a Linux clone with
-`core.symlinks=false` set, not on a real Windows machine. The `cli-review` workflow's
+The marketplace installs the plugin from the `claude-code-plugin` branch (a `url` source over HTTPS), which each
+release rebuilds from `integrations/claude-code` with its symlinks replaced by real files, so the install has
+nothing to dereference. On Linux with `core.symlinks=false` (the Windows default) the plugin installs with all its
+files. It has not been observed on Windows, where the hooks are POSIX shell commands run by Claude Code's shell. The `cli-review` workflow's
 released binary covers x86_64 Windows too (`craft-x86_64-pc-windows-msvc.tar.gz`, unpacked with the system's
 `tar.exe`), built by the release but not yet run on Windows. Working from a checkout,
 `claude --plugin-dir integrations/claude-code` loads the delivery in place through its symlinks (Linux, macOS).
