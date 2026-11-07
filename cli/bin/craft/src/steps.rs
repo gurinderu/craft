@@ -28,6 +28,17 @@ pub struct StartArgs {
     /// craft's plugin root, named in the prompts; found above the executable when absent.
     #[arg(long, env = "CRAFT_ROOT")]
     pub craft_root: Option<PathBuf>,
+    /// `light`: the diff-scoped lenses, one round, only Medium and above verified; `full`: the
+    /// whole review.
+    #[arg(long, value_enum, default_value_t = Depth::Full)]
+    pub depth: Depth,
+}
+
+/// How deep a review goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Depth {
+    Full,
+    Light,
 }
 
 #[derive(Debug, clap::Args)]
@@ -86,6 +97,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
             .with_context(|| format!("resolving {}", run_dir.display()))?,
         craft_root,
         craft_version,
+        light: args.depth == Depth::Light,
     };
     print(&step::start(&opts)?)
 }

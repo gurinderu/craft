@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{answers, finding, fixture, ids, opts, prompt_of, verdict, write_answer};
+use common::{
+    answers, finding, fixture, ids, lens, opts, prompt_of, small_run, verdict, write_answer,
+};
 use craft_review::status;
 use craft_review::step;
 use serde_json::json;
@@ -12,9 +14,20 @@ fn a_full_loop_reads_every_answer_from_its_file() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
-    let s = step::start(&opts(repo.path(), out.path())).unwrap();
-    let lens = json!({"lens": "intent", "findings": [finding("High", 1), finding("Medium", 1)]});
-    write_answer(&s, "lens-intent", &lens.to_string());
+    let (run2, s) = small_run(repo.path(), out.path());
+    assert_eq!(run2, run);
+    let mut medium = finding("Medium", 2);
+    medium["title"] = json!("another");
+    write_answer(
+        &s,
+        "lens-errors-r1",
+        &lens("errors", &[finding("High", 1), medium]).to_string(),
+    );
+    write_answer(&s, "lens-intent-r1", &lens("intent", &[]).to_string());
+    write_answer(&s, "lens-tests-r1", &lens("tests", &[]).to_string());
+    let s = step::submit(&run, None).unwrap();
+    assert_eq!(ids(&s), ["dedup-rust"]);
+    write_answer(&s, "dedup-rust", r#"{"groups": []}"#);
     let s = step::submit(&run, None).unwrap();
     assert_eq!(ids(&s), ["verify-0", "verify-batch-0"]);
     assert!(prompt_of(&s["tasks"][1]).contains("--- FINDING 0 ---"));
@@ -26,7 +39,7 @@ fn a_full_loop_reads_every_answer_from_its_file() {
         (s["done"].clone(), s["verdict"].clone()),
         (json!(true), json!("Block"))
     );
-    for id in ["lens-intent", "verify-0", "verify-batch-0"] {
+    for id in ["lens-errors-r1", "dedup-rust", "verify-0", "verify-batch-0"] {
         assert!(
             run.join(format!("answers/{id}.json")).is_file(),
             "{id}'s accepted answer is kept"
@@ -47,35 +60,35 @@ fn a_missing_an_unparsable_and_an_invalid_file_are_each_asked_again_then_fail() 
     step::start(&opts(repo.path(), out.path())).unwrap();
 
     let s = step::submit(&run, None).unwrap();
-    assert_eq!(ids(&s), ["lens-intent"]);
+    assert_eq!(ids(&s), ["scout-rust"]);
     let prompt = prompt_of(&s["tasks"][0]);
     assert!(
         prompt.contains("Your previous answer was invalid: no answer file was written at"),
         "the prompt file is rewritten with the note: {prompt}"
     );
 
-    write_answer(&s, "lens-intent", "{\"lens\": \"intent\", \"findings\": [");
+    write_answer(&s, "scout-rust", "{\"sizeBucket\": ");
     let s = step::submit(&run, None).unwrap();
     assert!(prompt_of(&s["tasks"][0]).contains("is not JSON"));
     assert!(
-        !run.join("answers/lens-intent.json").exists()
-            && run.join("answers/lens-intent.rejected-1.json").is_file(),
+        !run.join("answers/scout-rust.json").exists()
+            && run.join("answers/scout-rust.rejected-1.json").is_file(),
         "a refused file is set aside, so a retry that writes nothing is not read as it"
     );
 
-    write_answer(&s, "lens-intent", "{\"lens\": \"intent\"}");
+    write_answer(&s, "scout-rust", "{\"sizeBucket\": \"small\"}");
     let s = step::submit(&run, None).unwrap();
-    assert_eq!(
-        (s["done"].clone(), s["verdict"].clone()),
-        (json!(true), json!("INCOMPLETE"))
+    assert!(
+        ids(&s).len() > 3,
+        "a failed scout gives the conservative plan: {s}"
     );
     let st = status::status(&run).unwrap();
-    assert_eq!(st["tasks"][0]["state"], json!("failed"));
     assert!(
-        st["tasks"][0]["error"]
+        st["notRun"][0]
             .as_str()
             .unwrap()
-            .contains("does not match the schema")
+            .contains("does not match the schema"),
+        "{st}"
     );
 }
 
@@ -84,9 +97,11 @@ fn answers_given_by_the_host_override_the_files() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let run = out.path().join("run");
-    let s = step::start(&opts(repo.path(), out.path())).unwrap();
-    write_answer(&s, "lens-intent", "not json");
-    let empty = json!({"lens": "intent", "findings": []});
-    let s = step::submit(&run, Some(&answers(json!({"lens-intent": empty})))).unwrap();
+    let (_, s) = small_run(repo.path(), out.path());
+    write_answer(&s, "lens-errors-r1", "not json");
+    let empty = json!({
+        "lens-errors-r1": lens("errors", &[]), "lens-intent-r1": lens("intent", &[]), "lens-tests-r1": lens("tests", &[]),
+    });
+    let s = step::submit(&run, Some(&answers(empty))).unwrap();
     assert_eq!(s["verdict"], json!("Approve"));
 }

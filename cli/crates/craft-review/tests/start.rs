@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{answers, finding, fixture, git, opts, verdict};
+use common::{finding, fixture, git, ids, lens, opts, small_run, submit, verdict};
 use craft_review::step;
 use serde_json::json;
 
@@ -72,13 +72,15 @@ fn the_report_and_state_name_the_head_and_whether_the_tree_was_dirty() {
 fn a_confirmed_high_naming_a_self_healing_harm_is_capped_and_does_not_block() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
-    let run = out.path().join("run");
-    step::start(&opts(repo.path(), out.path())).unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
     let mut f = finding("High", 1);
     f["harmLevel"] = json!("self-healing");
-    let lens = json!({"lens": "intent", "findings": [f]});
-    step::submit(&run, Some(&answers(json!({"lens-intent": lens})))).unwrap();
-    let s = step::submit(&run, Some(&answers(json!({"verify-0": verdict(false)})))).unwrap();
+    let s = submit(
+        &run,
+        json!({"lens-errors-r1": lens("errors", &[]), "lens-intent-r1": lens("intent", &[f]), "lens-tests-r1": lens("tests", &[])}),
+    );
+    assert_eq!(ids(&s), ["verify-0"], "one finding needs no dedup");
+    let s = submit(&run, json!({"verify-0": verdict(false)}));
     assert_eq!(s["verdict"], json!("Approve"));
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     assert!(report.contains("**Low** `src/lib.rs:1`"), "{report}");

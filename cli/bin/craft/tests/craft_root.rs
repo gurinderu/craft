@@ -60,8 +60,8 @@ fn fetched(dir: &Path) -> PathBuf {
     bin
 }
 
-/// `review start` by `exe` over `repo`, with `root` as `--craft-root` when given: the lens prompt
-/// and the context the run's state keeps.
+/// `review start` by `exe` over `repo`, with `root` as `--craft-root` when given, then the scout's
+/// answer submitted: the first lens prompt and the context the run's state keeps.
 fn start(exe: &Path, repo: &Path, run: &Path, root: Option<&Path>) -> (String, Value) {
     let mut cmd = Command::new(exe);
     cmd.args(["review", "start", "--cwd"])
@@ -79,6 +79,27 @@ fn start(exe: &Path, repo: &Path, run: &Path, root: Option<&Path>) -> (String, V
         String::from_utf8_lossy(&out.stderr)
     );
     let step: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(step["tasks"][0]["id"], "scout-rust");
+    // The scout's answer, through the binary, brings the lenses that name the review rules.
+    let scout = r#"{"scout-rust": {"sizeBucket": "small", "lenses": ["errors"], "isLibrary": false,
+        "securitySensitive": false, "intent": "", "churn": [], "repoRules": [], "notes": ""}}"#;
+    let answers = run.with_extension("answers.json");
+    std::fs::write(&answers, scout).unwrap();
+    let out = Command::new(exe)
+        .args(["review", "submit", "--run"])
+        .arg(run)
+        .arg("--answers")
+        .arg(&answers)
+        .env_remove("CRAFT_ROOT")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let step: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(step["tasks"][0]["id"], "lens-errors-r1");
     let prompt = std::fs::read_to_string(step["tasks"][0]["promptFile"].as_str().unwrap()).unwrap();
     let state: Value =
         serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();

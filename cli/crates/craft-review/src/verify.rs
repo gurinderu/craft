@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::content;
+use crate::harm;
 use crate::prompts;
 use crate::state::{RunState, Task, TaskKind, TaskState};
 
@@ -53,12 +54,46 @@ pub(crate) fn route(f: &Value) -> Route {
     }
 }
 
+/// Whether two or more different lenses reported `f` (`lensAgreed`): its `sources`, else its
+/// `source`. No CLI finding is a gate tool's, so every source is a lens.
+fn lens_agreed(f: &Value) -> bool {
+    let all: Vec<&Value> = match f.get("sources").and_then(Value::as_array) {
+        Some(a) => a.iter().collect(),
+        None => f.get("source").into_iter().collect(),
+    };
+    let mut lenses: Vec<&str> = all
+        .iter()
+        .filter_map(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .collect();
+    lenses.sort_unstable();
+    lenses.dedup();
+    lenses.len() >= 2
+}
+
+/// The route `f` takes in a run, as `routeOf` in `lib/review-verify-pool.mjs`: a light pass
+/// verifies only Medium and above (`depthVerifyTier`), and two or more lenses on one defect buy a
+/// verifier when the harm it names could make it must-fix (realm @nick/craft, node #407).
+pub(crate) fn route_in(f: &Value, light: bool) -> Route {
+    let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
+    let tier = if light && !matches!(sev, "Critical" | "High" | "Medium") {
+        Route::Skip
+    } else {
+        route(f)
+    };
+    if tier == Route::Skip && lens_agreed(f) && harm::raise::may_be_must_fix(f) {
+        Route::Individual
+    } else {
+        tier
+    }
+}
+
 /// One verifier per finding routed alone, one per batch of the batched; none for the skipped.
 pub(crate) fn tasks(run: &RunState) -> Result<Vec<Task>> {
     let mut tasks = Vec::new();
     let mut rest = Vec::new();
     for (i, f) in run.findings.iter().enumerate() {
-        match route(f) {
+        match route_in(f, run.light) {
             Route::Individual => tasks.push(individual(run, i, f)?),
             Route::Batch => rest.push(i),
             Route::Skip => {}
@@ -104,7 +139,7 @@ pub(crate) fn skipped_note(run: &RunState) -> Option<String> {
     let n = run
         .findings
         .iter()
-        .filter(|f| route(f) == Route::Skip)
+        .filter(|f| route_in(f, run.light) == Route::Skip)
         .count();
     (n > 0).then(|| {
         format!(
@@ -145,7 +180,7 @@ pub(crate) fn collect_votes(run: &mut RunState) {
                     }
                 }
             }
-            TaskKind::Lens => {}
+            TaskKind::Scout | TaskKind::Lens { .. } | TaskKind::Dedup => {}
         }
     }
 }

@@ -104,7 +104,8 @@ internal to the plugin, no external dependency). They are authored under `src/`;
 copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
 committed. The review's knowledge — lens briefs and prompt templates (`content/prompts/`, `{{name}}`
 placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
-under `content/`, inlined into the engines by the build.
+under `content/`, inlined into the engines by the build; the Rust profile's roster is also data
+(`content/profiles/rust.json`, read by the Rust CLI), held to the engine's own by a parity test.
 
 | Workflow | Composes | Output |
 |---|---|---|
@@ -216,10 +217,11 @@ that shaped this layer has been removed.
 a host (the `cli-review` engine above) runs its agents; not yet observed end to end
 in a live session: `bin/craft` (the command: `craft review start | submit | status`, the step
 protocol, and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
-under a concurrency cap), `crates/craft-review` (the steps — one Rust correctness lens, then a
-verifier per finding or per batch, each finding's severity capped by the harm it names as the
-engines cap it, then a Markdown report naming the head and whether the tree was dirty — rendered from
-`content/`, which it compiles in, its verification rules held to the engines' by the shared cases in
+under a concurrency cap), `crates/craft-review` (the steps — a scout whose answer plans the lenses of the Rust profile
+(`content/profiles/rust.json`), the lenses round after round until one finds nothing new or the plan's rounds are spent, the
+floor, roll-up and dedup of their pool, then a verifier per finding or per batch, each finding's severity capped by the harm
+it names as the engines cap it, then a Markdown report of the findings by tier, the lenses that ran and the rounds — rendered
+from `content/`, which it compiles in, its plans, prompts and verification rules held to the engines' by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them) and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise). The toolchain is pinned in `cli/rust-toolchain.toml`;

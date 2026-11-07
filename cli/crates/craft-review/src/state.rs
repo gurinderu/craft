@@ -8,10 +8,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::git::Diff;
+use crate::plan::Plan;
 use crate::prompts::PromptContext;
+use crate::rounds::Rounds;
 
 /// The state file's format; a run written by another format is refused, not misread.
-pub const STATE_VERSION: u32 = 3;
+pub const STATE_VERSION: u32 = 4;
 /// How many times an invalid or missing answer is asked for again before its task fails.
 pub const MAX_RETRIES: u32 = 2;
 
@@ -19,7 +21,9 @@ pub const MAX_RETRIES: u32 = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
-    Lens,
+    Scout,
+    Lenses,
+    Dedup,
     Verify,
     Done,
 }
@@ -28,7 +32,9 @@ pub enum Phase {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TaskKind {
-    Lens,
+    Scout,
+    Lens { lens: String, round: u32 },
+    Dedup,
     Verify { finding: usize },
     VerifyBatch { findings: Vec<usize> },
 }
@@ -111,16 +117,27 @@ pub struct RunState {
     pub version: u32,
     pub context: PromptContext,
     pub diff: Diff,
+    /// The changed files the profile reviews.
     pub rust_files: Vec<String>,
+    /// A light pass (`depth=light`) rather than the full review.
+    pub light: bool,
     pub phase: Phase,
     /// The current phase's tasks.
     pub tasks: Vec<Task>,
-    /// What the lens reported, each a finding object as its schema shapes it.
+    /// What the scout's answer planned; `None` until it is in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<Plan>,
+    /// The lens rounds: the pool they filled and their coverage.
+    pub rounds: Rounds,
+    /// What verification judges: the pool after the floor, the roll-up and the dedup, each a
+    /// finding object as its schema shapes it.
     pub findings: Vec<Value>,
     /// The verifier's verdict on each finding, by index; `None` while none is in.
     pub votes: Vec<Option<Value>>,
-    /// What went wrong on the way, for the report.
+    /// What happened on the way, for the report.
     pub notes: Vec<String>,
+    /// What did not run that the review needed: any entry makes the verdict INCOMPLETE.
+    pub not_run: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
 }

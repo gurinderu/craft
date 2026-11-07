@@ -21,6 +21,45 @@ fn claims(f: &Value) -> Vec<Claim> {
         .get("harmClaims")
         .and_then(Value::as_array)
         .map_or(&own[..], Vec::as_slice);
+    union(raw)
+}
+
+impl Claim {
+    /// The claim as a finding's `harmClaims` entry carries it.
+    fn to_value(&self) -> Value {
+        let mut m = serde_json::Map::new();
+        m.insert("harmLevel".into(), Value::String(self.level.clone()));
+        if let Some(h) = &self.harm {
+            m.insert("harm".into(), Value::String(h.clone()));
+        }
+        if let Some(r) = &self.repo_rule {
+            m.insert("repoRule".into(), r.clone());
+        }
+        Value::Object(m)
+    }
+}
+
+/// The distinct harms `members` claim between them, worst first, as `groupClaims`.
+pub(crate) fn group_claims<'a>(members: impl IntoIterator<Item = &'a Value>) -> Vec<Value> {
+    let raw: Vec<Value> = members
+        .into_iter()
+        .flat_map(|m| claims(m).iter().map(Claim::to_value).collect::<Vec<_>>())
+        .collect();
+    union(&raw).iter().map(Claim::to_value).collect()
+}
+
+/// How many distinct harms `f` claims.
+pub(crate) fn claim_count(f: &Value) -> usize {
+    claims(f).len()
+}
+
+/// Whether any harm `f` claims could make it must-fix, as `mayBeMustFix`.
+pub(crate) fn may_be_must_fix(f: &Value) -> bool {
+    claims(f).iter().any(must_fix)
+}
+
+/// One claim per known level, worst first; at a level, one citing its rule wins.
+fn union(raw: &[Value]) -> Vec<Claim> {
     let mut by: Vec<Claim> = Vec::new();
     for c in raw {
         let Some(level) = text(c, "harmLevel").filter(|l| ceiling(l).is_some()) else {

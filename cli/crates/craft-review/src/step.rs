@@ -10,13 +10,12 @@ use serde_json::{Map, Value, json};
 use crate::content;
 use crate::git;
 use crate::handoff;
-use crate::prompts::{self, LENS, PromptContext};
-use crate::report;
+use crate::phases::{advance, finish};
+use crate::profile::Profile;
+use crate::prompts::{self, PromptContext, SPEC_MAX};
+use crate::rounds::Rounds;
 use crate::state::{self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState};
 use crate::validate;
-use crate::verify;
-
-const LENS_MODEL: &str = "opus";
 
 /// What `start` needs.
 #[derive(Debug, Clone, Default)]
@@ -27,6 +26,9 @@ pub struct StartOptions {
     /// craft's checkout and plugin version, for the review-rules paths the prompts name.
     pub craft_root: Option<String>,
     pub craft_version: Option<String>,
+    /// A light pass (`depth=light`): the diff-scoped lenses, one round, only Medium and above
+    /// verified.
+    pub light: bool,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -51,17 +53,18 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
         }
     }
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let profile = Profile::rust()?;
     let context = PromptContext {
         repo: cwd.display().to_string(),
         base: diff.base.clone(),
-        spec: diff.log.clone(),
+        spec: diff.log.chars().take(SPEC_MAX).collect(),
         craft_root: opts.craft_root.clone(),
         craft_version: opts.craft_version.clone(),
     };
     let rust_files: Vec<String> = diff
         .files
         .iter()
-        .filter(|f| f.ends_with(".rs"))
+        .filter(|f| profile.covers(f))
         .cloned()
         .collect();
     let mut run = RunState {
@@ -70,26 +73,28 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
         context,
         diff,
         rust_files,
-        phase: Phase::Lens,
+        light: opts.light,
+        phase: Phase::Scout,
+        plan: None,
+        rounds: Rounds::default(),
         findings: Vec::new(),
         votes: Vec::new(),
         notes: Vec::new(),
+        not_run: Vec::new(),
         verdict: None,
     };
     if run.rust_files.is_empty() {
         run.notes
-            .push("the diff changes no Rust file: nothing to review".into());
-        finish(dir, &mut run, false)?;
+            .push("the diff changes no file the Rust profile reviews: nothing to review".into());
+        finish(dir, &mut run)?;
     } else {
-        let prompt = prompts::lens_prompt(&run.context)?;
-        let schema = content::schema("findings")?;
         run.tasks = vec![Task::new(
-            format!("lens-{LENS}"),
-            format!("lens:{LENS}"),
-            prompt,
-            LENS_MODEL,
-            schema,
-            TaskKind::Lens,
+            format!("scout-{}", profile.id),
+            format!("scout:{}", profile.id),
+            prompts::scout_prompt(&run.context, &profile)?,
+            &profile.scout_model,
+            content::schema("scout")?,
+            TaskKind::Scout,
         )];
     }
     handoff::write_pending(dir, &run)?;
@@ -166,57 +171,4 @@ fn next(dir: &Path, run: &RunState) -> Value {
             json!({"run": dir.display().to_string(), "tasks": tasks, "done": false})
         }
     }
-}
-
-/// Moves the run on once no task is pending: the lens's findings to verification, the verdicts to
-/// the report.
-fn advance(dir: &Path, run: &mut RunState) -> Result<()> {
-    if run.tasks.iter().any(|t| t.state == TaskState::Pending) {
-        return Ok(());
-    }
-    match run.phase {
-        Phase::Lens => {
-            let lens = run.tasks.first().context("the run has no lens task")?;
-            if lens.state == TaskState::Failed {
-                let why = lens.error.clone().unwrap_or_default();
-                run.notes
-                    .push(format!("the {LENS} lens gave no valid answer: {why}"));
-                return finish(dir, run, true);
-            }
-            run.findings = lens
-                .answer
-                .as_ref()
-                .and_then(|a| a.get("findings"))
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
-            run.votes = vec![None; run.findings.len()];
-            if run.findings.is_empty() {
-                return finish(dir, run, false);
-            }
-            run.notes.extend(verify::skipped_note(run));
-            run.tasks = verify::tasks(run)?;
-            if run.tasks.is_empty() {
-                return finish(dir, run, false);
-            }
-            run.phase = Phase::Verify;
-            Ok(())
-        }
-        Phase::Verify => {
-            verify::collect_votes(run);
-            finish(dir, run, false)
-        }
-        Phase::Done => Ok(()),
-    }
-}
-
-/// Ends the run: its verdict, and the report written beside the state.
-fn finish(dir: &Path, run: &mut RunState, lens_failed: bool) -> Result<()> {
-    let verdict = report::verdict(run, lens_failed);
-    let path = state::report_path(dir);
-    std::fs::write(&path, report::markdown(run, verdict))
-        .with_context(|| format!("writing {}", path.display()))?;
-    run.verdict = Some(verdict.to_owned());
-    run.phase = Phase::Done;
-    Ok(())
 }

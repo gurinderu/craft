@@ -1,33 +1,32 @@
-//! The prompts of the slice: the Rust correctness lens and its verifiers, each rendered from
-//! `content/prompts/` with the values `lib/review-lens-prompts.mjs` and `lib/review-verify.mjs`
-//! compute for the same template — what is chosen or joined is chosen here and passed in.
+//! The prompts of a review: the scout, every lens, the dedup pass and the verifiers, each rendered
+//! from `content/prompts/` with the values `lib/review-lens-prompts.mjs`, `lib/review-dedup.mjs`
+//! and `lib/review-verify.mjs` compute for the same template — what is chosen or joined is chosen
+//! here and passed in.
 
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::content::{self, ContentError, vars};
-
+mod lens;
+#[cfg(test)]
+mod parity;
+mod scout;
 mod verify;
+pub use lens::{lens_prompt, prior_found_summary};
+pub use scout::{dedup_prompt, scout_prompt};
 pub use verify::{batch_verify_prompt, verify_prompt};
 
-/// The lens this slice runs: the Rust profile's `intent` brief, the one that judges whether the
-/// change does what it is supposed to (correct-looking code with wrong behaviour, off-by-one,
-/// missed requirements, false claims in comments and tests).
-pub const LENS: &str = "intent";
-pub const LENS_BRIEF: &str = "lens-briefs/rust-intent";
-/// The review rubric skill of the Rust profile, and the exclusion catalogue it ships.
+/// The review rubric skill of the Rust profile, and the exclusion catalogue it ships; the
+/// verifiers name them as `lib/review-verify.mjs` does.
 const RUBRIC_SKILL: &str = "rust-review";
 const FP_RULES: &str = "fp-rules.md";
-/// The diff the Rust profile reviews.
-const PATHSPEC: &str = "'*.rs'";
 /// The skill directory every lens and verifier reads beside its rubric.
 const REVIEW_RULES_DIR: &str = "skills/review-rules";
 /// How much of a model-authored field enters a prompt, as `flattenField` caps it.
 const FIELD_MAX: usize = 500;
 /// How much of the commit log stands in for the stated spec.
-const SPEC_MAX: usize = 4000;
+pub(crate) const SPEC_MAX: usize = 4000;
 
 /// What every prompt of one run is rendered from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +34,7 @@ const SPEC_MAX: usize = 4000;
 pub struct PromptContext {
     pub repo: String,
     pub base: String,
-    /// The commit messages of the change: the lens's STATED SPEC block.
+    /// The commit messages of the change, capped: the lenses' STATED SPEC block.
     pub spec: String,
     pub craft_root: Option<String>,
     pub craft_version: Option<String>,
@@ -89,53 +88,6 @@ fn repo_directive(repo: &str) -> String {
          sitting in.\n\n",
         shq(repo)
     )
-}
-
-/// The lens prompt.
-///
-/// # Errors
-/// When a content file is missing or a placeholder has no value.
-pub fn lens_prompt(ctx: &PromptContext) -> Result<String, ContentError> {
-    let spec = ctx.spec.chars().take(SPEC_MAX).collect::<String>();
-    let spec = if spec.is_empty() {
-        String::new()
-    } else {
-        content::prompt("lens-spec", &vars([("spec", spec)]))?
-    };
-    let rules = content::prompt(
-        "review-rules",
-        &vars([("dirs", plugin_candidates(ctx, REVIEW_RULES_DIR))]),
-    )?;
-    let base = flatten(Some(&Value::String(ctx.base.clone())));
-    let body = content::prompt(
-        "lens",
-        &vars([
-            ("lens", LENS.into()),
-            ("lang", "Rust".into()),
-            ("rubricSkill", RUBRIC_SKILL.into()),
-            (
-                "navLoad",
-                " and the rust-navigation skill for context expansion".into(),
-            ),
-            ("brief", content::text(LENS_BRIEF)?),
-            ("catalogue", String::new()),
-            ("rules", rules),
-            ("strict", String::new()),
-            ("base", format!("`{base}`")),
-            ("range", format!("--merge-base {}", shq(&ctx.base))),
-            ("pathspec", PATHSPEC.into()),
-            ("slice", String::new()),
-            ("reReview", String::new()),
-            // lensPlanLines: intent, spec, hot files, repository rules — one line each.
-            ("plan", format!("\n{spec}\n\n")),
-            ("lsp", " + LSP".into()),
-            ("dependencySource", content::text("dependency-source")?),
-            ("sources", String::new()),
-            ("mutants", String::new()),
-            ("alreadyFound", String::new()),
-        ]),
-    )?;
-    Ok(format!("{}{body}", repo_directive(&ctx.repo)))
 }
 
 /// The craft checkout above `exe`, and the plugin version its manifest names.
