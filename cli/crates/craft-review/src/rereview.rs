@@ -43,8 +43,8 @@ pub enum Fate {
     /// Set aside by its author, and the code around it unchanged since: it leaves the ledger as a
     /// `dismissed` tombstone.
     Retired,
-    /// Known and deferred: its question still holds (`deferralHeld`), so it is carried, deferred,
-    /// out of the verdict.
+    /// Known and deferred: its question still holds (`deferralHeld`) and the code of its file is
+    /// unchanged since the question's commit, so it is carried, deferred, out of the verdict.
     Deferred,
     /// Still open, but a remembered record sets it aside this round: it leaves the ledger as the
     /// author's word the memory writes (`Memory::ledger_rows`).

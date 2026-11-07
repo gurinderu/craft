@@ -256,7 +256,12 @@ fn strict_mode_runs_the_maintainability_lens_and_a_confirmed_finding_of_it_block
 /// Answers every task of `s` until the run is done: the scout picks `errors`, the recall finds
 /// nothing, `errors` reports `first` in round 1 of the chain, the verifiers confirm and each
 /// adjudicator finds its prior still open.
-fn drive(run: &Path, mut s: Value, first: &[Value]) -> Value {
+fn drive(run: &Path, s: Value, first: &[Value]) -> Value {
+    drive_as(run, s, first, "still-open")
+}
+
+/// [`drive`], each adjudicator answering `status`.
+fn drive_as(run: &Path, mut s: Value, first: &[Value], status: &str) -> Value {
     while s["done"] == json!(false) {
         let mut answers = serde_json::Map::new();
         for id in ids(&s) {
@@ -268,7 +273,7 @@ fn drive(run: &Path, mut s: Value, first: &[Value]) -> Value {
                 let name = rest.split('-').next().unwrap();
                 lens(name, if name == "errors" { first } else { &[] })
             } else if id.starts_with("adjudicate-") {
-                json!({"status": "still-open", "currentLine": 0, "note": "", "invariant": "i", "attack": ""})
+                json!({"status": status, "currentLine": 0, "note": "", "invariant": "i", "attack": ""})
             } else {
                 assert_eq!(id, "verify-batch-0");
                 confirmed(&[0])
@@ -312,7 +317,11 @@ fn a_deferred_finding_stays_known_and_deferred_while_its_question_holds() {
     common::git(repo.path(), &["add", "."]);
     common::git(repo.path(), &["commit", "-qm", "fix: elsewhere"]);
     let s = step::start(&start("r2")).unwrap();
-    assert_eq!(ids(&s), ["scout-rust", "memory-recall", "adjudicate-0"]);
+    assert_eq!(
+        ids(&s),
+        ["scout-rust", "memory-recall"],
+        "its code unchanged, a held deferral needs no adjudicator"
+    );
     let two = drive(&runs.path().join("r2"), s, &[]);
     assert_eq!(
         two["verdict"],
@@ -332,6 +341,41 @@ fn a_deferred_finding_stays_known_and_deferred_while_its_question_holds() {
             "## Known and deferred (open question — not in the verdict)\n- Medium · `src/lib.rs:1` · retry budget of fetch is unbounded",
         ],
     );
+}
+
+#[test]
+fn a_deferred_finding_whose_code_changed_since_its_question_counts_by_its_adjudication() {
+    let repo = fixture(true);
+    let runs = tempfile::tempdir().unwrap();
+    let question = json!([{
+        "id": "question-abcdef0123", "kind": "question", "title": "retry budget of fetch",
+        "body": "decide after the load test", "scope": "src/lib.rs", "deferred": true,
+        "commit": rev(repo.path(), "HEAD"), "line": 1, "lens": "errors"
+    }]);
+    let start = |name: &str| StartOptions {
+        run_dir: runs.path().join(name),
+        recall: true,
+        prior_decisions: Some(Ok(question.clone())),
+        ..opts(repo.path(), runs.path())
+    };
+    let one = drive(
+        &runs.path().join("r1"),
+        step::start(&start("r1")).unwrap(),
+        &[titled("Medium", 1, "retry budget of fetch is unbounded")],
+    );
+    assert_eq!(one["verdict"], json!("Approve"));
+    // Round 2 edits the deferred function and makes it worse.
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 2 }\n").unwrap();
+    common::git(repo.path(), &["commit", "-qam", "feat: f returns 2"]);
+    let s = step::start(&start("r2")).unwrap();
+    assert_eq!(ids(&s), ["scout-rust", "memory-recall", "adjudicate-0"]);
+    let two = drive_as(&runs.path().join("r2"), s, &[], "regressed");
+    assert_eq!(
+        two["verdict"],
+        json!("Warning"),
+        "the regressed defect counts again"
+    );
+    assert_eq!(two["reReview"]["regressed"], json!(1));
 }
 
 #[test]
@@ -446,7 +490,7 @@ fn a_priors_deferral_released_by_a_record_that_answers_its_question_counts_again
     );
     let report = std::fs::read_to_string(two["report"].as_str().unwrap()).unwrap();
     assert!(
-        report.contains("the deferral on src/lib.rs:1 does not hold"),
+        report.contains("the deferral on src/lib.rs:1 no longer holds"),
         "{report}"
     );
 }

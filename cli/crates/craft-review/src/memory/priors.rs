@@ -48,7 +48,8 @@ impl Memory {
         !matching::reraised_by_severity(&row.finding()) && !released(deferral, &self.decisions)
     }
 
-    /// Sets aside the findings of `settled` and the priors still open in `chain` a record answers,
+    /// Sets aside the findings of `settled` and the priors still open or carried unverified in
+    /// `chain` (the engine's `stillOpen`, `regressed` and `unverified` tiers) a record answers,
     /// its scope checked by git in `repo`; what it did goes to `notes`. A prior set aside leaves
     /// the chain's ledger for the memory's; one raised again keeps the note why.
     pub(crate) fn apply(
@@ -59,7 +60,12 @@ impl Memory {
         notes: &mut Vec<String>,
     ) {
         let live: Vec<usize> = (0..chain.priors.len())
-            .filter(|&i| chain.priors.get(i).is_some_and(|p| p.gates()))
+            .filter(|&i| {
+                chain
+                    .priors
+                    .get(i)
+                    .is_some_and(|p| p.gates() || p.fate == Fate::Unverified)
+            })
             .collect();
         if self.decisions.is_empty() || (settled.is_empty() && live.is_empty()) {
             return;
