@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Install craft's opencode adapters by symlinking them into an opencode tree.
-# Usage: opencode/install.sh [--project | --global]   (default: --project)
+# Usage: integrations/opencode/install.sh [--project | --global]   (default: --project)
 set -euo pipefail
 
-# Repo root = parent of this script's dir (opencode/), so the script works from anywhere.
+# Repo root = two levels above this script's dir (integrations/opencode/), so the script works from anywhere.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 SCOPE="project"
 for arg in "$@"; do
@@ -58,5 +58,5 @@ cat <<EOF
 Done.
   • Restart opencode (or reopen the project) so it rescans skills/agents/commands/plugins.
   • If opencode does not auto-install the plugin's deps, add @opencode-ai/plugin and
-    @opencode-ai/sdk to "$TARGET/package.json" and restart. See opencode/README.md.
+    @opencode-ai/sdk to "$TARGET/package.json" and restart. See integrations/opencode/README.md.
 EOF

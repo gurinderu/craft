@@ -9,8 +9,8 @@ adapter layer.
 From the repo root, symlink the adapters into an opencode tree:
 
 ```bash
-opencode/install.sh            # project-scoped: ./.opencode  (default)
-opencode/install.sh --global   # ~/.config/opencode
+integrations/opencode/install.sh            # project-scoped: ./.opencode  (default)
+integrations/opencode/install.sh --global   # ~/.config/opencode
 ```
 
 Then restart opencode (or reopen the project) so it rescans `skills/`, `agents/`, `commands/`,
@@ -72,6 +72,6 @@ the plugin directory is linked from; if that fails, the hook is silent and the t
   captures `ts`/`project`/`commit`/`dirty`, which dimensions ran vs `notRun`, and a `verdict` parsed
   from the synthesis text — but NOT `findings.bySeverity` or `outputTokens` (`findings` is `null`).
   The hidden review agents do not self-log, so a standalone hidden-agent invocation is not recorded.
-- **triage `conflict` semantics differ.** In `opencode/plugin/triage-findings.ts` the per-finding
+- **triage `conflict` semantics differ.** In `integrations/opencode/plugin/triage-findings.ts` the per-finding
   validation may itself return a `conflict` verdict (validate and plan logic are merged into one
   call); the Claude Code `triage-findings.js` reserves `conflict` for the separate Plan phase.

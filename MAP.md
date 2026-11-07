@@ -100,7 +100,7 @@ agents (would duplicate).
 ## Workflows
 
 Multi-agent orchestration scripts that compose the agents above (referencing them by `agentType` —
-internal to the plugin, no external dependency). They are authored under `src/`; `workflows/` holds the
+internal to the plugin, no external dependency). They are authored under `src/`; `integrations/claude-code/workflows/` holds the
 copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
 committed. The review's knowledge — lens briefs and prompt templates (`content/prompts/`, `{{name}}`
 placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
@@ -205,7 +205,7 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 
 ## opencode adapter
 
-`opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
+`integrations/opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
 (skills shared verbatim by symlink; 4 translated agent files; a TS/Bun plugin hosting the
 `rust-audit` and `triage-findings` workflows and craft's work hook on `chat.message` and `event`;
 a symlink `install.sh`). Single source of truth: the skills are not duplicated. The design spec
@@ -231,13 +231,29 @@ on a terminal, one line per event otherwise). The toolchain is pinned in `cli/ru
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, apart
 from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
 `cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
-binary at the archive root) and its `.sha256` to each release for Linux and macOS on x64 and arm64;
-`lib/craft-bin.mjs ensure` fetches the one for this platform and version into `~/.craft/bin/<version>/`,
+binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each release for Linux and macOS on x64
+and arm64 and Windows on x64; `lib/craft-bin.mjs ensure` fetches the one for this platform and version into
+`~/.craft/bin/<version>/`,
 which the `cli-review` engine runs when no `craftBin` is given.
 
 ## Codex delivery
 
 `.codex-plugin/plugin.json` and the marketplace `.agents/plugins/marketplace.json` deliver the same
-`skills/` and `hooks/hooks.json` to the Codex CLI. Codex has no Workflow tool, so the workflow
-engines and the review agents under `agents/` are not shipped there; the hooks tell a Codex session
-to review the diff itself.
+`skills/` and hooks file (`integrations/claude-code/hooks/hooks.json`, named by the manifest's `hooks`) to the
+Codex CLI. Its plugin root is the repository root: Codex leaves symlinks out of the copy it installs
+(`integrations/codex/README.md`). Codex has no Workflow tool, so the workflow engines and the review agents
+under `integrations/claude-code/agents/` are not shipped there; the hooks tell a Codex session to review the
+diff itself.
+
+## Deliveries
+
+`integrations/` holds one directory per harness. `integrations/claude-code/` is the Claude Code plugin: its
+manifest, `agents/`, `hooks/` and the built `workflows/`, with `skills`, `lib`, `content`, `src` and `README.md` as
+symlinks to the shared ones at the root; a load in place (`--plugin-dir`) follows them into the checkout. The root
+marketplace (`.claude-plugin/marketplace.json`) installs it in place today (`./integrations/claude-code`, the
+links followed where the clone made them: Linux, macOS). Staged: the `claude-code-plugin` branch, which each
+release rebuilds from this directory with the links dereferenced into real files
+(`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls;
+the first release carrying it creates the branch); a follow-up then moves the entry to a `url` source over HTTPS on
+that branch, so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
+Codex delivery's place at the root, and `integrations/pi/` is planned.

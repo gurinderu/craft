@@ -6,21 +6,21 @@ import sonarjs from 'eslint-plugin-sonarjs'
 import { COMPLEXITY_RULES } from './lib/complexity-rules.mjs'
 import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 
-// Lint scope: the .mjs files under lib/ and opencode/plugin/, opencode/plugin/*.ts, knip.config.js and
+// Lint scope: the .mjs files under lib/ and integrations/opencode/plugin/, integrations/opencode/plugin/*.ts, knip.config.js and
 // .dependency-cruiser.mjs (both decide what a gate sees; tsc checks their JSDoc types — a test imports the
 // first, lib/tsconfig.json names the second, which a wildcard would skip as a dot-file).
-//   - the engines (src/*.js, generated into workflows/*.js) are NOT linted as files and cannot be: they
+//   - the engines (src/*.js, generated into integrations/claude-code/workflows/*.js) are NOT linted as files and cannot be: they
 //     carry top-level export + await + return and only parse inside the Workflow sandbox wrapper — the same reason `node --check` cannot
 //     read them. `node lib/check-workflows.mjs` compiles them, and `npm run check:types:workflows`
 //     type-checks them wrapped as the sandbox runs them; those are their gates.
-//   - opencode/plugin/*.ts are type-checked by `npm run check:types` (tsc, opencode/plugin/tsconfig.json);
+//   - integrations/opencode/plugin/*.ts are type-checked by `npm run check:types` (tsc, integrations/opencode/plugin/tsconfig.json);
 //     here they get the TypeScript parser and the type-aware rules below.
 //
 // Type-aware rules (typescript-eslint, devDependency only; realm @nick/craft, #137): each file is linted
-// against the program its own type check builds — lib/tsconfig.json or opencode/plugin/tsconfig.json — so a
+// against the program its own type check builds — lib/tsconfig.json or integrations/opencode/plugin/tsconfig.json — so a
 // rule sees the same types tsc does (JSDoc types in .mjs, though not a JSDoc cast: the parser drops its
 // parentheses). typescript-eslint loads `typescript` from the root node_modules, hence the root
-// devDependency pinned to opencode/plugin's version (lib/typescript-pin.test.mjs fails when they part).
+// devDependency pinned to integrations/opencode/plugin's version (lib/typescript-pin.test.mjs fails when they part).
 // Only the rules of recommended-type-checked that report nothing on today's tree are on, so the gate stays
 // zero-warning; the rules left off and what they report are on #137.
 // Fail closed: a program missing a declared package still builds, its imports read as `any` and the rules
@@ -45,9 +45,9 @@ export default [
   {
     ignores: [
       '**/node_modules/**',
-      'workflows/**',
+      'integrations/claude-code/workflows/**',
       'src/**',
-      'opencode/plugin/node_modules/**',
+      'integrations/opencode/plugin/node_modules/**',
       // Stryker's leftovers (gitignored): a run that ends red leaves its per-worker setup files in the root,
       // and its in-place backup of lib/ sits in .stryker-tmp/ — neither is source, both trip a wider lint.
       'stryker-setup-*.js',
@@ -60,7 +60,7 @@ export default [
   { linterOptions: { noInlineConfig: true } },
   js.configs.recommended,
   {
-    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'knip.config.js', '.dependency-cruiser.mjs'],
+    files: ['lib/**/*.mjs', 'integrations/opencode/**/*.mjs', 'knip.config.js', '.dependency-cruiser.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',
@@ -89,29 +89,29 @@ export default [
     },
   },
   // The TypeScript parser and plugin for every linted file; core rules tsc already enforces are off for .ts.
-  { ...tseslint.configs.base, files: ['lib/**/*.mjs', 'opencode/plugin/*.mjs', 'opencode/plugin/*.ts'] },
-  { ...tseslint.configs.eslintRecommended, files: ['opencode/plugin/*.ts'] },
+  { ...tseslint.configs.base, files: ['lib/**/*.mjs', 'integrations/opencode/plugin/*.mjs', 'integrations/opencode/plugin/*.ts'] },
+  { ...tseslint.configs.eslintRecommended, files: ['integrations/opencode/plugin/*.ts'] },
   // Core no-unused-vars reads a function type's parameter names as unused bindings; tsc's
-  // noUnusedLocals/noUnusedParameters (opencode/plugin/tsconfig.json) already hold the real ones.
-  { files: ['opencode/plugin/*.ts'], rules: { 'no-unused-vars': 'off' } },
-  // Under verbatimModuleSyntax (opencode/plugin/tsconfig.json) `import { type X } from 'p'` is not erased:
+  // noUnusedLocals/noUnusedParameters (integrations/opencode/plugin/tsconfig.json) already hold the real ones.
+  { files: ['integrations/opencode/plugin/*.ts'], rules: { 'no-unused-vars': 'off' } },
+  // Under verbatimModuleSyntax (integrations/opencode/plugin/tsconfig.json) `import { type X } from 'p'` is not erased:
   // it runs as `import {} from 'p'`, loading a package that a type-only reading takes for absent. Written
   // `import type`, it is erased. .dependency-cruiser.mjs follows the same tsconfig and catches the
   // runtime import too; this keeps the shape out of the source (realm @nick/craft, #145).
-  { files: ['opencode/plugin/*.ts'], rules: { '@typescript-eslint/no-import-type-side-effects': 'error' } },
+  { files: ['integrations/opencode/plugin/*.ts'], rules: { '@typescript-eslint/no-import-type-side-effects': 'error' } },
   {
     files: ['lib/**/*.mjs'],
     languageOptions: { parserOptions: { project: ['./lib/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
     rules: typeAware,
   },
   {
-    files: ['opencode/plugin/*.mjs', 'opencode/plugin/*.ts'],
-    languageOptions: { parserOptions: { project: ['./opencode/plugin/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
+    files: ['integrations/opencode/plugin/*.mjs', 'integrations/opencode/plugin/*.ts'],
+    languageOptions: { parserOptions: { project: ['./integrations/opencode/plugin/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
     rules: typeAware,
   },
   // Every linted function, tests included; the engines get the same rules through lib/engine-lint.mjs.
   {
-    files: ['lib/**/*.mjs', 'opencode/**/*.mjs', 'opencode/plugin/*.ts', 'knip.config.js', '.dependency-cruiser.mjs'],
+    files: ['lib/**/*.mjs', 'integrations/opencode/**/*.mjs', 'integrations/opencode/plugin/*.ts', 'knip.config.js', '.dependency-cruiser.mjs'],
     plugins: { sonarjs },
     rules: COMPLEXITY_RULES,
   },

@@ -17,6 +17,7 @@
     "craft"
   ],
   "skills": "./skills/",
+  "hooks": "./integrations/claude-code/hooks/hooks.json",
   "interface": {
     "displayName": "craft",
     "shortDescription": "Engineering skills: Rust, Nix, review, specs, debugging",

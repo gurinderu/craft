@@ -32,7 +32,7 @@ checkout so the two share one round chain, and reading the branch from the colla
 a worktree's run under the main checkout's branch.
 
 **Engine identity** — `craftVersion` (the plugin release, stamped from a `CRAFT_VERSION` const that
-`lib/check-workflows.mjs` keeps in sync with `.claude-plugin/plugin.json`) and `craftCommit`
+`lib/check-workflows.mjs` keeps in sync with `integrations/claude-code/.claude-plugin/plugin.json`) and `craftCommit`
 (craft's own git HEAD, best-effort via `$CLAUDE_PLUGIN_ROOT`). Distinct from `commit`, which is the
 **reviewed project's** HEAD, and from `schemaVersion`, which versions this record format.
 
@@ -266,7 +266,7 @@ run, because the transcripts are outside the workflow sandbox's reach.
 ## Three edits that deliberately did not refactor their host
 
 `lib/analyze-runs.mjs`'s aggregation loop, `lib/craft-log-run.mjs`'s
-`finalizeRun`, and `workflows/review.js`'s `verifyPool` are each long and each
+`finalizeRun`, and `integrations/claude-code/workflows/review.js`'s `verifyPool` are each long and each
 mix concerns. Fixes landed inside all three anyway, without extraction, and
 that was a decision rather than an oversight: refactoring the hot review engine
 was ruled out of the branch that carried these fixes, because a restructuring of

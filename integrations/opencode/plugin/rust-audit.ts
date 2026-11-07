@@ -2,7 +2,7 @@
 // unsafe) plus the whole-project tool dimensions (crate-decomposition, semver, build-matrix, deps,
 // unused-crates, tests-cov, on the default session model) → synthesize. The Claude-Code-only
 // elastic rust-review engine has no opencode equivalent, so the "review" dimension is a single-pass
-// rust-reviewer (no per-crate / inter-crate-contract fan-out); see opencode/README.md parity caveats.
+// rust-reviewer (no per-crate / inter-crate-contract fan-out); see integrations/opencode/README.md parity caveats.
 import type { PluginCtx } from "./index.ts"
 import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
 import { auditSynthesisInput, buildAuditRecord, hasVerdictLine, writeRecord, EVIDENCE_MARKER } from "./run-record.mjs"

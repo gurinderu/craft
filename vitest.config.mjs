@@ -16,7 +16,7 @@ export default defineConfig({
   test: {
     // Explicit, not Vitest's default `**/*.test.*`: agent worktrees under .claude/worktrees/ carry whole
     // copies of lib/ and would be collected a second time from the main checkout.
-    include: ['lib/**/*.test.mjs', 'opencode/**/*.test.mjs'],
+    include: ['lib/**/*.test.mjs', 'integrations/opencode/**/*.test.mjs'],
     exclude: ['**/node_modules/**'],
     // No per-test deadline (the previous runner had none): engine-harness and tsc-backed tests run for seconds.
     testTimeout: 0,

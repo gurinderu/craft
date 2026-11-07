@@ -42,7 +42,7 @@ jobs:
         run: npm ci
       # inPlace mode runs the tsc-backed tests against the real tree, which read the plugin's tsc.
       - name: Install opencode plugin deps
-        run: npm ci --prefix opencode/plugin
+        run: npm ci --prefix integrations/opencode/plugin
       # ubuntu-latest has 4 vCPUs; four Vitest workers keep them busy while each test runner idles on
       # the child processes (git, tsc) its tests spawn.
       - name: Stryker over lib/
