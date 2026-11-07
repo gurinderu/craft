@@ -65,7 +65,7 @@ cross-linking is the collection's cohesion.
 ```
 craft/
 ├── .claude-plugin/
-│   └── marketplace.json   # single-plugin marketplace (source: ./integrations/claude-code)
+│   └── marketplace.json   # single-plugin marketplace (source: the claude-code-plugin branch, built from integrations/claude-code per release)
 ├── .codex-plugin/plugin.json      # the Codex plugin manifest (root skills/ and lib/, the Claude Code hooks file)
 ├── .agents/plugins/marketplace.json  # the Codex marketplace (source: .)
 ├── integrations/          # one directory per harness craft is delivered to
@@ -74,7 +74,7 @@ craft/
 │   │   ├── agents/        # diff/structure review agents and the engines' service agent
 │   │   ├── hooks/hooks.json   # SessionStart (lib/session-start-hook.mjs); UserPromptSubmit, SubagentStart (lib/work-hook-entry.mjs); PreToolUse (lib/push-hook-entry.mjs, lib/reviewer-dispatch-hook-entry.mjs)
 │   │   ├── workflows/     # multi-agent orchestration scripts, generated from src/ (npm run build:engines)
-│   │   └── skills, lib, content, src, README.md -> ../../…   # symlinks; an install copies them as real files
+│   │   └── skills, lib, content, src, README.md -> ../../…   # symlinks; the release branch holds them as real files
 │   ├── opencode/          # the OpenCode adapter layer (agents, commands, plugin, install.sh)
 │   ├── codex/             # where the Codex delivery lives, and why its manifest stays at the root
 │   └── pi/                # planned
@@ -94,6 +94,11 @@ craft/
 /plugin marketplace add gurinderu/craft
 /plugin install craft@craft
 ```
+
+The marketplace installs the plugin from the `claude-code-plugin` branch, which each release rebuilds from
+`integrations/claude-code` with its symlinks replaced by real files. Windows is supported that way: a clone there
+makes no symlinks by default (`core.symlinks=false`), and the branch has none to make. Working from a checkout,
+`claude --plugin-dir integrations/claude-code` loads the delivery in place through its symlinks (Linux, macOS).
 
 ## opencode
 

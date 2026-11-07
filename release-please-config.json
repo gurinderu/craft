@@ -10,7 +10,6 @@
       "extra-files": [
         { "type": "json", "path": "integrations/claude-code/.claude-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.version" },
-        { "type": "json", "path": ".claude-plugin/marketplace.json", "jsonpath": "$.plugins[0].version" },
         { "type": "json", "path": ".codex-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "src/review.js" },
         { "type": "generic", "path": "integrations/claude-code/workflows/review.js" },

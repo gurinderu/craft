@@ -34,6 +34,9 @@ export default {
         'lib/build-engines.mjs!',
         // The Claude Code plugin manifest validated on a materialized copy (`npm run check:plugin`): run, not imported.
         'lib/validate-plugin.mjs!',
+        // The release job's symlink-free Claude Code branch (.github/workflows/release-please.yml): run, not imported
+        // there; validate-plugin imports its materialize.
+        'lib/materialize-claude-code.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
         // reads only outside production mode, so its import is not followed there.
         'lib/lint-prerequisites.mjs!',
