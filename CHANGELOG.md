@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.44.0](https://github.com/gurinderu/craft/compare/v0.43.0...v0.44.0) (2026-11-07)
+
+
+### Features
+
+* **cli:** cli-review files a run record, a Verdict block and names uncovered files ([#335](https://github.com/gurinderu/craft/issues/335)) ([ad27761](https://github.com/gurinderu/craft/commit/ad277615a1d8bfe7d64cced4f2c4e513619efb40))
+* **cli:** Nix and general-language profiles in one CLI review run ([#337](https://github.com/gurinderu/craft/issues/337)) ([044ba56](https://github.com/gurinderu/craft/commit/044ba569f7ca17111332cfed3b57c809b82f9729))
+* **cli:** re-review rounds — chain, delta, prior adjudication and carry-check ([#339](https://github.com/gurinderu/craft/issues/339)) ([4553e28](https://github.com/gurinderu/craft/commit/4553e284654beee46e937efc6074c3a579986993))
+
 ## [0.43.0](https://github.com/gurinderu/craft/compare/v0.42.1...v0.43.0) (2026-11-07)
 
 
