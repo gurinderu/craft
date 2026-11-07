@@ -147,8 +147,6 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
             ));
         }
     }
-    let absorbed = rereview::absorb(&mut run.chain, &mut run.rounds.pool);
-    run.notes.extend(absorbed);
     if run.rounds.pool.is_empty() {
         return finish(dir, run);
     }
@@ -220,6 +218,8 @@ fn file_round(dir: &Path, run: &RunState) -> Result<(), Error> {
 /// # Errors
 /// When the report cannot be written.
 pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
+    let absorbed = rereview::absorb(&mut run.chain, &mut run.settled);
+    run.notes.extend(absorbed);
     run.chain.ledger = rereview::ledger(&run.chain, &run.settled);
     file_round(dir, run)?;
     let verdict = report::verdict(run);

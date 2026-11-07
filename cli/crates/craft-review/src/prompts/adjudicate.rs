@@ -1,11 +1,12 @@
 //! The adjudicator's prompt, as `adjudicatePrompt` in `lib/review-adjudicate-priors.mjs` renders
 //! it: whether a prior round's finding is still present, its model-authored fields flattened and
-//! its rationale sanitized as `sanitizeAttack` sanitizes it. The CLI writes no absorbed-site
-//! clauses onto a ledger row, so the block that delivers them is always empty here.
+//! its rationale sanitized as `sanitizeAttack` sanitizes it, and the sites of later findings
+//! absorbed into it handed over on lines of their own.
 
 use serde_json::Value;
 
 use super::{PromptContext, flatten, repo_directive};
+use crate::absorbed;
 use crate::content::{self, ContentError, vars};
 use crate::ledger::LedgerRow;
 
@@ -114,8 +115,8 @@ pub fn adjudicate_prompt(
             ("line", row.line.to_string()),
             ("symbol", or(field(&row.symbol), "?")),
             ("ruleId", or(field(&row.rule_id), "—")),
-            ("why", sanitize(&row.why)),
-            ("absorbed", String::new()),
+            ("why", sanitize(&absorbed::without_absorbed(&row.why))),
+            ("absorbed", absorbed::prompt_block(&row.why)),
         ]),
     )?;
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))

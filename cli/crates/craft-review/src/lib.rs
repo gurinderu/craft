@@ -5,6 +5,7 @@
 //! types below are the pipeline's skeleton the single-agent probe
 //! still runs on.
 
+pub mod absorbed;
 pub mod agent;
 pub mod chain;
 pub mod content;

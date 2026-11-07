@@ -7,6 +7,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
+use crate::prompts::ReScope;
 use crate::report::{self, Tier};
 use crate::state::{self, RunState};
 
@@ -18,6 +19,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "verdict": verdict, "line": report::verdict_line(run, verdict),
         "head": run.diff.head, "base": base(run),
         "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run,
+        "lensScope": if run.context.re_review == ReScope::Fixes { "delta" } else { "full" },
         "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
     });
     if let (Some(obj), false) = (done.as_object_mut(), run.degraded.is_empty()) {

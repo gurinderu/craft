@@ -109,15 +109,43 @@ pub fn carried_key(f: &Value) -> String {
     }
 }
 
-/// Whether `f` repeats the prior `host`: the same file and rule when both carry a rule, the exact
-/// matcher otherwise, as `findCarrier`.
+/// Whether two findings are distinct by their tool's own rule, so none may stand for the other, as
+/// `toolDistinct` (realm @nick/craft, node #238): both carry a `toolRule` and they differ.
+#[must_use]
+pub fn tool_distinct(a: &Value, b: &Value) -> bool {
+    let rule = |f: &Value| text(f, "toolRule").trim().to_lowercase();
+    let (ra, rb) = (rule(a), rule(b));
+    !ra.is_empty() && !rb.is_empty() && ra != rb
+}
+
+/// Whether `f` sits where the prior `host` does: the same folded symbol when both name one, else
+/// the same line.
+fn same_site(f: &Value, host: &Value) -> bool {
+    let (fs, hs) = (
+        fold_symbol(text(f, "symbol")),
+        fold_symbol(text(host, "symbol")),
+    );
+    if !fs.is_empty() && !hs.is_empty() {
+        return fs == hs;
+    }
+    let line = |v: &Value| v.get("line").and_then(Value::as_i64).unwrap_or(0);
+    line(f) > 0 && line(f) == line(host)
+}
+
+/// Whether `f` is the prior `host` reported again: not told apart by a tool, and, when both carry
+/// a rule, the same file, rule and site; the exact matcher otherwise (`findCarrier`). The site is
+/// the CLI's own narrowing of the engine's file-and-rule key, so a second defect elsewhere in the
+/// file under the same rule stays a finding of its own.
 #[must_use]
 pub fn repeats(f: &Value, host: &Value) -> bool {
+    if tool_distinct(f, host) {
+        return false;
+    }
     let (a, b) = (carried_key(f), carried_key(host));
     if a.is_empty() || b.is_empty() {
         matches_prior(f, host)
     } else {
-        a == b
+        a == b && same_site(f, host)
     }
 }
 
@@ -156,15 +184,36 @@ mod tests {
 
     #[test]
     fn findings_match_by_rule_site_or_by_title() {
-        let host = json!({"file": "a.rs", "ruleId": "R1", "title": "x"});
+        let host = json!({"file": "a.rs", "ruleId": "R1", "title": "x", "line": 3});
         assert!(repeats(
-            &json!({"file": "A.rs ", "ruleId": "r1", "title": "other"}),
+            &json!({"file": "A.rs ", "ruleId": "r1", "title": "other", "line": 3}),
             &host
+        ));
+        assert!(
+            !repeats(
+                &json!({"file": "a.rs", "ruleId": "R1", "title": "x", "line": 9}),
+                &host
+            ),
+            "another site"
+        );
+        assert!(!repeats(
+            &json!({"file": "a.rs", "ruleId": "R2", "title": "x", "line": 3}),
+            &host
+        ));
+        let named = json!({"file": "a.rs", "ruleId": "R1", "symbol": "fn parse", "line": 3});
+        assert!(repeats(
+            &json!({"file": "a.rs", "ruleId": "R1", "symbol": "parse", "line": 40}),
+            &named
         ));
         assert!(!repeats(
-            &json!({"file": "a.rs", "ruleId": "R2", "title": "x"}),
-            &host
+            &json!({"file": "a.rs", "ruleId": "R1", "symbol": "emit", "line": 3}),
+            &named
         ));
+        let tool = |r: &str| json!({"file": "a.rs", "ruleId": "R1", "line": 3, "toolRule": r});
+        assert!(
+            !repeats(&tool("clippy::a"), &tool("clippy::b")),
+            "a tool tells them apart"
+        );
         let bare = json!({"file": "a.rs", "ruleId": "", "title": "f returns one, not zero"});
         assert!(repeats(
             &json!({"file": "a.rs", "ruleId": "", "title": "f returns zero not one!"}),

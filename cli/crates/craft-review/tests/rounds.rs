@@ -72,6 +72,7 @@ fn round_one(repo: &Path, runs: &Path) -> Value {
         (&json!("Block"), &json!(1))
     );
     assert_eq!(done["reReview"]["chained"], json!(false));
+    assert_eq!(done["lensScope"], json!("full"));
     let ledger: Vec<&str> = done["ledger"]
         .as_array()
         .unwrap()
@@ -149,7 +150,10 @@ fn the_second_round_reviews_the_fixes_adjudicates_the_first_and_reports_nothing_
         (&done["verdict"], &done["round"], &done["findings"]),
         (&json!("Block"), &json!(2), &json!([]))
     );
-    assert_eq!(done["base"], json!("origin/main"));
+    assert_eq!(
+        (&done["base"], &done["lensScope"]),
+        (&json!("origin/main"), &json!("delta"))
+    );
     let rr = &done["reReview"];
     assert_eq!(
         (
@@ -183,9 +187,9 @@ fn the_second_round_reviews_the_fixes_adjudicates_the_first_and_reports_nothing_
             "This is round 2 of this branch, building on round 1",
             "1 resolved, 1 still open, 0 regressed",
             "- Resolved: **High** `src/lib.rs:1` — X: f returns 1",
-            "- Still open: **High** `src/lib.rs:1` — Y: f has no error path\n  - Why: wrong — fix incomplete: f still has none",
+            "- Still open: **High** `src/lib.rs:1` — Y: f has no error path\n  - Why: wrong — also reported at src/lib.rs:1: no error path in f — fix incomplete: f still has none",
             "## Confirmed findings\n\nNone.",
-            "absorbed into it rather than reported twice",
+            "were absorbed into it (recorded on its rationale",
             "the re-review's red team on a resolved Critical or High prior finding",
         ],
     );

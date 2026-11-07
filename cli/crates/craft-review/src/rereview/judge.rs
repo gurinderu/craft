@@ -4,6 +4,7 @@
 use serde_json::Value;
 
 use super::{Chain, Fate};
+use crate::absorbed::base_why;
 use crate::agent::Model;
 use crate::content::{self, ContentError};
 use crate::coverage;
@@ -45,20 +46,6 @@ pub fn tasks(
         ));
     }
     Ok(out)
-}
-
-/// The markers a re-review appends to a prior's rationale, the latest one replacing the last.
-const SUFFIXES: [&str; 4] = [
-    " — fix incomplete",
-    " — REGRESSED after fix",
-    " — UNVERIFIED (adjudicator could not tell)",
-    " — still-open (adjudicator did not run",
-];
-
-/// The rationale without the marker an earlier round appended, as `baseWhy`.
-fn base_why(why: &str) -> &str {
-    let cut = SUFFIXES.iter().filter_map(|m| why.rfind(m)).max();
-    cut.and_then(|at| why.get(..at)).unwrap_or(why)
 }
 
 pub(super) fn field<'a>(v: &'a Value, k: &str) -> &'a str {

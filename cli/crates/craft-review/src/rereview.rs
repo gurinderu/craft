@@ -54,12 +54,6 @@ impl PriorFinding {
     pub fn gates(&self) -> bool {
         matches!(self.fate, Fate::StillOpen | Fate::Regressed) && self.row.tier != "unverified"
     }
-
-    /// Whether a lens finding repeating it is absorbed into it.
-    #[must_use]
-    pub fn live(&self) -> bool {
-        !matches!(self.fate, Fate::Resolved)
-    }
 }
 
 /// The prior run a re-review builds on.
