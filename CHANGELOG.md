@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.1](https://github.com/gurinderu/craft/compare/v0.42.0...v0.42.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **marketplace:** install the Claude Code plugin from its release branch ([#329](https://github.com/gurinderu/craft/issues/329)) ([f3862f8](https://github.com/gurinderu/craft/commit/f3862f8b30c5d5a3866281b5633f7ca73b7708aa))
+
 ## [0.42.0](https://github.com/gurinderu/craft/compare/v0.41.0...v0.42.0) (2026-11-07)
 
 
