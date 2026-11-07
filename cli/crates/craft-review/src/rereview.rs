@@ -21,7 +21,7 @@ mod start;
 
 pub use absorb::absorb;
 pub use carry::ledger;
-pub use judge::{judge, tasks};
+pub use judge::{hold_deferrals, judge, tasks};
 pub use start::{begin, scope};
 #[cfg(test)]
 use {carry::TOMBSTONES_MAX, start::take_ledger};
@@ -43,6 +43,12 @@ pub enum Fate {
     /// Set aside by its author, and the code around it unchanged since: it leaves the ledger as a
     /// `dismissed` tombstone.
     Retired,
+    /// Known and deferred: its question still holds (`deferralHeld`), so it is carried, deferred,
+    /// out of the verdict.
+    Deferred,
+    /// Still open, but a remembered record sets it aside this round: it leaves the ledger as the
+    /// author's word the memory writes (`Memory::ledger_rows`).
+    SetAside,
 }
 
 /// One finding of the prior round and its fate here.
@@ -109,6 +115,22 @@ impl Chain {
             .collect()
     }
 
+    /// The priors carried as Known and deferred, as findings their report section lists.
+    #[must_use]
+    pub fn deferred(&self) -> Vec<Value> {
+        self.priors
+            .iter()
+            .filter(|p| p.fate == Fate::Deferred)
+            .map(|p| {
+                let mut f = p.row.finding();
+                if let Some(o) = f.as_object_mut() {
+                    o.insert("priorKind".into(), Value::from("question"));
+                }
+                f
+            })
+            .collect()
+    }
+
     /// How many priors met each fate: resolved, still open, regressed, carried, unverified, retired.
     #[must_use]
     pub fn tally(&self) -> [usize; 6] {
@@ -117,7 +139,7 @@ impl Chain {
             n(Fate::Resolved),
             n(Fate::StillOpen) + n(Fate::Pending),
             n(Fate::Regressed),
-            n(Fate::Carried),
+            n(Fate::Carried) + n(Fate::Deferred) + n(Fate::SetAside),
             n(Fate::Unverified),
             n(Fate::Retired),
         ]

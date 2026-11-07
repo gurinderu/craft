@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use super::MemorySource;
 use super::PriorDecision;
+use super::oppose;
 use super::recall::Recalled;
 use super::record::{self, Parsed, plain_label};
 
@@ -67,26 +68,43 @@ fn accepted(m: MemorySource, applied: &[&PriorDecision]) -> MemorySource {
     out.with_kinds(q, r, 0)
 }
 
-/// The recall's records merged with the launcher's `passed` list and read once.
-pub(super) fn merge(r: Recalled, passed: Option<&Value>) -> Merged {
-    let alone = record::parse(passed, &plain_label);
-    let given: &[Value] = passed.and_then(Value::as_array).map_or(&[], Vec::as_slice);
-    let held: Vec<String> = r
-        .records
+/// The passed records a well-formed recalled record does not already hold (`mergeById`).
+fn fresh_at(recalled: &[Value], given: &[Value]) -> Vec<usize> {
+    let held: Vec<String> = recalled
         .iter()
         .filter(|x| well_formed(x))
         .flat_map(held_ids)
         .collect();
-    let added_at: Vec<usize> = (0..given.len())
+    (0..given.len())
         .filter(|&i| {
             given
                 .get(i)
                 .is_some_and(|x| !held_ids(x).iter().any(|id| held.contains(id)))
         })
+        .collect()
+}
+
+/// The recall's records merged with the launcher's `passed` list and read once.
+pub(super) fn merge(r: Recalled, passed: Option<&Value>) -> Merged {
+    let alone = record::parse(passed, &plain_label);
+    let given: &[Value] = passed.and_then(Value::as_array).map_or(&[], Vec::as_slice);
+    // A passed record the memory opposes is held back, or applied over it when newer (#224, #229).
+    let block = oppose::blocked(given, &r.inactive, &fresh_at(&r.records, given), &r.records);
+    let added_at: Vec<usize> = fresh_at(&r.records, given)
+        .into_iter()
+        .filter(|i| !block.at.contains(i))
         .collect();
     let recalled_len = r.records.len();
-    let mut list = r.records.clone();
-    list.extend(added_at.iter().filter_map(|&i| given.get(i).cloned()));
+    let mut list: Vec<Value> = r
+        .records
+        .iter()
+        .map(|x| oppose::without_links_to(x, &block.freed))
+        .collect();
+    list.extend(
+        added_at
+            .iter()
+            .filter_map(|&i| Some(oppose::with_overrides(given.get(i)?, block.over.get(&i)))),
+    );
     let label_of = |i: usize| match i.checked_sub(recalled_len) {
         None => format!("recalled decision #{i}"),
         Some(k) => format!("passed decision #{}", added_at.get(k).copied().unwrap_or(k)),
@@ -100,13 +118,17 @@ pub(super) fn merge(r: Recalled, passed: Option<&Value>) -> Merged {
         source.passed = Some(alone.decisions.len());
         source.added = Some(decisions.len() - from_recall.len());
     }
-    let source = source.with_derived(&decisions);
+    let mut source = source.with_derived(&decisions);
+    if !block.overrides.is_empty() {
+        source.why = format!("{}; {}", source.why, block.overrides.join("; "));
+    }
     let mut all_refused = if given.is_empty() && passed.is_some_and(|p| !p.is_array()) {
         alone.refused
     } else {
         Vec::new()
     };
     all_refused.extend(refused);
+    all_refused.extend(block.refused);
     Merged {
         decisions,
         refused: all_refused,

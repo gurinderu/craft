@@ -552,6 +552,217 @@
         },
         "report": "\n\n## Memory\n- memory: none — the .craft/memory directory (backend repo)\n\n\n## Prior decisions not applied\n- ⚠️ priorDecisions arrived as a string — only a list inside an object argument is read (in a key=value string nothing from priorDecisions on was read as an option) — no decision applied\n"
       }
+    },
+    {
+      "name": "a passed copy of a record the store withdrew is held back unless it is dated later",
+      "recall": {
+        "backend": "repo",
+        "why": "the .craft/memory directory",
+        "decisions": [],
+        "inactive": [
+          {
+            "id": "decision-1111111111",
+            "kind": "decision",
+            "title": "old",
+            "scope": "src",
+            "status": "withdrawn",
+            "date": "2026-03-01"
+          },
+          {
+            "id": "decision-2222222222",
+            "kind": "decision",
+            "title": "older",
+            "scope": "src",
+            "status": "superseded",
+            "date": "2026-03-01T12:00:00+02:00"
+          }
+        ]
+      },
+      "passed": [
+        {
+          "id": "decision-1111111111",
+          "kind": "decision",
+          "title": "Unwrap on parse",
+          "body": "checked",
+          "scope": "src/lib.rs",
+          "date": "2026-02-01",
+          "commit": "0123456789abcdef0123456789abcdef01234567"
+        },
+        {
+          "id": "decision-2222222222",
+          "kind": "decision",
+          "title": "Clone of the buffer",
+          "body": "cheap",
+          "scope": "src/lib.rs",
+          "date": "2026-03-01T11:00:00Z",
+          "commit": "0123456789abcdef0123456789abcdef01234567"
+        },
+        {
+          "id": "decision-6666666666",
+          "kind": "decision",
+          "title": "No date here",
+          "body": "r",
+          "scope": "src",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "links": [
+            "store: decision-1111111111"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "severity": "Medium",
+          "title": "unwrap on parse",
+          "file": "src/lib.rs",
+          "line": 4,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "clone of the buffer",
+          "file": "src/lib.rs",
+          "line": 6,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        }
+      ],
+      "unchanged": [
+        "0123456789abcdef0123456789abcdef01234567"
+      ],
+      "missing": [],
+      "expected": {
+        "kept": [
+          {
+            "title": "unwrap on parse",
+            "why": "w"
+          }
+        ],
+        "setAside": [
+          {
+            "title": "clone of the buffer",
+            "why": "w · REJECTED BEFORE: cheap — author not recorded, 2026-03-01T11:00:00Z, no link (decision decision-2222222222)",
+            "priorTier": "confirmed",
+            "priorDecision": "decision-2222222222",
+            "priorKind": "decision",
+            "priorMatch": "matched by title words (the judge gave no verdict)"
+          }
+        ],
+        "notes": [
+          "1 decision(s) given, 1 finding(s) set aside as rejected before, 0 raised again"
+        ],
+        "memory": {
+          "source": "none",
+          "count": 0,
+          "why": "the .craft/memory directory (backend repo); passed decision #1 (decision-2222222222) applied over a superseded record of 2026-03-01T12:00:00+02:00: newer",
+          "backend": "repo",
+          "passed": 3,
+          "added": 1
+        },
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:6` · clone of the buffer · w · REJECTED BEFORE: cheap — author not recorded, 2026-03-01T11:00:00Z, no link (decision decision-2222222222) · matched by title words (the judge gave no verdict)\n\n## Memory\n- memory: none — the .craft/memory directory (backend repo); passed decision #1 (decision-2222222222) applied over a superseded record of 2026-03-01T12:00:00+02:00: newer; plus 3 passed by the launcher\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #0 (decision-1111111111) not applied: withdrawn in memory (the passed record's date 2026-02-01 is not later than the withdrawn record's 2026-03-01)\n- ⚠️ passed decision #2 (decision-6666666666) not applied: withdrawn in memory (the passed record carries no ISO date to set against it)\n"
+      }
+    },
+    {
+      "name": "a newer PR rejection overrides the recalled successor that superseded it; an older one is held by it",
+      "recall": {
+        "backend": "mcp",
+        "why": "found by capability",
+        "decisions": [
+          {
+            "id": "decision-3333333333",
+            "kind": "decision",
+            "title": "Timeouts are the caller's",
+            "body": "a stance",
+            "scope": "src",
+            "status": "active",
+            "date": "2026-01-10",
+            "commit": "0123456789abcdef0123456789abcdef01234567",
+            "links": [
+              "supersedes: decision-4444444444",
+              "answers: decision-5555555555"
+            ]
+          }
+        ]
+      },
+      "passed": [
+        {
+          "id": "decision-4444444444",
+          "kind": "decision",
+          "title": "Missing timeout on fetch",
+          "body": "rejected on the PR",
+          "scope": "src/lib.rs",
+          "author": "rev",
+          "date": "2026-02-01",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "line": 8,
+          "lens": "errors"
+        },
+        {
+          "id": "decision-5555555555",
+          "kind": "decision",
+          "title": "Retry without backoff",
+          "body": "older",
+          "scope": "src/lib.rs",
+          "date": "2026-01-01",
+          "commit": "0123456789abcdef0123456789abcdef01234567"
+        }
+      ],
+      "findings": [
+        {
+          "severity": "Medium",
+          "title": "missing timeout on the fetch",
+          "file": "src/lib.rs",
+          "line": 9,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "retry without backoff",
+          "file": "src/lib.rs",
+          "line": 20,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        }
+      ],
+      "unchanged": [
+        "0123456789abcdef0123456789abcdef01234567"
+      ],
+      "missing": [],
+      "expected": {
+        "kept": [
+          {
+            "title": "retry without backoff",
+            "why": "w"
+          }
+        ],
+        "setAside": [
+          {
+            "title": "missing timeout on the fetch",
+            "why": "w · REJECTED BEFORE: rejected on the PR — rev, 2026-02-01, no link (decision decision-4444444444)",
+            "priorTier": "confirmed",
+            "priorDecision": "decision-4444444444",
+            "priorKind": "decision",
+            "priorMatch": "matched by file:line+lens"
+          }
+        ],
+        "notes": [
+          "2 decision(s) given, 1 finding(s) set aside as rejected before, 0 raised again"
+        ],
+        "memory": {
+          "source": "recalled",
+          "count": 1,
+          "why": "mcp (found by capability); passed decision #0 (decision-4444444444) applied over decision-3333333333 (active, 2026-01-10): newer",
+          "backend": "mcp",
+          "passed": 2,
+          "added": 1
+        },
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:9` · missing timeout on the fetch · w · REJECTED BEFORE: rejected on the PR — rev, 2026-02-01, no link (decision decision-4444444444) · matched by file:line+lens\n\n## Memory\n- memory: recalled 1 decision(s) from mcp (found by capability); passed decision #0 (decision-4444444444) applied over decision-3333333333 (active, 2026-01-10): newer; plus 2 passed by the launcher (1 new)\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #1 (decision-5555555555) not applied: held by decision-3333333333 (active, 2026-01-10) (the passed record's date 2026-01-01 is not later than the active record's 2026-01-10)\n"
+      }
     }
   ]
 }

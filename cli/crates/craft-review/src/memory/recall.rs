@@ -4,7 +4,7 @@
 //! each record given the skill's id where the store keeps its own, and the source it came from is
 //! named in one line of the report.
 
-use super::MemorySource;
+use super::{MemorySource, oppose};
 use serde_json::{Map, Value};
 
 use super::record::{skill_record_id, text};
@@ -48,10 +48,12 @@ pub(super) fn prompt(paths: &[String], base: &str) -> Result<String, ContentErro
 pub(super) struct Recalled {
     pub records: Vec<Value>,
     pub source: MemorySource,
+    /// The records the store withdrew or superseded, named only: they hold back a passed copy.
+    pub inactive: Vec<oppose::Inactive>,
 }
 
 /// One line of an answer's text, its whitespace collapsed (`recallText`).
-fn one_line(v: Option<&Value>) -> String {
+pub(super) fn one_line(v: Option<&Value>) -> String {
     v.and_then(Value::as_str)
         .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
         .unwrap_or_default()
@@ -142,8 +144,10 @@ pub(super) fn read(raw: Option<&Value>, cut: usize) -> Recalled {
     } else {
         String::new()
     };
+    let inactive = oppose::inactive(r.get("inactive"));
     let Some(list) = r.get("decisions").and_then(Value::as_array) else {
         return Recalled {
+            inactive,
             records: Vec::new(),
             source: MemorySource::none(format!(
                 "the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally{tail}"
@@ -171,12 +175,20 @@ pub(super) fn read(raw: Option<&Value>, cut: usize) -> Recalled {
     if records.is_empty() && externals == 0 {
         let mut source = MemorySource::none(format!("{why} (backend {backend}){stale}{tail}"));
         source.backend = Some(backend);
-        return Recalled { records, source };
+        return Recalled {
+            records,
+            source,
+            inactive,
+        };
     }
     let mut source =
         MemorySource::none(format!("{backend} ({why}){stale}{tail}")).with_kinds(nq, nr, externals);
     source.source = "recalled".into();
     source.count = records.len();
     source.backend = Some(backend);
-    Recalled { records, source }
+    Recalled {
+        records,
+        source,
+        inactive,
+    }
 }

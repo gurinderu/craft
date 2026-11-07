@@ -248,7 +248,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     if state.exit.is_none() {
         findings(state, &mut out);
     }
-    out.push_str(&state.memory.report());
+    out.push_str(&state.memory.report(&state.chain.deferred()));
     out.push_str("\n## Not run\n\n");
     for n in &state.not_run {
         out.push_str(&format!("- {n}\n"));

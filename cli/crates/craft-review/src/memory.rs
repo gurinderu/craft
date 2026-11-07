@@ -12,15 +12,15 @@ mod apply;
 mod id;
 mod matching;
 mod merge;
+mod oppose;
 #[cfg(test)]
 mod parity;
+mod priors;
 mod recall;
 mod record;
 mod source;
 #[cfg(test)]
 mod tests;
-
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -30,9 +30,7 @@ pub use source::MemorySource;
 
 use crate::agent::Model;
 use crate::content::{self, ContentError};
-use crate::git;
 use crate::ledger::LedgerRow;
-use crate::report::Tier;
 use crate::state::{Task, TaskKind, TaskState};
 
 /// A run's memory: the records it applies, what of them was refused, where they came from, and the
@@ -47,20 +45,42 @@ pub struct Memory {
     pub refused: Vec<String>,
     pub source: MemorySource,
     pub set_aside: Vec<Value>,
+    /// Why the launcher's list could not be read at all, when it could not: refused, the run goes on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unread: Option<String>,
 }
 
 impl Memory {
-    /// The memory of a run before its recall: the launcher's `passed` list read on its own.
+    /// The memory of a run before its recall: the launcher's `passed` list read on its own; a list
+    /// that could not be read (`Err`) applies nothing and is named.
     #[must_use]
-    pub fn open(passed: Option<Value>) -> Self {
+    pub fn open(passed: Option<Result<Value, String>>) -> Self {
+        let (passed, unread) = match passed {
+            Some(Ok(v)) => (Some(v), None),
+            Some(Err(why)) => (
+                None,
+                Some(format!(
+                    "priorDecisions could not be read ({why}) — no decision applied"
+                )),
+            ),
+            None => (None, None),
+        };
         let m = merge::launch(passed.as_ref());
-        Self {
+        let mut out = Self {
             passed,
             decisions: m.decisions,
-            refused: m.refused,
+            refused: Vec::new(),
             source: m.source,
             set_aside: Vec::new(),
-        }
+            unread,
+        };
+        out.set_refused(m.refused);
+        out
+    }
+
+    /// The refusals, the unreadable launcher list named first.
+    fn set_refused(&mut self, refused: Vec<String>) {
+        self.refused = self.unread.iter().cloned().chain(refused).collect();
     }
 
     /// The memory of a run that recalls, or that recalls nothing itself: its launcher's records
@@ -112,26 +132,8 @@ impl Memory {
             .filter(|_| task.state == TaskState::Answered);
         let m = merge::merge(recall::read(answer, cut), self.passed.as_ref());
         self.decisions = m.decisions;
-        self.refused = m.refused;
+        self.set_refused(m.refused);
         self.source = m.source;
-    }
-
-    /// Sets aside the findings of `settled` a record answers, in the repository at `repo`; what it
-    /// did goes to `notes`.
-    pub(crate) fn apply(&mut self, repo: &Path, settled: &mut Vec<Value>, notes: &mut Vec<String>) {
-        if self.decisions.is_empty() || settled.is_empty() {
-            return;
-        }
-        let (refuted, judged): (Vec<Value>, Vec<Value>) = settled
-            .drain(..)
-            .partition(|f| Tier::of(f) == Tier::Refuted);
-        let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
-        let out = apply::apply(judged, &self.decisions, &check);
-        *settled = out.kept;
-        settled.extend(refuted);
-        notes.extend(out.notes.iter().map(|n| format!("prior decisions: {n}")));
-        self.refused.extend(out.refused);
-        self.set_aside = out.set_aside;
     }
 
     /// The ledger rows of the findings set aside: the author's word, which the next round carries.
@@ -154,29 +156,16 @@ impl Memory {
             .collect()
     }
 
-    /// The report's sections: what was set aside, where the records came from, what was refused.
+    /// The report's sections: what was set aside this round and the `carried` deferred priors, where
+    /// the records came from, what was refused.
     #[must_use]
-    pub fn report(&self) -> String {
+    pub fn report(&self, carried: &[Value]) -> String {
+        let listed: Vec<Value> = self.set_aside.iter().chain(carried).cloned().collect();
         format!(
             "{}\n\n## Memory\n- {}\n{}",
-            apply::section(&self.set_aside),
+            apply::section(&listed),
             self.source.line(),
             apply::refused_section(&self.refused)
         )
     }
-}
-
-/// The scope check of `ds`, by git in `repo` (`scopeCheckScript`, run here rather than by an
-/// agent): a record whose commit the repository lacks is missing; one whose scope `git diff
-/// --quiet` shows untouched since its commit, the working tree included, is unchanged.
-fn scope_check(repo: &Path, ds: &[&PriorDecision]) -> apply::Scope {
-    let mut out = apply::Scope::default();
-    for d in ds {
-        if !git::has_commit(repo, &d.commit) {
-            out.missing.insert(d.id.clone());
-        } else if git::unchanged_since(repo, &d.commit, &d.scope) {
-            out.unchanged.insert(d.id.clone());
-        }
-    }
-    out
 }

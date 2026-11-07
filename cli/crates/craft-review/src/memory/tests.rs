@@ -53,9 +53,9 @@ fn a_tool_finding_matches_only_a_record_of_its_own_rule_and_an_override_is_tried
 
 #[test]
 fn the_launchers_records_apply_before_any_recall_and_the_memory_line_says_so() {
-    let m = Memory::open(Some(
+    let m = Memory::open(Some(Ok(
         json!([{"id": "decision-x", "title": "t", "reason": "r", "scope": "src"}, 7]),
-    ));
+    )));
     assert_eq!(m.decisions.len(), 1);
     assert_eq!(m.refused, ["decision #1 is not an object"]);
     assert_eq!(

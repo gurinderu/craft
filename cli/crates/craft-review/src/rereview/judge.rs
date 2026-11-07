@@ -85,6 +85,30 @@ fn fate_of(row: &LedgerRow, answer: Option<&Value>) -> (Fate, String) {
     }
 }
 
+/// Settles each prior the prior round deferred (`deferralHeld` in `lib/review-adjudicate-priors.mjs`;
+/// realm @nick/craft, node #204): one whose question still `holds` stays Known and deferred, out of
+/// the verdict, unless its adjudicator finds the defect gone; any other — no deferral recorded,
+/// Critical or High, or released by a record that answers its question — is adjudicated like any
+/// prior. Run once the memory is recalled, before [`judge`]. Returns the notes of the released.
+pub fn hold_deferrals(chain: &mut Chain, holds: &dyn Fn(&LedgerRow) -> bool) -> Vec<String> {
+    let mut notes = Vec::new();
+    for p in chain
+        .priors
+        .iter_mut()
+        .filter(|p| p.fate == Fate::Pending && p.row.disposition == "deferred")
+    {
+        if holds(&p.row) {
+            p.fate = Fate::Deferred;
+        } else {
+            notes.push(format!(
+                "the deferral on {}:{} does not hold (no question recorded, a Critical or High finding, or a record answers its question): adjudicated like any prior",
+                p.row.file, p.row.line
+            ));
+        }
+    }
+    notes
+}
+
 /// Takes the adjudicators' answers among `tasks` into the chain's priors: each one's fate, its
 /// re-located line and its rationale; a dead adjudicator keeps its prior still open. Returns the
 /// notes of what could not be judged.
@@ -98,6 +122,13 @@ pub fn judge(chain: &mut Chain, tasks: &[Task]) -> Vec<String> {
             continue;
         };
         let answer = t.answer.as_ref().filter(|_| t.state == TaskState::Answered);
+        if p.fate == Fate::Deferred {
+            // A held deferral leaves the chain only when its defect is gone; otherwise it stays as it was.
+            if answer.is_some_and(|a| fate_of(&p.row, Some(a)).0 == Fate::Resolved) {
+                p.fate = Fate::Resolved;
+            }
+            continue;
+        }
         if answer.is_none() {
             notes.push(format!(
                 "the adjudicator of {}:{} gave no valid answer ({}): the prior finding is kept still open",

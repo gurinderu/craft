@@ -74,9 +74,10 @@ fn every_case_applies_as_the_engines_apply_it() {
             refused,
             source: m.source,
             set_aside: out.set_aside,
+            unread: None,
         };
         assert_eq!(
-            memory.report(),
+            memory.report(&[]),
             want["report"].as_str().unwrap(),
             "{name}: report"
         );

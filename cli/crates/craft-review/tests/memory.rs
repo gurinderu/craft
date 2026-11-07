@@ -38,7 +38,7 @@ fn recalled_run(repo: &Path, out: &Path, passed: Option<Value>, recall: Value) -
     let run = out.join("run");
     let start = StartOptions {
         recall: true,
-        prior_decisions: passed,
+        prior_decisions: passed.map(Ok),
         ..opts(repo, out)
     };
     let s = step::start(&start).unwrap();
@@ -251,4 +251,202 @@ fn strict_mode_runs_the_maintainability_lens_and_a_confirmed_finding_of_it_block
         "outside strict mode the cap lowers it to Low"
     );
     assert_eq!(s["findings"][0]["severity"], json!("Low"));
+}
+
+/// Answers every task of `s` until the run is done: the scout picks `errors`, the recall finds
+/// nothing, `errors` reports `first` in round 1 of the chain, the verifiers confirm and each
+/// adjudicator finds its prior still open.
+fn drive(run: &Path, mut s: Value, first: &[Value]) -> Value {
+    while s["done"] == json!(false) {
+        let mut answers = serde_json::Map::new();
+        for id in ids(&s) {
+            let a = if id.starts_with("scout-") {
+                scout("small", &["errors"])
+            } else if id == "memory-recall" {
+                nothing_recalled()
+            } else if let Some(rest) = id.strip_prefix("lens-rust-") {
+                let name = rest.split('-').next().unwrap();
+                lens(name, if name == "errors" { first } else { &[] })
+            } else if id.starts_with("adjudicate-") {
+                json!({"status": "still-open", "currentLine": 0, "note": "", "invariant": "i", "attack": ""})
+            } else {
+                assert_eq!(id, "verify-batch-0");
+                confirmed(&[0])
+            };
+            answers.insert(id, a);
+        }
+        s = submit(run, Value::Object(answers));
+    }
+    s
+}
+
+#[test]
+fn a_deferred_finding_stays_known_and_deferred_while_its_question_holds() {
+    let repo = fixture(true);
+    let runs = tempfile::tempdir().unwrap();
+    let question = json!([{
+        "id": "question-abcdef0123", "kind": "question", "title": "retry budget of fetch",
+        "body": "decide after the load test", "scope": "src/lib.rs", "deferred": true,
+        "commit": rev(repo.path(), "HEAD"), "line": 1, "lens": "errors", "author": "nick"
+    }]);
+    let start = |name: &str| StartOptions {
+        run_dir: runs.path().join(name),
+        recall: true,
+        prior_decisions: Some(Ok(question.clone())),
+        ..opts(repo.path(), runs.path())
+    };
+    let one = drive(
+        &runs.path().join("r1"),
+        step::start(&start("r1")).unwrap(),
+        &[titled("Medium", 1, "retry budget of fetch is unbounded")],
+    );
+    assert_eq!(one["verdict"], json!("Approve"));
+    let row = &one["ledger"][0];
+    assert_eq!(
+        (&row["disposition"], &row["deferral"]["id"]),
+        (&json!("deferred"), &json!("question-abcdef0123"))
+    );
+
+    // A fix elsewhere: the deferred code is unchanged and the question still active.
+    std::fs::write(repo.path().join("src/other.rs"), "pub fn g() {}\n").unwrap();
+    common::git(repo.path(), &["add", "."]);
+    common::git(repo.path(), &["commit", "-qm", "fix: elsewhere"]);
+    let s = step::start(&start("r2")).unwrap();
+    assert_eq!(ids(&s), ["scout-rust", "memory-recall", "adjudicate-0"]);
+    let two = drive(&runs.path().join("r2"), s, &[]);
+    assert_eq!(
+        two["verdict"],
+        json!("Approve"),
+        "the held deferral holds no verdict"
+    );
+    let row = &two["ledger"][0];
+    assert_eq!(
+        (&row["disposition"], &row["deferral"]["id"]),
+        (&json!("deferred"), &json!("question-abcdef0123"))
+    );
+    let report = std::fs::read_to_string(two["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "Known and deferred (its question still holds)",
+            "## Known and deferred (open question — not in the verdict)\n- Medium · `src/lib.rs:1` · retry budget of fetch is unbounded",
+        ],
+    );
+}
+
+#[test]
+fn a_remembered_decision_sets_aside_a_prior_still_open() {
+    let repo = fixture(true);
+    let runs = tempfile::tempdir().unwrap();
+    let one = drive(
+        &runs.path().join("r1"),
+        step::start(&StartOptions {
+            run_dir: runs.path().join("r1"),
+            ..opts(repo.path(), runs.path())
+        })
+        .unwrap(),
+        &[titled("Medium", 1, "f returns 1 instead of 0")],
+    );
+    assert_eq!(one["verdict"], json!("Warning"));
+    std::fs::write(repo.path().join("src/other.rs"), "pub fn g() {}\n").unwrap();
+    common::git(repo.path(), &["add", "."]);
+    common::git(repo.path(), &["commit", "-qm", "fix: elsewhere"]);
+    let rejected = json!([{
+        "id": "decision-0011223344", "kind": "decision", "title": "f returns 1 instead of 0",
+        "body": "1 is intended", "scope": "src/lib.rs", "commit": rev(repo.path(), "HEAD"),
+        "line": 1, "lens": "errors"
+    }]);
+    let two = drive(
+        &runs.path().join("r2"),
+        step::start(&StartOptions {
+            run_dir: runs.path().join("r2"),
+            prior_decisions: Some(Ok(rejected)),
+            ..opts(repo.path(), runs.path())
+        })
+        .unwrap(),
+        &[],
+    );
+    assert_eq!(
+        two["verdict"],
+        json!("Approve"),
+        "the prior set aside holds no verdict"
+    );
+    let ledger = two["ledger"].as_array().unwrap();
+    assert_eq!(ledger.len(), 1, "{ledger:?}");
+    assert_eq!(ledger[0]["disposition"], json!("rejected"));
+    let report = std::fs::read_to_string(two["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "Set aside by a remembered record",
+            "## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:1` · f returns 1 instead of 0",
+        ],
+    );
+}
+
+#[test]
+fn an_unreadable_launcher_list_is_refused_and_the_review_runs() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let s = step::start(&StartOptions {
+        prior_decisions: Some(Err("- is not JSON: expected value at line 1".into())),
+        ..opts(repo.path(), out.path())
+    })
+    .unwrap();
+    let done = drive(&out.path().join("run"), s, &[]);
+    assert_eq!(done["verdict"], json!("Approve"));
+    let report = std::fs::read_to_string(done["report"].as_str().unwrap()).unwrap();
+    assert!(
+        report.contains("## Prior decisions not applied\n- ⚠️ priorDecisions could not be read (- is not JSON: expected value at line 1) — no decision applied"),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_priors_deferral_released_by_a_record_that_answers_its_question_counts_again() {
+    let repo = fixture(true);
+    let runs = tempfile::tempdir().unwrap();
+    let head = rev(repo.path(), "HEAD");
+    let question = json!({
+        "id": "question-abcdef0123", "kind": "question", "title": "retry budget of fetch",
+        "body": "decide after the load test", "scope": "src/lib.rs", "deferred": true,
+        "commit": head, "line": 1, "lens": "errors"
+    });
+    let one = drive(
+        &runs.path().join("r1"),
+        step::start(&StartOptions {
+            run_dir: runs.path().join("r1"),
+            recall: true,
+            prior_decisions: Some(Ok(json!([question]))),
+            ..opts(repo.path(), runs.path())
+        })
+        .unwrap(),
+        &[titled("Medium", 1, "retry budget of fetch is unbounded")],
+    );
+    assert_eq!(one["verdict"], json!("Approve"));
+    std::fs::write(repo.path().join("src/other.rs"), "pub fn g() {}\n").unwrap();
+    common::git(repo.path(), &["add", "."]);
+    common::git(repo.path(), &["commit", "-qm", "fix: elsewhere"]);
+    let answer = json!([{
+        "id": "decision-0011223344", "kind": "decision", "title": "the retry budget is unbounded on purpose",
+        "body": "answered: load test passed", "scope": "lib", "links": ["answers: question-abcdef0123"]
+    }]);
+    let s = step::start(&StartOptions {
+        run_dir: runs.path().join("r2"),
+        recall: true,
+        prior_decisions: Some(Ok(answer)),
+        ..opts(repo.path(), runs.path())
+    })
+    .unwrap();
+    let two = drive(&runs.path().join("r2"), s, &[]);
+    assert_eq!(
+        two["verdict"],
+        json!("Warning"),
+        "released, the prior is adjudicated and counts"
+    );
+    let report = std::fs::read_to_string(two["report"].as_str().unwrap()).unwrap();
+    assert!(
+        report.contains("the deferral on src/lib.rs:1 does not hold"),
+        "{report}"
+    );
 }

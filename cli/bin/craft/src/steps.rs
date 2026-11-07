@@ -130,11 +130,11 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         runs: args.runs.clone(),
         strict: args.strict,
         recall: !args.no_recall,
+        // An unreadable list is refused and named in the report; the review still runs.
         prior_decisions: args
             .prior_decisions
             .as_deref()
-            .map(json_input)
-            .transpose()?,
+            .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
     };
     print(&step::start(&opts)?)
 }
