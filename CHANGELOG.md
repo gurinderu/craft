@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.0](https://github.com/gurinderu/craft/compare/v0.41.0...v0.42.0) (2026-11-07)
+
+
+### Features
+
+* **cli:** the full Rust review in the step protocol — scout, lens rounds, dedup, verifier panel ([#325](https://github.com/gurinderu/craft/issues/325)) ([9116ed5](https://github.com/gurinderu/craft/commit/9116ed543da3139e114097f21ab484e73b2dabc1))
+
 ## [0.41.0](https://github.com/gurinderu/craft/compare/v0.40.1...v0.41.0) (2026-11-06)
 
 
