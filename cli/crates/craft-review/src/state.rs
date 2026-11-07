@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::agent::{AgentKind, Model};
 use crate::git::Diff;
+use crate::memory::Memory;
 use crate::plan::Plan;
 use crate::prompts::PromptContext;
 use crate::rereview::Chain;
@@ -85,6 +86,10 @@ pub enum TaskKind {
     /// The carry-check of the prior round's finding `prior`, which its author set aside.
     CarryCheck {
         prior: usize,
+    },
+    /// The recall of the project's memory; `cut` changed paths past its prompt's bound.
+    Recall {
+        cut: usize,
     },
 }
 
@@ -248,6 +253,10 @@ pub struct RunState {
     /// before it reads as a first review and the format keeps its version.
     #[serde(default)]
     pub chain: Chain,
+    /// The project's memory: the records the run applies and what they set aside. Optional, so a
+    /// state written before it reads as a run with none.
+    #[serde(default)]
+    pub memory: Memory,
 }
 
 impl RunState {

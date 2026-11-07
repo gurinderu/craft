@@ -61,6 +61,13 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
             coverage::note(&gap)
         ),
     };
+    let line = if strict_escalates(state) {
+        format!(
+            "{line} · strict maintainability mode escalated it: a confirmed maintainability finding at Medium or above is a presumptive blocker"
+        )
+    } else {
+        line
+    };
     if state.light {
         light::mark(&line)
     } else {
@@ -72,18 +79,16 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
 /// still open (`rereviewVerdict`), and what did not run. A coverage exit's own verdict stands
 /// unless a prior finding still holds the run.
 fn severity_verdict(state: &RunState) -> String {
-    let gating = state.chain.gating();
-    let confirmed = state
-        .settled
-        .iter()
-        .filter(|f| Tier::of(f) == Tier::Confirmed);
     let mut worst = "Approve";
-    for f in confirmed.chain(&gating) {
+    for f in &verdict_findings(state) {
         match field(f, "severity").to_lowercase().as_str() {
             "critical" | "high" => worst = "Block",
             "medium" if worst == "Approve" => worst = "Warning",
             _ => {}
         }
+    }
+    if strict_escalates(state) {
+        worst = "Block";
     }
     if let Some(exit) = state.exit.as_ref().filter(|_| worst == "Approve") {
         return exit.verdict.clone();
@@ -93,6 +98,21 @@ fn severity_verdict(state: &RunState) -> String {
         (false, "Approve") => "INCOMPLETE".into(),
         (false, w) => format!("{w} (INCOMPLETE)"),
     }
+}
+
+/// The findings that hold the verdict: the confirmed ones and the prior round's still open.
+fn verdict_findings(state: &RunState) -> Vec<Value> {
+    let confirmed = state
+        .settled
+        .iter()
+        .filter(|f| Tier::of(f) == Tier::Confirmed)
+        .cloned();
+    confirmed.chain(state.chain.gating()).collect()
+}
+
+/// Whether strict mode's maintainability bar makes the verdict Block.
+fn strict_escalates(state: &RunState) -> bool {
+    crate::strict::blocks(state.context.strict, verdict_findings(state).iter())
 }
 
 fn field<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -228,6 +248,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     if state.exit.is_none() {
         findings(state, &mut out);
     }
+    out.push_str(&state.memory.report());
     out.push_str("\n## Not run\n\n");
     for n in &state.not_run {
         out.push_str(&format!("- {n}\n"));

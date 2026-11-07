@@ -57,6 +57,7 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         Phase::Scout => {
             let judged = rereview::judge(&mut run.chain, &run.tasks);
             run.notes.extend(judged);
+            run.memory.take_recall(&run.tasks);
             plan_tracks(run, &profiles);
             next_round(dir, run, &profiles)
         }
@@ -109,6 +110,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             changed_files: &run.diff.files,
             spec: &run.context.spec,
             light: run.light,
+            strict: run.context.strict,
         }));
     }
 }
@@ -220,7 +222,10 @@ fn file_round(dir: &Path, run: &RunState) -> Result<(), Error> {
 pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     let absorbed = rereview::absorb(&mut run.chain, &mut run.settled);
     run.notes.extend(absorbed);
+    let repo = std::path::PathBuf::from(&run.context.repo);
+    run.memory.apply(&repo, &mut run.settled, &mut run.notes);
     run.chain.ledger = rereview::ledger(&run.chain, &run.settled);
+    run.chain.ledger.extend(run.memory.ledger_rows());
     file_round(dir, run)?;
     let verdict = report::verdict(run);
     let path = state::report_path(dir);

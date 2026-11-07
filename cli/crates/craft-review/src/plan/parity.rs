@@ -32,6 +32,7 @@ fn every_case_plans_as_the_engines_plan_it() {
             changed_files: &files,
             spec: "feat: x",
             light: c["light"] == json!(true),
+            strict: c["strict"] == json!(true),
         });
         let want = &c["expected"];
         let got_json = json!({

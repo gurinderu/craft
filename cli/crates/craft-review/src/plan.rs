@@ -43,6 +43,8 @@ pub struct PlanInput<'a> {
     pub changed_files: &'a [String],
     pub spec: &'a str,
     pub light: bool,
+    /// Strict mode: the plan carries `maintainability` whatever the scout picked.
+    pub strict: bool,
 }
 
 /// Rounds and verifier votes by size, as `RIGOR_BY_SIZE`.
@@ -166,6 +168,9 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         light_skipped: Vec::new(),
     };
     required(p, scout, files, &mut plan);
+    if input.strict && p.offers("maintainability") {
+        push_missing(&mut plan.lenses, "maintainability");
+    }
     floors(p, files, &mut plan);
     surface_gate(p, scout, files, &mut plan);
     if input.light {

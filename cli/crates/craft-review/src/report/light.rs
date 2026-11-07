@@ -15,13 +15,14 @@ fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
-const CLI_NOT_RUN: [&str; 6] = [
+const CLI_NOT_RUN: [&str; 7] = [
     "the gate and its tool seeds (clippy and semgrep for Rust; nix flake check, statix and deadnix for Nix)",
     "the completeness critic",
     "unit slicing and the contract lens",
     "extra and role lenses",
     "the external-sources block",
-    "project memory",
+    "the project rules memory recalls (a rule covers no finding) and the match judge (a remembered record that meets a finding only by a near line or some shared title words sets it aside by the title rule alone)",
+    "the hold-back of a passed record the memory store withdrew or superseded (it is applied as passed)",
 ];
 
 /// The not-run line that says what this CLI's review leaves out by construction. It is a scope
@@ -40,7 +41,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
         parts.push(REREVIEW_NOT_RUN);
     }
     format!(
-        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup and the verification only; a re-run will not add these): {}",
+        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup, the verification and the project memory's decisions and deferred questions only; a re-run will not add these): {}",
         parts.join(" · ")
     )
 }
@@ -50,7 +51,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
 const GENERAL_NOT_RUN: &str = "the general profile's complexity lens (needs a code-metrics index)";
 
 /// What a re-review leaves out of the engine's adjudicate track until it is ported.
-const REREVIEW_NOT_RUN: &str = "the re-review's red team on a resolved Critical or High prior finding, and the release of a finding set aside as Known and deferred by the record that answers its question (the CLI keeps no deferral on a ledger row, so it adjudicates a deferred finding like any other)";
+const REREVIEW_NOT_RUN: &str = "the re-review's red team on a resolved Critical or High prior finding, the release of a finding set aside as Known and deferred by the record that answers its question (the CLI keeps no deferral on a ledger row, so it adjudicates a deferred finding like any other), and a remembered decision applied to a prior finding still open";
 
 /// The verdict line marked as a light pass's, once.
 pub(super) fn mark(line: &str) -> String {
