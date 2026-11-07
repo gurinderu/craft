@@ -1,6 +1,6 @@
 // Knip: unused files, exports and dependencies across both deliveries.
 //
-// The engines (src/*.js, shipped as the generated workflows/*.js) are loaded by the harness's Workflow
+// The engines (src/*.js, shipped as the generated integrations/claude-code/workflows/*.js) are loaded by the harness's Workflow
 // tool, not imported. Each imports its lib/ code and is read as written (realm @nick/craft, #210).
 //
 // Run it twice. `knip` counts tests as users, and is blind to the exports of any module a test
@@ -8,7 +8,7 @@
 // `knip --production` drops tests and checks what the shipped entries (marked `!`) reach.
 import { SHIPPED_NODE_ENTRIES } from './lib/shipped-entries.mjs'
 
-const PLUGIN = 'opencode/plugin/'
+const PLUGIN = 'integrations/opencode/plugin/'
 
 export default {
   // An export also used in its own module is surplus `export`, not dead code: not worth a red gate.
@@ -32,6 +32,8 @@ export default {
         'lib/gate.mjs!',
         // The engine build (`npm run build:engines`, the gate's check:engines): run, not imported.
         'lib/build-engines.mjs!',
+        // The Claude Code plugin manifest validated on a materialized copy (`npm run check:plugin`): run, not imported.
+        'lib/validate-plugin.mjs!',
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
         // reads only outside production mode, so its import is not followed there.
         'lib/lint-prerequisites.mjs!',
@@ -45,8 +47,8 @@ export default {
         '!lib/logger-replay.mjs!',
       ],
     },
-    'opencode/plugin': {
-      // Loaded by opencode from plugins/craft-rust (opencode/install.sh links it there), not imported.
+    'integrations/opencode/plugin': {
+      // Loaded by opencode from plugins/craft-rust (integrations/opencode/install.sh links it there), not imported.
       entry: SHIPPED_NODE_ENTRIES.filter(p => p.startsWith(PLUGIN)).map(p => `${p.slice(PLUGIN.length)}!`),
       project: ['**/*.{ts,mjs,js}!'],
       // Pinned exactly beside @opencode-ai/plugin on purpose, though nothing imports it directly

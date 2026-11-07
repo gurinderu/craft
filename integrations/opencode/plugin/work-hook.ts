@@ -7,10 +7,10 @@ import { homedir } from "node:os"
 import type { Hooks } from "@opencode-ai/plugin"
 import type { Part, TextPart } from "@opencode-ai/sdk"
 
-type Modules = [typeof import("../../lib/work-hook-opencode.mjs"), typeof import("../../lib/hook-log.mjs")]
+type Modules = [typeof import("../../../lib/work-hook-opencode.mjs"), typeof import("../../../lib/hook-log.mjs")]
 let modules: Promise<Modules | null> | undefined
 const load = (): Promise<Modules | null> =>
-  (modules ??= Promise.all([import("../../lib/work-hook-opencode.mjs"), import("../../lib/hook-log.mjs")]).catch(() => null))
+  (modules ??= Promise.all([import("../../../lib/work-hook-opencode.mjs"), import("../../../lib/hook-log.mjs")]).catch(() => null))
 
 // The words the human (or the parent agent) wrote: the message's own text parts.
 function promptOf(parts: Part[]): string {

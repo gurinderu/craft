@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "craft",
-      "source": "./",
+      "source": "./integrations/claude-code",
       "description": "Opinionated engineering skills and agents for Claude Code — a broad Rust skill set (ownership, concurrency, traits, performance, unsafe, errors, idioms, ecosystem, architecture, web, CLI, security, plugins, macros, fintech, cloud-native), language-agnostic engineering skills (specs, debugging, refactoring, onboarding), and code-review / security / Miri agents. Self-contained, no plugin dependencies.",
       "version": "0.41.0",
       "category": "development",
