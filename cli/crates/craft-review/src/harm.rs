@@ -3,7 +3,10 @@
 //! its level's ceiling (`lib/harm-cap.mjs`); the verified-harm raise is [`raise`].
 //! `content/parity/verify-cases.json` holds both ports to the same answers.
 
+mod floor;
 pub(crate) mod raise;
+
+pub(crate) use floor::{floor_note, raise_path_floor};
 
 use serde_json::{Map, Value};
 

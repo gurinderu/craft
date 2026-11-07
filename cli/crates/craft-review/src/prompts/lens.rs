@@ -1,0 +1,249 @@
+//! A lens's prompt, as `lensPrompt` and `negativeSpacePrompt` in `lib/review-lens-prompts.mjs`
+//! render it for an unsliced dispatch, and the ALREADY-FOUND list a later round carries
+//! (`priorFoundSummary` in `lib/review-coverage.mjs`).
+
+use serde_json::Value;
+
+use super::{PromptContext, REVIEW_RULES_DIR, flatten, plugin_candidates, repo_directive, shq};
+use crate::content::{self, ContentError, vars};
+use crate::plan::Plan;
+use crate::profile::{Lens, Profile};
+
+/// How long the ALREADY-FOUND list may grow, and how much of a title it carries.
+const PRIOR_SUMMARY_MAX_CHARS: usize = 2500;
+const PRIOR_SUMMARY_TITLE_MAX: usize = 120;
+
+fn sev_rank(f: &Value) -> usize {
+    let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
+    ["critical", "high", "medium", "low", "info"]
+        .iter()
+        .position(|s| *s == sev.trim().to_lowercase())
+        .unwrap_or(9)
+}
+
+fn one_line(v: Option<&Value>) -> String {
+    let s = v.and_then(Value::as_str).unwrap_or("");
+    s.split(['\r', '\n'])
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_owned()
+}
+
+/// What the pool holds so far, worst first, one `file:line title` a line, capped; `none yet` when
+/// empty.
+#[must_use]
+pub fn prior_found_summary(pool: &[Value]) -> String {
+    if pool.is_empty() {
+        return "none yet".into();
+    }
+    let mut ordered: Vec<(usize, &Value)> = pool.iter().enumerate().collect();
+    ordered.sort_by_key(|&(i, f)| (sev_rank(f), i));
+    let lines: Vec<String> = ordered
+        .iter()
+        .map(|(_, f)| {
+            let file = one_line(f.get("file"));
+            let line = f.get("line").and_then(Value::as_i64).unwrap_or(0);
+            let title: String = one_line(f.get("title"))
+                .chars()
+                .take(PRIOR_SUMMARY_TITLE_MAX)
+                .collect();
+            format!(
+                "{}:{line} {title}",
+                if file.is_empty() { "?" } else { &file }
+            )
+            .trim_end()
+            .to_owned()
+        })
+        .collect();
+    let mut kept: Vec<String> = Vec::new();
+    let mut used = 0;
+    for l in &lines {
+        let len = l.chars().count();
+        if !kept.is_empty() && used + len + 1 > PRIOR_SUMMARY_MAX_CHARS {
+            break;
+        }
+        kept.push(l.clone());
+        used += len + 1;
+    }
+    let omitted = lines.len() - kept.len();
+    if omitted > 0 {
+        kept.push(format!("… and {omitted} more already-found finding(s), lowest severity first, withheld to keep this prompt small. This list is PARTIAL: anything you re-surface is de-duplicated downstream, so do not spend effort guessing what is missing from it."));
+    }
+    kept.join("\n")
+}
+
+fn base_label(ctx: &PromptContext) -> String {
+    format!("`{}`", flatten(Some(&Value::String(ctx.base.clone()))))
+}
+
+fn range(ctx: &PromptContext) -> String {
+    format!("--merge-base {}", shq(&ctx.base))
+}
+
+fn rules(ctx: &PromptContext) -> Result<String, ContentError> {
+    content::prompt(
+        "review-rules",
+        &vars([("dirs", plugin_candidates(ctx, REVIEW_RULES_DIR))]),
+    )
+}
+
+fn repo_rules_line(paths: &[String]) -> Result<String, ContentError> {
+    if paths.is_empty() {
+        return Ok(String::new());
+    }
+    let paths = paths
+        .iter()
+        .map(|p| format!("`{p}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    content::prompt("repo-rules-line", &vars([("paths", paths)]))
+}
+
+fn intent_line(intent: &str) -> String {
+    if intent.is_empty() {
+        String::new()
+    } else {
+        format!("INTENT (what the change should do): {intent}")
+    }
+}
+
+/// The plan's lines of a lens prompt: intent, spec, hot files, repository rules — one line each.
+fn plan_lines(plan: &Plan) -> Result<String, ContentError> {
+    let spec = if plan.spec.is_empty() {
+        String::new()
+    } else {
+        content::prompt("lens-spec", &vars([("spec", plan.spec.clone())]))?
+    };
+    let hot = if plan.churn.is_empty() {
+        String::new()
+    } else {
+        format!("HOT FILES (scrutinize harder): {}", plan.churn.join(", "))
+    };
+    Ok(format!(
+        "{}\n{spec}\n{hot}\n{}",
+        intent_line(&plan.intent),
+        repo_rules_line(&plan.repo_rules)?
+    ))
+}
+
+fn catalogue_line(ctx: &PromptContext, lens: &Lens) -> Result<String, ContentError> {
+    let Some(cat) = &lens.catalogue else {
+        return Ok(String::new());
+    };
+    content::prompt(
+        "lens-catalogue",
+        &vars([
+            ("label", cat.label.clone()),
+            ("candidates", plugin_candidates(ctx, &cat.file)),
+            ("fallback", cat.fallback.clone()),
+        ]),
+    )
+}
+
+/// The prompt of `lens` over the whole diff in a round whose pool is summed up by `prior`.
+///
+/// # Errors
+/// When the lens is not the profile's, a content file is missing or a placeholder has no value.
+pub fn lens_prompt(
+    ctx: &PromptContext,
+    profile: &Profile,
+    lens: &str,
+    plan: &Plan,
+    prior: &str,
+) -> Result<String, ContentError> {
+    let spec = profile
+        .lens(lens)
+        .ok_or_else(|| ContentError::UnknownFile(format!("the lens {lens}")))?;
+    let already = content::prompt("already-found", &vars([("summary", prior.to_owned())]))?;
+    let body = if lens == "negative-space" {
+        negative_space(ctx, profile, plan, already)?
+    } else {
+        let nav = !profile.nav_skill.is_empty();
+        let mutants = profile.id == "rust"
+            && lens == "tests"
+            && matches!(plan.size_bucket.as_str(), "medium" | "large");
+        content::prompt(
+            "lens",
+            &vars([
+                ("lens", lens.to_owned()),
+                ("lang", profile.lang.clone()),
+                ("rubricSkill", profile.rubric_skill.clone()),
+                (
+                    "navLoad",
+                    if nav {
+                        format!(" and the {} skill for context expansion", profile.nav_skill)
+                    } else {
+                        String::new()
+                    },
+                ),
+                ("brief", content::text(&spec.brief)?),
+                ("catalogue", catalogue_line(ctx, spec)?),
+                ("rules", rules(ctx)?),
+                ("strict", String::new()),
+                ("base", base_label(ctx)),
+                ("range", range(ctx)),
+                ("pathspec", profile.diff_globs.join(" ")),
+                ("slice", String::new()),
+                ("reReview", String::new()),
+                ("plan", plan_lines(plan)?),
+                ("lsp", if nav { " + LSP".into() } else { String::new() }),
+                ("dependencySource", content::text("dependency-source")?),
+                ("sources", String::new()),
+                (
+                    "mutants",
+                    if mutants {
+                        content::text("lens-mutants")?
+                    } else {
+                        String::new()
+                    },
+                ),
+                ("alreadyFound", already),
+            ]),
+        )?
+    };
+    Ok(format!("{}{body}", repo_directive(&ctx.repo)))
+}
+
+/// The negative-space lens: the bug the diff enables in code it did not touch.
+fn negative_space(
+    ctx: &PromptContext,
+    profile: &Profile,
+    plan: &Plan,
+    already: String,
+) -> Result<String, ContentError> {
+    let spec = if plan.spec.is_empty() {
+        String::new()
+    } else {
+        content::prompt(
+            "lens-negative-space-spec",
+            &vars([("spec", plan.spec.clone())]),
+        )?
+    };
+    let nav_use = if profile.nav_skill.is_empty() {
+        "Use".to_owned()
+    } else {
+        format!(
+            "Load the {} skill for whole-repo search; use",
+            profile.nav_skill
+        )
+    };
+    content::prompt(
+        "lens-negative-space",
+        &vars([
+            ("lang", profile.lang.clone()),
+            ("navUse", nav_use),
+            ("base", base_label(ctx)),
+            ("intent", intent_line(&plan.intent)),
+            ("spec", spec),
+            ("range", range(ctx)),
+            ("newSurface", "enum variant / status value / DB column / table / migration / public fn / route / struct field".into()),
+            ("shapeUses", "lists, updates, deletes, cascades, serializes, orders, or authorizes".into()),
+            ("rules", rules(ctx)?),
+            ("repoRules", repo_rules_line(&plan.repo_rules)?),
+            ("alreadyFound", already),
+            ("rubricSkill", profile.rubric_skill.clone()),
+        ]),
+    )
+}

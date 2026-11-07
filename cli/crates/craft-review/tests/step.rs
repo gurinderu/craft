@@ -1,16 +1,17 @@
-//! The step protocol end to end over a fixture repository with a real git diff.
+//! The step protocol end to end over a fixture repository with a real git diff: the scout, the
+//! lens rounds, the dedup, the verifiers, the report.
 
 mod common;
 
-use std::path::Path;
-
-use common::{answers, finding, fixture, ids, opts, prompt_of, verdict};
+use common::{
+    answers, fixture, ids, lens, opts, prompt_of, scout, small_run, submit, titled, verdict,
+};
 use craft_review::status;
 use craft_review::step;
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
 
 #[test]
-fn start_renders_the_lens_over_the_diff() {
+fn start_renders_the_scout_over_the_diff() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
@@ -21,155 +22,287 @@ fn start_renders_the_lens_over_the_diff() {
     assert_eq!(
         task,
         &json!({
-            "id": "lens-intent", "label": "lens:intent", "model": "opus",
-            "promptFile": at("tasks/lens-intent.md"),
-            "schemaFile": at("tasks/lens-intent.schema.json"),
-            "answerFile": at("answers/lens-intent.json"),
+            "id": "scout-rust", "label": "scout:rust", "model": "haiku",
+            "promptFile": at("tasks/scout-rust.md"),
+            "schemaFile": at("tasks/scout-rust.schema.json"),
+            "answerFile": at("answers/scout-rust.json"),
         }),
         "the task names its files and carries no prompt or schema text"
     );
-    assert!(run.join("answers").is_dir());
     let prompt = prompt_of(task);
-    let prompt = prompt.as_str();
-    assert!(
-        prompt.contains("--merge-base 'origin/main' -- '*.rs'"),
-        "{prompt}"
-    );
-    assert!(
-        prompt.contains("feat: add f, which never fails"),
-        "the commit log is the spec"
-    );
-    assert!(prompt.contains("`/craft/skills/review-rules`"));
+    for want in [
+        "You are scouting a Rust diff",
+        "git diff --stat 'origin/main'...HEAD -- '*.rs'",
+        r#"choose from ["safety","errors","concurrency","performance","api-idioms","api-boundary","reconciler","failure-windows","compat","maintainability","tests","intent","invariants"]"#,
+        r#"EXCEPT ["failure-windows"]"#,
+        "Decide what is \"in play\" from the diff",
+        "Return repo-relative paths, at most 5",
+    ] {
+        assert!(prompt.contains(want), "{want}: {prompt}");
+    }
     assert!(
         !prompt.contains("{{"),
         "an unrendered placeholder: {prompt}"
     );
-    let schema: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(run.join("tasks/lens-intent.schema.json")).unwrap(),
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(run.join("tasks/scout-rust.schema.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        schema["properties"]["findings"]["items"]["type"],
-        json!("object"),
-        "the schema file is whole, its references inlined"
+    assert!(
+        schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("sizeBucket"))
     );
-    assert!(out.path().join("run/state.json").is_file());
+    assert_eq!(status::status(&run).unwrap()["phase"], json!("scout"));
     let again = step::start(&opts(repo.path(), out.path())).unwrap_err();
     assert!(again.to_string().contains("holds a run already"), "{again}");
 }
 
+/// The three lens answers of a small run's round 1.
+fn round1(errors: &[Value]) -> Value {
+    json!({
+        "lens-errors-r1": lens("errors", errors),
+        "lens-intent-r1": lens("intent", &[]),
+        "lens-tests-r1": lens("tests", &[]),
+    })
+}
+
+/// Round 1 finds four (a High pair worded twice at one spot), round 2 only a known place: the
+/// pool goes to the dedup.
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "a step of the test below, failing loudly like it"
+)]
+fn lens_rounds(run: &std::path::Path) {
+    let run = run.to_path_buf();
+    // Round 1: two lenses report one defect in other words at one spot, and one more each.
+    let s = submit(
+        &run,
+        json!({
+            "lens-errors-r1": lens("errors", &[titled("High", 1, "f returns 1 where 0 is claimed"), titled("Medium", 1, "no doc")]),
+            "lens-intent-r1": lens("intent", &[titled("High", 1, "f returns 1, where 0 is claimed!"), titled("Low", 1, "naming")]),
+            "lens-tests-r1": lens("tests", &[]),
+        }),
+    );
+    assert_eq!(
+        ids(&s),
+        ["lens-errors-r2", "lens-intent-r2", "lens-tests-r2"]
+    );
+    let p = prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("src/lib.rs:1 f returns 1 where 0 is claimed\nsrc/lib.rs:1 f returns 1, where 0 is claimed!\nsrc/lib.rs:1 no doc\nsrc/lib.rs:1 naming"),
+        "the pool, worst first: {p}"
+    );
+    assert_eq!(
+        status::status(&run).unwrap()["phase"],
+        json!("lenses round 2")
+    );
+
+    // Round 2 re-surfaces a known place only: dry, so the pool goes to the dedup.
+    let s = submit(
+        &run,
+        json!({
+            "lens-errors-r2": lens("errors", &[titled("Medium", 1, "No  DOC")]),
+            "lens-intent-r2": lens("intent", &[]),
+            "lens-tests-r2": lens("tests", &[]),
+        }),
+    );
+    assert_eq!(ids(&s), ["dedup-rust"]);
+    let p = prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("2. src/lib.rs:1 [High] (intent) f returns 1, where 0 is claimed! — wrong"),
+        "{p}"
+    );
+    let st = status::status(&run).unwrap();
+    assert_eq!(
+        (st["phase"].clone(), st["pool"].clone()),
+        (json!("dedup"), json!(4))
+    );
+    assert_eq!(
+        st["rounds"][1],
+        json!({"round": 2, "agents": 3, "returned": 3, "newFindings": 0})
+    );
+}
+
 #[test]
-fn a_full_loop_goes_lens_then_verify_then_done() {
+fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
-    let run = step::start(&opts(repo.path(), out.path())).unwrap()["run"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let run = Path::new(&run);
-    let lens = json!({"lens": "intent", "findings": [finding("High", 1), finding("Medium", 1), finding("Medium", 1), finding("Low", 1)]});
-    // An agent's final text carrying JSON is read as that JSON.
-    let s = step::submit(
-        run,
-        Some(&answers(json!({"lens-intent": lens.to_string()}))),
-    )
-    .unwrap();
-    assert_eq!(ids(&s), ["verify-0", "verify-batch-0"]);
-    let batch_prompt = prompt_of(&s["tasks"][1]);
-    assert!(batch_prompt.contains("--- FINDING 1 ---") && batch_prompt.contains("(0..1)"));
-    let s = step::submit(
-        run,
-        Some(&answers(json!({
-            "verify-0": verdict(false),
-            "verify-batch-0": {"verdicts": [
-                {"index": 0, "refuted": false, "citedLineMatches": true, "reachable": false, "premiseSupported": true, "reason": "test-only"},
-                {"index": 1, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "no"}
-            ]}
-        }))),
-    )
-    .unwrap();
-    assert_eq!(s["done"], json!(true));
-    assert_eq!(s["verdict"], json!("Block"));
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    let s = submit(
+        &run,
+        json!({"scout-rust": scout("medium", &["errors", "bogus"])}),
+    );
+    assert_eq!(
+        ids(&s),
+        ["lens-errors-r1", "lens-intent-r1", "lens-tests-r1"]
+    );
+    assert_eq!(s["tasks"][0]["label"], json!("lens:rust:errors r1"));
+    let p = prompt_of(&s["tasks"][1]);
+    for want in [
+        "You are the **intent** review lens for a Rust diff",
+        "INTENT (what the change should do): add f, which never fails",
+        "HOT FILES (scrutinize harder): src/lib.rs",
+        "REPO RULES `AGENTS.md`",
+        "ALREADY-FOUND (do not re-report these PLACES",
+        "none yet",
+        "feat: add f, which never fails",
+        "--merge-base 'origin/main' -- '*.rs'",
+    ] {
+        assert!(p.contains(want), "{want}: {p}");
+    }
+    let st = status::status(&run).unwrap();
+    assert_eq!(
+        (st["phase"].clone(), st["round"].clone()),
+        (json!("lenses round 1"), json!(1))
+    );
+    assert_eq!(st["plan"]["maxRounds"], json!(2));
+
+    lens_rounds(&run);
+
+    // The model groups nothing; the same-spot pass merges the High pair.
+    let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
+    assert_eq!(ids(&s), ["verify-2-v0", "verify-2-v1", "verify-batch-0"]);
+    assert_eq!(status::status(&run).unwrap()["phase"], json!("verify"));
+    let s = submit(
+        &run,
+        json!({
+            "verify-2-v0": verdict(false),
+            "verify-2-v1": verdict(false),
+            "verify-batch-0": {"verdicts": [{"index": 0, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "documented"}]},
+        }),
+    );
+    assert_eq!(
+        (s["done"].clone(), s["verdict"].clone()),
+        (json!(true), json!("Block"))
+    );
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    for want in [
+        "Plan: medium diff, full review, at most 2 round(s). Lenses planned: errors, intent, tests; ran: errors, intent, tests.",
+        "- Round 1: 3 lens(es) dispatched, 3 returned, 4 new finding(s).",
+        "- Round 2: 3 lens(es) dispatched, 3 returned, 0 new finding(s).",
+        "## Confirmed findings\n\n- **High** `src/lib.rs:1` — f returns 1 where 0 is claimed (errors, intent)",
+        "(same defect also reported by: intent)",
+        "## Unverified findings\n\n- **Low** `src/lib.rs:1` — naming (intent)",
+        "## Refuted findings\n\n- **Medium** `src/lib.rs:1` — no doc (errors)",
+        "3 finding(s) reported: 1 confirmed, 0 suspected, 1 refuted, 1 unverified.",
+        "dedup before verification: 4 → 3 (1 cross-lens duplicate(s) merged)",
+    ] {
+        assert!(report.contains(want), "{want}: {report}");
+    }
+    assert_eq!(status::status(&run).unwrap()["phase"], json!("done"));
+    let late = step::submit(&run, Some(&Map::new())).unwrap_err();
+    assert!(late.to_string().contains("is done"), "{late}");
+}
+
+#[test]
+fn a_lens_asked_again_holds_the_round_and_one_that_never_answers_makes_it_incomplete() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let mut first = round1(&[]);
+    first["lens-errors-r1"] = json!({"lens": "errors"});
+    let s = submit(&run, first);
+    assert_eq!(
+        ids(&s),
+        ["lens-errors-r1"],
+        "only the refused answer is asked for again"
+    );
+    let p = prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("Your previous answer was invalid: it does not match the schema"),
+        "{p}"
+    );
+    let st = status::status(&run).unwrap();
+    assert_eq!(st["tasks"][0]["retries"], json!(1));
+    assert_eq!(st["tasks"][1]["state"], json!("answered"));
+    submit(&run, json!({"lens-errors-r1": "not json"}));
+    let s = submit(&run, json!({}));
+    assert_eq!(
+        (s["done"].clone(), s["verdict"].clone()),
+        (json!(true), json!("INCOMPLETE"))
+    );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     assert!(
-        report.contains("**High** `src/lib.rs:1` — bad at 1"),
+        report.contains(
+            "## Not run\n\n- rust lenses that never returned — errors: no answer was submitted"
+        ),
         "{report}"
     );
-    assert!(
-        report.contains("**Low** `src/lib.rs:1`"),
-        "an unreachable Medium is demoted: {report}"
-    );
-    assert!(
-        report.contains("4 finding(s) reported: 2 confirmed, 0 suspected, 1 refuted, 1 unverified"),
-        "the Low went unverified: {report}"
-    );
-    assert!(
-        report.contains("1 Low/Info finding(s) NOT VERIFIED"),
-        "{report}"
-    );
-    let st = status::status(run).unwrap();
+    assert!(report.contains("ran: intent, tests."), "{report}");
+}
+
+#[test]
+fn a_scout_that_never_answers_runs_the_conservative_plan_and_says_so() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    for _ in 0..2 {
+        let s = submit(&run, json!({"scout-rust": {"sizeBucket": "tiny"}}));
+        assert_eq!(ids(&s), ["scout-rust"]);
+    }
+    let s = submit(&run, json!({}));
+    let lenses = ids(&s);
     assert_eq!(
-        (st["phase"].clone(), st["tiers"]["refuted"].clone()),
-        (json!("done"), json!(1))
+        lenses.len(),
+        10,
+        "the security floor's roster and negative-space: {lenses:?}"
     );
-    let late = step::submit(run, Some(&Map::new())).unwrap_err();
-    assert!(late.to_string().contains("is done"), "{late}");
+    let ns = s["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == "lens-negative-space-r1")
+        .unwrap();
+    assert!(
+        prompt_of(ns).contains("You are the **negative-space** review lens for a Rust change.")
+    );
+    let st = status::status(&run).unwrap();
+    assert!(
+        st["notRun"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("rust scout classification")
+    );
+    let empty: Map<String, Value> = lenses
+        .iter()
+        .map(|id| (id.clone(), lens("x", &[])))
+        .collect();
+    let s = step::submit(&run, Some(&empty)).unwrap();
+    assert_eq!(
+        (s["done"].clone(), s["verdict"].clone()),
+        (json!(true), json!("INCOMPLETE")),
+        "a dry first round ends the lenses; the fallback plan is no clean pass"
+    );
 }
 
 #[test]
 fn a_run_of_low_and_info_findings_ends_unverified_with_no_verifier() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
-    let run = out.path().join("run");
-    step::start(&opts(repo.path(), out.path())).unwrap();
-    let lens = json!({"lens": "intent", "findings": [finding("Low", 1), finding("Info", 1)]});
-    let s = step::submit(&run, Some(&answers(json!({"lens-intent": lens})))).unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let s = submit(
+        &run,
+        round1(&[titled("Low", 1, "a"), titled("Info", 2, "b")]),
+    );
+    assert_eq!(ids(&s), ["dedup-rust"]);
+    let s = submit(&run, json!({"dedup-rust": {"groups": [[0, 1]]}}));
     assert_eq!(
         (s["done"].clone(), s["verdict"].clone()),
         (json!(true), json!("Approve"))
     );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     assert!(
-        report.contains("2 finding(s) reported: 0 confirmed, 0 suspected, 0 refuted, 2 unverified"),
+        report.contains("1 finding(s) reported: 0 confirmed, 0 suspected, 0 refuted, 1 unverified"),
+        "the model's group merged: {report}"
+    );
+    assert!(
+        report.contains("1 Low/Info finding(s) NOT VERIFIED"),
         "{report}"
-    );
-    assert!(
-        report.contains("2 Low/Info finding(s) NOT VERIFIED"),
-        "{report}"
-    );
-}
-
-#[test]
-fn an_invalid_answer_is_asked_again_then_fails_the_task() {
-    let repo = fixture(true);
-    let out = tempfile::tempdir().unwrap();
-    let run = out.path().join("run");
-    step::start(&opts(repo.path(), out.path())).unwrap();
-    let s = step::submit(
-        &run,
-        Some(&answers(json!({"lens-intent": {"lens": "intent"}}))),
-    )
-    .unwrap();
-    assert_eq!(ids(&s), ["lens-intent"]);
-    let prompt = prompt_of(&s["tasks"][0]);
-    assert!(
-        prompt.contains("Your previous answer was invalid: it does not match the schema"),
-        "{prompt}"
-    );
-    assert!(
-        prompt.contains("findings"),
-        "the note names what is missing: {prompt}"
-    );
-    let s = step::submit(&run, Some(&Map::new())).unwrap();
-    assert!(prompt_of(&s["tasks"][0]).contains("no answer was submitted"));
-    assert_eq!(
-        status::status(&run).unwrap()["tasks"][0]["retries"],
-        json!(2)
-    );
-    let s = step::submit(&run, Some(&answers(json!({"lens-intent": "not json"})))).unwrap();
-    assert_eq!(
-        (s["done"].clone(), s["verdict"].clone()),
-        (json!(true), json!("INCOMPLETE"))
     );
 }
 
@@ -177,12 +310,15 @@ fn an_invalid_answer_is_asked_again_then_fails_the_task() {
 fn a_batch_verdict_missing_an_index_is_asked_again() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
-    let run = out.path().join("run");
-    step::start(&opts(repo.path(), out.path())).unwrap();
-    let lens = json!({"lens": "intent", "findings": [finding("Medium", 1), finding("Medium", 2)]});
-    step::submit(&run, Some(&answers(json!({"lens-intent": lens})))).unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    submit(
+        &run,
+        round1(&[titled("Medium", 1, "a"), titled("Medium", 2, "b")]),
+    );
+    let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
+    assert_eq!(ids(&s), ["verify-batch-0"]);
     let one = json!({"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "r"}]});
-    let s = step::submit(&run, Some(&answers(json!({"verify-batch-0": one})))).unwrap();
+    let s = submit(&run, json!({"verify-batch-0": one}));
     assert!(prompt_of(&s["tasks"][0]).contains("no verdict for index 1"));
 }
 
@@ -201,18 +337,11 @@ fn an_answer_for_no_pending_task_is_refused_and_changes_nothing() {
 }
 
 #[test]
-fn a_lens_with_no_findings_and_a_diff_with_no_rust_both_approve() {
+fn lenses_with_no_findings_and_a_diff_of_inert_files_both_approve() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
-    let run = out.path().join("run");
-    step::start(&opts(repo.path(), out.path())).unwrap();
-    let s = step::submit(
-        &run,
-        Some(&answers(
-            json!({"lens-intent": {"lens": "intent", "findings": []}}),
-        )),
-    )
-    .unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let s = submit(&run, round1(&[]));
     assert_eq!(s["verdict"], json!("Approve"));
 
     let repo = fixture(false);
@@ -220,8 +349,43 @@ fn a_lens_with_no_findings_and_a_diff_with_no_rust_both_approve() {
     let s = step::start(&opts(repo.path(), out.path())).unwrap();
     assert_eq!(
         (s["done"].clone(), s["verdict"].clone()),
-        (json!(true), json!("Approve"))
+        (json!(true), json!("Approve (nothing to review)"))
     );
+}
+
+#[test]
+fn a_light_pass_runs_one_round_of_the_scoped_lenses() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    let mut o = opts(repo.path(), out.path());
+    o.light = true;
+    step::start(&o).unwrap();
+    let s = submit(
+        &run,
+        json!({"scout-rust": scout("large", &["errors", "invariants"])}),
+    );
+    assert_eq!(
+        ids(&s),
+        ["lens-errors-r1", "lens-intent-r1", "lens-tests-r1"]
+    );
+    let st = status::status(&run).unwrap();
+    assert_eq!(
+        st["plan"]["lightSkipped"],
+        json!(["invariants", "negative-space", "compat"])
+    );
+    assert_eq!(st["plan"]["maxRounds"], json!(1));
+    let low = titled("Low", 2, "naming");
+    let s = submit(&run, round1(&[low]));
+    assert_eq!(s["verdict"], json!("Approve"));
+    let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
+    for want in [
+        "## Verdict\n\nApprove · light pass (depth=light) -- see \"Light pass\" below for what it skipped",
+        "(NOT VERIFIED: light pass: only Medium and above are verified, so no verifier was spent on this Low finding and nothing here has been checked against the code)",
+        "## Light pass -- what it skipped\n⚠️ This was a LIGHT pass (depth=light), not a full review, and its verdict covers only what it ran: the whole-diff lenses invariants, negative-space, compat were NOT dispatched (it DID run intent, which the diff called for);",
+    ] {
+        assert!(report.contains(want), "{want}: {report}");
+    }
 }
 
 #[test]
