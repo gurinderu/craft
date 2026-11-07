@@ -1,0 +1,72 @@
+name: claude-code-plugin
+
+# The Claude Code plugin without symlinks, for consumers whose clone does not make them (core.symlinks=false, the
+# Windows default, turns each of integrations/claude-code's links into a one-line text file the harness then caches
+# as it is). One ref's delivery, every link dereferenced, becomes the next commit of the claude-code-plugin branch,
+# which the marketplace entry's `url` source names (lib/materialize-claude-code.mjs). Its plugin.json carries that
+# ref's version, so an install or update moves with release-please.
+#
+# release-please.yml calls this with the tag of each release it cuts. By hand (`gh workflow run
+# claude-code-plugin.yml --ref <branch> -f ref=<ref>`) it seeds the branch before its first release, or rebuilds it:
+# `ref` is what is materialized, whichever branch the dispatch runs the workflow file from.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: the tag, branch or commit whose delivery is materialized
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: the tag, branch or commit whose delivery is materialized
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  claude-code-plugin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: claude-code-plugin
+      cancel-in-progress: false
+    env:
+      BRANCH: claude-code-plugin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: fetch the branch head
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git fetch --no-tags origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
+          else
+            echo "no $BRANCH yet: its first commit has no parent"
+          fi
+      - name: commit the materialized delivery
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node lib/materialize-claude-code.mjs --branch "$BRANCH" --message "craft $REF ($(git rev-parse HEAD)): the Claude Code plugin with its symlinks dereferenced"
+      # What is about to be pushed, read back out of the commit: no symlink in it, and the plugin manifest with its
+      # hooks valid as the harness reads them. A failure here pushes nothing.
+      - name: validate the committed tree
+        run: |
+          tree="$RUNNER_TEMP/claude-code-plugin"
+          mkdir -p "$tree"
+          git archive "refs/heads/$BRANCH" | tar -x -C "$tree"
+          links="$(find "$tree" -type l)"
+          [ -z "$links" ] || { echo "::error::symlinks in the materialized tree:"; echo "$links"; exit 1; }
+          npx --yes @anthropic-ai/claude-code plugin validate "$tree/.claude-plugin/plugin.json" --strict
+      - name: push
+        run: git push origin "refs/heads/$BRANCH:refs/heads/$BRANCH"

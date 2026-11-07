@@ -95,9 +95,12 @@ craft/
 /plugin install craft@craft
 ```
 
-The marketplace installs the plugin from the `claude-code-plugin` branch, which each release rebuilds from
-`integrations/claude-code` with its symlinks replaced by real files. Windows is supported that way: a clone there
-makes no symlinks by default (`core.symlinks=false`), and the branch has none to make. Working from a checkout,
+The marketplace installs the plugin over HTTPS from the `claude-code-plugin` branch, which each release rebuilds
+from `integrations/claude-code` with its symlinks replaced by real files. That is for Windows, where a clone makes
+no symlinks by default (`core.symlinks=false`) and the branch has none to make. What has been observed is an install
+from a Linux clone with `core.symlinks=false` set, not one on a real Windows machine. The `cli-review` workflow's
+released binary covers x86_64 Windows too (`craft-x86_64-pc-windows-msvc.tar.gz`, unpacked with the system's
+`tar.exe`), built by the release but not yet run on Windows. Working from a checkout,
 `claude --plugin-dir integrations/claude-code` loads the delivery in place through its symlinks (Linux, macOS).
 
 ## opencode

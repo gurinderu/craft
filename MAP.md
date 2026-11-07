@@ -231,8 +231,9 @@ on a terminal, one line per event otherwise). The toolchain is pinned in `cli/ru
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, apart
 from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
 `cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
-binary at the archive root) and its `.sha256` to each release for Linux and macOS on x64 and arm64;
-`lib/craft-bin.mjs ensure` fetches the one for this platform and version into `~/.craft/bin/<version>/`,
+binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each release for Linux and macOS on x64
+and arm64 and Windows on x64; `lib/craft-bin.mjs ensure` fetches the one for this platform and version into
+`~/.craft/bin/<version>/`,
 which the `cli-review` engine runs when no `craftBin` is given.
 
 ## Codex delivery
@@ -251,5 +252,7 @@ manifest, `agents/`, `hooks/` and the built `workflows/`, with `skills`, `lib`, 
 symlinks to the shared ones at the root; a load in place (`--plugin-dir`) follows them into the checkout. The root
 marketplace (`.claude-plugin/marketplace.json`) installs it from the `claude-code-plugin` branch, which each
 release rebuilds from this directory with the links dereferenced into real files
-(`lib/materialize-claude-code.mjs`), so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
+(`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls
+and which can be dispatched by hand to seed the branch), so a clone without symlinks (Windows) installs it whole;
+the entry is a `url` source over HTTPS. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` is planned.

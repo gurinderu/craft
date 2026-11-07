@@ -233,8 +233,8 @@ fn stop_signal() -> impl Future<Output = Option<u8>> {
 
 /// Off unix only Ctrl-C stops the run.
 #[cfg(not(unix))]
-fn stop_signal() -> impl Future<Output = Option<u8>> {
-    async { tokio::signal::ctrl_c().await.ok().map(|()| INTERRUPTED) }
+async fn stop_signal() -> Option<u8> {
+    tokio::signal::ctrl_c().await.ok().map(|()| INTERRUPTED)
 }
 
 /// Runner events by index → view events by agent id.
