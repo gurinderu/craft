@@ -162,7 +162,9 @@ pub(crate) fn panel(run: &RunState, i: usize) -> Vec<(u32, Option<Value>)> {
             | TaskKind::VerifyBatch { .. }
             | TaskKind::Scout { .. }
             | TaskKind::Lens { .. }
-            | TaskKind::Dedup => None,
+            | TaskKind::Dedup
+            | TaskKind::Adjudicate { .. }
+            | TaskKind::CarryCheck { .. } => None,
         })
         .collect()
 }

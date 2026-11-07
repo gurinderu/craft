@@ -6,8 +6,11 @@ use crate::coverage;
 use crate::state::{RunState, Track};
 
 mod light;
+mod rereview;
 #[cfg(test)]
 mod tests;
+
+use rereview::rereview_line;
 
 pub use crate::settle::Tier;
 
@@ -50,7 +53,8 @@ pub fn verdict(state: &RunState) -> String {
 pub fn verdict_line(state: &RunState, verdict: &str) -> String {
     let gap = coverage::gap(&state.uncovered);
     let line = match (&state.exit, gap.is_empty()) {
-        (Some(exit), _) => exit.line.clone(),
+        (Some(exit), _) if exit.verdict == verdict => exit.line.clone(),
+        (Some(_), _) => format!("{verdict} — {}", rereview_line(state)),
         (None, true) => verdict.to_owned(),
         (None, false) => format!(
             "{verdict} — {}: this verdict covers only the files its language profiles reviewed",
@@ -64,22 +68,25 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
     }
 }
 
-/// The verdict from the confirmed findings' severities and what did not run.
+/// The verdict from the severities of the confirmed findings and of the prior round's findings
+/// still open (`rereviewVerdict`), and what did not run. A coverage exit's own verdict stands
+/// unless a prior finding still holds the run.
 fn severity_verdict(state: &RunState) -> String {
-    if let Some(exit) = &state.exit {
-        return exit.verdict.clone();
-    }
-    let mut worst = "Approve";
-    for f in state
+    let gating = state.chain.gating();
+    let confirmed = state
         .settled
         .iter()
-        .filter(|f| Tier::of(f) == Tier::Confirmed)
-    {
-        match field(f, "severity") {
-            "Critical" | "High" => worst = "Block",
-            "Medium" if worst == "Approve" => worst = "Warning",
+        .filter(|f| Tier::of(f) == Tier::Confirmed);
+    let mut worst = "Approve";
+    for f in confirmed.chain(&gating) {
+        match field(f, "severity").to_lowercase().as_str() {
+            "critical" | "high" => worst = "Block",
+            "medium" if worst == "Approve" => worst = "Warning",
             _ => {}
         }
+    }
+    if let Some(exit) = state.exit.as_ref().filter(|_| worst == "Approve") {
+        return exit.verdict.clone();
     }
     match (state.not_run.is_empty(), worst) {
         (true, w) => w.into(),
@@ -212,6 +219,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         verdict_line(state, verdict),
         header(state)
     );
+    out.push_str(&rereview::section(state));
     match state.exit.as_ref() {
         Some(exit) => listed(exit.listed.as_deref(), &state.diff.files, &mut out),
         None => listed(Some(NOT_COVERED), &state.uncovered, &mut out),

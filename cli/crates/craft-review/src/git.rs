@@ -61,6 +61,36 @@ fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
     String::from_utf8(out.stdout).map_err(GitError::NotUtf8)
 }
 
+/// The branch `HEAD` is on, `None` on a detached `HEAD` (`git rev-parse --abbrev-ref` prints
+/// `HEAD`) or when git cannot say, as `branchFromAbbrevRef`.
+#[must_use]
+pub fn branch(cwd: &Path) -> Option<String> {
+    let name = git(cwd, &["rev-parse", "--abbrev-ref", "HEAD"]).ok()?;
+    let name = name.trim();
+    (!name.is_empty() && name != "HEAD").then(|| name.to_owned())
+}
+
+/// The repository's shared git directory, one for a checkout and all its linked worktrees, so the
+/// worktrees of one repository share their review rounds as `repoKey` lets them.
+///
+/// # Errors
+/// When `cwd` is not a repository or `git` fails.
+pub fn common_dir(cwd: &Path) -> Result<String, GitError> {
+    let dir = git(
+        cwd,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    Ok(dir.trim().to_owned())
+}
+
+/// Whether `commit` is `HEAD` or an ancestor of it: a rebase or a force-push leaves it off.
+#[must_use]
+pub fn is_ancestor(cwd: &Path, commit: &str) -> bool {
+    !commit.is_empty()
+        && !commit.starts_with('-')
+        && git(cwd, &["merge-base", "--is-ancestor", commit, "HEAD"]).is_ok()
+}
+
 fn verifies(cwd: &Path, rev: &str) -> bool {
     git(
         cwd,

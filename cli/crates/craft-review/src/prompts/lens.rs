@@ -4,7 +4,9 @@
 
 use serde_json::Value;
 
-use super::{PromptContext, REVIEW_RULES_DIR, flatten, plugin_candidates, repo_directive, shq};
+use super::{
+    PromptContext, REVIEW_RULES_DIR, ReScope, flatten, plugin_candidates, repo_directive, shq,
+};
 use crate::content::{self, ContentError, vars};
 use crate::plan::Plan;
 use crate::profile::{Lens, Profile};
@@ -197,7 +199,7 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
                 ("range", range(ctx)),
                 ("pathspec", at.pathspec.to_owned()),
                 ("slice", String::new()),
-                ("reReview", String::new()),
+                ("reReview", re_review(ctx)?),
                 ("plan", plan_lines(plan)?),
                 ("lsp", if nav { " + LSP".into() } else { String::new() }),
                 ("dependencySource", content::text("dependency-source")?),
@@ -216,6 +218,17 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
         )?
     };
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
+}
+
+/// The re-review framing of a lens prompt, empty on a first review.
+fn re_review(ctx: &PromptContext) -> Result<String, ContentError> {
+    let name = match ctx.re_review {
+        ReScope::First => return Ok(String::new()),
+        ReScope::Fixes => "lens-re-review-fixes",
+        ReScope::Rescan => "lens-re-review-rescan",
+    };
+    let base = flatten(Some(&Value::String(ctx.base.clone())));
+    content::prompt(name, &vars([("base", base)]))
 }
 
 /// The lens prompt's RULE ID line: cite the rubric's catalog, or, a profile with none, leave it

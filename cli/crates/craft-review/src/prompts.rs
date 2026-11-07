@@ -8,11 +8,13 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod adjudicate;
 mod lens;
 #[cfg(test)]
 mod parity;
 mod scout;
 mod verify;
+pub use adjudicate::{adjudicate_prompt, carry_prompt, sanitize};
 pub use lens::{LensIn, lens_prompt, prior_found_summary};
 pub use scout::{dedup_prompt, scout_prompt};
 pub use verify::{batch_verify_prompt, verify_prompt};
@@ -34,6 +36,31 @@ pub struct PromptContext {
     pub spec: String,
     pub craft_root: Option<String>,
     pub craft_version: Option<String>,
+    /// Which round of a branch's review the lenses are told this is: a first review, or a re-review
+    /// of the fix commits or of the whole diff again. Optional, so a state written before it reads
+    /// as a first review.
+    #[serde(default, skip_serializing_if = "ReScope::is_first")]
+    pub re_review: ReScope,
+}
+
+/// What a round's lenses review, as `reReviewBlock` in `lib/review-lens-prompts.mjs` frames it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReScope {
+    /// A first review: no prior round, no framing.
+    #[default]
+    First,
+    /// The fix commits since the prior round's head, which `base` then names.
+    Fixes,
+    /// The whole diff again on a re-review: a periodic or a forced full re-scan.
+    Rescan,
+}
+
+impl ReScope {
+    #[must_use]
+    pub fn is_first(&self) -> bool {
+        *self == Self::First
+    }
 }
 
 /// `s` single-quoted for a shell, as `shq` in `lib/run-logging.mjs`.
