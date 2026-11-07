@@ -9,6 +9,7 @@ pub mod content;
 pub mod coverage;
 mod dedup;
 mod error;
+mod finished;
 pub mod git;
 pub mod handoff;
 mod harm;

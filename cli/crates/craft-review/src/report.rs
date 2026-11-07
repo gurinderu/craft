@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 
+use crate::coverage;
 use crate::state::RunState;
 
 mod light;
@@ -29,9 +30,40 @@ pub fn tier_counts(state: &RunState) -> [usize; 4] {
 /// The run's verdict: a coverage exit's own; else Block on a confirmed Critical or High, Warning on
 /// a confirmed Medium, Approve otherwise — and, when something the review needed did not run
 /// (`not_run`, where every finding verification failed to judge is named), INCOMPLETE in place of
-/// Approve and a red verdict marked ` (INCOMPLETE)`, as `honestVerdict`.
+/// Approve and a red verdict marked ` (INCOMPLETE)`, as `honestVerdict`; otherwise, when changed
+/// files that carry code went unreviewed (`coverage::gap`), marked ` (PARTIAL COVERAGE)`, as
+/// `verdictSuffix` in `lib/review-coverage.mjs`: a hole a re-run will not fill.
 #[must_use]
 pub fn verdict(state: &RunState) -> String {
+    let worst = severity_verdict(state);
+    if worst.contains("INCOMPLETE") || coverage::gap(&state.uncovered).is_empty() {
+        return worst;
+    }
+    format!("{worst} (PARTIAL COVERAGE)")
+}
+
+/// The verdict line as the report and the finished step show it: a coverage exit's own line, else
+/// the verdict with what a coverage gap left out; marked as a light pass's when it was one.
+#[must_use]
+pub fn verdict_line(state: &RunState, verdict: &str) -> String {
+    let gap = coverage::gap(&state.uncovered);
+    let line = match (&state.exit, gap.is_empty()) {
+        (Some(exit), _) => exit.line.clone(),
+        (None, true) => verdict.to_owned(),
+        (None, false) => format!(
+            "{verdict} — {}: this verdict covers only the files the Rust profile reviewed",
+            coverage::note(&gap)
+        ),
+    };
+    if state.light {
+        light::mark(&line)
+    } else {
+        line
+    }
+}
+
+/// The verdict from the confirmed findings' severities and what did not run.
+fn severity_verdict(state: &RunState) -> String {
     if let Some(exit) = &state.exit {
         return exit.verdict.clone();
     }
@@ -143,22 +175,14 @@ fn header(state: &RunState) -> String {
 /// first in each.
 #[must_use]
 pub fn markdown(state: &RunState, verdict: &str) -> String {
-    let line = state.exit.as_ref().map_or(verdict, |e| e.line.as_str());
-    let line = if state.light {
-        light::mark(line)
-    } else {
-        line.to_owned()
-    };
     let mut out = format!(
-        "# craft review\n\n## Verdict\n\n{line}\n\n{}",
+        "# craft review\n\n## Verdict\n\n{}\n\n{}",
+        verdict_line(state, verdict),
         header(state)
     );
-    if let Some(listed) = state.exit.as_ref().and_then(|e| e.listed.as_ref()) {
-        out.push_str(&format!("## {listed}\n\n"));
-        for f in &state.diff.files {
-            out.push_str(&format!("- {f}\n"));
-        }
-        out.push('\n');
+    match state.exit.as_ref() {
+        Some(exit) => listed(exit.listed.as_deref(), &state.diff.files, &mut out),
+        None => listed(Some(NOT_COVERED), &state.uncovered, &mut out),
     }
     degraded(state, &mut out);
     if state.exit.is_none() {
@@ -179,6 +203,21 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         out.push_str(&light::section(state));
     }
     out
+}
+
+/// The heading of the changed files a run that reviewed code left out, as review.js names it.
+const NOT_COVERED: &str = "Not reviewed (no language profile)";
+
+/// The changed files under `heading`, when there is one and a file to list.
+fn listed(heading: Option<&str>, files: &[String], out: &mut String) {
+    let Some(heading) = heading.filter(|_| !files.is_empty()) else {
+        return;
+    };
+    out.push_str(&format!("## {heading}\n\n"));
+    for f in files {
+        out.push_str(&format!("- {f}\n"));
+    }
+    out.push('\n');
 }
 
 /// How the run was weaker than asked, as its host said: before the findings, so they are read with it.
