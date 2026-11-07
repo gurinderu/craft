@@ -5,3 +5,8 @@ allow-panic-in-tests = true
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-dbg-in-tests = true
+
+# The cognitive-complexity bar of one function (`cognitive_complexity`, on in
+# the workspace lints): fixed at 15, the bar JS has too; no exception — a
+# function over it is rebuilt (realm @nick/craft, node #155).
+cognitive-complexity-threshold = 15

@@ -96,6 +96,14 @@ pub fn prompt_of(task: &Value) -> String {
     std::fs::read_to_string(task["promptFile"].as_str().unwrap()).unwrap()
 }
 
+/// Fails, naming the missing piece, unless `text` holds every one of `wants`.
+#[track_caller]
+pub fn assert_contains_all(text: &str, wants: &[&str]) {
+    for want in wants {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+}
+
 /// Writes `answer` where the task of `step` with `id` wants it, as its agent would.
 pub fn write_answer(step: &Value, id: &str, answer: &str) {
     let task = step["tasks"]
