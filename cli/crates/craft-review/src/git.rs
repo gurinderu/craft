@@ -91,6 +91,19 @@ pub fn is_ancestor(cwd: &Path, commit: &str) -> bool {
         && git(cwd, &["merge-base", "--is-ancestor", commit, "HEAD"]).is_ok()
 }
 
+/// Whether this repository has `commit`: a squash-merged branch or another clone may not.
+#[must_use]
+pub fn has_commit(cwd: &Path, commit: &str) -> bool {
+    !commit.starts_with('-') && verifies(cwd, commit)
+}
+
+/// Whether the code in `scope` is unchanged since `commit`, the working tree included, as
+/// `git diff --quiet <commit> -- <scope>` answers; false when git cannot tell.
+#[must_use]
+pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
+    !commit.starts_with('-') && git(cwd, &["diff", "--quiet", commit, "--", scope]).is_ok()
+}
+
 fn verifies(cwd: &Path, rev: &str) -> bool {
     git(
         cwd,

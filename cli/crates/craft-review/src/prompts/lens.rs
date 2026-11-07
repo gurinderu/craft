@@ -194,7 +194,7 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
                 ("brief", content::text(&spec.brief)?),
                 ("catalogue", catalogue_line(ctx, spec)?),
                 ("rules", rules(ctx)?),
-                ("strict", String::new()),
+                ("strict", strict_line(ctx, lens)?),
                 ("base", base_label(ctx)),
                 ("range", range(ctx)),
                 ("pathspec", at.pathspec.to_owned()),
@@ -218,6 +218,17 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
         )?
     };
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
+}
+
+/// The maintainability lens's STRICT MODE brief, which overrides the harm cap; empty otherwise.
+fn strict_line(ctx: &PromptContext, lens: &str) -> Result<String, ContentError> {
+    if !ctx.strict || lens != "maintainability" {
+        return Ok(String::new());
+    }
+    Ok(format!(
+        "\n{}\n",
+        content::text("lens-strict-maintainability")?
+    ))
 }
 
 /// The re-review framing of a lens prompt, empty on a first review.

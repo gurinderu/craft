@@ -41,7 +41,8 @@ pub fn ledger(chain: &Chain, settled: &[Value]) -> Vec<LedgerRow> {
                 why: format!("dismissed in round {}", chain.round),
                 ..p.row.clone()
             }),
-            Fate::Carried => rows.push(p.row.clone()),
+            Fate::Carried | Fate::Deferred => rows.push(p.row.clone()),
+            Fate::SetAside => {}
         }
     }
     let drop = tombstones.len().saturating_sub(TOMBSTONES_MAX);

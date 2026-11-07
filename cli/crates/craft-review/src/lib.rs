@@ -17,6 +17,7 @@ pub mod git;
 pub mod handoff;
 mod harm;
 pub mod ledger;
+pub mod memory;
 #[cfg(test)]
 mod parity;
 mod paths;
@@ -31,6 +32,7 @@ pub mod settle;
 pub mod state;
 pub mod status;
 pub mod step;
+mod strict;
 mod tool;
 mod validate;
 mod verify;

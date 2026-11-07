@@ -85,6 +85,35 @@ fn fate_of(row: &LedgerRow, answer: Option<&Value>) -> (Fate, String) {
     }
 }
 
+/// Settles each prior carried as Known and deferred (`deferralHeld` in
+/// `lib/review-adjudicate-priors.mjs`; realm @nick/craft, node #204) once the memory is recalled:
+/// one whose question still `holds` stays deferred, out of the verdict; one a record releases counts
+/// again, kept still open until the next round adjudicates it. A deferred prior whose code changed
+/// since its question's commit was never carried: it is adjudicated and counted by its answer.
+/// Returns the notes of the released.
+pub fn hold_deferrals(chain: &mut Chain, holds: &dyn Fn(&LedgerRow) -> bool) -> Vec<String> {
+    let mut notes = Vec::new();
+    for p in chain
+        .priors
+        .iter_mut()
+        .filter(|p| p.fate == Fate::Deferred && !holds(&p.row))
+    {
+        // Released by a record that answers its question, it counts again; no adjudicator was
+        // asked for it beside the scouts, so it is kept still open and adjudicated next round.
+        p.row.why = format!(
+            "{} (its deferral was released by a record that answers its question; not adjudicated this round, kept still open)",
+            base_why(&p.row.why)
+        );
+        p.row.disposition = "open".into();
+        p.fate = Fate::StillOpen;
+        notes.push(format!(
+            "the deferral on {}:{} no longer holds — a record answers its question: kept still open, adjudicated next round",
+            p.row.file, p.row.line
+        ));
+    }
+    notes
+}
+
 /// Takes the adjudicators' answers among `tasks` into the chain's priors: each one's fate, its
 /// re-located line and its rationale; a dead adjudicator keeps its prior still open. Returns the
 /// notes of what could not be judged.

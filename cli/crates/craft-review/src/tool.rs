@@ -20,33 +20,46 @@ const TOOL_LENSES: [&str; 9] = [
 /// The lens names a value carries, as `lensWords`: split on `,`, `;` and `|`, folded.
 fn words(v: Option<&Value>) -> Vec<String> {
     v.and_then(Value::as_str)
-        .map(|s| {
-            s.to_lowercase()
-                .split([',', ';', '|'])
-                .map(|w| w.trim().to_owned())
-                .filter(|w| !w.is_empty())
-                .collect()
-        })
+        .map(lens_words)
         .unwrap_or_default()
 }
 
-/// Whether `f` is a gate tool's: its `lens`, a `sources` entry or its `source` names one.
-fn is_tool_finding(f: &Value) -> bool {
+/// The lens names a text carries, as `lensWords`.
+pub(crate) fn lens_words(s: &str) -> Vec<String> {
+    s.to_lowercase()
+        .split([',', ';', '|'])
+        .map(|w| w.trim().to_owned())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// The lenses a finding names: its `lens`, each of its `sources`, its `source` (`findingLenses`).
+pub(crate) fn finding_lenses(f: &Value) -> Vec<String> {
     let sources = f.get("sources").and_then(Value::as_array);
     let mut lenses = words(f.get("lens"));
     lenses.extend(sources.into_iter().flatten().flat_map(|s| words(Some(s))));
     lenses.extend(words(f.get("source")));
-    lenses.iter().any(|l| TOOL_LENSES.contains(&l.as_str()))
+    lenses
+}
+
+/// Whether a lens name is a gate tool's.
+pub(crate) fn is_tool_lens(l: &str) -> bool {
+    TOOL_LENSES.contains(&l)
+}
+
+/// Whether `f` is a gate tool's: its `lens`, a `sources` entry or its `source` names one.
+pub(crate) fn is_tool_finding(f: &Value) -> bool {
+    finding_lenses(f).iter().any(|l| is_tool_lens(l))
+}
+
+/// A finding's `toolRule` as compared, as `ruleKey`.
+pub(crate) fn rule_key(f: &Value) -> String {
+    rule_key_of(f.get("toolRule").and_then(Value::as_str).unwrap_or(""))
 }
 
 /// A `toolRule` as compared, as `ruleKey`: folded, a leading `<tool>::` naming a gate tool dropped.
-fn rule_key(f: &Value) -> String {
-    let s = f
-        .get("toolRule")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim()
-        .to_lowercase();
+pub(crate) fn rule_key_of(rule: &str) -> String {
+    let s = rule.trim().to_lowercase();
     let Some((tool, rule)) = s.split_once("::") else {
         return s;
     };
@@ -67,7 +80,11 @@ fn rule_key(f: &Value) -> String {
 
 /// A title as compared, as `titleKey`: folded, whitespace collapsed.
 fn title_key(f: &Value) -> String {
-    let t = f.get("title").and_then(Value::as_str).unwrap_or("");
+    title_key_of(f.get("title").and_then(Value::as_str).unwrap_or(""))
+}
+
+/// A title as compared, as `titleKey`: folded, whitespace collapsed.
+pub(crate) fn title_key_of(t: &str) -> String {
     t.to_lowercase()
         .split_whitespace()
         .collect::<Vec<_>>()

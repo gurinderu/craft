@@ -32,6 +32,8 @@ fn label(fate: Fate) -> &'static str {
         Fate::Carried => "Carried (set aside by its author; its carry-check gave no answer)",
         Fate::Retired => "Retired (set aside by its author, the code around it unchanged)",
         Fate::Unverified => "Carried unverified (never checked against the code)",
+        Fate::Deferred => "Known and deferred (its question still holds)",
+        Fate::SetAside => "Set aside by a remembered record (listed under its own section below)",
     }
 }
 
