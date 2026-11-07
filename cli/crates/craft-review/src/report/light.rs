@@ -36,6 +36,9 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
     {
         parts.insert(2, GENERAL_NOT_RUN);
     }
+    if state.chain.prior.is_some() {
+        parts.push(REREVIEW_NOT_RUN);
+    }
     format!(
         "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup and the verification only; a re-run will not add these): {}",
         parts.join(" · ")
@@ -45,6 +48,9 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
 /// What the general profile leaves out of adversarial-review's catalog until its metrics gate is
 /// ported.
 const GENERAL_NOT_RUN: &str = "the general profile's complexity lens (needs a code-metrics index)";
+
+/// What a re-review leaves out of the engine's adjudicate track until it is ported.
+const REREVIEW_NOT_RUN: &str = "the re-review's red team on a resolved Critical or High prior finding, and the release of a finding set aside as Known and deferred by the record that answers its question (the CLI keeps no deferral on a ledger row, so it adjudicates a deferred finding like any other)";
 
 /// The verdict line marked as a light pass's, once.
 pub(super) fn mark(line: &str) -> String {
