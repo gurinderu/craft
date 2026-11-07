@@ -176,7 +176,7 @@ There is no formatter and no pre-commit hook: run `npm run gate` before pushing;
 - `docs/` — `LESSONS.md`, `observability.md`.
 - `.claude-plugin/` — the marketplace manifest; `.codex-plugin/` and `.agents/plugins/` — the Codex plugin manifest and marketplace, at the root because Codex leaves symlinks out of the plugin root it copies (`integrations/codex/README.md`); the manifest's `hooks` names the Claude Code hooks file.
 - `integrations/codex/`, `integrations/pi/` — a README each: where the Codex delivery lives and why; the planned pi driver.
-- `integrations/claude-code/hooks/` — `hooks.json`: the SessionStart hook (Claude Code), run as `lib/session-start-hook.mjs`; the UserPromptSubmit and SubagentStart hooks, run as `lib/work-hook-entry.mjs`; the PreToolUse hook on Bash, run as `lib/push-hook-entry.mjs`.
+- `integrations/claude-code/hooks/` — `hooks.json`: the SessionStart hook (Claude Code), run as `lib/session-start-hook.mjs`; the UserPromptSubmit and SubagentStart hooks, run as `lib/work-hook-entry.mjs`; the PreToolUse hook on the Agent tool, run as `lib/reviewer-dispatch-hook-entry.mjs`.
 - `.claude/` — `settings.json` (hooks) and `agents/` (the seven role agents for working on this repo: `reader`, `searcher`, `worker`, `designer`, `weaver`, `reviewer`, `verifier`; not shipped).
 - `MAP.md` — a map of the repo's contents; `README.md` — the human-facing entry point.
 

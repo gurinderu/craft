@@ -218,7 +218,7 @@ const telemetryNotes = () => telemetryLost.map(l => (
 // stamps the slice's `head` and tracked dirtiness from git; `startHead` is the head the scout saw first. The
 // record is filed with `finalize`, which folds this slice and files `reviewedHead`/`reviewedDirty` only when the
 // two name one commit (lib/craft-log-run.mjs, reviewedTree) — the rule craft:review's checkpoints go through, so a
-// push verdict is keyed to the commit this run read, never to one committed while it ran (realm @nick/craft, node #299).
+// verdict is keyed to the commit this run read, never to one committed while it ran (realm @nick/craft, node #299).
 const CHECKPOINT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
