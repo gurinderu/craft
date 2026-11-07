@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.0](https://github.com/gurinderu/craft/compare/v0.42.1...v0.43.0) (2026-11-07)
+
+
+### Features
+
+* **cli:** run the lens tasks on the Rust reviewer agent ([#331](https://github.com/gurinderu/craft/issues/331)) ([8017147](https://github.com/gurinderu/craft/commit/8017147de48f5864baada225e72d316c316c6a92))
+
 ## [0.42.1](https://github.com/gurinderu/craft/compare/v0.42.0...v0.42.1) (2026-11-07)
 
 
