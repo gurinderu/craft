@@ -8,21 +8,21 @@ name: claude-code-plugin
 #
 # release-please.yml calls this with the tag of each release it cuts; the first release to carry this file creates
 # the branch. GitHub dispatches only a workflow whose file is on the default branch, so by hand (`gh workflow run
-# claude-code-plugin.yml -f ref=<ref>`) it only re-publishes the branch from a ref once this file is on main —
-# never to seed it ahead of a release, which would ship unreleased content under the last release's version.
+# claude-code-plugin.yml -f ref=vX.Y.Z`) it only re-publishes the branch from a release tag once this file is on
+# main. Either way the ref must be a release tag (vX.Y.Z) whose plugin.json carries that version: a branch or a
+# commit would ship unreleased content under the last release's version, so the job refuses it before materializing.
 on:
   workflow_call:
     inputs:
       ref:
-        description: the tag, branch or commit whose delivery is materialized
+        description: the release tag (vX.Y.Z) whose delivery is materialized
         required: true
         type: string
   workflow_dispatch:
     inputs:
       ref:
-        description: the tag, branch or commit whose delivery is materialized
+        description: the release tag (vX.Y.Z) whose delivery is re-published
         required: true
-        default: main
         type: string
 
 permissions:
@@ -46,6 +46,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Only a release tag is published: vX.Y.Z, a tag on the remote at the checked-out commit, and the plugin.json
+      # it carries at that version. Anything else fails here, before the branch is touched.
+      - name: require a release tag
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "ref '$REF' is not a release tag (vX.Y.Z)"
+          tagged="$(git ls-remote --tags origin "refs/tags/$REF" "refs/tags/$REF^{}" | tail -n1 | cut -f1)"
+          [ -n "$tagged" ] || fail "no tag '$REF' on origin"
+          [ "$tagged" = "$(git rev-parse HEAD)" ] || fail "tag '$REF' ($tagged) is not the checked-out commit"
+          manifest=integrations/claude-code/.claude-plugin/plugin.json
+          [ -f "$manifest" ] || fail "tag '$REF' has no $manifest"
+          version="$(node -p "require('./$manifest').version")"
+          [ "$version" = "${REF#v}" ] || fail "tag '$REF' carries plugin.json version '$version', not '${REF#v}'"
       - name: fetch the branch head
         run: |
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
