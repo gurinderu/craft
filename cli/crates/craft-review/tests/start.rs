@@ -155,6 +155,15 @@ fn a_diff_no_profile_takes_takes_the_engines_coverage_exit() {
         "{report}"
     );
 
+    for config in ["package.json", "pyproject.toml", "docker-compose.yml"] {
+        let (v, _) = exit_of(config, None);
+        assert_eq!(
+            v,
+            json!("INCOMPLETE (no language profile)"),
+            "{config} is project configuration, no code for the general lenses"
+        );
+    }
+
     let s = start_over("Dockerfile");
     assert_eq!(s["uncovered"], json!(["Dockerfile"]));
     let line = s["line"].as_str().unwrap();

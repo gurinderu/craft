@@ -202,6 +202,7 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
                 ("lsp", if nav { " + LSP".into() } else { String::new() }),
                 ("dependencySource", content::text("dependency-source")?),
                 ("sources", String::new()),
+                ("ruleId", rule_id(profile)?),
                 (
                     "mutants",
                     if mutants {
@@ -215,6 +216,19 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
         )?
     };
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
+}
+
+/// The lens prompt's RULE ID line: cite the rubric's catalog, or, a profile with none, leave it
+/// empty.
+fn rule_id(profile: &Profile) -> Result<String, ContentError> {
+    if profile.rule_catalog {
+        content::prompt(
+            "lens-rule-id",
+            &vars([("rubricSkill", profile.rubric_skill.clone())]),
+        )
+    } else {
+        content::text("lens-rule-id-none")
+    }
 }
 
 /// The negative-space lens: the bug the diff enables in code it did not touch.

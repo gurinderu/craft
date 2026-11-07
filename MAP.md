@@ -106,8 +106,8 @@ committed. The review's knowledge — lens briefs and prompt templates (`content
 placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
 under `content/`, inlined into the engines by the build; the Rust and Nix profiles' rosters are also data
 (`content/profiles/rust.json`, `content/profiles/nix.json`, read by the Rust CLI), held to the engine's own by a
-parity test, and so is the CLI's general profile (`content/profiles/general.json`: adversarial-review's lenses, whose
-briefs that engine reads from the same files).
+parity test, and so is the CLI's general profile (`content/profiles/general.json`: adversarial-review's lenses but
+complexity, which waits for its code-metrics gate; that engine reads their briefs from the same files).
 
 | Workflow | Composes | Output |
 |---|---|---|

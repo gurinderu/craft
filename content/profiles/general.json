@@ -5,6 +5,7 @@
   "diffGlobs": [],
   "rubricSkill": "review-rules",
   "fpRules": "",
+  "ruleCatalog": false,
   "navSkill": "",
   "securityHints": "input parsing, authentication or authorization, tenant isolation, secrets, deserialization, payments, or untrusted input reaching a sink",
   "usesLibrary": false,
@@ -20,8 +21,7 @@
     { "id": "money", "brief": "lens-briefs/general-money", "model": "opus" },
     { "id": "concurrency", "brief": "lens-briefs/general-concurrency", "model": "opus" },
     { "id": "errors", "brief": "lens-briefs/general-errors", "model": "opus" },
-    { "id": "performance", "brief": "lens-briefs/general-performance", "model": "opus" },
-    { "id": "complexity", "brief": "lens-briefs/general-complexity", "model": "opus" }
+    { "id": "performance", "brief": "lens-briefs/general-performance", "model": "opus" }
   ],
   "floorLenses": []
 }

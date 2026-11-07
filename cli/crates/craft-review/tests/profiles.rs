@@ -88,6 +88,7 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
     );
     let p = prompt_of(task(&s, "lens-general-security-r1"));
     for want in [
+        "RULE ID (required field): this profile has no rule catalog",
         "You are the **security** review lens for a source diff",
         "Load the review-rules skill for the rubric.",
         "SLICE: security: injection, authz/authn gaps",
@@ -95,6 +96,10 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
     ] {
         assert!(p.contains(want), "{want}: {p}");
     }
+    assert!(
+        !p.contains("skill's rules.md"),
+        "no catalog to hunt in: {p}"
+    );
 
     let mut f = titled("High", 1, "token logged");
     f["file"] = json!("web/app.ts");
@@ -136,6 +141,7 @@ fn a_nix_only_diff_runs_the_nix_lenses_on_the_nix_reviewer() {
     for want in [
         "for a Nix diff",
         "Load the nix-review skill for the rubric.",
+        "the matching catalog ID from the nix-review skill's rules.md",
         "-- '*.nix' 'flake.lock'",
     ] {
         assert!(p.contains(want), "{want}: {p}");
@@ -166,7 +172,13 @@ fn round(step: &Value, found: &dyn Fn(&str) -> Vec<Value>) -> Value {
 
 #[test]
 fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
-    let repo = repo_with(&["src/lib.rs", "flake.nix", "web/app.ts", "Makefile"]);
+    let repo = repo_with(&[
+        "src/lib.rs",
+        "flake.nix",
+        "web/app.ts",
+        "Makefile",
+        "web/package.json",
+    ]);
     let out = tempfile::tempdir().unwrap();
     let (run, s) = start(repo.path(), out.path());
     assert_eq!(ids(&s), ["scout-rust", "scout-nix", "scout-general"]);
@@ -242,10 +254,14 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
         json!("Block"),
         "one verdict over every profile"
     );
-    assert_eq!(s["uncovered"], json!(["Makefile"]));
+    assert_eq!(
+        s["uncovered"],
+        json!(["Makefile", "web/package.json"]),
+        "project configuration goes to no profile"
+    );
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
     for want in [
-        "4 changed file(s), 1 Rust, 1 Nix, 1 source.",
+        "5 changed file(s), 1 Rust, 1 Nix, 1 source.",
         "Plan (rust): medium diff",
         "Plan (nix): small diff",
         "Plan (general): small diff",

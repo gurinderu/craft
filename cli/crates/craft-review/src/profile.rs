@@ -63,6 +63,10 @@ pub struct Lens {
     pub catalogue: Option<Catalogue>,
 }
 
+fn with_catalog() -> bool {
+    true
+}
+
 /// A language profile.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +77,10 @@ pub struct Profile {
     pub diff_globs: Vec<String>,
     pub rubric_skill: String,
     pub fp_rules: String,
+    /// Whether its rubric skill ships a `rules.md` catalog whose IDs a finding's `ruleId` cites;
+    /// without one its lenses are told to leave `ruleId` empty, not to hunt for an ID.
+    #[serde(default = "with_catalog")]
+    pub rule_catalog: bool,
     pub nav_skill: String,
     pub security_hints: String,
     pub uses_library: bool,

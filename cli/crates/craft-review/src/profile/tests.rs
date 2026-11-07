@@ -44,6 +44,7 @@ fn every_profile_reads_and_carries_its_briefs_and_scout_rules() {
 fn the_nix_profile_runs_its_lenses_on_the_nix_reviewer_over_its_globs() {
     let p = Profile::load("nix").unwrap();
     assert_eq!(p.lens_agent, Some(AgentKind::NixReviewer));
+    assert!(p.rule_catalog, "nix-review ships rules.md");
     assert_eq!(
         (
             p.rubric_skill.as_str(),
@@ -64,6 +65,8 @@ fn the_general_profile_takes_code_but_not_prose_or_configuration() {
         "its lenses run on the host's default agent"
     );
     assert!(p.lens("negative-space").is_none());
+    assert!(!p.rule_catalog, "review-rules ships no rules.md");
+    assert!(!p.offers("complexity"), "not without its code-metrics gate");
     for f in ["web/app.ts", "main.py", "src/lib.rs", "scripts/build.sh"] {
         assert!(p.covers(f), "{f}");
     }

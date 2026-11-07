@@ -15,9 +15,10 @@ fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
-const CLI_NOT_RUN: [&str; 6] = [
+const CLI_NOT_RUN: [&str; 7] = [
     "the gate and its tool seeds (clippy and semgrep for Rust; nix flake check, statix and deadnix for Nix)",
     "the completeness critic",
+    "the general profile's complexity lens (needs a code-metrics index)",
     "unit slicing and the contract lens",
     "extra and role lenses",
     "the external-sources block",
