@@ -12,7 +12,7 @@ use craft_agent::anthropic_api::AnthropicApi;
 use craft_agent::claude_code::ClaudeCode;
 use craft_agent::runner::{Batch, RunEvent, run_until};
 use craft_agent::{AgentBackend, AgentRequest};
-use craft_review::AgentSpec;
+use craft_review::{AgentSpec, prompts};
 use craft_tui::ProgressEvent;
 use tokio::sync::{mpsc, oneshot};
 
@@ -40,7 +40,10 @@ pub async fn run(args: ReviewArgs) -> Result<ExitCode> {
     let spec = load_spec(args.spec.as_deref(), &args.base)?;
     match args.backend {
         Backend::ClaudeCode => {
-            let craft_root = args.craft_root.clone().or_else(find_craft_root);
+            let craft_root = match &args.craft_root {
+                Some(given) => Some(plugin_dir(given)),
+                None => find_craft_root(),
+            };
             let backend = ClaudeCode {
                 command: args.claude.clone(),
                 plugin_dirs: craft_root.into_iter().collect(),
@@ -62,13 +65,31 @@ fn load_spec(path: Option<&Path>, base: &str) -> Result<AgentSpec> {
         .with_context(|| format!("parsing the agent spec {}", path.display()))
 }
 
-/// The nearest directory above the executable that holds craft's plugin manifest: the checkout a
-/// development build sits in.
+/// The nearest plugin root above the executable: for a development build, the Claude Code delivery
+/// (`integrations/claude-code`) of the checkout it sits in.
 pub(crate) fn find_craft_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    exe.ancestors()
-        .find(|dir| dir.join(".claude-plugin/plugin.json").is_file())
-        .map(Path::to_path_buf)
+    exe.ancestors().find_map(prompts::plugin_root_at)
+}
+
+/// The plugin directory an explicit `--craft-root` names, made absolute against craft's own working
+/// directory (`claude` runs in the review directory, where a relative path would name another place).
+/// Only an exact plugin root, or an exact checkout root (which names its `integrations/claude-code`),
+/// is mapped; no ancestor is searched, so a typo or another delivery's directory is not silently
+/// replaced by the Claude Code delivery. Anything else is passed as given, with a warning.
+fn plugin_dir(given: &Path) -> PathBuf {
+    let given = std::path::absolute(given).unwrap_or_else(|_| given.to_path_buf());
+    prompts::plugin_root_at(&given).unwrap_or_else(|| {
+        #[expect(clippy::print_stderr, reason = "a one-line warning to the CLI's user")]
+        {
+            eprintln!(
+                "craft: warning: --craft-root {} is neither a plugin root nor a checkout root \
+             (no .claude-plugin/plugin.json there or under integrations/claude-code); passed to claude as given",
+                given.display()
+            );
+        }
+        given
+    })
 }
 
 async fn run_one<B: AgentBackend + 'static>(
@@ -212,8 +233,8 @@ fn stop_signal() -> impl Future<Output = Option<u8>> {
 
 /// Off unix only Ctrl-C stops the run.
 #[cfg(not(unix))]
-fn stop_signal() -> impl Future<Output = Option<u8>> {
-    async { tokio::signal::ctrl_c().await.ok().map(|()| INTERRUPTED) }
+async fn stop_signal() -> Option<u8> {
+    tokio::signal::ctrl_c().await.ok().map(|()| INTERRUPTED)
 }
 
 /// Runner events by index → view events by agent id.
@@ -282,6 +303,57 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    fn manifest_at(dir: &Path) {
+        std::fs::create_dir_all(dir.join(".claude-plugin")).unwrap();
+        std::fs::write(dir.join(".claude-plugin/plugin.json"), "{}").unwrap();
+    }
+
+    #[test]
+    fn a_checkout_root_names_its_claude_code_delivery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let delivery = tmp.path().join("integrations/claude-code");
+        manifest_at(&delivery);
+        assert_eq!(plugin_dir(tmp.path()), delivery);
+    }
+
+    #[test]
+    fn an_installed_plugin_root_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        manifest_at(tmp.path());
+        assert_eq!(plugin_dir(tmp.path()), tmp.path());
+    }
+
+    #[test]
+    fn a_path_with_no_plugin_root_is_passed_as_given() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(plugin_dir(tmp.path()), tmp.path());
+    }
+
+    #[test]
+    fn a_typo_inside_a_checkout_is_not_mapped_to_the_delivery() {
+        let tmp = tempfile::tempdir().unwrap();
+        manifest_at(&tmp.path().join("integrations/claude-code"));
+        let typo = tmp.path().join("integrations/claude-cod");
+        assert_eq!(plugin_dir(&typo), typo);
+    }
+
+    #[test]
+    fn another_delivery_inside_a_checkout_is_not_mapped_to_the_claude_code_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        manifest_at(&tmp.path().join("integrations/claude-code"));
+        let opencode = tmp.path().join("integrations/opencode");
+        std::fs::create_dir_all(&opencode).unwrap();
+        assert_eq!(plugin_dir(&opencode), opencode);
+    }
+
+    #[test]
+    fn a_relative_root_is_made_absolute_against_crafts_own_directory() {
+        let given = Path::new("no-such-dir/craft");
+        let dir = plugin_dir(given);
+        assert!(dir.is_absolute(), "{}", dir.display());
+        assert_eq!(dir, std::env::current_dir().unwrap().join(given));
+    }
 
     #[tokio::test(start_paused = true)]
     async fn an_interrupt_still_stops_the_run_after_the_view_ended() {

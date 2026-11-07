@@ -19,7 +19,7 @@ jobs:
       # out of the root package.json so the shipped plugin still installs with nothing to fetch.
       # `npm ci` here is what makes the typecheck step below possible.
       - name: Install opencode plugin deps
-        run: npm ci --prefix opencode/plugin
+        run: npm ci --prefix integrations/opencode/plugin
       # The gate as one call (lib/gate.mjs): lint, the three typechecks, the unit tests, the workflow,
       # skill, delivery-parity, OpenCode-frontmatter and eval checkers, dependency-cruiser, both Knip runs,
       # jscpd, the mutation floor and the plugin manifest validator — the same command an agent runs before
@@ -43,11 +43,11 @@ jobs:
       # Last in the job, so a red audit never hides the other checks' verdict on the diff.
       # Deliberately not reproducible: a new advisory, or an unreachable registry, can turn a commit red
       # that was green (realm @nick/craft, #141). Green here is not a claim about a consumer's install:
-      # per opencode/README.md the plugin's deps land in the consumer's opencode tree (or they add
+      # per integrations/opencode/README.md the plugin's deps land in the consumer's opencode tree (or they add
       # @opencode-ai/plugin and @opencode-ai/sdk, unpinned, to their own package.json) — that closure
       # is whatever their tree resolves, and this audit does not cover it.
       - name: Audit shipped dependencies
-        run: npm audit --prefix opencode/plugin --omit=dev --audit-level=high
+        run: npm audit --prefix integrations/opencode/plugin --omit=dev --audit-level=high
       # Dev tooling never reaches a consumer: an advisory there is reported — a warning annotation on the
       # run and the job summary — not blocking, so a new advisory in a linter does not turn unrelated PRs
       # red. Fix with `npm audit fix` in its own PR. Runs even when an earlier step failed. An advisory is
@@ -92,7 +92,8 @@ jobs:
         run: cargo test --locked
 
   # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
-  # lib/, opencode/plugin/ and workflows/ (not opencode/install.sh or .github/). It found nothing real on adoption — it is here for code
+  # lib/, integrations/opencode/plugin/ and integrations/claude-code/workflows/ (not integrations/opencode/install.sh or
+  # .github/). It found nothing real on adoption — it is here for code
   # not yet written (realm @nick/craft, #138). A separate job, not a step in `test`: it is a Python
   # tool in its own pinned image and fails on its own. Not reproducible, like the dependency audit
   # (#141): `--config p/...` fetches the registry's rules as of the run, so a rule added upstream can
@@ -118,7 +119,7 @@ jobs:
           semgrep scan --metrics=off --error --strict --timeout 0 --max-target-bytes 0
           --config .semgrep/child-process.yml --config p/javascript --config p/typescript --config p/nodejs
           --config p/security-audit --config p/secrets --config p/default
-          lib opencode/plugin workflows
+          lib integrations/opencode/plugin integrations/claude-code/workflows
 
   # How quality moved between the PR's base and head — complexity, lint and type errors, tests, Knip,
   # import cycles — written to the job summary as a signal for review, never a gate (realm @nick/craft,
@@ -146,8 +147,10 @@ jobs:
       - name: Measure base and head, write the quality delta to the job summary
         run: |
           set +e
+          # The OpenCode plugin moved from opencode/plugin to integrations/opencode/plugin: a side installs the one it has.
           for side in base head; do
-            for prefix in . opencode/plugin; do
+            for prefix in . opencode/plugin integrations/opencode/plugin; do
+              [ -f "$side/$prefix/package.json" ] || continue
               if ! npm ci --prefix "$side/$prefix" > install.log 2>&1; then
                 echo "> **$side**: \`npm ci --prefix $prefix\` failed; metrics needing it show as failed to measure." >> "$GITHUB_STEP_SUMMARY"
                 tail -n 20 install.log

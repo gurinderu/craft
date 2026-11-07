@@ -3,7 +3,7 @@
 //! and `lib/review-verify.mjs` compute for the same template — what is chosen or joined is chosen
 //! here and passed in.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -90,12 +90,19 @@ fn repo_directive(repo: &str) -> String {
     )
 }
 
-/// The craft checkout above `exe`, and the plugin version its manifest names.
+/// The Claude Code plugin root `dir` is or holds: `dir` itself when its manifest is there (an installed
+/// copy, or the delivery directory), else the checkout's delivery `integrations/claude-code`.
+#[must_use]
+pub fn plugin_root_at(dir: &Path) -> Option<PathBuf> {
+    [dir.to_path_buf(), dir.join("integrations/claude-code")]
+        .into_iter()
+        .find(|d| d.join(".claude-plugin/plugin.json").is_file())
+}
+
+/// The craft plugin root at or above `exe`, and the plugin version its manifest names.
 #[must_use]
 pub fn craft_root_near(exe: &Path) -> Option<(String, Option<String>)> {
-    let root = exe
-        .ancestors()
-        .find(|d| d.join(".claude-plugin/plugin.json").is_file())?;
+    let root = exe.ancestors().find_map(plugin_root_at)?;
     let version = std::fs::read_to_string(root.join(".claude-plugin/plugin.json"))
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())

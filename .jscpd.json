@@ -1,5 +1,5 @@
 {
-  "path": ["lib", "opencode/plugin", "src"],
+  "path": ["lib", "integrations/opencode/plugin", "src"],
   "format": ["javascript", "typescript"],
   "ignore": ["**/*.test.mjs", "**/node_modules/**"],
   "crossFormats": ["js-ts"],

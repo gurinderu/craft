@@ -34,7 +34,7 @@
   "include": [
     "**/*.mjs",
     "content-modules.d.ts",
-    "../opencode/plugin/run-record.mjs",
+    "../integrations/opencode/plugin/run-record.mjs",
     "../.dependency-cruiser.mjs"
   ],
   "exclude": []

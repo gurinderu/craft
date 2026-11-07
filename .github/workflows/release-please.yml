@@ -23,15 +23,16 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   # The craft CLI built for each platform lib/craft-bin.mjs fetches, attached to the release just cut as
-  # craft-<target>.tar.gz (the binary `craft` at the archive root) and its .sha256. The CLI's version is the
-  # plugin's (release-please moves cli/Cargo.toml and cli/Cargo.lock with the manifest; the lock's filter was
+  # craft-<target>.tar.gz (the binary `craft` at the archive root, `craft.exe` for Windows) and its .sha256. The
+  # CLI's version is the plugin's (release-please moves cli/Cargo.toml and cli/Cargo.lock with the manifest; the lock's filter was
   # observed on release-please 17.3.0, the one this action's v4.4.1 bundles — re-check it when the action moves,
   # and ci.yml's rust job, run with --locked on main, fails on a lock left behind), so the binary a
   # plugin version fetches is the one built from that version's tag. Each runner builds for its own host:
   # the step below refuses a runner whose host is not the matrix target, so no archive is mislabelled. Linux
   # builds are static musl (any distro's libc, however old); the runner's host is gnu on the same arch, so for
   # musl the guard compares the target with its gnu twin. musl needs no musl-tools: no crate compiles C code,
-  # and Rust links the musl targets with its own self-contained C runtime.
+  # and Rust links the musl targets with its own self-contained C runtime. Windows is a tar.gz too: craft-bin
+  # unpacks it with the tar.exe Windows 10 and later ship; every step runs in bash (Git Bash on the Windows runner).
   cli-binaries:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
@@ -49,9 +50,12 @@ jobs:
             runner: macos-15
           - target: x86_64-apple-darwin
             runner: macos-15-intel
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
+        shell: bash
         working-directory: cli
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +84,9 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           archive="craft-$TARGET.tar.gz"
-          tar -czf "$archive" -C "target/$TARGET/release" craft
+          bin=craft
+          case "$TARGET" in *-windows-*) bin=craft.exe ;; esac
+          tar -czf "$archive" -C "target/$TARGET/release" "$bin"
           if command -v sha256sum >/dev/null; then sha256sum "$archive" > "$archive.sha256"; else shasum -a 256 "$archive" > "$archive.sha256"; fi
           cat "$archive.sha256"
       - name: upload to the release
@@ -89,3 +95,15 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
           TARGET: ${{ matrix.target }}
         run: gh release upload "$TAG" "craft-$TARGET.tar.gz" "craft-$TARGET.tar.gz.sha256" --clobber --repo "$GITHUB_REPOSITORY"
+
+  # The Claude Code plugin without symlinks, rebuilt from the release's tag as the next commit of the
+  # claude-code-plugin branch (the first such release creates it) — claude-code-plugin.yml. The marketplace entry
+  # moves to this branch in a follow-up once it exists; until then it installs ./integrations/claude-code.
+  claude-code-plugin:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/claude-code-plugin.yml
+    with:
+      ref: ${{ needs.release-please.outputs.tag_name }}

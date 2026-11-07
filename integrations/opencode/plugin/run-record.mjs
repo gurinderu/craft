@@ -790,7 +790,7 @@ async function sh(ctx, cmd) {
 // writer is best-effort and never throws (realm @nick/craft, node #119).
 /** @param {string} dir @param {string} line */
 async function appendIndex(dir, line) {
-  const lock = await import('../../lib/index-lock.mjs').catch(() => null)
+  const lock = await import('../../../lib/index-lock.mjs').catch(() => null)
   if (lock) lock.appendIndexLine(dir, line)
   else appendFileSync(join(dir, 'index.jsonl'), `${line}\n`)
 }

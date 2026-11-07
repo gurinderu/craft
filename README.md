@@ -65,25 +65,23 @@ cross-linking is the collection's cohesion.
 ```
 craft/
 ├── .claude-plugin/
-│   ├── plugin.json        # plugin metadata
-│   └── marketplace.json   # single-plugin marketplace (source: ./)
-├── .codex-plugin/plugin.json      # the Codex plugin manifest (same skills/ and hooks/)
+│   └── marketplace.json   # single-plugin marketplace (source: integrations/claude-code)
+├── .codex-plugin/plugin.json      # the Codex plugin manifest (root skills/ and lib/, the Claude Code hooks file)
 ├── .agents/plugins/marketplace.json  # the Codex marketplace (source: .)
-├── agents/                # diff/structure review agents
-│   ├── rust-reviewer.md
-│   ├── rust-security-scanner.md
-│   ├── rust-miri.md
-│   ├── engine-service.md  # the engines' service steps
-│   └── rust-architecture-reviewer.md
-├── hooks/
-│   └── hooks.json         # SessionStart (lib/session-start-hook.mjs); UserPromptSubmit, SubagentStart (lib/work-hook-entry.mjs); PreToolUse (lib/push-hook-entry.mjs)
+├── integrations/          # one directory per harness craft is delivered to
+│   ├── claude-code/       # the Claude Code plugin (what a marketplace install copies)
+│   │   ├── .claude-plugin/plugin.json   # plugin metadata
+│   │   ├── agents/        # diff/structure review agents and the engines' service agent
+│   │   ├── hooks/hooks.json   # SessionStart (lib/session-start-hook.mjs); UserPromptSubmit, SubagentStart (lib/work-hook-entry.mjs); PreToolUse (lib/push-hook-entry.mjs, lib/reviewer-dispatch-hook-entry.mjs)
+│   │   ├── workflows/     # multi-agent orchestration scripts, generated from src/ (npm run build:engines)
+│   │   └── skills, lib, content, src, README.md -> ../../…   # symlinks; the release branch holds them as real files
+│   ├── opencode/          # the OpenCode adapter layer (agents, commands, plugin, install.sh)
+│   ├── codex/             # where the Codex delivery lives, and why its manifest stays at the root
+│   └── pi/                # planned
 ├── src/                   # the workflow scripts as authored
-├── workflows/             # multi-agent orchestration scripts, generated from src/ (npm run build:engines)
-│   ├── rust-review.js
-│   ├── rust-audit.js
-│   └── triage-findings.js
-├── lib/                   # tested helpers shared (bundled) by the workflows
-│   └── run-record.mjs
+├── lib/                   # tested helpers shared (bundled) by the workflows; the hooks' scripts
+├── content/               # prompts and schemas the engines and the CLI render
+├── cli/                   # the craft Rust CLI
 └── skills/                # (abbreviated)
     ├── rust-review/
     ├── rust-testing/
@@ -97,20 +95,32 @@ craft/
 /plugin install craft@craft
 ```
 
+The marketplace installs the plugin from `integrations/claude-code` in the repository; the install follows its
+symlinks to the shared skills, `lib`, `content` and `src`, which works where the clone makes symlinks (Linux,
+macOS). Windows, where a clone makes none by default (`core.symlinks=false`), is not supported yet: each release
+also rebuilds the `claude-code-plugin` branch from `integrations/claude-code` with its symlinks replaced by real
+files, and once a release has published it, the marketplace entry moves to that branch (a `url` source over
+HTTPS), from which Windows installs it whole. Its install has been observed from a Linux clone with
+`core.symlinks=false` set, not on a real Windows machine. The `cli-review` workflow's
+released binary covers x86_64 Windows too (`craft-x86_64-pc-windows-msvc.tar.gz`, unpacked with the system's
+`tar.exe`), built by the release but not yet run on Windows. Working from a checkout,
+`claude --plugin-dir integrations/claude-code` loads the delivery in place through its symlinks (Linux, macOS).
+
 ## opencode
 
 craft also runs in [opencode](https://opencode.ai) via a contained adapter layer under
-`opencode/`: the skills are shared verbatim (opencode reads the Anthropic skill spec), the 4
+`integrations/opencode/`: the skills are shared verbatim (opencode reads the Anthropic skill spec), the 4
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
 workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`). Install with
-`opencode/install.sh` (project-scoped by default). See `opencode/README.md` for details, the model
+`integrations/opencode/install.sh` (project-scoped by default). See `integrations/opencode/README.md` for details, the model
 strategy, and parity caveats.
 
 ## Codex
 
 craft installs into the [Codex CLI](https://github.com/openai/codex) as a plugin: `.codex-plugin/plugin.json`
-and the marketplace `.agents/plugins/marketplace.json` serve the same `skills/` and `hooks/hooks.json` as the
-Claude Code plugin.
+and the marketplace `.agents/plugins/marketplace.json` serve the same `skills/` and hooks file
+(`integrations/claude-code/hooks/hooks.json`) as the Claude Code plugin. The Codex plugin root is the repository
+root (see `integrations/codex/README.md`).
 
 ```
 codex plugin marketplace add gurinderu/craft
@@ -120,7 +130,7 @@ codex plugin add craft@craft
 Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
 skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines (`craft:review`,
 `adversarial-review`, `rust-audit`, `triage-findings`) and the review loop of `craft:develop` do not run there,
-and the review agents under `agents/` are not shipped to it: the hooks tell a Codex session to review the diff
+and the review agents under `integrations/claude-code/agents/` are not shipped to it: the hooks tell a Codex session to review the diff
 itself. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
 
 ## Workflows

@@ -5,7 +5,7 @@
 // @opencode-ai/sdk. So a shipped entry that reaches a test file (they import vitest) or any other
 // package fails only in the consumer's repo, at run time; in CI every devDependency is installed and
 // the rest of the gate stays green. Knip (even --production --strict), tsc and the unit tests let both
-// through (realm @nick/craft, #145). The engines (authored in src/*.js, shipped as workflows/*.js) run in the
+// through (realm @nick/craft, #145). The engines (authored in src/*.js, shipped as integrations/claude-code/workflows/*.js) run in the
 // Workflow sandbox, which has neither packages nor Node: each imports lib/ modules that esbuild bundles in
 // (realm @nick/craft, #210), so what it reaches may hold no npm package, no node: built-in and no test.
 //
@@ -41,7 +41,7 @@ export default {
       from: { path: SHIPPED },
       to: {
         path: '(^|/)node_modules/',
-        pathNot: '^opencode/plugin/node_modules/@opencode-ai/(plugin|sdk)/',
+        pathNot: '^integrations/opencode/plugin/node_modules/@opencode-ai/(plugin|sdk)/',
         reachable: true,
       },
     },
@@ -73,14 +73,14 @@ export default {
       name: 'resolvable',
       severity: 'error',
       comment: 'An import dependency-cruiser cannot resolve is invisible to shipped-reaches-no-package.',
-      from: { path: '^(lib|opencode/plugin|src)/' },
+      from: { path: '^(lib|integrations/opencode/plugin|src)/' },
       to: { couldNotResolve: true },
     },
   ],
   options: {
     doNotFollow: { path: '(^|/)node_modules/' },
     tsPreCompilationDeps: false,
-    tsConfig: { fileName: `${import.meta.dirname}/opencode/plugin/tsconfig.json` },
+    tsConfig: { fileName: `${import.meta.dirname}/integrations/opencode/plugin/tsconfig.json` },
     // @opencode-ai/plugin exports only an `import` condition.
     enhancedResolveOptions: { conditionNames: ['import', 'node', 'default'], exportsFields: ['exports'] },
   },
