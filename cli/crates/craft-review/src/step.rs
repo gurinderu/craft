@@ -82,6 +82,7 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
         settled: Vec::new(),
         notes: Vec::new(),
         not_run: Vec::new(),
+        degraded: Vec::new(),
         verdict: None,
         exit: None,
     };
@@ -117,9 +118,27 @@ pub fn start(opts: &StartOptions) -> Result<Value> {
 /// When the run is done, a given answer names no pending task, or the state or a file cannot be read
 /// or written.
 pub fn submit(dir: &Path, given: Option<&Map<String, Value>>) -> Result<Value> {
+    submit_noting(dir, given, &[])
+}
+
+/// [`submit`], keeping `degraded`: how the host ran this step's tasks weaker than asked (a task
+/// run without the agent it named), each note once, for the report and the finished step.
+///
+/// # Errors
+/// As [`submit`].
+pub fn submit_noting(
+    dir: &Path,
+    given: Option<&Map<String, Value>>,
+    degraded: &[String],
+) -> Result<Value> {
     let mut run = state::load(dir)?;
     if run.phase == Phase::Done {
         bail!("the run in {} is done", dir.display());
+    }
+    for note in degraded.iter().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        if !run.degraded.iter().any(|d| d == note) {
+            run.degraded.push(note.to_owned());
+        }
     }
     let pending = |id: &str| {
         run.tasks
@@ -178,7 +197,11 @@ pub fn submit(dir: &Path, given: Option<&Map<String, Value>>) -> Result<Value> {
 fn next(dir: &Path, run: &RunState) -> Value {
     match &run.verdict {
         Some(v) if run.phase == Phase::Done => {
-            json!({"run": dir.display().to_string(), "done": true, "report": state::report_path(dir).display().to_string(), "verdict": v})
+            let mut done = json!({"run": dir.display().to_string(), "done": true, "report": state::report_path(dir).display().to_string(), "verdict": v});
+            if let (Some(obj), false) = (done.as_object_mut(), run.degraded.is_empty()) {
+                obj.insert("degraded".into(), json!(run.degraded));
+            }
+            done
         }
         Some(_) | None => {
             let tasks: Vec<Value> = run

@@ -50,6 +50,10 @@ pub struct SubmitArgs {
     /// files the tasks' agents wrote under the run's `answers/`.
     #[arg(long)]
     pub answers: Option<PathBuf>,
+    /// How the host ran this step's tasks weaker than asked (a task run without the agent it
+    /// named); repeatable. Each is kept and named in the report and the finished step.
+    #[arg(long)]
+    pub degraded: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -121,7 +125,7 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
-    print(&step::submit(&run, given.as_ref())?)
+    print(&step::submit_noting(&run, given.as_ref(), &args.degraded)?)
 }
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {

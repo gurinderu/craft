@@ -157,6 +157,11 @@ pub struct RunState {
     pub notes: Vec<String>,
     /// What did not run that the review needed: any entry makes the verdict INCOMPLETE.
     pub not_run: Vec<String>,
+    /// How the run was weaker than asked, as its host said when submitting (`submit_noting`): a task
+    /// run without the agent it named, say. The report names each; the verdict stands. Optional, so
+    /// a state written before it reads as before and the format keeps its version.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub degraded: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
 }

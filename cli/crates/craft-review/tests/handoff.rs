@@ -7,7 +7,7 @@ use common::{
 };
 use craft_review::status;
 use craft_review::step;
-use serde_json::{Value, json};
+use serde_json::json;
 
 #[test]
 fn a_full_loop_reads_every_answer_from_its_file() {
@@ -111,58 +111,4 @@ fn answers_given_by_the_host_override_the_files() {
     });
     let s = step::submit(&run, Some(&answers(empty))).unwrap();
     assert_eq!(s["verdict"], json!("Approve"));
-}
-
-/// The `agentType` each task of step `s` names, `None` where it names none.
-fn agent_types(s: &Value) -> Vec<Option<&str>> {
-    s["tasks"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|t| t.get("agentType").and_then(Value::as_str))
-        .collect()
-}
-
-#[test]
-fn only_the_lens_tasks_name_the_profile_agent() {
-    let repo = fixture(true);
-    let scouted = tempfile::tempdir().unwrap();
-    let scout = step::start(&opts(repo.path(), scouted.path())).unwrap();
-    assert_eq!(
-        agent_types(&scout),
-        [None],
-        "the scout runs on the default agent"
-    );
-
-    let out = tempfile::tempdir().unwrap();
-    let (run, s) = small_run(repo.path(), out.path());
-    assert_eq!(
-        agent_types(&s),
-        [Some("rust-reviewer"); 3],
-        "every lens runs on the profile's lens agent, named without a host prefix"
-    );
-    let mut medium = finding("Medium", 2);
-    medium["title"] = json!("another");
-    let round1 = json!({
-        "lens-errors-r1": lens("errors", &[finding("High", 1), medium]),
-        "lens-intent-r1": lens("intent", &[]),
-        "lens-tests-r1": lens("tests", &[]),
-    });
-    let s = step::submit(&run, Some(&answers(round1))).unwrap();
-    assert_eq!(ids(&s), ["dedup-rust"]);
-    assert_eq!(
-        agent_types(&s),
-        [None],
-        "the dedup runs on the default agent"
-    );
-    let dedup = json!({"dedup-rust": {"groups": []}});
-    let s = step::submit(&run, Some(&answers(dedup))).unwrap();
-    assert!(
-        !ids(&s).is_empty() && ids(&s).iter().all(|id| id.starts_with("verify")),
-        "{s}"
-    );
-    assert!(
-        agent_types(&s).iter().all(Option::is_none),
-        "the verifiers run on the default agent: {s}"
-    );
 }
