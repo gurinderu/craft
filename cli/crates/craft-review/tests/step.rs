@@ -204,6 +204,25 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
             "dedup before verification: 4 → 3 (1 cross-lens duplicate(s) merged)",
         ],
     );
+    let mut reported: Vec<Value> = s["findings"].as_array().unwrap().clone();
+    reported.sort_by_key(|f| f["tier"].as_str().unwrap().to_owned());
+    assert_eq!(
+        reported,
+        [
+            json!({"severity": "High", "file": "src/lib.rs", "line": 1, "title": "f returns 1 where 0 is claimed", "ruleId": "", "tier": "confirmed"}),
+            json!({"severity": "Low", "file": "src/lib.rs", "line": 1, "title": "naming", "ruleId": "", "tier": "unverified"}),
+        ],
+        "the finished step carries the reported findings for the run record, the refuted one left out"
+    );
+    assert_eq!(
+        (&s["line"], &s["base"], &s["uncovered"], &s["notRun"]),
+        (
+            &json!("Block"),
+            &json!("origin/main"),
+            &json!([]),
+            &json!([])
+        )
+    );
     assert_eq!(status::status(&run).unwrap()["phase"], json!("done"));
     let late = step::submit(&run, Some(&Map::new())).unwrap_err();
     assert!(matches!(late, Error::Step(StepError::Done(_))), "{late}");

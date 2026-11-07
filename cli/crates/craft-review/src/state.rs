@@ -161,6 +161,10 @@ pub struct RunState {
     pub diff: Diff,
     /// The changed files the profile reviews.
     pub rust_files: Vec<String>,
+    /// The changed files no profile covers that carry something to review (`coverage::uncovered`).
+    /// Optional, so a state written before it reads as before and the format keeps its version.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uncovered: Vec<String>,
     /// A light pass (`depth=light`) rather than the full review.
     pub light: bool,
     pub phase: Phase,
