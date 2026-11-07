@@ -224,7 +224,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     for n in &state.not_run {
         out.push_str(&format!("- {n}\n"));
     }
-    out.push_str(&format!("- {}\n", light::cli_not_run()));
+    out.push_str(&format!("- {}\n", light::cli_not_run(state)));
     if !state.notes.is_empty() {
         out.push_str("\n## Notes\n\n");
         for n in &state.notes {

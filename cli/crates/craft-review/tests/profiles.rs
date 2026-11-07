@@ -124,6 +124,10 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
         report.contains("1 changed file(s), 1 source.") && report.contains("`web/app.ts:1`"),
         "{report}"
     );
+    assert!(
+        report.contains("the general profile's complexity lens (needs a code-metrics index)"),
+        "a run the general profile took part in names the lens it leaves out: {report}"
+    );
 }
 
 #[test]
@@ -155,6 +159,10 @@ fn a_nix_only_diff_runs_the_nix_lenses_on_the_nix_reviewer() {
     assert!(
         report.contains("Plan: small diff, full review, at most 1 round(s). Lenses planned: purity, intent; ran: purity, intent."),
         "{report}"
+    );
+    assert!(
+        !report.contains("complexity"),
+        "no general profile, no word of its complexity lens: {report}"
     );
 }
 
@@ -251,8 +259,8 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     );
     assert_eq!(
         s["verdict"],
-        json!("Block"),
-        "one verdict over every profile"
+        json!("Block (PARTIAL COVERAGE)"),
+        "one verdict over every profile, marked for the manifest no lens read"
     );
     assert_eq!(
         s["uncovered"],

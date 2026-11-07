@@ -15,10 +15,9 @@ fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
-const CLI_NOT_RUN: [&str; 7] = [
+const CLI_NOT_RUN: [&str; 6] = [
     "the gate and its tool seeds (clippy and semgrep for Rust; nix flake check, statix and deadnix for Nix)",
     "the completeness critic",
-    "the general profile's complexity lens (needs a code-metrics index)",
     "unit slicing and the contract lens",
     "extra and role lenses",
     "the external-sources block",
@@ -27,13 +26,25 @@ const CLI_NOT_RUN: [&str; 7] = [
 
 /// The not-run line that says what this CLI's review leaves out by construction. It is a scope
 /// statement, not a failure: a re-run will not add these, so it does not make the verdict
-/// INCOMPLETE.
-pub(super) fn cli_not_run() -> String {
+/// INCOMPLETE. A run the general profile took part in also names the lens that profile leaves out.
+pub(super) fn cli_not_run(state: &RunState) -> String {
+    let mut parts = CLI_NOT_RUN.to_vec();
+    if state
+        .tracks
+        .iter()
+        .any(|t| t.profile == "general" && t.plan.is_some())
+    {
+        parts.insert(2, GENERAL_NOT_RUN);
+    }
     format!(
         "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup and the verification only; a re-run will not add these): {}",
-        CLI_NOT_RUN.join(" · ")
+        parts.join(" · ")
     )
 }
+
+/// What the general profile leaves out of adversarial-review's catalog until its metrics gate is
+/// ported.
+const GENERAL_NOT_RUN: &str = "the general profile's complexity lens (needs a code-metrics index)";
 
 /// The verdict line marked as a light pass's, once.
 pub(super) fn mark(line: &str) -> String {

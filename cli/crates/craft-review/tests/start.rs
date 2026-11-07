@@ -213,6 +213,23 @@ fn mixed_run(extra: &[&str]) -> (serde_json::Value, String) {
 }
 
 #[test]
+fn a_package_manifest_beside_code_goes_to_no_lens_and_voids_green() {
+    let (s, report) = mixed_run(&["package.json"]);
+    assert_eq!(
+        (&s["verdict"], &s["uncovered"]),
+        (
+            &json!("Approve (PARTIAL COVERAGE)"),
+            &json!(["package.json"])
+        ),
+        "a manifest (a postinstall script, say) no lens read is no green Approve: {report}"
+    );
+    assert!(
+        report.contains("## Not reviewed (no language profile)\n\n- package.json\n"),
+        "{report}"
+    );
+}
+
+#[test]
 fn project_configuration_is_listed_as_not_reviewed_but_is_no_hole() {
     let (s, report) = mixed_run(&["Makefile", "NOTES.md"]);
     assert_eq!(

@@ -12,7 +12,7 @@ mod assign;
 mod gap;
 
 pub use assign::{assign, supported};
-pub use gap::{gap, is_ancillary, note, uncovered};
+pub use gap::{gap, is_ancillary, is_project_config, note, uncovered};
 
 /// A run that ended before any lens ran: its verdict, the line under it, and the files it lists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

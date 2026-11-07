@@ -175,7 +175,7 @@ impl Profile {
     #[must_use]
     pub fn covers(&self, file: &str) -> bool {
         if self.detect.rest {
-            return !crate::coverage::is_inert(file) && !crate::coverage::is_ancillary(file);
+            return !crate::coverage::is_inert(file) && !crate::coverage::is_project_config(file);
         }
         let base = file.rsplit('/').next().unwrap_or(file);
         self.detect
