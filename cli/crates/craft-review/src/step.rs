@@ -14,7 +14,8 @@ use crate::git;
 use crate::handoff;
 use crate::phases::{advance, finish};
 use crate::profile::Profile;
-use crate::prompts::{self, PromptContext, SPEC_MAX};
+use crate::prompts::{self, PromptContext, ReScope, SPEC_MAX};
+use crate::rereview;
 use crate::rounds::Rounds;
 use crate::state::{
     self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState, Track,
@@ -66,6 +67,12 @@ pub struct StartOptions {
     /// A light pass (`depth=light`): the diff-scoped lenses, one round, only Medium and above
     /// verified.
     pub light: bool,
+    /// Start a new chain of rounds rather than build on the branch's earlier round.
+    pub fresh: bool,
+    /// Every this-many-th round of a chain reviews the whole diff again; 0, never.
+    pub full_every: u32,
+    /// Where earlier runs are looked for; the run directory's parent when `None`.
+    pub runs: Option<PathBuf>,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -81,7 +88,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
             path: opts.cwd.clone(),
             source,
         })?;
-    let diff = git::read_diff(&cwd, opts.base.as_deref())?;
+    let branch_diff = git::read_diff(&cwd, opts.base.as_deref())?;
     let dir = &opts.run_dir;
     if state::state_path(dir).exists() {
         return Err(StepError::RunExists(dir.clone()).into());
@@ -97,12 +104,26 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         source,
     })?;
     let profiles = Profile::all()?;
+    let runs = opts
+        .runs
+        .clone()
+        .or_else(|| dir.parent().map(Path::to_path_buf));
+    let mut chain = rereview::begin(
+        &cwd,
+        runs.as_deref().unwrap_or(dir),
+        opts.fresh,
+        opts.full_every,
+        &branch_diff.base,
+    )?;
+    let spec = branch_diff.log.chars().take(SPEC_MAX).collect();
+    let (diff, re_review) = rereview::scope(&cwd, &mut chain, branch_diff)?;
     let context = PromptContext {
         repo: cwd.display().to_string(),
         base: diff.base.clone(),
-        spec: diff.log.chars().take(SPEC_MAX).collect(),
+        spec,
         craft_root: opts.craft_root.clone(),
         craft_version: opts.craft_version.clone(),
+        re_review,
     };
     let tracks: Vec<Track> = coverage::assign(&diff.files, &profiles)
         .into_iter()
@@ -127,18 +148,24 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         degraded: Vec::new(),
         verdict: None,
         exit: None,
+        chain,
     };
     run.exit = coverage::exit(
         &run.diff,
         run.tracks.len(),
         &coverage::supported(&profiles),
-        opts.base.is_some(),
+        opts.base.is_some() || re_review != ReScope::First,
     );
+    // The prior round's open findings are adjudicated beside the scouts: neither waits on the other.
+    let adjudicators = rereview::tasks(&run.context, &run.chain, &profiles)?;
     if let Some(exit) = &run.exit {
         run.not_run.extend(exit.not_run.clone());
-        finish(dir, &mut run)?;
     } else {
         run.tasks = scouts(&run, &profiles)?;
+    }
+    run.tasks.extend(adjudicators);
+    if run.tasks.is_empty() {
+        finish(dir, &mut run)?;
     }
     handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;

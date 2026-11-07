@@ -1,10 +1,12 @@
 //! The review: what work it needs, step by step, without starting an agent itself ([`step`],
 //! realm @nick/craft, node #453), rendered from craft's content ([`content`], node #452) for the
 //! language profiles it reads as data ([`profile`]): a scout per profile, the lens rounds, one dedup, the
-//! verifiers ([`phases`]). The types below are the pipeline's skeleton the single-agent probe
+//! verifiers ([`phases`]); a later run of a branch builds on its earlier round ([`rereview`]). The
+//! types below are the pipeline's skeleton the single-agent probe
 //! still runs on.
 
 pub mod agent;
+pub mod chain;
 pub mod content;
 pub mod coverage;
 mod dedup;
@@ -13,6 +15,7 @@ mod finished;
 pub mod git;
 pub mod handoff;
 mod harm;
+pub mod ledger;
 #[cfg(test)]
 mod parity;
 mod paths;
@@ -21,6 +24,7 @@ pub mod plan;
 pub mod profile;
 pub mod prompts;
 pub mod report;
+pub mod rereview;
 pub mod rounds;
 pub mod settle;
 pub mod state;

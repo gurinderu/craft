@@ -32,6 +32,17 @@ pub struct StartArgs {
     /// whole review.
     #[arg(long, value_enum, default_value_t = Depth::Full)]
     pub depth: Depth,
+    /// Start a new chain of review rounds: build on no earlier round of this branch.
+    #[arg(long)]
+    pub fresh: bool,
+    /// Every this-many-th round of a branch's chain reviews the whole diff again rather than the
+    /// fix commits since the prior round; 0, never.
+    #[arg(long, default_value_t = 3)]
+    pub full_every: u32,
+    /// Where the earlier runs a re-review builds on are looked for; the run directory's parent
+    /// (~/.craft/runs/cli by default) when absent.
+    #[arg(long)]
+    pub runs: Option<PathBuf>,
 }
 
 /// How deep a review goes.
@@ -102,6 +113,9 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         craft_root,
         craft_version,
         light: args.depth == Depth::Light,
+        fresh: args.fresh,
+        full_every: args.full_every,
+        runs: args.runs.clone(),
     };
     print(&step::start(&opts)?)
 }

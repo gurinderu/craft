@@ -10,6 +10,7 @@ use crate::agent::{AgentKind, Model};
 use crate::git::Diff;
 use crate::plan::Plan;
 use crate::prompts::PromptContext;
+use crate::rereview::Chain;
 use crate::rounds::Rounds;
 
 /// The state file's format; a run written by another format is refused, not misread.
@@ -76,6 +77,10 @@ pub enum TaskKind {
     },
     VerifyBatch {
         findings: Vec<usize>,
+    },
+    /// The adjudicator of the prior round's finding `prior` (`Chain::priors`).
+    Adjudicate {
+        prior: usize,
     },
 }
 
@@ -235,6 +240,10 @@ pub struct RunState {
     pub degraded: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
+    /// Where the run stands in its branch's chain of review rounds. Optional, so a state written
+    /// before it reads as a first review and the format keeps its version.
+    #[serde(default)]
+    pub chain: Chain,
 }
 
 impl RunState {

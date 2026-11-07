@@ -10,12 +10,14 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::Error;
+use crate::chain;
 use crate::content;
 use crate::dedup;
 use crate::plan::{self, PlanInput};
 use crate::profile::Profile;
 use crate::prompts;
 use crate::report;
+use crate::rereview;
 use crate::rounds;
 use crate::state::{self, Phase, RunState, Task, TaskKind, TaskState};
 use crate::step::StepError;
@@ -53,6 +55,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     let profiles = profiles_of(run)?;
     match run.phase {
         Phase::Scout => {
+            let judged = rereview::judge(&mut run.chain, &run.tasks);
+            run.notes.extend(judged);
             plan_tracks(run, &profiles);
             next_round(dir, run, &profiles)
         }
@@ -143,6 +147,8 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
             ));
         }
     }
+    let absorbed = rereview::absorb(&mut run.chain, &mut run.rounds.pool);
+    run.notes.extend(absorbed);
     if run.rounds.pool.is_empty() {
         return finish(dir, run);
     }
@@ -195,11 +201,27 @@ fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     Ok(())
 }
 
+/// Files the run's round record, which a later run of its branch builds on; a run on no branch
+/// files none.
+fn file_round(dir: &Path, run: &RunState) -> Result<(), Error> {
+    let Some(branch) = &run.chain.branch else {
+        return Ok(());
+    };
+    let c = &run.chain;
+    let record = chain::record(&c.repo, branch, &run.diff.head, c.round, c.ledger.clone());
+    chain::file_record(dir, &record).map_err(|source| {
+        let path = chain::record_path(dir);
+        StepError::NoReport { path, source }.into()
+    })
+}
+
 /// Ends the run: its verdict, and the report written beside the state.
 ///
 /// # Errors
 /// When the report cannot be written.
 pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
+    run.chain.ledger = rereview::ledger(&run.chain, &run.settled);
+    file_round(dir, run)?;
     let verdict = report::verdict(run);
     let path = state::report_path(dir);
     std::fs::write(&path, report::markdown(run, &verdict))

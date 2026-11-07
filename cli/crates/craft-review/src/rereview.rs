@@ -1,0 +1,126 @@
+//! A re-review — one of the parts of the engine's review the CLI carries before the engine goes
+//! (realm @nick/craft, node #445) — as the review engine's Scout, Adjudicate and
+//! Synthesize phases run one (`lib/review-prior-round.mjs`, `lib/review-prior-basis.mjs`,
+//! `lib/review-adjudicate-priors.mjs`, `lib/review-reconcile-priors.mjs`, `lib/review-ledger.mjs`):
+//! a run of a branch builds on its newest earlier round ([`crate::chain`]); its lenses review the
+//! fix commits since that round's head, or the whole diff again every `fullEvery`-th round; each
+//! finding that round left open is adjudicated again; a lens finding repeating a still-live prior
+//! is absorbed into it rather than reported twice; and its ledger carries every live finding, the
+//! author's settled ones and the tombstones of resolved ones to the next round.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::ledger::LedgerRow;
+
+mod absorb;
+mod carry;
+mod judge;
+mod start;
+
+pub use absorb::absorb;
+pub use carry::ledger;
+pub use judge::{judge, tasks};
+pub use start::{begin, scope};
+#[cfg(test)]
+use {carry::TOMBSTONES_MAX, start::take_ledger};
+
+/// What became of a prior round's finding in this one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Fate {
+    /// Open, its adjudicator not yet answered.
+    Pending,
+    Resolved,
+    StillOpen,
+    /// The site changed and now holds a different defect of the same kind.
+    Regressed,
+    /// Set aside by its author (`rejected`, `justified`, `deferred`): carried as it stands.
+    Carried,
+    /// Never checked against the code: carried unverified, nothing to adjudicate.
+    Unverified,
+}
+
+/// One finding of the prior round and its fate here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PriorFinding {
+    pub row: LedgerRow,
+    pub fate: Fate,
+}
+
+impl PriorFinding {
+    /// Whether it still holds this run's verdict: open or regressed, and checked against the code.
+    #[must_use]
+    pub fn gates(&self) -> bool {
+        matches!(self.fate, Fate::StillOpen | Fate::Regressed) && self.row.tier != "unverified"
+    }
+
+    /// Whether a lens finding repeating it is absorbed into it.
+    #[must_use]
+    pub fn live(&self) -> bool {
+        !matches!(self.fate, Fate::Resolved)
+    }
+}
+
+/// The prior run a re-review builds on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriorRun {
+    pub dir: String,
+    pub round: u32,
+    pub head: String,
+}
+
+/// Where a run stands in its branch's chain of rounds, and what it made of the prior round.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Chain {
+    /// The repository's shared git directory and the branch: the chain's key.
+    pub repo: String,
+    pub branch: Option<String>,
+    /// This run's round, 1 on a first review.
+    pub round: u32,
+    /// The branch's own base, which the record names; the run's diff is what its lenses reviewed.
+    pub base: String,
+    pub prior: Option<PriorRun>,
+    /// Why the run builds on no prior round.
+    pub unchained: Option<String>,
+    /// Why a re-review's lenses review the whole diff again rather than the fix commits.
+    pub rescan: Option<String>,
+    pub priors: Vec<PriorFinding>,
+    /// The prior round's tombstones, carried.
+    pub tombstones: Vec<LedgerRow>,
+    /// Lens findings absorbed into a still-live prior, and fresh ones that match a tombstone.
+    pub absorbed: usize,
+    pub regressions: usize,
+    /// The ledger the run left for its next round, once it is done.
+    pub ledger: Vec<LedgerRow>,
+}
+
+impl Chain {
+    /// The priors still holding the verdict, as findings.
+    #[must_use]
+    pub fn gating(&self) -> Vec<Value> {
+        self.priors
+            .iter()
+            .filter(|p| p.gates())
+            .map(|p| p.row.finding())
+            .collect()
+    }
+
+    /// How many priors met each fate: resolved, still open, regressed, carried, unverified.
+    #[must_use]
+    pub fn tally(&self) -> [usize; 5] {
+        let n = |f: Fate| self.priors.iter().filter(|p| p.fate == f).count();
+        [
+            n(Fate::Resolved),
+            n(Fate::StillOpen) + n(Fate::Pending),
+            n(Fate::Regressed),
+            n(Fate::Carried),
+            n(Fate::Unverified),
+        ]
+    }
+}
+
+#[cfg(test)]
+mod tests;

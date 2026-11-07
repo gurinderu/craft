@@ -16,13 +16,38 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "run": dir.display().to_string(), "done": true,
         "report": state::report_path(dir).display().to_string(),
         "verdict": verdict, "line": report::verdict_line(run, verdict),
-        "head": run.diff.head, "base": run.diff.base,
+        "head": run.diff.head, "base": base(run),
         "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run,
+        "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
     });
     if let (Some(obj), false) = (done.as_object_mut(), run.degraded.is_empty()) {
         obj.insert("degraded".into(), json!(run.degraded));
     }
     done
+}
+
+/// The base the branch is reviewed against: the chain's, which a re-review of the fix commits
+/// keeps although its diff starts at the prior round's head.
+fn base(run: &RunState) -> &str {
+    if run.chain.base.is_empty() {
+        &run.diff.base
+    } else {
+        &run.chain.base
+    }
+}
+
+/// What the record keeps of the round: whether it built on a prior round, which, what its lenses
+/// reviewed, and how the prior findings fared.
+fn re_review(run: &RunState) -> Value {
+    let c = &run.chain;
+    let [resolved, still_open, regressed, carried, unverified] = c.tally();
+    json!({
+        "chained": c.prior.is_some(), "reason": c.unchained,
+        "priorRun": c.prior.as_ref().map(|p| &p.dir), "priorRound": c.prior.as_ref().map(|p| p.round),
+        "priorHead": c.prior.as_ref().map(|p| &p.head), "scope": run.context.re_review, "rescan": c.rescan,
+        "resolved": resolved, "stillOpen": still_open, "regressed": regressed, "carried": carried,
+        "unverified": unverified, "absorbed": c.absorbed, "regressions": c.regressions,
+    })
 }
 
 /// The reported findings, each as the record's ledger keys it.
