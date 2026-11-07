@@ -16,7 +16,9 @@ use crate::phases::{advance, finish};
 use crate::profile::Profile;
 use crate::prompts::{self, PromptContext, SPEC_MAX};
 use crate::rounds::Rounds;
-use crate::state::{self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState};
+use crate::state::{
+    self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState, Track,
+};
 use crate::validate;
 
 /// Why a run could not be opened or moved on, beyond its parts' own errors.
@@ -94,7 +96,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         path: dir.clone(),
         source,
     })?;
-    let profile = Profile::rust()?;
+    let profiles = Profile::all()?;
     let context = PromptContext {
         repo: cwd.display().to_string(),
         base: diff.base.clone(),
@@ -102,23 +104,21 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         craft_root: opts.craft_root.clone(),
         craft_version: opts.craft_version.clone(),
     };
-    let rust_files: Vec<String> = diff
-        .files
-        .iter()
-        .filter(|f| profile.covers(f))
-        .cloned()
+    let tracks: Vec<Track> = coverage::assign(&diff.files, &profiles)
+        .into_iter()
+        .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
         .collect();
-    let uncovered = coverage::uncovered(&diff.files, |f| profile.covers(f));
+    let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
+    let uncovered = coverage::uncovered(&diff.files, taken);
     let mut run = RunState {
         version: STATE_VERSION,
         tasks: Vec::new(),
         context,
         diff,
-        rust_files,
+        tracks,
         uncovered,
         light: opts.light,
         phase: Phase::Scout,
-        plan: None,
         rounds: Rounds::default(),
         findings: Vec::new(),
         settled: Vec::new(),
@@ -130,26 +130,40 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     };
     run.exit = coverage::exit(
         &run.diff,
-        run.rust_files.len(),
-        &profile.lang,
+        run.tracks.len(),
+        &coverage::supported(&profiles),
         opts.base.is_some(),
     );
     if let Some(exit) = &run.exit {
         run.not_run.extend(exit.not_run.clone());
         finish(dir, &mut run)?;
     } else {
-        run.tasks = vec![Task::new(
-            format!("scout-{}", profile.id),
-            format!("scout:{}", profile.id),
-            prompts::scout_prompt(&run.context, &profile)?,
-            profile.scout_model,
-            content::schema("scout")?,
-            TaskKind::Scout,
-        )];
+        run.tasks = scouts(&run, &profiles)?;
     }
     handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;
     Ok(next(dir, &run))
+}
+
+/// One scout per profile taking part of the change, each over its own files.
+fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
+    let mut tasks = Vec::new();
+    for t in &run.tracks {
+        let Some(p) = profiles.iter().find(|p| p.id == t.profile) else {
+            continue;
+        };
+        tasks.push(Task::new(
+            format!("scout-{}", p.id),
+            format!("scout:{}", p.id),
+            prompts::scout_prompt(&run.context, p, &t.files)?,
+            p.scout_model,
+            content::schema("scout")?,
+            TaskKind::Scout {
+                profile: p.id.clone(),
+            },
+        ));
+    }
+    Ok(tasks)
 }
 
 /// Takes the answers to the pending tasks of the run in `dir` and hands out what comes next. The

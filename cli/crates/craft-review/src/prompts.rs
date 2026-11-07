@@ -13,14 +13,10 @@ mod lens;
 mod parity;
 mod scout;
 mod verify;
-pub use lens::{lens_prompt, prior_found_summary};
+pub use lens::{LensIn, lens_prompt, prior_found_summary};
 pub use scout::{dedup_prompt, scout_prompt};
 pub use verify::{batch_verify_prompt, verify_prompt};
 
-/// The review rubric skill of the Rust profile, and the exclusion catalogue it ships; the
-/// verifiers name them as `lib/review-verify.mjs` does.
-const RUBRIC_SKILL: &str = "rust-review";
-const FP_RULES: &str = "fp-rules.md";
 /// The skill directory every lens and verifier reads beside its rubric.
 const REVIEW_RULES_DIR: &str = "skills/review-rules";
 /// How much of a model-authored field enters a prompt, as `flattenField` caps it.

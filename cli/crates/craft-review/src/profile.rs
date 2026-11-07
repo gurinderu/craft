@@ -1,17 +1,34 @@
 //! A language profile as data: `content/profiles/<id>.json` names its lenses (each with its brief,
 //! model and flags), its scout rules and its rubric, as `PROFILES` in `lib/review-profiles.mjs`
-//! does for the engines; `lib/review-profile-parity.test.mjs` holds the two to one roster.
+//! does for the engines; `lib/review-profile-parity.test.mjs` holds the two to one roster. Beside
+//! the engines' Rust and Nix profiles the CLI has `general`, adversarial-review's lenses over every
+//! file carrying code that neither takes (realm @nick/craft, node #421).
 
 use serde::Deserialize;
 
 use crate::agent::{AgentKind, Model};
 use crate::content::{self, ContentError};
 
-/// What files a profile reviews: a changed path ending in one of `suffixes` or named one of `names`.
+/// The profiles a run may review with, in the order a changed file is offered to them.
+pub const IDS: [&str; 3] = ["rust", "nix", "general"];
+
+/// What files a profile reviews: a changed path ending in one of `suffixes` or named one of `names`;
+/// with `rest`, every file carrying code no other profile takes, project configuration aside.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Detect {
     pub suffixes: Vec<String>,
     pub names: Vec<String>,
+    #[serde(default)]
+    pub rest: bool,
+}
+
+/// What the negative-space lens of a profile inventories as new surface, and the uses of it it
+/// greps the unchanged tree for.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NegativeSpace {
+    pub new_surface: String,
+    pub shape_uses: String,
 }
 
 /// Where a lens reads its catalogue, and the classes its brief carries when none is readable.
@@ -46,6 +63,10 @@ pub struct Lens {
     pub catalogue: Option<Catalogue>,
 }
 
+fn with_catalog() -> bool {
+    true
+}
+
 /// A language profile.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,6 +77,10 @@ pub struct Profile {
     pub diff_globs: Vec<String>,
     pub rubric_skill: String,
     pub fp_rules: String,
+    /// Whether its rubric skill ships a `rules.md` catalog whose IDs a finding's `ruleId` cites;
+    /// without one its lenses are told to leave `ruleId` empty, not to hunt for an ID.
+    #[serde(default = "with_catalog")]
+    pub rule_catalog: bool,
     pub nav_skill: String,
     pub security_hints: String,
     pub uses_library: bool,
@@ -70,6 +95,9 @@ pub struct Profile {
     #[serde(default)]
     pub lens_agent: Option<AgentKind>,
     pub rollup_rule_ids: Vec<String>,
+    /// What its negative-space lens looks for; a profile without that lens has none.
+    #[serde(default)]
+    pub negative_space: Option<NegativeSpace>,
     /// The roster a scout picks from.
     pub lenses: Vec<Lens>,
     /// Lenses only a rigor floor adds, outside the roster.
@@ -82,9 +110,25 @@ impl Profile {
     /// # Errors
     /// When the profile file is missing or not of this shape.
     pub fn rust() -> Result<Self, ContentError> {
-        let path = "profiles/rust.json";
-        serde_json::from_str(content::raw(path)?)
-            .map_err(|e| ContentError::NotJson(path.to_owned(), e.to_string()))
+        Self::load("rust")
+    }
+
+    /// The profile `id`, `content/profiles/<id>.json`.
+    ///
+    /// # Errors
+    /// When the profile file is missing or not of this shape.
+    pub fn load(id: &str) -> Result<Self, ContentError> {
+        let path = format!("profiles/{id}.json");
+        serde_json::from_str(content::raw(&path)?)
+            .map_err(|e| ContentError::NotJson(path, e.to_string()))
+    }
+
+    /// Every profile of [`IDS`], in its order.
+    ///
+    /// # Errors
+    /// As [`Profile::load`].
+    pub fn all() -> Result<Vec<Self>, ContentError> {
+        IDS.iter().map(|id| Self::load(id)).collect()
     }
 
     /// The roster's lens ids, in order.
@@ -125,15 +169,35 @@ impl Profile {
         files.iter().any(|f| self.covers(f))
     }
 
-    /// Whether the profile reviews `file`.
+    /// Whether the profile reviews `file`: by its suffixes and names, or, a profile taking the
+    /// rest, when it carries code and is no project configuration. Which of several profiles takes
+    /// a file is [`crate::coverage::assign`]'s.
     #[must_use]
     pub fn covers(&self, file: &str) -> bool {
+        if self.detect.rest {
+            return !crate::coverage::is_inert(file) && !crate::coverage::is_project_config(file);
+        }
         let base = file.rsplit('/').next().unwrap_or(file);
         self.detect
             .suffixes
             .iter()
             .any(|s| file.ends_with(s.as_str()))
             || self.detect.names.iter().any(|n| n == base)
+    }
+
+    /// What a `git diff` of this profile's part of a change names: its globs, or, a profile
+    /// without any, the files it took, each a literal pathspec.
+    #[must_use]
+    pub fn pathspec(&self, files: &[String]) -> String {
+        if !self.diff_globs.is_empty() {
+            return self.diff_globs.join(" ");
+        }
+        files
+            .iter()
+            .filter(|f| !f.is_empty())
+            .map(|f| format!("'{}'", format!(":(literal){f}").replace('\'', r"'\''")))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 

@@ -13,7 +13,7 @@ use crate::prompts::PromptContext;
 use crate::rounds::Rounds;
 
 /// The state file's format; a run written by another format is refused, not misread.
-pub const STATE_VERSION: u32 = 5;
+pub const STATE_VERSION: u32 = 6;
 /// How many times an invalid or missing answer is asked for again before its task fails.
 pub const MAX_RETRIES: u32 = 2;
 
@@ -59,8 +59,12 @@ pub enum Phase {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TaskKind {
-    Scout,
+    /// The scout of `profile`'s part of the change.
+    Scout {
+        profile: String,
+    },
     Lens {
+        profile: String,
         lens: String,
         round: u32,
     },
@@ -152,6 +156,45 @@ impl Task {
     }
 }
 
+/// One profile's part of a run: the changed files it takes, what its scout planned, and how far
+/// its lens rounds went.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Track {
+    pub profile: String,
+    pub files: Vec<String>,
+    /// What its scout's answer planned; `None` until it is in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<Plan>,
+    /// The lens rounds it has run.
+    #[serde(default)]
+    pub rounds: u32,
+    /// Its last round added nothing new.
+    #[serde(default)]
+    pub dry: bool,
+}
+
+impl Track {
+    #[must_use]
+    pub fn new(profile: &str, files: Vec<String>) -> Self {
+        Self {
+            profile: profile.to_owned(),
+            files,
+            plan: None,
+            rounds: 0,
+            dry: false,
+        }
+    }
+
+    /// Whether it runs another lens round: planned, not dry, and its plan's rounds not spent.
+    #[must_use]
+    pub fn live(&self) -> bool {
+        self.plan
+            .as_ref()
+            .is_some_and(|p| !self.dry && self.rounds < p.max_rounds)
+    }
+}
+
 /// Everything a run keeps between steps.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -159,8 +202,9 @@ pub struct RunState {
     pub version: u32,
     pub context: PromptContext,
     pub diff: Diff,
-    /// The changed files the profile reviews.
-    pub rust_files: Vec<String>,
+    /// Each profile's part of the change, in the profiles' order: one plan per profile, all their
+    /// lenses in the same rounds, and one pool through one dedup and one verification.
+    pub tracks: Vec<Track>,
     /// The changed files no profile covers that carry something to review (`coverage::uncovered`).
     /// Optional, so a state written before it reads as before and the format keeps its version.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -170,9 +214,6 @@ pub struct RunState {
     pub phase: Phase,
     /// The current phase's tasks.
     pub tasks: Vec<Task>,
-    /// What the scout's answer planned; `None` until it is in.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<Plan>,
     /// The lens rounds: the pool they filled and their coverage.
     pub rounds: Rounds,
     /// What verification judges: the pool after the floor, the roll-up and the dedup, each a
@@ -194,6 +235,29 @@ pub struct RunState {
     pub degraded: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
+}
+
+impl RunState {
+    /// The track of `profile`.
+    #[must_use]
+    pub fn track(&self, profile: &str) -> Option<&Track> {
+        self.tracks.iter().find(|t| t.profile == profile)
+    }
+
+    /// The plan of `profile`'s part, once its scout is in.
+    #[must_use]
+    pub fn plan_of(&self, profile: &str) -> Option<&Plan> {
+        self.track(profile).and_then(|t| t.plan.as_ref())
+    }
+}
+
+/// The profile a pooled finding was found under: its `profile`, else the run's first.
+#[must_use]
+pub fn finding_profile<'a>(run: &'a RunState, f: &'a Value) -> &'a str {
+    f.get("profile")
+        .and_then(Value::as_str)
+        .or_else(|| run.tracks.first().map(|t| t.profile.as_str()))
+        .unwrap_or("")
 }
 
 /// The state file of the run in `dir`.

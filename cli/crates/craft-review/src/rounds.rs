@@ -1,6 +1,7 @@
 //! The lens rounds (`lensRoundsPhase` in `lib/review-lens-rounds.mjs`): every planned lens over
-//! the whole diff, round after round, each told what the pool already holds, until a round adds
-//! nothing new or the plan's rounds are spent (loop until dry). A finding is new when no pooled
+//! its profile's part of the diff, round after round, each told what the pool already holds, until
+//! a round adds nothing new to its profile or the profile's plan's rounds are spent (loop until
+//! dry). The profiles of a run share each round and the pool. A finding is new when no pooled
 //! finding has its key (file, line and title); a lens dispatch that never returns is a hole the
 //! verdict reads as INCOMPLETE.
 
@@ -14,7 +15,7 @@ use crate::content::{self, ContentError};
 use crate::harm::raise::{claim_count, group_claims};
 use crate::plan::Plan;
 use crate::profile::Profile;
-use crate::prompts::{self, PromptContext};
+use crate::prompts::{self, LensIn, PromptContext};
 use crate::state::{Task, TaskKind, TaskState};
 
 /// What one round dispatched and what it added, as `lensRounds` records it.
@@ -33,14 +34,14 @@ pub struct RoundYield {
 pub struct Rounds {
     /// The round under way, 0 before the first.
     pub round: u32,
-    /// Every finding found so far, each once, its `source` the lens dispatched and its
-    /// `foundInRound` the round that first found it.
+    /// Every finding found so far, each once, its `source` the lens dispatched, its `profile` that
+    /// lens's profile and its `foundInRound` the round that first found it.
     pub pool: Vec<Value>,
     pub yields: Vec<RoundYield>,
-    /// The lenses dispatched, and those that answered at least once.
+    /// The lenses dispatched, and those that answered at least once, each as `profile:lens`.
     pub expected: Vec<String>,
     pub returned: Vec<String>,
-    /// Why each lens's last dispatch gave no answer.
+    /// Why each lens's last dispatch gave no answer, by `profile:lens`.
     pub failures: BTreeMap<String, String>,
 }
 
@@ -59,8 +60,13 @@ pub fn key(f: &Value) -> String {
     format!("{}:{line}:{title}", s("file"))
 }
 
-/// One task per planned lens for `round`, each told what the pool holds and run on the profile's
-/// lens agent.
+/// A lens as the rounds key it: its profile and its id.
+fn lens_key(profile: &str, lens: &str) -> String {
+    format!("{profile}:{lens}")
+}
+
+/// One task per planned lens of `profile` for `round`, over the profile's part `files`, each told
+/// what the pool holds and run on the profile's lens agent.
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the findings schema read.
@@ -68,21 +74,31 @@ pub fn tasks(
     ctx: &PromptContext,
     profile: &Profile,
     plan: &Plan,
+    files: &[String],
     rounds: &Rounds,
 ) -> Result<Vec<Task>, ContentError> {
     let prior = prompts::prior_found_summary(&rounds.pool);
     let round = rounds.round;
+    let pathspec = profile.pathspec(files);
     plan.lenses
         .iter()
         .map(|lens| {
             let model = profile.lens(lens).map_or(Model::Opus, |l| l.model);
+            let at = LensIn {
+                profile,
+                lens,
+                plan,
+                pathspec: &pathspec,
+                prior: &prior,
+            };
             let mut task = Task::new(
-                format!("lens-{lens}-r{round}"),
+                format!("lens-{}-{lens}-r{round}", profile.id),
                 format!("lens:{}:{lens} r{round}", profile.id),
-                prompts::lens_prompt(ctx, profile, lens, plan, &prior)?,
+                prompts::lens_prompt(ctx, &at)?,
                 model,
                 content::schema("findings")?,
                 TaskKind::Lens {
+                    profile: profile.id.clone(),
                     lens: lens.clone(),
                     round,
                 },
@@ -122,82 +138,107 @@ fn note_exact_copy(kept: &mut Value, copy: &Value) {
     }
 }
 
+/// One lens finding as the pool keeps it: its lens as `source`, its profile, its first round.
+fn pooled(found: &Value, profile: &str, lens: &str, round: u32) -> Value {
+    let mut f: Map<String, Value> = found.as_object().cloned().unwrap_or_default();
+    f.insert("source".into(), Value::String(lens.to_owned()));
+    f.insert("profile".into(), Value::String(profile.to_owned()));
+    f.insert("foundInRound".into(), Value::from(round));
+    Value::Object(f)
+}
+
 impl Rounds {
-    /// Takes the answers of a round's lens tasks into the pool; true when it added nothing new
-    /// (the loop is dry).
-    pub fn absorb(&mut self, tasks: &[Task]) -> bool {
+    /// Takes the answers of a round's lens tasks into the pool; returns how many new findings
+    /// each profile that dispatched a lens added (none: that profile's loop is dry).
+    pub fn absorb(&mut self, tasks: &[Task]) -> BTreeMap<String, usize> {
         let mut fresh: Vec<Value> = Vec::new();
+        let mut added: BTreeMap<String, usize> = BTreeMap::new();
         let mut returned = 0;
         for t in tasks {
-            let TaskKind::Lens { lens, round } = &t.kind else {
+            let TaskKind::Lens {
+                profile,
+                lens,
+                round,
+            } = &t.kind
+            else {
                 continue;
             };
-            if !self.expected.contains(lens) {
-                self.expected.push(lens.clone());
-            }
-            let answer = t.answer.as_ref().filter(|_| t.state == TaskState::Answered);
-            let Some(answer) = answer else {
-                let why = t.error.clone().unwrap_or_else(|| {
-                    "returned no result (skipped or died without an error)".into()
-                });
-                self.failures.insert(lens.clone(), why);
+            added.entry(profile.clone()).or_insert(0);
+            let Some(answer) = self.answered(t, &lens_key(profile, lens)) else {
                 continue;
             };
             returned += 1;
-            if !self.returned.contains(lens) {
-                self.returned.push(lens.clone());
-            }
             let found = answer.get("findings").and_then(Value::as_array);
-            for f0 in found.into_iter().flatten() {
-                let mut f: Map<String, Value> = f0.as_object().cloned().unwrap_or_default();
-                f.insert("source".into(), Value::String(lens.clone()));
-                f.insert("foundInRound".into(), Value::from(*round));
-                let f = Value::Object(f);
-                let k = key(&f);
-                let kept = self
+            for f in found.into_iter().flatten() {
+                let f = pooled(f, profile, lens, *round);
+                let at = key(&f);
+                match self
                     .pool
                     .iter_mut()
                     .chain(fresh.iter_mut())
-                    .find(|g| key(g) == k);
-                match kept {
+                    .find(|g| key(g) == at)
+                {
                     Some(g) => note_exact_copy(g, &f),
-                    None => fresh.push(f),
+                    None => {
+                        fresh.push(f);
+                        *added.entry(profile.clone()).or_insert(0) += 1;
+                    }
                 }
             }
         }
-        let new = fresh.len();
-        self.pool.extend(fresh);
         self.yields.push(RoundYield {
             round: self.round,
             agents: tasks.len(),
             returned,
-            new_findings: new,
+            new_findings: fresh.len(),
         });
-        new == 0
+        self.pool.extend(fresh);
+        added
     }
 
-    /// The planned lenses that never answered in any round, each with why.
+    /// Records the dispatch of the lens keyed `k` and whether it answered; its answer if it did.
+    fn answered<'t>(&mut self, t: &'t Task, k: &str) -> Option<&'t Value> {
+        if !self.expected.iter().any(|e| e == k) {
+            self.expected.push(k.to_owned());
+        }
+        let Some(answer) = t.answer.as_ref().filter(|_| t.state == TaskState::Answered) else {
+            let why = t
+                .error
+                .clone()
+                .unwrap_or_else(|| "returned no result (skipped or died without an error)".into());
+            self.failures.insert(k.to_owned(), why);
+            return None;
+        };
+        if !self.returned.iter().any(|r| r == k) {
+            self.returned.push(k.to_owned());
+        }
+        Some(answer)
+    }
+
+    /// The lenses of `profile` that never answered in any round, each with why.
     #[must_use]
-    pub fn holes(&self) -> Vec<String> {
+    pub fn holes(&self, profile: &str) -> Vec<String> {
+        let prefix = lens_key(profile, "");
         self.expected
             .iter()
-            .filter(|l| !self.returned.contains(l))
-            .map(|l| {
-                let why = self.failures.get(l).map_or(
+            .filter(|k| !self.returned.contains(k))
+            .filter_map(|k| {
+                let lens = k.strip_prefix(&prefix)?;
+                let why = self.failures.get(k).map_or(
                     "returned no result (skipped or died without an error)",
                     String::as_str,
                 );
-                format!("{l}: {why}")
+                Some(format!("{lens}: {why}"))
             })
             .collect()
     }
 
-    /// The planned lenses that answered.
+    /// The lenses of `profile`'s plan that answered.
     #[must_use]
-    pub fn ran(&self, plan: &Plan) -> Vec<String> {
+    pub fn ran(&self, profile: &str, plan: &Plan) -> Vec<String> {
         plan.lenses
             .iter()
-            .filter(|l| self.returned.contains(l))
+            .filter(|l| self.returned.contains(&lens_key(profile, l)))
             .cloned()
             .collect()
     }

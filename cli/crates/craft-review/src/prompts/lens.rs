@@ -142,21 +142,32 @@ fn catalogue_line(ctx: &PromptContext, lens: &Lens) -> Result<String, ContentErr
     )
 }
 
-/// The prompt of `lens` over the whole diff in a round whose pool is summed up by `prior`.
+/// What one lens dispatch is rendered from: the lens of `profile`, its plan, the pathspec of the
+/// profile's part of the diff, and the pool summed up as `prior`.
+#[derive(Debug, Clone, Copy)]
+pub struct LensIn<'a> {
+    pub profile: &'a Profile,
+    pub lens: &'a str,
+    pub plan: &'a Plan,
+    pub pathspec: &'a str,
+    pub prior: &'a str,
+}
+
+/// The prompt of a lens over its profile's part of the diff in a round.
 ///
 /// # Errors
 /// When the lens is not the profile's, a content file is missing or a placeholder has no value.
-pub fn lens_prompt(
-    ctx: &PromptContext,
-    profile: &Profile,
-    lens: &str,
-    plan: &Plan,
-    prior: &str,
-) -> Result<String, ContentError> {
+pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, ContentError> {
+    let LensIn {
+        profile,
+        lens,
+        plan,
+        ..
+    } = *at;
     let spec = profile
         .lens(lens)
         .ok_or_else(|| ContentError::UnknownFile(format!("the lens {lens}")))?;
-    let already = content::prompt("already-found", &vars([("summary", prior.to_owned())]))?;
+    let already = content::prompt("already-found", &vars([("summary", at.prior.to_owned())]))?;
     let body = if lens == "negative-space" {
         negative_space(ctx, profile, plan, already)?
     } else {
@@ -184,13 +195,14 @@ pub fn lens_prompt(
                 ("strict", String::new()),
                 ("base", base_label(ctx)),
                 ("range", range(ctx)),
-                ("pathspec", profile.diff_globs.join(" ")),
+                ("pathspec", at.pathspec.to_owned()),
                 ("slice", String::new()),
                 ("reReview", String::new()),
                 ("plan", plan_lines(plan)?),
                 ("lsp", if nav { " + LSP".into() } else { String::new() }),
                 ("dependencySource", content::text("dependency-source")?),
                 ("sources", String::new()),
+                ("ruleId", rule_id(profile)?),
                 (
                     "mutants",
                     if mutants {
@@ -206,6 +218,19 @@ pub fn lens_prompt(
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
 }
 
+/// The lens prompt's RULE ID line: cite the rubric's catalog, or, a profile with none, leave it
+/// empty.
+fn rule_id(profile: &Profile) -> Result<String, ContentError> {
+    if profile.rule_catalog {
+        content::prompt(
+            "lens-rule-id",
+            &vars([("rubricSkill", profile.rubric_skill.clone())]),
+        )
+    } else {
+        content::text("lens-rule-id-none")
+    }
+}
+
 /// The negative-space lens: the bug the diff enables in code it did not touch.
 fn negative_space(
     ctx: &PromptContext,
@@ -213,6 +238,9 @@ fn negative_space(
     plan: &Plan,
     already: String,
 ) -> Result<String, ContentError> {
+    let surface = profile.negative_space.as_ref().ok_or_else(|| {
+        ContentError::UnknownFile(format!("the negative-space surface of {}", profile.id))
+    })?;
     let spec = if plan.spec.is_empty() {
         String::new()
     } else {
@@ -238,8 +266,8 @@ fn negative_space(
             ("intent", intent_line(&plan.intent)),
             ("spec", spec),
             ("range", range(ctx)),
-            ("newSurface", "enum variant / status value / DB column / table / migration / public fn / route / struct field".into()),
-            ("shapeUses", "lists, updates, deletes, cascades, serializes, orders, or authorizes".into()),
+            ("newSurface", surface.new_surface.clone()),
+            ("shapeUses", surface.shape_uses.clone()),
             ("rules", rules(ctx)?),
             ("repoRules", repo_rules_line(&plan.repo_rules)?),
             ("alreadyFound", already),

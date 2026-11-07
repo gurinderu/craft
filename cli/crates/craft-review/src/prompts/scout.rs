@@ -11,12 +11,17 @@ use crate::profile::Profile;
 /// How much of a finding's `why` the dedup listing carries.
 const DEDUP_WHY_MAX: usize = 160;
 
-/// The scout's prompt: classify the diff and pick the lenses, without reviewing it.
+/// The scout's prompt for `profile`'s part `files` of the diff: classify it and pick the lenses,
+/// without reviewing it.
 ///
 /// # Errors
 /// When a content file is missing or a placeholder has no value.
-pub fn scout_prompt(ctx: &PromptContext, profile: &Profile) -> Result<String, ContentError> {
-    let globs = profile.diff_globs.join(" ");
+pub fn scout_prompt(
+    ctx: &PromptContext,
+    profile: &Profile,
+    files: &[String],
+) -> Result<String, ContentError> {
+    let globs = profile.pathspec(files);
     let json = |v: Vec<String>| serde_json::to_string(&v).unwrap_or_default();
     let is_library = if profile.uses_library {
         "true if this is a published library (has `[lib]`/looks publishable) — best effort."

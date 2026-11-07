@@ -1,0 +1,27 @@
+{
+  "id": "general",
+  "lang": "source",
+  "detect": { "suffixes": [], "names": [], "rest": true },
+  "diffGlobs": [],
+  "rubricSkill": "review-rules",
+  "fpRules": "",
+  "ruleCatalog": false,
+  "navSkill": "",
+  "securityHints": "input parsing, authentication or authorization, tenant isolation, secrets, deserialization, payments, or untrusted input reaching a sink",
+  "usesLibrary": false,
+  "alwaysLenses": ["correctness"],
+  "safetyLens": "security",
+  "scoutRules": "scout-rules-general",
+  "scoutModel": "haiku",
+  "dedupModel": "haiku",
+  "rollupRuleIds": [],
+  "lenses": [
+    { "id": "correctness", "brief": "lens-briefs/general-correctness", "model": "opus" },
+    { "id": "security", "brief": "lens-briefs/general-security", "model": "opus" },
+    { "id": "money", "brief": "lens-briefs/general-money", "model": "opus" },
+    { "id": "concurrency", "brief": "lens-briefs/general-concurrency", "model": "opus" },
+    { "id": "errors", "brief": "lens-briefs/general-errors", "model": "opus" },
+    { "id": "performance", "brief": "lens-briefs/general-performance", "model": "opus" }
+  ],
+  "floorLenses": []
+}
