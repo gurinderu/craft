@@ -24,8 +24,11 @@ fn host_rank(f: Fate) -> Option<u8> {
     match f {
         Fate::StillOpen | Fate::Pending => Some(0),
         Fate::Regressed => Some(1),
-        Fate::Carried => Some(2),
-        Fate::Resolved | Fate::Unverified => None,
+        // A still-open prior is adjudicated by the next round, and handed every site absorbed into it.
+        // Neither a carried nor a retired prior absorbs a judged finding: nothing adjudicates either
+        // again, so a finding absorbed into one would leave the report unjudged. It stays a finding
+        // and counts by its severity this round, as the engine's re-raised dismissal does.
+        Fate::Carried | Fate::Retired | Fate::Resolved | Fate::Unverified => None,
     }
 }
 
@@ -111,12 +114,19 @@ pub fn absorb(chain: &mut Chain, settled: &mut Vec<Value>) -> Vec<String> {
         }
     }
     *settled = kept;
-    mark_regressions(chain, settled);
-    notes(chain, severer, tracked)
+    let reraised = mark_regressions(chain, settled);
+    let mut notes = notes(chain, severer, tracked);
+    if reraised > 0 {
+        notes.push(format!("re-review: {reraised} finding(s) match a defect the author dismissed in an earlier round, marked as re-raised (not a regression); each still counts by its severity"));
+    }
+    notes
 }
 
-/// Marks each reported finding that matches a tombstone as a regression.
-fn mark_regressions(chain: &mut Chain, settled: &mut [Value]) {
+/// Marks each reported finding that matches a tombstone, as `flagReturningDefects`: a `resolved` one
+/// came back (a regression), a `dismissed` one is the author's dismissal raised again. Returns how
+/// many were raised again.
+fn mark_regressions(chain: &mut Chain, settled: &mut [Value]) -> usize {
+    let mut reraised = 0;
     for f in settled.iter_mut().filter(|f| Tier::of(f) != Tier::Refuted) {
         let Some(t) = chain
             .tombstones
@@ -127,15 +137,28 @@ fn mark_regressions(chain: &mut Chain, settled: &mut [Value]) {
             continue;
         };
         let round = t.why.split("round ").nth(1).unwrap_or("?").to_owned();
-        let why = format!(
-            "{} REGRESSION: this exact defect was resolved in round {round} and has reappeared.",
-            field(f, "why")
-        );
+        let dismissed = t.why.starts_with("dismissed ");
+        let why = if dismissed {
+            format!(
+                "{} NOTE: a defect the author dismissed in round {round} has been re-raised.",
+                field(f, "why")
+            )
+        } else {
+            format!(
+                "{} REGRESSION: this exact defect was resolved in round {round} and has reappeared.",
+                field(f, "why")
+            )
+        };
         if let Some(obj) = f.as_object_mut() {
             obj.insert("why".into(), Value::String(why));
-            chain.regressions += 1;
+            if dismissed {
+                reraised += 1;
+            } else {
+                chain.regressions += 1;
+            }
         }
     }
+    reraised
 }
 
 fn notes(chain: &Chain, severer: usize, tracked: usize) -> Vec<String> {

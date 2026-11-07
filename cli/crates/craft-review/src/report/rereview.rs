@@ -29,7 +29,8 @@ fn label(fate: Fate) -> &'static str {
         Fate::Resolved => "Resolved",
         Fate::Pending | Fate::StillOpen => "Still open",
         Fate::Regressed => "Regressed",
-        Fate::Carried => "Carried (set aside by its author)",
+        Fate::Carried => "Carried (set aside by its author; its carry-check gave no answer)",
+        Fate::Retired => "Retired (set aside by its author, the code around it unchanged)",
         Fate::Unverified => "Carried unverified (never checked against the code)",
     }
 }
@@ -59,9 +60,9 @@ pub(crate) fn section(state: &RunState) -> String {
         out.push('\n');
         return out;
     }
-    let [resolved, open, regressed, carried, unverified] = c.tally();
+    let [resolved, open, regressed, carried, unverified, retired] = c.tally();
     out.push_str(&format!(
-        "\nThe prior round's findings: {resolved} resolved, {open} still open, {regressed} regressed, {carried} carried, {unverified} carried unverified; {} tombstone(s) of resolved findings carried. Still-open and regressed ones count toward the verdict by their severity.\n\n",
+        "\nThe prior round's findings: {resolved} resolved, {open} still open, {regressed} regressed, {carried} carried, {unverified} carried unverified, {retired} retired; {} tombstone(s) of resolved or retired findings carried. Still-open and regressed ones count toward the verdict by their severity.\n\n",
         c.tombstones.len()
     ));
     for p in &c.priors {

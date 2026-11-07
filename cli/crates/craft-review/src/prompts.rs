@@ -14,7 +14,7 @@ mod lens;
 mod parity;
 mod scout;
 mod verify;
-pub use adjudicate::{adjudicate_prompt, sanitize};
+pub use adjudicate::{adjudicate_prompt, carry_prompt, sanitize};
 pub use lens::{LensIn, lens_prompt, prior_found_summary};
 pub use scout::{dedup_prompt, scout_prompt};
 pub use verify::{batch_verify_prompt, verify_prompt};

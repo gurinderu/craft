@@ -5,7 +5,7 @@
 use serde_json::Value;
 
 use super::{
-    LensIn, PromptContext, ReScope, adjudicate_prompt, dedup_prompt, lens_prompt,
+    LensIn, PromptContext, ReScope, adjudicate_prompt, carry_prompt, dedup_prompt, lens_prompt,
     prior_found_summary, repo_directive, scout_prompt,
 };
 use crate::ledger::LedgerRow;
@@ -117,4 +117,11 @@ fn rereview(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: 
     let row: LedgerRow = serde_json::from_value(input["prior"].clone()).unwrap();
     let got = body(adjudicate_prompt(ctx, &row, &rust.rubric_skill).unwrap());
     assert_eq!(got, want["adjudicate"].as_str().unwrap());
+    let set_aside = LedgerRow {
+        disposition: "rejected".into(),
+        file: "src/it's.rs".into(),
+        ..row
+    };
+    let got = body(carry_prompt(ctx, &set_aside, head).unwrap());
+    assert_eq!(got, want["carry"].as_str().unwrap());
 }

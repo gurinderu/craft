@@ -188,25 +188,100 @@ fn a_more_severe_finding_or_one_beside_a_relocated_prior_is_never_swallowed() {
     );
 }
 
-#[test]
-fn a_rejected_prior_whose_line_moved_takes_its_re_report_and_nothing_blocks_on_it() {
+/// The carry-check of prior `prior`: `changed`, or `None` for a check that gave no answer.
+fn carried(prior: usize, changed: Option<bool>) -> Task {
+    let mut t = adjudicated(prior, changed.map(|c| json!({"changed": c, "reason": "r"})));
+    t.kind = TaskKind::CarryCheck { prior };
+    t
+}
+
+/// A rejected High of rule `R2` at `src/lib.rs:40`.
+fn rejected_at_40() -> Chain {
     let mut set_aside = row("rejected high", "R2", "rejected", "confirmed");
     set_aside.line = 40;
-    let mut c = chained(vec![set_aside]);
-    let mut found = vec![settled("R2", 52, "High", "confirmed")];
-    absorb(&mut c, &mut found);
-    assert!(found.is_empty(), "{found:?}");
-    assert_eq!(c.absorbed, 1);
-    assert_eq!(
-        c.priors[0].row.why,
-        "w — also reported at src/lib.rs:52: R2 at 52"
-    );
+    chained(vec![set_aside])
+}
+
+#[test]
+fn a_set_aside_prior_swallows_no_judged_finding_whatever_its_carry_check_says() {
+    for check in [Some(false), None] {
+        let mut c = rejected_at_40();
+        judge(&mut c, &[carried(0, check)]);
+        let mut found = vec![settled("R2", 200, "High", "confirmed")];
+        absorb(&mut c, &mut found);
+        assert_eq!(
+            (found.len(), c.absorbed),
+            (1, 0),
+            "{check:?}: the new High stays and gates"
+        );
+        assert_eq!(c.priors[0].row.why, "w");
+    }
+}
+
+#[test]
+fn an_unchanged_set_aside_prior_retires_and_its_re_raise_is_marked_next_round() {
+    let mut c = rejected_at_40();
+    judge(&mut c, &[carried(0, Some(false))]);
+    assert_eq!(c.priors[0].fate, Fate::Retired);
     assert!(
         c.gating().is_empty(),
         "the author's rejection holds no verdict"
     );
-    let rows = ledger(&c, &found);
-    assert_eq!(rows.len(), 1, "no row is added on a re-scan");
+    let rows = ledger(&c, &[]);
+    assert_eq!(
+        (rows[0].disposition.as_str(), rows[0].why.as_str()),
+        ("closed", "dismissed in round 2")
+    );
+    let mut next = chained(rows);
+    let mut found = vec![settled("R2", 52, "High", "confirmed")];
+    let notes = absorb(&mut next, &mut found);
+    assert!(
+        found[0]["why"]
+            .as_str()
+            .unwrap()
+            .ends_with("the author dismissed in round 2 has been re-raised."),
+        "{}",
+        found[0]
+    );
+    assert_eq!(
+        next.regressions, 0,
+        "a re-raised dismissal is no regression"
+    );
+    assert!(notes.iter().any(|n| n.contains("re-raised")), "{notes:?}");
+}
+
+#[test]
+fn a_changed_set_aside_prior_reopens_and_takes_its_re_report_at_a_moved_line() {
+    let mut c = rejected_at_40();
+    judge(&mut c, &[carried(0, Some(true))]);
+    let p = &c.priors[0];
+    assert_eq!(
+        (p.fate, p.row.disposition.as_str()),
+        (Fate::StillOpen, "open")
+    );
+    assert!(p.row.why.ends_with("(reopened: dismissed as rejected, but the code around it changed — re-verify the justification)"));
+    assert_eq!(c.gating().len(), 1, "reopened, it counts by its severity");
+    let mut found = vec![settled("R2", 52, "High", "confirmed")];
+    absorb(&mut c, &mut found);
+    assert!(found.is_empty(), "{found:?}");
+    assert!(
+        c.priors[0]
+            .row
+            .why
+            .starts_with("w — also reported at src/lib.rs:52: R2 at 52 (reopened")
+    );
+    assert_eq!(ledger(&c, &found).len(), 1, "no row is added on a re-scan");
+    let mut again = chained(ledger(&c, &found));
+    judge(&mut again, &[adjudicated(0, said("still-open", 0, ""))]);
+    assert!(
+        !again.priors[0].located,
+        "currentLine 0 is not found: the old line, the file-and-rule key"
+    );
+    assert!(
+        again.priors[0].row.why.starts_with("w — also reported at"),
+        "{}",
+        again.priors[0].row.why
+    );
 }
 
 #[test]

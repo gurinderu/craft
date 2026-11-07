@@ -82,6 +82,10 @@ pub enum TaskKind {
     Adjudicate {
         prior: usize,
     },
+    /// The carry-check of the prior round's finding `prior`, which its author set aside.
+    CarryCheck {
+        prior: usize,
+    },
 }
 
 /// Whether a task still waits for its answer.

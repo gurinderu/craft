@@ -17,7 +17,10 @@ pub(super) fn take_ledger(chain: &mut Chain, ledger: Vec<LedgerRow>) {
                 continue;
             }
             "open" if row.tier == "unverified" => Fate::Unverified,
-            "open" => Fate::Pending,
+            // A deferral the CLI cannot see (its ledger keeps no question behind it) holds nothing:
+            // the row is adjudicated like any prior, as the engine does with a `deferred` row
+            // without a `deferral`.
+            "open" | "deferred" => Fate::Pending,
             _ => Fate::Carried,
         };
         chain.priors.push(PriorFinding {

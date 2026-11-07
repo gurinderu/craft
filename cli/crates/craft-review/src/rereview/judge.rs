@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use super::{Chain, Fate};
+use super::{Chain, Fate, carry_check};
 use crate::absorbed::base_why;
 use crate::agent::Model;
 use crate::content::{self, ContentError};
@@ -21,7 +21,8 @@ fn rubric_for(file: &str, profiles: &[Profile]) -> String {
         .map_or_else(|| "review-rules".into(), |p| p.rubric_skill.clone())
 }
 
-/// One adjudicator per prior finding still open and checked, on the lens model.
+/// One carry-check per prior finding its author set aside, and one adjudicator per prior finding
+/// still open and checked, on the lens model.
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the schema read.
@@ -30,7 +31,7 @@ pub fn tasks(
     chain: &Chain,
     profiles: &[Profile],
 ) -> Result<Vec<Task>, ContentError> {
-    let mut out = Vec::new();
+    let mut out = carry_check::tasks(ctx, chain)?;
     for (i, p) in chain.priors.iter().enumerate() {
         if p.fate != Fate::Pending {
             continue;
@@ -88,7 +89,7 @@ fn fate_of(row: &LedgerRow, answer: Option<&Value>) -> (Fate, String) {
 /// re-located line and its rationale; a dead adjudicator keeps its prior still open. Returns the
 /// notes of what could not be judged.
 pub fn judge(chain: &mut Chain, tasks: &[Task]) -> Vec<String> {
-    let mut notes = Vec::new();
+    let mut notes = carry_check::judge(chain, tasks);
     for t in tasks {
         let TaskKind::Adjudicate { prior } = t.kind else {
             continue;
@@ -108,12 +109,15 @@ pub fn judge(chain: &mut Chain, tasks: &[Task]) -> Vec<String> {
         let (fate, why) = fate_of(&p.row, answer);
         let line = answer
             .and_then(|a| a.get("currentLine"))
-            .and_then(Value::as_i64);
-        if let Some(l) = line.filter(|l| *l > 0) {
+            .and_then(Value::as_i64)
+            .filter(|l| *l > 0);
+        if let Some(l) = line {
             p.row.line = l;
         }
         p.fate = fate;
-        p.located = answer.is_some();
+        // `currentLine` 0 is "not found": such a prior keeps the old line, and with it the
+        // file-and-rule key.
+        p.located = line.is_some();
         p.row.why = why;
     }
     notes

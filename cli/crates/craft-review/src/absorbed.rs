@@ -26,9 +26,15 @@ const TITLE_MAX: usize = 160;
 const MORE_HEAD: &str = " — (+";
 const MORE_TAIL: &str = " more report(s) at this site)";
 
-/// The rationale without the marker an earlier round appended, as `baseWhy`.
+/// The rationale without the marker an earlier round appended, as `baseWhy`: a trailing
+/// ` (reopened: …)`, then the latest round marker.
 #[must_use]
 pub fn base_why(why: &str) -> &str {
+    let reopened = why.rfind(" (reopened: ").filter(|at| {
+        why.get(*at..)
+            .is_some_and(|t| t.trim_end().ends_with(')') && t.matches(')').count() == 1)
+    });
+    let why = reopened.and_then(|at| why.get(..at)).unwrap_or(why);
     let cut = SUFFIXES.iter().filter_map(|m| why.rfind(m)).max();
     cut.and_then(|at| why.get(..at)).unwrap_or(why)
 }

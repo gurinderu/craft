@@ -15,6 +15,7 @@ use crate::ledger::LedgerRow;
 
 mod absorb;
 mod carry;
+mod carry_check;
 mod judge;
 mod start;
 
@@ -35,10 +36,13 @@ pub enum Fate {
     StillOpen,
     /// The site changed and now holds a different defect of the same kind.
     Regressed,
-    /// Set aside by its author (`rejected`, `justified`, `deferred`): carried as it stands.
+    /// Set aside by its author (`rejected`, `justified`): carried until its carry-check answers.
     Carried,
     /// Never checked against the code: carried unverified, nothing to adjudicate.
     Unverified,
+    /// Set aside by its author, and the code around it unchanged since: it leaves the ledger as a
+    /// `dismissed` tombstone.
+    Retired,
 }
 
 /// One finding of the prior round and its fate here.
@@ -105,9 +109,9 @@ impl Chain {
             .collect()
     }
 
-    /// How many priors met each fate: resolved, still open, regressed, carried, unverified.
+    /// How many priors met each fate: resolved, still open, regressed, carried, unverified, retired.
     #[must_use]
-    pub fn tally(&self) -> [usize; 5] {
+    pub fn tally(&self) -> [usize; 6] {
         let n = |f: Fate| self.priors.iter().filter(|p| p.fate == f).count();
         [
             n(Fate::Resolved),
@@ -115,6 +119,7 @@ impl Chain {
             n(Fate::Regressed),
             n(Fate::Carried),
             n(Fate::Unverified),
+            n(Fate::Retired),
         ]
     }
 }

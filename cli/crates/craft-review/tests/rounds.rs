@@ -318,3 +318,52 @@ fn an_unchecked_site_keeps_one_ledger_row_across_full_rescans() {
         assert_eq!(rows[0]["tier"], json!("unverified"));
     }
 }
+
+#[test]
+fn a_new_defect_under_the_rule_of_a_rejected_finding_is_not_swallowed() {
+    let repo = fixture(true);
+    let (_keep, runs) = runs();
+    round_one(repo.path(), &runs);
+    // The author rejects Y.
+    let record = runs.join("r1/round.json");
+    let mut r: Value = serde_json::from_str(&std::fs::read_to_string(&record).unwrap()).unwrap();
+    r["ledger"][1]["disposition"] = json!("rejected");
+    std::fs::write(&record, r.to_string()).unwrap();
+    fix(repo.path());
+
+    let s = step::start(&at(repo.path(), &runs, "r2")).unwrap();
+    assert_eq!(ids(&s), ["scout-rust", "carry-1", "adjudicate-0"]);
+    assert_contains_all(
+        &prompt_of(&s["tasks"][1]),
+        &[
+            "set aside by the author (disposition: rejected)",
+            "rule RS-Y",
+        ],
+    );
+    let r2 = runs.join("r2");
+    let s = submit(
+        &r2,
+        json!({
+            "scout-rust": scout("small", &["errors"]),
+            "carry-1": {"changed": false, "reason": "untouched"},
+            "adjudicate-0": {"status": "resolved", "currentLine": 1, "note": "", "invariant": "i", "attack": ""},
+        }),
+    );
+    // A different defect under Y's rule, elsewhere in the file.
+    let done = drive(&r2, s, &[found("RS-Y", 9, "another unwrap")], &[]);
+    assert_eq!(done["verdict"], json!("Block"), "the new High gates");
+    assert_eq!(done["findings"][0]["line"], json!(9));
+    assert_eq!(done["reReview"]["retired"], json!(1));
+    let ledger: Vec<(i64, &str)> = done["ledger"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["line"].as_i64().unwrap(),
+                r["disposition"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(ledger, [(9, "open"), (1, "closed"), (1, "closed")]);
+}

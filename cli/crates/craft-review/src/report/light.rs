@@ -50,7 +50,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
 const GENERAL_NOT_RUN: &str = "the general profile's complexity lens (needs a code-metrics index)";
 
 /// What a re-review leaves out of the engine's adjudicate track until it is ported.
-const REREVIEW_NOT_RUN: &str = "the re-review's red team on a resolved Critical or High prior finding, its carry-check that retires a finding the author set aside once the code around it is unchanged, and the absorbed-site clauses a prior finding carries to its next adjudicator";
+const REREVIEW_NOT_RUN: &str = "the re-review's red team on a resolved Critical or High prior finding, and the release of a finding set aside as Known and deferred by the record that answers its question (the CLI keeps no deferral on a ledger row, so it adjudicates a deferred finding like any other)";
 
 /// The verdict line marked as a light pass's, once.
 pub(super) fn mark(line: &str) -> String {

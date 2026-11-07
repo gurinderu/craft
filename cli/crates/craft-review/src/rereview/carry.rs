@@ -36,6 +36,11 @@ pub fn ledger(chain: &Chain, settled: &[Value]) -> Vec<LedgerRow> {
                     ..p.row.clone()
                 });
             }
+            Fate::Retired => tombstones.push(LedgerRow {
+                disposition: "closed".into(),
+                why: format!("dismissed in round {}", chain.round),
+                ..p.row.clone()
+            }),
             Fate::Carried => rows.push(p.row.clone()),
         }
     }

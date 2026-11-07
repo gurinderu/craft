@@ -42,13 +42,20 @@ fn base(run: &RunState) -> &str {
 /// reviewed, and how the prior findings fared.
 fn re_review(run: &RunState) -> Value {
     let c = &run.chain;
-    let [resolved, still_open, regressed, carried, unverified] = c.tally();
+    let [
+        resolved,
+        still_open,
+        regressed,
+        carried,
+        unverified,
+        retired,
+    ] = c.tally();
     json!({
         "chained": c.prior.is_some(), "reason": c.unchained,
         "priorRun": c.prior.as_ref().map(|p| &p.dir), "priorRound": c.prior.as_ref().map(|p| p.round),
         "priorHead": c.prior.as_ref().map(|p| &p.head), "scope": run.context.re_review, "rescan": c.rescan,
         "resolved": resolved, "stillOpen": still_open, "regressed": regressed, "carried": carried,
-        "unverified": unverified, "absorbed": c.absorbed, "regressions": c.regressions,
+        "unverified": unverified, "retired": retired, "absorbed": c.absorbed, "regressions": c.regressions,
     })
 }
 

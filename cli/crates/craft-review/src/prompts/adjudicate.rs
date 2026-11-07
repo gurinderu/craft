@@ -5,7 +5,7 @@
 
 use serde_json::Value;
 
-use super::{PromptContext, flatten, repo_directive};
+use super::{PromptContext, flatten, repo_directive, shq};
 use crate::absorbed;
 use crate::content::{self, ContentError, vars};
 use crate::ledger::LedgerRow;
@@ -91,6 +91,41 @@ pub fn sanitize(text: &str) -> String {
     } else {
         flat
     }
+}
+
+/// The prompt of the agent that decides whether the code around `row`, which its author set aside,
+/// changed since the prior round's head `head`, as `carryPrompt` renders it.
+///
+/// # Errors
+/// When the template is missing or a placeholder has no value.
+pub fn carry_prompt(
+    ctx: &PromptContext,
+    row: &LedgerRow,
+    head: &str,
+) -> Result<String, ContentError> {
+    let field = |s: &str| flatten(Some(&Value::String(s.to_owned())));
+    let or = |s: String, empty: &str| if s.is_empty() { empty.to_owned() } else { s };
+    let range = if head.is_empty() {
+        "HEAD".to_owned()
+    } else {
+        format!("{}...HEAD", shq(head))
+    };
+    let body = content::prompt(
+        "carry-check",
+        &vars([
+            ("disposition", row.disposition.clone()),
+            ("head", field(head)),
+            ("severity", field(&row.severity)),
+            ("title", field(&row.title)),
+            ("file", field(&row.file)),
+            ("line", row.line.to_string()),
+            ("symbol", or(field(&row.symbol), "?")),
+            ("ruleId", or(field(&row.rule_id), "—")),
+            ("range", range),
+            ("quotedFile", shq(&row.file)),
+        ]),
+    )?;
+    Ok(format!("{}{body}", repo_directive(&ctx.repo)))
 }
 
 /// The prompt of the agent that judges whether `row` is still present, under the rubric of the
