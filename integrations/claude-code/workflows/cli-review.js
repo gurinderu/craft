@@ -8,7 +8,7 @@ export const meta = {
     { title: 'Submit', detail: 'a service agent runs `craft review submit`, which reads the answer files', model: 'haiku' },
   ],
 }
-const CRAFT_VERSION = '0.42.1' // x-release-please-version
+const CRAFT_VERSION = '0.43.0' // x-release-please-version
 function shq(s){return`'${String(s??"").replace(/'/g,"'\\''")}'`}function pluginScriptPrelude(craftRoot,version,repo,script,varName){let preamble=`${usablePredicate(repo)}${varName}=""
 ${varName}_WHY=""
 `,noteWhy=(label,why)=>`${varName}_WHY="\${${varName}_WHY}"${shq(label)}": ${why}; "
