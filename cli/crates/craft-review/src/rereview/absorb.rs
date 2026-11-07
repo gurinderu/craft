@@ -15,6 +15,10 @@ use crate::dedup::sev_rank;
 use crate::ledger;
 use crate::report::Tier;
 
+/// The field on a settled finding whose ledger row an unverified prior already holds, as
+/// `ledgerDupOfUnverifiedPrior`.
+pub(super) const LEDGER_DUP: &str = "ledgerDupOfUnverifiedPrior";
+
 /// The order a finding's host is looked for in, as the engine's live priors are ordered.
 fn host_rank(f: Fate) -> Option<u8> {
     match f {
@@ -30,18 +34,32 @@ fn host_rank(f: Fate) -> Option<u8> {
 enum Landing {
     Into(usize),
     Severer,
+    /// An unverified finding at the site of an unverified prior: tracked on it, no second row.
+    Tracked(usize),
     Own,
 }
 
+/// The unverified prior an unverified finding repeats, as `markTrackedUnverified` collapses one
+/// ("an unchecked site does not gain a row per round"): a judged host is never one, since it can
+/// resolve and leave the ledger with the site.
+fn tracker(chain: &Chain, f: &Value) -> Landing {
+    let host = chain.priors.iter().position(|p| {
+        p.fate == Fate::Unverified && ledger::repeats(f, &p.row.finding(), p.located)
+    });
+    host.map_or(Landing::Own, Landing::Tracked)
+}
+
 fn landing(chain: &Chain, hosts: &[usize], f: &Value) -> Landing {
-    if !matches!(Tier::of(f), Tier::Confirmed | Tier::Suspected) {
-        return Landing::Own;
+    match Tier::of(f) {
+        Tier::Confirmed | Tier::Suspected => {}
+        Tier::Unverified => return tracker(chain, f),
+        Tier::Refuted => return Landing::Own,
     }
     let host = hosts.iter().copied().find(|i| {
         chain
             .priors
             .get(*i)
-            .is_some_and(|p| ledger::repeats(f, &p.row.finding()))
+            .is_some_and(|p| ledger::repeats(f, &p.row.finding(), p.located))
     });
     match host.and_then(|i| Some((i, chain.priors.get(i)?.row.finding()))) {
         Some((_, h)) if sev_rank(f) < sev_rank(&h) => Landing::Severer,
@@ -67,10 +85,18 @@ pub fn absorb(chain: &mut Chain, settled: &mut Vec<Value>) -> Vec<String> {
         })
         .collect();
     hosts.sort_by_key(|i| chain.priors.get(*i).and_then(|p| host_rank(p.fate)));
-    let mut severer = 0;
+    let (mut severer, mut tracked) = (0, 0);
     let mut kept = Vec::with_capacity(settled.len());
-    for f in settled.drain(..) {
+    for mut f in settled.drain(..) {
         match landing(chain, &hosts, &f) {
+            Landing::Tracked(i) => {
+                if let (Some(p), Some(obj)) = (chain.priors.get_mut(i), f.as_object_mut()) {
+                    p.row.why = absorbed::absorb_into(&p.row.why, &Value::Object(obj.clone()));
+                    obj.insert(LEDGER_DUP.into(), Value::Bool(true));
+                    tracked += 1;
+                }
+                kept.push(f);
+            }
             Landing::Into(i) => {
                 if let Some(p) = chain.priors.get_mut(i) {
                     p.row.why = absorbed::absorb_into(&p.row.why, &f);
@@ -86,7 +112,7 @@ pub fn absorb(chain: &mut Chain, settled: &mut Vec<Value>) -> Vec<String> {
     }
     *settled = kept;
     mark_regressions(chain, settled);
-    notes(chain, severer)
+    notes(chain, severer, tracked)
 }
 
 /// Marks each reported finding that matches a tombstone as a regression.
@@ -112,8 +138,11 @@ fn mark_regressions(chain: &mut Chain, settled: &mut [Value]) {
     }
 }
 
-fn notes(chain: &Chain, severer: usize) -> Vec<String> {
+fn notes(chain: &Chain, severer: usize, tracked: usize) -> Vec<String> {
     let mut notes = Vec::new();
+    if tracked > 0 {
+        notes.push(format!("re-review: {tracked} unverified finding(s) sit where an equally unverified prior finding already holds a ledger row: shown in this report, recorded on that prior, and not given a second row"));
+    }
     if chain.absorbed > 0 {
         notes.push(format!("re-review: {} verified finding(s) repeated a prior finding still tracked at the same site, and were absorbed into it (recorded on its rationale, which the next round's adjudicator is handed) rather than reported twice", chain.absorbed));
     }

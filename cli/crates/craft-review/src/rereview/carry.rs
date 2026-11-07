@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 
+use super::absorb::LEDGER_DUP;
 use super::{Chain, Fate};
 use crate::ledger::LedgerRow;
 use crate::report::Tier;
@@ -18,6 +19,7 @@ pub fn ledger(chain: &Chain, settled: &[Value]) -> Vec<LedgerRow> {
     let mut rows: Vec<LedgerRow> = settled
         .iter()
         .filter(|f| Tier::of(f) != Tier::Refuted)
+        .filter(|f| f.get(LEDGER_DUP) != Some(&Value::Bool(true)))
         .map(LedgerRow::open)
         .collect();
     let mut tombstones = chain.tombstones.clone();

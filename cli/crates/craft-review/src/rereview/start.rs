@@ -20,7 +20,11 @@ pub(super) fn take_ledger(chain: &mut Chain, ledger: Vec<LedgerRow>) {
             "open" => Fate::Pending,
             _ => Fate::Carried,
         };
-        chain.priors.push(PriorFinding { row, fate });
+        chain.priors.push(PriorFinding {
+            row,
+            fate,
+            located: false,
+        });
     }
 }
 

@@ -162,24 +162,55 @@ fn a_verified_repeat_is_absorbed_onto_its_prior_and_a_returning_one_is_marked() 
 }
 
 #[test]
-fn a_more_severe_finding_or_one_at_another_site_is_never_swallowed() {
+fn a_more_severe_finding_or_one_beside_a_relocated_prior_is_never_swallowed() {
     let mut low = row("a low one", "R1", "open", "confirmed");
     low.severity = "Low".into();
-    let mut c = chained(vec![low, row("set aside", "R2", "rejected", "confirmed")]);
+    let mut c = chained(vec![low, row("open high", "R3", "open", "confirmed")]);
+    judge(
+        &mut c,
+        &[
+            adjudicated(0, said("still-open", 3, "")),
+            adjudicated(1, said("still-open", 3, "")),
+        ],
+    );
     let mut found = vec![
         settled("R1", 9, "Critical", "confirmed"),
         settled("R1", 3, "Critical", "confirmed"),
-        settled("R2", 40, "Medium", "confirmed"),
+        settled("R3", 9, "Medium", "confirmed"),
     ];
     let notes = absorb(&mut c, &mut found);
     assert_eq!(found.len(), 3, "{found:?}");
     assert_eq!(c.absorbed, 0);
     assert!(notes.iter().any(|n| n.contains("more severe")), "{notes:?}");
-    assert_eq!(c.priors[1].row.why, "w", "the carried prior took nothing");
+    assert_eq!(
+        c.priors[1].row.why, "w",
+        "a relocated prior takes nothing from another site"
+    );
 }
 
 #[test]
-fn an_unverified_prior_hosts_nothing_and_an_unverified_finding_is_not_absorbed() {
+fn a_rejected_prior_whose_line_moved_takes_its_re_report_and_nothing_blocks_on_it() {
+    let mut set_aside = row("rejected high", "R2", "rejected", "confirmed");
+    set_aside.line = 40;
+    let mut c = chained(vec![set_aside]);
+    let mut found = vec![settled("R2", 52, "High", "confirmed")];
+    absorb(&mut c, &mut found);
+    assert!(found.is_empty(), "{found:?}");
+    assert_eq!(c.absorbed, 1);
+    assert_eq!(
+        c.priors[0].row.why,
+        "w — also reported at src/lib.rs:52: R2 at 52"
+    );
+    assert!(
+        c.gating().is_empty(),
+        "the author's rejection holds no verdict"
+    );
+    let rows = ledger(&c, &found);
+    assert_eq!(rows.len(), 1, "no row is added on a re-scan");
+}
+
+#[test]
+fn an_unverified_prior_hosts_no_judged_finding_and_tracks_an_unverified_one() {
     let mut c = chained(vec![
         row("never checked", "R1", "open", "unverified"),
         row("open", "R2", "open", "confirmed"),
@@ -187,9 +218,34 @@ fn an_unverified_prior_hosts_nothing_and_an_unverified_finding_is_not_absorbed()
     let mut found = vec![
         settled("R1", 3, "High", "confirmed"),
         settled("R2", 3, "High", "unverified"),
+        settled("R1", 8, "Low", "unverified"),
     ];
-    absorb(&mut c, &mut found);
-    assert_eq!((found.len(), c.absorbed), (2, 0));
+    let notes = absorb(&mut c, &mut found);
+    assert_eq!(
+        (found.len(), c.absorbed),
+        (3, 0),
+        "every one stays in the report"
+    );
+    assert!(
+        c.priors[0]
+            .row
+            .why
+            .ends_with("also reported at src/lib.rs:8: R1 at 8")
+    );
+    assert_eq!(
+        c.priors[1].row.why, "w",
+        "a judged prior tracks nothing unchecked"
+    );
+    assert!(
+        notes.iter().any(|n| n.contains("not given a second row")),
+        "{notes:?}"
+    );
+    let rows = ledger(&c, &found);
+    assert_eq!(
+        rows.len(),
+        4,
+        "the tracked one gets no row of its own: {rows:?}"
+    );
 }
 
 #[test]

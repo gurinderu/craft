@@ -46,6 +46,9 @@ pub enum Fate {
 pub struct PriorFinding {
     pub row: LedgerRow,
     pub fate: Fate,
+    /// Its adjudicator answered this round, so its line is where the defect sits now.
+    #[serde(default)]
+    pub located: bool,
 }
 
 impl PriorFinding {

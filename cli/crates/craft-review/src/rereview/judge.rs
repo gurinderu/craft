@@ -113,6 +113,7 @@ pub fn judge(chain: &mut Chain, tasks: &[Task]) -> Vec<String> {
             p.row.line = l;
         }
         p.fate = fate;
+        p.located = answer.is_some();
         p.row.why = why;
     }
     notes

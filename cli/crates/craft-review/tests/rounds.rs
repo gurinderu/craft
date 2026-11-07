@@ -289,3 +289,32 @@ fn a_round_with_no_fix_since_the_last_reviews_the_whole_diff_and_a_detached_head
     let st = std::fs::read_to_string(runs.join("r3/state.json")).unwrap();
     assert!(st.contains("no branch (a detached HEAD)"), "{st}");
 }
+
+#[test]
+fn an_unchecked_site_keeps_one_ledger_row_across_full_rescans() {
+    let repo = fixture(true);
+    let (_keep, runs) = runs();
+    let mut low = found("RS-L", 2, "a low one");
+    low["severity"] = json!("Low");
+    for (round, name) in [(1, "r1"), (2, "r2"), (3, "r3")] {
+        let s = step::start(&StartOptions {
+            full_every: 1,
+            ..at(repo.path(), &runs, name)
+        })
+        .unwrap();
+        let done = drive(&runs.join(name), s, std::slice::from_ref(&low), &[]);
+        assert_eq!(done["round"], json!(round));
+        assert_eq!(
+            done["reReview"]["scope"],
+            json!(if round == 1 { "first" } else { "rescan" })
+        );
+        let rows: Vec<&Value> = done["ledger"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["ruleId"] == json!("RS-L"))
+            .collect();
+        assert_eq!(rows.len(), 1, "round {round}: {}", done["ledger"]);
+        assert_eq!(rows[0]["tier"], json!("unverified"));
+    }
+}
