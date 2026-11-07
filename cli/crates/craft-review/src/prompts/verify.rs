@@ -5,6 +5,7 @@ use serde_json::Value;
 use super::{PromptContext, REVIEW_RULES_DIR, flatten, plugin_candidates, repo_directive};
 use crate::content::{self, ContentError, vars};
 use crate::profile::Profile;
+use crate::sources;
 
 /// The fields that state one finding to a verifier, its model-authored text flattened.
 fn finding_fields(f: &Value, self_contained: &str) -> Vec<(&'static str, String)> {
@@ -110,7 +111,7 @@ pub fn verify_prompt(
             " If no tool applies, judge it yourself.".into(),
         ),
         ("exclusions", exclusions(ctx, profile)?),
-        ("sources", String::new()),
+        ("sources", sources::verify_block(&ctx.sources.prepared)),
         (
             "refutedRule",
             "Mechanical check first, then your judgement; when uncertain about the claim, \
@@ -159,7 +160,7 @@ pub fn batch_verify_prompt(
         &vars([
             ("count", group.len().to_string()),
             ("lang", profile.lang.clone()),
-            ("sources", String::new()),
+            ("sources", sources::verify_block(&ctx.sources.prepared)),
             ("dependencySource", content::text("dependency-source")?),
             ("harmQuestion", content::text("verify-harm-question")?),
             ("findings", findings),

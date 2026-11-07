@@ -10,6 +10,7 @@ use super::{
 use crate::content::{self, ContentError, vars};
 use crate::plan::Plan;
 use crate::profile::{Lens, Profile};
+use crate::sources;
 
 /// How long the ALREADY-FOUND list may grow, and how much of a title it carries.
 const PRIOR_SUMMARY_MAX_CHARS: usize = 2500;
@@ -203,7 +204,7 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
                 ("plan", plan_lines(plan)?),
                 ("lsp", if nav { " + LSP".into() } else { String::new() }),
                 ("dependencySource", content::text("dependency-source")?),
-                ("sources", String::new()),
+                ("sources", sources_line(ctx, profile, lens)),
                 ("ruleId", rule_id(profile)?),
                 (
                     "mutants",
@@ -218,6 +219,16 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
         )?
     };
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
+}
+
+/// The external sources' block on a line of its own, for a lens that judges another system's
+/// behaviour (`sourcesLine`); empty otherwise.
+fn sources_line(ctx: &PromptContext, profile: &Profile, lens: &str) -> String {
+    let block = sources::lens_block(&ctx.sources.prepared);
+    if block.is_empty() || !sources::reads(&profile.id, lens) {
+        return String::new();
+    }
+    format!("\n{block}")
 }
 
 /// The maintainability lens's STRICT MODE brief, which overrides the harm cap; empty otherwise.

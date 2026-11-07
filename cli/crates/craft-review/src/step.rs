@@ -18,6 +18,7 @@ use crate::profile::Profile;
 use crate::prompts::{self, PromptContext, ReScope, SPEC_MAX};
 use crate::rereview;
 use crate::rounds::Rounds;
+use crate::sources::{self, SourcesSetup};
 use crate::state::{
     self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState, Track,
 };
@@ -81,6 +82,9 @@ pub struct StartOptions {
     pub prior_decisions: Option<Result<Value, String>>,
     /// Recall the project's memory beside the scouts; without it only `prior_decisions` apply.
     pub recall: bool,
+    /// Where the reviewer's profile and the sources cache are: the integration points' sources are
+    /// prepared before the first tasks. `None`, none are.
+    pub sources: Option<SourcesSetup>,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -135,6 +139,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         craft_version: opts.craft_version.clone(),
         re_review,
         strict: opts.strict,
+        sources: sources::Sources::default(),
     };
     let tracks: Vec<Track> = coverage::assign(&diff.files, &profiles)
         .into_iter()
@@ -174,6 +179,9 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     if let Some(exit) = &run.exit {
         run.not_run.extend(exit.not_run.clone());
     } else {
+        if let Some(setup) = &opts.sources {
+            run.context.sources = sources::for_repo(&cwd, setup);
+        }
         run.tasks = scouts(&run, &profiles)?;
         let recall = opts.recall && !recall_paths.is_empty();
         if recall {
