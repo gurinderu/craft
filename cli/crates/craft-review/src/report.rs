@@ -274,6 +274,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         &state.settled,
     ));
     out.push_str(&crate::critic::section(state));
+    out.push_str(&crate::units::section(&state.units));
     out.push_str("\n## Not run\n\n");
     for n in &state.not_run {
         out.push_str(&format!("- {n}\n"));

@@ -7,7 +7,7 @@ use serde_json::Value;
 use super::{
     PromptContext, REVIEW_RULES_DIR, ReScope, flatten, plugin_candidates, repo_directive, shq,
 };
-use crate::content::{self, ContentError, vars};
+use crate::content::{self, ContentError, Vars, vars};
 use crate::plan::Plan;
 use crate::profile::{Lens, Profile};
 use crate::sources;
@@ -161,64 +161,92 @@ pub struct LensIn<'a> {
 /// # Errors
 /// When the lens is not the profile's, a content file is missing or a placeholder has no value.
 pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, ContentError> {
+    lens_prompt_in(ctx, at, String::new())
+}
+
+/// The lens `at` names, of its profile.
+pub(super) fn lens_spec<'a>(at: &LensIn<'a>) -> Result<&'a Lens, ContentError> {
+    at.profile
+        .lens(at.lens)
+        .ok_or_else(|| ContentError::UnknownFile(format!("the lens {}", at.lens)))
+}
+
+/// What every judging lens prompt shares (`lensCommon`): who it is, its brief and catalogue, the
+/// rules, the diff and the round, and the ALREADY-FOUND list.
+pub(super) fn common_vars(
+    ctx: &PromptContext,
+    at: &LensIn<'_>,
+    spec: &Lens,
+) -> Result<Vars, ContentError> {
     let LensIn {
         profile,
         lens,
         plan,
         ..
     } = *at;
-    let spec = profile
-        .lens(lens)
-        .ok_or_else(|| ContentError::UnknownFile(format!("the lens {lens}")))?;
-    let already = content::prompt("already-found", &vars([("summary", at.prior.to_owned())]))?;
+    let mutants = profile.id == "rust"
+        && lens == "tests"
+        && matches!(plan.size_bucket.as_str(), "medium" | "large");
+    Ok(vars([
+        ("lens", lens.to_owned()),
+        ("lang", profile.lang.clone()),
+        ("rubricSkill", profile.rubric_skill.clone()),
+        ("brief", content::text(&spec.brief)?),
+        ("catalogue", catalogue_line(ctx, spec)?),
+        ("rules", rules(ctx)?),
+        ("strict", strict_line(ctx, lens)?),
+        ("base", base_label(ctx)),
+        ("range", range(ctx)),
+        ("pathspec", at.pathspec.to_owned()),
+        ("reReview", re_review(ctx)?),
+        ("plan", plan_lines(plan)?),
+        ("sources", sources_line(ctx, profile, lens)),
+        (
+            "mutants",
+            if mutants {
+                content::text("lens-mutants")?
+            } else {
+                String::new()
+            },
+        ),
+        (
+            "alreadyFound",
+            content::prompt("already-found", &vars([("summary", at.prior.to_owned())]))?,
+        ),
+    ]))
+}
+
+/// [`lens_prompt`] with `slice`, the YOUR SLICE block of a directory slice (empty unsliced).
+pub(super) fn lens_prompt_in(
+    ctx: &PromptContext,
+    at: &LensIn<'_>,
+    slice: String,
+) -> Result<String, ContentError> {
+    let spec = lens_spec(at)?;
+    let (profile, lens) = (at.profile, at.lens);
     let body = if spec.metrics {
         crate::complexity::lens_body(&spec.brief, &base_label(ctx))?
     } else if lens == "negative-space" {
-        negative_space(ctx, profile, plan, already)?
+        let already = content::prompt("already-found", &vars([("summary", at.prior.to_owned())]))?;
+        negative_space(ctx, profile, at.plan, already)?
     } else {
         let nav = !profile.nav_skill.is_empty();
-        let mutants = profile.id == "rust"
-            && lens == "tests"
-            && matches!(plan.size_bucket.as_str(), "medium" | "large");
-        content::prompt(
-            "lens",
-            &vars([
-                ("lens", lens.to_owned()),
-                ("lang", profile.lang.clone()),
-                ("rubricSkill", profile.rubric_skill.clone()),
-                (
-                    "navLoad",
-                    if nav {
-                        format!(" and the {} skill for context expansion", profile.nav_skill)
-                    } else {
-                        String::new()
-                    },
-                ),
-                ("brief", content::text(&spec.brief)?),
-                ("catalogue", catalogue_line(ctx, spec)?),
-                ("rules", rules(ctx)?),
-                ("strict", strict_line(ctx, lens)?),
-                ("base", base_label(ctx)),
-                ("range", range(ctx)),
-                ("pathspec", at.pathspec.to_owned()),
-                ("slice", String::new()),
-                ("reReview", re_review(ctx)?),
-                ("plan", plan_lines(plan)?),
-                ("lsp", if nav { " + LSP".into() } else { String::new() }),
-                ("dependencySource", content::text("dependency-source")?),
-                ("sources", sources_line(ctx, profile, lens)),
-                ("ruleId", rule_id(profile)?),
-                (
-                    "mutants",
-                    if mutants {
-                        content::text("lens-mutants")?
-                    } else {
-                        String::new()
-                    },
-                ),
-                ("alreadyFound", already),
-            ]),
-        )?
+        let mut v = common_vars(ctx, at, spec)?;
+        v.extend(vars([
+            (
+                "navLoad",
+                if nav {
+                    format!(" and the {} skill for context expansion", profile.nav_skill)
+                } else {
+                    String::new()
+                },
+            ),
+            ("slice", slice),
+            ("lsp", if nav { " + LSP".into() } else { String::new() }),
+            ("dependencySource", content::text("dependency-source")?),
+            ("ruleId", rule_id(profile)?),
+        ]));
+        content::prompt("lens", &v)?
     };
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
 }

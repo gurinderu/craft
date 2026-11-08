@@ -21,6 +21,7 @@ fn profile_task(profile: &str, lens: &str, round: u32, answer: Option<Value>) ->
             profile: profile.into(),
             lens: lens.into(),
             round,
+            slice: None,
         },
     );
     match answer {

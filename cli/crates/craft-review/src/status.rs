@@ -15,6 +15,7 @@ fn phase_label(run: &RunState) -> String {
         Phase::Match => "memory match judge".into(),
         Phase::Rules => "project rule judge".into(),
         Phase::Lenses => format!("lenses round {}", run.rounds.round),
+        Phase::Seam => "unit-mode coordinator".into(),
         Phase::Dedup => "dedup".into(),
         Phase::Verify => "verify".into(),
         Phase::Critic => "completeness critic".into(),

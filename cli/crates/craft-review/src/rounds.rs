@@ -17,6 +17,7 @@ use crate::plan::Plan;
 use crate::profile::Profile;
 use crate::prompts::{self, LensIn, PromptContext};
 use crate::state::{Task, TaskKind, TaskState};
+use crate::units::Slice;
 
 /// What one round dispatched and what it added, as `lensRounds` records it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,64 +61,104 @@ pub fn key(f: &Value) -> String {
     format!("{}:{line}:{title}", s("file"))
 }
 
+/// What parts a sliced dispatch's key from its slice's, as `dispatchKey` in
+/// `lib/review-lens-dispatch.mjs`: each slice of a lens is a dispatch of its own, and one that
+/// never returned is a hole whatever its siblings did.
+const SLICE_SEP: &str = " :: ";
+
 /// A lens as the rounds key it: its profile and its id.
 fn lens_key(profile: &str, lens: &str) -> String {
     format!("{profile}:{lens}")
 }
 
 /// One task per planned lens of `profile` for `round`, over the profile's part `files`, each told
-/// what the pool holds and run on the profile's lens agent; a metrics-or-nothing lens in the first round only.
+/// what the pool holds and run on the profile's lens agent; a metrics-or-nothing lens in the first
+/// round only. Under unit mode a sliceable lens runs once per slice of `slices` instead.
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the findings schema read.
 pub fn tasks(
     ctx: &PromptContext,
-    profile: &Profile,
-    plan: &Plan,
+    at: (&Profile, &Plan),
     files: &[String],
+    slices: &[Slice],
     rounds: &Rounds,
 ) -> Result<Vec<Task>, ContentError> {
+    let (profile, plan) = at;
     let prior = prompts::prior_found_summary(&rounds.pool);
-    let round = rounds.round;
     let pathspec = profile.pathspec(files);
-    plan.lenses
+    let mut out = Vec::new();
+    // A metrics lens reads numbers another round would not change: it runs in the first only.
+    let lenses = plan
+        .lenses
         .iter()
-        // A metrics lens reads numbers another round would not change: it runs in the first only.
-        .filter(|l| round <= 1 || !profile.lens(l).is_some_and(|x| x.metrics))
-        .map(|lens| {
-            let spec = profile.lens(lens);
-            let model = spec.map_or(Model::Opus, |l| l.model);
-            // A metrics-or-nothing lens's findings carry the numbers they rest on.
-            let schema = if spec.is_some_and(|l| l.metrics) {
-                crate::complexity::findings_schema()?
-            } else {
-                content::schema("findings")?
-            };
-            let at = LensIn {
-                profile,
-                lens,
-                plan,
-                pathspec: &pathspec,
-                prior: &prior,
-            };
-            let mut task = Task::new(
-                format!("lens-{}-{lens}-r{round}", profile.id),
-                format!("lens:{}:{lens} r{round}", profile.id),
-                prompts::lens_prompt(ctx, &at)?,
-                model,
-                schema,
-                TaskKind::Lens {
-                    profile: profile.id.clone(),
-                    lens: lens.clone(),
-                    round,
-                },
-            );
-            // Only the lenses run on the profile's agent, as the engine dispatches them
-            // (lib/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
-            task.agent_type = profile.lens_agent;
-            Ok(task)
-        })
-        .collect()
+        .filter(|l| rounds.round <= 1 || !profile.lens(l).is_some_and(|x| x.metrics));
+    for lens in lenses {
+        let at = LensIn {
+            profile,
+            lens,
+            plan,
+            pathspec: &pathspec,
+            prior: &prior,
+        };
+        // A lens that judges the change as a whole (`WHOLE_DIFF_LENSES` in lib/lens-scope.mjs, the
+        // profile's `wholeDiff`) or reads metrics is never sliced.
+        let whole = profile.lens(lens).is_none_or(|l| l.metrics || l.whole_diff);
+        if slices.is_empty() || whole {
+            out.push(lens_task(ctx, &at, rounds.round, None)?);
+            continue;
+        }
+        for (i, slice) in slices.iter().enumerate() {
+            out.push(lens_task(ctx, &at, rounds.round, Some((i, slice)))?);
+        }
+    }
+    Ok(out)
+}
+
+/// One lens dispatch: over its profile's whole part, or over the `i`-th slice.
+fn lens_task(
+    ctx: &PromptContext,
+    at: &LensIn<'_>,
+    round: u32,
+    slice: Option<(usize, &Slice)>,
+) -> Result<Task, ContentError> {
+    let (profile, lens) = (at.profile, at.lens);
+    let spec = profile.lens(lens);
+    let model = spec.map_or(Model::Opus, |l| l.model);
+    // A metrics-or-nothing lens's findings carry the numbers they rest on; a lens confined to a
+    // unit batch answers with its questions about other units beside its findings.
+    let schema = if spec.is_some_and(|l| l.metrics) {
+        crate::complexity::findings_schema()?
+    } else if slice.is_some_and(|(_, s)| !s.units.is_empty()) {
+        content::schema("unit-findings")?
+    } else {
+        content::schema("findings")?
+    };
+    let (id, label, prompt) = match slice {
+        None => (String::new(), String::new(), prompts::lens_prompt(ctx, at)?),
+        Some((i, s)) => (
+            format!("-s{i}"),
+            format!(" {}", s.key),
+            prompts::slice_lens_prompt(ctx, at, s)?,
+        ),
+    };
+    let mut task = Task::new(
+        format!("lens-{}-{lens}-r{round}{id}", profile.id),
+        format!("lens:{}:{lens} r{round}{label}", profile.id),
+        prompt,
+        model,
+        schema,
+        TaskKind::Lens {
+            profile: profile.id.clone(),
+            lens: lens.to_owned(),
+            round,
+            slice: slice.map(|(_, s)| s.key.clone()),
+        },
+    );
+    // Only the lenses run on the profile's agent, as the engine dispatches them
+    // (lib/review-lens-dispatch.mjs); the scout, the dedup and the verifiers keep the default.
+    task.agent_type = profile.lens_agent;
+    Ok(task)
 }
 
 /// Records on `kept` that another lens filed the very same finding, as `noteExactCopy`.
@@ -168,12 +209,17 @@ impl Rounds {
                 profile,
                 lens,
                 round,
+                slice,
             } = &t.kind
             else {
                 continue;
             };
             added.entry(profile.clone()).or_insert(0);
-            let Some(answer) = self.answered(t, &lens_key(profile, lens)) else {
+            let mut k = lens_key(profile, lens);
+            if let Some(s) = slice {
+                k = format!("{k}{SLICE_SEP}{s}");
+            }
+            let Some(answer) = self.answered(t, &k) else {
                 continue;
             };
             returned += 1;
@@ -246,12 +292,21 @@ impl Rounds {
             .collect()
     }
 
-    /// The lenses of `profile`'s plan that answered.
+    /// The lenses of `profile`'s plan that answered: a sliced one on every slice it was sent.
     #[must_use]
     pub fn ran(&self, profile: &str, plan: &Plan) -> Vec<String> {
         plan.lenses
             .iter()
-            .filter(|l| self.returned.contains(&lens_key(profile, l)))
+            .filter(|l| {
+                let k = lens_key(profile, l);
+                let sliced = format!("{k}{SLICE_SEP}");
+                let mut sent = self
+                    .expected
+                    .iter()
+                    .filter(|e| **e == k || e.starts_with(&sliced))
+                    .peekable();
+                sent.peek().is_some() && sent.all(|e| self.returned.contains(e))
+            })
             .cloned()
             .collect()
     }
