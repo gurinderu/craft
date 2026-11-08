@@ -49,6 +49,10 @@ pub struct GateSetup {
     pub budget: Duration,
     /// The PATH its tools are looked up on, when not craft's own.
     pub path: Option<OsString>,
+    /// The directory the run reviews (`path`, repository-relative): when it is a Cargo package or
+    /// inside one, clippy lints that package alone (`-p`), so per-crate runs of one workspace do
+    /// not lint the same packages side by side.
+    pub scope: Option<String>,
 }
 
 impl Default for GateSetup {
@@ -56,6 +60,7 @@ impl Default for GateSetup {
         Self {
             budget: BUDGET,
             path: None,
+            scope: None,
         }
     }
 }
@@ -173,6 +178,7 @@ pub fn run(
             files: &t.files,
             lines: &lines,
             profile: &t.profile,
+            scope: setup.scope.as_deref(),
         };
         let mut acc = Acc::default();
         if t.profile == "rust" {

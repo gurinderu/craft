@@ -278,6 +278,10 @@ pub struct RunState {
     pub uncovered: Vec<String>,
     /// A light pass (`depth=light`) rather than the full review.
     pub light: bool,
+    /// The optional lenses the run was asked for, qualified by profile ([`crate::optional`]).
+    /// Optional, so a state written before it reads as a run that bought none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optional: Vec<String>,
     pub phase: Phase,
     /// The current phase's tasks.
     pub tasks: Vec<Task>,
