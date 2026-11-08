@@ -11,7 +11,7 @@ mod common;
 
 use std::path::{Path, PathBuf};
 
-use common::{finding, fixture, ids, lens, opts, prompt_of, submit, titled, verdict};
+use common::{finding, fixture, ids, lens, opts, past_critic, prompt_of, submit, titled, verdict};
 use craft_review::step;
 use serde_json::{Map, Value, json};
 
@@ -75,6 +75,7 @@ fn an_agreeing_pair_settles_a_high_with_no_further_vote() {
         &run,
         json!({"verify-0-v0": verdict(false), "verify-0-v3": verdict(false)}),
     );
+    let s = past_critic(&run, s);
     assert_eq!(s["verdict"], json!("Block"));
 }
 
@@ -94,6 +95,7 @@ fn a_split_pair_buys_the_rest_of_the_panel_and_the_majority_decides() {
         json!({"verify-0-v1": verdict(false), "verify-0-v2": verdict(false)}),
     );
     // One refutation of four: suspected, which does not block.
+    let s = past_critic(&run, s);
     assert_eq!(s["verdict"], json!("Approve"));
     assert!(
         report(&s).contains("## Suspected findings\n\n- **High** `src/lib.rs:1`"),
@@ -116,6 +118,7 @@ fn a_dead_and_an_off_schema_voter_thin_the_panel_and_the_report_says_so() {
         &run,
         json!({"verify-0-v1": verdict(false), "verify-0-v2": verdict(false)}),
     );
+    let s = past_critic(&run, s);
     assert_eq!(s["verdict"], json!("Block"));
     let r = report(&s);
     assert!(
@@ -137,6 +140,7 @@ fn a_panel_that_never_answers_is_unverified_and_the_verdict_incomplete() {
     for _ in 0..6 {
         s = submit(&run, json!({}));
     }
+    let s = past_critic(&run, s);
     assert_eq!(s["verdict"], json!("INCOMPLETE"));
     let r = report(&s);
     for want in [
@@ -157,6 +161,7 @@ fn a_dead_batch_leaves_its_findings_unverified_and_names_the_death() {
     for _ in 0..3 {
         s = submit(&run, json!({"verify-batch-0": {"verdicts": "none"}}));
     }
+    let s = past_critic(&run, s);
     assert_eq!(s["verdict"], json!("INCOMPLETE"));
     let r = report(&s);
     assert!(

@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::agent::{AgentKind, Model};
+use crate::critic::Critic;
+use crate::extra::Extra;
 use crate::gate::Gate;
 use crate::git::Diff;
 use crate::memory::Memory;
@@ -62,6 +64,11 @@ pub enum Phase {
     Match,
     /// The memory's rule judge on the findings in a project rule's scope.
     Rules,
+    /// The completeness critic of each profile whose plan is large or security-sensitive.
+    Critic,
+    /// The lenses the completeness critic admitted.
+    #[serde(rename = "critic-lenses")]
+    CriticLenses,
     Done,
 }
 
@@ -109,6 +116,19 @@ pub enum TaskKind {
     RuleJudge,
     /// The warm-up finding whether a code-metrics index covers the repository, beside the scouts.
     Warmup,
+    /// The completeness critic of `profile`'s plan.
+    Critic {
+        profile: String,
+    },
+    /// A lens of `profile` the completeness critic admitted.
+    CriticLens {
+        profile: String,
+        lens: String,
+    },
+    /// The consumer's own agent `agent`, run as an extra lens beside the first round.
+    Extra {
+        agent: String,
+    },
 }
 
 /// Whether a task still waits for its answer.
@@ -133,6 +153,10 @@ pub struct Task {
     /// The agent it runs on; `None`, the host's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<AgentKind>,
+    /// The consumer repository's own agent it runs on, by the name that repository gives it: an
+    /// extra lens (realm @nick/craft, node #295). The host runs it on that agent and no other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consumer_agent: Option<String>,
     #[serde(flatten)]
     pub kind: TaskKind,
     pub state: TaskState,
@@ -166,6 +190,7 @@ impl Task {
             model,
             schema,
             agent_type: None,
+            consumer_agent: None,
             kind,
             state: TaskState::Pending,
             retries: 0,
@@ -279,6 +304,14 @@ pub struct RunState {
     /// run without one.
     #[serde(default)]
     pub gate: Gate,
+    /// The completeness critic and the lenses it admitted. Optional, so a state written before it
+    /// reads as a run whose critic has not been asked.
+    #[serde(default)]
+    pub critic: Critic,
+    /// The consumer's own agents run as extra lenses. Optional, so a state written before it reads
+    /// as a run with them off.
+    #[serde(default)]
+    pub extra: Extra,
 }
 
 impl RunState {

@@ -176,7 +176,10 @@ pub(crate) fn panel(run: &RunState, i: usize) -> Vec<(u32, Option<Value>)> {
             | TaskKind::RedTeam { .. }
             | TaskKind::MatchJudge
             | TaskKind::RuleJudge
-            | TaskKind::Warmup => None,
+            | TaskKind::Warmup
+            | TaskKind::Critic { .. }
+            | TaskKind::CriticLens { .. }
+            | TaskKind::Extra { .. } => None,
         })
         .collect()
 }

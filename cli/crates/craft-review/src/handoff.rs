@@ -118,6 +118,9 @@ pub fn wire(dir: &Path, task: &Task) -> Value {
     if let (Some(a), Some(obj)) = (&task.agent_type, t.as_object_mut()) {
         obj.insert("agentType".into(), json!(a));
     }
+    if let (Some(a), Some(obj)) = (&task.consumer_agent, t.as_object_mut()) {
+        obj.insert("consumerAgent".into(), json!(a));
+    }
     t
 }
 

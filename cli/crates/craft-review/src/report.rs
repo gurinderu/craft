@@ -273,6 +273,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         &state.context.sources,
         &state.settled,
     ));
+    out.push_str(&crate::critic::section(state));
     out.push_str("\n## Not run\n\n");
     for n in &state.not_run {
         out.push_str(&format!("- {n}\n"));
@@ -287,6 +288,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     if state.light {
         out.push_str(&light::section(state));
     }
+    out.push_str(&crate::extra::section(state));
     out
 }
 

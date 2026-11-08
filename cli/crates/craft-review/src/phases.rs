@@ -18,6 +18,7 @@ use crate::chain;
 use crate::complexity;
 use crate::content;
 use crate::dedup;
+use crate::extra;
 use crate::plan::{self, PlanInput};
 use crate::profile::Profile;
 use crate::prompts;
@@ -28,6 +29,7 @@ use crate::state::{self, Phase, RunState, Task, TaskKind, TaskState};
 use crate::step::StepError;
 use crate::verify;
 
+mod critic;
 mod memory;
 
 pub(crate) use memory::settle as settle_memory;
@@ -94,6 +96,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         Phase::Lenses => {
             let sifted = complexity::sift(&mut run.tasks, &profiles);
             run.notes.extend(sifted);
+            let first = run.tracks.first().map(|t| t.profile.clone());
+            extra::take(&mut run.extra, &run.tasks, first.as_deref().unwrap_or(""));
             let added = run.rounds.absorb(&run.tasks);
             for t in run.tracks.iter_mut().filter(|t| t.live()) {
                 t.rounds += 1;
@@ -107,14 +111,16 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         }
         Phase::Verify => {
             // A split or thinned deciding pair buys the rest of its panel before anything settles.
-            let more = verify::escalation(run)?;
+            let mut more = verify::escalation(run)?;
+            crate::critic::relabel(run, &mut more);
             if !more.is_empty() {
                 run.tasks.extend(more);
                 return Ok(());
             }
-            verify::settle_run(run);
-            settle_memory(dir, run)
+            critic::verified(dir, run)
         }
+        Phase::Critic => critic::answered(dir, run, &profiles),
+        Phase::CriticLenses => critic::lenses_back(dir, run, &profiles),
         Phase::Match => memory::matched(dir, run),
         Phase::Rules => memory::ruled(dir, run),
         Phase::Done => Ok(()),
@@ -169,7 +175,8 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
         return end_rounds(dir, run, profiles);
     }
     run.rounds.round += 1;
-    let mut tasks = Vec::new();
+    // The consumer's own agents run once, beside the first round, over the whole change.
+    let mut tasks = extra::tasks(run)?;
     for (track, p) in run.tracks.iter().zip(profiles).filter(|(t, _)| t.live()) {
         let plan = track.plan.as_ref().ok_or(StepError::NoPlan)?;
         tasks.extend(rounds::tasks(
@@ -185,8 +192,10 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
     Ok(())
 }
 
-/// After the last round: the lenses that never returned, then the pool to the dedup.
+/// After the last round: the extra lenses' findings into the pool, the lenses that never returned,
+/// then the pool to the dedup.
 fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
+    extra::join(run);
     for p in profiles {
         let holes = run.rounds.holes(&p.id);
         if !holes.is_empty() {
@@ -197,15 +206,28 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
             ));
         }
     }
+    // Nothing to verify: the critic is still asked whether a lens that did not run should have.
     if run.rounds.pool.is_empty() {
-        return settle_memory(dir, run);
+        return critic::ask(dir, run);
     }
-    run.findings = dedup::prepare(&run.rounds.pool, profiles);
+    let pool = run.rounds.pool.clone();
+    to_dedup(dir, run, profiles, &pool)
+}
+
+/// `pool` through the floor and the roll-up, then to the dedup pass when two or more remain, else
+/// straight to verification.
+fn to_dedup(
+    dir: &Path,
+    run: &mut RunState,
+    profiles: &[Profile],
+    pool: &[Value],
+) -> Result<(), Error> {
+    run.findings = dedup::prepare(pool, profiles);
     let Some(first) = profiles.first().filter(|_| run.findings.len() >= 2) else {
         return start_verify(dir, run);
     };
     let ids: Vec<&str> = profiles.iter().map(|p| p.id.as_str()).collect();
-    run.tasks = vec![Task::new(
+    let mut tasks = vec![Task::new(
         format!("dedup-{}", ids.join("-")),
         format!("dedup:{}", ids.join("-")),
         prompts::dedup_prompt(&run.context, &run.findings)?,
@@ -213,6 +235,8 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
         content::schema("dedup")?,
         TaskKind::Dedup,
     )];
+    crate::critic::relabel(run, &mut tasks);
+    run.tasks = tasks;
     run.phase = Phase::Dedup;
     Ok(())
 }
@@ -240,10 +264,11 @@ fn dedup_answered(run: &mut RunState) {
 /// Hands the pool to its verifiers, or ends the run when none is to be spent.
 fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     run.notes.extend(verify::skipped_note(run));
-    run.tasks = verify::tasks(run)?;
+    let mut tasks = verify::tasks(run)?;
+    crate::critic::relabel(run, &mut tasks);
+    run.tasks = tasks;
     if run.tasks.is_empty() {
-        verify::settle_run(run);
-        return settle_memory(dir, run);
+        return critic::verified(dir, run);
     }
     run.phase = Phase::Verify;
     Ok(())
