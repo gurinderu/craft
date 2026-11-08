@@ -8,26 +8,29 @@ use super::Status;
 use super::check::{Acc, Cx, last_line};
 use super::nix_lint::{STATIX, deadnix, statix};
 
-/// What a failed `nix flake check` says when this machine, not the change, stopped it.
+// The messages below are nix's own, observed with nix 2.35.2 (`nix flake check
+// --no-write-lock-file` on a flake whose second input its flake.lock did not lock yet, and with
+// `NIX_REMOTE` at a socket that does not exist); `gate/tests.rs` holds them verbatim.
+
+/// What a failed `nix flake check` says when this machine, not the change, stopped it. Each is an
+/// error line nix prints itself, not text a failing check could echo from its build log.
 const ENVIRONMENT: [&str; 9] = [
     "unable to download",
     "Could not resolve host",
     "Couldn't resolve host",
     "experimental Nix feature",
-    "cannot connect to socket",
+    "error: cannot connect to socket at",
     "lock file '/nix/var/nix/db/big-lock'",
     "SQLite database '/nix/var/nix/db/",
     "while setting up the build environment",
     "sandboxing builds is not supported",
 ];
 
-/// What `nix flake check --no-write-lock-file` says when the branch's `flake.lock` lacks an entry
-/// its inputs need: a failure then is the unwritten lock's, not established as the change's.
-const UNLOCKED: [&str; 3] = [
-    "not writing modified lock file",
-    "cannot write modified lock file",
-    "entry in the lock file",
-];
+/// The trace nix prints when locking the branch's inputs itself failed — an input its flake.lock
+/// did not lock yet could not be fetched — so no check ran. The warning `not writing modified lock
+/// file`, printed whenever an input changed, is NOT this: evaluation goes on after it, and a check
+/// that then fails is red.
+const UNLOCKED: &str = "while updating the lock file of flake";
 
 /// The Nix gate over `cx`.
 pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
@@ -81,10 +84,10 @@ fn flake_check(cx: &Cx<'_>, acc: &mut Acc) -> Status {
         ));
         return Status::Unknown;
     }
-    if UNLOCKED.iter().any(|e| err.contains(e)) {
+    if err.contains(UNLOCKED) {
         acc.parts.push(format!("{label}: not established"));
         acc.notes.push(format!(
-            "{label} failed with the branch's flake.lock not locking every input, which the gate does not write — its signal is unknown: {why}"
+            "{label} failed while locking an input the branch's flake.lock does not lock yet (the gate never writes that lockfile): no check ran, its signal is unknown: {why}"
         ));
         return Status::Unknown;
     }

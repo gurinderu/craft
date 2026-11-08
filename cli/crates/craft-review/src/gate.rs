@@ -25,6 +25,8 @@ mod lines;
 mod lock;
 mod nix;
 mod nix_lint;
+#[cfg(test)]
+mod nix_tests;
 mod runner;
 mod rust;
 mod section;

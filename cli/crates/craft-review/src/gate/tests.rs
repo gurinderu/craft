@@ -7,7 +7,7 @@ use std::time::Duration;
 use super::{GateSetup, Status, run};
 use crate::state::Track;
 
-fn tool(dir: &Path, name: &str, script: &str) {
+pub(super) fn tool(dir: &Path, name: &str, script: &str) {
     use std::os::unix::fs::PermissionsExt;
     let path = dir.join(name);
     std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
@@ -29,7 +29,7 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 /// A repository whose first commit holds `flake.nix`, the second adding `a.nix` with three lines.
-fn repo() -> tempfile::TempDir {
+pub(super) fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     git(d, &["init", "-q", "-b", "main"]);
@@ -42,11 +42,11 @@ fn repo() -> tempfile::TempDir {
     dir
 }
 
-fn nix_track() -> Vec<Track> {
+pub(super) fn nix_track() -> Vec<Track> {
     vec![Track::new("nix", vec!["a.nix".into()])]
 }
 
-fn setup(path: &Path, budget: Duration) -> GateSetup {
+pub(super) fn setup(path: &Path, budget: Duration) -> GateSetup {
     GateSetup {
         budget,
         path: Some(path.as_os_str().to_owned()),
@@ -198,45 +198,6 @@ fn a_red_flake_fails_the_gate_but_one_this_machine_stopped_is_unknown() {
         );
         assert_eq!(gate.tracks[0].status, Status::Unknown, "{fault}");
     }
-}
-
-#[test]
-fn the_flake_check_never_writes_the_branchs_flake_lock() {
-    let (repo, tools, run_dir) = (
-        repo(),
-        tempfile::tempdir().unwrap(),
-        tempfile::tempdir().unwrap(),
-    );
-    std::fs::write(repo.path().join("flake.lock"), "pinned\n").unwrap();
-    // A nix that writes the lock unless told not to, and fails on the input the lock lacks.
-    tool(
-        tools.path(),
-        "nix",
-        "case \"$*\" in *--no-write-lock-file*) ;; *) printf 'rewritten' > flake.lock ;; esac\n\
-         echo \"warning: not writing modified lock file of flake 'path:.'\" >&2\n\
-         echo \"error: input 'new' has no entry in the lock file\" >&2; exit 1",
-    );
-    let (gate, _) = run(
-        repo.path(),
-        "HEAD~1",
-        &nix_track(),
-        &setup(tools.path(), Duration::from_secs(30)),
-        run_dir.path(),
-    );
-    let lock = std::fs::read_to_string(repo.path().join("flake.lock")).unwrap();
-    assert_eq!(lock, "pinned\n");
-    let t = &gate.tracks[0];
-    assert_eq!(
-        t.status,
-        Status::Unknown,
-        "a missing lock entry is not red: {t:?}"
-    );
-    assert!(gate.exit().is_none());
-    assert!(
-        t.notes
-            .iter()
-            .any(|n| n.contains("flake.lock not locking every input"))
-    );
 }
 
 #[test]
