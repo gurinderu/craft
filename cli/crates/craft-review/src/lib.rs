@@ -30,6 +30,7 @@ pub mod plan;
 pub mod profile;
 pub mod project;
 pub mod prompts;
+pub mod publish;
 pub mod report;
 pub mod rereview;
 pub mod rounds;

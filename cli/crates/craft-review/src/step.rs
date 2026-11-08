@@ -19,6 +19,7 @@ use crate::memory::Memory;
 use crate::phases::{advance, settle_memory};
 use crate::profile::Profile;
 use crate::prompts::{self, PromptContext, ReScope, SPEC_MAX};
+use crate::publish::{self, PostSetup, Publish};
 use crate::rereview;
 use crate::rounds::Rounds;
 use crate::sources::{self, SourcesSetup};
@@ -109,6 +110,10 @@ pub struct StartOptions {
     /// The directory (or file) of the change to review (`path`), repository-relative or absolute
     /// inside the repository; `None`, the whole change ([`crate::scope`]).
     pub path: Option<String>,
+    /// Publish the findings on the branch's PR when the run finishes (`comment`): the defects
+    /// posted with the craft-finding marker, the doubtful ones listed for the reviewer
+    /// ([`crate::publish`]); off, nothing is posted.
+    pub comment: bool,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -187,6 +192,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         units: units::Units::default(),
         watch: stop::Watch::default(),
         stopped: None,
+        publish: Publish::asked(opts.comment),
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -214,12 +220,16 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         }
     }
     run.tasks.extend(adjudicators);
+    first_step(dir, &mut run)
+}
+
+/// The new run's first step: its tasks, or, with none to run, the run ended at once (with nothing
+/// found, so nothing to post).
+fn first_step(dir: &Path, run: &mut RunState) -> Result<Value, Error> {
     if run.tasks.is_empty() {
-        settle_memory(dir, &mut run)?;
+        settle_memory(dir, run)?;
     }
-    handoff::write_pending(dir, &run)?;
-    state::save(dir, &run)?;
-    Ok(next(dir, &run))
+    save_and_next(dir, run, &Said::default())
 }
 
 /// The scope the run reviews (`path`, repository-relative) and the branch's change under it.
@@ -385,6 +395,9 @@ pub struct Said<'a> {
     /// host): an answer missing now is the round's agents never run, not a failed attempt, so its
     /// task is handed out again uncounted, and no dead round is read from it.
     pub resume: bool,
+    /// How the defects of a run this submit finishes are posted on the PR; `None`, with gh on
+    /// craft's own PATH within the default budget.
+    pub post: Option<&'a PostSetup>,
 }
 
 /// Which failed answers wait uncounted rather than use up a retry.
@@ -417,7 +430,7 @@ pub fn submit_with(
         }
         run.stopped = None;
         if given.is_none() {
-            return save_and_next(dir, &run);
+            return save_and_next(dir, &mut run, said);
         }
     }
     for note in said
@@ -453,7 +466,7 @@ pub fn submit_with(
         run.watch.live |= live;
     }
     move_on(dir, &mut run, said)?;
-    save_and_next(dir, &run)
+    save_and_next(dir, &mut run, said)
 }
 
 /// Moves the run on once this submit's answers are in: stopped on the host's limit (after
@@ -476,9 +489,11 @@ fn move_on(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<(), Error>
     Ok(())
 }
 
-/// Writes the pending tasks and the state, and says what comes next: the stop, when the run
-/// stopped.
-fn save_and_next(dir: &Path, run: &RunState) -> Result<Value, Error> {
+/// Posts a run that finished on its PR when it was asked to, writes the pending tasks and the
+/// state, and says what comes next: the stop, when the run stopped.
+fn save_and_next(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<Value, Error> {
+    let setup = said.post.cloned().unwrap_or_default();
+    publish::deliver(dir, run, &setup)?;
     handoff::write_pending(dir, run)?;
     state::save(dir, run)?;
     if run.stopped.is_some() {

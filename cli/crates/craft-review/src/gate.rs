@@ -21,14 +21,14 @@ use crate::coverage::Exit;
 
 mod check;
 mod clippy;
-mod lines;
+pub(crate) mod lines;
 mod lock;
 mod nix;
 mod nix_fault;
 mod nix_lint;
 #[cfg(test)]
 mod nix_tests;
-mod runner;
+pub(crate) mod runner;
 mod rust;
 mod section;
 mod semgrep;

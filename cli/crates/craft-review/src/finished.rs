@@ -1,7 +1,9 @@
 //! The finished step: where the report is and the verdict, and what the host files as the run's
 //! record beside them — the verdict line as the report shows it, the head and base the run read,
 //! the findings it reported (severity, file, line, title, tier), the changed files no profile
-//! covered and what did not run. Refuted findings are left out: the run did not report them.
+//! covered and what did not run, the sorting before publication, the findings going against
+//! memory and what was posted on the PR ([`crate::publish`]). Refuted findings are left out: the
+//! run did not report them.
 
 use std::path::Path;
 
@@ -23,15 +25,20 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
         "memory": run.memory.source.record(), "strict": run.context.strict,
     });
-    if let (Some(obj), false) = (done.as_object_mut(), run.degraded.is_empty()) {
-        obj.insert("degraded".into(), json!(run.degraded));
+    if let Some(obj) = done.as_object_mut() {
+        if !run.degraded.is_empty() {
+            obj.insert("degraded".into(), json!(run.degraded));
+        }
+        for (k, v) in crate::publish::finished(run) {
+            obj.insert(k.into(), v);
+        }
     }
     done
 }
 
 /// The base the branch is reviewed against: the chain's, which a re-review of the fix commits
 /// keeps although its diff starts at the prior round's head.
-fn base(run: &RunState) -> &str {
+pub(crate) fn base(run: &RunState) -> &str {
     if run.chain.base.is_empty() {
         &run.diff.base
     } else {
