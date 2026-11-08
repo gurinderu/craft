@@ -1,28 +1,26 @@
-//! The planner held to the engines' by `content/parity/plan-cases.json` (each case of its profile,
-//! Rust when it names none), whose expected plans `lib/review-profile-parity.test.mjs` checks against
-//! `lib/review-plan.mjs`.
+//! The planner held to `content/parity/plan-cases.json` (each case of its profile, Rust when it
+//! names none), a golden file this crate owns ([`crate::golden`]; `lib/review-profile-parity.test.mjs`
+//! holds `lib/review-plan.mjs` to it too while the engines ship).
 
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::{PlanInput, plan};
+use crate::golden::Golden;
 use crate::profile::Profile;
-
-const CASES: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../content/parity/plan-cases.json"
-));
 
 #[test]
 fn every_case_plans_as_the_engines_plan_it() {
-    let cases: Value = serde_json::from_str(CASES).unwrap();
+    let mut g = Golden::open("plan-cases.json");
+    let cases = g.file();
     let all = cases["cases"].as_array().unwrap();
     assert!(all.len() > 5);
     assert!(
         all.iter().any(|c| c["profile"] == "nix"),
         "the Nix profile is held too"
     );
-    for c in all {
+    for (i, c) in all.iter().enumerate() {
         let name = c["name"].as_str().unwrap();
+        let at = format!("/cases/{i}/expected");
         let profile = Profile::load(c["profile"].as_str().unwrap_or("rust")).unwrap();
         let files: Vec<String> = serde_json::from_value(c["changedFiles"].clone()).unwrap();
         let scout = Some(&c["scout"]).filter(|s| !s.is_null());
@@ -35,7 +33,6 @@ fn every_case_plans_as_the_engines_plan_it() {
             strict: c["strict"] == json!(true),
             metrics: false,
         });
-        let want = &c["expected"];
         let got_json = json!({
             "sizeBucket": got.size_bucket, "lenses": got.lenses, "maxRounds": got.max_rounds,
             "verifyVotes": got.verify_votes, "isLibrary": got.is_library,
@@ -44,16 +41,13 @@ fn every_case_plans_as_the_engines_plan_it() {
             "lightSkipped": got.light_skipped,
         });
         for (k, v) in got_json.as_object().unwrap() {
-            assert_eq!(v, &want[k], "{name}: {k}");
+            g.check(&format!("{at}/{k}"), v.clone());
         }
+        let model = got.lens_model(&profile);
+        g.check(&format!("{at}/lensModel"), json!(model));
         for l in &got.lenses {
-            assert_eq!(
-                json!(profile.lens(l).unwrap().model),
-                want["lensModel"],
-                "{name}: {l}"
-            );
+            assert_eq!(profile.lens(l).unwrap().model, model, "{name}: {l}");
         }
-        assert_eq!(json!(got.lens_model(&profile)), want["lensModel"], "{name}");
     }
 }
 

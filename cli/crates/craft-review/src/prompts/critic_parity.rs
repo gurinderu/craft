@@ -1,19 +1,15 @@
-//! Held to the engines' text by `content/parity/prompt-cases.json`, which
-//! `lib/review-prompt-parity.test.mjs` renders: the critic over the Rust plan of the input's
-//! lenses, an `errors` follow-up it admitted, the extra lens `reviewer`, and the scout and extra
-//! lens of a review scoped to one directory.
+//! Held to `content/parity/prompt-cases.json`, a golden file this crate owns ([`crate::golden`];
+//! `lib/review-prompt-parity.test.mjs` holds the engines to it too while they ship): the critic over
+//! the Rust plan of the input's lenses, an `errors` follow-up it admitted, the extra lens `reviewer`,
+//! and the scout and extra lens of a review scoped to one directory.
 
 use serde_json::Value;
 
 use super::*;
+use crate::golden::Golden;
 use crate::plan::Plan;
 use crate::profile::Profile;
 use crate::prompts::{LensIn, ReScope, lens_prompt, prior_found_summary};
-
-const CASES: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../content/parity/prompt-cases.json"
-));
 
 fn strings(v: &Value) -> Vec<String> {
     serde_json::from_value(v.clone()).unwrap()
@@ -40,8 +36,9 @@ fn plan_of(p: &Value) -> Plan {
 
 #[test]
 fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
-    let file: Value = serde_json::from_str(CASES).unwrap();
-    let (input, want) = (&file["input"], &file["expected"]);
+    let mut g = Golden::open("prompt-cases.json");
+    let file = g.file();
+    let input = &file["input"];
     let ctx = PromptContext {
         repo: "/work/repo".into(),
         base: input["base"].as_str().unwrap().into(),
@@ -69,8 +66,10 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
         suspected: 2,
         candidates: &candidates,
     };
-    let got = body(critic_prompt(&ctx, &at).unwrap());
-    assert_eq!(got, want["critic"]["prompt"].as_str().unwrap());
+    g.check(
+        "/expected/critic/prompt",
+        body(critic_prompt(&ctx, &at).unwrap()),
+    );
 
     let plan = plan_of(&input["plan"]);
     let pool = input["pool"].as_array().unwrap();
@@ -83,12 +82,14 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
         pathspec: &pathspec,
         prior: &told,
     };
-    let got = body(lens_prompt(&ctx, &follow).unwrap());
-    assert_eq!(got, want["critic"]["followup"].as_str().unwrap());
+    g.check(
+        "/expected/critic/followup",
+        body(lens_prompt(&ctx, &follow).unwrap()),
+    );
 
     let prior = prior_found_summary(pool);
     let got = body(extra_lens_prompt(&ctx, "reviewer", &prior, &plan.repo_rules).unwrap());
-    assert_eq!(got, want["extraLens"].as_str().unwrap());
+    g.check("/expected/extraLens", got);
 
     // A review scoped to one directory: the scout told it, the extra lens's diff limited to it.
     let scoped = PromptContext {
@@ -96,7 +97,7 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
         ..ctx
     };
     let got = body(crate::prompts::scout_prompt(&scoped, &rust, &[]).unwrap());
-    assert_eq!(got, want["scoped"]["scout"].as_str().unwrap());
+    g.check("/expected/scoped/scout", got);
     let got = body(extra_lens_prompt(&scoped, "reviewer", &prior, &plan.repo_rules).unwrap());
-    assert_eq!(got, want["scoped"]["extraLens"].as_str().unwrap());
+    g.check("/expected/scoped/extraLens", got);
 }
