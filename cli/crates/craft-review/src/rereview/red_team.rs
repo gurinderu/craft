@@ -26,8 +26,9 @@ fn high(severity: &str) -> bool {
 }
 
 /// One red team per Critical or High prior whose adjudicator among `tasks` answered a clean
-/// `resolved` — no attack of its own. Built before the answers move the priors, so each names the
-/// line and rationale its adjudicator was asked about.
+/// `resolved` — no attack of its own — on `model`, the plan's lens model as the engine asks it
+/// (`adjudModel`). Built before the answers move the priors, so each names the line and rationale
+/// its adjudicator was asked about.
 ///
 /// # Errors
 /// When the prompt cannot be rendered or the schema read.
@@ -35,6 +36,7 @@ pub fn tasks(
     ctx: &PromptContext,
     chain: &Chain,
     tasks: &[Task],
+    model: Model,
 ) -> Result<Vec<Task>, ContentError> {
     let mut out = Vec::new();
     for t in tasks {
@@ -53,7 +55,7 @@ pub fn tasks(
             format!("red-team-{prior}"),
             format!("redteam:{}:{}", p.row.file, p.row.line),
             prompts::red_team_prompt(ctx, &p.row, field(a, "invariant"))?,
-            Model::Opus,
+            model,
             content::schema("attack")?,
             TaskKind::RedTeam { prior },
         ));

@@ -27,10 +27,13 @@ go on without it.
 
 ```sh
 CRAFT_BIN="$(node "<this skill's base directory>/../../lib/craft-bin.mjs" ensure)" || exit $?
-printf '%s' '<the recalled records as one JSON list>' | "$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.." --memory-externals -
+"$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.." --memory-externals - <<'CRAFT_MEMORY_EXTERNALS'
+<the recalled records as one JSON list, on one line>
+CRAFT_MEMORY_EXTERNALS
 ```
 
-With nothing recalled, drop the pipe and `--memory-externals -`. A local build (`cargo build
+The quoted heredoc hands the records over as written: the shell reads no `'`, `$` or `\` in
+them. With nothing recalled, drop the heredoc and `--memory-externals -`. A local build (`cargo build
 --release` in craft's `cli/`) can stand for `$CRAFT_BIN`. It prints one JSON object: `profile`
 (the file's path, outside the repository), `exists`, `integrations` (what the profile holds now:
 `name`, `repo`, `ref`), `memory` and `discovery`. It writes nothing.

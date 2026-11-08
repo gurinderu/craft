@@ -474,3 +474,27 @@ fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_si
         "{p}"
     );
 }
+
+#[test]
+fn a_red_team_runs_on_the_model_it_is_handed_not_a_fixed_one() {
+    let c = chained(vec![row("open one", "R1", "open", "confirmed")]);
+    let ctx = crate::prompts::PromptContext {
+        strict: false,
+        repo: "/r".into(),
+        base: "abc".into(),
+        spec: String::new(),
+        craft_root: None,
+        craft_version: None,
+        re_review: crate::prompts::ReScope::Fixes,
+        sources: crate::sources::Sources::default(),
+    };
+    let answered = [adjudicated(0, said("resolved", 3, ""))];
+    for model in [Model::Sonnet, Model::Opus] {
+        let t = attack_tasks(&ctx, &c, &answered, model).unwrap();
+        assert_eq!(
+            t.iter().map(|t| t.model).collect::<Vec<_>>(),
+            [model],
+            "the plan's lens model, as the engine's adjudModel"
+        );
+    }
+}

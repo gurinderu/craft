@@ -52,5 +52,28 @@ fn every_case_plans_as_the_engines_plan_it() {
                 "{name}: {l}"
             );
         }
+        assert_eq!(json!(got.lens_model(&profile)), want["lensModel"], "{name}");
     }
+}
+
+#[test]
+fn a_plan_names_the_model_its_lenses_run_on() {
+    let mut profile = Profile::load("rust").unwrap();
+    for l in &mut profile.lenses {
+        l.model = crate::agent::Model::Sonnet;
+    }
+    let got = plan(PlanInput {
+        profile: &profile,
+        scout: None,
+        changed_files: &["src/lib.rs".into()],
+        spec: "feat: x",
+        light: false,
+        strict: false,
+    });
+    assert_eq!(got.lens_model(&profile), crate::agent::Model::Sonnet);
+    let none = super::Plan {
+        lenses: Vec::new(),
+        ..got
+    };
+    assert_eq!(none.lens_model(&profile), crate::agent::Model::Opus);
 }

@@ -13,6 +13,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::Error;
+use crate::agent::Model;
 use crate::chain;
 use crate::content;
 use crate::dedup;
@@ -66,11 +67,13 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             let memory = &run.memory;
             let released = rereview::hold_deferrals(&mut run.chain, &|row| memory.holds(row));
             run.notes.extend(released);
-            // Built before the adjudicators' answers move their priors.
-            let attacks = rereview::attack_tasks(&run.context, &run.chain, &run.tasks)?;
+            plan_tracks(run, &profiles);
+            // Built before the adjudicators' answers move their priors, on the first plan's lens
+            // model, as the engine's `adjudModel`.
+            let model = lens_model(run, &profiles);
+            let attacks = rereview::attack_tasks(&run.context, &run.chain, &run.tasks, model)?;
             let judged = rereview::judge(&mut run.chain, &run.tasks);
             run.notes.extend(judged);
-            plan_tracks(run, &profiles);
             if attacks.is_empty() {
                 return next_round(dir, run, &profiles);
             }
@@ -109,6 +112,15 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
         Phase::Rules => memory::ruled(dir, run),
         Phase::Done => Ok(()),
     }
+}
+
+/// The lens model of the run's first plan (`results[0].plan.lensModel`), Opus before any.
+fn lens_model(run: &RunState, profiles: &[Profile]) -> Model {
+    run.tracks
+        .iter()
+        .zip(profiles)
+        .find_map(|(t, p)| Some(t.plan.as_ref()?.lens_model(p)))
+        .unwrap_or(Model::Opus)
 }
 
 /// Plans each track from its scout's answer, the conservative fallback where it gave none.

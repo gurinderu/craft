@@ -60,6 +60,11 @@ impl Pairs {
         &self.pairs
     }
 
+    /// Takes `pairs` as those asked: the judge's answer is read against what it was handed.
+    pub(super) fn asked(&mut self, pairs: Vec<(usize, usize)>) {
+        self.pairs = pairs;
+    }
+
     /// Whether any rule applies.
     pub(super) fn any(&self) -> bool {
         !self.rules.is_empty()

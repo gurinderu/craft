@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::agent::Model;
 use crate::paths::{changes_production_code, is_contract_path};
 use crate::profile::Profile;
 
@@ -32,6 +33,18 @@ pub struct Plan {
     pub surface_dropped: Vec<String>,
     /// Whole-diff lenses a light pass did not dispatch.
     pub light_skipped: Vec<String>,
+}
+
+impl Plan {
+    /// The model its lenses run on, as the engine's `plan.lensModel`: its first lens's in
+    /// `profile`, Opus when it plans none.
+    #[must_use]
+    pub fn lens_model(&self, profile: &Profile) -> Model {
+        self.lenses
+            .first()
+            .and_then(|l| profile.lens(l))
+            .map_or(Model::Opus, |l| l.model)
+    }
 }
 
 /// What a plan is built from.
