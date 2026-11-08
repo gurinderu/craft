@@ -15,8 +15,7 @@ fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
-const CLI_NOT_RUN: [&str; 4] = [
-    "the gate and its tool seeds (clippy and semgrep for Rust; nix flake check, statix and deadnix for Nix)",
+const CLI_NOT_RUN: [&str; 3] = [
     "the completeness critic",
     "unit slicing and the contract lens",
     "extra and role lenses",
@@ -24,28 +23,43 @@ const CLI_NOT_RUN: [&str; 4] = [
 
 /// The not-run line that says what this CLI's review leaves out by construction. It is a scope
 /// statement, not a failure: a re-run will not add these, so it does not make the verdict
-/// INCOMPLETE. A run the general profile took part in also names the lens that profile leaves out.
+/// INCOMPLETE. A run a gated profile took part in also names what its gate leaves out of the
+/// engine's.
 pub(super) fn cli_not_run(state: &RunState) -> String {
     let mut parts = CLI_NOT_RUN.to_vec();
+    let took_part = |id: &str| state.tracks.iter().any(|t| t.profile == id);
+    if took_part("rust") {
+        parts.insert(0, RUST_GATE_NOT_RUN);
+    }
+    if took_part("nix") {
+        parts.insert(0, NIX_GATE_NOT_RUN);
+    }
     if state
         .tracks
         .iter()
         .any(|t| t.profile == "general" && t.plan.is_some())
     {
-        parts.insert(2, GENERAL_NOT_RUN);
+        parts.push(GENERAL_NOT_RUN);
     }
     if state.chain.prior.is_some() {
         parts.push(REREVIEW_NOT_RUN);
     }
     format!(
-        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup, the verification, the project memory's decisions, deferred questions and project rules with their judges, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
+        "not part of this CLI's review (it runs the mechanical gate of its Rust and Nix profiles, the lenses of its Rust, Nix and general profiles, the dedup, the verification, the project memory's decisions, deferred questions and project rules with their judges, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
         parts.join(" · ")
     )
 }
 
+/// What the Rust gate leaves out of the engine's: what takes an agent's judgement (CI's checks, the
+/// project's own lint recipe, dependency context) or the scout's plan (semver, registry rules).
+const RUST_GATE_NOT_RUN: &str = "the Rust gate's reading of CI and of the project's own lint recipe, its tests, cargo audit and cargo deny, cargo semver-checks, semgrep's registry rule sets (p/rust, p/secrets) and the dependency-context seeds";
+
 /// What the general profile leaves out of adversarial-review's catalog until its metrics gate is
 /// ported.
 const GENERAL_NOT_RUN: &str = "the general profile's complexity lens (needs a code-metrics index)";
+
+/// What the Nix gate leaves out of the engine's.
+const NIX_GATE_NOT_RUN: &str = "the Nix gate's reading of CI, its formatter check, the builds of the touched attributes and the dependency-context seeds";
 
 /// What a re-review leaves out of the engine's adjudicate track until it is ported.
 const REREVIEW_NOT_RUN: &str = "the re-review's adjudication in the same round of a deferred prior whose question a record answered (it is kept still open and adjudicated next round)";

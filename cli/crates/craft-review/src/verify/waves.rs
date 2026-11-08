@@ -141,7 +141,13 @@ fn vote(run: &RunState, i: usize, f: &Value, k: u32) -> Result<Task, ContentErro
     Ok(Task::new(
         format!("verify-{i}-v{k}"),
         format!("verify:{file}:{line}#{tag}"),
-        prompts::verify_prompt(&run.context, &profile_of(run, f)?, f, k)?,
+        prompts::verify_prompt(
+            &run.context,
+            &profile_of(run, f)?,
+            f,
+            k,
+            run.gate.provenance(finding_profile(run, f)),
+        )?,
         model,
         content::schema("verdict")?,
         TaskKind::Verify {

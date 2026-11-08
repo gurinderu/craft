@@ -245,6 +245,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         None => listed(Some(NOT_COVERED), &state.uncovered, &mut out),
     }
     degraded(state, &mut out);
+    out.push_str(&crate::gate::section(&state.gate));
     if state.exit.is_none() {
         findings(state, &mut out);
     }
@@ -261,6 +262,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         )
         .collect();
     out.push_str(&state.memory.report(&state.chain.deferred(), &in_verdict));
+    out.push_str(&crate::tool::titles_section(&in_verdict));
     out.push_str(&crate::sources::section(
         &state.context.sources,
         &state.settled,

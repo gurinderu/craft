@@ -136,6 +136,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
             .as_deref()
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
         sources: crate::init::sources_setup(),
+        gate: Some(craft_review::gate::GateSetup::default()),
     };
     print(&step::start(&opts)?)
 }

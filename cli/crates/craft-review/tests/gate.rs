@@ -1,0 +1,178 @@
+//! The mechanical gate end to end over a fixture repository, its tools stand-ins on a PATH of
+//! their own: a tool's seed reaches the lenses, the verdict's report and the ledger with its own
+//! rule; a red check blocks before any lens; a tool not installed is named and the review goes on.
+
+mod common;
+
+use std::path::{Path, PathBuf};
+
+use common::{fixture, git, ids, lens, opts, prompt_of, scout, submit};
+use craft_review::gate::GateSetup;
+use craft_review::step::{self, StartOptions};
+use serde_json::{Value, json};
+
+/// A warning clippy prints, in its JSON form, at `src/lib.rs:<line>`.
+fn warning(code: &str, message: &str, line: u32) -> String {
+    json!({"reason": "compiler-message", "message": {"level": "warning", "code": {"code": code}, "message": message,
+        "spans": [{"file_name": "src/lib.rs", "line_start": line, "is_primary": true}]}})
+    .to_string()
+}
+
+/// A directory holding a `cargo` that prints `gate` on the gate's run and `pedantic` on the
+/// pedantic pass, as clippy's JSON lines.
+fn fake_cargo(gate: &[String], pedantic: &[String]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let lines = |ls: &[String]| {
+        ls.iter()
+            .map(|l| format!("printf '%s\\n' '{l}'"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    let script = format!(
+        "#!/bin/sh\ncase \"$*\" in *pedantic*) {} ;; *) {} ;; esac\n",
+        if pedantic.is_empty() { ":".into() } else { lines(pedantic) },
+        if gate.is_empty() { ":".into() } else { lines(gate) },
+    );
+    write_tool(dir.path(), "cargo", &script);
+    dir
+}
+
+fn write_tool(dir: &Path, name: &str, script: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join(name);
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// The fixture repository with a Cargo package at its top, so clippy has a package to lint.
+fn package() -> tempfile::TempDir {
+    let repo = fixture(true);
+    std::fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"f\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-qm", "chore: the package"]);
+    repo
+}
+
+fn gated(repo: &Path, out: &Path, path: &Path) -> StartOptions {
+    StartOptions {
+        gate: Some(GateSetup {
+            path: Some(path.as_os_str().to_owned()),
+            ..GateSetup::default()
+        }),
+        ..opts(repo, out)
+    }
+}
+
+/// Answers every task until the run is done: a small plan, no lens finding.
+fn drive(run: &Path, mut s: Value) -> Value {
+    while s["done"] == json!(false) {
+        let mut answers = serde_json::Map::new();
+        for id in ids(&s) {
+            let a = if id.starts_with("scout-") {
+                scout("small", &["errors"])
+            } else if id.starts_with("dedup-") {
+                json!({"groups": []})
+            } else {
+                let name = id.strip_prefix("lens-rust-").unwrap();
+                lens(name.split('-').next().unwrap(), &[])
+            };
+            answers.insert(id, a);
+        }
+        s = submit(run, Value::Object(answers));
+    }
+    s
+}
+
+fn report(done: &Value) -> String {
+    std::fs::read_to_string(done["report"].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn a_gate_seed_reaches_the_lenses_the_report_and_the_ledger_with_its_tool_rule() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let tools = fake_cargo(
+        &[
+            warning("clippy::needless_return", "unneeded `return` statement", 1),
+            warning("clippy::other_place", "left alone", 7),
+        ],
+        &[warning("clippy::must_use_candidate", "this function could have a `#[must_use]` attribute", 1)],
+    );
+    let run: PathBuf = out.path().join("run");
+    let s = step::start(&gated(repo.path(), out.path(), tools.path())).unwrap();
+    assert_eq!(ids(&s), ["scout-rust"]);
+    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    let p = prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("src/lib.rs:1 unneeded `return` statement")
+            && p.contains("src/lib.rs:1 this function could have a `#[must_use]` attribute"),
+        "the lens is told what the gate found: {p}"
+    );
+    assert!(!p.contains("left alone"), "a line the change left alone seeds nothing");
+    let done = drive(&run, s);
+    let ledger = done["ledger"].as_array().unwrap();
+    let rule = |r: &str| ledger.iter().find(|row| row["toolRule"] == json!(r));
+    let seed = rule("clippy::needless_return").unwrap();
+    assert_eq!(
+        (&seed["source"], &seed["line"], &seed["disposition"]),
+        (&json!("clippy"), &json!(1), &json!("open"))
+    );
+    assert_eq!(
+        rule("clippy::must_use_candidate").unwrap()["source"],
+        json!("clippy-pedantic")
+    );
+    let r = report(&done);
+    common::assert_contains_all(
+        &r,
+        &[
+            "## Gate\n\n- **rust**: pass — `cargo clippy --manifest-path Cargo.toml --all-targets`: pass",
+            "2 tool finding(s) seeded for the lenses and the verifiers",
+            "unneeded `return` statement (clippy)",
+        ],
+    );
+    assert!(!r.contains("the gate and its tool seeds"), "the gate ran: {r}");
+}
+
+#[test]
+fn a_red_check_blocks_before_any_lens() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let error = json!({"reason": "compiler-message", "message": {"level": "error", "code": {"code": "E0308"}, "message": "mismatched types",
+        "spans": [{"file_name": "src/lib.rs", "line_start": 1, "is_primary": true}]}})
+    .to_string();
+    let tools = fake_cargo(&[error], &[]);
+    let done = step::start(&gated(repo.path(), out.path(), tools.path())).unwrap();
+    assert_eq!(done["done"], json!(true), "no scout, no lens: {done}");
+    assert_eq!(done["verdict"], json!("Block"));
+    common::assert_contains_all(
+        &report(&done),
+        &[
+            "⛔ Block — mechanical gate is red (rust).",
+            "  - Failed: clippy (Cargo.toml): mismatched types at src/lib.rs:1",
+        ],
+    );
+}
+
+#[test]
+fn a_tool_not_installed_is_named_and_the_review_goes_on() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join(".semgrep")).unwrap();
+    let run = out.path().join("run");
+    let s = step::start(&gated(repo.path(), out.path(), empty.path())).unwrap();
+    assert_eq!(ids(&s), ["scout-rust"], "the review goes on");
+    let done = drive(&run, s);
+    assert_eq!(done["verdict"], json!("Approve"), "an absent tool is no failure");
+    common::assert_contains_all(
+        &report(&done),
+        &[
+            "- **rust**: unknown — `cargo clippy --manifest-path Cargo.toml --all-targets`: not installed",
+            "  - Not installed, skipped (the review went on without them): cargo, semgrep",
+        ],
+    );
+}

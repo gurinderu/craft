@@ -13,6 +13,7 @@ pub mod coverage;
 mod dedup;
 mod error;
 mod finished;
+pub mod gate;
 pub mod git;
 pub mod handoff;
 mod harm;

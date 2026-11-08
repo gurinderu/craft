@@ -87,7 +87,8 @@ fn exclusions(ctx: &PromptContext, profile: &Profile) -> Result<String, ContentE
 }
 
 /// The verifier prompt for `profile`'s finding `f`, to voter `voter` of its panel (skeptic
-/// #`voter + 1`).
+/// #`voter + 1`), `gate` the provenance of its profile's gate ('' without one), as `verifyPrompt`
+/// renders it: a gate tool's finding is refuted only by running the tool again.
 ///
 /// # Errors
 /// When a content file is missing or a placeholder has no value.
@@ -96,28 +97,40 @@ pub fn verify_prompt(
     profile: &Profile,
     f: &Value,
     voter: u32,
+    gate: &str,
 ) -> Result<String, ContentError> {
+    let source = flatten(f.get("source"));
+    let tool = crate::tool::is_tool_source(f.get("source").and_then(Value::as_str).unwrap_or(""));
+    let n = (voter + 1).to_string();
+    let head = if tool {
+        content::prompt("verify-head-tool", &vars([("n", n), ("source", source)]))?
+    } else {
+        content::prompt("verify-head-skeptic", &vars([("n", n)]))?
+    };
+    let gate = if gate.is_empty() {
+        String::new()
+    } else {
+        let provenance = flatten(Some(&Value::String(gate.to_owned())));
+        format!(" {}", content::prompt("verify-gate", &vars([("provenance", provenance)]))?)
+    };
+    let (fallback, refuted) = if tool {
+        (
+            " If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.",
+            "Tool-decided as above.",
+        )
+    } else {
+        (
+            " If no tool applies, judge it yourself.",
+            "Mechanical check first, then your judgement; when uncertain about the claim, refuted=true.",
+        )
+    };
     let mut v = vars([
-        (
-            "head",
-            content::prompt(
-                "verify-head-skeptic",
-                &vars([("n", (voter + 1).to_string())]),
-            )?,
-        ),
-        ("gate", String::new()),
-        (
-            "toolFallback",
-            " If no tool applies, judge it yourself.".into(),
-        ),
+        ("head", head),
+        ("gate", gate),
+        ("toolFallback", fallback.into()),
         ("exclusions", exclusions(ctx, profile)?),
         ("sources", sources::verify_block(&ctx.sources.prepared)),
-        (
-            "refutedRule",
-            "Mechanical check first, then your judgement; when uncertain about the claim, \
-             refuted=true."
-                .into(),
-        ),
+        ("refutedRule", refuted.into()),
         ("dependencySource", content::text("dependency-source")?),
         ("harmQuestion", content::text("verify-harm-question")?),
     ]);

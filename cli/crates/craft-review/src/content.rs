@@ -185,6 +185,8 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/dependency-source.md",
     "prompts/verify.md",
     "prompts/verify-head-skeptic.md",
+    "prompts/verify-head-tool.md",
+    "prompts/verify-gate.md",
     "prompts/verify-exclusion-catalog.md",
     "prompts/verify-shared-exclusions.md",
     "prompts/verify-harm-question.md",

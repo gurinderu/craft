@@ -89,6 +89,23 @@ fn every_prompt_renders_as_the_engines_render_it() {
     rereview(&ctx, &plan, &prior, input, want);
     strict_and_recall(&ctx, &plan, &prior, input, want);
     sources(&ctx, &plan, &prior, input, want);
+    verifiers(&ctx, input, want);
+}
+
+/// A gate tool's seed under the tool's own verifier, and a lens finding's, each told how the gate
+/// ran its tools.
+fn verifiers(ctx: &PromptContext, input: &Value, want: &Value) {
+    let dir = repo_directive(&ctx.repo);
+    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+    let rust = Profile::load("rust").unwrap();
+    let gate = input["gateProvenance"].as_str().unwrap();
+    for (case, f, voter) in [
+        ("tool", &input["gateSeed"], 0),
+        ("lens", &input["pool"][1], 1),
+    ] {
+        let got = body(verify_prompt(ctx, &rust, f, voter, gate).unwrap());
+        assert_eq!(got, want["verify"][case].as_str().unwrap(), "verify: {case}");
+    }
 }
 
 /// The prepared sources' blocks, the reconciler lens that reads them and the tests lens that does
@@ -123,7 +140,7 @@ fn sources(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &
     let finding = &input["pool"][0];
     let block = want["verify"].as_str().unwrap();
     assert!(
-        verify_prompt(&ctx, &rust, finding, 0)
+        verify_prompt(&ctx, &rust, finding, 0, "")
             .unwrap()
             .contains(block)
     );

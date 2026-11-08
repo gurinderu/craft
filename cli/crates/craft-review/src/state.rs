@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::agent::{AgentKind, Model};
+use crate::gate::Gate;
 use crate::git::Diff;
 use crate::memory::Memory;
 use crate::plan::Plan;
@@ -272,6 +273,10 @@ pub struct RunState {
     /// state written before it reads as a run with none.
     #[serde(default)]
     pub memory: Memory,
+    /// The mechanical gate before the lenses. Optional, so a state written before it reads as a
+    /// run without one.
+    #[serde(default)]
+    pub gate: Gate,
 }
 
 impl RunState {
