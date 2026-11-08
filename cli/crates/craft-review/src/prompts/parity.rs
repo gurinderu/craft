@@ -5,13 +5,14 @@
 use serde_json::Value;
 
 use super::{
-    LensIn, PromptContext, ReScope, adjudicate_prompt, carry_prompt, dedup_prompt, lens_prompt,
-    prior_found_summary, repo_directive, scout_prompt,
+    LensIn, PromptContext, ReScope, adjudicate_prompt, batch_verify_prompt, carry_prompt,
+    dedup_prompt, lens_prompt, prior_found_summary, repo_directive, scout_prompt, verify_prompt,
 };
 use crate::ledger::LedgerRow;
 use crate::memory::Memory;
 use crate::plan::Plan;
 use crate::profile::Profile;
+use crate::sources::{Prepared, Sources, lens_block, verify_block};
 
 const CASES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -34,6 +35,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
         craft_version: input["craftVersion"].as_str().map(str::to_owned),
         re_review: ReScope::First,
         strict: false,
+        sources: crate::sources::Sources::default(),
     };
     let p = &input["plan"];
     let plan = Plan {
@@ -85,6 +87,50 @@ fn every_prompt_renders_as_the_engines_render_it() {
     );
     rereview(&ctx, &plan, &prior, input, want);
     strict_and_recall(&ctx, &plan, &prior, input, want);
+    sources(&ctx, &plan, &prior, input, want);
+}
+
+/// The prepared sources' blocks, the reconciler lens that reads them and the tests lens that does
+/// not, and a verifier given the block.
+fn sources(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &Value) {
+    let dir = repo_directive(&ctx.repo);
+    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+    let prepared: Vec<Prepared> = serde_json::from_value(input["sources"].clone()).unwrap();
+    let want = &want["sources"];
+    assert_eq!(lens_block(&prepared), want["lens"].as_str().unwrap());
+    assert_eq!(verify_block(&prepared), want["verify"].as_str().unwrap());
+    let ctx = PromptContext {
+        sources: Sources {
+            prepared,
+            ..Sources::default()
+        },
+        ..ctx.clone()
+    };
+    let rust = Profile::load("rust").unwrap();
+    let pathspec = rust.pathspec(&[]);
+    for lens in ["reconciler", "tests"] {
+        let at = LensIn {
+            profile: &rust,
+            lens,
+            plan,
+            pathspec: &pathspec,
+            prior,
+        };
+        let got = body(lens_prompt(&ctx, &at).unwrap());
+        assert_eq!(got, want[lens].as_str().unwrap(), "sources: {lens}");
+    }
+    let finding = &input["pool"][0];
+    let block = want["verify"].as_str().unwrap();
+    assert!(
+        verify_prompt(&ctx, &rust, finding, 0)
+            .unwrap()
+            .contains(block)
+    );
+    assert!(
+        batch_verify_prompt(&ctx, &rust, &[finding])
+            .unwrap()
+            .contains(block)
+    );
 }
 
 /// Strict mode's scout and maintainability lens, and the memory recall over the input's paths and

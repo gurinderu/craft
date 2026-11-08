@@ -15,12 +15,11 @@ fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
-const CLI_NOT_RUN: [&str; 6] = [
+const CLI_NOT_RUN: [&str; 5] = [
     "the gate and its tool seeds (clippy and semgrep for Rust; nix flake check, statix and deadnix for Nix)",
     "the completeness critic",
     "unit slicing and the contract lens",
     "extra and role lenses",
-    "the external-sources block",
     "the project rules memory recalls (a rule covers no finding) and the match judge (a remembered record that meets a finding only by a near line or some shared title words sets it aside by the title rule alone)",
 ];
 
@@ -40,7 +39,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
         parts.push(REREVIEW_NOT_RUN);
     }
     format!(
-        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup, the verification and the project memory's decisions and deferred questions only; a re-run will not add these): {}",
+        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup, the verification, the project memory's decisions and deferred questions, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
         parts.join(" · ")
     )
 }
