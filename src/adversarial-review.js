@@ -21,6 +21,7 @@ import { readRepoArg, repoDirective, REPO_REFUSED_CLASS } from '../lib/repo-arg.
 import { ADVERSARIAL_EXTERNAL_LENSES, makeExternalSources } from '../lib/review-external-sources.mjs'
 import { SERVICE_AGENT_TYPE, makeDefaultTypeFallback } from '../lib/service-agent.mjs'
 import { agentUnavailableRecord } from '../lib/agent-fallback.mjs'
+import { LENS_BRIEF, complexityPrompt, METRIC_VERIFY, INDEX_WARMUP } from '../lib/adversarial-lenses.mjs'
 
 export const meta = {
   name: 'adversarial-review',
@@ -195,7 +196,7 @@ const isEscalated = (/** @type {{ lens?: string, severity: string }} */ f) => f.
 // aggregate can be filtered to ONE engine version: without it, runs from every rubric the store
 // has ever seen blend together. MUST match `.claude-plugin/plugin.json` — `lib/check-workflows.mjs`
 // fails the build if it drifts. The build lifts this line verbatim into the engine's banner.
-const CRAFT_VERSION = '0.43.0' // x-release-please-version
+const CRAFT_VERSION = '0.44.0' // x-release-please-version
 
 // ---- the one write path (shared with every other record-filing engine): lib/run-logging.mjs ----
 
@@ -213,12 +214,11 @@ const telemetryNotes = () => telemetryLost.map(l => (
     ? `⚠️ telemetry: ${l} — the record for this run is in the store; what the directory held may not be.`
     : `⚠️ telemetry lost: ${l} — this run may be missing or incomplete in the run store. Read this verdict, not the store, for what it did.`))
 
-// ---- the start checkpoint: the head the run read, observed by code ----
+// ---- the start checkpoint: the identity the run started on, observed by code ----
 // ONE phase slice, written after the scout and before any lens or the memory recall reads the diff. The logger
-// stamps the slice's `head` and tracked dirtiness from git; `startHead` is the head the scout saw first. The
-// record is filed with `finalize`, which folds this slice and files `reviewedHead`/`reviewedDirty` only when the
-// two name one commit (lib/craft-log-run.mjs, reviewedTree) — the rule craft:review's checkpoints go through, so a
-// push verdict is keyed to the commit this run read, never to one committed while it ran (realm @nick/craft, node #299).
+// stamps the slice's branch and `head` from git; the record is filed with `finalize`, which folds this slice and
+// files the run under that start identity, not under whatever is checked out when it ends — the identity the
+// re-review chain selects on (lib/craft-log-run.mjs, startIdentity).
 const CHECKPOINT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -229,9 +229,9 @@ const CHECKPOINT_SCHEMA = {
   },
 }
 let runDir = ''
-/** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn @param {ScoutResult | null} scoutIn  its `head` is the start head */
-async function startCheckpoint(phaseTitle, payloadIn, scoutIn) {
-  const payload = { kind: 'workflow', name: 'adversarial-review', craftVersion: CRAFT_VERSION, ...payloadIn, phase: phaseTitle, startHead: scoutIn?.head ?? '' }
+/** @param {string} phaseTitle @param {Record<string, unknown>} payloadIn */
+async function startCheckpoint(phaseTitle, payloadIn) {
+  const payload = { kind: 'workflow', name: 'adversarial-review', craftVersion: CRAFT_VERSION, ...payloadIn, phase: phaseTitle }
   const res = /** @type {{ runDir?: string, error?: string, __threw?: string } | null} */ (await quietly(service.run)(
     checkpointPrompt({ payload, craftRoot: craftRootArg, repo: repoArg, phase: phaseTitle }),
     { label: `checkpoint:${phaseTitle}`, phase: 'Prep', schema: CHECKPOINT_SCHEMA, model: 'haiku', effort: 'low', agentType: SERVICE_AGENT_TYPE },
@@ -264,39 +264,13 @@ const recordHead = () => ({
   ...agentUnavailableRecord([], service.fallbacks()),
 })
 
-// ---- lens catalog ----
-/** @type {Record<string, string>} */
-const LENS_BRIEF = {
-  correctness: 'logic and spec conformance: does the change do what it is supposed to? Wrong behavior behind correct-looking code, off-by-one, inverted conditions, missed requirements, broken invariants.',
-  security: 'security: injection, authz/authn gaps, tenant isolation breaks, secrets in code, unsafe deserialization, path traversal, SSRF, untrusted input reaching sinks.',
-  money: 'money-path invariants: float arithmetic on amounts, lost cents in splits/rounding, missing idempotency on payment operations, double-charge/double-credit windows, currency mixups, ledger imbalance.',
-  concurrency: 'concurrency: races on shared state, check-then-act windows, missing transactions/locks, lock ordering, blocking calls in async contexts, unbounded queues.',
-  errors: 'error handling: swallowed errors, panic/crash on recoverable failures, missing rollback/cleanup on the error path, error messages leaking internals.',
-  performance: 'performance: N+1 queries, work inside hot loops, unbounded memory growth, missing pagination/limits, accidental O(n^2).',
-  complexity: 'complexity metrics from the codebase-memory graph (metrics-or-nothing; skipped when the repo is not indexed).',
-}
+// ---- lens catalog (lib/adversarial-lenses.mjs, shared with the CLI's general profile) ----
 const ALL_LENSES = Object.keys(LENS_BRIEF)
 
 /** @param {string} lens */
 function finderPrompt(lens) {
   const base = diffBase ? `\`${diffBase}\`` : 'resolve it yourself: merge-base with origin/main, then main, then HEAD~1; target uncommitted changes if the tree is dirty'
-  if (lens === 'complexity') {
-    return `You are the complexity review lens, grounded in the codebase-memory knowledge graph.
-Use ToolSearch to load the codebase-memory MCP tools (list_projects, index_status, detect_changes, search_graph, query_graph).
-
-Step 0 — availability gate: call list_projects / index_status for this repository. If the project is NOT indexed, or the index predates the diff base, return {"findings": []} immediately. Never estimate complexity by eye; this lens is metrics-or-nothing.
-Step 1: detect_changes (diff base: ${base}) to get the functions touched by the diff and their impact radius.
-Step 2: for each touched function, read its complexity properties from the graph: cognitive, complexity (cyclomatic), loop_depth, transitive_loop_depth, linear_scan_in_loop, alloc_in_loop, recursion_in_loop, unguarded_recursion, param_count. One query_graph call can fetch them all.
-Step 3: report ONLY findings grounded in those numbers, quoting the metric values in the description. Calibrate severity by whether THIS diff introduced or worsened the metric, not by pre-existing debt:
-- diff introduces/deepens transitive_loop_depth >= 3 on a caller-reachable path -> high
-- diff adds linear_scan_in_loop (hidden O(n^2)) or alloc_in_loop on a hot path -> medium..high
-- diff adds unguarded_recursion or recursion_in_loop -> high
-- diff sharply raises cognitive complexity of a function -> medium
-- pre-existing debt merely touched by the diff -> low, mention briefly
-Each finding: exact file, line, metric values, and a concrete fix (extract, hoist the scan, use a map, cap recursion).
-
-Return {findings: []-shaped JSON}.`
-  }
+  if (lens === 'complexity') return complexityPrompt(base)
   return `You are the **${lens}** review lens for a diff. Review ONLY this slice; ignore everything else (other lenses cover it).
 
 SLICE: ${LENS_BRIEF[lens]}
@@ -355,13 +329,7 @@ const [scoutRaw, warmupRaw] = await parallel([
    Decide "in play" from the diff: payments/amounts/ledger -> money; async/threads/locks/transactions -> concurrency; input parsing/auth/tenancy -> security; loops/queries -> performance; always consider 'correctness' and 'errors'. Include 'complexity' whenever the diff is medium/large (it self-skips if the repo is not indexed).`,
     { label: 'scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
   ),
-  () => work(
-    `You are warming up the codebase-memory index for a review. Use ToolSearch to load the codebase-memory MCP tools.
-1. Check list_projects / index_status for this repository.
-2. If the project is not indexed or the index is stale relative to the current HEAD, run index_repository with mode=fast on the repo root and wait for it.
-3. Return indexed=true only if a usable index exists when you are done. If the MCP server is unavailable, return indexed=false — never error.`,
-    { label: 'index-warmup', schema: WARMUP_SCHEMA, effort: 'low' },
-  ),
+  () => work(INDEX_WARMUP, { label: 'index-warmup', schema: WARMUP_SCHEMA, effort: 'low' }),
 ])
 const scout = /** @type {ScoutResult | null} */ (scoutRaw)
 const warmup = /** @type {WarmupResult | null} */ (warmupRaw)
@@ -570,7 +538,7 @@ async function coverageGuard(scoutIn) {
 }
 const early = await coverageGuard(scout)
 if (early) return early
-await startCheckpoint('prep', { size: plan.sizeBucket, lenses: plan.lenses }, scout)
+await startCheckpoint('prep', { size: plan.sizeBucket, lenses: plan.lenses })
 // ONE read-only agent recalls the decisions through the craft:memory skill for the diff's paths (realm
 // @nick/craft, node #203); its answer is parsed like a passed list and the passed records merge into it.
 async function recallMemory() {
@@ -812,13 +780,7 @@ const COMBINED_INSTR = `You are an adversarial verifier. Try to REFUTE this find
 3. severity — calibrate real impact for the multi-tenant money-path, and confirm the issue is in scope for THIS diff.
 Return refuted=true if ANY dimension fails. Default to refuted=true when uncertain. Return the calibrated severity.
 Also set premiseSupported: identify the ONE claim that, if false, makes the finding evaporate. If it lives outside the cited line, OPEN the finding's whereChecked location and check it actually shows that; premiseSupported=false when the premise is off-site and whereChecked is empty, points elsewhere, or merely restates the cited line. Unsupported is NOT disproven — do not raise refuted for it; the field demotes the finding on its own.`
-const COMBINED_METRIC_INSTR = `You are an adversarial verifier for a METRIC-BACKED complexity finding.
-Use ToolSearch to load the codebase-memory MCP tools. Check ALL THREE dimensions:
-1. metric — re-read the metric values yourself via query_graph; refute if they don't match the claim or the index is unavailable.
-2. attribution — confirm THIS diff introduced or worsened the metric (compare against detect_changes); pre-existing debt misattributed to the diff -> refute or downgrade.
-3. severity — calibrate real impact: is the function on a hot / caller-reachable path (trace_path), or dead-end cold code?
-Return refuted=true if ANY dimension fails; default to refuted=true when uncertain.
-Also set premiseSupported: true when you re-read the metric values yourself and they back the claim, false when the numbers came only from the finding's own description. Unsupported is NOT disproven — it demotes the finding without marking it refuted.`
+const COMBINED_METRIC_INSTR = METRIC_VERIFY
 /** @type {[string, string][]} */
 const PANEL_LENSES = [
   ['code', 'Verify ONLY the factual claim against the code as written. Read the code yourself; refute if the description misstates it.'],

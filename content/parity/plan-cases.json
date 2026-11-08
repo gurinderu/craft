@@ -536,6 +536,283 @@
           "intent"
         ]
       }
+    },
+    {
+      "name": "nix: a small diff keeps the picks and adds intent",
+      "profile": "nix",
+      "changedFiles": [
+        "flake.nix"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "purity",
+          "injection"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "purity",
+          "injection",
+          "intent"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "nix: no scout answer: the conservative plan",
+      "profile": "nix",
+      "changedFiles": [
+        "flake.nix",
+        "flake.lock"
+      ],
+      "scout": null,
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "purity",
+          "reproducibility",
+          "injection",
+          "packaging",
+          "dev-env",
+          "modules",
+          "maintainability",
+          "intent",
+          "negative-space"
+        ],
+        "maxRounds": 2,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": true,
+        "intent": "",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "nix: security-sensitive floors the roster and adds negative-space",
+      "profile": "nix",
+      "changedFiles": [
+        "modules/a.nix"
+      ],
+      "scout": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "modules"
+        ],
+        "isLibrary": false,
+        "securitySensitive": true,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "medium",
+        "lenses": [
+          "modules",
+          "intent",
+          "purity",
+          "reproducibility",
+          "injection",
+          "packaging",
+          "dev-env",
+          "maintainability",
+          "negative-space"
+        ],
+        "maxRounds": 2,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": true,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "nix: large adds negative-space but no compat, three rounds",
+      "profile": "nix",
+      "changedFiles": [
+        "a.nix"
+      ],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "purity",
+          "reproducibility",
+          "packaging"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "large",
+        "lenses": [
+          "purity",
+          "reproducibility",
+          "packaging",
+          "intent",
+          "negative-space"
+        ],
+        "maxRounds": 3,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "nix: a surface said absent drops negative-space; tests, compat and reconciler are not offered",
+      "profile": "nix",
+      "changedFiles": [
+        "a.nix"
+      ],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "reconciler",
+          "tests",
+          "purity"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n",
+        "surfaces": {
+          "crossBoundarySymbol": false
+        }
+      },
+      "expected": {
+        "sizeBucket": "large",
+        "lenses": [
+          "purity",
+          "intent"
+        ],
+        "maxRounds": 3,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [
+          "negative-space"
+        ],
+        "lightSkipped": []
+      }
+    },
+    {
+      "name": "nix: light skips negative-space and keeps intent, one round",
+      "profile": "nix",
+      "changedFiles": [
+        "a.nix"
+      ],
+      "scout": {
+        "sizeBucket": "large",
+        "lenses": [
+          "purity",
+          "dev-env"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "light": true,
+      "expected": {
+        "sizeBucket": "large",
+        "lenses": [
+          "purity",
+          "dev-env",
+          "intent"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 3,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "pins nixpkgs",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": [
+          "negative-space"
+        ]
+      }
+    },
+    {
+      "name": "strict mode adds maintainability whatever the scout picked",
+      "changedFiles": [
+        "src/lib.rs"
+      ],
+      "scout": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors"
+        ],
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "notes": "n"
+      },
+      "expected": {
+        "sizeBucket": "small",
+        "lenses": [
+          "errors",
+          "intent",
+          "tests",
+          "maintainability"
+        ],
+        "maxRounds": 1,
+        "verifyVotes": 1,
+        "lensModel": "opus",
+        "isLibrary": false,
+        "securitySensitive": false,
+        "intent": "adds f",
+        "churn": [],
+        "repoRules": [],
+        "surfaceDropped": [],
+        "lightSkipped": []
+      },
+      "strict": true
     }
   ]
 }

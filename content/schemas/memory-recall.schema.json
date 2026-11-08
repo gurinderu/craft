@@ -1,0 +1,304 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "backend",
+    "why",
+    "decisions"
+  ],
+  "properties": {
+    "backend": {
+      "type": "string",
+      "description": "the memory backend recall used, or none"
+    },
+    "why": {
+      "type": "string",
+      "description": "one line: the rule that chose the backend, or why there is none, or that recall found nothing"
+    },
+    "decisions": {
+      "type": "array",
+      "description": "the matching active decision records, verbatim",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "lens": {
+            "type": "string"
+          },
+          "toolRule": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "deferred": {
+            "type": "boolean"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "description": "the matching active question records (open questions, deferred findings among them), verbatim",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "lens": {
+            "type": "string"
+          },
+          "toolRule": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "deferred": {
+            "type": "boolean"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "the matching active project rule records (a stance on a class of findings), verbatim",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "lens": {
+            "type": "string"
+          },
+          "toolRule": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "deferred": {
+            "type": "boolean"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "externals": {
+      "type": "array",
+      "description": "the matching active external-system records (kind external), verbatim",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "lens": {
+            "type": "string"
+          },
+          "toolRule": {
+            "type": "string"
+          },
+          "system": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "versionFrom": {
+            "type": "string"
+          },
+          "versionMatch": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "knownExternals": {
+      "type": "array",
+      "description": "every active external-system record, whatever its scope, as system, repo, versionFrom and version only",
+      "items": {
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "versionFrom": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "stale": {
+      "type": "array",
+      "description": "matching active decisions that no longer hold against the code, left out of decisions and NOT superseded",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "inactive": {
+      "type": "array",
+      "description": "matching superseded or withdrawn records, named only — never applied; they hold back a passed copy not dated later",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
