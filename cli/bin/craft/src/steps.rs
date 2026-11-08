@@ -104,6 +104,10 @@ pub struct SubmitArgs {
     /// without it resumes the run once the limit resets.
     #[arg(long)]
     pub limit: Option<String>,
+    /// The host resumes a run it lost (a stop it could not report, an interrupted host): an answer
+    /// missing now is handed out again rather than counted as a failed attempt.
+    #[arg(long)]
+    pub resume: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -198,6 +202,7 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     let said = step::Said {
         degraded: &args.degraded,
         limit: args.limit.as_deref(),
+        resume: args.resume,
     };
     print(&step::submit_with(&run, given.as_ref(), &said)?)
 }

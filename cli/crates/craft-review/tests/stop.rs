@@ -124,3 +124,44 @@ fn a_transient_429_does_not_stop_the_run() {
         "an ordinary death, not a stop: {s}"
     );
 }
+
+#[test]
+fn a_resume_holds_the_answers_still_missing_rather_than_failing_them() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = small_run(repo.path(), out.path());
+    // Two rounds dead: every lens at its last retry. Then the host lost its `--limit` submit.
+    submit(&run, json!({}));
+    submit(&run, json!({}));
+    let st = status::status(&run).unwrap();
+    assert_eq!(st["tasks"][0]["retries"], json!(2));
+    write_answer(&s, "lens-rust-errors-r1", &lens("errors", &[]).to_string());
+    let said = Said {
+        resume: true,
+        ..Said::default()
+    };
+    let s = step::submit_with(&run, None, &said).unwrap();
+    assert!(s.get("stopped").is_none(), "no dead round read: {s}");
+    assert_eq!(
+        ids(&s),
+        ["lens-rust-intent-r1", "lens-rust-tests-r1"],
+        "the answer that came in is kept, the missing ones handed out again"
+    );
+    assert!(!prompt_of(&s["tasks"][0]).contains("previous answer was invalid"));
+    let st = status::status(&run).unwrap();
+    assert_eq!(st["tasks"][1]["retries"], json!(2), "not counted");
+    assert_eq!(
+        s["repo"],
+        json!(repo.path().canonicalize().unwrap().display().to_string())
+    );
+    for id in ["lens-rust-intent-r1", "lens-rust-tests-r1"] {
+        let name = id.split('-').nth(2).unwrap();
+        write_answer(&s, id, &lens(name, &[]).to_string());
+    }
+    let s = step::submit_with(&run, None, &said).unwrap();
+    assert_eq!(
+        (&s["done"], &s["verdict"]),
+        (&json!(true), &json!("Approve")),
+        "{s}"
+    );
+}

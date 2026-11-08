@@ -59,7 +59,7 @@ impl Stop {
 }
 
 /// The dispatch round the run is in and whether any task of it answered: a lens round, the
-/// verification (each of its waves), or none — the scouts, the dedup and the judges are single
+/// verification (all its waves one round, as the engine watches it), or none — the scouts, the dedup and the judges are single
 /// steps whose death the run already reports, as the engine leaves them out of its rounds.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

@@ -368,7 +368,7 @@ pub fn submit_noting(
         given,
         &Said {
             degraded,
-            limit: None,
+            ..Said::default()
         },
     )
 }
@@ -381,6 +381,20 @@ pub struct Said<'a> {
     /// The account's usage limit, in the words an agent's error or short answer gave it: the run
     /// stops at once, keeping the answers that came in ([`crate::stop`]).
     pub limit: Option<&'a str>,
+    /// The host resumes a run it lost (`--resume`: a stop it could not report, an interrupted
+    /// host): an answer missing now is the round's agents never run, not a failed attempt, so its
+    /// task is handed out again uncounted, and no dead round is read from it.
+    pub resume: bool,
+}
+
+/// Which failed answers wait uncounted rather than use up a retry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Hold {
+    Nothing,
+    /// The missing ones (a resume).
+    Missing,
+    /// Every one (the host's limit).
+    Every,
 }
 
 /// [`submit`] with what the host `said`. A stopped run is resumed by a submit without a limit: its
@@ -425,23 +439,28 @@ pub fn submit_with(
         return Err(StepError::UnknownTask(id.clone()).into());
     }
     stop::open(&mut run);
-    let held = said.limit.is_some();
+    let hold = match (said.limit, said.resume) {
+        (Some(_), _) => Hold::Every,
+        (None, true) => Hold::Missing,
+        (None, false) => Hold::Nothing,
+    };
     for task in run
         .tasks
         .iter_mut()
         .filter(|t| t.state == TaskState::Pending)
     {
-        let live = take_answer(dir, task, given, held)?;
+        let live = take_answer(dir, task, given, hold)?;
         run.watch.live |= live;
     }
-    move_on(dir, &mut run, said.limit)?;
+    move_on(dir, &mut run, said)?;
     save_and_next(dir, &run)
 }
 
 /// Moves the run on once this submit's answers are in: stopped on the host's limit (after
-/// advancing when nothing is left to wait for) or on a round that died whole, else advanced.
-fn move_on(dir: &Path, run: &mut RunState, limit: Option<&str>) -> Result<(), Error> {
-    if let Some(text) = limit {
+/// advancing when nothing is left to wait for) or on a round that died whole — never read from a
+/// resume, whose missing answers are held — else advanced.
+fn move_on(dir: &Path, run: &mut RunState, said: &Said<'_>) -> Result<(), Error> {
+    if let Some(text) = said.limit {
         if run.tasks.iter().all(|t| t.state != TaskState::Pending) {
             advance(dir, run)?;
         }
@@ -450,7 +469,7 @@ fn move_on(dir: &Path, run: &mut RunState, limit: Option<&str>) -> Result<(), Er
         }
         return Ok(());
     }
-    match stop::round_died(run) {
+    match stop::round_died(run).filter(|_| !said.resume) {
         Some(why) => stop::hold(run, stop::deaths(why)),
         None => advance(dir, run)?,
     }
@@ -469,13 +488,14 @@ fn save_and_next(dir: &Path, run: &RunState) -> Result<Value, Error> {
 }
 
 /// Takes the answer of one pending task, from `given` or the file its agent wrote; one refused is
-/// asked for again until its retries are spent — unless the run is `held` on the host's limit,
-/// when it waits for the resume uncounted. Says whether its agent answered at all, valid or not.
+/// asked for again until its retries are spent — unless `hold` keeps it waiting uncounted: every
+/// one on the host's limit, a missing one on a resume (handed out again as first written). Says
+/// whether its agent answered at all, valid or not.
 fn take_answer(
     dir: &Path,
     task: &mut Task,
     given: Option<&Map<String, Value>>,
-    held: bool,
+    hold: Hold,
 ) -> Result<bool, Error> {
     let submitted = match given {
         Some(g) => g
@@ -510,8 +530,14 @@ fn take_answer(
     if given.is_none() {
         handoff::set_aside(dir, task)?;
     }
-    if held {
-        return Ok(live);
+    match hold {
+        Hold::Every => return Ok(live),
+        Hold::Missing if !live => {
+            task.error = None;
+            task.refused = None;
+            return Ok(false);
+        }
+        Hold::Missing | Hold::Nothing => {}
     }
     if task.retries < MAX_RETRIES {
         task.retries += 1;
@@ -534,7 +560,7 @@ fn next(dir: &Path, run: &RunState) -> Value {
                 .filter(|t| t.state == TaskState::Pending)
                 .map(|t| handoff::wire(dir, t))
                 .collect();
-            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head})
+            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo})
         }
     }
 }

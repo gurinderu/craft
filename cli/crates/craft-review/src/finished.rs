@@ -17,7 +17,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "run": dir.display().to_string(), "done": true,
         "report": state::report_path(dir).display().to_string(),
         "verdict": verdict, "line": report::verdict_line(run, verdict),
-        "head": run.diff.head, "base": base(run),
+        "head": run.diff.head, "base": base(run), "repo": run.context.repo,
         "findings": findings(run), "uncovered": run.uncovered, "notRun": run.not_run,
         "lensScope": if run.context.re_review == ReScope::Fixes { "delta" } else { "full" },
         "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
