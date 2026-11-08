@@ -197,3 +197,59 @@ fn only_nix_naming_a_machine_or_network_fault_leaves_the_signal_unknown() {
         );
     }
 }
+
+/// nix's final error over a download, in the observed form, failing with `why`.
+fn download_failed(url: &str, why: &str) -> String {
+    format!(
+        "error:\n       … while fetching the input '{url}'\n\n       error: Failed to open archive (Source threw exception: error: unable to download '{url}': {why})\n"
+    )
+}
+
+#[test]
+fn a_dns_hiccup_nix_retried_past_does_not_excuse_a_failing_check() {
+    let retried = "warning: unable to download 'https://craft-no-such-host.invalid/x.tar.gz': Could not resolve hostname (6) Could not resolve host: craft-no-such-host.invalid; retrying in 218 ms (attempt 4/5)\n";
+    let (gate, _) = flake_check(&format!("{retried}{NOT_WRITING}{CHECK_FAILED}"), 1);
+    let t = &gate.tracks[0];
+    assert_eq!(t.status, Status::Fail, "{t:?}");
+    assert_eq!(
+        t.failed_checks,
+        ["nix flake check: error: the check is broken"]
+    );
+}
+
+#[test]
+fn transfer_tls_server_and_rate_limit_failures_are_the_networks_other_http_errors_the_changes() {
+    let archive = "https://github.com/o/r/archive/0123.tar.gz";
+    let api = "https://api.github.com/repos/o/r/commits/HEAD";
+    for (case, url, why) in [
+        (
+            "a transfer cut",
+            archive,
+            "Failure when receiving data from the peer (56) Recv failure: Connection reset by peer",
+        ),
+        ("TLS", archive, "SSL connect error (35) TLS connect error"),
+        (
+            "an empty reply",
+            archive,
+            "Server returned nothing (no headers, no data) (52)",
+        ),
+        ("a send", archive, "Send failure (55) Broken pipe"),
+        ("a server error", archive, "HTTP error 502"),
+        ("rate limited", archive, "HTTP error 429"),
+        ("GitHub's API rate limit", api, "HTTP error 403"),
+    ] {
+        let (gate, _) = flake_check(&download_failed(url, why), 1);
+        assert_eq!(gate.tracks[0].status, Status::Unknown, "{case}");
+    }
+    for (case, url, why) in [
+        (
+            "a 403 off GitHub's API",
+            "https://example.com/x.tar.gz",
+            "HTTP error 403",
+        ),
+        ("a 404 on GitHub's API", api, "HTTP error 404"),
+    ] {
+        let (gate, _) = flake_check(&download_failed(url, why), 1);
+        assert_eq!(gate.tracks[0].status, Status::Fail, "{case}");
+    }
+}
