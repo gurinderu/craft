@@ -402,6 +402,7 @@ fn every_prior() -> Vec<PriorFinding> {
                     row: row("p", "R1", "open", tier),
                     fate,
                     located,
+                    contradicts: None,
                 });
             }
         }

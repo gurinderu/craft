@@ -13,7 +13,7 @@ use crate::finished;
 use crate::git;
 use crate::handoff;
 use crate::memory::Memory;
-use crate::phases::{advance, finish};
+use crate::phases::{advance, settle_memory};
 use crate::profile::Profile;
 use crate::prompts::{self, PromptContext, ReScope, SPEC_MAX};
 use crate::rereview;
@@ -191,7 +191,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     }
     run.tasks.extend(adjudicators);
     if run.tasks.is_empty() {
-        finish(dir, &mut run)?;
+        settle_memory(dir, &mut run)?;
     }
     handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;

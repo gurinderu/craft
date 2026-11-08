@@ -51,9 +51,16 @@ pub enum StateError {
 #[serde(rename_all = "lowercase")]
 pub enum Phase {
     Scout,
+    /// The red team on each resolved Critical or High prior, after its adjudicator.
+    #[serde(rename = "red-team")]
+    RedTeam,
     Lenses,
     Dedup,
     Verify,
+    /// The memory's match judge on the near misses between records and findings.
+    Match,
+    /// The memory's rule judge on the findings in a project rule's scope.
+    Rules,
     Done,
 }
 
@@ -91,6 +98,14 @@ pub enum TaskKind {
     Recall {
         cut: usize,
     },
+    /// The red team attacking the fix of the prior round's finding `prior`, adjudicated resolved.
+    RedTeam {
+        prior: usize,
+    },
+    /// The memory's match judge.
+    MatchJudge,
+    /// The memory's rule judge.
+    RuleJudge,
 }
 
 /// Whether a task still waits for its answer.

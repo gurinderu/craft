@@ -15,12 +15,11 @@ fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
-const CLI_NOT_RUN: [&str; 5] = [
+const CLI_NOT_RUN: [&str; 4] = [
     "the gate and its tool seeds (clippy and semgrep for Rust; nix flake check, statix and deadnix for Nix)",
     "the completeness critic",
     "unit slicing and the contract lens",
     "extra and role lenses",
-    "the project rules memory recalls (a rule covers no finding) and the match judge (a remembered record that meets a finding only by a near line or some shared title words sets it aside by the title rule alone)",
 ];
 
 /// The not-run line that says what this CLI's review leaves out by construction. It is a scope
@@ -39,7 +38,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
         parts.push(REREVIEW_NOT_RUN);
     }
     format!(
-        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup, the verification, the project memory's decisions and deferred questions, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
+        "not part of this CLI's review (it runs the lenses of its Rust, Nix and general profiles, the dedup, the verification, the project memory's decisions, deferred questions and project rules with their judges, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
         parts.join(" · ")
     )
 }
@@ -49,7 +48,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
 const GENERAL_NOT_RUN: &str = "the general profile's complexity lens (needs a code-metrics index)";
 
 /// What a re-review leaves out of the engine's adjudicate track until it is ported.
-const REREVIEW_NOT_RUN: &str = "the re-review's red team on a resolved Critical or High prior finding, and the adjudication in the same round of a deferred prior whose question a record answered (it is kept still open and adjudicated next round)";
+const REREVIEW_NOT_RUN: &str = "the re-review's adjudication in the same round of a deferred prior whose question a record answered (it is kept still open and adjudicated next round)";
 
 /// The verdict line marked as a light pass's, once.
 pub(super) fn mark(line: &str) -> String {

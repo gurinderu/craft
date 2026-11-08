@@ -248,7 +248,19 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
     if state.exit.is_none() {
         findings(state, &mut out);
     }
-    out.push_str(&state.memory.report(&state.chain.deferred()));
+    let in_verdict: Vec<Value> = state
+        .chain
+        .contradicting()
+        .into_iter()
+        .chain(
+            state
+                .settled
+                .iter()
+                .filter(|f| Tier::of(f) != Tier::Refuted)
+                .cloned(),
+        )
+        .collect();
+    out.push_str(&state.memory.report(&state.chain.deferred(), &in_verdict));
     out.push_str(&crate::sources::section(
         &state.context.sources,
         &state.settled,

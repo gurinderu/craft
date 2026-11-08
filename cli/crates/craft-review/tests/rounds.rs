@@ -48,6 +48,8 @@ fn drive(run: &Path, mut s: Value, first: &[Value], adjudicate: &[(&str, &str)])
             } else if let Some(i) = id.strip_prefix("adjudicate-") {
                 let (status, attack) = adjudicate[i.parse::<usize>().unwrap()];
                 json!({"status": status, "currentLine": 0, "note": "", "invariant": "i", "attack": attack})
+            } else if id.starts_with("red-team-") {
+                json!({"defeated": false, "attack": ""})
             } else {
                 assert!(id.starts_with("verify-") && !id.contains("batch"), "{id}");
                 common::verdict(false)
@@ -137,6 +139,20 @@ fn the_second_round_reviews_the_fixes_adjudicates_the_first_and_reports_nothing_
             "adjudicate-1": {"status": "still-open", "currentLine": 1, "note": "", "invariant": "i", "attack": "f still has none"},
         }),
     );
+    // The resolved High X is attacked by a red team before the lenses run.
+    assert_eq!(ids(&s), ["red-team-0"]);
+    assert_contains_all(
+        &prompt_of(&s["tasks"][0]),
+        &[
+            "Attack the fix. Shell + read only",
+            "FINDING: [High] X: f returns 1",
+            "INVARIANT it violated: i",
+        ],
+    );
+    let s = submit(
+        &r2,
+        json!({"red-team-0": {"defeated": false, "attack": ""}}),
+    );
     assert_contains_all(
         &prompt_of(&s["tasks"][0]),
         &[
@@ -190,7 +206,8 @@ fn the_second_round_reviews_the_fixes_adjudicates_the_first_and_reports_nothing_
             "- Still open: **High** `src/lib.rs:1` — Y: f has no error path\n  - Why: wrong — also reported at src/lib.rs:1: no error path in f — fix incomplete: f still has none",
             "## Confirmed findings\n\nNone.",
             "were absorbed into it (recorded on its rationale",
-            "the re-review's red team on a resolved Critical or High prior finding",
+            "the re-review's adjudication in the same round of a deferred prior",
+            "red team: 1 resolved Critical/High prior(s) attacked — 0 overturned (still open), 0 red team(s) died, 0 invalid",
         ],
     );
 }
@@ -253,6 +270,14 @@ fn every_full_every_th_round_reviews_the_whole_diff_again() {
             "scout-rust": scout("small", &["errors"]),
             "adjudicate-0": {"status": "resolved", "currentLine": 0, "note": "", "invariant": "i", "attack": ""},
             "adjudicate-1": {"status": "resolved", "currentLine": 0, "note": "", "invariant": "i", "attack": ""},
+        }),
+    );
+    assert_eq!(ids(&s), ["red-team-0", "red-team-1"]);
+    let s = submit(
+        &runs.join("r2"),
+        json!({
+            "red-team-0": {"defeated": false, "attack": ""},
+            "red-team-1": {"defeated": false, "attack": ""},
         }),
     );
     assert_contains_all(
@@ -366,4 +391,48 @@ fn a_new_defect_under_the_rule_of_a_rejected_finding_is_not_swallowed() {
         })
         .collect();
     assert_eq!(ledger, [(9, "open"), (1, "closed"), (1, "closed")]);
+}
+
+#[test]
+fn a_red_team_that_breaks_a_resolved_high_reopens_it() {
+    let repo = fixture(true);
+    let (_keep, runs) = runs();
+    round_one(repo.path(), &runs);
+    fix(repo.path());
+    let r2 = runs.join("r2");
+    step::start(&at(repo.path(), &runs, "r2")).unwrap();
+    let resolved = json!({"status": "resolved", "currentLine": 1, "note": "", "invariant": "f never returns 1", "attack": ""});
+    let s = submit(
+        &r2,
+        json!({"scout-rust": scout("small", &["errors"]), "adjudicate-0": resolved, "adjudicate-1": resolved}),
+    );
+    assert_eq!(ids(&s), ["red-team-0", "red-team-1"]);
+    assert_contains_all(
+        &prompt_of(&s["tasks"][0]),
+        &["INVARIANT it violated: f never returns 1"],
+    );
+    let s = submit(
+        &r2,
+        json!({
+            "red-team-0": {"defeated": true, "attack": "f() under `cfg(test)` still returns 1"},
+            "red-team-1": {"defeated": true, "attack": ""},
+        }),
+    );
+    let done = drive(&r2, s, &[], &[]);
+    assert_eq!(
+        done["verdict"],
+        json!("Block"),
+        "the reopened High holds it"
+    );
+    let report = std::fs::read_to_string(done["report"].as_str().unwrap()).unwrap();
+    assert_contains_all(
+        &report,
+        &[
+            "1 resolved, 1 still open, 0 regressed",
+            "- Still open: **High** `src/lib.rs:1` — X: f returns 1\n  - Why: wrong — fix incomplete: (red-team) f() under cfg(test) still returns 1",
+            "- Resolved: **High** `src/lib.rs:1` — Y: f has no error path",
+            "the red team for src/lib.rs:1 claimed defeat with NO attack — invalid verdict discarded, keeping resolved",
+            "red team: 2 resolved Critical/High prior(s) attacked — 1 overturned (still open), 0 red team(s) died, 1 invalid",
+        ],
+    );
 }

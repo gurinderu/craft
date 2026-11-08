@@ -1,8 +1,13 @@
 use serde_json::json;
 
-use super::matching::{match_of, tried_order};
+use super::matching::{Match, plan, resolve, tried_order};
 use super::record::{parse, plain_label};
 use super::{Memory, PriorDecision};
+
+/// The record answering `f` with no judge to ask.
+fn match_of(f: &serde_json::Value, ds: &[PriorDecision], order: &[usize]) -> Option<Match> {
+    resolve(f, ds, &plan(f, ds, order), None)
+}
 
 fn decision(id: &str, title: &str) -> PriorDecision {
     PriorDecision {
@@ -48,7 +53,10 @@ fn a_tool_finding_matches_only_a_record_of_its_own_rule_and_an_override_is_tried
     let order = tried_order(&ds);
     assert_eq!(order, [2, 0, 1]);
     let m = match_of(&f, &ds, &order).unwrap();
-    assert_eq!((m.at, m.how), (2, "matched by file:line+lens+toolRule"));
+    assert_eq!(
+        (m.at, m.how.as_str()),
+        (2, "matched by file:line+lens+toolRule")
+    );
 }
 
 #[test]

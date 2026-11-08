@@ -67,6 +67,15 @@ fn round1(findings: &[Value]) -> Value {
     })
 }
 
+/// The match judge's answer: `same` for each pair it names.
+fn judged(pairs: &[(usize, bool)]) -> Value {
+    let v: Vec<Value> = pairs
+        .iter()
+        .map(|(p, same)| json!({"pair": p, "same": same, "violates": false, "why": "judged"}))
+        .collect();
+    json!({"verdicts": v})
+}
+
 /// A batch verdict confirming the findings at `indices`.
 fn confirmed(indices: &[usize]) -> Value {
     let v: Vec<Value> = indices
@@ -97,6 +106,12 @@ fn a_finding_rejected_on_the_pr_is_set_aside_not_reported_again() {
     let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
     assert_eq!(ids(&s), ["verify-batch-0"]);
     let s = submit(&run, json!({"verify-batch-0": confirmed(&[0, 1])}));
+    assert_eq!(
+        ids(&s),
+        ["match-judge"],
+        "the unrelated finding shares the record's lens: a candidate the judge decides"
+    );
+    let s = submit(&run, json!({"match-judge": judged(&[(0, false)])}));
     assert_eq!(
         s["verdict"],
         json!("Warning"),
@@ -153,6 +168,12 @@ fn a_recalled_decision_whose_scope_changed_since_raises_its_finding_again() {
         round1(&[titled("Medium", 1, "f returns 1 instead of 0")]),
     );
     let s = submit(&run, json!({"verify-batch-0": confirmed(&[0])}));
+    assert_eq!(
+        ids(&s),
+        ["match-judge"],
+        "a directory scope compares no line"
+    );
+    let s = submit(&run, json!({"match-judge": judged(&[(0, true)])}));
     assert_eq!(s["verdict"], json!("Warning"));
     assert_eq!(s["findings"].as_array().unwrap().len(), 1);
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
@@ -274,6 +295,9 @@ fn drive_as(run: &Path, mut s: Value, first: &[Value], status: &str) -> Value {
                 lens(name, if name == "errors" { first } else { &[] })
             } else if id.starts_with("adjudicate-") {
                 json!({"status": status, "currentLine": 0, "note": "", "invariant": "i", "attack": ""})
+            } else if id == "match-judge" {
+                // No verdict: each pair falls back to the title rule, as without the judge.
+                json!({"verdicts": []})
             } else {
                 assert_eq!(id, "verify-batch-0");
                 confirmed(&[0])

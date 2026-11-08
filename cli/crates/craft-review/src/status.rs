@@ -11,6 +11,9 @@ use crate::state::{self, Phase, RunState, StateError};
 fn phase_label(run: &RunState) -> String {
     match run.phase {
         Phase::Scout => "scout".into(),
+        Phase::RedTeam => "red team".into(),
+        Phase::Match => "memory match judge".into(),
+        Phase::Rules => "project rule judge".into(),
         Phase::Lenses => format!("lenses round {}", run.rounds.round),
         Phase::Dedup => "dedup".into(),
         Phase::Verify => "verify".into(),

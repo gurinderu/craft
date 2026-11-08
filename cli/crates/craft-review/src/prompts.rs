@@ -14,10 +14,12 @@ mod adjudicate;
 mod lens;
 #[cfg(test)]
 mod parity;
+mod red_team;
 mod scout;
 mod verify;
 pub use adjudicate::{adjudicate_prompt, carry_prompt, sanitize};
 pub use lens::{LensIn, lens_prompt, prior_found_summary};
+pub use red_team::red_team_prompt;
 pub use scout::{dedup_prompt, scout_prompt};
 pub use verify::{batch_verify_prompt, verify_prompt};
 

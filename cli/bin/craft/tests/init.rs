@@ -201,3 +201,90 @@ fn a_review_prepares_the_profiles_sources_and_its_reconciler_lens_reads_them() {
         "{ids:?}"
     );
 }
+
+/// `craft <args>` as [`craft`] runs it, `stdin` piped in.
+fn craft_fed(t: &Path, args: &[&str], stdin: &str) -> Output {
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(args)
+        .env("HOME", t.join("home"))
+        .env_remove("CRAFT_ROOT")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn propose_imports_the_memorys_external_records_with_the_revision_their_file_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    let t = tmp.path();
+    fixture(t);
+    let repo = repo_arg(t);
+    std::fs::create_dir_all(t.join("repo/deploy")).unwrap();
+    std::fs::write(t.join("repo/deploy/values.yaml"), "sys:\n  tag: v1.2.3\n").unwrap();
+    // craft's own checkout: its lib/craft-externals.mjs reads the records.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let root = root.canonicalize().unwrap().display().to_string();
+    let records = serde_json::json!([
+        {"kind": "external", "system": "sys", "repo": URL, "versionFrom": "deploy/values.yaml",
+         "versionMatch": "tag: (\\S+)", "scope": "src", "status": "active"},
+        {"kind": "external", "system": "old", "repo": URL, "version": "v1", "status": "withdrawn"},
+    ])
+    .to_string();
+    let propose = [
+        "init",
+        "--propose",
+        "--cwd",
+        &repo,
+        "--craft-root",
+        &root,
+        "--memory-externals",
+        "-",
+    ];
+    let first = json_of(&craft_fed(t, &propose, &records));
+    let memory = &first["memory"];
+    assert_eq!(memory["ran"], true, "{memory}");
+    assert_eq!(
+        memory["candidates"],
+        serde_json::json!([{
+            "system": "sys", "repo": URL, "ref": "v1.2.3", "scope": "src",
+            "versionFrom": "deploy/values.yaml", "versionMatch": "tag: (\\S+)",
+            "point": format!("sys={URL}@v1.2.3"), "profileRef": null
+        }])
+    );
+    assert_eq!(
+        memory["refused"],
+        serde_json::json!(["external record #1 (old): status withdrawn"])
+    );
+    assert_eq!(first["discovery"]["ran"], true, "{}", first["discovery"]);
+
+    // The reviewer confirms it: written, the next proposal names the profile's revision beside it.
+    let point = memory["candidates"][0]["point"].as_str().unwrap();
+    json_of(&craft(
+        t,
+        &["init", "--write", "--cwd", &repo, "--point", point],
+    ));
+    let again = json_of(&craft_fed(t, &propose, &records));
+    assert_eq!(again["memory"]["candidates"][0]["profileRef"], "v1.2.3");
+
+    // Without the flag, or with stdin that is no JSON, the proposal still runs and says why.
+    let plain = json_of(&craft(t, &propose[..6]));
+    assert_eq!(plain["memory"]["ran"], false);
+    let unreadable = json_of(&craft_fed(t, &propose, "not json"));
+    assert!(
+        unreadable["memory"]["why"]
+            .as_str()
+            .unwrap()
+            .contains("stdin is not JSON"),
+        "{unreadable}"
+    );
+}

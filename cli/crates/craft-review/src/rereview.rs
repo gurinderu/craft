@@ -5,7 +5,8 @@
 //! a run of a branch builds on its newest earlier round ([`crate::chain`]); its lenses review the
 //! fix commits since that round's head, or the whole diff again every `fullEvery`-th round; each
 //! finding that round left open is adjudicated again; a lens finding repeating a still-live prior
-//! is absorbed into it rather than reported twice; and its ledger carries every live finding, the
+//! is absorbed into it rather than reported twice; a Critical or High prior adjudicated resolved
+//! is attacked by a red team before the lenses run; and its ledger carries every live finding, the
 //! author's settled ones and the tombstones of resolved ones to the next round.
 
 use serde::{Deserialize, Serialize};
@@ -17,11 +18,13 @@ mod absorb;
 mod carry;
 mod carry_check;
 mod judge;
+mod red_team;
 mod start;
 
 pub use absorb::absorb;
 pub use carry::ledger;
 pub use judge::{hold_deferrals, judge, tasks};
+pub use red_team::{take as take_attacks, tasks as attack_tasks};
 pub use start::{begin, scope};
 #[cfg(test)]
 use {carry::TOMBSTONES_MAX, start::take_ledger};
@@ -59,6 +62,9 @@ pub struct PriorFinding {
     /// Its adjudicator answered this round, so its line is where the defect sits now.
     #[serde(default)]
     pub located: bool,
+    /// The record a memory judge says its code goes against (`memoryContradicts`), when one does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contradicts: Option<Value>,
 }
 
 impl PriorFinding {
@@ -112,6 +118,22 @@ impl Chain {
             .iter()
             .filter(|p| p.gates())
             .map(|p| p.row.finding())
+            .collect()
+    }
+
+    /// The priors still open, regressed or carried unverified that a memory judge marked as going
+    /// against a record, as findings carrying the mark.
+    #[must_use]
+    pub fn contradicting(&self) -> Vec<Value> {
+        self.priors
+            .iter()
+            .filter(|p| matches!(p.fate, Fate::StillOpen | Fate::Regressed | Fate::Unverified))
+            .filter_map(|p| {
+                let mut f = p.row.finding();
+                f.as_object_mut()?
+                    .insert("memoryContradicts".into(), p.contradicts.clone()?);
+                Some(f)
+            })
             .collect()
     }
 
