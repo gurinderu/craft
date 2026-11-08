@@ -1,7 +1,7 @@
 //! Posting the defects on the PR with `gh`, run by the binary itself as it runs git and the gate's
 //! tools: every call bounded by what is left of one budget, its output in files of the run's
 //! `publish/` directory. A comment already on the PR — one carrying the craft-finding marker, on
-//! the same file, with the same `[Severity] title` first line — is not posted again, so a second
+//! the same file and line, with the same `[Severity] title` first line — is not posted again, so a second
 //! run over the same head adds nothing. Whatever gh does, the review's verdict stands: a failure is
 //! named in the outcome, never raised.
 
@@ -130,7 +130,8 @@ pub(super) fn post(
     };
     for (n, d) in defects.iter().enumerate() {
         let body = body::defect(&d.finding);
-        if !seen.insert((d.file.clone(), body::first_line(&body).to_owned())) {
+        let line = d.line.map_or(0, u64::from);
+        if !seen.insert((d.file.clone(), line, body::first_line(&body).to_owned())) {
             p.already += 1;
             continue;
         }

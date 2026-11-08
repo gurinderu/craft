@@ -241,6 +241,29 @@ fn a_second_run_over_the_same_head_posts_nothing_again() {
 }
 
 #[test]
+fn two_defects_sharing_a_title_on_one_file_are_both_posted_once() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let lines: String = (1..=50).map(|n| format!("pub fn f{n}() {{}}\n")).collect();
+    std::fs::write(repo.path().join("src/lib.rs"), lines).unwrap();
+    common::git(repo.path(), &["commit", "-qam", "feat: fifty functions"]);
+    let gh = out.path().join("gh");
+    let setup = stand_in(&gh, &head(repo.path()));
+    let same = vec![errors(12, "unchecked index"), errors(40, "unchecked index")];
+    let s = finished(repo.path(), out.path(), "first", true, &setup, &same);
+    let pr = &s["prComments"];
+    assert_eq!(
+        (&pr["requested"], &pr["posted"], &pr["already"]),
+        (&json!(2), &json!(2), &json!(0))
+    );
+    let at: Vec<Value> = posted(&gh).iter().map(|r| r["line"].clone()).collect();
+    assert_eq!(at, [json!(12), json!(40)]);
+    let s = finished(repo.path(), out.path(), "second", true, &setup, &same);
+    let pr = &s["prComments"];
+    assert_eq!((&pr["posted"], &pr["already"]), (&json!(0), &json!(2)));
+    assert_eq!(posted(&gh).len(), 2, "neither is posted again");
+}
+
+#[test]
 fn a_gh_failure_is_named_and_the_verdict_stands() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let gh = out.path().join("gh");

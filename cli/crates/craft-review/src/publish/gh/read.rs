@@ -45,14 +45,20 @@ pub(super) fn pull_request(runner: &Runner, repo: &Path) -> Result<Pr, String> {
     })
 }
 
-/// The craft finding comments already on the pull request, by file and first line. `--paginate`
+/// A posted comment's identity: its file, its line (0 for a comment on the file) and its first
+/// line, `[Severity] title` — two findings sharing a title on one file are told apart by line.
+pub(super) type Key = (String, u64, String);
+
+/// The craft finding comments already on the pull request, by file, line and first line: the
+/// line GitHub keeps for the comment now, else the one it was posted on (`original_line`, when the
+/// diff moved under it). `--paginate`
 /// prints the pages as one array (gh 2.102, observed) or, in older releases, one array after
 /// another: read here as a stream of values, either way.
 pub(super) fn posted_already(
     runner: &Runner,
     repo: &Path,
     pr: u64,
-) -> Result<BTreeSet<(String, String)>, String> {
+) -> Result<BTreeSet<Key>, String> {
     let route = format!("repos/{{owner}}/{{repo}}/pulls/{pr}/comments");
     let out = gh(runner, repo, &["api", "--paginate", &route])?;
     let mut keys = BTreeSet::new();
@@ -61,9 +67,14 @@ pub(super) fn posted_already(
             page.map_err(|e| format!("gh api printed no JSON for the PR's comments: {e}"))?;
         for c in page.as_array().into_iter().flatten() {
             let text = |k: &str| c.get(k).and_then(Value::as_str).unwrap_or("");
+            let line = ["line", "original_line"]
+                .iter()
+                .find_map(|k| c.get(*k).and_then(Value::as_u64))
+                .unwrap_or(0);
             if text("body").contains(MARKER) {
                 keys.insert((
                     text("path").to_owned(),
+                    line,
                     body::first_line(text("body")).to_owned(),
                 ));
             }

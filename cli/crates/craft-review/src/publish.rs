@@ -30,7 +30,7 @@ mod tests;
 pub use gh::PostSetup;
 pub use kept::{Defect, Posted, Publish, Sorting};
 pub(crate) use section::section;
-pub(crate) use sort::{doubt_reasons, sort_tier};
+pub(crate) use sort::doubt_reasons;
 
 /// Why nothing is posted from a review of uncommitted work: its lines are not the PR head's.
 const DIRTY: &str = "the review read uncommitted changes, whose lines the PR's head does not hold: commit, push and review again";
@@ -58,19 +58,12 @@ fn changed_lines(run: &RunState) -> Option<Lines> {
 /// Sorts the finished run's findings when it was asked to publish them, and counts those going
 /// against memory either way.
 pub(crate) fn settle(run: &mut RunState) {
+    // This round's findings only, as the engine's record counts its sort candidates: a prior the
+    // round carries was counted, and posted or not, by the round that found it.
     let found = candidates(run);
-    let mut counted = found.clone();
-    counted.extend(
-        run.chain
-            .contradicting()
-            .into_iter()
-            .filter(|f| matches!(sort_tier(f).as_str(), "confirmed" | "suspected")),
-    );
     if !run.publish.asked {
         run.publish.contradictions =
-            Some(crate::memory::contradiction_record(&counted, None, |_| {
-                false
-            }));
+            Some(crate::memory::contradiction_record(&found, None, |_| false));
         return;
     }
     let changed = changed_lines(run);
@@ -87,7 +80,7 @@ pub(crate) fn settle(run: &mut RunState) {
         .collect();
     let to_pr = |f: &Value| defect.contains(f);
     run.publish.contradictions = Some(crate::memory::contradiction_record(
-        &counted,
+        &found,
         changed.as_ref(),
         to_pr,
     ));
