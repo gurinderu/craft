@@ -82,6 +82,11 @@ pub struct StartArgs {
     /// marker is not posted again), the doubtful ones listed in the report for the reviewer.
     #[arg(long)]
     pub comment: bool,
+    /// The optional pass, off by default: `all`, or the optional lenses to run, separated by
+    /// commas (`performance`, or qualified by its profile, `rust-performance`). A name that is no
+    /// optional lens is named in the report; the recognised ones still run.
+    #[arg(long, value_name = "all|lens,…")]
+    pub optional: Option<String>,
 }
 
 /// How deep a review goes.
@@ -178,6 +183,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         unit_scope: args.unit_scope,
         path: args.path.clone(),
         comment: args.comment,
+        optional: args.optional.clone(),
     };
     print(&step::start(&opts)?)
 }

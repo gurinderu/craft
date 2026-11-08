@@ -114,6 +114,9 @@ pub struct StartOptions {
     /// posted with the craft-finding marker, the doubtful ones listed for the reviewer
     /// ([`crate::publish`]); off, nothing is posted.
     pub comment: bool,
+    /// The optional lenses to run (`optional`): `all`, or their names separated by commas or
+    /// spaces; `None`, none ([`crate::optional`]).
+    pub optional: Option<String>,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -167,6 +170,9 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
     let uncovered = coverage::uncovered(&diff.files, taken);
     let memory = Memory::open(opts.prior_decisions.clone());
+    let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
+    let notes =
+        crate::optional::unknown_note(opts.optional.as_deref().unwrap_or(""), &unknown, &profiles);
     let mut run = RunState {
         version: STATE_VERSION,
         tasks: Vec::new(),
@@ -175,11 +181,12 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         tracks,
         uncovered,
         light: opts.light,
+        optional,
         phase: Phase::Scout,
         rounds: Rounds::default(),
         findings: Vec::new(),
         settled: Vec::new(),
-        notes: Vec::new(),
+        notes: notes.into_iter().collect(),
         not_run: Vec::new(),
         degraded: Vec::new(),
         verdict: None,
@@ -304,7 +311,11 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
         let gated = opts
             .gate
             .as_ref()
-            .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, setup, dir));
+            .map(|setup| GateSetup {
+                scope: run.context.scope.clone(),
+                ..setup.clone()
+            })
+            .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir));
         (sources.join(), gated)
     });
     match prepared {

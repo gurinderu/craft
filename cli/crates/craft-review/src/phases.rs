@@ -171,6 +171,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             light: run.light,
             strict: run.context.strict,
             metrics,
+            optional: &run.optional,
         }));
     }
 }

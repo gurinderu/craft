@@ -2,13 +2,15 @@
 //! changed package with the project's own lint levels — a compile error or a lint the project
 //! denies is red, a warning on a line the change added a `clippy` seed — then a pedantic and
 //! nursery pass whose new warnings there are `clippy-pedantic` seeds, then semgrep with the
-//! repository's own rules over the changed files, each result a `semgrep` seed.
+//! repository's own rules over the changed files, each result a `semgrep` seed. A run scoped to a
+//! package's directory (`path`) lints that package alone, by name: per-crate runs of one workspace
+//! (rust-audit's) then do not lint each other's packages.
 
 use std::path::Path;
 
 use super::Status;
 use super::check::{Acc, Cx};
-use super::clippy::{gate_check, pedantic};
+use super::clippy::{Package, gate_check, pedantic};
 use super::semgrep::semgrep;
 
 /// At most this many packages are linted; the rest are named.
@@ -16,7 +18,7 @@ const PACKAGES_MAX: usize = 6;
 
 /// The Rust gate over `cx`.
 pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
-    let manifests = manifests(cx);
+    let manifests = packages(cx);
     if manifests.is_empty() {
         acc.parts
             .push("clippy: no Cargo package holds the changed files".into());
@@ -25,7 +27,7 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
         let rest: Vec<&str> = manifests
             .iter()
             .skip(PACKAGES_MAX)
-            .map(String::as_str)
+            .map(|p| p.manifest.as_str())
             .collect();
         acc.notes.push(format!(
             "clippy ran on the first {PACKAGES_MAX} of {} changed packages; not on: {}",
@@ -33,7 +35,7 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
             rest.join(", ")
         ));
     }
-    let manifests: Vec<&String> = manifests.iter().take(PACKAGES_MAX).collect();
+    let manifests: Vec<&Package> = manifests.iter().take(PACKAGES_MAX).collect();
     for m in &manifests {
         let s = gate_check(cx, acc, m);
         acc.check(s);
@@ -48,6 +50,39 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
         ));
     }
     semgrep(cx, acc);
+}
+
+/// The packages clippy lints: the scope's own when the run is scoped to a package's directory or
+/// one inside it, else each package holding a changed file.
+fn packages(cx: &Cx<'_>) -> Vec<Package> {
+    if let Some(p) = cx.scope.and_then(|s| scoped(cx.top, s)) {
+        return vec![p];
+    }
+    manifests(cx)
+        .into_iter()
+        .map(|manifest| Package {
+            manifest,
+            name: None,
+        })
+        .collect()
+}
+
+/// The package holding `scope`: the nearest `Cargo.toml` at or above it, below the top, when it
+/// declares a package; `None` when that manifest is a virtual workspace's or there is none.
+fn scoped(top: &Path, scope: &str) -> Option<Package> {
+    let at = top.join(scope);
+    let start = if at.is_file() { at.parent()? } else { &at };
+    let dir = start
+        .ancestors()
+        .take_while(|d| d.starts_with(top))
+        .find(|d| d.join("Cargo.toml").is_file())?;
+    let manifest = dir.join("Cargo.toml");
+    let table: toml::Table = toml::from_str(&std::fs::read_to_string(&manifest).ok()?).ok()?;
+    let name = table.get("package")?.get("name")?.as_str()?.to_owned();
+    Some(Package {
+        manifest: manifest.strip_prefix(top).ok()?.display().to_string(),
+        name: Some(name),
+    })
 }
 
 /// The manifest of each package holding a changed file: its nearest `Cargo.toml` below the top.
