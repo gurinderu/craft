@@ -354,6 +354,7 @@ version = "0.43.0"
 dependencies = [
  "jsonschema",
  "nix 0.31.3",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

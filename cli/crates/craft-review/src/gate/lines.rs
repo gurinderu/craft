@@ -5,12 +5,12 @@ use std::collections::BTreeMap;
 
 /// Each changed file's added line ranges, inclusive, by its repository-relative path.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct Lines(BTreeMap<String, Vec<(u32, u32)>>);
+pub(crate) struct Lines(BTreeMap<String, Vec<(u32, u32)>>);
 
 impl Lines {
     /// The ranges `git diff -U0` prints in `diff`: each hunk's `+start,count`, a count of 0 (a
     /// pure deletion) adding none.
-    pub(super) fn parse(diff: &str) -> Self {
+    pub(crate) fn parse(diff: &str) -> Self {
         let mut out: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
         let mut file: Option<String> = None;
         for l in diff.lines() {
@@ -23,8 +23,14 @@ impl Lines {
         Self(out)
     }
 
+    /// The ranges given, by file.
+    #[cfg(test)]
+    pub(crate) fn of(ranges: BTreeMap<String, Vec<(u32, u32)>>) -> Self {
+        Self(ranges)
+    }
+
     /// Whether `line` of `file` is one the change added.
-    pub(super) fn touches(&self, file: &str, line: u32) -> bool {
+    pub(crate) fn touches(&self, file: &str, line: u32) -> bool {
         self.0
             .get(file)
             .is_some_and(|rs| rs.iter().any(|&(a, b)| (a..=b).contains(&line)))

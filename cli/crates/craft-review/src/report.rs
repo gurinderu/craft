@@ -273,6 +273,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         )
         .collect();
     out.push_str(&state.memory.report(&state.chain.deferred(), &in_verdict));
+    out.push_str(&crate::publish::section(state));
     out.push_str(&crate::tool::titles_section(&in_verdict));
     out.push_str(&crate::sources::section(
         &state.context.sources,

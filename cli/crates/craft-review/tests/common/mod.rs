@@ -71,6 +71,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         session: Some(repo.to_path_buf()),
         unit_scope: false,
         path: None,
+        comment: false,
     }
 }
 
