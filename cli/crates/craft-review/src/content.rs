@@ -200,6 +200,7 @@ const FILES: &[(&str, &str)] = content_files![
     "prompts/lens-re-review-rescan.md",
     "prompts/adjudicate.md",
     "prompts/carry-check.md",
+    "prompts/scout-scope.md",
     "prompts/scout-strict.md",
     "prompts/lens-strict-maintainability.md",
     "prompts/memory-recall.md",

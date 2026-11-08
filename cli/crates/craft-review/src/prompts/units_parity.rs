@@ -40,6 +40,7 @@ fn unit_mode_prompts_render_as_the_engine_renders_them() {
         re_review: ReScope::First,
         strict: false,
         sources: crate::sources::Sources::default(),
+        scope: None,
     };
     let p = &input["plan"];
     let plan = Plan {

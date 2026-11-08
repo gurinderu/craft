@@ -67,5 +67,8 @@ pub fn status(dir: &Path) -> Result<Value, StateError> {
             json!(state::report_path(dir).display().to_string()),
         );
     }
+    if let (Some(stop), Some(obj)) = (&run.stopped, s.as_object_mut()) {
+        obj.insert("stopped".into(), json!(stop));
+    }
     Ok(s)
 }

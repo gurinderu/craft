@@ -64,7 +64,8 @@ fn quiet_deferral(cwd: &Path, row: &LedgerRow) -> bool {
 }
 
 /// The chain of the run about to start in `cwd`: its key, its round and the prior round it builds
-/// on under `runs`, unless `fresh` asks for a new chain. `base` is the branch's own base.
+/// on under `runs`, unless `fresh` asks for a new chain. `base` is the branch's own base, `scope`
+/// the directory of the change the run reviews (`None`, the whole change).
 ///
 /// # Errors
 /// When `cwd`'s git directory cannot be read.
@@ -74,15 +75,22 @@ pub fn begin(
     fresh: bool,
     full_every: u32,
     base: &str,
+    scope: Option<&str>,
 ) -> Result<Chain, GitError> {
     let mut chain = Chain {
         repo: git::common_dir(cwd)?,
         branch: git::branch(cwd),
+        scope: scope.unwrap_or_default().to_owned(),
         round: 1,
         base: base.to_owned(),
         ..Chain::default()
     };
-    match chain::locate(runs, cwd, &chain.repo, chain.branch.as_deref(), fresh) {
+    let key = (
+        chain.repo.as_str(),
+        chain.branch.as_deref(),
+        chain.scope.as_str(),
+    );
+    match chain::locate(runs, cwd, key, fresh) {
         Err(why) => chain.unchained = Some(why.reason().to_owned()),
         Ok(Prior { dir, record }) => {
             chain.round = record.round.saturating_add(1);
@@ -114,7 +122,8 @@ pub fn scope(cwd: &Path, chain: &mut Chain, branch: Diff) -> Result<(Diff, ReSco
     if chain.rescan.is_some() {
         return Ok((branch, ReScope::Rescan));
     }
-    let delta = git::read_diff(cwd, Some(&prior.head))?;
+    let scope = Some(chain.scope.as_str()).filter(|s| !s.is_empty());
+    let delta = git::read_diff(cwd, Some(&prior.head), scope)?;
     if delta.files.is_empty() {
         chain.rescan = Some("nothing changed since the prior round's head, so there were no fix commits to review on their own".into());
         return Ok((branch, ReScope::Rescan));

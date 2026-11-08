@@ -216,13 +216,19 @@ impl Profile {
         if !self.diff_globs.is_empty() {
             return self.diff_globs.join(" ");
         }
-        files
-            .iter()
-            .filter(|f| !f.is_empty())
-            .map(|f| format!("'{}'", format!(":(literal){f}").replace('\'', r"'\''")))
-            .collect::<Vec<_>>()
-            .join(" ")
+        literal_pathspec(files)
     }
+}
+
+/// `files` as literal git pathspecs, each shell-quoted.
+#[must_use]
+pub fn literal_pathspec(files: &[String]) -> String {
+    files
+        .iter()
+        .filter(|f| !f.is_empty())
+        .map(|f| format!("'{}'", format!(":(literal){f}").replace('\'', r"'\''")))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
