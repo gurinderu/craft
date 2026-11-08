@@ -196,3 +196,52 @@ fn a_tool_past_the_budget_is_cut_and_its_signal_unknown() {
         "{t:?}"
     );
 }
+
+#[test]
+fn a_diagnostic_is_placed_from_the_package_it_was_reported_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    git(d, &["init", "-q", "-b", "main"]);
+    std::fs::write(d.join("README.md"), "x\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "init"]);
+    for f in ["Cargo.toml", "crates/a/Cargo.toml"] {
+        std::fs::create_dir_all(d.join(f).parent().unwrap()).unwrap();
+        std::fs::write(d.join(f), "[package]\n").unwrap();
+    }
+    for f in ["src/lib.rs", "crates/a/src/lib.rs"] {
+        std::fs::create_dir_all(d.join(f).parent().unwrap()).unwrap();
+        std::fs::write(d.join(f), "pub fn f() {}\n").unwrap();
+    }
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "feat: two packages"]);
+    let top = crate::git::toplevel(d).unwrap();
+    // The package `crates/a`, its own workspace, names its file from its own directory.
+    let diag = serde_json::json!({"reason": "compiler-message", "manifest_path": top.join("crates/a/Cargo.toml"),
+        "message": {"level": "warning", "code": {"code": "clippy::x"}, "message": "m",
+        "spans": [{"file_name": "src/lib.rs", "line_start": 1, "is_primary": true}]}});
+    let tools = tempfile::tempdir().unwrap();
+    tool(
+        tools.path(),
+        "cargo",
+        &format!("case \"$*\" in *crates/a*) printf '%s\\n' '{diag}' ;; esac"),
+    );
+    let files: Vec<String> = ["src/lib.rs", "crates/a/src/lib.rs", "Cargo.toml"]
+        .map(String::from)
+        .to_vec();
+    let run_dir = tempfile::tempdir().unwrap();
+    let (gate, seeds) = run(
+        d,
+        "HEAD~1",
+        &[Track::new("rust", files)],
+        &setup(tools.path(), Duration::from_secs(30)),
+        run_dir.path(),
+    );
+    assert_eq!(gate.tracks[0].status, Status::Pass, "{gate:?}");
+    let at: Vec<&str> = seeds.iter().map(|s| s["file"].as_str().unwrap()).collect();
+    assert_eq!(
+        at,
+        ["crates/a/src/lib.rs"],
+        "not the top package's src/lib.rs"
+    );
+}

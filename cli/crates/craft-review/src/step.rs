@@ -235,8 +235,11 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
     }
     match gated {
         Some((gate, seeds)) => {
+            // A red gate ends the run before any lens: its seeds are no one's to read.
+            if gate.exit().is_none() {
+                run.rounds.pool = seeds;
+            }
             run.gate = gate;
-            run.rounds.pool = seeds;
         }
         None => run.gate = gate::Gate::not_asked(),
     }

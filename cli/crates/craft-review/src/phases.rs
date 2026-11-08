@@ -68,7 +68,11 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             let memory = &run.memory;
             let released = rereview::hold_deferrals(&mut run.chain, &|row| memory.holds(row));
             run.notes.extend(released);
-            plan_tracks(run, &profiles);
+            // A run that ended before its scouts (a red gate) plans no lens; its priors are
+            // still adjudicated.
+            if run.exit.is_none() {
+                plan_tracks(run, &profiles);
+            }
             // Built before the adjudicators' answers move their priors, on the first plan's lens
             // model, as the engine's `adjudModel`.
             let model = lens_model(run, &profiles);

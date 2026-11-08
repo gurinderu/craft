@@ -36,6 +36,15 @@ impl Cx<'_> {
             .map(String::as_str)
     }
 
+    /// The changed file at the absolute `path`, `None` for another file.
+    pub(super) fn exact(&self, path: &Path) -> Option<&str> {
+        let rel = path.strip_prefix(self.top).ok()?;
+        self.files
+            .iter()
+            .find(|f| Path::new(f) == rel)
+            .map(String::as_str)
+    }
+
     /// The changed files of this profile that end in `suffix` and are still on disk.
     pub(super) fn present(&self, suffix: &str) -> Vec<&str> {
         self.files

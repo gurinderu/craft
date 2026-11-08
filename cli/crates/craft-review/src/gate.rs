@@ -17,11 +17,14 @@ use serde_json::Value;
 use crate::coverage::Exit;
 
 mod check;
+mod clippy;
 mod lines;
 mod nix;
+mod nix_lint;
 mod runner;
 mod rust;
 mod section;
+mod semgrep;
 #[cfg(test)]
 mod tests;
 

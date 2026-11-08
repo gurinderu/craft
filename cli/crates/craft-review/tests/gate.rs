@@ -24,6 +24,13 @@ fn warning(code: &str, message: &str, line: u32) -> String {
     .to_string()
 }
 
+/// A compile error rustc prints, in its JSON form, at `src/lib.rs:1`.
+fn error(message: &str) -> String {
+    json!({"reason": "compiler-message", "message": {"level": "error", "code": {"code": "E0308"}, "message": message,
+        "spans": [{"file_name": "src/lib.rs", "line_start": 1, "is_primary": true}]}})
+    .to_string()
+}
+
 /// A directory holding a `cargo` that prints `gate` on the gate's run and `pedantic` on the
 /// pedantic pass, as clippy's JSON lines.
 fn fake_cargo(gate: &[String], pedantic: &[String]) -> tempfile::TempDir {
@@ -165,10 +172,7 @@ fn a_gate_seed_reaches_the_lenses_the_report_and_the_ledger_with_its_tool_rule()
 fn a_red_check_blocks_before_any_lens() {
     let repo = package();
     let out = tempfile::tempdir().unwrap();
-    let error = json!({"reason": "compiler-message", "message": {"level": "error", "code": {"code": "E0308"}, "message": "mismatched types",
-        "spans": [{"file_name": "src/lib.rs", "line_start": 1, "is_primary": true}]}})
-    .to_string();
-    let tools = fake_cargo(&[error], &[]);
+    let tools = fake_cargo(&[error("mismatched types")], &[]);
     let done = step::start(&gated(repo.path(), out.path(), tools.path())).unwrap();
     assert_eq!(done["done"], json!(true), "no scout, no lens: {done}");
     assert_eq!(done["verdict"], json!("Block"));
@@ -203,4 +207,52 @@ fn a_tool_not_installed_is_named_and_the_review_goes_on() {
             "  - Not installed, skipped (the review went on without them): cargo, semgrep",
         ],
     );
+}
+
+#[test]
+fn a_red_gate_on_a_re_review_still_adjudicates_the_priors_and_plans_no_lens() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let quiet = fake_cargo(&[], &[]);
+    let r1 = out.path().join("run");
+    step::start(&gated(repo.path(), out.path(), quiet.path())).unwrap();
+    let s = submit(&r1, json!({"scout-rust": scout("small", &["errors"])}));
+    let mut answers = serde_json::Map::new();
+    for id in ids(&s) {
+        let name = id.strip_prefix("lens-rust-").unwrap();
+        let name = name.split('-').next().unwrap();
+        let found = if name == "errors" {
+            vec![common::titled("High", 1, "f returns 1")]
+        } else {
+            Vec::new()
+        };
+        answers.insert(id.clone(), lens(name, &found));
+    }
+    let s = submit(&r1, Value::Object(answers));
+    let votes: serde_json::Map<String, Value> = ids(&s)
+        .into_iter()
+        .map(|id| (id, common::verdict(false)))
+        .collect();
+    let done = submit(&r1, Value::Object(votes));
+    assert_eq!(done["verdict"], json!("Block"));
+
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 0 }\n").unwrap();
+    git(repo.path(), &["commit", "-qam", "fix: f returns 0"]);
+    let red = fake_cargo(&[error("mismatched types")], &[]);
+    let r2 = out.path().join("r2");
+    let s = step::start(&StartOptions {
+        run_dir: r2.clone(),
+        ..gated(repo.path(), out.path(), red.path())
+    })
+    .unwrap();
+    assert_eq!(ids(&s), ["adjudicate-0"], "no scout, no lens, no seed");
+    let done = submit(
+        &r2,
+        json!({"adjudicate-0": {"status": "still-open", "currentLine": 1, "note": "", "invariant": "f never returns 1", "attack": "it still does"}}),
+    );
+    assert_eq!(done["done"], json!(true), "{done}");
+    assert_eq!(done["verdict"], json!("Block"));
+    let r = report(&done);
+    assert!(r.contains("mechanical gate is red (rust)"), "{r}");
+    assert!(!r.contains("scout classification"), "{r}");
 }
