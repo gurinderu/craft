@@ -14,11 +14,28 @@ const CASES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../content/parity/memory-cases.json"
 ));
-/// The prompts the engines render, the judges' among them (`lib/review-prompt-parity.test.mjs`).
+/// The memory's prompts triage-findings renders too: the recall's and the judges', which
+/// `lib/judge-prompt-parity.test.mjs` writes.
 const PROMPTS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../../content/parity/prompt-cases.json"
+    "/../../../content/parity/judge-prompt-cases.json"
 ));
+
+#[test]
+fn the_recall_prompt_renders_as_the_engines_render_it() {
+    let file: Value = serde_json::from_str(PROMPTS).unwrap();
+    let (input, want) = (&file["input"], &file["expected"]);
+    let base = input["base"].as_str().unwrap();
+    let paths: Vec<String> = serde_json::from_value(input["recallPaths"].clone()).unwrap();
+    for (case, paths) in [("paths", paths), ("none", Vec::new())] {
+        let got = recall::prompt(&paths, base).unwrap();
+        assert_eq!(
+            got,
+            want["memoryRecall"][case].as_str().unwrap(),
+            "recall: {case}"
+        );
+    }
+}
 
 #[test]
 fn the_judges_prompts_render_as_the_engines_render_them() {
