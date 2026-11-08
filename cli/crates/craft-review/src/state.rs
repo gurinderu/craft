@@ -333,6 +333,10 @@ pub struct RunState {
     /// ([`crate::stop`]); `None`, it did not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped: Option<crate::stop::Stop>,
+    /// The findings' publication on the PR and the memory contradictions ([`crate::publish`]).
+    /// Optional, so a state written before it reads as a run that posts nothing.
+    #[serde(default)]
+    pub publish: crate::publish::Publish,
 }
 
 impl RunState {

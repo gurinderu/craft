@@ -15,7 +15,7 @@ const POLL: Duration = Duration::from_millis(50);
 
 /// What running a tool came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Ran {
+pub(crate) enum Ran {
     /// It exited: its status (`None` killed by a signal), its stdout and its stderr.
     Exited { ok: bool, out: String, err: String },
     /// No such program on the PATH.
@@ -28,7 +28,7 @@ pub(super) enum Ran {
 
 /// The tools of one gate: where they run from and until when.
 #[derive(Debug)]
-pub(super) struct Runner {
+pub(crate) struct Runner {
     deadline: Instant,
     /// The PATH the tools are looked up on, when not craft's own.
     path: Option<OsString>,
@@ -37,7 +37,7 @@ pub(super) struct Runner {
 }
 
 impl Runner {
-    pub(super) fn new(budget: Duration, path: Option<OsString>, dir: PathBuf) -> Self {
+    pub(crate) fn new(budget: Duration, path: Option<OsString>, dir: PathBuf) -> Self {
         Self {
             deadline: Instant::now() + budget,
             path,
@@ -47,12 +47,12 @@ impl Runner {
     }
 
     /// What is left of the budget.
-    pub(super) fn left(&self) -> Duration {
+    pub(crate) fn left(&self) -> Duration {
         self.deadline.saturating_duration_since(Instant::now())
     }
 
     /// Runs `program args` in `cwd` within what is left of the budget.
-    pub(super) fn run(&self, cwd: &Path, program: &str, args: &[&str]) -> Ran {
+    pub(crate) fn run(&self, cwd: &Path, program: &str, args: &[&str]) -> Ran {
         let limit = self.left();
         if limit.is_zero() {
             return Ran::TimedOut(Duration::ZERO);

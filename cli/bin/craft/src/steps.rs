@@ -77,6 +77,11 @@ pub struct StartArgs {
     /// path builds only on an earlier round of the same path.
     #[arg(long)]
     pub path: Option<String>,
+    /// Publish the findings on the checked-out branch's pull request when the run finishes: the
+    /// defects posted as review comments with `gh` (one already there with the craft-finding
+    /// marker is not posted again), the doubtful ones listed in the report for the reviewer.
+    #[arg(long)]
+    pub comment: bool,
 }
 
 /// How deep a review goes.
@@ -172,6 +177,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         session: None,
         unit_scope: args.unit_scope,
         path: args.path.clone(),
+        comment: args.comment,
     };
     print(&step::start(&opts)?)
 }
@@ -203,6 +209,7 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
         degraded: &args.degraded,
         limit: args.limit.as_deref(),
         resume: args.resume,
+        post: None,
     };
     print(&step::submit_with(&run, given.as_ref(), &said)?)
 }

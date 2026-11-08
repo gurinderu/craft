@@ -18,6 +18,7 @@ use crate::tool::finding_lenses;
 mod contradiction;
 mod pairs;
 
+pub(crate) use contradiction::{contradiction_of, contradiction_record};
 pub(super) use contradiction::{contradiction_section, mark_contradicting};
 pub(super) use pairs::{match_pairs_json, rule_pairs_json};
 
