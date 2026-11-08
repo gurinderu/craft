@@ -18,6 +18,8 @@ pub mod extra;
 mod finished;
 pub mod gate;
 pub mod git;
+#[cfg(test)]
+mod golden;
 pub mod handoff;
 mod harm;
 pub mod ledger;
