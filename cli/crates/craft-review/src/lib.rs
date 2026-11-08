@@ -24,6 +24,7 @@ pub mod handoff;
 mod harm;
 pub mod ledger;
 pub mod memory;
+pub mod optional;
 #[cfg(test)]
 mod parity;
 mod paths;

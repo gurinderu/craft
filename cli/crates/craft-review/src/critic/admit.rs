@@ -1,6 +1,6 @@
 //! What a critic's answer admits, as `refuseCriticNames` in `lib/review-critic.mjs` decides it: a
-//! named lens outside the candidates is ignored; one of the optional pass is refused (the CLI runs
-//! no optional pass, so it is bought by no model mid-run either), and one the surface gate dropped
+//! named lens outside the candidates is ignored; one of the optional pass is refused (it is bought
+//! by an explicit `optional` request, which plans it, never by a model mid-run), and one the surface gate dropped
 //! is refused (realm @nick/craft, node #102) — each said in a note as an uncovered surface — and
 //! the rest run.
 

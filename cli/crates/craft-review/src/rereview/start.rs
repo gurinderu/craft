@@ -64,15 +64,16 @@ fn quiet_deferral(cwd: &Path, row: &LedgerRow) -> bool {
 }
 
 /// The chain of the run about to start in `cwd`: its key, its round and the prior round it builds
-/// on under `runs`, unless `fresh` asks for a new chain. `base` is the branch's own base, `scope`
-/// the directory of the change the run reviews (`None`, the whole change).
+/// on under `runs`, unless `fresh` asks for a new chain or the run is `nested` (a parent engine
+/// launched it, so it stays out of the chain). `base` is the branch's own base, `scope` the
+/// directory of the change the run reviews (`None`, the whole change).
 ///
 /// # Errors
 /// When `cwd`'s git directory cannot be read.
 pub fn begin(
     cwd: &Path,
     runs: &Path,
-    fresh: bool,
+    (fresh, nested): (bool, bool),
     full_every: u32,
     base: &str,
     scope: Option<&str>,
@@ -83,6 +84,7 @@ pub fn begin(
         scope: scope.unwrap_or_default().to_owned(),
         round: 1,
         base: base.to_owned(),
+        nested,
         ..Chain::default()
     };
     let key = (
@@ -90,7 +92,12 @@ pub fn begin(
         chain.branch.as_deref(),
         chain.scope.as_str(),
     );
-    match chain::locate(runs, cwd, key, fresh) {
+    let found = if nested {
+        Err(chain::Unchained::Nested)
+    } else {
+        chain::locate(runs, cwd, key, fresh)
+    };
+    match found {
         Err(why) => chain.unchained = Some(why.reason().to_owned()),
         Ok(Prior { dir, record }) => {
             chain.round = record.round.saturating_add(1);

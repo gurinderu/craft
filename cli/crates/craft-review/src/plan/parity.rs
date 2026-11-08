@@ -32,6 +32,7 @@ fn every_case_plans_as_the_engines_plan_it() {
             light: c["light"] == json!(true),
             strict: c["strict"] == json!(true),
             metrics: false,
+            optional: &[],
         });
         let got_json = json!({
             "sizeBucket": got.size_bucket, "lenses": got.lenses, "maxRounds": got.max_rounds,
@@ -65,6 +66,7 @@ fn a_plan_names_the_model_its_lenses_run_on() {
         light: false,
         strict: false,
         metrics: true,
+        optional: &[],
     });
     assert_eq!(got.lens_model(&profile), crate::agent::Model::Sonnet);
     let none = super::Plan {

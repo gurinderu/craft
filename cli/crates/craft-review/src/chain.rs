@@ -74,6 +74,9 @@ pub enum Unchained {
     NoPriorRound,
     /// The newest round restarted the chain with no base (a fresh run its red gate ended).
     Restarted,
+    /// A parent engine launched the run (`--nested`), as `selectPriorRounds` keeps a nested run
+    /// out of the chain: it neither builds on a round nor files one.
+    Nested,
 }
 
 impl Unchained {
@@ -88,6 +91,9 @@ impl Unchained {
             Self::NoPriorRound => "no earlier round of this branch is on HEAD's history",
             Self::Restarted => {
                 "the newest round of this branch started a new chain (fresh) and its gate was red: nothing to build on"
+            }
+            Self::Nested => {
+                "nested: a parent engine launched this run, which builds on no round and files none"
             }
         }
     }
