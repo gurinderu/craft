@@ -15,6 +15,7 @@ use serde_json::Value;
 use crate::Error;
 use crate::agent::Model;
 use crate::chain;
+use crate::complexity;
 use crate::content;
 use crate::dedup;
 use crate::plan::{self, PlanInput};
@@ -87,6 +88,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             next_round(dir, run, &profiles)
         }
         Phase::Lenses => {
+            let sifted = complexity::sift(&mut run.tasks, &profiles);
+            run.notes.extend(sifted);
             let added = run.rounds.absorb(&run.tasks);
             for t in run.tracks.iter_mut().filter(|t| t.live()) {
                 t.rounds += 1;
@@ -123,8 +126,12 @@ fn lens_model(run: &RunState, profiles: &[Profile]) -> Model {
         .unwrap_or(Model::Opus)
 }
 
-/// Plans each track from its scout's answer, the conservative fallback where it gave none.
+/// Plans each track from its scout's answer, the conservative fallback where it gave none; the
+/// metrics-or-nothing lenses only when the warm-up found an index.
 fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
+    let index = complexity::indexed(&run.tasks);
+    let metrics = index.as_ref().is_some_and(|(found, _)| *found);
+    run.notes.extend(index.and_then(|(_, note)| note));
     for (track, p) in run.tracks.iter_mut().zip(profiles) {
         let task = run
             .tasks
@@ -147,6 +154,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             spec: &run.context.spec,
             light: run.light,
             strict: run.context.strict,
+            metrics,
         }));
     }
 }

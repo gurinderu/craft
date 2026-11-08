@@ -33,6 +33,7 @@ fn every_case_plans_as_the_engines_plan_it() {
             spec: "feat: x",
             light: c["light"] == json!(true),
             strict: c["strict"] == json!(true),
+            metrics: false,
         });
         let want = &c["expected"];
         let got_json = json!({
@@ -69,6 +70,7 @@ fn a_plan_names_the_model_its_lenses_run_on() {
         spec: "feat: x",
         light: false,
         strict: false,
+        metrics: true,
     });
     assert_eq!(got.lens_model(&profile), crate::agent::Model::Sonnet);
     let none = super::Plan {

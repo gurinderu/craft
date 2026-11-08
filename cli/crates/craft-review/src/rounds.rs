@@ -83,7 +83,14 @@ pub fn tasks(
     plan.lenses
         .iter()
         .map(|lens| {
-            let model = profile.lens(lens).map_or(Model::Opus, |l| l.model);
+            let spec = profile.lens(lens);
+            let model = spec.map_or(Model::Opus, |l| l.model);
+            // A metrics-or-nothing lens's findings carry the numbers they rest on.
+            let schema = if spec.is_some_and(|l| l.metrics) {
+                crate::complexity::findings_schema()?
+            } else {
+                content::schema("findings")?
+            };
             let at = LensIn {
                 profile,
                 lens,
@@ -96,7 +103,7 @@ pub fn tasks(
                 format!("lens:{}:{lens} r{round}", profile.id),
                 prompts::lens_prompt(ctx, &at)?,
                 model,
-                content::schema("findings")?,
+                schema,
                 TaskKind::Lens {
                     profile: profile.id.clone(),
                     lens: lens.clone(),

@@ -8,6 +8,7 @@
 pub mod absorbed;
 pub mod agent;
 pub mod chain;
+pub mod complexity;
 pub mod content;
 pub mod coverage;
 mod dedup;

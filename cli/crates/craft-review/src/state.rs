@@ -107,6 +107,8 @@ pub enum TaskKind {
     MatchJudge,
     /// The memory's rule judge.
     RuleJudge,
+    /// The warm-up finding whether a code-metrics index covers the repository, beside the scouts.
+    Warmup,
 }
 
 /// Whether a task still waits for its answer.

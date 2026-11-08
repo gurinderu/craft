@@ -102,7 +102,10 @@ pub fn verify_prompt(
     let source = flatten(f.get("source"));
     let tool = crate::tool::is_tool_source(f.get("source").and_then(Value::as_str).unwrap_or(""));
     let n = (voter + 1).to_string();
-    let head = if tool {
+    let metric = crate::complexity::is_metric(f);
+    let head = if metric {
+        content::text("verify-metric")?
+    } else if tool {
         content::prompt("verify-head-tool", &vars([("n", n), ("source", source)]))?
     } else {
         content::prompt("verify-head-skeptic", &vars([("n", n)]))?
@@ -113,7 +116,12 @@ pub fn verify_prompt(
         let provenance = flatten(Some(&Value::String(gate.to_owned())));
         format!(" {}", content::prompt("verify-gate", &vars([("provenance", provenance)]))?)
     };
-    let (fallback, refuted) = if tool {
+    let (fallback, refuted) = if metric {
+        (
+            " If you cannot re-read the metrics (the index is unavailable), refuted=true.",
+            "Metric-decided as above: refuted=true when the values you re-read do not back the claim, or this diff did not introduce or worsen them.",
+        )
+    } else if tool {
         (
             " If you STILL cannot run the tool, set refuted=false — an unverifiable tool finding stays alive.",
             "Tool-decided as above.",

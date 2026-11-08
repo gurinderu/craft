@@ -61,6 +61,11 @@ pub struct Lens {
     pub surface: Option<String>,
     #[serde(default)]
     pub catalogue: Option<Catalogue>,
+    /// Metrics-or-nothing: it runs only with a code-metrics index, its brief is its whole prompt,
+    /// its findings stand only on numbers over a threshold, and its verifier re-reads them
+    /// ([`crate::complexity`]).
+    #[serde(default)]
+    pub metrics: bool,
 }
 
 fn with_catalog() -> bool {

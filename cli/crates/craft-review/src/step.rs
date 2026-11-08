@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use crate::Error;
+use crate::complexity;
 use crate::content;
 use crate::coverage;
 use crate::finished;
@@ -241,7 +242,8 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
     }
 }
 
-/// One scout per profile taking part of the change, each over its own files.
+/// One scout per profile taking part of the change, each over its own files; beside them the index
+/// warm-up when a profile taking part has a metrics-or-nothing lens.
 fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
     let mut tasks = Vec::new();
     for t in &run.tracks {
@@ -258,6 +260,10 @@ fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
                 profile: p.id.clone(),
             },
         ));
+    }
+    let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
+    if profiles.iter().filter(taking_part).any(complexity::wanted) {
+        tasks.push(complexity::warmup_task(&run.context.repo)?);
     }
     Ok(tasks)
 }

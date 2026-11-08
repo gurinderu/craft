@@ -34,13 +34,6 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
     if took_part("nix") {
         parts.insert(0, NIX_GATE_NOT_RUN);
     }
-    if state
-        .tracks
-        .iter()
-        .any(|t| t.profile == "general" && t.plan.is_some())
-    {
-        parts.push(GENERAL_NOT_RUN);
-    }
     if state.chain.prior.is_some() {
         parts.push(REREVIEW_NOT_RUN);
     }
@@ -53,10 +46,6 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
 /// What the Rust gate leaves out of the engine's: what takes an agent's judgement (CI's checks, the
 /// project's own lint recipe, dependency context) or the scout's plan (semver, registry rules).
 const RUST_GATE_NOT_RUN: &str = "the Rust gate's reading of CI and of the project's own lint recipe, its tests, cargo audit and cargo deny, cargo semver-checks, semgrep's registry rule sets (p/rust, p/secrets) and the dependency-context seeds";
-
-/// What the general profile leaves out of adversarial-review's catalog until its metrics gate is
-/// ported.
-const GENERAL_NOT_RUN: &str = "the general profile's complexity lens (needs a code-metrics index)";
 
 /// What the Nix gate leaves out of the engine's.
 const NIX_GATE_NOT_RUN: &str = "the Nix gate's reading of CI, its formatter check, the builds of the touched attributes and the dependency-context seeds";

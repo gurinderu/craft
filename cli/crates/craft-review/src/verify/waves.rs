@@ -19,12 +19,13 @@ const CULL_MODEL: Model = Model::Sonnet;
 /// constant in `lib/review-plan.mjs`.
 const AUTH_MODEL: Model = Model::Opus;
 
-/// Whether `f` gets the authoritative vote and may escalate: a Critical or High.
+/// Whether `f` gets the authoritative vote and may escalate: a Critical or High — but a metrics
+/// lens's, which its one metric verifier decides (`isEscalated`).
 pub(super) fn is_high(f: &Value) -> bool {
     matches!(
         f.get("severity").and_then(Value::as_str),
         Some("Critical" | "High")
-    )
+    ) && !crate::complexity::is_metric(f)
 }
 
 /// The cull votes a High or Critical panel on `f` holds at most, `max(1, plan.verifyVotes)` of the
@@ -174,7 +175,8 @@ pub(crate) fn panel(run: &RunState, i: usize) -> Vec<(u32, Option<Value>)> {
             | TaskKind::Recall { .. }
             | TaskKind::RedTeam { .. }
             | TaskKind::MatchJudge
-            | TaskKind::RuleJudge => None,
+            | TaskKind::RuleJudge
+            | TaskKind::Warmup => None,
         })
         .collect()
 }

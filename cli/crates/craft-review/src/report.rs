@@ -222,6 +222,12 @@ fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
             ran.join(", ")
         },
     ));
+    if !plan.metrics_dropped.is_empty() {
+        out.push_str(&format!(
+            "Dropped for want of a code-metrics index{whose}: {}.\n",
+            plan.metrics_dropped.join(", ")
+        ));
+    }
     if !plan.surface_dropped.is_empty() {
         out.push_str(&format!(
             "Dropped by the scout's surfaces{whose}: {}.\n",
