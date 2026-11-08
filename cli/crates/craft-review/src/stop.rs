@@ -93,10 +93,14 @@ pub(crate) fn open(run: &mut RunState) {
     }
 }
 
-/// Whether the round settled with every task in it dead: none pending, none answered alive.
+/// Whether the round settled with every task in it dead: none pending, none answered alive. A task
+/// the host abandoned at its deadline was a live agent that took too long, as the engine reads a
+/// deadline fire (`lib/usage-limit.mjs`, realm @nick/craft, #299): a round with one is not dead, and
+/// goes on with its failed tasks.
 pub(crate) fn round_died(run: &RunState) -> Option<String> {
-    let settled = !run.tasks.is_empty() && run.tasks.iter().all(|t| t.state != TaskState::Pending);
-    if !settled || run.watch.live {
+    let settled = run.tasks.iter().all(|t| t.state != TaskState::Pending);
+    let dead = !run.tasks.is_empty() && !run.tasks.iter().any(|t| t.abandoned);
+    if !settled || !dead || run.watch.live {
         return None;
     }
     run.watch
@@ -124,12 +128,13 @@ pub fn deaths(text: String) -> Stop {
     }
 }
 
-/// Stops the run: every task not answered is held as first handed out, to be handed out again.
+/// Stops the run: every task not answered is held as first handed out, to be handed out again —
+/// but one abandoned at its deadline, which stays failed.
 pub(crate) fn hold(run: &mut RunState, stop: Stop) {
     for t in run
         .tasks
         .iter_mut()
-        .filter(|t| t.state != TaskState::Answered)
+        .filter(|t| t.state != TaskState::Answered && !t.abandoned)
     {
         t.state = TaskState::Pending;
         t.retries = 0;

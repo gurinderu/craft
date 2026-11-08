@@ -166,12 +166,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         sources: sources::Sources::default(),
         scope,
     };
-    let tracks: Vec<Track> = coverage::assign(&diff.files, &profiles)
-        .into_iter()
-        .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
-        .collect();
-    let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
-    let uncovered = coverage::uncovered(&diff.files, taken);
+    let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
     let memory = Memory::open(opts.prior_decisions.clone());
     let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
     let notes =
@@ -203,6 +198,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         watch: stop::Watch::default(),
         stopped: None,
         publish: Publish::asked(opts.comment),
+        telemetry: crate::telemetry::Tally::default(),
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -231,6 +227,18 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     }
     run.tasks.extend(adjudicators);
     first_step(dir, &mut run)
+}
+
+/// Each profile's part of the changed `files`, and the files no profile covers that carry
+/// something to review.
+fn tracks_of(files: &[String], profiles: &[Profile]) -> (Vec<Track>, Vec<String>) {
+    let tracks: Vec<Track> = coverage::assign(files, profiles)
+        .into_iter()
+        .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
+        .collect();
+    let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
+    let uncovered = coverage::uncovered(files, taken);
+    (tracks, uncovered)
 }
 
 /// The new run's first step: its tasks, or, with none to run, the run ended at once (with nothing
@@ -412,6 +420,9 @@ pub struct Said<'a> {
     /// How the defects of a run this submit finishes are posted on the PR; `None`, with gh on
     /// craft's own PATH within the default budget.
     pub post: Option<&'a PostSetup>,
+    /// The tasks whose agents the host abandoned at their deadline (`--abandoned`): each fails at
+    /// once, never handed out again, and an answer its agent writes later is never read.
+    pub abandoned: &'a [String],
 }
 
 /// Which failed answers wait uncounted rather than use up a retry.
@@ -465,6 +476,7 @@ pub fn submit_with(
     if let Some(id) = given.and_then(|g| g.keys().find(|id| !pending(id))) {
         return Err(StepError::UnknownTask(id.clone()).into());
     }
+    abandon(dir, &mut run, said.abandoned)?;
     stop::open(&mut run);
     let hold = match (said.limit, said.resume) {
         (Some(_), _) => Hold::Every,
@@ -481,6 +493,25 @@ pub fn submit_with(
     }
     move_on(dir, &mut run, said)?;
     save_and_next(dir, &mut run, said)
+}
+
+/// Fails each pending task of `ids`, abandoned by the host at its deadline, as the engine counts a
+/// deadline fire: a dead agent not dispatched again, whose wait already spent the budget. Its
+/// answer file, should one be there, is set aside unread.
+fn abandon(dir: &Path, run: &mut RunState, ids: &[String]) -> Result<(), Error> {
+    for task in run
+        .tasks
+        .iter_mut()
+        .filter(|t| t.state == TaskState::Pending && ids.contains(&t.id))
+    {
+        handoff::set_aside(dir, task)?;
+        task.state = TaskState::Failed;
+        task.abandoned = true;
+        task.error = Some(
+            "abandoned at its deadline: the host waited its whole budget and no answer came back, so it is not asked for again".into(),
+        );
+    }
+    Ok(())
 }
 
 /// Moves the run on once this submit's answers are in: stopped on the host's limit (after
@@ -591,7 +622,7 @@ fn next(dir: &Path, run: &RunState) -> Value {
                 .filter(|t| t.state == TaskState::Pending)
                 .map(|t| handoff::wire(dir, t))
                 .collect();
-            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo})
+            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo, "phase": run.phase})
         }
     }
 }
