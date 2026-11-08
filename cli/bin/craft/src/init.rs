@@ -1,8 +1,10 @@
 //! `craft init`: the reviewer's project profile (realm @nick/craft, node #467), asked for inside an
-//! agent session, where the binary cannot prompt. `--propose` prints what the profile holds and
-//! the candidates the repository's deployment manifests name (the discovery of
-//! `lib/craft-externals.mjs`, node #435) as JSON; the host session asks the reviewer which systems
-//! the code talks to and at which deployed tag or commit, then `--write` stores exactly those.
+//! agent session, where the binary cannot prompt. `--propose` prints what the profile holds, the
+//! project memory's `external` records the session pipes in, each with the revision its version
+//! file names now (node #470, option (a); [`memory`]), and the candidates the repository's
+//! deployment manifests name (the discovery of `lib/craft-externals.mjs`, node #435) as JSON; the
+//! host session asks the reviewer which systems the code talks to and at which deployed tag or
+//! commit, then `--write` stores exactly those.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,6 +17,8 @@ use craft_review::sources::{self, Git, SourcesSetup};
 use serde_json::{Value, json};
 
 use crate::review::find_craft_root;
+
+mod memory;
 
 #[derive(Debug, clap::Args)]
 #[command(group(clap::ArgGroup::new("mode").required(true).args(["propose", "write"])))]
@@ -33,6 +37,10 @@ pub struct InitArgs {
     /// An integration point: `<name>=<git url>@<tag or full commit>`; repeatable.
     #[arg(long = "point", requires = "write", value_name = "NAME=URL@REF")]
     pub points: Vec<String>,
+    /// The project memory's `external` records as JSON on stdin (`-`, the only value): each one is
+    /// proposed as an integration point with the revision its version file names now.
+    #[arg(long = "memory-externals", requires = "propose", value_name = "-")]
+    pub memory_externals: Option<String>,
     /// craft's plugin root, whose `lib/craft-externals.mjs` finds the candidates; found above the
     /// executable when absent.
     #[arg(long, env = "CRAFT_ROOT")]
@@ -81,20 +89,23 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         .map(|p| p.integrations.clone())
         .unwrap_or_default();
     let root = args.craft_root.clone().or_else(find_craft_root);
-    let discovery = discover(root.as_deref(), &args.cwd, &integrations);
+    let recalled = memory::recalled(args.memory_externals.as_deref())?;
+    let imported = memory::import(root.as_deref(), &args.cwd, &recalled, &integrations);
+    let discovery = discover(root.as_deref(), &args.cwd, &integrations, &recalled);
     print(&json!({
         "profile": path,
         "exists": held.is_some(),
         "integrations": integrations,
+        "memory": imported,
         "discovery": discovery,
         "write": "craft init --write --point <name>=<git url>@<tag or full commit> … (every point to keep; a branch is refused when a review prepares the sources)",
     }))
 }
 
-/// The discovery's answer over the repository at `cwd`, the profile's points left out as known;
-/// `{"ran": false, "why": …}` when it cannot run (no plugin root, no node).
-fn discover(root: Option<&Path>, cwd: &Path, known: &[IntegrationPoint]) -> Value {
-    match run_discovery(root, cwd, known) {
+/// `answer` marked as having run, or `{"ran": false, "why": …}` when it could not (no plugin root,
+/// no node).
+fn ran(answer: Result<Value>) -> Value {
+    match answer {
         Ok(mut v) => {
             if let Some(o) = v.as_object_mut() {
                 o.insert("ran".into(), Value::Bool(true));
@@ -105,7 +116,30 @@ fn discover(root: Option<&Path>, cwd: &Path, known: &[IntegrationPoint]) -> Valu
     }
 }
 
-fn run_discovery(root: Option<&Path>, cwd: &Path, known: &[IntegrationPoint]) -> Result<Value> {
+/// The discovery's answer over the repository at `cwd`, the profile's points and the memory's
+/// `recalled` records left out as known.
+fn discover(
+    root: Option<&Path>,
+    cwd: &Path,
+    known: &[IntegrationPoint],
+    recalled: &memory::Recalled,
+) -> Value {
+    let mut records: Vec<Value> = known
+        .iter()
+        .map(|p| json!({"system": p.name, "repo": p.repo, "version": p.rev}))
+        .collect();
+    records.extend(memory::listed(recalled));
+    ran(externals(
+        root,
+        cwd,
+        &["discover", "--known", "-"],
+        &Value::Array(records),
+    ))
+}
+
+/// What `lib/craft-externals.mjs <verb> --repo-root <top> <rest…>` prints, `stdin` handed to it as
+/// JSON; its `{"error"}` is an error.
+fn externals(root: Option<&Path>, cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
     let root = root.context("no craft plugin root: pass --craft-root")?;
     let script = root.join("lib/craft-externals.mjs");
     anyhow::ensure!(
@@ -114,32 +148,29 @@ fn run_discovery(root: Option<&Path>, cwd: &Path, known: &[IntegrationPoint]) ->
         root.display()
     );
     let top = git::toplevel(cwd)?;
-    let records: Vec<Value> = known
-        .iter()
-        .map(|p| json!({"system": p.name, "repo": p.repo, "version": p.rev}))
-        .collect();
+    let (verb, rest) = args.split_first().context("no verb")?;
     let mut child = Command::new("node")
         .arg(&script)
-        .args(["discover", "--repo-root"])
+        .args([verb, "--repo-root"])
         .arg(&top)
-        .args(["--known", "-"])
+        .args(rest)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .context("running node")?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(serde_json::to_string(&records)?.as_bytes())?;
+    if let Some(mut input) = child.stdin.take() {
+        input.write_all(serde_json::to_string(stdin)?.as_bytes())?;
     }
     let out = child.wait_with_output()?;
     let answer: Value = serde_json::from_slice(&out.stdout).with_context(|| {
         format!(
-            "the discovery printed no JSON: {}",
+            "lib/craft-externals.mjs {verb} printed no JSON: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         )
     })?;
     match answer.get("error") {
-        Some(e) => anyhow::bail!("the discovery refused: {e}"),
+        Some(e) => anyhow::bail!("lib/craft-externals.mjs {verb} refused: {e}"),
         None => Ok(answer),
     }
 }

@@ -42,6 +42,7 @@ pub(super) fn take_ledger(
             row,
             fate,
             located: false,
+            contradicts: None,
         });
     }
 }

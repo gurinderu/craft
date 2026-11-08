@@ -79,7 +79,7 @@ pub(super) fn reraised_note(d: &PriorDecision, why: &str) -> String {
 }
 
 /// `f` with `note` appended to its `why`, and `extra` fields set.
-pub(super) fn noted(f: &Value, note: &str, extra: &[(&str, Value)]) -> Value {
+pub(in crate::memory) fn noted(f: &Value, note: &str, extra: &[(&str, Value)]) -> Value {
     let mut o: Map<String, Value> = f.as_object().cloned().unwrap_or_default();
     let why = o
         .get("why")

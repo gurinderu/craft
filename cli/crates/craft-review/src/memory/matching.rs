@@ -3,9 +3,14 @@
 //! finding's file, of the finding's lens, its line within a few lines of the finding's (and, for a
 //! gate tool's finding, the same tool rule) answers it outright; any other candidate answers it
 //! only by the title rule — titles sharing most of their words — or, for a tool finding naming no
-//! rule, only by the same title. A record that overrides another is tried before it.
+//! rule, only by the same title — unless the match judge gave that pair a verdict ([`resolve`]).
+//! A record that overrides another is tried before it.
+
+use std::collections::BTreeMap;
 
 use serde_json::Value;
+
+use super::judge::Verdict;
 
 use super::PriorDecision;
 use super::record::scope_parts;
@@ -31,10 +36,18 @@ const BY_SAME_TITLE_IN_SCOPE: &str =
     "matched by the same title in scope, no line to compare (the judge gave no verdict)";
 
 /// The record that answers a finding, by its index, and how that was established.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Match {
     pub at: usize,
-    pub how: &'static str,
+    pub how: String,
+}
+
+/// One finding against the records in tried order (`findingPlan`): the first outright match, and
+/// the candidates tried before it, which the judge decides first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct Plan {
+    pub sure: Option<Match>,
+    pub disputed: Vec<usize>,
 }
 
 fn text<'a>(f: &'a Value, k: &str) -> &'a str {
@@ -65,7 +78,7 @@ fn finding_line(f: &Value) -> u64 {
 }
 
 /// Whether a tool finding names no rule (`namesNoRule`).
-fn names_no_rule(f: &Value) -> bool {
+pub(super) fn names_no_rule(f: &Value) -> bool {
     is_tool_finding(f) && tool::rule_key(f).is_empty()
 }
 
@@ -215,28 +228,75 @@ fn unjudged(f: &Value, d: &PriorDecision) -> &'static str {
     if answers { BY_TITLE } else { "" }
 }
 
-/// The record answering `f`, tried in order (`sureMatchOf`): a candidate before the first outright
-/// match that answers it by its title, else that outright match.
-pub(super) fn match_of(f: &Value, ds: &[PriorDecision], order: &[usize]) -> Option<Match> {
+/// How `f` stands to the records in tried `order` (`findingPlan`).
+pub(super) fn plan(f: &Value, ds: &[PriorDecision], order: &[usize]) -> Plan {
+    let mut out = Plan::default();
     for &at in order {
-        let d = ds.get(at)?;
+        let Some(d) = ds.get(at) else { continue };
         match class(f, d) {
             Class::Anchored => {
-                return Some(Match {
+                out.sure = Some(Match {
                     at,
-                    how: sure_how(f, d),
+                    how: sure_how(f, d).to_owned(),
                 });
+                break;
             }
-            Class::Disputed => {
-                let how = unjudged(f, d);
-                if !how.is_empty() {
-                    return Some(Match { at, how });
-                }
-            }
+            Class::Disputed => out.disputed.push(at),
             Class::Neither => {}
         }
     }
-    None
+    out
+}
+
+/// The record answering `f` under `plan`, given the judge's verdicts on its candidates by record
+/// index (`resolvePlan`): in tried order, a candidate judged the same; one without a verdict that
+/// answers it by its title; else the outright match.
+pub(super) fn resolve(
+    f: &Value,
+    ds: &[PriorDecision],
+    plan: &Plan,
+    judged: Option<&BTreeMap<usize, Verdict>>,
+) -> Option<Match> {
+    for &at in &plan.disputed {
+        match judged.and_then(|j| j.get(&at)) {
+            Some(v) if v.same => {
+                return Some(Match {
+                    at,
+                    how: format!("matched by judge: {}", v.why),
+                });
+            }
+            Some(_) => {}
+            None => {
+                let how = ds.get(at).map_or("", |d| unjudged(f, d));
+                if !how.is_empty() {
+                    return Some(Match {
+                        at,
+                        how: how.to_owned(),
+                    });
+                }
+            }
+        }
+    }
+    plan.sure.clone()
+}
+
+/// A candidate pair's rank under the judge's bound, lowest first (`pairRank`): findings a record
+/// may set aside before Critical and High ones, and within each a near line before a shared lens
+/// before title words alone.
+pub(super) fn pair_rank(f: &Value, d: &PriorDecision) -> u8 {
+    let a = anchor_of(f, d);
+    let place = if a.near {
+        0
+    } else if a.same {
+        1
+    } else {
+        2
+    };
+    if reraised_by_severity(f) {
+        3 + place
+    } else {
+        place
+    }
 }
 
 /// The records in the order they are tried: those overriding another first (`triedOrder`).
@@ -244,21 +304,4 @@ pub(super) fn tried_order(ds: &[PriorDecision]) -> Vec<usize> {
     let (first, rest): (Vec<usize>, Vec<usize>) =
         (0..ds.len()).partition(|&i| ds.get(i).is_some_and(|d| !d.overrides.is_empty()));
     first.into_iter().chain(rest).collect()
-}
-
-/// The records that could answer `f` (`findingPlan`): every candidate tried before the first
-/// outright match, and that match.
-pub(super) fn candidates(f: &Value, ds: &[PriorDecision], order: &[usize]) -> Vec<usize> {
-    let mut out = Vec::new();
-    for &at in order {
-        match ds.get(at).map(|d| class(f, d)) {
-            Some(Class::Anchored) => {
-                out.push(at);
-                break;
-            }
-            Some(Class::Disputed) => out.push(at),
-            Some(Class::Neither) | None => {}
-        }
-    }
-    out
 }

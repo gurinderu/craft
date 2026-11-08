@@ -1,21 +1,28 @@
 //! The memory applied to a run's findings and to the prior round's (`setAsidePhase` in
-//! `lib/review-set-aside.mjs`; realm @nick/craft, nodes #204, #218): the verified findings and the
-//! priors still open are split by the records in hand, and a deferred prior is held while its
-//! question is (`deferralHeld`, `deferralReleased` in `lib/prior-decision-apply.mjs`).
+//! `lib/review-set-aside.mjs`; realm @nick/craft, nodes #204, #218, #273): the verified findings and
+//! the priors still open are split by the records in hand — the decisions first, the match judge
+//! asked about their near misses, then the project rules, the rule judge asked about the findings
+//! in their scope — and a deferred prior is held while its question is (`deferralHeld`,
+//! `deferralReleased` in `lib/prior-decision-apply.mjs`). Each judge is a task of its own step, so
+//! each stage is computed twice over the same state: once for its task, once with its answer.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::Value;
 
-use super::{Memory, PriorDecision, apply, matching};
+use super::{Memory, PriorDecision, RecordKind, apply, matching, rules};
+use crate::content::ContentError;
 use crate::git;
 use crate::ledger::{Deferral, LedgerRow};
 use crate::report::Tier;
 use crate::rereview::{Chain, Fate};
+use crate::state::Task;
 
 /// The field a prior carries through the split, naming its place in the chain.
 const PRIOR_AT: &str = "priorIndex";
+/// The mark of a finding going against a record (`memoryContradicts`).
+const CONTRADICTS: &str = "memoryContradicts";
 
 /// Every id a record is known by: its own and the store's.
 fn aliases(d: &PriorDecision) -> impl Iterator<Item = &String> {
@@ -48,70 +55,154 @@ impl Memory {
         !matching::reraised_by_severity(&row.finding()) && !released(deferral, &self.decisions)
     }
 
-    /// Sets aside the findings of `settled` and the priors still open or carried unverified in
-    /// `chain` (the engine's `stillOpen`, `regressed` and `unverified` tiers) a record answers,
-    /// its scope checked by git in `repo`; what it did goes to `notes`. A prior set aside leaves
-    /// the chain's ledger for the memory's; one raised again keeps the note why.
+    /// The match judge's task over the findings of `settled` and the priors still open or carried
+    /// unverified in `chain` (the engine's `stillOpen`, `regressed` and `unverified` tiers), `None`
+    /// when no pair needs it.
+    ///
+    /// # Errors
+    /// When its template or schema is missing.
+    pub(crate) fn match_task(
+        &self,
+        repo: &Path,
+        settled: &[Value],
+        chain: &Chain,
+    ) -> Result<Option<Task>, ContentError> {
+        let judged = pool(settled, chain);
+        if self.decisions.is_empty() || judged.is_empty() {
+            return Ok(None);
+        }
+        let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
+        apply::prepare(&judged, &self.decisions, &check).task(&judged)
+    }
+
+    /// Sets aside what a record answers among the same findings and priors as
+    /// [`Memory::match_task`], `answer` the match judge's when it was asked, its scope checked by
+    /// git in `repo`; what it did goes to `notes`. A prior set aside leaves the chain's ledger for
+    /// the memory's; one raised again keeps the note why.
     pub(crate) fn apply(
         &mut self,
         repo: &Path,
         settled: &mut Vec<Value>,
         chain: &mut Chain,
         notes: &mut Vec<String>,
+        answer: Option<&Value>,
     ) {
-        let live: Vec<usize> = (0..chain.priors.len())
-            .filter(|&i| {
-                chain
-                    .priors
-                    .get(i)
-                    .is_some_and(|p| p.gates() || p.fate == Fate::Unverified)
-            })
-            .collect();
-        if self.decisions.is_empty() || (settled.is_empty() && live.is_empty()) {
+        let judged = pool(settled, chain);
+        if self.decisions.is_empty() || judged.is_empty() {
             return;
         }
-        let (refuted, mut judged): (Vec<Value>, Vec<Value>) = settled
-            .drain(..)
-            .partition(|f| Tier::of(f) == Tier::Refuted);
-        for &i in &live {
-            if let Some(Value::Object(mut f)) = chain.priors.get(i).map(|p| p.row.finding()) {
-                f.insert(PRIOR_AT.into(), Value::from(i));
-                judged.push(Value::Object(f));
-            }
-        }
         let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
-        let out = apply::apply(judged, &self.decisions, &check);
-        for f in out.kept {
-            match take_prior(&f) {
-                Some((i, f)) => {
-                    if let Some(p) = chain.priors.get_mut(i) {
-                        p.row.why = f
-                            .get("why")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_owned();
-                    }
-                }
-                None => settled.push(f),
-            }
-        }
-        settled.extend(refuted);
-        self.set_aside = out
-            .set_aside
-            .into_iter()
-            .map(|f| match take_prior(&f) {
-                Some((i, f)) => {
-                    if let Some(p) = chain.priors.get_mut(i) {
-                        p.fate = Fate::SetAside;
-                    }
-                    f
-                }
-                None => f,
-            })
-            .collect();
+        let prepared = apply::prepare(&judged, &self.decisions, &check);
+        let out = apply::apply(judged, prepared, answer);
+        self.set_aside = commit(settled, chain, out.kept, out.set_aside);
         notes.extend(out.notes.iter().map(|n| format!("prior decisions: {n}")));
         self.refused.extend(out.refused);
     }
+
+    /// The rule judge's task over what the decisions left, `None` when no finding sits in a rule's
+    /// scope.
+    ///
+    /// # Errors
+    /// When its template or schema is missing.
+    pub(crate) fn rule_task(
+        &self,
+        settled: &[Value],
+        chain: &Chain,
+    ) -> Result<Option<Task>, ContentError> {
+        let judged = pool(settled, chain);
+        rules::Pairs::new(&judged, &self.decisions).task(&judged)
+    }
+
+    /// Covers by the project rules what the decisions left, `answer` the rule judge's when it was
+    /// asked; a covered prior leaves the chain's ledger for the memory's, as `covered`.
+    pub(crate) fn cover(
+        &mut self,
+        settled: &mut Vec<Value>,
+        chain: &mut Chain,
+        notes: &mut Vec<String>,
+        answer: Option<&Value>,
+    ) {
+        let judged = pool(settled, chain);
+        if !self.decisions.iter().any(|d| d.kind == RecordKind::Rule) || judged.is_empty() {
+            return;
+        }
+        let pairs = rules::Pairs::new(&judged, &self.decisions);
+        // As the engine does: with no rule in force the rules say nothing, superseded ones included.
+        if !pairs.any() {
+            return;
+        }
+        let out = rules::apply(judged, &pairs, answer);
+        let covered = commit(settled, chain, out.kept, out.covered);
+        self.set_aside.extend(covered);
+        self.rule_notices = out.notices;
+        notes.extend(out.notes.iter().map(|n| format!("project rules: {n}")));
+    }
+}
+
+/// What the records are applied to: the findings of `settled` not refuted, then the priors still
+/// open or carried unverified in `chain`, each carrying its place in the chain and its mark.
+fn pool(settled: &[Value], chain: &Chain) -> Vec<Value> {
+    let mut out: Vec<Value> = settled
+        .iter()
+        .filter(|f| Tier::of(f) != Tier::Refuted)
+        .cloned()
+        .collect();
+    for (i, p) in chain.priors.iter().enumerate() {
+        if !(p.gates() || p.fate == Fate::Unverified) {
+            continue;
+        }
+        if let Value::Object(mut f) = p.row.finding() {
+            f.insert(PRIOR_AT.into(), Value::from(i));
+            if let Some(m) = &p.contradicts {
+                f.insert(CONTRADICTS.into(), m.clone());
+            }
+            out.push(Value::Object(f));
+        }
+    }
+    out
+}
+
+/// Puts what a split `kept` back: a finding of this round into `settled` beside the refuted ones,
+/// a prior's note and mark onto its row. The findings `aside` are returned without their place,
+/// a prior among them set aside in `chain`.
+fn commit(
+    settled: &mut Vec<Value>,
+    chain: &mut Chain,
+    kept: Vec<Value>,
+    aside: Vec<Value>,
+) -> Vec<Value> {
+    let refuted: Vec<Value> = settled
+        .drain(..)
+        .filter(|f| Tier::of(f) == Tier::Refuted)
+        .collect();
+    for f in kept {
+        match take_prior(&f) {
+            Some((i, f)) => {
+                if let Some(p) = chain.priors.get_mut(i) {
+                    p.row.why = f
+                        .get("why")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_owned();
+                    p.contradicts = f.get(CONTRADICTS).cloned();
+                }
+            }
+            None => settled.push(f),
+        }
+    }
+    settled.extend(refuted);
+    aside
+        .into_iter()
+        .map(|f| match take_prior(&f) {
+            Some((i, f)) => {
+                if let Some(p) = chain.priors.get_mut(i) {
+                    p.fate = Fate::SetAside;
+                }
+                f
+            }
+            None => f,
+        })
+        .collect()
 }
 
 /// A prior's place in the chain and the finding without it; `None` for a finding of this round.

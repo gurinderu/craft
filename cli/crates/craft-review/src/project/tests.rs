@@ -100,3 +100,29 @@ fn the_id_names_the_repository_and_tells_two_clones_apart() {
     assert_ne!(a, project_id("/home/u/other/craft/.git"));
     assert!(project_id("/srv/mirror.git").starts_with("mirror-"));
 }
+
+#[test]
+fn a_write_over_a_stored_profile_of_another_format_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("review.toml");
+    let profile = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()]).unwrap();
+    for stored in [
+        format!(
+            "version = {}\n[lenses]\nskip = [\"compat\"]\n",
+            PROFILE_VERSION + 1
+        ),
+        "[lenses]\nskip = [\"compat\"]\n".to_owned(),
+    ] {
+        std::fs::write(&path, &stored).unwrap();
+        let err = save(&path, &profile).unwrap_err().to_string();
+        assert!(err.contains("this craft writes 1"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            stored,
+            "nothing written"
+        );
+    }
+    std::fs::write(&path, format!("version = {PROFILE_VERSION}\n")).unwrap();
+    save(&path, &profile).unwrap();
+    assert_eq!(load(&path).unwrap(), Some(profile));
+}

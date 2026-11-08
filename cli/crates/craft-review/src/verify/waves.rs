@@ -165,7 +165,10 @@ pub(crate) fn panel(run: &RunState, i: usize) -> Vec<(u32, Option<Value>)> {
             | TaskKind::Dedup
             | TaskKind::Adjudicate { .. }
             | TaskKind::CarryCheck { .. }
-            | TaskKind::Recall { .. } => None,
+            | TaskKind::Recall { .. }
+            | TaskKind::RedTeam { .. }
+            | TaskKind::MatchJudge
+            | TaskKind::RuleJudge => None,
         })
         .collect()
 }
