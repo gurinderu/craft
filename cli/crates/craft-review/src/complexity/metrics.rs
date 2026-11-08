@@ -52,14 +52,19 @@ pub fn findings_schema() -> Result<Value, ContentError> {
     Ok(schema)
 }
 
-/// The values `metrics` carries, as `name value`, in the graph's order.
+/// The metrics `metrics` carries, in the graph's order: each count that is a number, as `name
+/// value`, and each flag that is set, by its name; a null, a string or an unset flag says nothing.
 #[must_use]
 pub fn values(metrics: &Value) -> Vec<String> {
-    COUNTS
+    let counts = COUNTS.iter().filter_map(|m| {
+        let n = metrics.get(*m).filter(|v| v.is_number())?;
+        Some(format!("{m} {n}"))
+    });
+    let flags = FLAGS
         .iter()
-        .chain(&FLAGS)
-        .filter_map(|m| Some(format!("{m} {}", metrics.get(*m)?)))
-        .collect()
+        .filter(|m| metrics.get(**m) == Some(&Value::Bool(true)))
+        .map(|m| (*m).to_owned());
+    counts.chain(flags).collect()
 }
 
 /// Keeps `f` when it carries a metric value, stating them in its `why` for its verifier.
@@ -119,13 +124,20 @@ mod tests {
     #[test]
     fn a_finding_stands_on_the_values_it_carries_whatever_they_are() {
         assert_eq!(
-            values(&json!({"function": "f", "alloc_in_loop": false, "cognitive": 3})),
-            ["cognitive 3", "alloc_in_loop false"]
+            values(
+                &json!({"function": "f", "alloc_in_loop": false, "recursion_in_loop": true, "cognitive": 3, "loop_depth": null})
+            ),
+            ["cognitive 3", "recursion_in_loop"]
         );
         assert!(
             values(&json!({"function": "f"})).is_empty(),
             "no numbers, no finding"
         );
         assert!(values(&json!(null)).is_empty());
+        assert!(
+            values(&json!({"function": "f", "cognitive": null, "unguarded_recursion": false}))
+                .is_empty(),
+            "a null count and an unset flag are no metric"
+        );
     }
 }

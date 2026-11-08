@@ -9,14 +9,24 @@ use super::check::{Acc, Cx, last_line};
 use super::nix_lint::{STATIX, deadnix, statix};
 
 /// What a failed `nix flake check` says when this machine, not the change, stopped it.
-const ENVIRONMENT: [&str; 7] = [
+const ENVIRONMENT: [&str; 9] = [
     "unable to download",
     "Could not resolve host",
     "Couldn't resolve host",
     "experimental Nix feature",
-    "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'",
+    "cannot connect to socket",
+    "lock file '/nix/var/nix/db/big-lock'",
+    "SQLite database '/nix/var/nix/db/",
     "while setting up the build environment",
     "sandboxing builds is not supported",
+];
+
+/// What `nix flake check --no-write-lock-file` says when the branch's `flake.lock` lacks an entry
+/// its inputs need: a failure then is the unwritten lock's, not established as the change's.
+const UNLOCKED: [&str; 3] = [
+    "not writing modified lock file",
+    "cannot write modified lock file",
+    "entry in the lock file",
 ];
 
 /// The Nix gate over `cx`.
@@ -51,8 +61,11 @@ fn flake_check(cx: &Cx<'_>, acc: &mut Acc) -> Status {
         "nix-command flakes",
         "flake",
         "check",
+        // The review reads the branch, it never edits it: a branch that adds an input leaves its
+        // flake.lock as it is.
+        "--no-write-lock-file",
     ];
-    let label = "`nix flake check`";
+    let label = "`nix flake check --no-write-lock-file`";
     let Some((ok, _, err)) = acc.exited(label, "nix", cx.runner.run(cx.top, "nix", &args)) else {
         return Status::Unknown;
     };
@@ -65,6 +78,13 @@ fn flake_check(cx: &Cx<'_>, acc: &mut Acc) -> Status {
         acc.parts.push(format!("{label}: could not run here"));
         acc.notes.push(format!(
             "{label} was stopped by this machine, not the change — its signal is unknown: {why}"
+        ));
+        return Status::Unknown;
+    }
+    if UNLOCKED.iter().any(|e| err.contains(e)) {
+        acc.parts.push(format!("{label}: not established"));
+        acc.notes.push(format!(
+            "{label} failed with the branch's flake.lock not locking every input, which the gate does not write — its signal is unknown: {why}"
         ));
         return Status::Unknown;
     }

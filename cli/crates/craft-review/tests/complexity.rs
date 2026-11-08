@@ -124,7 +124,7 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
         &[
             "You are an adversarial verifier for a METRIC-BACKED complexity finding.",
             "f is hard to follow",
-            "[metrics: cognitive 3, loop_depth 1, unguarded_recursion false]",
+            "[metrics: cognitive 3, loop_depth 1]",
             "Metric-decided as above",
         ],
     );

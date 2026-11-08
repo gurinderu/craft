@@ -179,6 +179,64 @@ fn a_red_flake_fails_the_gate_but_one_this_machine_stopped_is_unknown() {
         run_dir.path(),
     );
     assert_eq!(gate.tracks[0].status, Status::Fail);
+    // A machine fault at another daemon socket or in the store's own database is the machine's.
+    for fault in [
+        "error: cannot connect to socket at '/run/nix/daemon.sock': Connection refused",
+        "error: opening lock file '/nix/var/nix/db/big-lock': Permission denied",
+    ] {
+        tool(
+            tools.path(),
+            "nix",
+            &format!("echo \"{fault}\" >&2; exit 1"),
+        );
+        let (gate, _) = run(
+            repo.path(),
+            "HEAD~1",
+            &nix_track(),
+            &setup(tools.path(), budget),
+            run_dir.path(),
+        );
+        assert_eq!(gate.tracks[0].status, Status::Unknown, "{fault}");
+    }
+}
+
+#[test]
+fn the_flake_check_never_writes_the_branchs_flake_lock() {
+    let (repo, tools, run_dir) = (
+        repo(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    std::fs::write(repo.path().join("flake.lock"), "pinned\n").unwrap();
+    // A nix that writes the lock unless told not to, and fails on the input the lock lacks.
+    tool(
+        tools.path(),
+        "nix",
+        "case \"$*\" in *--no-write-lock-file*) ;; *) printf 'rewritten' > flake.lock ;; esac\n\
+         echo \"warning: not writing modified lock file of flake 'path:.'\" >&2\n\
+         echo \"error: input 'new' has no entry in the lock file\" >&2; exit 1",
+    );
+    let (gate, _) = run(
+        repo.path(),
+        "HEAD~1",
+        &nix_track(),
+        &setup(tools.path(), Duration::from_secs(30)),
+        run_dir.path(),
+    );
+    let lock = std::fs::read_to_string(repo.path().join("flake.lock")).unwrap();
+    assert_eq!(lock, "pinned\n");
+    let t = &gate.tracks[0];
+    assert_eq!(
+        t.status,
+        Status::Unknown,
+        "a missing lock entry is not red: {t:?}"
+    );
+    assert!(gate.exit().is_none());
+    assert!(
+        t.notes
+            .iter()
+            .any(|n| n.contains("flake.lock not locking every input"))
+    );
 }
 
 #[test]
@@ -210,7 +268,8 @@ fn a_tool_past_the_budget_is_cut_and_its_signal_unknown() {
         "{t:?}"
     );
     assert!(
-        t.provenance.starts_with("`nix flake check`: timed out"),
+        t.provenance
+            .starts_with("`nix flake check --no-write-lock-file`: timed out"),
         "{t:?}"
     );
 }

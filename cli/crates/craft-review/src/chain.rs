@@ -29,6 +29,11 @@ pub struct RoundRecord {
     /// When the run finished, in milliseconds since the epoch: the newest record wins.
     pub finished_at_ms: u64,
     pub ledger: Vec<LedgerRow>,
+    /// A chain started afresh here with nothing to build on: a run started `fresh` that its red gate
+    /// ended before any lens. The next run of the branch starts a new chain rather than resume the
+    /// one `fresh` set aside. Absent in a record written before it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restart: bool,
 }
 
 /// The record of the run in `dir`.
@@ -62,6 +67,8 @@ pub enum Unchained {
     NoBranch,
     /// No finished round of this branch is on `HEAD`'s history.
     NoPriorRound,
+    /// The newest round restarted the chain with no base (a fresh run its red gate ended).
+    Restarted,
 }
 
 impl Unchained {
@@ -74,6 +81,9 @@ impl Unchained {
                 "no branch (a detached HEAD): findings do not carry to a later run; check out a branch to chain review rounds"
             }
             Self::NoPriorRound => "no earlier round of this branch is on HEAD's history",
+            Self::Restarted => {
+                "the newest round of this branch started a new chain (fresh) and its gate was red: nothing to build on"
+            }
         }
     }
 }
@@ -116,7 +126,11 @@ pub fn locate(
         return Err(Unchained::Fresh);
     }
     let branch = branch.ok_or(Unchained::NoBranch)?;
-    newest(runs, cwd, repo, branch).ok_or(Unchained::NoPriorRound)
+    let prior = newest(runs, cwd, repo, branch).ok_or(Unchained::NoPriorRound)?;
+    if prior.record.restart {
+        return Err(Unchained::Restarted);
+    }
+    Ok(prior)
 }
 
 /// Whether round `round` of a chain reviews the whole diff again rather than the fix commits:
@@ -152,6 +166,7 @@ pub fn record(
         round,
         finished_at_ms: now_ms(),
         ledger,
+        restart: false,
     }
 }
 

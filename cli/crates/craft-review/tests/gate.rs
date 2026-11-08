@@ -209,13 +209,11 @@ fn a_tool_not_installed_is_named_and_the_review_goes_on() {
     );
 }
 
-#[test]
-fn a_red_gate_on_a_re_review_still_adjudicates_the_priors_and_plans_no_lens() {
-    let repo = package();
-    let out = tempfile::tempdir().unwrap();
-    let quiet = fake_cargo(&[], &[]);
-    let r1 = out.path().join("run");
-    step::start(&gated(repo.path(), out.path(), quiet.path())).unwrap();
+/// A round in `<out>/run` whose gate passes and whose errors lens finds a confirmed High: Block,
+/// filed as the base of the branch's next round.
+fn high_round(repo: &Path, out: &Path, tools: &Path) -> Value {
+    let r1 = out.join("run");
+    step::start(&gated(repo, out, tools)).unwrap();
     let s = submit(&r1, json!({"scout-rust": scout("small", &["errors"])}));
     let mut answers = serde_json::Map::new();
     for id in ids(&s) {
@@ -235,6 +233,15 @@ fn a_red_gate_on_a_re_review_still_adjudicates_the_priors_and_plans_no_lens() {
         .collect();
     let done = submit(&r1, Value::Object(votes));
     assert_eq!(done["verdict"], json!("Block"));
+    done
+}
+
+#[test]
+fn a_red_gate_on_a_re_review_still_adjudicates_the_priors_and_plans_no_lens() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let quiet = fake_cargo(&[], &[]);
+    high_round(repo.path(), out.path(), quiet.path());
 
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 0 }\n").unwrap();
     git(repo.path(), &["commit", "-qam", "fix: f returns 0"]);
@@ -312,6 +319,42 @@ fn after_a_red_round_the_next_reviews_the_whole_branch_not_the_fix() {
     let p = prompt_of(&s["tasks"][0]);
     assert!(p.contains("'origin/main'...HEAD"), "the whole branch: {p}");
     let done = drive(&r2, s);
+    assert_eq!(
+        (&done["round"], &done["lensScope"]),
+        (&json!(1), &json!("full"))
+    );
+}
+
+#[test]
+fn a_red_fresh_round_restarts_the_chain_so_the_next_does_not_resume_the_old_one() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let quiet = fake_cargo(&[], &[]);
+    high_round(repo.path(), out.path(), quiet.path());
+    let red = fake_cargo(&[error("mismatched types")], &[]);
+    let done = step::start(&StartOptions {
+        run_dir: out.path().join("r2"),
+        fresh: true,
+        ..gated(repo.path(), out.path(), red.path())
+    })
+    .unwrap();
+    assert_eq!(done["verdict"], json!("Block"));
+    assert!(report(&done).contains("filed only as the start of a new chain"));
+
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 0 }\n").unwrap();
+    git(repo.path(), &["commit", "-qam", "fix: it builds"]);
+    let r3 = out.path().join("r3");
+    let s = step::start(&StartOptions {
+        run_dir: r3.clone(),
+        ..gated(repo.path(), out.path(), quiet.path())
+    })
+    .unwrap();
+    assert_eq!(
+        ids(&s),
+        ["scout-rust"],
+        "the chain fresh set aside is not resumed: no prior to adjudicate"
+    );
+    let done = drive(&r3, s);
     assert_eq!(
         (&done["round"], &done["lensScope"]),
         (&json!(1), &json!("full"))

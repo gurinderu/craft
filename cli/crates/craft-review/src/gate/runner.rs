@@ -1,7 +1,8 @@
 //! A gate tool as the binary runs it: in its own process group, its output in files of the run's
 //! `gate/` directory (a lint run prints megabytes, past a pipe's buffer), every command bounded by
 //! what is left of the gate's one budget — a command the budget cuts is killed with its group and
-//! reads as an unestablished signal, never a failure (`GATE_TIME_BUDGET`).
+//! reads as an unestablished signal, never a failure (`GATE_TIME_BUDGET`). The group is killed by
+//! craft, not with it: a craft killed from outside leaves a running tool behind.
 
 use std::ffi::OsString;
 use std::fs::File;
