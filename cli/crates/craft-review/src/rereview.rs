@@ -116,6 +116,9 @@ pub struct Chain {
     /// written before it reads as a run of the branch's chain.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nested: bool,
+    /// When the run started, in milliseconds since the epoch: the round record's place in its
+    /// chain ([`crate::chain::RoundRecord::started_at_ms`]). 0 in a state written before it.
+    pub started_at_ms: u64,
 }
 
 impl Chain {
