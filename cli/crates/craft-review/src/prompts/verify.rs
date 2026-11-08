@@ -114,7 +114,10 @@ pub fn verify_prompt(
         String::new()
     } else {
         let provenance = flatten(Some(&Value::String(gate.to_owned())));
-        format!(" {}", content::prompt("verify-gate", &vars([("provenance", provenance)]))?)
+        format!(
+            " {}",
+            content::prompt("verify-gate", &vars([("provenance", provenance)]))?
+        )
     };
     let (fallback, refuted) = if metric {
         (

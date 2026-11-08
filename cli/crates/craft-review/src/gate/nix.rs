@@ -48,7 +48,12 @@ fn flake_check(cx: &Cx<'_>, acc: &mut Acc) -> Status {
         acc.parts.push("nix flake check: no flake.nix".into());
         return Status::Unknown;
     }
-    let args = ["--extra-experimental-features", "nix-command flakes", "flake", "check"];
+    let args = [
+        "--extra-experimental-features",
+        "nix-command flakes",
+        "flake",
+        "check",
+    ];
     let label = "`nix flake check`";
     let Some((ok, _, err)) = acc.exited(label, "nix", cx.runner.run(cx.top, "nix", &args)) else {
         return Status::Unknown;
@@ -60,7 +65,9 @@ fn flake_check(cx: &Cx<'_>, acc: &mut Acc) -> Status {
     let why = last_line(&err);
     if ENVIRONMENT.iter().any(|e| err.contains(e)) {
         acc.parts.push(format!("{label}: could not run here"));
-        acc.notes.push(format!("{label} was stopped by this machine, not the change — its signal is unknown: {why}"));
+        acc.notes.push(format!(
+            "{label} was stopped by this machine, not the change — its signal is unknown: {why}"
+        ));
         return Status::Unknown;
     }
     acc.parts.push(format!("{label}: red"));
@@ -74,7 +81,9 @@ const STATIX: &str = "`statix check -o json`";
 /// statix on `file`: one JSON report of its lints. False when it did not run, which ends the
 /// files' loop: not installed, or the budget spent.
 fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
-    let ran = cx.runner.run(cx.top, "statix", &["check", "-o", "json", file]);
+    let ran = cx
+        .runner
+        .run(cx.top, "statix", &["check", "-o", "json", file]);
     let Some((_, out, err)) = acc.exited(STATIX, "statix", ran) else {
         return false;
     };
@@ -82,18 +91,50 @@ fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
         return true;
     }
     let Ok(v) = serde_json::from_str::<Value>(&out) else {
-        acc.notes.push(format!("{STATIX} on {file} printed no JSON: {}", last_line(&err)));
+        acc.notes.push(format!(
+            "{STATIX} on {file} printed no JSON: {}",
+            last_line(&err)
+        ));
         return true;
     };
-    for r in v.get("report").and_then(Value::as_array).into_iter().flatten() {
+    for r in v
+        .get("report")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         let code = r.get("code").and_then(Value::as_u64).unwrap_or(0);
-        let kind = if r.get("severity").and_then(Value::as_str) == Some("Error") { 'E' } else { 'W' };
+        let kind = if r.get("severity").and_then(Value::as_str) == Some("Error") {
+            'E'
+        } else {
+            'W'
+        };
         let rule = format!("{kind}{code:02}");
-        for d in r.get("diagnostics").and_then(Value::as_array).into_iter().flatten() {
-            let line = d.pointer("/at/from/line").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(0);
+        for d in r
+            .get("diagnostics")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let line = d
+                .pointer("/at/from/line")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok())
+                .unwrap_or(0);
             let message = d.get("message").and_then(Value::as_str).unwrap_or("");
             if cx.lines.touches(file, line) {
-                acc.seed(cx, &Seed { tool: "statix", rule: &rule, severity: "Low", title: message, file, line, rule_id: RULE_ID });
+                acc.seed(
+                    cx,
+                    &Seed {
+                        tool: "statix",
+                        rule: &rule,
+                        severity: "Low",
+                        title: message,
+                        file,
+                        line,
+                        rule_id: RULE_ID,
+                    },
+                );
             }
         }
     }
@@ -106,18 +147,46 @@ fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) {
     let label = "`deadnix -o json`";
     let mut args = vec!["-o", "json"];
     args.extend(files);
-    let Some((_, out, _)) = acc.exited(label, "deadnix", cx.runner.run(cx.top, "deadnix", &args)) else {
+    let Some((_, out, _)) = acc.exited(label, "deadnix", cx.runner.run(cx.top, "deadnix", &args))
+    else {
         return;
     };
-    for v in out.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
-        let Some(file) = v.get("file").and_then(Value::as_str).and_then(|f| cx.changed(f)) else {
+    for v in out
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+    {
+        let Some(file) = v
+            .get("file")
+            .and_then(Value::as_str)
+            .and_then(|f| cx.changed(f))
+        else {
             continue;
         };
-        for r in v.get("results").and_then(Value::as_array).into_iter().flatten() {
-            let line = r.get("line").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok()).unwrap_or(0);
+        for r in v
+            .get("results")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let line = r
+                .get("line")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok())
+                .unwrap_or(0);
             let message = r.get("message").and_then(Value::as_str).unwrap_or("");
             if cx.lines.touches(file, line) {
-                acc.seed(cx, &Seed { tool: "deadnix", rule: "", severity: "Low", title: message, file, line, rule_id: RULE_ID });
+                acc.seed(
+                    cx,
+                    &Seed {
+                        tool: "deadnix",
+                        rule: "",
+                        severity: "Low",
+                        title: message,
+                        file,
+                        line,
+                        rule_id: RULE_ID,
+                    },
+                );
             }
         }
     }

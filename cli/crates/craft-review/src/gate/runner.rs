@@ -16,11 +16,7 @@ const POLL: Duration = Duration::from_millis(50);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Ran {
     /// It exited: its status (`None` killed by a signal), its stdout and its stderr.
-    Exited {
-        ok: bool,
-        out: String,
-        err: String,
-    },
+    Exited { ok: bool, out: String, err: String },
     /// No such program on the PATH.
     Missing,
     /// The budget ran out before it exited: after how long it ran.
@@ -120,7 +116,8 @@ fn wait(mut child: Child, limit: Duration, out: &Path, err: &Path) -> Ran {
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let read = |p: &Path| std::fs::read(p).map(|b| String::from_utf8_lossy(&b).into_owned());
+                let read =
+                    |p: &Path| std::fs::read(p).map(|b| String::from_utf8_lossy(&b).into_owned());
                 return match (read(out), read(err)) {
                     (Ok(out), Ok(err)) => Ran::Exited {
                         ok: status.success(),

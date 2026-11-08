@@ -117,8 +117,14 @@ pub(crate) fn is_tool_source(source: &str) -> bool {
 #[must_use]
 pub(crate) fn titles_section(findings: &[Value]) -> String {
     let mut rows: Vec<String> = Vec::new();
-    for f in findings.iter().filter(|f| is_tool_finding(f) && rule_key(f).is_empty()) {
-        let file = f.get("file").and_then(Value::as_str).filter(|s| !s.is_empty());
+    for f in findings
+        .iter()
+        .filter(|f| is_tool_finding(f) && rule_key(f).is_empty())
+    {
+        let file = f
+            .get("file")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
         let line = f.get("line").and_then(Value::as_u64).unwrap_or(0);
         let title = f.get("title").and_then(Value::as_str).unwrap_or("");
         let row = format!(
@@ -133,7 +139,10 @@ pub(crate) fn titles_section(findings: &[Value]) -> String {
     if rows.is_empty() {
         return String::new();
     }
-    format!("\n\n## Tool finding titles (verbatim)\n{}\n", rows.join("\n"))
+    format!(
+        "\n\n## Tool finding titles (verbatim)\n{}\n",
+        rows.join("\n")
+    )
 }
 
 #[cfg(test)]

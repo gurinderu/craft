@@ -82,7 +82,12 @@ impl Acc {
     }
 
     /// The output of a tool that exited, or `None` with what came of it noted under `label`.
-    pub(super) fn exited(&mut self, label: &str, tool: &str, ran: Ran) -> Option<(bool, String, String)> {
+    pub(super) fn exited(
+        &mut self,
+        label: &str,
+        tool: &str,
+        ran: Ran,
+    ) -> Option<(bool, String, String)> {
         match ran {
             Ran::Exited { ok, out, err } => return Some((ok, out, err)),
             Ran::Missing => self.missing(label, tool),
@@ -113,12 +118,17 @@ impl Acc {
         let same = self.seeds.iter().any(|f| {
             at(f, "file") == s.file
                 && f.get("line") == Some(&json!(s.line))
-                && (at(f, "toolRule") == s.rule && (!s.rule.is_empty() || at(f, "title") == s.title))
+                && (at(f, "toolRule") == s.rule
+                    && (!s.rule.is_empty() || at(f, "title") == s.title))
         });
         if same {
             return;
         }
-        let rule = if s.rule.is_empty() { String::new() } else { format!(" ({})", s.rule) };
+        let rule = if s.rule.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", s.rule)
+        };
         let mut f = json!({
             "severity": s.severity, "title": s.title, "file": s.file, "line": s.line,
             "why": format!("{} reports it{rule} on a line this change added or rewrote: the tool's own diagnostic, seeded by the gate.", s.tool),

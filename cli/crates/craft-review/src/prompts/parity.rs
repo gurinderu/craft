@@ -135,7 +135,11 @@ fn verifiers(ctx: &PromptContext, input: &Value, want: &Value) {
         ("lens", &input["pool"][1], 1),
     ] {
         let got = body(verify_prompt(ctx, &rust, f, voter, gate).unwrap());
-        assert_eq!(got, want["verify"][case].as_str().unwrap(), "verify: {case}");
+        assert_eq!(
+            got,
+            want["verify"][case].as_str().unwrap(),
+            "verify: {case}"
+        );
     }
 }
 

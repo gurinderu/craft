@@ -2,6 +2,12 @@
 //! their own: a tool's seed reaches the lenses, the verdict's report and the ledger with its own
 //! rule; a red check blocks before any lens; a tool not installed is named and the review goes on.
 
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "the helpers of these tests fail loudly, like the tests they serve"
+)]
+
 mod common;
 
 use std::path::{Path, PathBuf};
@@ -30,8 +36,16 @@ fn fake_cargo(gate: &[String], pedantic: &[String]) -> tempfile::TempDir {
     };
     let script = format!(
         "#!/bin/sh\ncase \"$*\" in *pedantic*) {} ;; *) {} ;; esac\n",
-        if pedantic.is_empty() { ":".into() } else { lines(pedantic) },
-        if gate.is_empty() { ":".into() } else { lines(gate) },
+        if pedantic.is_empty() {
+            ":".into()
+        } else {
+            lines(pedantic)
+        },
+        if gate.is_empty() {
+            ":".into()
+        } else {
+            lines(gate)
+        },
     );
     write_tool(dir.path(), "cargo", &script);
     dir
@@ -100,7 +114,11 @@ fn a_gate_seed_reaches_the_lenses_the_report_and_the_ledger_with_its_tool_rule()
             warning("clippy::needless_return", "unneeded `return` statement", 1),
             warning("clippy::other_place", "left alone", 7),
         ],
-        &[warning("clippy::must_use_candidate", "this function could have a `#[must_use]` attribute", 1)],
+        &[warning(
+            "clippy::must_use_candidate",
+            "this function could have a `#[must_use]` attribute",
+            1,
+        )],
     );
     let run: PathBuf = out.path().join("run");
     let s = step::start(&gated(repo.path(), out.path(), tools.path())).unwrap();
@@ -112,7 +130,10 @@ fn a_gate_seed_reaches_the_lenses_the_report_and_the_ledger_with_its_tool_rule()
             && p.contains("src/lib.rs:1 this function could have a `#[must_use]` attribute"),
         "the lens is told what the gate found: {p}"
     );
-    assert!(!p.contains("left alone"), "a line the change left alone seeds nothing");
+    assert!(
+        !p.contains("left alone"),
+        "a line the change left alone seeds nothing"
+    );
     let done = drive(&run, s);
     let ledger = done["ledger"].as_array().unwrap();
     let rule = |r: &str| ledger.iter().find(|row| row["toolRule"] == json!(r));
@@ -134,7 +155,10 @@ fn a_gate_seed_reaches_the_lenses_the_report_and_the_ledger_with_its_tool_rule()
             "unneeded `return` statement (clippy)",
         ],
     );
-    assert!(!r.contains("the gate and its tool seeds"), "the gate ran: {r}");
+    assert!(
+        !r.contains("the gate and its tool seeds"),
+        "the gate ran: {r}"
+    );
 }
 
 #[test]
@@ -167,7 +191,11 @@ fn a_tool_not_installed_is_named_and_the_review_goes_on() {
     let s = step::start(&gated(repo.path(), out.path(), empty.path())).unwrap();
     assert_eq!(ids(&s), ["scout-rust"], "the review goes on");
     let done = drive(&run, s);
-    assert_eq!(done["verdict"], json!("Approve"), "an absent tool is no failure");
+    assert_eq!(
+        done["verdict"],
+        json!("Approve"),
+        "an absent tool is no failure"
+    );
     common::assert_contains_all(
         &report(&done),
         &[

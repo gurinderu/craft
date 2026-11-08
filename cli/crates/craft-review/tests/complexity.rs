@@ -2,11 +2,19 @@
 //! code-metrics index, a finding of it stands only on a number over its bar, and its one verifier
 //! re-reads the metrics.
 
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "the helpers of these tests fail loudly, like the tests they serve"
+)]
+
 mod common;
 
 use std::path::Path;
 
-use common::{assert_contains_all, fixture, git, ids, lens, opts, prompt_of, scout, submit, verdict};
+use common::{
+    assert_contains_all, fixture, git, ids, lens, opts, prompt_of, scout, submit, verdict,
+};
 use craft_review::step;
 use serde_json::{Value, json};
 
@@ -49,8 +57,10 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
     let run = out.path().join("run");
     let mut s = s;
     while s["done"] == json!(false) {
-        let answers: serde_json::Map<String, Value> =
-            ids(&s).into_iter().map(|id| (id, lens("correctness", &[]))).collect();
+        let answers: serde_json::Map<String, Value> = ids(&s)
+            .into_iter()
+            .map(|id| (id, lens("correctness", &[])))
+            .collect();
         s = submit(&run, Value::Object(answers));
     }
     let report = std::fs::read_to_string(s["report"].as_str().unwrap()).unwrap();
@@ -81,9 +91,10 @@ fn with_an_index_only_numbers_over_their_bar_stand_and_the_verifier_rereads_them
             "A finding stands only on a number over its bar: cognitive above 15",
         ],
     );
-    let schema: Value =
-        serde_json::from_str(&std::fs::read_to_string(s["tasks"][0]["schemaFile"].as_str().unwrap()).unwrap())
-            .unwrap();
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(s["tasks"][0]["schemaFile"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
     assert!(
         schema["properties"]["findings"]["items"]["required"]
             .as_array()

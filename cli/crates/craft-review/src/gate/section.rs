@@ -23,8 +23,16 @@ pub fn section(gate: &Gate) -> String {
     }
     let mut out = String::from("## Gate\n\n");
     for t in &gate.tracks {
-        let ran = if t.provenance.is_empty() { "nothing ran" } else { &t.provenance };
-        out.push_str(&format!("- **{}**: {} — {ran}\n", t.profile, status(t.status)));
+        let ran = if t.provenance.is_empty() {
+            "nothing ran"
+        } else {
+            &t.provenance
+        };
+        out.push_str(&format!(
+            "- **{}**: {} — {ran}\n",
+            t.profile,
+            status(t.status)
+        ));
         for c in &t.failed_checks {
             out.push_str(&format!("  - Failed: {c}\n"));
         }
@@ -38,7 +46,10 @@ pub fn section(gate: &Gate) -> String {
             out.push_str(&format!("  - {n}\n"));
         }
         if t.seeds > 0 {
-            out.push_str(&format!("  - {} tool finding(s) seeded for the lenses and the verifiers\n", t.seeds));
+            out.push_str(&format!(
+                "  - {} tool finding(s) seeded for the lenses and the verifiers\n",
+                t.seeds
+            ));
         }
     }
     out.push('\n');

@@ -50,7 +50,11 @@ pub fn warmup_task(repo: &str) -> Result<Task, ContentError> {
     Ok(Task::new(
         "index-warmup".into(),
         "index-warmup".into(),
-        format!("{}{}", prompts::repo_directive(repo), content::text("index-warmup")?),
+        format!(
+            "{}{}",
+            prompts::repo_directive(repo),
+            content::text("index-warmup")?
+        ),
         Model::Sonnet,
         json!({
             "type": "object", "additionalProperties": false, "required": ["indexed", "notes"],
@@ -75,7 +79,9 @@ pub fn indexed(tasks: &[Task]) -> Option<(bool, Option<String>)> {
     let why = answer
         .and_then(|a| a.get("notes"))
         .and_then(Value::as_str)
-        .map_or("the warm-up died", |n| if n.is_empty() { "no notes" } else { n });
+        .map_or("the warm-up died", |n| {
+            if n.is_empty() { "no notes" } else { n }
+        });
     Some((
         false,
         Some(format!(
@@ -95,7 +101,11 @@ pub fn findings_schema() -> Result<Value, ContentError> {
     let mut props: Map<String, Value> = ALL
         .iter()
         .map(|m| {
-            let ty = if FLAGS.contains(m) { "boolean" } else { "integer" };
+            let ty = if FLAGS.contains(m) {
+                "boolean"
+            } else {
+                "integer"
+            };
             ((*m).to_owned(), json!({"type": ty}))
         })
         .collect();
@@ -148,16 +158,27 @@ pub fn sift(tasks: &mut [Task], profiles: &[Profile]) -> Vec<String> {
             .find(|p| &p.id == profile)
             .and_then(|p| p.lens(lens))
             .is_some_and(|l| l.metrics);
-        let found = t.answer.as_mut().and_then(|a| a.get_mut("findings")).and_then(Value::as_array_mut);
+        let found = t
+            .answer
+            .as_mut()
+            .and_then(|a| a.get_mut("findings"))
+            .and_then(Value::as_array_mut);
         let (Some(found), true) = (found, metrics_lens) else {
             continue;
         };
         let before = found.len();
         found.retain_mut(|f| {
             let over = over_bar(f.get("metrics").unwrap_or(&Value::Null));
-            let why = f.get("why").and_then(Value::as_str).unwrap_or("").to_owned();
+            let why = f
+                .get("why")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
             if let (false, Some(o)) = (over.is_empty(), f.as_object_mut()) {
-                o.insert("why".into(), json!(format!("{why} [over the bar: {}]", over.join(", "))));
+                o.insert(
+                    "why".into(),
+                    json!(format!("{why} [over the bar: {}]", over.join(", "))),
+                );
             }
             !over.is_empty()
         });
@@ -191,8 +212,14 @@ mod tests {
     fn a_number_stands_only_over_its_bar() {
         assert!(over_bar(&json!({"cognitive": 15, "transitive_loop_depth": 2, "complexity": 40, "param_count": 12})).is_empty());
         assert_eq!(
-            over_bar(&json!({"cognitive": 16, "transitive_loop_depth": 3, "alloc_in_loop": true, "linear_scan_in_loop": false})),
-            ["cognitive 16 (over 15)", "transitive_loop_depth 3 (over 2)", "alloc_in_loop"]
+            over_bar(
+                &json!({"cognitive": 16, "transitive_loop_depth": 3, "alloc_in_loop": true, "linear_scan_in_loop": false})
+            ),
+            [
+                "cognitive 16 (over 15)",
+                "transitive_loop_depth 3 (over 2)",
+                "alloc_in_loop"
+            ]
         );
         assert!(over_bar(&json!(null)).is_empty(), "no numbers, no finding");
     }
