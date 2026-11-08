@@ -164,6 +164,7 @@ pub(crate) fn settle_run(run: &mut RunState) {
         .flatten()
         .map(|f| finalize_in(&f, run.context.strict))
         .collect();
+    crate::telemetry::verified(run, &settled);
     let gaps = not_run(run, &settled);
     for g in gaps {
         if !run.not_run.contains(&g) {

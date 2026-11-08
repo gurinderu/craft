@@ -118,6 +118,13 @@ pub fn wire(dir: &Path, task: &Task) -> Value {
     if let (Some(a), Some(obj)) = (&task.agent_type, t.as_object_mut()) {
         obj.insert("agentType".into(), json!(a));
     }
+    // What the task is for (a scout, a lens, a verifier…), by which the host sets its deadline.
+    let kind = serde_json::to_value(&task.kind)
+        .ok()
+        .and_then(|k| k.get("kind").cloned());
+    if let (Some(k), Some(obj)) = (kind, t.as_object_mut()) {
+        obj.insert("kind".into(), k);
+    }
     if let (Some(a), Some(obj)) = (&task.consumer_agent, t.as_object_mut()) {
         obj.insert("consumerAgent".into(), json!(a));
     }

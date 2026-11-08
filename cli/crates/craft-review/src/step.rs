@@ -193,6 +193,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         watch: stop::Watch::default(),
         stopped: None,
         publish: Publish::asked(opts.comment),
+        telemetry: crate::telemetry::Tally::default(),
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -577,7 +578,7 @@ fn next(dir: &Path, run: &RunState) -> Value {
                 .filter(|t| t.state == TaskState::Pending)
                 .map(|t| handoff::wire(dir, t))
                 .collect();
-            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo})
+            json!({"run": dir.display().to_string(), "tasks": tasks, "done": false, "head": run.diff.head, "repo": run.context.repo, "phase": run.phase})
         }
     }
 }

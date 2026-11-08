@@ -337,6 +337,10 @@ pub struct RunState {
     /// Optional, so a state written before it reads as a run that posts nothing.
     #[serde(default)]
     pub publish: crate::publish::Publish,
+    /// What the record carries of the lenses and the verification ([`crate::telemetry`]).
+    /// Optional, so a state written before it reads as a run with nothing counted yet.
+    #[serde(default)]
+    pub telemetry: crate::telemetry::Tally,
 }
 
 impl RunState {

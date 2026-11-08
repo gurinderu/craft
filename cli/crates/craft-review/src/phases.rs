@@ -95,6 +95,7 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             next_round(dir, run, &profiles)
         }
         Phase::Lenses => {
+            run.telemetry.dispatched(&run.tasks);
             let sifted = complexity::sift(&mut run.tasks, &profiles);
             run.notes.extend(sifted);
             let first = run.tracks.first().map(|t| t.profile.clone());
@@ -108,6 +109,7 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             next_round(dir, run, &profiles)
         }
         Phase::Seam => {
+            run.telemetry.dispatched(&run.tasks);
             units::seam_answered(run);
             to_pool(dir, run, &profiles)
         }
@@ -126,7 +128,10 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             critic::verified(dir, run)
         }
         Phase::Critic => critic::answered(dir, run, &profiles),
-        Phase::CriticLenses => critic::lenses_back(dir, run, &profiles),
+        Phase::CriticLenses => {
+            run.telemetry.dispatched(&run.tasks);
+            critic::lenses_back(dir, run, &profiles)
+        }
         Phase::Match => memory::matched(dir, run),
         Phase::Rules => memory::ruled(dir, run),
         Phase::Done => Ok(()),
