@@ -4,12 +4,15 @@
 //! ([`recall`]); the records the launcher passes (`priorDecisions`: rejections read from a PR's
 //! threads, say) add to it ([`merge`]); once the findings are verified, a finding the project
 //! already rejected or deferred is set aside under its own section, never dropped ([`apply`]), its
-//! record's scope checked against the repository by git here, with no agent. The report names where
-//! the records came from and what was not applied; the ledger carries what was set aside as the
-//! author's word, so the next round carries it.
+//! record's scope checked against the repository by git here, with no agent, and a near miss
+//! decided by the match judge ([`judge`]); then a finding a project rule covers is set aside under
+//! its own, decided by the rule judge ([`rules`]). The report names where the records came from and
+//! what was not applied; the ledger carries what was set aside as the author's word, so the next
+//! round carries it.
 
 mod apply;
 mod id;
+mod judge;
 mod matching;
 mod merge;
 mod oppose;
@@ -18,6 +21,7 @@ mod parity;
 mod priors;
 mod recall;
 mod record;
+mod rules;
 mod source;
 #[cfg(test)]
 mod tests;
@@ -45,6 +49,10 @@ pub struct Memory {
     pub refused: Vec<String>,
     pub source: MemorySource,
     pub set_aside: Vec<Value>,
+    /// The project rules' warnings: a Critical finding raised under a rule, a finding left in the
+    /// verdict for want of the rule judge's verdict.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rule_notices: Vec<String>,
     /// Why the launcher's list could not be read at all, when it could not: refused, the run goes on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unread: Option<String>,
@@ -72,6 +80,7 @@ impl Memory {
             refused: Vec::new(),
             source: m.source,
             set_aside: Vec::new(),
+            rule_notices: Vec::new(),
             unread,
         };
         out.set_refused(m.refused);
@@ -137,14 +146,20 @@ impl Memory {
     }
 
     /// The ledger rows of the findings set aside: the author's word, which the next round carries.
+    /// One a project rule covered is `covered`, not a dismissal: the next round adjudicates it like
+    /// an open prior and applies the rules afresh (`priorDisposition`).
     #[must_use]
     pub fn ledger_rows(&self) -> Vec<LedgerRow> {
         self.set_aside
             .iter()
             .map(|f| {
-                let question = f.get("priorKind").and_then(Value::as_str) == Some("question");
+                let disposition = match f.get("priorKind").and_then(Value::as_str) {
+                    Some("question") => "deferred",
+                    Some("rule") => "covered",
+                    _ => "rejected",
+                };
                 LedgerRow {
-                    disposition: if question { "deferred" } else { "rejected" }.into(),
+                    disposition: disposition.into(),
                     tier: f
                         .get("priorTier")
                         .and_then(Value::as_str)
@@ -156,14 +171,17 @@ impl Memory {
             .collect()
     }
 
-    /// The report's sections: what was set aside this round and the `carried` deferred priors, where
-    /// the records came from, what was refused.
+    /// The report's sections: what was set aside this round and the `carried` deferred priors, what
+    /// the rules covered, which of the verdict's `findings` go against a record, where the records
+    /// came from, what was refused.
     #[must_use]
-    pub fn report(&self, carried: &[Value]) -> String {
+    pub fn report(&self, carried: &[Value], findings: &[Value]) -> String {
         let listed: Vec<Value> = self.set_aside.iter().chain(carried).cloned().collect();
         format!(
-            "{}\n\n## Memory\n- {}\n{}",
+            "{}{}{}\n\n## Memory\n- {}\n{}",
             apply::section(&listed),
+            rules::section(&self.set_aside, &self.rule_notices),
+            judge::contradiction_section(findings),
             self.source.line(),
             apply::refused_section(&self.refused)
         )

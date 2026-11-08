@@ -34,6 +34,16 @@ impl RecordKind {
             Self::Decision | Self::Rule => "decision",
         }
     }
+
+    /// The kind as a record names it.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Decision => "decision",
+            Self::Question => "question",
+            Self::Rule => "rule",
+        }
+    }
 }
 
 /// One record as a review holds it. `line` 0 is no line; `stores` are the store's own ids its

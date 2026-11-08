@@ -120,7 +120,7 @@
           "why": "repo (the .craft/memory directory); stale, left out: decision-cccccccccc (the guard is gone)",
           "backend": "repo"
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:11` · unwrap of a value checked earlier · w · REJECTED BEFORE: checked above — nick, 2026-01-02, https://example.com/pr/1#r1 (decision decision-aaaaaaaaaa) · matched by file:line+lens\n\n## Memory\n- memory: recalled 2 decision(s) from repo (the .craft/memory directory); stale, left out: decision-cccccccccc (the guard is gone)\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:11` · unwrap of a value checked earlier · w · REJECTED BEFORE: checked above — nick, 2026-01-02, https://example.com/pr/1#r1 (decision decision-aaaaaaaaaa) · matched by file:line+lens\n\n## Memory\n- memory: recalled 2 decision(s) from repo (the .craft/memory directory); stale, left out: decision-cccccccccc (the guard is gone)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
       }
     },
     {
@@ -212,7 +212,7 @@
           "added": 2,
           "derived": 2
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:5` · missing timeout on the HTTP client · w · REJECTED BEFORE: the caller sets one — rev, 2026-02-01, https://example.com/pr/2#r9 (decision decision-fb75f13cb3) · matched by title words (the judge gave no verdict)\n\n## Memory\n- memory: none — no memory configured (backend none); plus 2 passed by the launcher; id derived for 2 record(s): decision-fb75f13cb3 (Missing timeout on the client), decision-beca630a45 (Error is swallowed in parse)\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #2 (decision-6cef08ccc9) lacks a reason\n- ⚠️ decision decision-beca630a45: commit fedcba9876543210fedcba9876543210fedcba98 not found in this repo — raised normally\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:5` · missing timeout on the HTTP client · w · REJECTED BEFORE: the caller sets one — rev, 2026-02-01, https://example.com/pr/2#r9 (decision decision-fb75f13cb3) · matched by title words (the judge gave no verdict)\n\n## Memory\n- memory: none — no memory configured (backend none); plus 2 passed by the launcher; id derived for 2 record(s): decision-fb75f13cb3 (Missing timeout on the client), decision-beca630a45 (Error is swallowed in parse)\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #2 (decision-6cef08ccc9) lacks a reason\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n- ⚠️ decision decision-beca630a45: commit fedcba9876543210fedcba9876543210fedcba98 not found in this repo — raised normally\n"
       }
     },
     {
@@ -313,7 +313,8 @@
         ],
         "notes": [
           "1 open question(s) record no deferral — context only, set nothing aside",
-          "0 decision(s) given, 0 finding(s) set aside as rejected before, 1 raised again; 2 deferred question(s) given, 1 finding(s) set aside as known and deferred"
+          "0 decision(s) given, 0 finding(s) set aside as rejected before, 1 raised again; 2 deferred question(s) given, 1 finding(s) set aside as known and deferred",
+          "1 project rule(s) given, no finding in their scope"
         ],
         "memory": {
           "source": "recalled",
@@ -324,7 +325,7 @@
           "questions": 3,
           "rules": 1
         },
-        "report": "\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/lib.rs:21` · retry budget of fetch is unbounded · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-03-01, no link (question question-1111111111) · matched by file:line+lens\n\n## Memory\n- memory: recalled 0 decision(s) and 3 open question(s) and 1 project rule(s) and 1 external system(s) from mcp (pinned by AGENTS.md)\n\n\n## Prior decisions not applied\n- ⚠️ question question-2222222222: records a deferral but no commit, so an unchanged scope cannot be established — raised normally\n"
+        "report": "\n\n## Known and deferred (open question — not in the verdict)\n- Medium · `src/lib.rs:21` · retry budget of fetch is unbounded · w · KNOWN AND DEFERRED: decide after the load test — nick, 2026-03-01, no link (question question-1111111111) · matched by file:line+lens\n\n## Memory\n- memory: recalled 0 decision(s) and 3 open question(s) and 1 project rule(s) and 1 external system(s) from mcp (pinned by AGENTS.md)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n- ⚠️ question question-2222222222: records a deferral but no commit, so an unchanged scope cannot be established — raised normally\n"
       }
     },
     {
@@ -423,7 +424,7 @@
           "passed": 1,
           "added": 0
         },
-        "report": "\n\n## Memory\n- memory: recalled 3 decision(s) from mcp (found by capability); plus 1 passed by the launcher (0 new)\n"
+        "report": "\n\n## Memory\n- memory: recalled 3 decision(s) from mcp (found by capability); plus 1 passed by the launcher (0 new)\n\n\n## Prior decisions not applied\n- ⚠️ the match judge died or answered unreadably — 2 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
       }
     },
     {
@@ -511,7 +512,7 @@
           "passed": 1,
           "added": 1
         },
-        "report": "\n\n## Memory\n- memory: none — the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally; plus 1 passed by the launcher\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #0 (decision-ffffffffff) is not active (status \"withdrawn\")\n- ⚠️ passed decision #1 (lesson-0000000000) is a \"lesson\" record, not a decision, a question or a rule\n- ⚠️ passed decision #2 (decision-9999999999): scope \"../etc\" is not a repo-relative path\n- ⚠️ passed decision #3 (decision-8888888888): commit \"not-a-hash\" is not a commit hash\n- ⚠️ passed decision #4 (decision-7777777777): line \"ten\" is not a line number\n- ⚠️ passed decision #6 (decision-6666666666) repeats an id already given — not applied\n- ⚠️ passed decision #7 is not an object\n"
+        "report": "\n\n## Memory\n- memory: none — the recall agent died or returned no decision list, so nothing recalled was applied — findings are raised normally; plus 1 passed by the launcher\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #0 (decision-ffffffffff) is not active (status \"withdrawn\")\n- ⚠️ passed decision #1 (lesson-0000000000) is a \"lesson\" record, not a decision, a question or a rule\n- ⚠️ passed decision #2 (decision-9999999999): scope \"../etc\" is not a repo-relative path\n- ⚠️ passed decision #3 (decision-8888888888): commit \"not-a-hash\" is not a commit hash\n- ⚠️ passed decision #4 (decision-7777777777): line \"ten\" is not a line number\n- ⚠️ passed decision #6 (decision-6666666666) repeats an id already given — not applied\n- ⚠️ passed decision #7 is not an object\n- ⚠️ the match judge died or answered unreadably — 1 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
       }
     },
     {
@@ -661,7 +662,7 @@
           "passed": 3,
           "added": 1
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:6` · clone of the buffer · w · REJECTED BEFORE: cheap — author not recorded, 2026-03-01T11:00:00Z, no link (decision decision-2222222222) · matched by title words (the judge gave no verdict)\n\n## Memory\n- memory: none — the .craft/memory directory (backend repo); passed decision #1 (decision-2222222222) applied over a superseded record of 2026-03-01T12:00:00+02:00: newer; plus 3 passed by the launcher\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #0 (decision-1111111111) not applied: withdrawn in memory (the passed record's date 2026-02-01 is not later than the withdrawn record's 2026-03-01)\n- ⚠️ passed decision #2 (decision-6666666666) not applied: withdrawn in memory (the passed record carries no ISO date to set against it)\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:6` · clone of the buffer · w · REJECTED BEFORE: cheap — author not recorded, 2026-03-01T11:00:00Z, no link (decision decision-2222222222) · matched by title words (the judge gave no verdict)\n\n## Memory\n- memory: none — the .craft/memory directory (backend repo); passed decision #1 (decision-2222222222) applied over a superseded record of 2026-03-01T12:00:00+02:00: newer; plus 3 passed by the launcher\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #0 (decision-1111111111) not applied: withdrawn in memory (the passed record's date 2026-02-01 is not later than the withdrawn record's 2026-03-01)\n- ⚠️ passed decision #2 (decision-6666666666) not applied: withdrawn in memory (the passed record carries no ISO date to set against it)\n- ⚠️ the match judge died or answered unreadably — 1 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
       }
     },
     {
@@ -761,7 +762,349 @@
           "passed": 2,
           "added": 1
         },
-        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:9` · missing timeout on the fetch · w · REJECTED BEFORE: rejected on the PR — rev, 2026-02-01, no link (decision decision-4444444444) · matched by file:line+lens\n\n## Memory\n- memory: recalled 1 decision(s) from mcp (found by capability); passed decision #0 (decision-4444444444) applied over decision-3333333333 (active, 2026-01-10): newer; plus 2 passed by the launcher (1 new)\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #1 (decision-5555555555) not applied: held by decision-3333333333 (active, 2026-01-10) (the passed record's date 2026-01-01 is not later than the active record's 2026-01-10)\n"
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:9` · missing timeout on the fetch · w · REJECTED BEFORE: rejected on the PR — rev, 2026-02-01, no link (decision decision-4444444444) · matched by file:line+lens\n\n## Memory\n- memory: recalled 1 decision(s) from mcp (found by capability); passed decision #0 (decision-4444444444) applied over decision-3333333333 (active, 2026-01-10): newer; plus 2 passed by the launcher (1 new)\n\n\n## Prior decisions not applied\n- ⚠️ passed decision #1 (decision-5555555555) not applied: held by decision-3333333333 (active, 2026-01-10) (the passed record's date 2026-01-01 is not later than the active record's 2026-01-10)\n- ⚠️ the match judge died or answered unreadably — 1 disputed record–finding pair(s) not matched unless a near-verbatim title answers them (for a tool finding naming no rule only a tool record with the same title, near its line when lines compare), the rest raised normally\n"
+      }
+    },
+    {
+      "name": "the match judge sets aside a reworded finding, says another differs and that a third and a re-raised High go against the record",
+      "recall": {
+        "backend": "repo",
+        "why": "the .craft/memory directory",
+        "decisions": [
+          {
+            "id": "decision-a1a1a1a1a1",
+            "kind": "decision",
+            "title": "unwrap on a checked value",
+            "body": "checked above",
+            "scope": "src/lib.rs",
+            "status": "active",
+            "date": "2026-05-01",
+            "author": "nick",
+            "commit": "0123456789abcdef0123456789abcdef01234567",
+            "line": 10,
+            "lens": "errors"
+          }
+        ]
+      },
+      "findings": [
+        {
+          "severity": "Medium",
+          "title": "the guarded value is unwrapped",
+          "file": "src/lib.rs",
+          "line": 30,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "an unrelated panic",
+          "file": "src/lib.rs",
+          "line": 50,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Low",
+          "title": "the guard was removed",
+          "file": "src/lib.rs",
+          "line": 60,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "High",
+          "title": "unwrap on a checked value",
+          "file": "src/lib.rs",
+          "line": 11,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        }
+      ],
+      "unchanged": [
+        "0123456789abcdef0123456789abcdef01234567"
+      ],
+      "missing": [],
+      "judge": {
+        "verdicts": [
+          {
+            "pair": 0,
+            "same": true,
+            "violates": false,
+            "why": "the same unwrap, reworded"
+          },
+          {
+            "pair": 1,
+            "same": false,
+            "violates": false,
+            "why": "another panic"
+          },
+          {
+            "pair": 2,
+            "same": true,
+            "violates": true,
+            "why": "the guard the record kept is gone"
+          },
+          {
+            "pair": 3,
+            "same": false,
+            "violates": true,
+            "why": "the check the record relies on was dropped"
+          }
+        ]
+      },
+      "expected": {
+        "kept": [
+          {
+            "title": "an unrelated panic",
+            "why": "w"
+          },
+          {
+            "title": "the guard was removed",
+            "why": "w",
+            "memoryContradicts": {
+              "id": "decision-a1a1a1a1a1",
+              "kind": "decision",
+              "why": "the guard the record kept is gone"
+            }
+          },
+          {
+            "title": "unwrap on a checked value",
+            "why": "w · Rejected before (decision decision-a1a1a1a1a1, nick, 2026-05-01) — raised again: a Critical/High finding is never set aside by a prior decision.",
+            "memoryContradicts": {
+              "id": "decision-a1a1a1a1a1",
+              "kind": "decision",
+              "why": "the check the record relies on was dropped"
+            }
+          }
+        ],
+        "setAside": [
+          {
+            "title": "the guarded value is unwrapped",
+            "why": "w · REJECTED BEFORE: checked above — nick, 2026-05-01, no link (decision decision-a1a1a1a1a1)",
+            "priorTier": "confirmed",
+            "priorDecision": "decision-a1a1a1a1a1",
+            "priorKind": "decision",
+            "priorMatch": "matched by judge: the same unwrap, reworded"
+          }
+        ],
+        "notes": [
+          "match judge: 3 disputed pair(s) judged, 1 the same, 1 re-raised match(es) asked about the record, 2 showing the code against the record",
+          "1 decision(s) given, 1 finding(s) set aside as rejected before, 1 raised again"
+        ],
+        "memory": {
+          "source": "recalled",
+          "count": 1,
+          "why": "repo (the .craft/memory directory)",
+          "backend": "repo"
+        },
+        "report": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:30` · the guarded value is unwrapped · w · REJECTED BEFORE: checked above — nick, 2026-05-01, no link (decision decision-a1a1a1a1a1) · matched by judge: the same unwrap, reworded\n\n## Contradicts project memory — a defect when confirmed, whatever the other doubt signs say\n- Low · `src/lib.rs:60` · the guard was removed · goes against decision decision-a1a1a1a1a1: the guard the record kept is gone\n- High · `src/lib.rs:11` · unwrap on a checked value · goes against decision decision-a1a1a1a1a1: the check the record relies on was dropped\n\n\n## Memory\n- memory: recalled 1 decision(s) from repo (the .craft/memory directory)\n"
+      }
+    },
+    {
+      "name": "project rules: one covered, a Critical raised under it, one going against a rule, one unjudged, a superseded rule not applied",
+      "recall": {
+        "backend": "repo",
+        "why": "the .craft/memory directory",
+        "decisions": [],
+        "rules": [
+          {
+            "id": "rule-b1b1b1b1b1",
+            "title": "we do not support rollback",
+            "body": "forward only",
+            "scope": "src",
+            "status": "active",
+            "lens": "errors, compat"
+          },
+          {
+            "id": "rule-c1c1c1c1c1",
+            "title": "old rule",
+            "body": "gone",
+            "scope": "src",
+            "status": "active"
+          },
+          {
+            "id": "rule-d1d1d1d1d1",
+            "title": "replaces the old rule",
+            "body": "new",
+            "scope": "docs",
+            "status": "active",
+            "links": [
+              "supersedes: rule-c1c1c1c1c1"
+            ]
+          }
+        ]
+      },
+      "findings": [
+        {
+          "severity": "Medium",
+          "title": "no rollback path",
+          "file": "src/lib.rs",
+          "line": 5,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Critical",
+          "title": "rollback loses data",
+          "file": "src/lib.rs",
+          "line": 7,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Low",
+          "title": "every handler must validate",
+          "file": "src/lib.rs",
+          "line": 9,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "the migration is one-way",
+          "file": "src/lib.rs",
+          "line": 11,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        },
+        {
+          "severity": "Medium",
+          "title": "a performance thing",
+          "file": "src/lib.rs",
+          "line": 13,
+          "why": "w",
+          "source": "performance",
+          "tier": "confirmed"
+        }
+      ],
+      "unchanged": [],
+      "missing": [],
+      "ruleJudge": {
+        "verdicts": [
+          {
+            "pair": 0,
+            "covered": true,
+            "violates": false,
+            "why": "rollback is declared unsupported"
+          },
+          {
+            "pair": 1,
+            "covered": false,
+            "violates": true,
+            "why": "the rule requires validation"
+          },
+          {
+            "pair": 3,
+            "covered": true,
+            "violates": false,
+            "why": "a rollback concern"
+          }
+        ]
+      },
+      "expected": {
+        "kept": [
+          {
+            "title": "rollback loses data",
+            "why": "w · Raised under project rule rule-b1b1b1b1b1: a Critical finding is never covered by a rule."
+          },
+          {
+            "title": "every handler must validate",
+            "why": "w",
+            "memoryContradicts": {
+              "id": "rule-b1b1b1b1b1",
+              "kind": "rule",
+              "why": "the rule requires validation"
+            }
+          },
+          {
+            "title": "the migration is one-way",
+            "why": "w"
+          },
+          {
+            "title": "a performance thing",
+            "why": "w"
+          }
+        ],
+        "setAside": [
+          {
+            "title": "no rollback path",
+            "why": "w · COVERED BY PROJECT RULE: we do not support rollback (rule rule-b1b1b1b1b1)",
+            "priorTier": "confirmed",
+            "priorDecision": "rule-b1b1b1b1b1",
+            "priorKind": "rule",
+            "priorMatch": "covered by judge: rollback is declared unsupported"
+          }
+        ],
+        "notes": [
+          "1 project rule(s) superseded by another given record — not applied: rule-c1c1c1c1c1",
+          "2 project rule(s) given, 4 rule–finding pair(s), 1 finding(s) covered, 1 showing the code against a rule"
+        ],
+        "memory": {
+          "source": "recalled",
+          "count": 3,
+          "why": "repo (the .craft/memory directory)",
+          "backend": "repo",
+          "rules": 3
+        },
+        "report": "\n\n## Covered by project rules (not in the verdict)\n- Medium · `src/lib.rs:5` · no rollback path · rule rule-b1b1b1b1b1 \"we do not support rollback\" · covered by judge: rollback is declared unsupported\n- ⚠️ Critical \"rollback loses data\" @ src/lib.rs:7 RAISED — a Critical finding is raised even under rule rule-b1b1b1b1b1 \"we do not support rollback\" (judge: a rollback concern)\n- ⚠️ 1 finding(s) in a project rule's scope NOT covered — the rule judge returned no verdict for it, so they stay in the verdict: \"the migration is one-way\" @ src/lib.rs:11\n\n## Contradicts project memory — a defect when confirmed, whatever the other doubt signs say\n- Low · `src/lib.rs:9` · every handler must validate · goes against rule rule-b1b1b1b1b1: the rule requires validation\n\n\n## Memory\n- memory: recalled 0 decision(s) and 3 project rule(s) from repo (the .craft/memory directory)\n"
+      }
+    },
+    {
+      "name": "a dead rule judge covers nothing and says so",
+      "recall": {
+        "backend": "repo",
+        "why": "the .craft/memory directory",
+        "decisions": [],
+        "rules": [
+          {
+            "id": "rule-e1e1e1e1e1",
+            "title": "tests may unwrap",
+            "body": "on purpose",
+            "scope": "src",
+            "status": "active"
+          }
+        ]
+      },
+      "findings": [
+        {
+          "severity": "Low",
+          "title": "unwrap in a test helper",
+          "file": "src/lib.rs",
+          "line": 3,
+          "why": "w",
+          "source": "errors",
+          "tier": "confirmed"
+        }
+      ],
+      "unchanged": [],
+      "missing": [],
+      "expected": {
+        "kept": [
+          {
+            "title": "unwrap in a test helper",
+            "why": "w"
+          }
+        ],
+        "setAside": [],
+        "notes": [
+          "1 project rule(s) given, 1 rule–finding pair(s), 0 finding(s) covered"
+        ],
+        "memory": {
+          "source": "recalled",
+          "count": 1,
+          "why": "repo (the .craft/memory directory)",
+          "backend": "repo",
+          "rules": 1
+        },
+        "report": "\n\n## Covered by project rules (not in the verdict)\n- ⚠️ 1 finding(s) in a project rule's scope NOT covered — the rule judge died or answered unreadably, so they stay in the verdict: \"unwrap in a test helper\" @ src/lib.rs:3\n\n## Memory\n- memory: recalled 0 decision(s) and 1 project rule(s) from repo (the .craft/memory directory)\n"
       }
     }
   ]

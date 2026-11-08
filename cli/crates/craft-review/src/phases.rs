@@ -2,8 +2,11 @@
 //! `lib/review-profile.mjs` orders it for each profile: each profile's scout plans its lenses; the
 //! lens rounds run until each profile's last round adds nothing new or its plan's rounds are spent;
 //! the one pool goes through the floor, the roll-up and the dedup; the verifiers judge it; the
-//! verdicts make one report. The profiles of a mixed diff share each phase (realm @nick/craft,
-//! node #421): one dedup and one verification over all their findings, one verdict.
+//! project's memory sets aside what it answers, its match judge and then its rule judge asked when
+//! a pair needs them; the verdicts make one report. On a re-review a red team attacks each
+//! resolved Critical or High prior before the lenses run. The profiles of a mixed diff share each
+//! phase (realm @nick/craft, node #421): one dedup and one verification over all their findings,
+//! one verdict.
 
 use std::path::Path;
 
@@ -23,7 +26,11 @@ use crate::state::{self, Phase, RunState, Task, TaskKind, TaskState};
 use crate::step::StepError;
 use crate::verify;
 
-/// The answer of the phase's single task (the dedup), when it gave a valid one.
+mod memory;
+
+pub(crate) use memory::settle as settle_memory;
+
+/// The answer of the phase's single task (the dedup, a memory judge), when it gave a valid one.
 fn only_answer(run: &RunState) -> Option<Value> {
     run.tasks
         .first()
@@ -59,9 +66,21 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             let memory = &run.memory;
             let released = rereview::hold_deferrals(&mut run.chain, &|row| memory.holds(row));
             run.notes.extend(released);
+            // Built before the adjudicators' answers move their priors.
+            let attacks = rereview::attack_tasks(&run.context, &run.chain, &run.tasks)?;
             let judged = rereview::judge(&mut run.chain, &run.tasks);
             run.notes.extend(judged);
             plan_tracks(run, &profiles);
+            if attacks.is_empty() {
+                return next_round(dir, run, &profiles);
+            }
+            run.tasks = attacks;
+            run.phase = Phase::RedTeam;
+            Ok(())
+        }
+        Phase::RedTeam => {
+            let notes = rereview::take_attacks(&mut run.chain, &run.tasks);
+            run.notes.extend(notes);
             next_round(dir, run, &profiles)
         }
         Phase::Lenses => {
@@ -84,8 +103,10 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
                 return Ok(());
             }
             verify::settle_run(run);
-            finish(dir, run)
+            settle_memory(dir, run)
         }
+        Phase::Match => memory::matched(dir, run),
+        Phase::Rules => memory::ruled(dir, run),
         Phase::Done => Ok(()),
     }
 }
@@ -153,7 +174,7 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
         }
     }
     if run.rounds.pool.is_empty() {
-        return finish(dir, run);
+        return settle_memory(dir, run);
     }
     run.findings = dedup::prepare(&run.rounds.pool, profiles);
     let Some(first) = profiles.first().filter(|_| run.findings.len() >= 2) else {
@@ -198,7 +219,7 @@ fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     run.tasks = verify::tasks(run)?;
     if run.tasks.is_empty() {
         verify::settle_run(run);
-        return finish(dir, run);
+        return settle_memory(dir, run);
     }
     run.phase = Phase::Verify;
     Ok(())
@@ -223,11 +244,6 @@ fn file_round(dir: &Path, run: &RunState) -> Result<(), Error> {
 /// # Errors
 /// When the report cannot be written.
 pub(crate) fn finish(dir: &Path, run: &mut RunState) -> Result<(), Error> {
-    let absorbed = rereview::absorb(&mut run.chain, &mut run.settled);
-    run.notes.extend(absorbed);
-    let repo = std::path::PathBuf::from(&run.context.repo);
-    run.memory
-        .apply(&repo, &mut run.settled, &mut run.chain, &mut run.notes);
     run.chain.ledger = rereview::ledger(&run.chain, &run.settled);
     run.chain.ledger.extend(run.memory.ledger_rows());
     file_round(dir, run)?;

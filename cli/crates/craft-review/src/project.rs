@@ -164,11 +164,30 @@ fn kept(path: &Path) -> Result<toml::Table, ProjectError> {
     }
 }
 
+/// Refuses to write over a stored profile of another format: its sections are kept on a write,
+/// and stamping them with this binary's version would claim a format they may not have.
+fn same_format(path: &Path, table: &toml::Table) -> Result<(), ProjectError> {
+    if table.is_empty() {
+        return Ok(());
+    }
+    match table.get("version").and_then(toml::Value::as_integer) {
+        Some(v) if v == i64::from(PROFILE_VERSION) => Ok(()),
+        found => Err(ProjectError::Malformed {
+            path: path.to_owned(),
+            why: format!(
+                "it is format {}, this craft writes {PROFILE_VERSION} — nothing written: use a craft that reads it, or remove the file",
+                found.map_or_else(|| "unknown".to_owned(), |v| v.to_string())
+            ),
+        }),
+    }
+}
+
 /// Writes `profile` to `path`, the sections it does not know kept: a sibling file renamed into
 /// place.
 ///
 /// # Errors
-/// When the profile there is not TOML, or the directory or the file cannot be written.
+/// When the profile there is not TOML or is of another format, or the directory or the file
+/// cannot be written.
 pub fn save(path: &Path, profile: &ProjectProfile) -> Result<(), ProjectError> {
     let write = |source| ProjectError::Write {
         path: path.to_owned(),
@@ -176,6 +195,7 @@ pub fn save(path: &Path, profile: &ProjectProfile) -> Result<(), ProjectError> {
     };
     let invalid = |e: &dyn std::fmt::Display| ProjectError::Invalid(e.to_string());
     let mut table = kept(path)?;
+    same_format(path, &table)?;
     table.extend(toml::Table::try_from(profile).map_err(|e| invalid(&e))?);
     let body = toml::to_string(&table).map_err(|e| invalid(&e))?;
     let text = format!(

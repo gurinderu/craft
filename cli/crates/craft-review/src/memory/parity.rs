@@ -1,17 +1,56 @@
 //! The project memory held to the engines' by `content/parity/memory-cases.json`, whose expected
-//! side `lib/memory-parity.test.mjs` computes with `lib/memory-recall.mjs` and
-//! `lib/prior-decision-apply.mjs`: the same recall, launcher list, findings and scope check give
-//! the same findings kept and set aside, notes, source and report sections.
+//! side `lib/memory-parity.test.mjs` computes with `lib/memory-recall.mjs`,
+//! `lib/prior-decision-apply.mjs` and `lib/project-rule-apply.mjs`: the same recall, launcher list,
+//! findings, scope check and judges' answers give the same findings kept (with their marks) and set
+//! aside, notes, source and report sections.
 
 use serde_json::{Value, json};
 
 use super::apply::{self, Scope};
-use super::{Memory, PriorDecision, merge, recall};
+use super::judge::{self, Judge};
+use super::{Memory, PriorDecision, merge, recall, rules};
 
 const CASES: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../content/parity/memory-cases.json"
 ));
+/// The prompts the engines render, the judges' among them (`lib/review-prompt-parity.test.mjs`).
+const PROMPTS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../content/parity/prompt-cases.json"
+));
+
+#[test]
+fn the_judges_prompts_render_as_the_engines_render_them() {
+    let file: Value = serde_json::from_str(PROMPTS).unwrap();
+    let (input, want) = (&file["input"], &file["expected"]);
+    let side = |key: &str, record: &str| -> Vec<(PriorDecision, Value)> {
+        input[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                (
+                    serde_json::from_value(p[record].clone()).unwrap(),
+                    p["finding"].clone(),
+                )
+            })
+            .collect()
+    };
+    for (judge, key, record, json) in [
+        (Judge::Match, "judgePairs", "record", "matchJudge"),
+        (Judge::Rule, "rulePairs", "rule", "ruleJudge"),
+    ] {
+        let pairs = side(key, record);
+        let borrowed: Vec<(&PriorDecision, &Value)> = pairs.iter().map(|(d, f)| (d, f)).collect();
+        let block = match judge {
+            Judge::Match => judge::match_pairs_json(&borrowed),
+            Judge::Rule => judge::rule_pairs_json(&borrowed),
+        };
+        let got = judge.task(&block).unwrap().prompt;
+        assert_eq!(got, want[json].as_str().unwrap(), "{json}");
+    }
+}
 
 /// What the case's scope check sees: the records whose commit it names unchanged or missing.
 fn scope_seen(case: &Value, ds: &[&PriorDecision]) -> Scope {
@@ -47,11 +86,20 @@ fn every_case_applies_as_the_engines_apply_it() {
         let recalled = recall::read(Some(&case["recall"]).filter(|r| !r.is_null()), 0);
         let m = merge::merge(recalled, case.get("passed"));
         let findings = case["findings"].as_array().unwrap().clone();
-        let out = apply::apply(findings, &m.decisions, &|ds| scope_seen(case, ds));
-        let kept: Vec<Value> = out
+        let prepared = apply::prepare(&findings, &m.decisions, &|ds| scope_seen(case, ds));
+        let out = apply::apply(findings, prepared, case.get("judge"));
+        let pairs = rules::Pairs::new(&out.kept, &m.decisions);
+        let ruled = rules::apply(out.kept, &pairs, case.get("ruleJudge"));
+        let kept: Vec<Value> = ruled
             .kept
             .iter()
-            .map(|f| pick(f, &["title", "why"]))
+            .map(|f| {
+                let mut k = pick(f, &["title", "why"]);
+                if let Some(c) = f.get("memoryContradicts") {
+                    k["memoryContradicts"] = c.clone();
+                }
+                k
+            })
             .collect();
         assert_eq!(json!(kept), want["kept"], "{name}: kept");
         let keys = [
@@ -62,9 +110,13 @@ fn every_case_applies_as_the_engines_apply_it() {
             "priorKind",
             "priorMatch",
         ];
-        let aside: Vec<Value> = out.set_aside.iter().map(|f| pick(f, &keys)).collect();
+        let mut set_aside = out.set_aside;
+        set_aside.extend(ruled.covered);
+        let aside: Vec<Value> = set_aside.iter().map(|f| pick(f, &keys)).collect();
         assert_eq!(json!(aside), want["setAside"], "{name}: set aside");
-        assert_eq!(json!(out.notes), want["notes"], "{name}: notes");
+        let mut notes = out.notes;
+        notes.extend(ruled.notes);
+        assert_eq!(json!(notes), want["notes"], "{name}: notes");
         assert_eq!(m.source.record(), want["memory"], "{name}: memory");
         let mut refused = m.refused;
         refused.extend(out.refused);
@@ -73,11 +125,12 @@ fn every_case_applies_as_the_engines_apply_it() {
             decisions: m.decisions,
             refused,
             source: m.source,
-            set_aside: out.set_aside,
+            set_aside,
+            rule_notices: ruled.notices,
             unread: None,
         };
         assert_eq!(
-            memory.report(&[]),
+            memory.report(&[], &ruled.kept),
             want["report"].as_str().unwrap(),
             "{name}: report"
         );

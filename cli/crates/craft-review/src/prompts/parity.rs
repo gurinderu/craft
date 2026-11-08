@@ -6,7 +6,8 @@ use serde_json::Value;
 
 use super::{
     LensIn, PromptContext, ReScope, adjudicate_prompt, batch_verify_prompt, carry_prompt,
-    dedup_prompt, lens_prompt, prior_found_summary, repo_directive, scout_prompt, verify_prompt,
+    dedup_prompt, lens_prompt, prior_found_summary, red_team_prompt, repo_directive, scout_prompt,
+    verify_prompt,
 };
 use crate::ledger::LedgerRow;
 use crate::memory::Memory;
@@ -207,4 +208,18 @@ fn rereview(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: 
     };
     let got = body(carry_prompt(ctx, &set_aside, head).unwrap());
     assert_eq!(got, want["carry"].as_str().unwrap());
+    let invariant = input["redTeam"]["invariant"].as_str().unwrap();
+    for (case, named) in [("invariant", invariant), ("fallback", "")] {
+        let got = body(red_team_prompt(ctx, &set_aside_row(input), named).unwrap());
+        assert_eq!(
+            got,
+            want["redTeam"][case].as_str().unwrap(),
+            "red team: {case}"
+        );
+    }
+}
+
+/// The input's prior finding as its ledger row.
+fn set_aside_row(input: &Value) -> LedgerRow {
+    serde_json::from_value(input["prior"].clone()).unwrap()
 }
