@@ -117,6 +117,9 @@ pub struct StartOptions {
     /// The optional lenses to run (`optional`): `all`, or their names separated by commas or
     /// spaces; `None`, none ([`crate::optional`]).
     pub optional: Option<String>,
+    /// A parent engine launched the run (`nested`): it builds on no earlier round of the branch
+    /// and files no round record for a later one, as the engine keeps a nested run out of the chain.
+    pub nested: bool,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -143,7 +146,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     let mut chain = rereview::begin(
         &cwd,
         runs.as_deref().unwrap_or(dir),
-        opts.fresh,
+        (opts.fresh, opts.nested),
         opts.full_every,
         &branch_diff.base,
         scope.as_deref(),

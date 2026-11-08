@@ -68,7 +68,9 @@ fn packages(cx: &Cx<'_>) -> Vec<Package> {
 }
 
 /// The package holding `scope`: the nearest `Cargo.toml` at or above it, below the top, when it
-/// declares a package; `None` when that manifest is a virtual workspace's or there is none.
+/// declares a package; `None` when there is none, or when that manifest is a workspace's root
+/// (virtual or a package too): the scope may then hold member crates its `-p` would leave unlinted,
+/// so each changed package is linted by its manifest instead.
 fn scoped(top: &Path, scope: &str) -> Option<Package> {
     let at = top.join(scope);
     let start = if at.is_file() { at.parent()? } else { &at };
@@ -78,6 +80,9 @@ fn scoped(top: &Path, scope: &str) -> Option<Package> {
         .find(|d| d.join("Cargo.toml").is_file())?;
     let manifest = dir.join("Cargo.toml");
     let table: toml::Table = toml::from_str(&std::fs::read_to_string(&manifest).ok()?).ok()?;
+    if table.contains_key("workspace") {
+        return None;
+    }
     let name = table.get("package")?.get("name")?.as_str()?.to_owned();
     Some(Package {
         manifest: manifest.strip_prefix(top).ok()?.display().to_string(),

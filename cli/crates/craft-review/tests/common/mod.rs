@@ -73,6 +73,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         path: None,
         comment: false,
         optional: None,
+        nested: false,
     }
 }
 

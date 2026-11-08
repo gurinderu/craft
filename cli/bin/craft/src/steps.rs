@@ -87,6 +87,11 @@ pub struct StartArgs {
     /// optional lens is named in the report; the recognised ones still run.
     #[arg(long, value_name = "all|lens,…")]
     pub optional: Option<String>,
+    /// A parent engine launched this run (rust-audit's per-crate reviews): it builds on no earlier
+    /// round of the branch and files no round record, so a later run of the same path reviews it
+    /// whole again.
+    #[arg(long)]
+    pub nested: bool,
 }
 
 /// How deep a review goes.
@@ -184,6 +189,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         path: args.path.clone(),
         comment: args.comment,
         optional: args.optional.clone(),
+        nested: args.nested,
     };
     print(&step::start(&opts)?)
 }

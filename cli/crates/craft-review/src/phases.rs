@@ -305,14 +305,14 @@ fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     Ok(())
 }
 
-/// Files the run's round record, which a later run of its branch builds on; a run on no branch
-/// files none. Neither does a run its red gate ended before any lens: no lens read its head, so a
+/// Files the run's round record, which a later run of its branch builds on; a run on no branch,
+/// or one a parent engine launched (`nested`), files none. Neither does a run its red gate ended before any lens: no lens read its head, so a
 /// later round reviewing only the commits since it would leave the branch's own changes unread;
 /// the next round builds on the last round that did review, its ledger as it stands — unless the
 /// red run was started `fresh`: it files a marker that restarts the chain with nothing to build
 /// on, so the next run does not quietly resume the chain `fresh` set aside.
 fn file_round(dir: &Path, run: &mut RunState) -> Result<(), Error> {
-    let Some(branch) = &run.chain.branch else {
+    let Some(branch) = run.chain.branch.as_ref().filter(|_| !run.chain.nested) else {
         return Ok(());
     };
     let c = &run.chain;

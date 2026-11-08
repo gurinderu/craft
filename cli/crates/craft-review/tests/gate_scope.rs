@@ -21,17 +21,16 @@ fn write(dir: &Path, file: &str, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
-/// A workspace of two crates, `alpha` in `crates/a` and `beta` in `crates/b`, whose branch
-/// changes both.
-fn workspace() -> tempfile::TempDir {
+/// The root manifest of a workspace of `crates/a` and `crates/b` that is no package itself.
+const VIRTUAL: &str = "[workspace]\nmembers = [\"crates/a\", \"crates/b\"]\n";
+
+/// A workspace of two crates, `alpha` in `crates/a` and `beta` in `crates/b`, its root manifest
+/// `root`, whose branch changes both.
+fn workspace(root: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     git(d, &["init", "-q", "-b", "main"]);
-    write(
-        d,
-        "Cargo.toml",
-        "[workspace]\nmembers = [\"crates/a\", \"crates/b\"]\n",
-    );
+    write(d, "Cargo.toml", root);
     for (sub, name) in [("a", "alpha"), ("b", "beta")] {
         let manifest = format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n");
         write(d, &format!("crates/{sub}/Cargo.toml"), &manifest);
@@ -64,9 +63,10 @@ fn logging_tools(dir: &Path) {
     }
 }
 
-/// The arguments each tool was run with, scoped to `path` or not.
-fn gate_calls(path: Option<&str>) -> (String, String) {
-    let repo = workspace();
+/// The arguments each tool was run with over a workspace whose root manifest is `root`, scoped to
+/// `path` or not.
+fn calls_under(root: &str, path: Option<&str>) -> (String, String) {
+    let repo = workspace(root);
     let out = tempfile::tempdir().unwrap();
     let tools = tempfile::tempdir().unwrap();
     logging_tools(tools.path());
@@ -81,6 +81,11 @@ fn gate_calls(path: Option<&str>) -> (String, String) {
     .unwrap();
     let read = |t: &str| std::fs::read_to_string(tools.path().join(format!("{t}.log"))).unwrap();
     (read("cargo"), read("semgrep"))
+}
+
+/// [`calls_under`] a virtual workspace.
+fn gate_calls(path: Option<&str>) -> (String, String) {
+    calls_under(VIRTUAL, path)
 }
 
 #[test]
@@ -114,4 +119,19 @@ fn an_unscoped_run_lints_each_changed_package_by_its_manifest() {
     assert!(cargo.contains("--manifest-path crates/b/Cargo.toml --all-targets"));
     assert!(!cargo.contains(" -p "), "{cargo}");
     assert!(semgrep.contains("crates/a/src/lib.rs") && semgrep.contains("crates/b/src/lib.rs"));
+}
+
+#[test]
+fn a_scope_under_a_root_that_is_package_and_workspace_lints_each_member_by_its_manifest() {
+    let root = format!("[package]\nname = \"root\"\nversion = \"0.1.0\"\n\n{VIRTUAL}");
+    let (cargo, _) = calls_under(&root, Some("crates"));
+    assert!(!cargo.contains(" -p "), "{cargo}");
+    assert!(
+        cargo.contains("--manifest-path crates/a/Cargo.toml"),
+        "{cargo}"
+    );
+    assert!(
+        cargo.contains("--manifest-path crates/b/Cargo.toml"),
+        "{cargo}"
+    );
 }
