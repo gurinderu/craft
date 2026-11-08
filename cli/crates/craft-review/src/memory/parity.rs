@@ -127,7 +127,7 @@ fn every_case_applies_as_the_engines_apply_it() {
             source: m.source,
             set_aside,
             rule_notices: ruled.notices,
-            unread: None,
+            ..Memory::default()
         };
         assert_eq!(
             memory.report(&[], &ruled.kept),

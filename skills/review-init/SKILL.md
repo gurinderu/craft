@@ -13,6 +13,11 @@ each one's source at the revision you name, so a claim about how that system beh
 its code, not on memory. Library dependencies are not asked for: the review opens the version
 the lockfile pins on its own.
 
+The profile is read, never built. The review itself is another matter: unless it is started
+with `gate=false` (`craft review start --no-gate`), its mechanical gate **builds and runs the
+branch's code** on your machine — clippy runs its build scripts and proc macros, `nix flake
+check` its checks. Review a branch you do not trust with `gate=false`.
+
 The binary cannot ask you anything inside an agent session. So: **propose, ask, write.**
 
 ## 1. Recall the memory's external systems
@@ -27,10 +32,13 @@ go on without it.
 
 ```sh
 CRAFT_BIN="$(node "<this skill's base directory>/../../lib/craft-bin.mjs" ensure)" || exit $?
-printf '%s' '<the recalled records as one JSON list>' | "$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.." --memory-externals -
+"$CRAFT_BIN" init --propose --cwd "$(git rev-parse --show-toplevel)" --craft-root "<this skill's base directory>/../.." --memory-externals - <<'CRAFT_MEMORY_EXTERNALS'
+<the recalled records as one JSON list, on one line>
+CRAFT_MEMORY_EXTERNALS
 ```
 
-With nothing recalled, drop the pipe and `--memory-externals -`. A local build (`cargo build
+The quoted heredoc hands the records over as written: the shell reads no `'`, `$` or `\` in
+them. With nothing recalled, drop the heredoc and `--memory-externals -`. A local build (`cargo build
 --release` in craft's `cli/`) can stand for `$CRAFT_BIN`. It prints one JSON object: `profile`
 (the file's path, outside the repository), `exists`, `integrations` (what the profile holds now:
 `name`, `repo`, `ref`), `memory` and `discovery`. It writes nothing.

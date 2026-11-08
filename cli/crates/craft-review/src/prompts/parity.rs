@@ -52,6 +52,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
         repo_rules: strings(&p["repoRules"]),
         surface_dropped: Vec::new(),
         light_skipped: Vec::new(),
+        metrics_dropped: Vec::new(),
     };
     let pool = input["pool"].as_array().unwrap();
     let dir = repo_directive(&ctx.repo);
@@ -89,6 +90,57 @@ fn every_prompt_renders_as_the_engines_render_it() {
     rereview(&ctx, &plan, &prior, input, want);
     strict_and_recall(&ctx, &plan, &prior, input, want);
     sources(&ctx, &plan, &prior, input, want);
+    verifiers(&ctx, input, want);
+    complexity(&ctx, &plan, &prior, want);
+}
+
+/// The general profile's complexity lens — the engine's prompt, then what its findings carry here —,
+/// its index warm-up, and the verifier of one of its findings.
+fn complexity(ctx: &PromptContext, plan: &Plan, prior: &str, want: &Value) {
+    let dir = repo_directive(&ctx.repo);
+    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+    let want = &want["complexity"];
+    let general = Profile::load("general").unwrap();
+    let pathspec = general.pathspec(&["web/app.ts".into()]);
+    let at = LensIn {
+        profile: &general,
+        lens: "complexity",
+        plan,
+        pathspec: &pathspec,
+        prior,
+    };
+    let lens = body(lens_prompt(ctx, &at).unwrap());
+    let shared = want["lens"].as_str().unwrap();
+    assert!(
+        lens.starts_with(&format!("{shared}\n\n")),
+        "the engine's prompt, whole: {lens}"
+    );
+    let warmup = crate::complexity::warmup_task(&ctx.repo).unwrap();
+    assert_eq!(body(warmup.prompt), want["warmup"].as_str().unwrap());
+    let f = serde_json::json!({"severity": "High", "title": "t", "file": "web/app.ts", "line": 1, "why": "w",
+        "source": "complexity", "metrics": {"function": "f", "cognitive": 30}});
+    let v = body(verify_prompt(ctx, &general, &f, 0, "").unwrap());
+    assert!(v.starts_with(want["verify"].as_str().unwrap()), "{v}");
+}
+
+/// A gate tool's seed under the tool's own verifier, and a lens finding's, each told how the gate
+/// ran its tools.
+fn verifiers(ctx: &PromptContext, input: &Value, want: &Value) {
+    let dir = repo_directive(&ctx.repo);
+    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+    let rust = Profile::load("rust").unwrap();
+    let gate = input["gateProvenance"].as_str().unwrap();
+    for (case, f, voter) in [
+        ("tool", &input["gateSeed"], 0),
+        ("lens", &input["pool"][1], 1),
+    ] {
+        let got = body(verify_prompt(ctx, &rust, f, voter, gate).unwrap());
+        assert_eq!(
+            got,
+            want["verify"][case].as_str().unwrap(),
+            "verify: {case}"
+        );
+    }
 }
 
 /// The prepared sources' blocks, the reconciler lens that reads them and the tests lens that does
@@ -123,7 +175,7 @@ fn sources(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &
     let finding = &input["pool"][0];
     let block = want["verify"].as_str().unwrap();
     assert!(
-        verify_prompt(&ctx, &rust, finding, 0)
+        verify_prompt(&ctx, &rust, finding, 0, "")
             .unwrap()
             .contains(block)
     );

@@ -106,8 +106,8 @@ committed. The review's knowledge — lens briefs and prompt templates (`content
 placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
 under `content/`, inlined into the engines by the build; the Rust and Nix profiles' rosters are also data
 (`content/profiles/rust.json`, `content/profiles/nix.json`, read by the Rust CLI), held to the engine's own by a
-parity test, and so is the CLI's general profile (`content/profiles/general.json`: adversarial-review's lenses but
-complexity, which waits for its code-metrics gate; that engine reads their briefs from the same files).
+parity test, and so is the CLI's general profile (`content/profiles/general.json`: adversarial-review's lenses,
+complexity among them behind a code-metrics index in both; that engine reads their briefs from the same files).
 
 | Workflow | Composes | Output |
 |---|---|---|
@@ -222,7 +222,9 @@ in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-l
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
 protocol, and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
 under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, or the general lenses for source in
-any other language, `content/profiles/`), a scout per profile whose answer plans its lenses over its own files, the
+any other language, `content/profiles/`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
+for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
+lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
 lenses round after round until each profile's round finds nothing new or its plan's rounds are spent, the
 floor, roll-up and dedup of their one pool, then verification as the engine buys it — a batch vote per file group of Mediums, one
 vote per other finding routed alone, and for a Critical or High a cheap vote plus an authoritative one, the rest of the

@@ -11,6 +11,7 @@
 //! round carries it.
 
 mod apply;
+mod asked;
 mod id;
 mod judge;
 mod matching;
@@ -29,6 +30,7 @@ mod tests;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use asked::{Asked, MatchAsked};
 pub use record::{PriorDecision, RecordKind};
 pub use source::MemorySource;
 
@@ -56,6 +58,9 @@ pub struct Memory {
     /// Why the launcher's list could not be read at all, when it could not: refused, the run goes on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unread: Option<String>,
+    /// What its judges were asked when their tasks were handed out, read back with their answers.
+    #[serde(skip_serializing_if = "Asked::is_empty")]
+    pub asked: Asked,
 }
 
 impl Memory {
@@ -82,6 +87,7 @@ impl Memory {
             set_aside: Vec::new(),
             rule_notices: Vec::new(),
             unread,
+            asked: Asked::default(),
         };
         out.set_refused(m.refused);
         out

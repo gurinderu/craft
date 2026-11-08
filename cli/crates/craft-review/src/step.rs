@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use crate::Error;
+use crate::complexity;
 use crate::content;
 use crate::coverage;
 use crate::finished;
+use crate::gate::{self, GateSetup};
 use crate::git;
 use crate::handoff;
 use crate::memory::Memory;
@@ -85,6 +87,9 @@ pub struct StartOptions {
     /// Where the reviewer's profile and the sources cache are: the integration points' sources are
     /// prepared before the first tasks. `None`, none are.
     pub sources: Option<SourcesSetup>,
+    /// How the mechanical gate runs its tools before the scouts; `None`, it does not run, and the
+    /// report says so.
+    pub gate: Option<GateSetup>,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -102,19 +107,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         })?;
     let branch_diff = git::read_diff(&cwd, opts.base.as_deref())?;
     let dir = &opts.run_dir;
-    if state::state_path(dir).exists() {
-        return Err(StepError::RunExists(dir.clone()).into());
-    }
-    // A leftover task or answer file would be read as this run's.
-    for sub in [handoff::tasks_dir(dir), handoff::answers_dir(dir)] {
-        if sub.read_dir().is_ok_and(|mut d| d.next().is_some()) {
-            return Err(StepError::Leftovers(sub).into());
-        }
-    }
-    std::fs::create_dir_all(dir).map_err(|source| StepError::NoDir {
-        path: dir.clone(),
-        source,
-    })?;
+    open_dir(dir)?;
     let profiles = Profile::all()?;
     let runs = opts
         .runs
@@ -167,6 +160,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         exit: None,
         chain,
         memory: memory.recalling(opts.recall),
+        gate: gate::Gate::default(),
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -179,9 +173,11 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     if let Some(exit) = &run.exit {
         run.not_run.extend(exit.not_run.clone());
     } else {
-        if let Some(setup) = &opts.sources {
-            run.context.sources = sources::for_repo(&cwd, setup);
-        }
+        prepare(&cwd, dir, opts, &mut run);
+        // A red gate blocks before any lens, as `gateFailedExit` does.
+        run.exit = run.gate.exit();
+    }
+    if run.exit.is_none() {
         run.tasks = scouts(&run, &profiles)?;
         let recall = opts.recall && !recall_paths.is_empty();
         if recall {
@@ -198,7 +194,59 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     Ok(next(dir, &run))
 }
 
-/// One scout per profile taking part of the change, each over its own files.
+/// Makes `dir` the new run's: refused when it holds a run, or a task or answer file that would be
+/// read as this run's.
+fn open_dir(dir: &Path) -> Result<(), StepError> {
+    if state::state_path(dir).exists() {
+        return Err(StepError::RunExists(dir.to_owned()));
+    }
+    for sub in [handoff::tasks_dir(dir), handoff::answers_dir(dir)] {
+        if sub.read_dir().is_ok_and(|mut d| d.next().is_some()) {
+            return Err(StepError::Leftovers(sub));
+        }
+    }
+    std::fs::create_dir_all(dir).map_err(|source| StepError::NoDir {
+        path: dir.to_owned(),
+        source,
+    })
+}
+
+/// The integration points' sources and the gate, side by side, neither waiting on the other: the
+/// sources reach the prompts, the gate's seeds the pool as round-0 findings.
+fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
+    let (prepared, gated) = std::thread::scope(|s| {
+        let sources = s.spawn(|| {
+            opts.sources
+                .as_ref()
+                .map(|setup| sources::for_repo(cwd, setup))
+        });
+        let gated = opts
+            .gate
+            .as_ref()
+            .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, setup, dir));
+        (sources.join(), gated)
+    });
+    match prepared {
+        Ok(Some(s)) => run.context.sources = s,
+        Ok(None) => {}
+        Err(_) => {
+            run.context.sources.skipped = "the sources' preparation stopped unexpectedly".into();
+        }
+    }
+    match gated {
+        Some((gate, seeds)) => {
+            // A red gate ends the run before any lens: its seeds are no one's to read.
+            if gate.exit().is_none() {
+                run.rounds.pool = seeds;
+            }
+            run.gate = gate;
+        }
+        None => run.gate = gate::Gate::not_asked(),
+    }
+}
+
+/// One scout per profile taking part of the change, each over its own files; beside them the index
+/// warm-up when a profile taking part has a metrics-or-nothing lens.
 fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
     let mut tasks = Vec::new();
     for t in &run.tracks {
@@ -215,6 +263,10 @@ fn scouts(run: &RunState, profiles: &[Profile]) -> Result<Vec<Task>, Error> {
                 profile: p.id.clone(),
             },
         ));
+    }
+    let taking_part = |p: &&Profile| run.tracks.iter().any(|t| t.profile == p.id);
+    if profiles.iter().filter(taking_part).any(complexity::wanted) {
+        tasks.push(complexity::warmup_task(&run.context.repo)?);
     }
     Ok(tasks)
 }

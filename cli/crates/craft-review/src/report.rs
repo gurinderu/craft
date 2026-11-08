@@ -222,6 +222,12 @@ fn plan_lines(state: &RunState, t: &Track, out: &mut String) {
             ran.join(", ")
         },
     ));
+    if !plan.metrics_dropped.is_empty() {
+        out.push_str(&format!(
+            "Dropped for want of a code-metrics index{whose}: {}.\n",
+            plan.metrics_dropped.join(", ")
+        ));
+    }
     if !plan.surface_dropped.is_empty() {
         out.push_str(&format!(
             "Dropped by the scout's surfaces{whose}: {}.\n",
@@ -245,6 +251,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         None => listed(Some(NOT_COVERED), &state.uncovered, &mut out),
     }
     degraded(state, &mut out);
+    out.push_str(&crate::gate::section(&state.gate));
     if state.exit.is_none() {
         findings(state, &mut out);
     }
@@ -261,6 +268,7 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         )
         .collect();
     out.push_str(&state.memory.report(&state.chain.deferred(), &in_verdict));
+    out.push_str(&crate::tool::titles_section(&in_verdict));
     out.push_str(&crate::sources::section(
         &state.context.sources,
         &state.settled,

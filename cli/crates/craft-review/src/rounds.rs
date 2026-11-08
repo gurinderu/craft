@@ -66,7 +66,7 @@ fn lens_key(profile: &str, lens: &str) -> String {
 }
 
 /// One task per planned lens of `profile` for `round`, over the profile's part `files`, each told
-/// what the pool holds and run on the profile's lens agent.
+/// what the pool holds and run on the profile's lens agent; a metrics-or-nothing lens in the first round only.
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the findings schema read.
@@ -82,8 +82,17 @@ pub fn tasks(
     let pathspec = profile.pathspec(files);
     plan.lenses
         .iter()
+        // A metrics lens reads numbers another round would not change: it runs in the first only.
+        .filter(|l| round <= 1 || !profile.lens(l).is_some_and(|x| x.metrics))
         .map(|lens| {
-            let model = profile.lens(lens).map_or(Model::Opus, |l| l.model);
+            let spec = profile.lens(lens);
+            let model = spec.map_or(Model::Opus, |l| l.model);
+            // A metrics-or-nothing lens's findings carry the numbers they rest on.
+            let schema = if spec.is_some_and(|l| l.metrics) {
+                crate::complexity::findings_schema()?
+            } else {
+                content::schema("findings")?
+            };
             let at = LensIn {
                 profile,
                 lens,
@@ -96,7 +105,7 @@ pub fn tasks(
                 format!("lens:{}:{lens} r{round}", profile.id),
                 prompts::lens_prompt(ctx, &at)?,
                 model,
-                content::schema("findings")?,
+                schema,
                 TaskKind::Lens {
                     profile: profile.id.clone(),
                     lens: lens.clone(),

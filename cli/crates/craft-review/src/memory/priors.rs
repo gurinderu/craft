@@ -3,8 +3,9 @@
 //! the priors still open are split by the records in hand — the decisions first, the match judge
 //! asked about their near misses, then the project rules, the rule judge asked about the findings
 //! in their scope — and a deferred prior is held while its question is (`deferralHeld`,
-//! `deferralReleased` in `lib/prior-decision-apply.mjs`). Each judge is a task of its own step, so
-//! each stage is computed twice over the same state: once for its task, once with its answer.
+//! `deferralReleased` in `lib/prior-decision-apply.mjs`). Each judge is a task of its own step: the
+//! pairs it is asked about, and the scopes git observed for them, are kept in the run's state when
+//! its task is handed out ([`super::Asked`]) and read back with its answer, so git is asked once.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -57,28 +58,33 @@ impl Memory {
 
     /// The match judge's task over the findings of `settled` and the priors still open or carried
     /// unverified in `chain` (the engine's `stillOpen`, `regressed` and `unverified` tiers), `None`
-    /// when no pair needs it.
+    /// when no pair needs it. What it is asked, the scopes git observed for it included, is kept
+    /// for [`Memory::apply`].
     ///
     /// # Errors
     /// When its template or schema is missing.
     pub(crate) fn match_task(
-        &self,
+        &mut self,
         repo: &Path,
         settled: &[Value],
         chain: &Chain,
     ) -> Result<Option<Task>, ContentError> {
+        self.asked.matched = None;
         let judged = pool(settled, chain);
         if self.decisions.is_empty() || judged.is_empty() {
             return Ok(None);
         }
         let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
-        apply::prepare(&judged, &self.decisions, &check).task(&judged)
+        let prepared = apply::prepare(&judged, &self.decisions, &check);
+        self.asked.matched = Some(prepared.to_keep());
+        prepared.task(&judged)
     }
 
     /// Sets aside what a record answers among the same findings and priors as
-    /// [`Memory::match_task`], `answer` the match judge's when it was asked, its scope checked by
-    /// git in `repo`; what it did goes to `notes`. A prior set aside leaves the chain's ledger for
-    /// the memory's; one raised again keeps the note why.
+    /// [`Memory::match_task`], `answer` the match judge's when it was asked, read against the pairs
+    /// and scopes that task kept — its scope checked by git in `repo` only when none was kept; what
+    /// it did goes to `notes`. A prior set aside leaves the chain's ledger for the memory's; one
+    /// raised again keeps the note why.
     pub(crate) fn apply(
         &mut self,
         repo: &Path,
@@ -87,12 +93,18 @@ impl Memory {
         notes: &mut Vec<String>,
         answer: Option<&Value>,
     ) {
+        let kept = self.asked.matched.take();
         let judged = pool(settled, chain);
         if self.decisions.is_empty() || judged.is_empty() {
             return;
         }
-        let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
-        let prepared = apply::prepare(&judged, &self.decisions, &check);
+        let prepared = match &kept {
+            Some(asked) => apply::prepare_asked(&judged, &self.decisions, asked),
+            None => {
+                let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
+                apply::prepare(&judged, &self.decisions, &check)
+            }
+        };
         let out = apply::apply(judged, prepared, answer);
         self.set_aside = commit(settled, chain, out.kept, out.set_aside);
         notes.extend(out.notes.iter().map(|n| format!("prior decisions: {n}")));
@@ -100,21 +112,24 @@ impl Memory {
     }
 
     /// The rule judge's task over what the decisions left, `None` when no finding sits in a rule's
-    /// scope.
+    /// scope. The pairs it is asked about are kept for [`Memory::cover`].
     ///
     /// # Errors
     /// When its template or schema is missing.
     pub(crate) fn rule_task(
-        &self,
+        &mut self,
         settled: &[Value],
         chain: &Chain,
     ) -> Result<Option<Task>, ContentError> {
         let judged = pool(settled, chain);
-        rules::Pairs::new(&judged, &self.decisions).task(&judged)
+        let pairs = rules::Pairs::new(&judged, &self.decisions);
+        self.asked.ruled = Some(pairs.pairs().to_vec());
+        pairs.task(&judged)
     }
 
     /// Covers by the project rules what the decisions left, `answer` the rule judge's when it was
-    /// asked; a covered prior leaves the chain's ledger for the memory's, as `covered`.
+    /// asked, read against the pairs [`Memory::rule_task`] kept; a covered prior leaves the chain's
+    /// ledger for the memory's, as `covered`.
     pub(crate) fn cover(
         &mut self,
         settled: &mut Vec<Value>,
@@ -122,11 +137,15 @@ impl Memory {
         notes: &mut Vec<String>,
         answer: Option<&Value>,
     ) {
+        let kept = self.asked.ruled.take();
         let judged = pool(settled, chain);
         if !self.decisions.iter().any(|d| d.kind == RecordKind::Rule) || judged.is_empty() {
             return;
         }
-        let pairs = rules::Pairs::new(&judged, &self.decisions);
+        let mut pairs = rules::Pairs::new(&judged, &self.decisions);
+        if let Some(asked) = kept {
+            pairs.asked(asked);
+        }
         // As the engine does: with no rule in force the rules say nothing, superseded ones included.
         if !pairs.any() {
             return;

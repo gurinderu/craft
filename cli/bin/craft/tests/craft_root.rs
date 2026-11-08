@@ -158,3 +158,40 @@ fn the_given_root_wins_over_the_checkout_above_the_binary() {
         Value::from(root.display().to_string())
     );
 }
+
+/// The gate `review start` ran over the fixture, with `extra` arguments, as its state keeps it.
+fn gate_of(extra: &[&str]) -> Value {
+    let tmp = tempfile::tempdir().unwrap();
+    let code = tmp.path().join("repo");
+    std::fs::create_dir_all(&code).unwrap();
+    repo(&code);
+    let run = tmp.path().join("run");
+    let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["review", "start", "--no-recall", "--cwd"])
+        .arg(&code)
+        .arg("--run-dir")
+        .arg(&run)
+        .args(extra)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let state: Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("state.json")).unwrap()).unwrap();
+    state["gate"].clone()
+}
+
+#[test]
+fn no_gate_runs_no_tool_on_the_branch_and_says_so() {
+    let skipped = gate_of(&["--no-gate"]);
+    assert!(skipped["tracks"].is_null(), "{skipped}");
+    assert!(
+        skipped["skipped"].as_str().unwrap().contains("--no-gate"),
+        "{skipped}"
+    );
+    let ran = gate_of(&[]);
+    assert_eq!(ran["tracks"][0]["profile"], "rust", "{ran}");
+}

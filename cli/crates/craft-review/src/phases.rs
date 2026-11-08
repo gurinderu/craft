@@ -13,7 +13,9 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::Error;
+use crate::agent::Model;
 use crate::chain;
+use crate::complexity;
 use crate::content;
 use crate::dedup;
 use crate::plan::{self, PlanInput};
@@ -66,11 +68,17 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             let memory = &run.memory;
             let released = rereview::hold_deferrals(&mut run.chain, &|row| memory.holds(row));
             run.notes.extend(released);
-            // Built before the adjudicators' answers move their priors.
-            let attacks = rereview::attack_tasks(&run.context, &run.chain, &run.tasks)?;
+            // A run that ended before its scouts (a red gate) plans no lens; its priors are
+            // still adjudicated.
+            if run.exit.is_none() {
+                plan_tracks(run, &profiles);
+            }
+            // Built before the adjudicators' answers move their priors, on the first plan's lens
+            // model, as the engine's `adjudModel`.
+            let model = lens_model(run, &profiles);
+            let attacks = rereview::attack_tasks(&run.context, &run.chain, &run.tasks, model)?;
             let judged = rereview::judge(&mut run.chain, &run.tasks);
             run.notes.extend(judged);
-            plan_tracks(run, &profiles);
             if attacks.is_empty() {
                 return next_round(dir, run, &profiles);
             }
@@ -84,6 +92,8 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             next_round(dir, run, &profiles)
         }
         Phase::Lenses => {
+            let sifted = complexity::sift(&mut run.tasks, &profiles);
+            run.notes.extend(sifted);
             let added = run.rounds.absorb(&run.tasks);
             for t in run.tracks.iter_mut().filter(|t| t.live()) {
                 t.rounds += 1;
@@ -111,8 +121,21 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     }
 }
 
-/// Plans each track from its scout's answer, the conservative fallback where it gave none.
+/// The lens model of the run's first plan (`results[0].plan.lensModel`), Opus before any.
+fn lens_model(run: &RunState, profiles: &[Profile]) -> Model {
+    run.tracks
+        .iter()
+        .zip(profiles)
+        .find_map(|(t, p)| Some(t.plan.as_ref()?.lens_model(p)))
+        .unwrap_or(Model::Opus)
+}
+
+/// Plans each track from its scout's answer, the conservative fallback where it gave none; the
+/// metrics-or-nothing lenses only when the warm-up found an index.
 fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
+    let index = complexity::indexed(&run.tasks);
+    let metrics = index.as_ref().is_some_and(|(found, _)| *found);
+    run.notes.extend(index.and_then(|(_, note)| note));
     for (track, p) in run.tracks.iter_mut().zip(profiles) {
         let task = run
             .tasks
@@ -135,6 +158,7 @@ fn plan_tracks(run: &mut RunState, profiles: &[Profile]) {
             spec: &run.context.spec,
             light: run.light,
             strict: run.context.strict,
+            metrics,
         }));
     }
 }
@@ -226,13 +250,31 @@ fn start_verify(dir: &Path, run: &mut RunState) -> Result<(), Error> {
 }
 
 /// Files the run's round record, which a later run of its branch builds on; a run on no branch
-/// files none.
-fn file_round(dir: &Path, run: &RunState) -> Result<(), Error> {
+/// files none. Neither does a run its red gate ended before any lens: no lens read its head, so a
+/// later round reviewing only the commits since it would leave the branch's own changes unread;
+/// the next round builds on the last round that did review, its ledger as it stands — unless the
+/// red run was started `fresh`: it files a marker that restarts the chain with nothing to build
+/// on, so the next run does not quietly resume the chain `fresh` set aside.
+fn file_round(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     let Some(branch) = &run.chain.branch else {
         return Ok(());
     };
     let c = &run.chain;
-    let record = chain::record(&c.repo, branch, &run.diff.head, c.round, c.ledger.clone());
+    let mut record = chain::record(&c.repo, branch, &run.diff.head, c.round, c.ledger.clone());
+    if run.gate.exit().is_some() {
+        let fresh = c.unchained.as_deref() == Some(chain::Unchained::Fresh.reason());
+        if !fresh {
+            run.notes.push(
+                "this round is not filed for the branch's next round: its gate was red and no lens read it, so the next round builds on the last round that did".into(),
+            );
+            return Ok(());
+        }
+        run.notes.push(
+            "this round is filed only as the start of a new chain (it was started fresh): its gate was red and no lens read it, so the next round reviews the whole branch with nothing to build on".into(),
+        );
+        record.ledger = Vec::new();
+        record.restart = true;
+    }
     chain::file_record(dir, &record).map_err(|source| {
         let path = chain::record_path(dir);
         StepError::NoReport { path, source }.into()
