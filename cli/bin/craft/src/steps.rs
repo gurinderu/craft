@@ -135,6 +135,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
             .prior_decisions
             .as_deref()
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
+        sources: crate::init::sources_setup(),
     };
     print(&step::start(&opts)?)
 }

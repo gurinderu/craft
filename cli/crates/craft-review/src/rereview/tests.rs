@@ -457,6 +457,7 @@ fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_si
         craft_root: None,
         craft_version: None,
         re_review: crate::prompts::ReScope::Fixes,
+        sources: crate::sources::Sources::default(),
     };
     let profiles = crate::profile::Profile::all().unwrap();
     let t = tasks(&ctx, &next, &profiles).unwrap();

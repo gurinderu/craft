@@ -1,5 +1,6 @@
 //! `craft`: the command line over craft's review.
 
+mod init;
 mod review;
 mod steps;
 
@@ -22,6 +23,9 @@ enum Command {
     /// host is to run, and the next takes their answers.
     #[command(subcommand)]
     Review(ReviewCommand),
+    /// Your review profile of a repository, kept outside it (`~/.craft/projects/<id>/review.toml`):
+    /// the integration points whose source a review reads at their deployed revision.
+    Init(init::InitArgs),
 }
 
 #[derive(Subcommand)]
@@ -83,6 +87,7 @@ async fn main() -> ExitCode {
         Command::Review(ReviewCommand::Start(args)) => steps::start(&args),
         Command::Review(ReviewCommand::Submit(args)) => steps::submit(&args),
         Command::Review(ReviewCommand::Status(args)) => steps::status(&args),
+        Command::Init(args) => init::init(&args),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
     // groups, so their SIGKILL is sent before craft is gone.

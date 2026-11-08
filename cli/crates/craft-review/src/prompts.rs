@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::sources::Sources;
+
 mod adjudicate;
 mod lens;
 #[cfg(test)]
@@ -45,6 +47,10 @@ pub struct PromptContext {
     /// `lib/review-run-args.mjs`). Optional, so a state written before it reads as a default review.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub strict: bool,
+    /// The integration points' sources the run prepared, for the lenses and verifiers that read
+    /// them. Optional, so a state written before it reads as a run with none.
+    #[serde(default, skip_serializing_if = "Sources::is_empty")]
+    pub sources: Sources,
 }
 
 /// What a round's lenses review, as `reReviewBlock` in `lib/review-lens-prompts.mjs` frames it.

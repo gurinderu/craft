@@ -249,6 +249,10 @@ pub fn markdown(state: &RunState, verdict: &str) -> String {
         findings(state, &mut out);
     }
     out.push_str(&state.memory.report(&state.chain.deferred()));
+    out.push_str(&crate::sources::section(
+        &state.context.sources,
+        &state.settled,
+    ));
     out.push_str("\n## Not run\n\n");
     for n in &state.not_run {
         out.push_str(&format!("- {n}\n"));

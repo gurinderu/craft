@@ -97,11 +97,26 @@ pub fn has_commit(cwd: &Path, commit: &str) -> bool {
     !commit.starts_with('-') && verifies(cwd, commit)
 }
 
-/// Whether the code in `scope` is unchanged since `commit`, the working tree included, as
-/// `git diff --quiet <commit> -- <scope>` answers; false when git cannot tell.
+/// Whether the code in `scope`, a repository-relative path, is unchanged since `commit`, the
+/// working tree included, as `git diff --quiet <commit> -- <scope>` answers from the repository's
+/// top level — a pathspec git reads from a subdirectory would name another path; false when git
+/// cannot tell.
 #[must_use]
 pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
-    !commit.starts_with('-') && git(cwd, &["diff", "--quiet", commit, "--", scope]).is_ok()
+    let Ok(top) = toplevel(cwd) else {
+        return false;
+    };
+    !commit.starts_with('-') && git(&top, &["diff", "--quiet", commit, "--", scope]).is_ok()
+}
+
+/// The top level of the working tree `cwd` is in.
+///
+/// # Errors
+/// When `cwd` is not in a working tree or `git` fails.
+pub fn toplevel(cwd: &Path) -> Result<PathBuf, GitError> {
+    Ok(PathBuf::from(
+        git(cwd, &["rev-parse", "--show-toplevel"])?.trim(),
+    ))
 }
 
 fn verifies(cwd: &Path, rev: &str) -> bool {
@@ -179,3 +194,6 @@ pub fn read_diff(cwd: &Path, base: Option<&str>) -> Result<Diff, GitError> {
         log: log.trim().to_owned(),
     })
 }
+
+#[cfg(test)]
+mod tests;
