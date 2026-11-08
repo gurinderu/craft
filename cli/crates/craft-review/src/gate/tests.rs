@@ -149,7 +149,7 @@ fn a_red_flake_fails_the_gate_but_one_this_machine_stopped_is_unknown() {
     tool(
         tools.path(),
         "nix",
-        "echo 'error: unable to download https://x' >&2; exit 1",
+        "echo \"error: unable to download 'https://x/y.tar.gz': Could not resolve hostname (6) Could not resolve host: x\" >&2; exit 1",
     );
     let (gate, _) = run(
         repo.path(),
