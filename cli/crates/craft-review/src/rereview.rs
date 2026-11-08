@@ -112,6 +112,10 @@ pub struct Chain {
     pub regressions: usize,
     /// The ledger the run left for its next round, once it is done.
     pub ledger: Vec<LedgerRow>,
+    /// A run a parent engine launched (`--nested`): it files no round record. Optional, so a state
+    /// written before it reads as a run of the branch's chain.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub nested: bool,
 }
 
 impl Chain {

@@ -11,6 +11,24 @@ use super::Status;
 use super::check::{Acc, Cx, Seed, last_line};
 use super::lock::Lockfiles;
 
+/// A package clippy lints: its manifest, repository-relative, and its name when it is linted alone
+/// (`-p`, a run scoped to it).
+pub(super) struct Package {
+    pub manifest: String,
+    pub name: Option<String>,
+}
+
+impl Package {
+    /// How clippy is pointed at it: `--manifest-path`, and `-p` with its name.
+    fn args(&self) -> Vec<&str> {
+        let mut args = vec!["--manifest-path", self.manifest.as_str()];
+        if let Some(n) = &self.name {
+            args.extend(["-p", n.as_str()]);
+        }
+        args
+    }
+}
+
 /// At most this many red diagnostics are listed per package.
 const ERRORS_MAX: usize = 5;
 
@@ -78,21 +96,18 @@ const PEDANTIC: [&str; 5] = ["--", "-W", "clippy::pedantic", "-W", "clippy::nurs
 fn clippy(
     cx: &Cx<'_>,
     acc: &mut Acc,
-    manifest: &str,
+    package: &Package,
     pedantic: bool,
 ) -> Option<(bool, Vec<Diag>, String)> {
-    let mut args = vec![
-        "clippy",
-        "--manifest-path",
-        manifest,
-        "--all-targets",
-        "--message-format=json",
-    ];
+    let mut args = vec!["clippy"];
+    args.extend(package.args());
+    args.extend(["--all-targets", "--message-format=json"]);
     if pedantic {
         args.extend(PEDANTIC);
     }
     let label = format!(
-        "`cargo clippy --manifest-path {manifest} --all-targets{}`",
+        "`cargo clippy {} --all-targets{}`",
+        package.args().join(" "),
         if pedantic {
             " -- -W clippy::pedantic -W clippy::nursery"
         } else {
@@ -100,7 +115,7 @@ fn clippy(
         }
     );
     let ran = {
-        let _kept = Lockfiles::keep(cx.top, manifest);
+        let _kept = Lockfiles::keep(cx.top, &package.manifest);
         cx.runner.run(cx.top, "cargo", &args)
     };
     let (ok, out, err) = acc.exited(&label, "cargo", ran)?;
@@ -136,16 +151,17 @@ fn clippy(
     Some((ok, all, err))
 }
 
-/// The pedantic and nursery pass on `manifest`, its warnings seeds: whether it ran.
-pub(super) fn pedantic(cx: &Cx<'_>, acc: &mut Acc, manifest: &str) -> bool {
-    clippy(cx, acc, manifest, true).is_some()
+/// The pedantic and nursery pass on `package`, its warnings seeds: whether it ran.
+pub(super) fn pedantic(cx: &Cx<'_>, acc: &mut Acc, package: &Package) -> bool {
+    clippy(cx, acc, package, true).is_some()
 }
 
-/// The gate's clippy run on `manifest`: red on a compile error or a lint the project denies, its
+/// The gate's clippy run on `package`: red on a compile error or a lint the project denies, its
 /// warnings seeds.
-pub(super) fn gate_check(cx: &Cx<'_>, acc: &mut Acc, manifest: &str) -> Status {
-    let label = format!("`cargo clippy --manifest-path {manifest} --all-targets`");
-    let Some((ok, all, err)) = clippy(cx, acc, manifest, false) else {
+pub(super) fn gate_check(cx: &Cx<'_>, acc: &mut Acc, package: &Package) -> Status {
+    let label = format!("`cargo clippy {} --all-targets`", package.args().join(" "));
+    let manifest = &package.manifest;
+    let Some((ok, all, err)) = clippy(cx, acc, package, false) else {
         return Status::Unknown;
     };
     let red: Vec<&Diag> = all.iter().filter(|d| d.level == "error").collect();

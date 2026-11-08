@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::agent::Model;
+use crate::optional::admitted;
 use crate::paths::{changes_production_code, is_contract_path};
 use crate::profile::Profile;
 
@@ -65,6 +66,9 @@ pub struct PlanInput<'a> {
     /// Whether a code-metrics index covers the repository: without one the metrics-or-nothing
     /// lenses are dropped.
     pub metrics: bool,
+    /// The optional lenses the run was asked for (`optional`), qualified by profile
+    /// ([`crate::optional`]): each is added to the plan; any other optional lens stays out.
+    pub optional: &'a [String],
 }
 
 /// Rounds and verifier votes by size, as `RIGOR_BY_SIZE`.
@@ -82,12 +86,12 @@ fn push_missing(lenses: &mut Vec<String>, l: &str) {
     }
 }
 
-/// The roster as a blanket fill takes it: no conditional lens, nothing of the optional pass (no
-/// run of the CLI requests it).
-fn blanket(p: &Profile) -> Vec<String> {
+/// The roster as a blanket fill takes it: no conditional lens, nothing of the optional pass the
+/// run did not ask for.
+fn blanket(p: &Profile, optional: &[String]) -> Vec<String> {
     p.lenses
         .iter()
-        .filter(|l| !l.conditional && !l.optional)
+        .filter(|l| !l.conditional && admitted(p, &l.id, optional))
         .map(|l| l.id.clone())
         .collect()
 }
@@ -159,12 +163,12 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
     let mut lenses: Vec<String> = Vec::new();
     for l in picked
         .iter()
-        .filter(|l| p.lens(l).is_some_and(|x| p.offers(l) && !x.optional))
+        .filter(|l| p.lens(l).is_some() && p.offers(l) && admitted(p, l, input.optional))
     {
         push_missing(&mut lenses, l);
     }
     if lenses.is_empty() {
-        lenses = blanket(p);
+        lenses = blanket(p, input.optional);
     }
     let mut plan = Plan {
         size_bucket: size.to_owned(),
@@ -192,7 +196,11 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
     if input.strict && p.offers("maintainability") {
         push_missing(&mut plan.lenses, "maintainability");
     }
-    floors(p, files, &mut plan);
+    floors(p, files, input.optional, &mut plan);
+    // A request adds the lens, not merely permits it, as `optionalRequested` does in the engine.
+    for l in crate::optional::bought(p, input.optional) {
+        push_missing(&mut plan.lenses, &l);
+    }
     surface_gate(p, scout, files, &mut plan);
     if !input.metrics {
         let metrics = p.flagged(|l| l.metrics);
@@ -201,7 +209,7 @@ pub fn plan(input: PlanInput<'_>) -> Plan {
         plan.metrics_dropped = dropped;
     }
     if input.light {
-        light(p, scout, files, &mut plan);
+        light((p, input.optional), scout, files, &mut plan);
     }
     plan
 }
@@ -227,9 +235,9 @@ fn required(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut Pla
 
 /// The security floor, negative-space where new surface appears (on a profile that has the lens),
 /// and compat on large diffs and contract paths.
-fn floors(p: &Profile, files: &[String], plan: &mut Plan) {
+fn floors(p: &Profile, files: &[String], optional: &[String], plan: &mut Plan) {
     if plan.security_sensitive {
-        for l in blanket(p) {
+        for l in blanket(p, optional) {
             push_missing(&mut plan.lenses, &l);
         }
         plan.verify_votes = plan.verify_votes.max(3);
@@ -262,7 +270,12 @@ fn surface_gate(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut
 }
 
 /// The light pass: the diff-scoped lenses and those the diff calls for, one round.
-fn light(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut Plan) {
+fn light(
+    (p, optional): (&Profile, &[String]),
+    scout: Option<&Value>,
+    files: &[String],
+    plan: &mut Plan,
+) {
     let in_roster = |ls: &[&str]| -> Vec<String> {
         ls.iter()
             .filter(|l| p.offers(l))
@@ -283,7 +296,10 @@ fn light(p: &Profile, scout: Option<&Value>, files: &[String], plan: &mut Plan) 
     let scoped = |l: &String| !whole.contains(l) || forced.contains(l);
     let mut kept: Vec<String> = plan.lenses.iter().filter(|l| scoped(l)).cloned().collect();
     if kept.is_empty() {
-        kept = blanket(p).into_iter().filter(|l| scoped(l)).collect();
+        kept = blanket(p, optional)
+            .into_iter()
+            .filter(|l| scoped(l))
+            .collect();
     }
     let mut out = Vec::new();
     for l in kept.iter().chain(&forced) {
