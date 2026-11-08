@@ -60,6 +60,12 @@ pub struct StartArgs {
     /// names the gate as skipped.
     #[arg(long)]
     pub no_gate: bool,
+    /// The repository's own reviewing agents to run as extra lenses, each over the whole change:
+    /// their names, separated by commas or spaces, or `off`. Absent, a light pass discovers them
+    /// among the agents the session's project declares under `.claude/agents` (when `--cwd` is that
+    /// project or one of its worktrees) and a full review runs none.
+    #[arg(long)]
+    pub extra_lenses: Option<String>,
 }
 
 /// How deep a review goes.
@@ -142,6 +148,8 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
         sources: crate::init::sources_setup(),
         gate: (!args.no_gate).then(craft_review::gate::GateSetup::default),
+        extra_lenses: args.extra_lenses.clone(),
+        session: None,
     };
     print(&step::start(&opts)?)
 }

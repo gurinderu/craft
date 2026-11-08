@@ -197,7 +197,11 @@ impl Rounds {
         }
         self.yields.push(RoundYield {
             round: self.round,
-            agents: tasks.len(),
+            // The lens dispatches only: an extra lens beside the round is the consumer's agent.
+            agents: tasks
+                .iter()
+                .filter(|t| matches!(t.kind, TaskKind::Lens { .. }))
+                .count(),
             returned,
             new_findings: fresh.len(),
         });

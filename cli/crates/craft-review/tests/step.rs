@@ -312,6 +312,9 @@ fn a_scout_that_never_answers_runs_the_conservative_plan_and_says_so() {
         .map(|id| (id.clone(), lens("x", &[])))
         .collect();
     let s = step::submit(&run, Some(&empty)).unwrap();
+    // The fallback plan is security-sensitive, so its critic is asked even of an empty pool.
+    assert_eq!(ids(&s), ["critic-rust"]);
+    let s = common::past_critic(&run, s);
     assert_eq!(
         (s["done"].clone(), s["verdict"].clone()),
         (json!(true), json!("INCOMPLETE")),

@@ -233,7 +233,10 @@ plan's panel bought only when those two disagree — each finding's severity cap
 memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
 under its own section when the code in its record's scope is unchanged since the record's commit, a near miss between a
 record and a finding decided by the engine's match judge, then a finding a project rule covers set aside under its own,
-decided by the engine's rule judge (on a re-review a red team attacks each resolved Critical or High prior first),
+decided by the engine's rule judge (on a re-review a red team attacks each resolved Critical or High prior first;
+the reviewed repository's own reviewing agents run as extra lenses beside the first round — named, or discovered on a light
+pass among the session project's `.claude/agents`; on a large or security-sensitive plan a completeness critic names roster
+lenses that should have run, which then run and whose findings are verified as a pass of their own),
 then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
 from `content/`, which it compiles in, its plans, prompts and verification rules held to the engines' by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and

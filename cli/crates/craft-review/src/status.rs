@@ -17,6 +17,8 @@ fn phase_label(run: &RunState) -> String {
         Phase::Lenses => format!("lenses round {}", run.rounds.round),
         Phase::Dedup => "dedup".into(),
         Phase::Verify => "verify".into(),
+        Phase::Critic => "completeness critic".into(),
+        Phase::CriticLenses => "critic follow-up lenses".into(),
         Phase::Done => "done".into(),
     }
 }
