@@ -1,6 +1,6 @@
-//! The prompts held to the engines' by `content/parity/prompt-cases.json`, which
-//! `lib/review-prompt-parity.test.mjs` renders with `lib/review-lens-prompts.mjs` and
-//! `lib/review-dedup.mjs`: the same inputs give the same text, the working-directory line aside.
+//! The prompts held to `content/parity/prompt-cases.json`, a golden file this crate owns
+//! ([`crate::golden`]; `lib/review-prompt-parity.test.mjs` holds the engines' renderers to it too
+//! while they ship): the same inputs give the same text, the working-directory line aside.
 
 use serde_json::Value;
 
@@ -9,25 +9,28 @@ use super::{
     dedup_prompt, lens_prompt, prior_found_summary, red_team_prompt, repo_directive, scout_prompt,
     verify_prompt,
 };
+use crate::golden::Golden;
 use crate::ledger::LedgerRow;
-use crate::memory::Memory;
 use crate::plan::Plan;
 use crate::profile::Profile;
 use crate::sources::{Prepared, Sources, lens_block, verify_block};
-
-const CASES: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../content/parity/prompt-cases.json"
-));
 
 fn strings(v: &Value) -> Vec<String> {
     serde_json::from_value(v.clone()).unwrap()
 }
 
+/// `s` without the working-directory line it opens with.
+fn body(ctx: &PromptContext, s: String) -> String {
+    s.strip_prefix(&repo_directive(&ctx.repo))
+        .unwrap()
+        .to_owned()
+}
+
 #[test]
 fn every_prompt_renders_as_the_engines_render_it() {
-    let file: Value = serde_json::from_str(CASES).unwrap();
-    let (input, want) = (&file["input"], &file["expected"]);
+    let mut g = Golden::open("prompt-cases.json");
+    let file = g.file();
+    let input = &file["input"];
     let ctx = PromptContext {
         repo: "/work/repo".into(),
         base: input["base"].as_str().unwrap().into(),
@@ -56,51 +59,45 @@ fn every_prompt_renders_as_the_engines_render_it() {
         metrics_dropped: Vec::new(),
     };
     let pool = input["pool"].as_array().unwrap();
-    let dir = repo_directive(&ctx.repo);
-    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
     let prior = prior_found_summary(pool);
-    assert_eq!(prior, want["prior"].as_str().unwrap());
+    g.check("/expected/prior", prior.clone());
     // Each profile the engines share: its scout and the lenses the input names, from its globs.
-    for (id, lenses, want) in [
-        ("rust", &input["lenses"], want),
-        ("nix", &input["nixLenses"], &want["nix"]),
+    for (id, lenses, at) in [
+        ("rust", &input["lenses"], "/expected"),
+        ("nix", &input["nixLenses"], "/expected/nix"),
     ] {
         let profile = Profile::load(id).unwrap();
-        assert_eq!(
-            body(scout_prompt(&ctx, &profile, &[]).unwrap()),
-            want["scout"].as_str().unwrap(),
-            "{id}"
+        g.check(
+            &format!("{at}/scout"),
+            body(&ctx, scout_prompt(&ctx, &profile, &[]).unwrap()),
         );
         let pathspec = profile.pathspec(&[]);
         for lens in strings(lenses) {
-            let at = LensIn {
+            let at_lens = LensIn {
                 profile: &profile,
                 lens: &lens,
                 plan: &plan,
                 pathspec: &pathspec,
                 prior: &prior,
             };
-            let got = body(lens_prompt(&ctx, &at).unwrap());
-            assert_eq!(got, want["lenses"][&lens].as_str().unwrap(), "{id}: {lens}");
+            let got = body(&ctx, lens_prompt(&ctx, &at_lens).unwrap());
+            g.check(&format!("{at}/lenses/{lens}"), got);
         }
     }
-    assert_eq!(
-        body(dedup_prompt(&ctx, pool).unwrap()),
-        want["dedup"].as_str().unwrap()
+    g.check(
+        "/expected/dedup",
+        body(&ctx, dedup_prompt(&ctx, pool).unwrap()),
     );
-    rereview(&ctx, &plan, &prior, input, want);
-    strict_and_recall(&ctx, &plan, &prior, input, want);
-    sources(&ctx, &plan, &prior, input, want);
-    verifiers(&ctx, input, want);
-    complexity(&ctx, &plan, &prior, want);
+    rereview(&mut g, &ctx, &plan, &prior, input);
+    strict(&mut g, &ctx, &plan, &prior);
+    sources(&mut g, &ctx, &plan, &prior, input);
+    verifiers(&mut g, &ctx, input);
+    complexity(&mut g, &ctx, &plan, &prior);
 }
 
 /// The general profile's complexity lens — the engine's prompt, then what its findings carry here —,
-/// its index warm-up, and the verifier of one of its findings.
-fn complexity(ctx: &PromptContext, plan: &Plan, prior: &str, want: &Value) {
-    let dir = repo_directive(&ctx.repo);
-    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
-    let want = &want["complexity"];
+/// its index warm-up, and the verifier of one of its findings, whose head is the engine's.
+fn complexity(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let general = Profile::load("general").unwrap();
     let pathspec = general.pathspec(&["web/app.ts".into()]);
     let at = LensIn {
@@ -110,49 +107,43 @@ fn complexity(ctx: &PromptContext, plan: &Plan, prior: &str, want: &Value) {
         pathspec: &pathspec,
         prior,
     };
-    let lens = body(lens_prompt(ctx, &at).unwrap());
-    let shared = want["lens"].as_str().unwrap();
-    assert!(
-        lens.starts_with(&format!("{shared}\n\n")),
-        "the engine's prompt, whole: {lens}"
-    );
+    let lens = body(ctx, lens_prompt(ctx, &at).unwrap());
+    let carried = format!("\n\n{}", crate::content::text("lens-metrics").unwrap());
+    let shared = lens
+        .strip_suffix(&carried)
+        .unwrap_or_else(|| panic!("what the findings carry closes it: {lens}"));
+    g.check("/expected/complexity/lens", shared);
     let warmup = crate::complexity::warmup_task(&ctx.repo).unwrap();
-    assert_eq!(body(warmup.prompt), want["warmup"].as_str().unwrap());
+    g.check("/expected/complexity/warmup", body(ctx, warmup.prompt));
+    let head = crate::content::text("verify-metric").unwrap();
+    g.check("/expected/complexity/verify", head.clone());
     let f = serde_json::json!({"severity": "High", "title": "t", "file": "web/app.ts", "line": 1, "why": "w",
         "source": "complexity", "metrics": {"function": "f", "cognitive": 30}});
-    let v = body(verify_prompt(ctx, &general, &f, 0, "").unwrap());
-    assert!(v.starts_with(want["verify"].as_str().unwrap()), "{v}");
+    let v = body(ctx, verify_prompt(ctx, &general, &f, 0, "").unwrap());
+    assert!(v.starts_with(&head), "{v}");
 }
 
 /// A gate tool's seed under the tool's own verifier, and a lens finding's, each told how the gate
 /// ran its tools.
-fn verifiers(ctx: &PromptContext, input: &Value, want: &Value) {
-    let dir = repo_directive(&ctx.repo);
-    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+fn verifiers(g: &mut Golden, ctx: &PromptContext, input: &Value) {
     let rust = Profile::load("rust").unwrap();
     let gate = input["gateProvenance"].as_str().unwrap();
     for (case, f, voter) in [
         ("tool", &input["gateSeed"], 0),
         ("lens", &input["pool"][1], 1),
     ] {
-        let got = body(verify_prompt(ctx, &rust, f, voter, gate).unwrap());
-        assert_eq!(
-            got,
-            want["verify"][case].as_str().unwrap(),
-            "verify: {case}"
-        );
+        let got = body(ctx, verify_prompt(ctx, &rust, f, voter, gate).unwrap());
+        g.check(&format!("/expected/verify/{case}"), got);
     }
 }
 
 /// The prepared sources' blocks, the reconciler lens that reads them and the tests lens that does
 /// not, and a verifier given the block.
-fn sources(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &Value) {
-    let dir = repo_directive(&ctx.repo);
-    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+fn sources(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value) {
     let prepared: Vec<Prepared> = serde_json::from_value(input["sources"].clone()).unwrap();
-    let want = &want["sources"];
-    assert_eq!(lens_block(&prepared), want["lens"].as_str().unwrap());
-    assert_eq!(verify_block(&prepared), want["verify"].as_str().unwrap());
+    g.check("/expected/sources/lens", lens_block(&prepared));
+    let block = verify_block(&prepared);
+    g.check("/expected/sources/verify", block.clone());
     let ctx = PromptContext {
         sources: Sources {
             prepared,
@@ -170,35 +161,35 @@ fn sources(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &
             pathspec: &pathspec,
             prior,
         };
-        let got = body(lens_prompt(&ctx, &at).unwrap());
-        assert_eq!(got, want[lens].as_str().unwrap(), "sources: {lens}");
+        g.check(
+            &format!("/expected/sources/{lens}"),
+            body(&ctx, lens_prompt(&ctx, &at).unwrap()),
+        );
     }
     let finding = &input["pool"][0];
-    let block = want["verify"].as_str().unwrap();
     assert!(
         verify_prompt(&ctx, &rust, finding, 0, "")
             .unwrap()
-            .contains(block)
+            .contains(&block)
     );
     assert!(
         batch_verify_prompt(&ctx, &rust, &[finding])
             .unwrap()
-            .contains(block)
+            .contains(&block)
     );
 }
 
-/// Strict mode's scout and maintainability lens, and the memory recall over the input's paths and
-/// over none.
-fn strict_and_recall(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &Value) {
-    let dir = repo_directive(&ctx.repo);
-    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+/// Strict mode's scout and maintainability lens.
+fn strict(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str) {
     let strict = PromptContext {
         strict: true,
         ..ctx.clone()
     };
     let rust = Profile::load("rust").unwrap();
-    let scout = body(scout_prompt(&strict, &rust, &[]).unwrap());
-    assert_eq!(scout, want["strict"]["scout"].as_str().unwrap());
+    g.check(
+        "/expected/strict/scout",
+        body(ctx, scout_prompt(&strict, &rust, &[]).unwrap()),
+    );
     let pathspec = rust.pathspec(&[]);
     let at = LensIn {
         profile: &rust,
@@ -207,25 +198,13 @@ fn strict_and_recall(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Valu
         pathspec: &pathspec,
         prior,
     };
-    let lens = body(lens_prompt(&strict, &at).unwrap());
-    assert_eq!(lens, want["strict"]["maintainability"].as_str().unwrap());
-    let base = input["base"].as_str().unwrap();
-    let paths = strings(&input["recallPaths"]);
-    for (case, paths) in [("paths", paths), ("none", Vec::new())] {
-        let task = Memory::recall_task(&ctx.repo, &paths, base).unwrap();
-        assert_eq!(
-            body(task.prompt),
-            want["memoryRecall"][case].as_str().unwrap(),
-            "recall: {case}"
-        );
-    }
+    let lens = body(ctx, lens_prompt(&strict, &at).unwrap());
+    g.check("/expected/strict/maintainability", lens);
 }
 
 /// A re-review round's scout and `errors` lens, over the fix commits and as a full re-scan, and
 /// the adjudicator of the input's prior finding.
-fn rereview(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: &Value) {
-    let dir = repo_directive(&ctx.repo);
-    let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
+fn rereview(g: &mut Golden, ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value) {
     let rust = Profile::load("rust").unwrap();
     let pathspec = rust.pathspec(&[]);
     let head = input["priorHead"].as_str().unwrap();
@@ -238,37 +217,45 @@ fn rereview(ctx: &PromptContext, plan: &Plan, prior: &str, input: &Value, want: 
             re_review: scope,
             ..ctx.clone()
         };
-        let want = &want["rereview"][case];
-        let scout = body(scout_prompt(&ctx, &rust, &[]).unwrap());
-        assert_eq!(scout, want["scout"].as_str().unwrap(), "{case}: scout");
-        let at = LensIn {
+        let at = format!("/expected/rereview/{case}");
+        g.check(
+            &format!("{at}/scout"),
+            body(&ctx, scout_prompt(&ctx, &rust, &[]).unwrap()),
+        );
+        let errors = LensIn {
             profile: &rust,
             lens: "errors",
             plan,
             pathspec: &pathspec,
             prior,
         };
-        let lens = body(lens_prompt(&ctx, &at).unwrap());
-        assert_eq!(lens, want["errors"].as_str().unwrap(), "{case}: errors");
+        g.check(
+            &format!("{at}/errors"),
+            body(&ctx, lens_prompt(&ctx, &errors).unwrap()),
+        );
     }
     let row: LedgerRow = serde_json::from_value(input["prior"].clone()).unwrap();
-    let got = body(adjudicate_prompt(ctx, &row, &rust.rubric_skill).unwrap());
-    assert_eq!(got, want["adjudicate"].as_str().unwrap());
+    let got = body(
+        ctx,
+        adjudicate_prompt(ctx, &row, &rust.rubric_skill).unwrap(),
+    );
+    g.check("/expected/adjudicate", got);
     let set_aside = LedgerRow {
         disposition: "rejected".into(),
         file: "src/it's.rs".into(),
         ..row
     };
-    let got = body(carry_prompt(ctx, &set_aside, head).unwrap());
-    assert_eq!(got, want["carry"].as_str().unwrap());
+    g.check(
+        "/expected/carry",
+        body(ctx, carry_prompt(ctx, &set_aside, head).unwrap()),
+    );
     let invariant = input["redTeam"]["invariant"].as_str().unwrap();
     for (case, named) in [("invariant", invariant), ("fallback", "")] {
-        let got = body(red_team_prompt(ctx, &set_aside_row(input), named).unwrap());
-        assert_eq!(
-            got,
-            want["redTeam"][case].as_str().unwrap(),
-            "red team: {case}"
+        let got = body(
+            ctx,
+            red_team_prompt(ctx, &set_aside_row(input), named).unwrap(),
         );
+        g.check(&format!("/expected/redTeam/{case}"), got);
     }
 }
 

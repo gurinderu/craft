@@ -246,7 +246,8 @@ from `content/`, which it compiles in, its plans, prompts and verification rules
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them) and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise). The toolchain is pinned in `cli/rust-toolchain.toml`;
-CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, apart
+CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, and checks that the
+parity files the CLI owns (`verify-cases.json`, `plan-cases.json`, `prompt-cases.json`) regenerate unchanged, apart
 from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and
 `cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
 binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each release for Linux and macOS on x64

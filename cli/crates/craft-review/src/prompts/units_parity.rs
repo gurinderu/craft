@@ -1,19 +1,15 @@
-//! Unit mode's prompts held to the engine's text by `content/parity/prompt-cases.json`, which
-//! `lib/review-prompt-parity.test.mjs` renders: a lens confined to a batch of two crates, a lens over
-//! a directory slice of files in no crate, the contract lens of one crate, and the coordinator over
-//! an open question.
+//! Unit mode's prompts held to `content/parity/prompt-cases.json`, a golden file this crate owns
+//! ([`crate::golden`]; `lib/review-prompt-parity.test.mjs` holds the engine to it too while it ships):
+//! a lens confined to a batch of two crates, a lens over a directory slice of files in no crate, the
+//! contract lens of one crate, and the coordinator over an open question.
 
 use serde_json::Value;
 
 use super::*;
+use crate::golden::Golden;
 use crate::plan::Plan;
 use crate::profile::Profile;
 use crate::units::Slice;
-
-const CASES: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../content/parity/prompt-cases.json"
-));
 
 fn strings(v: &Value) -> Vec<String> {
     serde_json::from_value(v.clone()).unwrap()
@@ -29,8 +25,9 @@ fn slice(v: &Value) -> Slice {
 
 #[test]
 fn unit_mode_prompts_render_as_the_engine_renders_them() {
-    let file: Value = serde_json::from_str(CASES).unwrap();
-    let (input, want) = (&file["input"], &file["expected"]["unit"]);
+    let mut g = Golden::open("prompt-cases.json");
+    let file = g.file();
+    let input = &file["input"];
     let ctx = PromptContext {
         repo: "/work/repo".into(),
         base: input["base"].as_str().unwrap().into(),
@@ -91,6 +88,6 @@ fn unit_mode_prompts_render_as_the_engine_renders_them() {
             "seam",
         ),
     ] {
-        assert_eq!(body(got.unwrap()), want[name].as_str().unwrap(), "{name}");
+        g.check(&format!("/expected/unit/{name}"), body(got.unwrap()));
     }
 }

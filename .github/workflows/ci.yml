@@ -90,6 +90,11 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --locked
+      # The parity files the CLI owns are what it renders: regenerated, they must not change.
+      - name: parity files are current
+        run: |
+          CRAFT_UPDATE_PARITY=1 cargo test -p craft-review --locked parity
+          git diff --exit-code ../content/parity
 
   # Static analysis with semgrep's public registry rule sets, plus craft's own shell-command rule, over
   # lib/, integrations/opencode/plugin/ and integrations/claude-code/workflows/ (not integrations/opencode/install.sh or
