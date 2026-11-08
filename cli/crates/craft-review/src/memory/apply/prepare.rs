@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::super::judge::{self, Judge};
 use super::super::matching::{self, Plan};
-use super::super::{PriorDecision, RecordKind};
+use super::super::{MatchAsked, PriorDecision, RecordKind};
 use super::Scope;
 use super::judged::Asked;
 use super::mark::reraise_reason;
@@ -146,7 +146,32 @@ pub(in crate::memory) fn prepare(
     }
 }
 
+/// Readies `records` for `findings` as they were readied when the judge was asked (`saved`): the
+/// scopes git observed then, and the pairs asked then, so the answer is read against them.
+pub(in crate::memory) fn prepare_asked(
+    findings: &[Value],
+    records: &[PriorDecision],
+    saved: &MatchAsked,
+) -> Prepared {
+    let seen = Scope {
+        unchanged: saved.unchanged.clone(),
+        missing: saved.missing.clone(),
+    };
+    let mut p = prepare(findings, records, &|_| seen.clone());
+    p.asked.pairs.clone_from(&saved.pairs);
+    p
+}
+
 impl Prepared {
+    /// What the judge is asked, to keep until it answers.
+    pub(in crate::memory) fn to_keep(&self) -> MatchAsked {
+        MatchAsked {
+            unchanged: self.scope.unchanged.clone(),
+            missing: self.scope.missing.clone(),
+            pairs: self.asked.pairs.clone(),
+        }
+    }
+
     /// The match judge's task over the asked pairs, `None` when there is none to ask.
     ///
     /// # Errors

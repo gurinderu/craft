@@ -105,6 +105,46 @@ pub fn distinct(a: &Value, b: &Value) -> bool {
     ra.is_empty() && rb.is_empty() && title_key(a) != title_key(b)
 }
 
+/// Whether a source names a gate tool, as `isToolSource`: a verifier refutes its finding only by
+/// running the tool again.
+pub(crate) fn is_tool_source(source: &str) -> bool {
+    lens_words(source).iter().any(|l| is_tool_lens(l))
+}
+
+/// The section listing each finding of a gate tool that names no rule, once, as `file:line` and
+/// its title unchanged but for collapsed whitespace, as `toolTitlesSection`: such a finding is told
+/// apart from a past decision by its title alone (realm @nick/craft, node #236).
+#[must_use]
+pub(crate) fn titles_section(findings: &[Value]) -> String {
+    let mut rows: Vec<String> = Vec::new();
+    for f in findings
+        .iter()
+        .filter(|f| is_tool_finding(f) && rule_key(f).is_empty())
+    {
+        let file = f
+            .get("file")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        let line = f.get("line").and_then(Value::as_u64).unwrap_or(0);
+        let title = f.get("title").and_then(Value::as_str).unwrap_or("");
+        let row = format!(
+            "- `{}:{line}` · {}",
+            file.unwrap_or("?"),
+            title.split_whitespace().collect::<Vec<_>>().join(" ")
+        );
+        if !rows.contains(&row) {
+            rows.push(row);
+        }
+    }
+    if rows.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\n## Tool finding titles (verbatim)\n{}\n",
+        rows.join("\n")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::distinct;

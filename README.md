@@ -98,7 +98,8 @@ craft/
 The marketplace installs the plugin from the `claude-code-plugin` branch (a `url` source over HTTPS), which each
 release rebuilds from `integrations/claude-code` with its symlinks replaced by real files, so the install has
 nothing to dereference. On Linux with `core.symlinks=false` (the Windows default) the plugin installs with all its
-files. It has not been observed on Windows, where the hooks are POSIX shell commands run by Claude Code's shell. The `cli-review` workflow's
+files. It has not been observed on Windows, where the hooks are POSIX shell commands run by Claude Code's shell. The `cli-review` workflow's mechanical gate builds and runs the reviewed branch's code on your machine (clippy runs
+its build scripts and proc macros, `nix flake check` its checks): pass `gate=false` for a branch you do not trust. Its
 released binary covers x86_64 Windows too (`craft-x86_64-pc-windows-msvc.tar.gz`, unpacked with the system's
 `tar.exe`), built by the release but not yet run on Windows. Working from a checkout,
 `claude --plugin-dir integrations/claude-code` loads the delivery in place through its symlinks (Linux, macOS).

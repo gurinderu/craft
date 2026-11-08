@@ -58,7 +58,7 @@ pub(crate) fn route(f: &Value) -> Route {
 }
 
 /// Whether two or more different lenses reported `f` (`lensAgreed`): its `sources`, else its
-/// `source`. No CLI finding is a gate tool's, so every source is a lens.
+/// `source` — a gate tool's aside, as `agreeingLenses`: a seed is not an independent reading.
 fn lens_agreed(f: &Value) -> bool {
     let all: Vec<&Value> = match f.get("sources").and_then(Value::as_array) {
         Some(a) => a.iter().collect(),
@@ -67,7 +67,7 @@ fn lens_agreed(f: &Value) -> bool {
     let mut lenses: Vec<&str> = all
         .iter()
         .filter_map(|s| s.as_str())
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty() && !crate::tool::is_tool_source(s))
         .collect();
     lenses.sort_unstable();
     lenses.dedup();
@@ -81,6 +81,9 @@ pub(crate) fn route_in(f: &Value, light: bool) -> Route {
     let sev = f.get("severity").and_then(Value::as_str).unwrap_or("");
     let tier = if light && !matches!(sev, "Critical" | "High" | "Medium") {
         Route::Skip
+    } else if crate::complexity::is_metric(f) {
+        // One verifier re-reads its metrics, whatever its severity, as `buildVerifyJobs` sends it.
+        Route::Individual
     } else {
         route(f)
     };

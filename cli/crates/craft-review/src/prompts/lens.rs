@@ -171,7 +171,9 @@ pub fn lens_prompt(ctx: &PromptContext, at: &LensIn<'_>) -> Result<String, Conte
         .lens(lens)
         .ok_or_else(|| ContentError::UnknownFile(format!("the lens {lens}")))?;
     let already = content::prompt("already-found", &vars([("summary", at.prior.to_owned())]))?;
-    let body = if lens == "negative-space" {
+    let body = if spec.metrics {
+        crate::complexity::lens_body(&spec.brief, &base_label(ctx))?
+    } else if lens == "negative-space" {
         negative_space(ctx, profile, plan, already)?
     } else {
         let nav = !profile.nav_skill.is_empty();

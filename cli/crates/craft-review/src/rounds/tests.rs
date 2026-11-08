@@ -147,6 +147,7 @@ fn each_profile_counts_its_own_new_findings_and_holes() {
         repo_rules: Vec::new(),
         surface_dropped: Vec::new(),
         light_skipped: Vec::new(),
+        metrics_dropped: Vec::new(),
     };
     assert_eq!(r.ran("general", &plan_of(&["errors", "money"])), ["errors"]);
     assert!(r.ran("nix", &plan_of(&["intent"])).is_empty());

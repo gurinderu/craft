@@ -22,7 +22,7 @@ mod mark;
 mod prepare;
 mod section;
 
-pub(super) use prepare::{Prepared, prepare};
+pub(super) use prepare::{Prepared, prepare, prepare_asked};
 
 pub(super) use mark::noted;
 use mark::{commit_missing, reraise_reason, reraised_note, set_aside};

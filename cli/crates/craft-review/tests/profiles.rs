@@ -62,7 +62,11 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
     let repo = repo_with(&["web/app.ts"]);
     let out = tempfile::tempdir().unwrap();
     let (run, s) = start(repo.path(), out.path());
-    assert_eq!(ids(&s), ["scout-general"], "planned, not INCOMPLETE: {s}");
+    assert_eq!(
+        ids(&s),
+        ["scout-general", "index-warmup"],
+        "planned, not INCOMPLETE, and the code-metrics index sought: {s}"
+    );
     let p = prompt_of(task(&s, "scout-general"));
     for want in [
         "You are scouting a source diff",
@@ -74,7 +78,7 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
 
     let s = submit(
         &run,
-        json!({"scout-general": scout("small", &["security"])}),
+        json!({"scout-general": scout("small", &["security"]), "index-warmup": {"indexed": false, "notes": "not indexed"}}),
     );
     assert_eq!(
         ids(&s),
@@ -125,8 +129,9 @@ fn a_typescript_only_diff_is_reviewed_by_the_general_lenses() {
         "{report}"
     );
     assert!(
-        report.contains("the general profile's complexity lens (needs a code-metrics index)"),
-        "a run the general profile took part in names the lens it leaves out: {report}"
+        report.contains("codebase-memory index unavailable (not indexed) -> the metrics-or-nothing lenses dropped")
+            && !report.contains("the general profile's complexity lens"),
+        "a run without the index says so, and complexity is no longer left out by construction: {report}"
     );
 }
 
@@ -189,7 +194,10 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     ]);
     let out = tempfile::tempdir().unwrap();
     let (run, s) = start(repo.path(), out.path());
-    assert_eq!(ids(&s), ["scout-rust", "scout-nix", "scout-general"]);
+    assert_eq!(
+        ids(&s),
+        ["scout-rust", "scout-nix", "scout-general", "index-warmup"]
+    );
     let general = prompt_of(task(&s, "scout-general"));
     assert!(
         general.contains("-- ':(literal)web/app.ts'") && !general.contains("lib.rs"),
@@ -200,7 +208,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     let s = submit(
         &run,
         json!({"scout-rust": scout("medium", &["errors"]), "scout-nix": scout("small", &["purity"]),
-               "scout-general": scout("small", &["security"])}),
+               "scout-general": scout("small", &["security"]), "index-warmup": {"indexed": false, "notes": ""}}),
     );
     assert_eq!(
         ids(&s),

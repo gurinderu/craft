@@ -66,7 +66,11 @@ fn the_general_profile_takes_code_but_not_prose_or_configuration() {
     );
     assert!(p.lens("negative-space").is_none());
     assert!(!p.rule_catalog, "review-rules ships no rules.md");
-    assert!(!p.offers("complexity"), "not without its code-metrics gate");
+    assert!(
+        p.lens("complexity").is_some_and(|l| l.metrics) && crate::complexity::wanted(&p),
+        "complexity, behind its code-metrics index"
+    );
+    assert!(!Profile::rust().unwrap().lenses.iter().any(|l| l.metrics));
     for f in ["web/app.ts", "main.py", "src/lib.rs", "scripts/build.sh"] {
         assert!(p.covers(f), "{f}");
     }
