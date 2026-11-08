@@ -24,6 +24,8 @@ pub(super) fn semgrep(cx: &Cx<'_>, acc: &mut Acc) {
         args.extend(["--config", d]);
     }
     let label = format!("`semgrep {}`", args.join(" "));
+    // `--`: a changed file named like an option stays a file.
+    args.push("--");
     args.extend(files);
     let Some((_, out, err)) =
         acc.exited(&label, "semgrep", cx.runner.run(cx.top, "semgrep", &args))

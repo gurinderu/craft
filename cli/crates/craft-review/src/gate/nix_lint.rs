@@ -17,7 +17,7 @@ pub(super) const STATIX: &str = "`statix check -o json`";
 pub(super) fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
     let ran = cx
         .runner
-        .run(cx.top, "statix", &["check", "-o", "json", file]);
+        .run(cx.top, "statix", &["check", "-o", "json", "--", file]);
     let Some((_, out, err)) = acc.exited(STATIX, "statix", ran) else {
         return false;
     };
@@ -79,7 +79,8 @@ pub(super) fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
 /// the message, which names the binding, tells two of them apart.
 pub(super) fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) {
     let label = "`deadnix -o json`";
-    let mut args = vec!["-o", "json"];
+    // `--`: a changed file named like an option (deadnix's `-e` edits files) stays a file.
+    let mut args = vec!["-o", "json", "--"];
     args.extend(files);
     let Some((_, out, _)) = acc.exited(label, "deadnix", cx.runner.run(cx.top, "deadnix", &args))
     else {

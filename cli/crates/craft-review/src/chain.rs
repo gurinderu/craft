@@ -26,8 +26,13 @@ pub struct RoundRecord {
     /// The commit `HEAD` named when the run started.
     pub head: String,
     pub round: u32,
-    /// When the run finished, in milliseconds since the epoch: the newest record wins.
+    /// When the run finished, in milliseconds since the epoch.
     pub finished_at_ms: u64,
+    /// When the run started, in milliseconds since the epoch: the record of the run started last
+    /// is the newest, however late a resume filed an earlier one ([`RoundRecord::order`]). Absent,
+    /// 0, in a record written before it.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub started_at_ms: u64,
     pub ledger: Vec<LedgerRow>,
     /// A chain started afresh here with nothing to build on: a run started `fresh` that its red gate
     /// ended before any lens. The next run of the branch starts a new chain rather than resume the
@@ -39,6 +44,27 @@ pub struct RoundRecord {
     /// change, as a record written before it reads.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scope: String,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+const fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+impl RoundRecord {
+    /// Where the record stands in its chain: when its run started, or, in a record written before
+    /// that was kept, when it finished.
+    #[must_use]
+    pub const fn order(&self) -> u64 {
+        if self.started_at_ms > 0 {
+            self.started_at_ms
+        } else {
+            self.finished_at_ms
+        }
+    }
 }
 
 /// The record of the run in `dir`.
@@ -127,7 +153,7 @@ pub fn newest(runs: &Path, cwd: &Path, key: Key<'_>) -> Option<Prior> {
         .filter_map(|dir| Some((read_record(&dir)?, dir)))
         .filter(|(r, _)| r.repo == key.repo && r.branch == key.branch && r.scope == key.scope)
         .filter(|(r, _)| git::is_ancestor(cwd, &r.head))
-        .max_by_key(|(r, _)| r.finished_at_ms)
+        .max_by_key(|(r, _)| r.order())
         .map(|(record, dir)| Prior { dir, record })
 }
 
@@ -189,6 +215,7 @@ pub fn record(
         head: head.to_owned(),
         round,
         finished_at_ms: now_ms(),
+        started_at_ms: 0,
         ledger,
         restart: false,
         scope: String::new(),

@@ -119,6 +119,11 @@ fn an_unscoped_run_lints_each_changed_package_by_its_manifest() {
     assert!(cargo.contains("--manifest-path crates/b/Cargo.toml --all-targets"));
     assert!(!cargo.contains(" -p "), "{cargo}");
     assert!(semgrep.contains("crates/a/src/lib.rs") && semgrep.contains("crates/b/src/lib.rs"));
+    // The file operands follow `--`, so none is read as an option.
+    assert!(
+        semgrep.contains(" -- crates/a/src/lib.rs") || semgrep.contains(" -- crates/b/src/lib.rs"),
+        "{semgrep}"
+    );
 }
 
 #[test]

@@ -53,6 +53,12 @@ pub enum StepError {
     Done(PathBuf),
     #[error("answer for {0}, which is no pending task of this run")]
     UnknownTask(String),
+    #[error("HEAD moved since this run stopped ({old} → {new}); start a new review")]
+    Moved { old: String, new: String },
+    #[error(
+        "tracked files changed since this run stopped (HEAD {0} unchanged); start a new review"
+    )]
+    Changed(String),
     #[error("the run has no plan")]
     NoPlan,
     #[error("writing {}", path.display())]
@@ -436,10 +442,12 @@ enum Hold {
 }
 
 /// [`submit`] with what the host `said`. A stopped run is resumed by a submit without a limit: its
-/// held tasks are handed out again, and nothing is read for them.
+/// held tasks are handed out again, and nothing is read for them. A resume — of a stopped run, or
+/// `said.resume` — goes on only over the tree the run started on ([`crate::resume`]).
 ///
 /// # Errors
-/// As [`submit`].
+/// As [`submit`], and [`StepError::Moved`] or [`StepError::Changed`] for a resume over another
+/// tree.
 pub fn submit_with(
     dir: &Path,
     given: Option<&Map<String, Value>>,
@@ -448,6 +456,9 @@ pub fn submit_with(
     let mut run = state::load(dir)?;
     if run.phase == Phase::Done {
         return Err(StepError::Done(dir.to_owned()).into());
+    }
+    if said.resume || (run.stopped.is_some() && said.limit.is_none()) {
+        crate::resume::unmoved(&run)?;
     }
     if run.stopped.is_some() {
         if said.limit.is_some() {
