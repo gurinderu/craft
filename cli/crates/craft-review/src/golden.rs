@@ -3,6 +3,10 @@
 //! instead, the input kept: `CRAFT_UPDATE_PARITY=1 cargo test -p craft-review parity`. The files the engines still
 //! write (`memory-cases.json`, `sort-cases.json`, `judge-prompt-cases.json`) are read with `include_str!`, never
 //! through this.
+//!
+//! The switch needs one test process: the lock below serialises the tests of one file across the threads of one
+//! `cargo test` binary, not across processes, so a runner that starts a process per test (cargo-nextest) can lose
+//! a write. Regenerate with plain `cargo test`.
 
 mod de;
 mod ordered;
@@ -14,7 +18,7 @@ use serde_json::Value;
 
 use ordered::Node;
 
-/// One file at a time: the tests of one file run on parallel threads and each writes it whole.
+/// One file at a time: the tests of one file run on parallel threads of one process and each writes it whole.
 static LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) struct Golden {
