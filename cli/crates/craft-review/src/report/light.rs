@@ -28,11 +28,16 @@ const CLI_NOT_RUN: [&str; 3] = [
 pub(super) fn cli_not_run(state: &RunState) -> String {
     let mut parts = CLI_NOT_RUN.to_vec();
     let took_part = |id: &str| state.tracks.iter().any(|t| t.profile == id);
-    if took_part("rust") {
-        parts.insert(0, RUST_GATE_NOT_RUN);
-    }
-    if took_part("nix") {
-        parts.insert(0, NIX_GATE_NOT_RUN);
+    let gated = took_part("rust") || took_part("nix");
+    if gated && !state.gate.skipped.is_empty() {
+        parts.insert(0, GATE_SKIPPED);
+    } else {
+        if took_part("rust") {
+            parts.insert(0, RUST_GATE_NOT_RUN);
+        }
+        if took_part("nix") {
+            parts.insert(0, NIX_GATE_NOT_RUN);
+        }
     }
     if state.chain.prior.is_some() {
         parts.push(REREVIEW_NOT_RUN);
@@ -46,6 +51,10 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
 /// What the Rust gate leaves out of the engine's: what takes an agent's judgement (CI's checks, the
 /// project's own lint recipe, dependency context) or the scout's plan (semver, registry rules).
 const RUST_GATE_NOT_RUN: &str = "the Rust gate's reading of CI and of the project's own lint recipe, its tests, cargo audit and cargo deny, cargo semver-checks, semgrep's registry rule sets (p/rust, p/secrets) and the dependency-context seeds";
+
+/// The gate of a run started with `--no-gate`.
+const GATE_SKIPPED: &str =
+    "the mechanical gate and its tool seeds (skipped on request, `--no-gate`)";
 
 /// What the Nix gate leaves out of the engine's.
 const NIX_GATE_NOT_RUN: &str = "the Nix gate's reading of CI, its formatter check, the builds of the touched attributes and the dependency-context seeds";

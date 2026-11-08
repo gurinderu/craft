@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use super::Status;
 use super::check::{Acc, Cx, Seed, last_line};
+use super::lock::Lockfiles;
 
 /// At most this many red diagnostics are listed per package.
 const ERRORS_MAX: usize = 5;
@@ -86,7 +87,6 @@ fn clippy(
         manifest,
         "--all-targets",
         "--message-format=json",
-        "--locked",
     ];
     if pedantic {
         args.extend(PEDANTIC);
@@ -99,7 +99,11 @@ fn clippy(
             ""
         }
     );
-    let (ok, out, err) = acc.exited(&label, "cargo", cx.runner.run(cx.top, "cargo", &args))?;
+    let ran = {
+        let _kept = Lockfiles::keep(cx.top, manifest);
+        cx.runner.run(cx.top, "cargo", &args)
+    };
+    let (ok, out, err) = acc.exited(&label, "cargo", ran)?;
     if !ok
         && (err.contains("no such command: `clippy`")
             || err.contains("cargo-clippy` is not installed"))

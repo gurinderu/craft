@@ -110,7 +110,8 @@ pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
 }
 
 /// The change against `base` with no context lines, from the merge-base to the working tree, as
-/// `git diff -U0 --merge-base <base>` prints it from the top level with its paths unquoted.
+/// `git diff -U0 --merge-base <base>` prints it from the top level with its paths unquoted and
+/// prefixed `a/` and `b/` whatever `diff.noprefix` or `diff.mnemonicPrefix` says.
 ///
 /// # Errors
 /// When `cwd` is not in a working tree or `git` fails.
@@ -131,6 +132,8 @@ pub fn zero_context_diff(cwd: &Path, base: &str) -> Result<String, GitError> {
             "-U0",
             "--no-color",
             "--no-ext-diff",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
             "--merge-base",
             base,
         ],

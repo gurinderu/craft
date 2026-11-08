@@ -55,6 +55,11 @@ pub struct StartArgs {
     /// apply (a launcher that recalled them itself).
     #[arg(long)]
     pub no_recall: bool,
+    /// Run no mechanical gate: clippy and `nix flake check` build the branch's code (build scripts,
+    /// proc macros, flake checks run as you), so skip them for a branch you do not trust; the report
+    /// names the gate as skipped.
+    #[arg(long)]
+    pub no_gate: bool,
 }
 
 /// How deep a review goes.
@@ -136,7 +141,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
             .as_deref()
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
         sources: crate::init::sources_setup(),
-        gate: Some(craft_review::gate::GateSetup::default()),
+        gate: (!args.no_gate).then(craft_review::gate::GateSetup::default),
     };
     print(&step::start(&opts)?)
 }

@@ -9,13 +9,14 @@ use super::check::{Acc, Cx, last_line};
 use super::nix_lint::{STATIX, deadnix, statix};
 
 /// What a failed `nix flake check` says when this machine, not the change, stopped it.
-const ENVIRONMENT: [&str; 6] = [
+const ENVIRONMENT: [&str; 7] = [
     "unable to download",
     "Could not resolve host",
     "Couldn't resolve host",
     "experimental Nix feature",
-    "cannot connect to socket",
-    "Permission denied",
+    "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'",
+    "while setting up the build environment",
+    "sandboxing builds is not supported",
 ];
 
 /// The Nix gate over `cx`.

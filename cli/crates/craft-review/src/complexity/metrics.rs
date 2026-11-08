@@ -1,5 +1,7 @@
-//! What a metrics lens's findings carry and what they stand on: the graph's numbers for the
-//! function each is about, and at least one of them over its bar.
+//! What a metrics lens's findings carry: the graph's numbers for the function each is about. The
+//! engine sets no cutoff in code — its prompt calibrates severity by whether the diff introduced or
+//! worsened a metric, and its verifier re-reads them — so none is set here: a finding stands on
+//! the metrics it carries, and one that carries none is not a metrics finding at all.
 
 use serde_json::{Map, Value, json};
 
@@ -7,23 +9,15 @@ use crate::content::{self, ContentError};
 use crate::profile::Profile;
 use crate::state::{Task, TaskKind, TaskState};
 
-/// The bar each metric is held to: a count over its number, or a flag set. Cognitive complexity's
-/// is craft's own (realm @nick/craft, node #155); the loop depth and the flags are those the
-/// engine's prompt calls High or Medium.
-const COUNTS: [(&str, u64); 2] = [("cognitive", 15), ("transitive_loop_depth", 2)];
-const FLAGS: [&str; 4] = [
-    "linear_scan_in_loop",
-    "alloc_in_loop",
-    "recursion_in_loop",
-    "unguarded_recursion",
-];
-/// The metrics a finding carries, as the graph names them.
-const ALL: [&str; 9] = [
+/// The metrics a finding carries, as the graph names them: the counts, then the flags.
+const COUNTS: [&str; 5] = [
     "cognitive",
     "complexity",
     "loop_depth",
     "transitive_loop_depth",
     "param_count",
+];
+const FLAGS: [&str; 4] = [
     "linear_scan_in_loop",
     "alloc_in_loop",
     "recursion_in_loop",
@@ -37,17 +31,14 @@ const ALL: [&str; 9] = [
 /// When the findings schema is missing.
 pub fn findings_schema() -> Result<Value, ContentError> {
     let mut schema = content::schema("findings")?;
-    let mut props: Map<String, Value> = ALL
-        .iter()
-        .map(|m| {
-            let ty = if FLAGS.contains(m) {
-                "boolean"
-            } else {
-                "integer"
-            };
-            ((*m).to_owned(), json!({"type": ty}))
-        })
-        .collect();
+    let typed = |names: &[&str], ty: &str| -> Vec<(String, Value)> {
+        names
+            .iter()
+            .map(|m| ((*m).to_owned(), json!({"type": ty})))
+            .collect()
+    };
+    let mut props: Map<String, Value> = typed(&COUNTS, "integer").into_iter().collect();
+    props.extend(typed(&FLAGS, "boolean"));
     props.insert("function".into(), json!({"type": "string"}));
     let metrics = json!({"type": "object", "additionalProperties": false, "required": ["function"], "properties": props});
     if let Some(item) = schema.pointer_mut("/properties/findings/items") {
@@ -61,40 +52,33 @@ pub fn findings_schema() -> Result<Value, ContentError> {
     Ok(schema)
 }
 
-/// What of `metrics` is over its bar, as `name value (over bar)`.
+/// The values `metrics` carries, as `name value`, in the graph's order.
 #[must_use]
-pub fn over_bar(metrics: &Value) -> Vec<String> {
-    let mut out = Vec::new();
-    for (m, bar) in COUNTS {
-        if let Some(n) = metrics.get(m).and_then(Value::as_u64).filter(|n| *n > bar) {
-            out.push(format!("{m} {n} (over {bar})"));
-        }
-    }
-    for m in FLAGS {
-        if metrics.get(m) == Some(&Value::Bool(true)) {
-            out.push(m.to_owned());
-        }
-    }
-    out
+pub fn values(metrics: &Value) -> Vec<String> {
+    COUNTS
+        .iter()
+        .chain(&FLAGS)
+        .filter_map(|m| Some(format!("{m} {}", metrics.get(*m)?)))
+        .collect()
 }
 
-/// Keeps `f` when a number of it is over its bar, telling it which in its `why`.
-fn stands(f: &mut Value) -> bool {
-    let over = over_bar(f.get("metrics").unwrap_or(&Value::Null));
+/// Keeps `f` when it carries a metric value, stating them in its `why` for its verifier.
+fn carries(f: &mut Value) -> bool {
+    let read = values(f.get("metrics").unwrap_or(&Value::Null));
     let why = f
         .get("why")
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_owned();
-    if let (false, Some(o)) = (over.is_empty(), f.as_object_mut()) {
-        let why = format!("{why} [over the bar: {}]", over.join(", "));
+    if let (false, Some(o)) = (read.is_empty(), f.as_object_mut()) {
+        let why = format!("{why} [metrics: {}]", read.join(", "));
         o.insert("why".into(), json!(why));
     }
-    !over.is_empty()
+    !read.is_empty()
 }
 
-/// Keeps, in each answered task of a metrics lens among `tasks`, only the findings whose numbers
-/// are over a bar, each told which; returns the notes on what was dropped.
+/// Keeps, in each answered task of a metrics lens among `tasks`, only the findings that carry a
+/// metric value, each stating them; returns the notes on what was dropped.
 pub fn sift(tasks: &mut [Task], profiles: &[Profile]) -> Vec<String> {
     let mut notes = Vec::new();
     for t in tasks.iter_mut().filter(|t| t.state == TaskState::Answered) {
@@ -115,10 +99,10 @@ pub fn sift(tasks: &mut [Task], profiles: &[Profile]) -> Vec<String> {
             continue;
         };
         let before = found.len();
-        found.retain_mut(stands);
+        found.retain_mut(carries);
         if found.len() < before {
             notes.push(format!(
-                "{lens}: {} finding(s) dropped — no metric over its bar (cognitive over 15, transitive_loop_depth over 2, or a linear scan, allocation or recursion in a loop, or unguarded recursion)",
+                "{lens}: {} finding(s) dropped — they carry no metric value read from the graph (metrics-or-nothing)",
                 before - found.len()
             ));
         }
@@ -130,21 +114,18 @@ pub fn sift(tasks: &mut [Task], profiles: &[Profile]) -> Vec<String> {
 mod tests {
     use serde_json::json;
 
-    use super::over_bar;
+    use super::values;
 
     #[test]
-    fn a_number_stands_only_over_its_bar() {
-        assert!(over_bar(&json!({"cognitive": 15, "transitive_loop_depth": 2, "complexity": 40, "param_count": 12})).is_empty());
+    fn a_finding_stands_on_the_values_it_carries_whatever_they_are() {
         assert_eq!(
-            over_bar(
-                &json!({"cognitive": 16, "transitive_loop_depth": 3, "alloc_in_loop": true, "linear_scan_in_loop": false})
-            ),
-            [
-                "cognitive 16 (over 15)",
-                "transitive_loop_depth 3 (over 2)",
-                "alloc_in_loop"
-            ]
+            values(&json!({"function": "f", "alloc_in_loop": false, "cognitive": 3})),
+            ["cognitive 3", "alloc_in_loop false"]
         );
-        assert!(over_bar(&json!(null)).is_empty(), "no numbers, no finding");
+        assert!(
+            values(&json!({"function": "f"})).is_empty(),
+            "no numbers, no finding"
+        );
+        assert!(values(&json!(null)).is_empty());
     }
 }

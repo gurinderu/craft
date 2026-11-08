@@ -4,8 +4,11 @@
 //! bounded by one time budget, as stage 5 runs git. The engine hands this to an agent only because
 //! its sandbox spawns no process; reading CI and a project's own lint recipe, which takes judgement,
 //! is left out and named. A red check this change is answerable for blocks the review before any
-//! lens; a tool's diagnostic on a line the change added is a seed finding every lens and verifier
+//! lens; a clippy, statix or deadnix diagnostic on a line the change added, and any result of
+//! semgrep's repository rules in a changed file, is a seed finding every lens and verifier
 //! sees, carrying its `toolRule`; a tool that is not installed is named, and the review goes on.
+//! clippy and `nix flake check` build and run the branch's code (build scripts, proc macros,
+//! flake checks): a run started with `--no-gate` runs none of them, and says so.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -19,6 +22,7 @@ use crate::coverage::Exit;
 mod check;
 mod clippy;
 mod lines;
+mod lock;
 mod nix;
 mod nix_lint;
 mod runner;
@@ -93,12 +97,14 @@ pub struct Gate {
 }
 
 impl Gate {
-    /// A run started without a gate.
+    /// A run started without a gate (`--no-gate`).
     #[must_use]
     pub fn not_asked() -> Self {
         Self {
             tracks: Vec::new(),
-            skipped: "the run was started without one".into(),
+            skipped:
+                "skipped on request (`--no-gate`): no tool built, linted or ran the branch's code"
+                    .into(),
         }
     }
 

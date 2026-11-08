@@ -255,4 +255,65 @@ fn a_red_gate_on_a_re_review_still_adjudicates_the_priors_and_plans_no_lens() {
     let r = report(&done);
     assert!(r.contains("mechanical gate is red (rust)"), "{r}");
     assert!(!r.contains("scout classification"), "{r}");
+    assert!(
+        !r2.join("round.json").exists(),
+        "a red round is no base for the next"
+    );
+
+    // The next round builds on round 1, the last that a lens read: its prior is adjudicated again.
+    let r3 = out.path().join("r3");
+    let s = step::start(&StartOptions {
+        run_dir: r3,
+        ..gated(repo.path(), out.path(), quiet.path())
+    })
+    .unwrap();
+    assert_eq!(ids(&s), ["scout-rust", "adjudicate-0"]);
+}
+
+#[test]
+fn a_gate_skipped_on_request_is_named_in_the_report() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let s = step::start(&opts(repo.path(), out.path())).unwrap();
+    let done = drive(&out.path().join("run"), s);
+    common::assert_contains_all(
+        &report(&done),
+        &[
+            "## Gate\n\nNot run: skipped on request (`--no-gate`): no tool built, linted or ran the branch's code.",
+            "the mechanical gate and its tool seeds (skipped on request, `--no-gate`)",
+        ],
+    );
+}
+
+#[test]
+fn after_a_red_round_the_next_reviews_the_whole_branch_not_the_fix() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let red = fake_cargo(&[error("mismatched types")], &[]);
+    let done = step::start(&gated(repo.path(), out.path(), red.path())).unwrap();
+    assert_eq!(done["verdict"], json!("Block"));
+    assert!(report(&done).contains("this round is not filed for the branch's next round"));
+    assert!(!out.path().join("run/round.json").exists());
+
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 0 }\n").unwrap();
+    git(repo.path(), &["commit", "-qam", "fix: it builds"]);
+    let quiet = fake_cargo(&[], &[]);
+    let r2 = out.path().join("r2");
+    let s = step::start(&StartOptions {
+        run_dir: r2.clone(),
+        ..gated(repo.path(), out.path(), quiet.path())
+    })
+    .unwrap();
+    assert_eq!(
+        ids(&s),
+        ["scout-rust"],
+        "a first round, no prior to adjudicate"
+    );
+    let p = prompt_of(&s["tasks"][0]);
+    assert!(p.contains("'origin/main'...HEAD"), "the whole branch: {p}");
+    let done = drive(&r2, s);
+    assert_eq!(
+        (&done["round"], &done["lensScope"]),
+        (&json!(1), &json!("full"))
+    );
 }

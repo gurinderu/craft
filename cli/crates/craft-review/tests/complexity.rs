@@ -1,6 +1,6 @@
 //! The general profile's complexity lens, metrics-or-nothing: it runs only when the warm-up found a
-//! code-metrics index, a finding of it stands only on a number over its bar, and its one verifier
-//! re-reads the metrics.
+//! code-metrics index, a finding of it stands only on the metrics it carries (no cutoff, as the
+//! engine sets none), and its one verifier re-reads them.
 
 #![expect(
     clippy::unwrap_used,
@@ -29,11 +29,11 @@ fn typescript() -> tempfile::TempDir {
     repo
 }
 
-/// A complexity finding at `web/app.ts:1` whose function reads `cognitive`.
-fn metric(title: &str, cognitive: u64) -> Value {
+/// A complexity finding at `web/app.ts:1` carrying `metrics`.
+fn metric(title: &str, metrics: Value) -> Value {
     json!({"severity": "Medium", "title": title, "file": "web/app.ts", "line": 1, "why": "w",
            "fix": "extract", "blastRadius": "", "source": "complexity", "ruleId": "", "whereChecked": "query_graph",
-           "metrics": {"function": "f", "cognitive": cognitive, "loop_depth": 1, "unguarded_recursion": false}})
+           "metrics": metrics})
 }
 
 /// Starts a run over the TypeScript change; the scout picks complexity, the warm-up says `indexed`.
@@ -74,7 +74,7 @@ fn without_a_code_metrics_index_the_lens_is_dropped_and_said_so() {
 }
 
 #[test]
-fn with_an_index_only_numbers_over_their_bar_stand_and_the_verifier_rereads_them() {
+fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rereads_them() {
     let (repo, out) = (typescript(), tempfile::tempdir().unwrap());
     let run = out.path().join("run");
     let s = planned(repo.path(), out.path(), true);
@@ -88,7 +88,7 @@ fn with_an_index_only_numbers_over_their_bar_stand_and_the_verifier_rereads_them
         &[
             "You are the complexity review lens, grounded in the codebase-memory knowledge graph.",
             "Step 1: detect_changes (diff base: `origin/main`)",
-            "A finding stands only on a number over its bar: cognitive above 15",
+            "A finding that carries no value read from the graph is dropped unread",
         ],
     );
     let schema: Value = serde_json::from_str(
@@ -104,10 +104,10 @@ fn with_an_index_only_numbers_over_their_bar_stand_and_the_verifier_rereads_them
     );
     let s = submit(
         &run,
-        json!({"lens-general-complexity-r1": lens("complexity", &[metric("f is hard to follow", 22), metric("f is a bit long", 9)]),
+        json!({"lens-general-complexity-r1": lens("complexity", &[metric("f is hard to follow", json!({"function": "f", "cognitive": 3, "loop_depth": 1, "unguarded_recursion": false})), metric("f is a bit long", json!({"function": "f"}))]),
                "lens-general-correctness-r1": lens("correctness", &[])}),
     );
-    // Round 2 adds nothing; then the one finding over its bar goes to one metric verifier.
+    // Round 2 adds nothing; then the one finding with metrics goes to one metric verifier.
     let quiet: serde_json::Map<String, Value> = ids(&s)
         .into_iter()
         .map(|id| {
@@ -124,7 +124,7 @@ fn with_an_index_only_numbers_over_their_bar_stand_and_the_verifier_rereads_them
         &[
             "You are an adversarial verifier for a METRIC-BACKED complexity finding.",
             "f is hard to follow",
-            "[over the bar: cognitive 22 (over 15)]",
+            "[metrics: cognitive 3, loop_depth 1, unguarded_recursion false]",
             "Metric-decided as above",
         ],
     );
@@ -133,7 +133,7 @@ fn with_an_index_only_numbers_over_their_bar_stand_and_the_verifier_rereads_them
     let report = std::fs::read_to_string(done["report"].as_str().unwrap()).unwrap();
     assert_contains_all(
         &report,
-        &["complexity: 1 finding(s) dropped — no metric over its bar"],
+        &["complexity: 1 finding(s) dropped — they carry no metric value read from the graph"],
     );
     assert!(!report.contains("f is a bit long"), "{report}");
 }

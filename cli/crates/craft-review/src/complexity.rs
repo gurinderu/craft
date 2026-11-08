@@ -2,7 +2,8 @@
 //! node #421; `dropComplexityUnlessIndexed`, `finderPrompt` and `COMBINED_METRIC_INSTR` in
 //! `src/adversarial-review.js`): an index warm-up beside the scouts finds whether a code-metrics
 //! index covers the repository, and without one the plan drops the lens; each of its findings
-//! carries the numbers it rests on and stands only when one is over its bar; its verifier re-reads
+//! carries the numbers it rests on, read from the graph — the engine sets no cutoff, and neither does
+//! this —, and one carrying none is dropped; its verifier re-reads
 //! the metrics rather than judging by argument.
 
 use serde_json::{Value, json};
@@ -15,7 +16,7 @@ use crate::state::{Task, TaskKind, TaskState};
 
 mod metrics;
 
-pub use metrics::{findings_schema, over_bar, sift};
+pub use metrics::{findings_schema, sift, values};
 
 /// Whether `profile` has a lens that needs the index.
 #[must_use]

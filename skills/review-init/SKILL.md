@@ -13,6 +13,11 @@ each one's source at the revision you name, so a claim about how that system beh
 its code, not on memory. Library dependencies are not asked for: the review opens the version
 the lockfile pins on its own.
 
+The profile is read, never built. The review itself is another matter: unless it is started
+with `gate=false` (`craft review start --no-gate`), its mechanical gate **builds and runs the
+branch's code** on your machine — clippy runs its build scripts and proc macros, `nix flake
+check` its checks. Review a branch you do not trust with `gate=false`.
+
 The binary cannot ask you anything inside an agent session. So: **propose, ask, write.**
 
 ## 1. Recall the memory's external systems

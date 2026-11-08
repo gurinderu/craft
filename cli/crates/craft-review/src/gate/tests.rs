@@ -60,6 +60,10 @@ fn the_nix_tools_seed_what_they_report_on_the_changes_lines() {
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
     );
+    // A reviewer's own diff settings change no prefix the gate reads its added lines by.
+    git(repo.path(), &["config", "diff.noprefix", "true"]);
+    git(repo.path(), &["config", "diff.mnemonicPrefix", "true"]);
+    git(repo.path(), &["config", "color.diff", "always"]);
     tool(tools.path(), "nix", "exit 0");
     tool(
         tools.path(),
@@ -161,6 +165,20 @@ fn a_red_flake_fails_the_gate_but_one_this_machine_stopped_is_unknown() {
         ["statix", "deadnix"],
         "not installed, named"
     );
+    // A check the change broke may say "Permission denied" itself: that is the change's, red.
+    tool(
+        tools.path(),
+        "nix",
+        "echo 'error: builder for check failed: open: Permission denied' >&2; exit 1",
+    );
+    let (gate, _) = run(
+        repo.path(),
+        "HEAD~1",
+        &nix_track(),
+        &setup(tools.path(), budget),
+        run_dir.path(),
+    );
+    assert_eq!(gate.tracks[0].status, Status::Fail);
 }
 
 #[test]
@@ -244,4 +262,62 @@ fn a_diagnostic_is_placed_from_the_package_it_was_reported_in() {
         ["crates/a/src/lib.rs"],
         "not the top package's src/lib.rs"
     );
+}
+
+/// A repository with a package at its top, its lockfile `lock` committed when there is one.
+fn package(lock: Option<&str>) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    git(d, &["init", "-q", "-b", "main"]);
+    std::fs::write(d.join("Cargo.toml"), "[package]\n").unwrap();
+    if let Some(l) = lock {
+        std::fs::write(d.join("Cargo.lock"), l).unwrap();
+    }
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "init"]);
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    std::fs::write(d.join("src/lib.rs"), "pub fn f() {}\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "feat: f"]);
+    dir
+}
+
+/// The gate over `repo`'s package with a `cargo` running `script`, its budget `budget`.
+fn clippy_with(repo: &Path, script: &str, budget: Duration) -> super::Gate {
+    let tools = tempfile::tempdir().unwrap();
+    tool(tools.path(), "cargo", script);
+    let run_dir = tempfile::tempdir().unwrap();
+    let files = vec!["src/lib.rs".to_owned()];
+    let (gate, _) = run(
+        repo,
+        "HEAD~1",
+        &[Track::new("rust", files)],
+        &setup(tools.path(), budget),
+        run_dir.path(),
+    );
+    gate
+}
+
+#[test]
+fn clippy_builds_without_locked_and_leaves_the_lockfile_as_it_was() {
+    let writes = "printf 'rewritten' > Cargo.lock";
+    let kept = package(Some("pinned\n"));
+    let gate = clippy_with(kept.path(), writes, Duration::from_secs(30));
+    assert_eq!(gate.tracks[0].status, Status::Pass, "{gate:?}");
+    assert!(!gate.tracks[0].provenance.contains("--locked"));
+    let lock = std::fs::read_to_string(kept.path().join("Cargo.lock")).unwrap();
+    assert_eq!(lock, "pinned\n", "put back");
+    let none = package(None);
+    clippy_with(none.path(), writes, Duration::from_secs(30));
+    assert!(!none.path().join("Cargo.lock").exists(), "none written");
+    // Killed by the budget after writing it, the lockfile is still put back.
+    let cut = package(Some("pinned\n"));
+    let gate = clippy_with(
+        cut.path(),
+        &format!("{writes}; while :; do :; done"),
+        Duration::from_millis(500),
+    );
+    assert_eq!(gate.tracks[0].status, Status::Unknown);
+    let lock = std::fs::read_to_string(cut.path().join("Cargo.lock")).unwrap();
+    assert_eq!(lock, "pinned\n");
 }
