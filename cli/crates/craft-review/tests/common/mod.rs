@@ -66,6 +66,9 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         recall: false,
         sources: None,
         gate: None,
+        extra_lenses: None,
+        // The fixture repository is the session's project, so a light pass discovers its agents.
+        session: Some(repo.to_path_buf()),
     }
 }
 
@@ -134,6 +137,36 @@ pub fn scout(size: &str, lenses: &[&str]) -> Value {
 /// A lens's answer of `findings`.
 pub fn lens(name: &str, findings: &[Value]) -> Value {
     json!({"lens": name, "findings": findings})
+}
+
+/// Past the completeness critic a large or security-sensitive plan asks: each critic answers that
+/// coverage is complete, so the run goes on as it would without one.
+pub fn past_critic(run: &Path, s: Value) -> Value {
+    let critics: Map<String, Value> = ids_of(&s)
+        .into_iter()
+        .filter(|id| ["critic-rust", "critic-nix", "critic-general"].contains(&id.as_str()))
+        .map(|id| {
+            (
+                id,
+                json!({"missingLenses": [], "notes": "coverage complete"}),
+            )
+        })
+        .collect();
+    if critics.is_empty() {
+        return s;
+    }
+    step::submit(run, Some(&critics)).unwrap()
+}
+
+/// The ids of a step's pending tasks; none on a finished step.
+fn ids_of(step: &Value) -> Vec<String> {
+    step.get("tasks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t.get("id").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Submits `pairs` (answers by task id) to the run in `run`.

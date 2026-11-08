@@ -77,22 +77,22 @@ pub fn prior_found_summary(pool: &[Value]) -> String {
     kept.join("\n")
 }
 
-fn base_label(ctx: &PromptContext) -> String {
+pub(super) fn base_label(ctx: &PromptContext) -> String {
     format!("`{}`", flatten(Some(&Value::String(ctx.base.clone()))))
 }
 
-fn range(ctx: &PromptContext) -> String {
+pub(super) fn range(ctx: &PromptContext) -> String {
     format!("--merge-base {}", shq(&ctx.base))
 }
 
-fn rules(ctx: &PromptContext) -> Result<String, ContentError> {
+pub(super) fn rules(ctx: &PromptContext) -> Result<String, ContentError> {
     content::prompt(
         "review-rules",
         &vars([("dirs", plugin_candidates(ctx, REVIEW_RULES_DIR))]),
     )
 }
 
-fn repo_rules_line(paths: &[String]) -> Result<String, ContentError> {
+pub(super) fn repo_rules_line(paths: &[String]) -> Result<String, ContentError> {
     if paths.is_empty() {
         return Ok(String::new());
     }
@@ -245,7 +245,7 @@ fn strict_line(ctx: &PromptContext, lens: &str) -> Result<String, ContentError> 
 }
 
 /// The re-review framing of a lens prompt, empty on a first review.
-fn re_review(ctx: &PromptContext) -> Result<String, ContentError> {
+pub(super) fn re_review(ctx: &PromptContext) -> Result<String, ContentError> {
     let name = match ctx.re_review {
         ReScope::First => return Ok(String::new()),
         ReScope::Fixes => "lens-re-review-fixes",

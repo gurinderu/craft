@@ -15,11 +15,7 @@ fn push_once<'a>(list: &mut Vec<&'a str>, l: &'a str) {
 
 /// The parts of craft:review the CLI does not run, each named once so a later slice that ports one
 /// removes its item and nothing else.
-const CLI_NOT_RUN: [&str; 3] = [
-    "the completeness critic",
-    "unit slicing and the contract lens",
-    "extra and role lenses",
-];
+const CLI_NOT_RUN: [&str; 1] = ["unit slicing and the contract lens"];
 
 /// The not-run line that says what this CLI's review leaves out by construction. It is a scope
 /// statement, not a failure: a re-run will not add these, so it does not make the verdict
@@ -43,7 +39,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
         parts.push(REREVIEW_NOT_RUN);
     }
     format!(
-        "not part of this CLI's review (it runs the mechanical gate of its Rust and Nix profiles, the lenses of its Rust, Nix and general profiles, the dedup, the verification, the project memory's decisions, deferred questions and project rules with their judges, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
+        "not part of this CLI's review (it runs the mechanical gate of its Rust and Nix profiles, the lenses of its Rust, Nix and general profiles, the repository's own reviewing agents as extra lenses, the dedup, the verification, the completeness critic with the lenses it admits, the project memory's decisions, deferred questions and project rules with their judges, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
         parts.join(" · ")
     )
 }

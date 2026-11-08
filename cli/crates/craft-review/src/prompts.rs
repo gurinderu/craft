@@ -11,6 +11,7 @@ use serde_json::Value;
 use crate::sources::Sources;
 
 mod adjudicate;
+mod critic;
 mod lens;
 #[cfg(test)]
 mod parity;
@@ -18,6 +19,7 @@ mod red_team;
 mod scout;
 mod verify;
 pub use adjudicate::{adjudicate_prompt, carry_prompt, sanitize};
+pub use critic::{CriticIn, critic_prior, critic_prompt, extra_lens_prompt};
 pub use lens::{LensIn, lens_prompt, prior_found_summary};
 pub use red_team::red_team_prompt;
 pub use scout::{dedup_prompt, scout_prompt};

@@ -10,6 +10,7 @@ use crate::Error;
 use crate::complexity;
 use crate::content;
 use crate::coverage;
+use crate::extra;
 use crate::finished;
 use crate::gate::{self, GateSetup};
 use crate::git;
@@ -90,6 +91,13 @@ pub struct StartOptions {
     /// How the mechanical gate runs its tools before the scouts; `None`, it does not run, and the
     /// report says so.
     pub gate: Option<GateSetup>,
+    /// The consumer's own agents to run as extra lenses, as the host names them (`extraLenses`):
+    /// names separated by commas or spaces, or `off`; `None`, discovered on a light pass and off
+    /// on a full review ([`crate::extra::request`]).
+    pub extra_lenses: Option<String>,
+    /// The directory the host session runs in, whose project's `.claude/agents` discovery reads;
+    /// the process's working directory when `None`.
+    pub session: Option<PathBuf>,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -161,6 +169,8 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         chain,
         memory: memory.recalling(opts.recall),
         gate: gate::Gate::default(),
+        critic: crate::critic::Critic::default(),
+        extra: extra::Extra::default(),
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -177,6 +187,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         // A red gate blocks before any lens, as `gateFailedExit` does.
         run.exit = run.gate.exit();
     }
+    choose_extra(&cwd, opts, &mut run);
     if run.exit.is_none() {
         run.tasks = scouts(&run, &profiles)?;
         let recall = opts.recall && !recall_paths.is_empty();
@@ -192,6 +203,26 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;
     Ok(next(dir, &run))
+}
+
+/// The extra lenses the run is asked for, discovered among the session project's agents when it
+/// asks for discovery and goes on to its lenses; a run ending here says they did not run.
+fn choose_extra(cwd: &Path, opts: &StartOptions, run: &mut RunState) {
+    run.extra = extra::request(opts.extra_lenses.as_deref(), opts.light);
+    if run.exit.is_some() {
+        extra::not_reached(run);
+        return;
+    }
+    if run.extra.how == extra::How::Discovered {
+        let session = opts
+            .session
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| cwd.to_path_buf());
+        let (agents, read) = extra::discover(&session, cwd);
+        run.extra.agents = agents;
+        run.extra.discovery = read;
+    }
 }
 
 /// Makes `dir` the new run's: refused when it holds a run, or a task or answer file that would be
