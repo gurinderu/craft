@@ -2,7 +2,8 @@
 //! record beside them — the verdict line as the report shows it, the head and base the run read,
 //! the findings it reported (severity, file, line, title, tier), the changed files no profile
 //! covered and what did not run, the sorting before publication, the findings going against
-//! memory and what was posted on the PR ([`crate::publish`]). Refuted findings are left out: the
+//! memory and what was posted on the PR ([`crate::publish`]), and what the lenses yielded and
+//! verification judged ([`crate::telemetry`]). Refuted findings are left out of `findings`: the
 //! run did not report them.
 
 use std::path::Path;
@@ -12,6 +13,7 @@ use serde_json::{Value, json};
 use crate::prompts::ReScope;
 use crate::report::{self, Tier};
 use crate::state::{self, RunState};
+use crate::telemetry;
 
 /// The finished step of the run in `dir`, whose verdict is `verdict`.
 pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
@@ -24,6 +26,8 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "lensScope": if run.context.re_review == ReScope::Fixes { "delta" } else { "full" },
         "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
         "memory": run.memory.source.record(), "strict": run.context.strict,
+        "dimensions": telemetry::dimensions(run), "verification": telemetry::verification(run),
+        "lensRounds": run.rounds.yields,
     });
     if let Some(obj) = done.as_object_mut() {
         if !run.degraded.is_empty() {

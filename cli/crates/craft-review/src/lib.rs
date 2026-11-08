@@ -45,6 +45,7 @@ pub mod status;
 pub mod step;
 pub mod stop;
 mod strict;
+pub mod telemetry;
 mod tool;
 pub mod units;
 mod validate;

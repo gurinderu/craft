@@ -28,9 +28,14 @@ fn start_renders_the_scout_over_the_diff() {
             "id": "scout-rust", "label": "scout:rust", "model": "haiku",
             "promptFile": at("tasks/scout-rust.md"),
             "schemaFile": at("tasks/scout-rust.schema.json"),
-            "answerFile": at("answers/scout-rust.json"),
+            "answerFile": at("answers/scout-rust.json"), "kind": "scout",
         }),
-        "the task names its files and carries no prompt or schema text"
+        "the task names its files and what it is for, and carries no prompt or schema text"
+    );
+    assert_eq!(
+        s["phase"],
+        json!("scout"),
+        "the step names the phase its tasks run in"
     );
     let prompt = prompt_of(task);
     for want in [
@@ -185,6 +190,10 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
     let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
     assert_eq!(ids(&s), ["verify-2-v0", "verify-2-v1", "verify-batch-0"]);
     assert_eq!(status::status(&run).unwrap()["phase"], json!("verify"));
+    assert_eq!(
+        (&s["phase"], &s["tasks"][0]["kind"], &s["tasks"][2]["kind"]),
+        (&json!("verify"), &json!("verify"), &json!("verifyBatch"))
+    );
     let s = submit(
         &run,
         json!({
@@ -231,10 +240,44 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
             &json!([])
         )
     );
+    finished_telemetry(&s);
     assert_eq!(status::status(&run).unwrap()["phase"], json!("done"));
     let late = step::submit(&run, Some(&Map::new())).unwrap_err();
     assert!(matches!(late, Error::Step(StepError::Done(_))), "{late}");
     assert!(late.to_string().contains("is done"), "{late}");
+}
+
+/// What the full run's finished step carries for the run record's lens yield and verification,
+/// in review's record shape: a row per planned lens, the merged High under the lens that kept it.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "a step of the test above, failing loudly like it"
+)]
+fn finished_telemetry(s: &Value) {
+    let row = |lens: &str, ran: bool, tiers: [u64; 4], high: u64| {
+        let [confirmed, suspected, refuted, unverified] = tiers;
+        json!({"dimension": format!("rust:{lens}"), "ran": ran, "verdict": "", "findingCount": confirmed,
+               "bySeverity": {"Critical": 0, "High": high, "Medium": 0, "Low": 0, "Info": 0},
+               "confirmedCount": confirmed, "suspectedCount": suspected, "refutedCount": refuted,
+               "unverifiedCount": unverified, "rounds": 2})
+    };
+    assert_eq!(
+        s["dimensions"],
+        json!([
+            row("errors", true, [1, 0, 1, 0], 1),
+            row("intent", true, [0, 0, 0, 1], 0),
+            row("tests", true, [0, 0, 0, 0], 0)
+        ])
+    );
+    assert_eq!(
+        s["verification"],
+        json!({"candidates": 2, "confirmed": 1, "refuteRate": 0.5, "unverified": 1, "thinned": 0,
+               "suspected": 0, "refuted": 1, "votes": {"sent": 3, "returned": 3}})
+    );
+    assert_eq!(
+        s["lensRounds"][0],
+        json!({"round": 1, "agents": 3, "returned": 3, "newFindings": 4})
+    );
 }
 
 #[test]

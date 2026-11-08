@@ -181,6 +181,10 @@ pub struct Task {
     /// retries counts as an off-schema vote rather than a dead one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refused: Option<Value>,
+    /// The host abandoned its agent at its deadline (`submit --abandoned`): failed for good, never
+    /// held for a resume nor handed out again, and no death of its dispatch round.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub abandoned: bool,
 }
 
 impl Task {
@@ -207,6 +211,7 @@ impl Task {
             error: None,
             answer: None,
             refused: None,
+            abandoned: false,
         }
     }
 
@@ -341,6 +346,10 @@ pub struct RunState {
     /// Optional, so a state written before it reads as a run that posts nothing.
     #[serde(default)]
     pub publish: crate::publish::Publish,
+    /// What the record carries of the lenses and the verification ([`crate::telemetry`]).
+    /// Optional, so a state written before it reads as a run with nothing counted yet.
+    #[serde(default)]
+    pub telemetry: crate::telemetry::Tally,
 }
 
 impl RunState {

@@ -5,7 +5,7 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use craft_review::{prompts, status, step};
@@ -123,6 +123,10 @@ pub struct SubmitArgs {
     /// missing now is handed out again rather than counted as a failed attempt.
     #[arg(long)]
     pub resume: bool,
+    /// A task whose agent the host abandoned at its deadline; repeatable. It fails at once and is
+    /// not handed out again, and an answer its agent writes later is never read.
+    #[arg(long)]
+    pub abandoned: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -138,6 +142,27 @@ fn print(value: &Value) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Whole milliseconds, saturated.
+fn ms(d: std::time::Duration) -> u64 {
+    u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+}
+
+/// A step stamped with the wall clock the host has none of (the workflow sandbox reads no clock):
+/// `at`, when it was printed, and `took`, how long this command ran, both in milliseconds, from
+/// which the host tells its runtime figures apart by phase.
+fn stamped(mut step: Value, began: Instant) -> Value {
+    // 0 on a clock set before the epoch: the host then reads no wall time from it.
+    let at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(ms)
+        .unwrap_or_default();
+    if let Some(obj) = step.as_object_mut() {
+        obj.insert("at".into(), Value::from(at));
+        obj.insert("took".into(), Value::from(ms(began.elapsed())));
+    }
+    step
+}
+
 /// A fresh run directory under `~/.craft/runs/cli`, named by the time and this process.
 fn default_run_dir() -> Result<PathBuf> {
     let home = std::env::var_os("HOME").context("HOME is not set; pass --run-dir")?;
@@ -151,6 +176,7 @@ fn default_run_dir() -> Result<PathBuf> {
 }
 
 pub fn start(args: &StartArgs) -> Result<ExitCode> {
+    let began = Instant::now();
     let root = args.craft_root.clone().or_else(find_craft_root);
     let (craft_root, craft_version) = match root {
         Some(r) => match prompts::craft_root_near(&r) {
@@ -191,7 +217,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         optional: args.optional.clone(),
         nested: args.nested,
     };
-    print(&step::start(&opts)?)
+    print(&stamped(step::start(&opts)?, began))
 }
 
 /// A JSON value the host passes, as a file or `-` for stdin.
@@ -214,6 +240,7 @@ fn given_answers(path: &Path) -> Result<Map<String, Value>> {
 }
 
 pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
+    let began = Instant::now();
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
@@ -222,8 +249,12 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
         limit: args.limit.as_deref(),
         resume: args.resume,
         post: None,
+        abandoned: &args.abandoned,
     };
-    print(&step::submit_with(&run, given.as_ref(), &said)?)
+    print(&stamped(
+        step::submit_with(&run, given.as_ref(), &said)?,
+        began,
+    ))
 }
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {
