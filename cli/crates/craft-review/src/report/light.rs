@@ -38,7 +38,7 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
         parts.push(REREVIEW_NOT_RUN);
     }
     format!(
-        "not part of this CLI's review (it runs the mechanical gate of its Rust and Nix profiles, the lenses of its Rust, Nix and general profiles (each sliceable lens once per directory slice of a change of 12 or more files across directories), unit mode when asked (each sliceable lens confined to a batch of crates, a contract lens per touched crate and a coordinator after the rounds), the repository's own reviewing agents as extra lenses, the dedup, the verification, the completeness critic with the lenses it admits, the project memory's decisions, deferred questions and project rules with their judges, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
+        "not part of this CLI's review (it runs the mechanical gate of its Rust and Nix profiles, the lenses of its Rust, Nix and general profiles (each sliceable lens once per directory slice of a change of 12 or more owned files across directories), unit mode when asked (each sliceable lens confined to a batch of crates, a contract lens per touched crate and a coordinator after the rounds), the repository's own reviewing agents as extra lenses, the dedup, the verification, the completeness critic with the lenses it admits, the project memory's decisions, deferred questions and project rules with their judges, and the sources of the integration points the reviewer's profile names (`craft init`) only; a re-run will not add these): {}",
         if parts.is_empty() {
             "nothing else".to_owned()
         } else {

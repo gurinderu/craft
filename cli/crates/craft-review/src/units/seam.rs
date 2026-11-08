@@ -80,24 +80,45 @@ fn named_dispositions(
         .map(named_key)
         .filter(|k| !k.is_empty())
         .collect();
-    dispositions
+    let mut out: BTreeMap<String, (String, String)> = BTreeMap::new();
+    for d in dispositions {
+        let (action, key) = (text(d, "action"), named_key(d));
+        if !named.contains(&key) || !matches!(action, "confirm" | "drop" | "convert") {
+            continue;
+        }
+        // As the engine's: a drop or convert once given is not undone by a later confirm.
+        if action == "confirm" && out.contains_key(&key) {
+            continue;
+        }
+        out.insert(key, (action.to_owned(), text(d, "why").to_owned()));
+    }
+    out
+}
+
+/// What the dispositions `decided` say of the pooled finding `f`: none when none names it; a drop
+/// or convert of any lens it was filed under over a confirm.
+fn verdict_of<'a>(
+    f: &Value,
+    decided: &'a BTreeMap<String, (String, String)>,
+) -> Option<&'a (String, String)> {
+    let hits: Vec<&(String, String)> = pooled_keys(f)
         .iter()
-        .map(|d| (text(d, "action"), named_key(d), d))
-        .filter(|(action, key, _)| {
-            named.contains(key) && matches!(*action, "confirm" | "drop" | "convert")
-        })
-        .map(|(action, key, d)| (key, (action.to_owned(), text(d, "why").to_owned())))
-        .collect()
+        .filter_map(|k| decided.get(k))
+        .collect();
+    hits.iter()
+        .find(|(action, _)| action != "confirm")
+        .or(hits.first())
+        .copied()
 }
 
 /// The coordinator's dispositions applied to `pool`, for the findings an open question named
 /// (`dependent`): `drop` and `convert` take the finding out (a converted one comes back as the seam
 /// finding the coordinator reports), `confirm` keeps it; a disposition naming any other finding, or
 /// an unknown action, is ignored. A disposition matches a pooled finding filed by its lens under
-/// `source` or under `sources`, and is counted only when it matched one — unlike
-/// `applyDispositions` in `lib/unit-seam.mjs`, which matches `source` alone and counts every
-/// disposition it reads, so a drop of the second lens's exact copy left the finding in the pool
-/// and still counted.
+/// `source` or under `sources`, and each finding a disposition matched is counted once, under the
+/// action that won — unlike `applyDispositions` in `lib/unit-seam.mjs`, which matches `source`
+/// alone and counts every disposition it reads, so a drop of the second lens's exact copy left the
+/// finding in the pool and still counted.
 #[must_use]
 pub fn apply(
     pool: Vec<Value>,
@@ -105,24 +126,23 @@ pub fn apply(
     dependent: &[Value],
 ) -> (Vec<Value>, Counts, Vec<SetAside>) {
     let decided = named_dispositions(dispositions, dependent);
-    let mut matched: BTreeSet<&str> = BTreeSet::new();
+    let mut counts = Counts::default();
     let mut set_aside = Vec::new();
     let mut kept = Vec::new();
     for f in pool {
-        let keys = pooled_keys(&f);
-        let hits: Vec<&String> = keys
-            .iter()
-            .filter_map(|k| decided.get_key_value(k).map(|(k, _)| k))
-            .collect();
-        matched.extend(hits.iter().map(|k| k.as_str()));
-        let gone = hits
-            .iter()
-            .filter_map(|k| decided.get(*k))
-            .find(|(action, _)| action != "confirm");
-        let Some((action, why)) = gone else {
+        let Some((action, why)) = verdict_of(&f, &decided) else {
             kept.push(f);
             continue;
         };
+        match action.as_str() {
+            "confirm" => {
+                counts.confirm += 1;
+                kept.push(f);
+                continue;
+            }
+            "drop" => counts.drop += 1,
+            _ => counts.convert += 1,
+        }
         set_aside.push(SetAside {
             action: action.clone(),
             lens: text(&f, "source").to_owned(),
@@ -132,14 +152,6 @@ pub fn apply(
             severity: text(&f, "severity").to_owned(),
             why: why.clone(),
         });
-    }
-    let mut counts = Counts::default();
-    for (action, _) in matched.iter().filter_map(|k| decided.get(*k)) {
-        match action.as_str() {
-            "confirm" => counts.confirm += 1,
-            "drop" => counts.drop += 1,
-            _ => counts.convert += 1,
-        }
     }
     (kept, counts, set_aside)
 }

@@ -2,7 +2,8 @@
 //! unit batches, each sliceable lens runs confined to one, the contract lens runs on each crate, and
 //! after the round a coordinator answers the lenses' questions — dropping or confirming the findings
 //! that depend on them — and reports its own seam findings. A change the mode cannot slice runs in
-//! the normal mode with a warning saying why; without the flag nothing changes.
+//! the normal mode with a warning saying why; without the flag a large change is cut by directory as
+//! the engine's normal mode cuts it, with no contract lens and no coordinator.
 
 #![expect(
     clippy::unwrap_used,
@@ -280,4 +281,51 @@ fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_al
     let text = report(&s);
     assert!(!text.contains("Unit mode"), "{text}");
     assert!(!text.contains("unit mode's choice"), "{text}");
+}
+
+#[test]
+fn a_profile_is_sliced_over_its_own_files_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    git(d, &["init", "-q", "-b", "main"]);
+    std::fs::write(d.join("README.md"), "x\n").unwrap();
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "init"]);
+    git(d, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    let files: Vec<String> = (0..20)
+        .map(|i| format!("{}/m/f{i}.rs", if i % 2 == 0 { "a" } else { "b" }))
+        .chain(["tools/x.py".into()])
+        .collect();
+    for f in &files {
+        let path = d.join(f);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "x = 1\n").unwrap();
+    }
+    git(d, &["add", "."]);
+    git(d, &["commit", "-qm", "feat: x"]);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(d, out.path())).unwrap();
+    let s = submit(
+        &run,
+        json!({"scout-rust": scout("small", &["errors"]), "scout-general": scout("small", &["security"]),
+               "index-warmup": {"indexed": false, "notes": "not indexed"}}),
+    );
+    let all = ids(&s);
+    assert!(
+        all.contains(&"lens-rust-errors-r1-s0".to_owned()),
+        "{all:?}"
+    );
+    let general: Vec<&String> = all
+        .iter()
+        .filter(|id| id.starts_with("lens-general-"))
+        .collect();
+    assert!(
+        !general.is_empty() && general.iter().all(|id| !id.contains("-r1-s")),
+        "{general:?}"
+    );
+    for id in general {
+        let p = prompt_of(task(&s, id));
+        assert!(!p.contains(".rs'"), "{id}: {p}");
+    }
 }

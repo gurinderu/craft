@@ -73,7 +73,8 @@ fn lens_key(profile: &str, lens: &str) -> String {
 
 /// One task per planned lens of `profile` for `round`, over the profile's part `files`, each told
 /// what the pool holds and run on the profile's lens agent; a metrics-or-nothing lens in the first
-/// round only. Under unit mode a sliceable lens runs once per slice of `slices` instead.
+/// round only. A sliceable lens runs once per slice of `slices` instead: the unit batches under unit
+/// mode, else the normal mode's directory slices.
 ///
 /// # Errors
 /// When a prompt cannot be rendered or the findings schema read.

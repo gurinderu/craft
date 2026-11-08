@@ -57,3 +57,27 @@ fn a_disposition_of_the_second_lens_s_exact_copy_takes_the_finding_and_only_matc
         }
     );
 }
+
+#[test]
+fn a_finding_given_conflicting_dispositions_counts_once_and_a_drop_wins_over_a_later_confirm() {
+    let copy = json!({"source": "errors", "sources": ["errors", "tests"], "file": "a.rs", "line": 1, "title": "t", "severity": "Low"});
+    let named = |lens: &str| json!({"lens": lens, "findingFile": "a.rs", "findingTitle": "t"});
+    let decide = |lens: &str, action: &str| json!({"lens": lens, "findingFile": "a.rs", "findingTitle": "t", "action": action, "why": action});
+    let questions = [named("errors"), named("tests")];
+    let dispositions = [
+        decide("errors", "drop"),
+        decide("errors", "confirm"),
+        decide("tests", "confirm"),
+    ];
+    let (kept, counts, aside) = apply(vec![copy], &dispositions, &questions);
+    assert!(kept.is_empty());
+    assert_eq!(aside[0].why, "drop");
+    assert_eq!(
+        counts,
+        Counts {
+            confirm: 0,
+            drop: 1,
+            convert: 0
+        }
+    );
+}

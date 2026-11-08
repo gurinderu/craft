@@ -25,12 +25,15 @@ pub fn open(
         asked,
         ..Units::default()
     };
-    for p in profiles
+    for (p, track) in profiles
         .iter()
-        .filter(|p| tracks.iter().any(|t| t.profile == p.id))
+        .filter_map(|p| Some((p, tracks.iter().find(|t| t.profile == p.id)?)))
     {
+        // A profile owns the part coverage assigned it, never what its detection alone would take:
+        // the general profile's covers every code file, the Rust and Nix ones' included.
+        let owns = |f: &str| track.files.iter().any(|x| x == f);
         if asked {
-            match open_track(top, base, files, p) {
+            match open_track(top, base, files, p, &owns) {
                 Ok(t) => {
                     units.tracks.push(t);
                     continue;
@@ -40,9 +43,12 @@ pub fn open(
                 )),
             }
         }
-        // The normal mode: the directory slicing, with the mode off or fallen back.
-        let owns = |f: &str| p.covers(f);
-        let slices = dirs::slice_diff(files, UNIT_MIN_FILES, MAX_SLICES, &owns);
+        // The normal mode: the directory slicing, with the mode off or fallen back. A profile that
+        // takes the rest carries no shared rider beyond its own part: project configuration stays
+        // out of every code lens, as coverage keeps it, and another profile's manifest is not its
+        // to read; the Rust and Nix profiles keep their manifests riding on every slice.
+        let riders = if p.detect.rest { &track.files } else { files };
+        let slices = dirs::slice_diff(riders, UNIT_MIN_FILES, MAX_SLICES, &owns);
         if !slices.is_empty() {
             units.directory.insert(p.id.clone(), slices);
         }
@@ -52,7 +58,13 @@ pub fn open(
 
 /// One profile's unit track, or why the mode cannot run for it (#362): no units in its profile, a
 /// failed discovery, no unit in the change, or a change too small to slice.
-fn open_track(top: &Path, base: &str, files: &[String], p: &Profile) -> Result<UnitTrack, String> {
+fn open_track(
+    top: &Path,
+    base: &str,
+    files: &[String],
+    p: &Profile,
+    owns: &dyn Fn(&str) -> bool,
+) -> Result<UnitTrack, String> {
     let Some(words) = &p.units else {
         return Err(format!(
             "not available for {}: its profile finds no units",
@@ -72,15 +84,14 @@ fn open_track(top: &Path, base: &str, files: &[String], p: &Profile) -> Result<U
     if units.is_empty() {
         return Err(format!("found no {} in the {} change", words.noun, p.lang));
     }
-    let owns = |f: &str| p.covers(f);
     let graph = Graph {
         roots: &roots,
         packages: &packages,
         numstat: &numstat,
     };
-    let slices = batch_by_unit(files, &graph, BATCH_BUDGET, &owns);
+    let slices = batch_by_unit(files, &graph, BATCH_BUDGET, owns);
     if slices.is_empty() {
-        let owned = dirs::partition_owned(files, &owns).1.len();
+        let owned = dirs::partition_owned(files, owns).1.len();
         return Err(format!("skipped, change too small to slice: {owned} files"));
     }
     Ok(UnitTrack {
