@@ -149,7 +149,11 @@ fn a_resume_holds_the_answers_still_missing_rather_than_failing_them() {
     );
     assert!(!prompt_of(&s["tasks"][0]).contains("previous answer was invalid"));
     let st = status::status(&run).unwrap();
-    assert_eq!(st["tasks"][1]["retries"], json!(2), "not counted");
+    assert_eq!(
+        st["tasks"][1]["retries"],
+        json!(0),
+        "handed out again with its retries whole"
+    );
     assert_eq!(
         s["repo"],
         json!(repo.path().canonicalize().unwrap().display().to_string())

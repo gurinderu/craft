@@ -533,6 +533,8 @@ fn take_answer(
     match hold {
         Hold::Every => return Ok(live),
         Hold::Missing if !live => {
+            // Handed out again as first written, its ladder whole, as `stop::hold` holds a task.
+            task.retries = 0;
             task.error = None;
             task.refused = None;
             return Ok(false);
