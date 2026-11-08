@@ -270,3 +270,30 @@ fn a_resume_after_a_limit_stop_does_not_hand_an_abandoned_task_out_again() {
             .contains("errors: abandoned at its deadline")
     );
 }
+
+#[test]
+fn a_round_with_one_abandoned_task_and_the_rest_dead_is_no_limit_stop() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    let abandoned = ["lens-rust-errors-r1".to_owned()];
+    let said = Said {
+        abandoned: &abandoned,
+        ..Said::default()
+    };
+    // The errors lens abandoned at its deadline; intent and tests die through their retries.
+    let mut s = step::submit_with(&run, None, &said).unwrap();
+    for _ in 0..2 {
+        assert_eq!(ids(&s), ["lens-rust-intent-r1", "lens-rust-tests-r1"]);
+        s = step::submit(&run, None).unwrap();
+    }
+    assert!(
+        s.get("stopped").is_none(),
+        "a deadline fire is a live agent that took too long: {s}"
+    );
+    assert_eq!(
+        (&s["done"], &s["verdict"]),
+        (&json!(true), &json!("INCOMPLETE"))
+    );
+    assert!(!s["line"].as_str().unwrap().contains("usage limit"));
+}
