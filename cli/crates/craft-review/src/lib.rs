@@ -36,6 +36,7 @@ pub mod prompts;
 pub mod publish;
 pub mod report;
 pub mod rereview;
+mod resume;
 pub mod rounds;
 pub mod scope;
 pub mod settle;

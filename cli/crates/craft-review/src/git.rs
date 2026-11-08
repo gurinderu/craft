@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Why the change could not be read.
 #[derive(Debug, thiserror::Error)]
@@ -36,6 +37,11 @@ pub struct Diff {
     /// Whether tracked files differed from `HEAD` when the run started (untracked ones aside): the
     /// review then read uncommitted work, which `head` alone does not name.
     pub dirty: bool,
+    /// The fingerprint of the tracked files' changes against `head` when the run started
+    /// ([`worktree`]), so a resume refuses a tree changed since; empty in a state written before
+    /// it, which then reads as before and keeps its format.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub worktree: String,
     /// Every changed path, repository-relative.
     pub files: Vec<String>,
     /// `git diff --stat`'s summary.
@@ -46,6 +52,11 @@ pub struct Diff {
 
 /// Runs `git` in `cwd` and returns its stdout.
 pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
+    String::from_utf8(git_bytes(cwd, args)?).map_err(GitError::NotUtf8)
+}
+
+/// Runs `git` in `cwd` and returns its stdout as bytes, whatever their encoding.
+fn git_bytes(cwd: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
     let out = Command::new("git")
         .arg("-C")
         .arg(cwd)
@@ -58,7 +69,27 @@ pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
             stderr: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
         });
     }
-    String::from_utf8(out.stdout).map_err(GitError::NotUtf8)
+    Ok(out.stdout)
+}
+
+/// The fingerprint of the tracked files' changes against `HEAD` in the working tree `cwd` is in
+/// (untracked ones aside, as [`Diff::dirty`]): sha256 of `git diff --binary HEAD` from the top
+/// level, the same for the same changes whatever the files' encoding.
+///
+/// # Errors
+/// When `cwd` is not in a working tree or `git` fails.
+pub fn worktree(cwd: &Path) -> Result<String, GitError> {
+    let top = toplevel(cwd)?;
+    let args = [
+        "diff",
+        "--binary",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "HEAD",
+    ];
+    let digest = Sha256::digest(git_bytes(&top, &args)?);
+    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// The branch `HEAD` is on, `None` on a detached `HEAD` (`git rev-parse --abbrev-ref` prints
@@ -210,6 +241,7 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
     let dirty = !git(cwd, &["status", "--porcelain", "--untracked-files=no"])?
         .trim()
         .is_empty();
+    let worktree = worktree(cwd)?;
     // `top`: read from the top level, so the scope names the same path from any subdirectory;
     // `literal`: a directory name is no glob.
     let pathspec = scope.map(|s| format!(":(top,literal){s}"));
@@ -231,6 +263,7 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
         merge_base,
         head,
         dirty,
+        worktree,
         files,
         stat: stat.trim_end().to_owned(),
         log: log.trim().to_owned(),

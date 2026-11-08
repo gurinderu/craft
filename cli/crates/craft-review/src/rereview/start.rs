@@ -85,6 +85,7 @@ pub fn begin(
         round: 1,
         base: base.to_owned(),
         nested,
+        started_at_ms: chain::now_ms(),
         ..Chain::default()
     };
     let key = (

@@ -323,6 +323,7 @@ fn file_round(dir: &Path, run: &mut RunState) -> Result<(), Error> {
     let c = &run.chain;
     let mut record = chain::record(&c.repo, branch, &run.diff.head, c.round, c.ledger.clone());
     record.scope.clone_from(&c.scope);
+    record.started_at_ms = c.started_at_ms;
     if run.gate.exit().is_some() {
         let fresh = c.unchained.as_deref() == Some(chain::Unchained::Fresh.reason());
         if !fresh {

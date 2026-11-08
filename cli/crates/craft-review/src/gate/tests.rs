@@ -66,15 +66,18 @@ fn the_nix_tools_seed_what_they_report_on_the_changes_lines() {
     git(repo.path(), &["config", "diff.mnemonicPrefix", "true"]);
     git(repo.path(), &["config", "color.diff", "always"]);
     tool(tools.path(), "nix", "exit 0");
+    // Each answers only when the file operand follows `--`, so none is read as an option.
     tool(
         tools.path(),
         "statix",
-        r#"printf '%s' '{"file":"a.nix","report":[{"note":"Assignment instead of inherit","code":3,"severity":"Warn","diagnostics":[{"at":{"from":{"line":2,"column":3}},"message":"This assignment is better written with `inherit`"}]}]}'; exit 1"#,
+        r#"case "$*" in *"-- a.nix") ;; *) exit 9 ;; esac
+printf '%s' '{"file":"a.nix","report":[{"note":"Assignment instead of inherit","code":3,"severity":"Warn","diagnostics":[{"at":{"from":{"line":2,"column":3}},"message":"This assignment is better written with `inherit`"}]}]}'; exit 1"#,
     );
     tool(
         tools.path(),
         "deadnix",
-        r#"printf '%s\n' '{"file":"a.nix","results":[{"column":9,"line":1,"message":"Unused lambda pattern: self"},{"column":1,"line":9,"message":"Unused let binding: gone"}]}'"#,
+        r#"case "$*" in *"-- a.nix") ;; *) exit 9 ;; esac
+printf '%s\n' '{"file":"a.nix","results":[{"column":9,"line":1,"message":"Unused lambda pattern: self"},{"column":1,"line":9,"message":"Unused let binding: gone"}]}'"#,
     );
     let (gate, seeds) = run(
         repo.path(),
