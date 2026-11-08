@@ -114,6 +114,12 @@ pub struct StartOptions {
     /// posted with the craft-finding marker, the doubtful ones listed for the reviewer
     /// ([`crate::publish`]); off, nothing is posted.
     pub comment: bool,
+    /// The optional lenses to run (`optional`): `all`, or their names separated by commas or
+    /// spaces; `None`, none ([`crate::optional`]).
+    pub optional: Option<String>,
+    /// A parent engine launched the run (`nested`): it builds on no earlier round of the branch
+    /// and files no round record for a later one, as the engine keeps a nested run out of the chain.
+    pub nested: bool,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -140,7 +146,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     let mut chain = rereview::begin(
         &cwd,
         runs.as_deref().unwrap_or(dir),
-        opts.fresh,
+        (opts.fresh, opts.nested),
         opts.full_every,
         &branch_diff.base,
         scope.as_deref(),
@@ -160,13 +166,11 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         sources: sources::Sources::default(),
         scope,
     };
-    let tracks: Vec<Track> = coverage::assign(&diff.files, &profiles)
-        .into_iter()
-        .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
-        .collect();
-    let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
-    let uncovered = coverage::uncovered(&diff.files, taken);
+    let (tracks, uncovered) = tracks_of(&diff.files, &profiles);
     let memory = Memory::open(opts.prior_decisions.clone());
+    let (optional, unknown) = crate::optional::request(opts.optional.as_deref(), &profiles);
+    let notes =
+        crate::optional::unknown_note(opts.optional.as_deref().unwrap_or(""), &unknown, &profiles);
     let mut run = RunState {
         version: STATE_VERSION,
         tasks: Vec::new(),
@@ -175,11 +179,12 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         tracks,
         uncovered,
         light: opts.light,
+        optional,
         phase: Phase::Scout,
         rounds: Rounds::default(),
         findings: Vec::new(),
         settled: Vec::new(),
-        notes: Vec::new(),
+        notes: notes.into_iter().collect(),
         not_run: Vec::new(),
         degraded: Vec::new(),
         verdict: None,
@@ -222,6 +227,18 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     }
     run.tasks.extend(adjudicators);
     first_step(dir, &mut run)
+}
+
+/// Each profile's part of the changed `files`, and the files no profile covers that carry
+/// something to review.
+fn tracks_of(files: &[String], profiles: &[Profile]) -> (Vec<Track>, Vec<String>) {
+    let tracks: Vec<Track> = coverage::assign(files, profiles)
+        .into_iter()
+        .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
+        .collect();
+    let taken = |f: &str| tracks.iter().any(|t| t.files.iter().any(|x| x == f));
+    let uncovered = coverage::uncovered(files, taken);
+    (tracks, uncovered)
 }
 
 /// The new run's first step: its tasks, or, with none to run, the run ended at once (with nothing
@@ -305,7 +322,11 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
         let gated = opts
             .gate
             .as_ref()
-            .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, setup, dir));
+            .map(|setup| GateSetup {
+                scope: run.context.scope.clone(),
+                ..setup.clone()
+            })
+            .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir));
         (sources.join(), gated)
     });
     match prepared {

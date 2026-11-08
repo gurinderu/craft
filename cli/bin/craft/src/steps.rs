@@ -82,6 +82,16 @@ pub struct StartArgs {
     /// marker is not posted again), the doubtful ones listed in the report for the reviewer.
     #[arg(long)]
     pub comment: bool,
+    /// The optional pass, off by default: `all`, or the optional lenses to run, separated by
+    /// commas (`performance`, or qualified by its profile, `rust-performance`). A name that is no
+    /// optional lens is named in the report; the recognised ones still run.
+    #[arg(long, value_name = "all|lens,…")]
+    pub optional: Option<String>,
+    /// A parent engine launched this run (rust-audit's per-crate reviews): it builds on no earlier
+    /// round of the branch and files no round record, so a later run of the same path reviews it
+    /// whole again.
+    #[arg(long)]
+    pub nested: bool,
 }
 
 /// How deep a review goes.
@@ -204,6 +214,8 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         unit_scope: args.unit_scope,
         path: args.path.clone(),
         comment: args.comment,
+        optional: args.optional.clone(),
+        nested: args.nested,
     };
     print(&stamped(step::start(&opts)?, began))
 }

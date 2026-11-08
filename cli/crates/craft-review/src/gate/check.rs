@@ -19,6 +19,8 @@ pub(super) struct Cx<'a> {
     pub files: &'a [String],
     pub lines: &'a Lines,
     pub profile: &'a str,
+    /// The directory the run reviews, repository-relative; `None`, the whole change.
+    pub scope: Option<&'a str>,
 }
 
 impl Cx<'_> {
