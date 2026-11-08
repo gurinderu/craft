@@ -485,6 +485,7 @@ fn abandon(dir: &Path, run: &mut RunState, ids: &[String]) -> Result<(), Error> 
     {
         handoff::set_aside(dir, task)?;
         task.state = TaskState::Failed;
+        task.abandoned = true;
         task.error = Some(
             "abandoned at its deadline: the host waited its whole budget and no answer came back, so it is not asked for again".into(),
         );
