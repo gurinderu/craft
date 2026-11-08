@@ -31,6 +31,21 @@ pub struct NegativeSpace {
     pub shape_uses: String,
 }
 
+/// What a profile's units are called and what a confined lens, the contract lens and the seam pass
+/// read of a unit they may not open (`RUST_UNITS` in `lib/rust-units.mjs`): another unit's
+/// signatures (`<its path>` its directory), the public surface at `{{root}}`, what a public contract
+/// is made of, and the public items the seam pass follows. The Rust profile's units are its Cargo
+/// packages, which the binary discovers itself ([`crate::units`]).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnitWords {
+    pub noun: String,
+    pub signatures: String,
+    pub surface: String,
+    pub public_items: String,
+    pub changed_items: String,
+}
+
 /// Where a lens reads its catalogue, and the classes its brief carries when none is readable.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Catalogue {
@@ -103,6 +118,10 @@ pub struct Profile {
     /// What its negative-space lens looks for; a profile without that lens has none.
     #[serde(default)]
     pub negative_space: Option<NegativeSpace>,
+    /// Its units for unit mode, in the words its prompts use; a profile without them finds no
+    /// units (realm @nick/craft, #362).
+    #[serde(default)]
+    pub units: Option<UnitWords>,
     /// The roster a scout picks from.
     pub lenses: Vec<Lens>,
     /// Lenses only a rigor floor adds, outside the roster.

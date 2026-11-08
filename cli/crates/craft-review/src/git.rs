@@ -45,7 +45,7 @@ pub struct Diff {
 }
 
 /// Runs `git` in `cwd` and returns its stdout.
-fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
+pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
     let out = Command::new("git")
         .arg("-C")
         .arg(cwd)

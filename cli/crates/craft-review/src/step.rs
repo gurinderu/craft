@@ -25,6 +25,7 @@ use crate::sources::{self, SourcesSetup};
 use crate::state::{
     self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState, Track,
 };
+use crate::units;
 use crate::validate;
 
 /// Why a run could not be opened or moved on, beyond its parts' own errors.
@@ -98,6 +99,10 @@ pub struct StartOptions {
     /// The directory the host session runs in, whose project's `.claude/agents` discovery reads;
     /// the process's working directory when `None`.
     pub session: Option<PathBuf>,
+    /// Unit mode (`unitScope`, off by default): each sliceable lens confined to a batch of the
+    /// units its profile finds, a contract lens per touched unit and a coordinator after the rounds
+    /// ([`crate::units`]).
+    pub unit_scope: bool,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -171,6 +176,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         gate: gate::Gate::default(),
         critic: crate::critic::Critic::default(),
         extra: extra::Extra::default(),
+        units: units::Units::default(),
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -187,6 +193,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         // A red gate blocks before any lens, as `gateFailedExit` does.
         run.exit = run.gate.exit();
     }
+    choose_units(&cwd, opts.unit_scope, &mut run, &profiles);
     choose_extra(&cwd, opts, &mut run);
     if run.exit.is_none() {
         run.tasks = scouts(&run, &profiles)?;
@@ -203,6 +210,19 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;
     Ok(next(dir, &run))
+}
+
+/// The slices of the change when the run goes on to its lenses: under unit mode, when asked, the
+/// units of each profile taking part, discovered in the repository's top level, and their batches;
+/// else the normal mode's directory slices.
+fn choose_units(cwd: &Path, asked: bool, run: &mut RunState, profiles: &[Profile]) {
+    run.units.asked = asked;
+    if run.exit.is_some() {
+        return;
+    }
+    let top = git::toplevel(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    let d = &run.diff;
+    run.units = units::open(asked, &top, &d.base, &d.files, &run.tracks, profiles);
 }
 
 /// The extra lenses the run is asked for, discovered among the session project's agents when it

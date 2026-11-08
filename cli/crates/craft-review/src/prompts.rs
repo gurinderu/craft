@@ -17,12 +17,18 @@ mod lens;
 mod parity;
 mod red_team;
 mod scout;
+mod seam;
+mod units;
+#[cfg(test)]
+mod units_parity;
 mod verify;
 pub use adjudicate::{adjudicate_prompt, carry_prompt, sanitize};
 pub use critic::{CriticIn, critic_prior, critic_prompt, extra_lens_prompt};
 pub use lens::{LensIn, lens_prompt, prior_found_summary};
 pub use red_team::red_team_prompt;
 pub use scout::{dedup_prompt, scout_prompt};
+pub use seam::{contract_prompt, seam_prompt};
+pub use units::slice_lens_prompt;
 pub use verify::{batch_verify_prompt, verify_prompt};
 
 /// The skill directory every lens and verifier reads beside its rubric.
