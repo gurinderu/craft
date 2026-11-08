@@ -37,6 +37,7 @@ fn every_prompt_renders_as_the_engines_render_it() {
         re_review: ReScope::First,
         strict: false,
         sources: crate::sources::Sources::default(),
+        scope: None,
     };
     let p = &input["plan"];
     let plan = Plan {

@@ -87,7 +87,7 @@ pub fn tasks(
 ) -> Result<Vec<Task>, ContentError> {
     let (profile, plan) = at;
     let prior = prompts::prior_found_summary(&rounds.pool);
-    let pathspec = profile.pathspec(files);
+    let pathspec = ctx.pathspec(profile, files);
     let mut out = Vec::new();
     // A metrics lens reads numbers another round would not change: it runs in the first only.
     let lenses = plan

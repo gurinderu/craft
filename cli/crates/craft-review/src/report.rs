@@ -161,8 +161,13 @@ fn header(state: &RunState) -> String {
         .iter()
         .map(|t| format!("{} {}", t.files.len(), lang(&t.profile)))
         .collect();
+    let scope = state
+        .context
+        .scope
+        .as_deref()
+        .map_or_else(String::new, |s| format!(" under `{s}`"));
     let mut out = format!(
-        "Head `{}`{tree}; base `{}` (merge-base `{}`), {} changed file(s){}.\n\n",
+        "Head `{}`{tree}; base `{}` (merge-base `{}`), {} changed file(s){scope}{}.\n\n",
         d.head,
         d.base,
         short(&d.merge_base),

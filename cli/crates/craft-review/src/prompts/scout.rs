@@ -32,7 +32,7 @@ pub fn scout_prompt(
         "scout",
         &vars([
             ("lang", profile.lang.clone()),
-            ("scope", String::new()),
+            ("scope", scope_line(ctx)?),
             ("base", format!("`{}`", flatten(Some(&Value::String(ctx.base.clone()))))),
             ("globs", globs),
             ("statRange", format!("{}...HEAD", shq(&ctx.base))),
@@ -48,6 +48,17 @@ pub fn scout_prompt(
         ]),
     )?;
     Ok(format!("{}{body}", repo_directive(&ctx.repo)))
+}
+
+/// The scout's SCOPE line under a scope (`path`), naming the directory it reviews; empty
+/// otherwise.
+fn scope_line(ctx: &PromptContext) -> Result<String, ContentError> {
+    let Some(scope) = ctx.scope.as_deref() else {
+        return Ok(String::new());
+    };
+    let dir = flatten(Some(&Value::String(scope.to_owned())));
+    let line = content::prompt("scout-scope", &vars([("dir", dir), ("quoted", shq(scope))]))?;
+    Ok(format!("\n\n{line}"))
 }
 
 /// The scout's STRICT MODE line, which makes it always pick `maintainability`; empty otherwise.

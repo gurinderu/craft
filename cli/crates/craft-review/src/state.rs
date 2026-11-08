@@ -325,6 +325,14 @@ pub struct RunState {
     /// Unit mode. Optional, so a state written before it reads as a run with the mode off.
     #[serde(default)]
     pub units: Units,
+    /// The dispatch round being answered and whether any of its tasks answered ([`crate::stop`]).
+    /// Optional, so a state written before it reads as a round with no answer yet.
+    #[serde(default)]
+    pub watch: crate::stop::Watch,
+    /// Why the run stopped before its end, its unanswered tasks held for a resume
+    /// ([`crate::stop`]); `None`, it did not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped: Option<crate::stop::Stop>,
 }
 
 impl RunState {

@@ -25,6 +25,7 @@ use crate::sources::{self, SourcesSetup};
 use crate::state::{
     self, MAX_RETRIES, Phase, RunState, STATE_VERSION, Task, TaskKind, TaskState, Track,
 };
+use crate::stop;
 use crate::units;
 use crate::validate;
 
@@ -59,6 +60,8 @@ pub enum StepError {
         #[source]
         source: std::io::Error,
     },
+    #[error(transparent)]
+    Scope(#[from] crate::scope::ScopeError),
 }
 
 /// What `start` needs.
@@ -103,6 +106,9 @@ pub struct StartOptions {
     /// units its profile finds, a contract lens per touched unit and a coordinator after the rounds
     /// ([`crate::units`]).
     pub unit_scope: bool,
+    /// The directory (or file) of the change to review (`path`), repository-relative or absolute
+    /// inside the repository; `None`, the whole change ([`crate::scope`]).
+    pub path: Option<String>,
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -118,7 +124,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
             path: opts.cwd.clone(),
             source,
         })?;
-    let branch_diff = git::read_diff(&cwd, opts.base.as_deref())?;
+    let (scope, branch_diff) = read_change(&cwd, opts)?;
     let dir = &opts.run_dir;
     open_dir(dir)?;
     let profiles = Profile::all()?;
@@ -132,6 +138,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         opts.fresh,
         opts.full_every,
         &branch_diff.base,
+        scope.as_deref(),
     )?;
     let spec = branch_diff.log.chars().take(SPEC_MAX).collect();
     // The memory is recalled for the branch's paths, not only those a re-review's fix commits touch.
@@ -146,6 +153,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         re_review,
         strict: opts.strict,
         sources: sources::Sources::default(),
+        scope,
     };
     let tracks: Vec<Track> = coverage::assign(&diff.files, &profiles)
         .into_iter()
@@ -177,6 +185,8 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         critic: crate::critic::Critic::default(),
         extra: extra::Extra::default(),
         units: units::Units::default(),
+        watch: stop::Watch::default(),
+        stopped: None,
     };
     run.exit = coverage::exit(
         &run.diff,
@@ -210,6 +220,16 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     handoff::write_pending(dir, &run)?;
     state::save(dir, &run)?;
     Ok(next(dir, &run))
+}
+
+/// The scope the run reviews (`path`, repository-relative) and the branch's change under it.
+fn read_change(cwd: &Path, opts: &StartOptions) -> Result<(Option<String>, git::Diff), Error> {
+    let scope = match opts.path.as_deref() {
+        Some(p) => crate::scope::normalize(&git::toplevel(cwd)?, p).map_err(StepError::from)?,
+        None => None,
+    };
+    let diff = git::read_diff(cwd, opts.base.as_deref(), scope.as_deref())?;
+    Ok((scope, diff))
 }
 
 /// The slices of the change when the run goes on to its lenses: under unit mode, when asked, the
@@ -343,11 +363,55 @@ pub fn submit_noting(
     given: Option<&Map<String, Value>>,
     degraded: &[String],
 ) -> Result<Value, Error> {
+    submit_with(
+        dir,
+        given,
+        &Said {
+            degraded,
+            limit: None,
+        },
+    )
+}
+
+/// What the host says beside its answers.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Said<'a> {
+    /// How it ran this step's tasks weaker than asked, as [`submit_noting`] keeps them.
+    pub degraded: &'a [String],
+    /// The account's usage limit, in the words an agent's error or short answer gave it: the run
+    /// stops at once, keeping the answers that came in ([`crate::stop`]).
+    pub limit: Option<&'a str>,
+}
+
+/// [`submit`] with what the host `said`. A stopped run is resumed by a submit without a limit: its
+/// held tasks are handed out again, and nothing is read for them.
+///
+/// # Errors
+/// As [`submit`].
+pub fn submit_with(
+    dir: &Path,
+    given: Option<&Map<String, Value>>,
+    said: &Said<'_>,
+) -> Result<Value, Error> {
     let mut run = state::load(dir)?;
     if run.phase == Phase::Done {
         return Err(StepError::Done(dir.to_owned()).into());
     }
-    for note in degraded.iter().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+    if run.stopped.is_some() {
+        if said.limit.is_some() {
+            return stop::step(dir, &run);
+        }
+        run.stopped = None;
+        if given.is_none() {
+            return save_and_next(dir, &run);
+        }
+    }
+    for note in said
+        .degraded
+        .iter()
+        .map(|n| n.trim())
+        .filter(|n| !n.is_empty())
+    {
         if !run.degraded.iter().any(|d| d == note) {
             run.degraded.push(note.to_owned());
         }
@@ -360,49 +424,101 @@ pub fn submit_noting(
     if let Some(id) = given.and_then(|g| g.keys().find(|id| !pending(id))) {
         return Err(StepError::UnknownTask(id.clone()).into());
     }
+    stop::open(&mut run);
+    let held = said.limit.is_some();
     for task in run
         .tasks
         .iter_mut()
         .filter(|t| t.state == TaskState::Pending)
     {
-        let submitted = match given {
-            Some(g) => g
-                .get(&task.id)
-                .cloned()
-                .ok_or_else(|| "no answer was submitted".to_owned()),
-            None => handoff::read_answer(dir, task),
-        };
-        let checked = submitted
-            .as_ref()
-            .map_err(Clone::clone)
-            .and_then(|a| validate::check(task, Some(a)));
-        match checked {
-            Ok(answer) => {
-                task.answer = Some(answer);
-                task.state = TaskState::Answered;
-                task.error = None;
-                task.refused = None;
-                continue;
-            }
-            Err(e) => {
-                task.error = Some(e);
-                // An answer that came back but off its schema is a live vote, not a dead one.
-                task.refused = submitted.ok().map(|a| validate::normalize(&a));
-            }
+        let live = take_answer(dir, task, given, held)?;
+        run.watch.live |= live;
+    }
+    move_on(dir, &mut run, said.limit)?;
+    save_and_next(dir, &run)
+}
+
+/// Moves the run on once this submit's answers are in: stopped on the host's limit (after
+/// advancing when nothing is left to wait for) or on a round that died whole, else advanced.
+fn move_on(dir: &Path, run: &mut RunState, limit: Option<&str>) -> Result<(), Error> {
+    if let Some(text) = limit {
+        if run.tasks.iter().all(|t| t.state != TaskState::Pending) {
+            advance(dir, run)?;
         }
-        if given.is_none() {
-            handoff::set_aside(dir, task)?;
+        if run.phase != Phase::Done {
+            stop::hold(run, stop::limit(text));
         }
-        if task.retries < MAX_RETRIES {
-            task.retries += 1;
-        } else {
-            task.state = TaskState::Failed;
+        return Ok(());
+    }
+    match stop::round_died(run) {
+        Some(why) => stop::hold(run, stop::deaths(why)),
+        None => advance(dir, run)?,
+    }
+    Ok(())
+}
+
+/// Writes the pending tasks and the state, and says what comes next: the stop, when the run
+/// stopped.
+fn save_and_next(dir: &Path, run: &RunState) -> Result<Value, Error> {
+    handoff::write_pending(dir, run)?;
+    state::save(dir, run)?;
+    if run.stopped.is_some() {
+        return stop::step(dir, run);
+    }
+    Ok(next(dir, run))
+}
+
+/// Takes the answer of one pending task, from `given` or the file its agent wrote; one refused is
+/// asked for again until its retries are spent — unless the run is `held` on the host's limit,
+/// when it waits for the resume uncounted. Says whether its agent answered at all, valid or not.
+fn take_answer(
+    dir: &Path,
+    task: &mut Task,
+    given: Option<&Map<String, Value>>,
+    held: bool,
+) -> Result<bool, Error> {
+    let submitted = match given {
+        Some(g) => g
+            .get(&task.id)
+            .cloned()
+            .ok_or_else(|| "no answer was submitted".to_owned()),
+        None => handoff::read_answer(dir, task),
+    };
+    // An answer file that cannot be read or parsed was still written: its agent was alive.
+    let live = match given {
+        Some(g) => g.contains_key(&task.id),
+        None => handoff::answer_file(dir, &task.id).exists(),
+    };
+    let checked = submitted
+        .as_ref()
+        .map_err(Clone::clone)
+        .and_then(|a| validate::check(task, Some(a)));
+    match checked {
+        Ok(answer) => {
+            task.answer = Some(answer);
+            task.state = TaskState::Answered;
+            task.error = None;
+            task.refused = None;
+            return Ok(true);
+        }
+        Err(e) => {
+            task.error = Some(e);
+            // An answer that came back but off its schema is a live vote, not a dead one.
+            task.refused = submitted.ok().map(|a| validate::normalize(&a));
         }
     }
-    advance(dir, &mut run)?;
-    handoff::write_pending(dir, &run)?;
-    state::save(dir, &run)?;
-    Ok(next(dir, &run))
+    if given.is_none() {
+        handoff::set_aside(dir, task)?;
+    }
+    if held {
+        return Ok(live);
+    }
+    if task.retries < MAX_RETRIES {
+        task.retries += 1;
+    } else {
+        task.state = TaskState::Failed;
+    }
+    Ok(live)
 }
 
 /// What the host is to do next: the pending tasks, or the finished run's report, verdict and what

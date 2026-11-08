@@ -124,7 +124,7 @@ fn lens_task(run: &RunState, p: &Profile, plan: &Plan, lens: &str) -> Result<Tas
         .count();
     let prior = prompts::critic_prior(pooled)?;
     let track = run.track(&p.id).map_or(&[][..], |t| t.files.as_slice());
-    let pathspec = p.pathspec(track);
+    let pathspec = run.context.pathspec(p, track);
     let at = LensIn {
         profile: p,
         lens,

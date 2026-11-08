@@ -189,11 +189,12 @@ pub fn default_base(cwd: &Path) -> Result<String, GitError> {
         .ok_or(GitError::NoDefaultBase)
 }
 
-/// Reads the change in `cwd` against `base`, or the remote default branch when `None`.
+/// Reads the change in `cwd` against `base`, or the remote default branch when `None`; with
+/// `scope`, a repository-relative directory or file ([`crate::scope`]), only the files under it.
 ///
 /// # Errors
 /// When `cwd` is not a repository, the base does not resolve, or `git` fails.
-pub fn read_diff(cwd: &Path, base: Option<&str>) -> Result<Diff, GitError> {
+pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<Diff, GitError> {
     let base = match base {
         Some(b) => b.to_owned(),
         None => default_base(cwd)?,
@@ -209,11 +210,21 @@ pub fn read_diff(cwd: &Path, base: Option<&str>) -> Result<Diff, GitError> {
     let dirty = !git(cwd, &["status", "--porcelain", "--untracked-files=no"])?
         .trim()
         .is_empty();
-    let files = git(cwd, &["diff", "--name-only", "--merge-base", &base])?
+    // `top`: read from the top level, so the scope names the same path from any subdirectory;
+    // `literal`: a directory name is no glob.
+    let pathspec = scope.map(|s| format!(":(top,literal){s}"));
+    let limited = |args: &[&str]| {
+        let mut all = args.to_vec();
+        if let Some(p) = &pathspec {
+            all.extend(["--", p.as_str()]);
+        }
+        git(cwd, &all)
+    };
+    let files = limited(&["diff", "--name-only", "--merge-base", &base])?
         .lines()
         .map(str::to_owned)
         .collect();
-    let stat = git(cwd, &["diff", "--stat", "--merge-base", &base])?;
+    let stat = limited(&["diff", "--stat", "--merge-base", &base])?;
     let log = git(cwd, &["log", "--format=%B", &format!("{merge_base}..HEAD")])?;
     Ok(Diff {
         base,

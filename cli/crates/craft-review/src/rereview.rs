@@ -91,6 +91,10 @@ pub struct Chain {
     /// The repository's shared git directory and the branch: the chain's key.
     pub repo: String,
     pub branch: Option<String>,
+    /// The directory of the change the run reviews (`path`), the chain's key beside them; empty,
+    /// the whole change.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub scope: String,
     /// This run's round, 1 on a first review.
     pub round: u32,
     /// The branch's own base, which the record names; the run's diff is what its lenses reviewed.

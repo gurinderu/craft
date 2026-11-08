@@ -34,6 +34,11 @@ pub struct RoundRecord {
     /// one `fresh` set aside. Absent in a record written before it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub restart: bool,
+    /// The directory of the change the round reviewed (`path`): a round of one scope builds only
+    /// on a round of the same, so one crate's ledger never stands for another's. Empty, the whole
+    /// change, as a record written before it reads.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
 }
 
 /// The record of the run in `dir`.
@@ -96,16 +101,25 @@ fn read_record(dir: &Path) -> Option<RoundRecord> {
         .filter(|r| r.version == ROUND_VERSION)
 }
 
-/// The newest round under `runs` of `repo`'s `branch` whose head is on the history of `cwd`'s
+/// The chain a round belongs to: its repository, its branch and the scope it reviewed (`""`, the
+/// whole change).
+#[derive(Debug, Clone, Copy)]
+pub struct Key<'a> {
+    pub repo: &'a str,
+    pub branch: &'a str,
+    pub scope: &'a str,
+}
+
+/// The newest round under `runs` of the chain `key` whose head is on the history of `cwd`'s
 /// `HEAD`; a rebase or a force-push leaves an older chain behind.
 #[must_use]
-pub fn newest(runs: &Path, cwd: &Path, repo: &str, branch: &str) -> Option<Prior> {
+pub fn newest(runs: &Path, cwd: &Path, key: Key<'_>) -> Option<Prior> {
     let entries = std::fs::read_dir(runs).ok()?;
     entries
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter_map(|dir| Some((read_record(&dir)?, dir)))
-        .filter(|(r, _)| r.repo == repo && r.branch == branch)
+        .filter(|(r, _)| r.repo == key.repo && r.branch == key.branch && r.scope == key.scope)
         .filter(|(r, _)| git::is_ancestor(cwd, &r.head))
         .max_by_key(|(r, _)| r.finished_at_ms)
         .map(|(record, dir)| Prior { dir, record })
@@ -118,15 +132,19 @@ pub fn newest(runs: &Path, cwd: &Path, repo: &str, branch: &str) -> Option<Prior
 pub fn locate(
     runs: &Path,
     cwd: &Path,
-    repo: &str,
-    branch: Option<&str>,
+    (repo, branch, scope): (&str, Option<&str>, &str),
     fresh: bool,
 ) -> Result<Prior, Unchained> {
     if fresh {
         return Err(Unchained::Fresh);
     }
     let branch = branch.ok_or(Unchained::NoBranch)?;
-    let prior = newest(runs, cwd, repo, branch).ok_or(Unchained::NoPriorRound)?;
+    let key = Key {
+        repo,
+        branch,
+        scope,
+    };
+    let prior = newest(runs, cwd, key).ok_or(Unchained::NoPriorRound)?;
     if prior.record.restart {
         return Err(Unchained::Restarted);
     }
@@ -167,6 +185,7 @@ pub fn record(
         finished_at_ms: now_ms(),
         ledger,
         restart: false,
+        scope: String::new(),
     }
 }
 
