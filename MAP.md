@@ -236,7 +236,10 @@ record and a finding decided by the engine's match judge, then a finding a proje
 decided by the engine's rule judge (on a re-review a red team attacks each resolved Critical or High prior first;
 the reviewed repository's own reviewing agents run as extra lenses beside the first round — named, or discovered on a light
 pass among the session project's `.claude/agents`; on a large or security-sensitive plan a completeness critic names roster
-lenses that should have run, which then run and whose findings are verified as a pass of their own),
+lenses that should have run, which then run and whose findings are verified as a pass of their own; with `--unit-scope`,
+off by default, each sliceable lens is confined to a batch of the Cargo crates the change touches, a contract lens runs
+on each touched crate, and after the rounds a coordinator answers the questions the confined lenses left in their answers,
+decides each finding that depends on one and judges the seam between the crates),
 then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
 from `content/`, which it compiles in, its plans, prompts and verification rules held to the engines' by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and

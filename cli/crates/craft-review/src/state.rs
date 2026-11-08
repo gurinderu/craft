@@ -16,6 +16,7 @@ use crate::plan::Plan;
 use crate::prompts::PromptContext;
 use crate::rereview::Chain;
 use crate::rounds::Rounds;
+use crate::units::Units;
 
 /// The state file's format; a run written by another format is refused, not misread.
 pub const STATE_VERSION: u32 = 6;
@@ -58,6 +59,8 @@ pub enum Phase {
     #[serde(rename = "red-team")]
     RedTeam,
     Lenses,
+    /// The coordinator of each profile under unit mode, after the last lens round.
+    Seam,
     Dedup,
     Verify,
     /// The memory's match judge on the near misses between records and findings.
@@ -84,6 +87,13 @@ pub enum TaskKind {
         profile: String,
         lens: String,
         round: u32,
+        /// The key of the slice it judges under unit mode; `None`, its profile's whole part.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slice: Option<String>,
+    },
+    /// The coordinator of `profile`'s units after the lens rounds (realm @nick/craft, #321).
+    Seam {
+        profile: String,
     },
     Dedup,
     /// Vote `voter` of finding `finding`'s panel.
@@ -312,6 +322,9 @@ pub struct RunState {
     /// as a run with them off.
     #[serde(default)]
     pub extra: Extra,
+    /// Unit mode. Optional, so a state written before it reads as a run with the mode off.
+    #[serde(default)]
+    pub units: Units,
 }
 
 impl RunState {

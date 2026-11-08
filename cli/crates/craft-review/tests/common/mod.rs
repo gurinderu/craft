@@ -69,6 +69,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         extra_lenses: None,
         // The fixture repository is the session's project, so a light pass discovers its agents.
         session: Some(repo.to_path_buf()),
+        unit_scope: false,
     }
 }
 

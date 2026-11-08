@@ -66,6 +66,12 @@ pub struct StartArgs {
     /// project or one of its worktrees) and a full review runs none.
     #[arg(long)]
     pub extra_lenses: Option<String>,
+    /// Unit mode, experimental and off by default: each sliceable lens confined to a batch of the
+    /// crates the change touches, a contract lens per touched crate, and a coordinator after the
+    /// rounds that answers the lenses' questions about other crates and judges the seam between
+    /// them; a change it cannot slice runs in the normal mode with a warning saying why.
+    #[arg(long)]
+    pub unit_scope: bool,
 }
 
 /// How deep a review goes.
@@ -150,6 +156,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         gate: (!args.no_gate).then(craft_review::gate::GateSetup::default),
         extra_lenses: args.extra_lenses.clone(),
         session: None,
+        unit_scope: args.unit_scope,
     };
     print(&step::start(&opts)?)
 }

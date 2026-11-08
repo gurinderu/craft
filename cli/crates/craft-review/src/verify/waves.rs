@@ -179,7 +179,8 @@ pub(crate) fn panel(run: &RunState, i: usize) -> Vec<(u32, Option<Value>)> {
             | TaskKind::Warmup
             | TaskKind::Critic { .. }
             | TaskKind::CriticLens { .. }
-            | TaskKind::Extra { .. } => None,
+            | TaskKind::Extra { .. }
+            | TaskKind::Seam { .. } => None,
         })
         .collect()
 }

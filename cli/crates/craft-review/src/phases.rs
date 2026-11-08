@@ -27,6 +27,7 @@ use crate::rereview;
 use crate::rounds;
 use crate::state::{self, Phase, RunState, Task, TaskKind, TaskState};
 use crate::step::StepError;
+use crate::units;
 use crate::verify;
 
 mod critic;
@@ -98,12 +99,17 @@ pub(crate) fn advance(dir: &Path, run: &mut RunState) -> Result<(), Error> {
             run.notes.extend(sifted);
             let first = run.tracks.first().map(|t| t.profile.clone());
             extra::take(&mut run.extra, &run.tasks, first.as_deref().unwrap_or(""));
+            units::keep_questions(run);
             let added = run.rounds.absorb(&run.tasks);
             for t in run.tracks.iter_mut().filter(|t| t.live()) {
                 t.rounds += 1;
                 t.dry = added.get(&t.profile).copied().unwrap_or(0) == 0;
             }
             next_round(dir, run, &profiles)
+        }
+        Phase::Seam => {
+            units::seam_answered(run);
+            to_pool(dir, run, &profiles)
         }
         Phase::Dedup => {
             dedup_answered(run);
@@ -179,13 +185,26 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
     let mut tasks = extra::tasks(run)?;
     for (track, p) in run.tracks.iter().zip(profiles).filter(|(t, _)| t.live()) {
         let plan = track.plan.as_ref().ok_or(StepError::NoPlan)?;
+        let slices = run.units.slices(&p.id);
         tasks.extend(rounds::tasks(
             &run.context,
-            p,
-            plan,
+            (p, plan),
             &track.files,
+            slices,
             &run.rounds,
         )?);
+        if let Some(unit) = run.units.track(&p.id) {
+            let prior = prompts::prior_found_summary(&run.rounds.pool);
+            let round = run.rounds.round;
+            tasks.extend(units::contract_tasks(
+                &run.context,
+                p,
+                plan,
+                unit,
+                round,
+                &prior,
+            )?);
+        }
     }
     run.tasks = tasks;
     run.phase = Phase::Lenses;
@@ -193,7 +212,7 @@ fn next_round(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
 }
 
 /// After the last round: the extra lenses' findings into the pool, the lenses that never returned,
-/// then the pool to the dedup.
+/// then the unit-mode coordinators when there are any, else the pool to the dedup.
 fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
     extra::join(run);
     for p in profiles {
@@ -206,6 +225,17 @@ fn end_rounds(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<()
             ));
         }
     }
+    let coordinators = units::seam_tasks(run, profiles)?;
+    if !coordinators.is_empty() {
+        run.tasks = coordinators;
+        run.phase = Phase::Seam;
+        return Ok(());
+    }
+    to_pool(dir, run, profiles)
+}
+
+/// The pool to the dedup; an empty one straight to the critic.
+fn to_pool(dir: &Path, run: &mut RunState, profiles: &[Profile]) -> Result<(), Error> {
     // Nothing to verify: the critic is still asked whether a lens that did not run should have.
     if run.rounds.pool.is_empty() {
         return critic::ask(dir, run);
