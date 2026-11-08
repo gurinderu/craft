@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.44.0](https://github.com/gurinderu/craft/compare/v0.43.0...v0.44.0) (2026-11-08)
+
+
+### Features
+
+* **cli:** cli-review files a run record, a Verdict block and names uncovered files ([#335](https://github.com/gurinderu/craft/issues/335)) ([ad27761](https://github.com/gurinderu/craft/commit/ad277615a1d8bfe7d64cced4f2c4e513619efb40))
+* **cli:** craft init and integration-point sources in the CLI review ([#341](https://github.com/gurinderu/craft/issues/341)) ([1c186ae](https://github.com/gurinderu/craft/commit/1c186aea99728ed6bb3641aed834a937780afccc))
+* **cli:** memory judges, re-review red team and memory externals in craft init ([#342](https://github.com/gurinderu/craft/issues/342)) ([3c3db7a](https://github.com/gurinderu/craft/commit/3c3db7acd3aea08b15c3a607c6d0a80db75bdf8c))
+* **cli:** Nix and general-language profiles in one CLI review run ([#337](https://github.com/gurinderu/craft/issues/337)) ([044ba56](https://github.com/gurinderu/craft/commit/044ba569f7ca17111332cfed3b57c809b82f9729))
+* **cli:** optional lenses, nested runs, refusals and a Findings answer for the swap ([#348](https://github.com/gurinderu/craft/issues/348)) ([a8727cb](https://github.com/gurinderu/craft/commit/a8727cb336c881c5f6eb98bd40696bbc5e131c0f))
+* **cli:** path scope, the usage-limit stop and run= resume in the CLI review ([#346](https://github.com/gurinderu/craft/issues/346)) ([051a641](https://github.com/gurinderu/craft/commit/051a641975be72406e651d60308e6f7fbb789957))
+* **cli:** project memory, prior decisions and strict mode in the CLI review ([#340](https://github.com/gurinderu/craft/issues/340)) ([0b1aaf5](https://github.com/gurinderu/craft/commit/0b1aaf5a209210a908b4e2ecc3d5b0258cb6b450))
+* **cli:** publish findings on the PR from the CLI review ([#347](https://github.com/gurinderu/craft/issues/347)) ([5e14c2e](https://github.com/gurinderu/craft/commit/5e14c2e29f2ee0ddc4bbb983fe36b434e1734406))
+* **cli:** re-review rounds — chain, delta, prior adjudication and carry-check ([#339](https://github.com/gurinderu/craft/issues/339)) ([4553e28](https://github.com/gurinderu/craft/commit/4553e284654beee46e937efc6074c3a579986993))
+* **cli:** run telemetry in the engine's shape and a per-agent deadline ([#350](https://github.com/gurinderu/craft/issues/350)) ([2598189](https://github.com/gurinderu/craft/commit/25981892222427fbf57c52e78f3b12e6a360ea66))
+* **cli:** the completeness critic and the repository's own reviewing agents as extra lenses in the CLI review ([#344](https://github.com/gurinderu/craft/issues/344)) ([3fb267d](https://github.com/gurinderu/craft/commit/3fb267d29fccad80b2bce9c448977cd2c3752c03))
+* **cli:** the review gate and the metrics-backed complexity lens in the CLI ([#343](https://github.com/gurinderu/craft/issues/343)) ([b3d7c2e](https://github.com/gurinderu/craft/commit/b3d7c2ef6abc9f3360f1e0aa86e91118b1d7a816))
+* **cli:** unit mode and normal-mode directory slicing in the CLI review ([#345](https://github.com/gurinderu/craft/issues/345)) ([624f614](https://github.com/gurinderu/craft/commit/624f6143d7bcad2544e97d48aa287ce31030fec3))
+* **runs:** read CLI review runs as their own chain; the CLI owns its parity files ([#349](https://github.com/gurinderu/craft/issues/349)) ([ab72c58](https://github.com/gurinderu/craft/commit/ab72c58c3f583e664ea3aa1d1e6e1815cae9012d))
+
+
+### Bug Fixes
+
+* **cli:** refuse a resume over a moved checkout; order rounds by start ([#351](https://github.com/gurinderu/craft/issues/351)) ([c5081c9](https://github.com/gurinderu/craft/commit/c5081c90048ecb7db2efbd05f38a422e0a3a41f7))
+
 ## [0.43.0](https://github.com/gurinderu/craft/compare/v0.42.1...v0.43.0) (2026-11-07)
 
 
