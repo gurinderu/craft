@@ -135,13 +135,24 @@ fn a_dead_and_an_off_schema_voter_thin_the_panel_and_the_report_says_so() {
 fn a_panel_that_never_answers_is_unverified_and_the_verdict_incomplete() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
-    let (run, _) = verify_step(repo.path(), out.path(), &[finding("Critical", 1)]);
-    let mut s = Value::Null;
-    for _ in 0..6 {
+    let found = [finding("Critical", 1), titled("High", 1, "another")];
+    let (run, _) = verify_step(repo.path(), out.path(), &found);
+    let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
+    assert_eq!(
+        ids(&s),
+        ["verify-0-v0", "verify-0-v3", "verify-1-v0", "verify-1-v3"]
+    );
+    // The other finding's panel answers, so the verification is no dead round (`stop`).
+    let mut s = submit(
+        &run,
+        json!({"verify-1-v0": verdict(true), "verify-1-v3": verdict(true)}),
+    );
+    for _ in 0..5 {
+        assert_eq!(s["done"], json!(false), "{s}");
         s = submit(&run, json!({}));
     }
     let s = past_critic(&run, s);
-    assert_eq!(s["verdict"], json!("INCOMPLETE"));
+    assert_eq!(s["verdict"], json!("INCOMPLETE"), "{s}");
     let r = report(&s);
     for want in [
         "(NOT VERIFIED: every verifier vote for this finding died before returning a verdict — nothing was checked against the code)",

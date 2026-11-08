@@ -61,6 +61,25 @@ pub struct PromptContext {
     /// them. Optional, so a state written before it reads as a run with none.
     #[serde(default, skip_serializing_if = "Sources::is_empty")]
     pub sources: Sources,
+    /// The directory of the change the run reviews (`path`, [`crate::scope`]): the scout is told
+    /// it, and the lenses read only its files. Optional, so a state written before it reads as a
+    /// review of the whole change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
+impl PromptContext {
+    /// The pathspec of `profile`'s part `files` of the change a lens reads: under a scope its
+    /// files themselves, since the profile's globs would reach every file of the change; else the
+    /// profile's own ([`Profile::pathspec`](crate::profile::Profile::pathspec)).
+    #[must_use]
+    pub fn pathspec(&self, profile: &crate::profile::Profile, files: &[String]) -> String {
+        if self.scope.is_some() {
+            crate::profile::literal_pathspec(files)
+        } else {
+            profile.pathspec(files)
+        }
+    }
 }
 
 /// What a round's lenses review, as `reReviewBlock` in `lib/review-lens-prompts.mjs` frames it.

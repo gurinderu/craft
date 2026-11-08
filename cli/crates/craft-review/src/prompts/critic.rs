@@ -6,7 +6,7 @@
 use serde_json::Value;
 
 use super::lens::{base_label, range, re_review, repo_rules_line, rules};
-use super::{PromptContext, flatten, repo_directive};
+use super::{PromptContext, flatten, repo_directive, shq};
 use crate::content::{self, ContentError, vars};
 
 /// What the critic of one profile is asked about.
@@ -69,7 +69,12 @@ pub fn extra_lens_prompt(
             ("agent", agent.to_owned()),
             ("base", base_label(ctx)),
             ("range", range(ctx)),
-            ("pathspec", String::new()),
+            (
+                "pathspec",
+                ctx.scope
+                    .as_deref()
+                    .map_or_else(String::new, |s| format!(" -- {}", shq(s))),
+            ),
             ("reReview", re_review(ctx)?),
             ("rules", rules(ctx)?),
             ("repoRules", repo_rules_line(repo_rules)?),

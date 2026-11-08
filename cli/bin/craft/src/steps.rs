@@ -72,6 +72,11 @@ pub struct StartArgs {
     /// them; a change it cannot slice runs in the normal mode with a warning saying why.
     #[arg(long)]
     pub unit_scope: bool,
+    /// Review only the change under this directory (or file) of the repository, as a crate of an
+    /// audit is reviewed: repository-relative, or absolute inside the repository. A run of one
+    /// path builds only on an earlier round of the same path.
+    #[arg(long)]
+    pub path: Option<String>,
 }
 
 /// How deep a review goes.
@@ -94,6 +99,15 @@ pub struct SubmitArgs {
     /// named); repeatable. Each is kept and named in the report and the finished step.
     #[arg(long)]
     pub degraded: Vec<String>,
+    /// The account's usage limit, as an agent's error or short answer said it: the run keeps the
+    /// answers that came in and stops, INCOMPLETE, with its unanswered tasks held; a later submit
+    /// without it resumes the run once the limit resets.
+    #[arg(long)]
+    pub limit: Option<String>,
+    /// The host resumes a run it lost (a stop it could not report, an interrupted host): an answer
+    /// missing now is handed out again rather than counted as a failed attempt.
+    #[arg(long)]
+    pub resume: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -157,6 +171,7 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         extra_lenses: args.extra_lenses.clone(),
         session: None,
         unit_scope: args.unit_scope,
+        path: args.path.clone(),
     };
     print(&step::start(&opts)?)
 }
@@ -184,7 +199,12 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
-    print(&step::submit_noting(&run, given.as_ref(), &args.degraded)?)
+    let said = step::Said {
+        degraded: &args.degraded,
+        limit: args.limit.as_deref(),
+        resume: args.resume,
+    };
+    print(&step::submit_with(&run, given.as_ref(), &said)?)
 }
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {

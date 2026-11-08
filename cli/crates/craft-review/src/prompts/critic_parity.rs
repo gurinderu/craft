@@ -1,6 +1,7 @@
 //! Held to the engines' text by `content/parity/prompt-cases.json`, which
 //! `lib/review-prompt-parity.test.mjs` renders: the critic over the Rust plan of the input's
-//! lenses, an `errors` follow-up it admitted, and the extra lens `reviewer`.
+//! lenses, an `errors` follow-up it admitted, the extra lens `reviewer`, and the scout and extra
+//! lens of a review scoped to one directory.
 
 use serde_json::Value;
 
@@ -50,6 +51,7 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
         re_review: ReScope::First,
         strict: false,
         sources: crate::sources::Sources::default(),
+        scope: None,
     };
     let dir = repo_directive(&ctx.repo);
     let body = |s: String| s.strip_prefix(&dir).unwrap().to_owned();
@@ -87,4 +89,14 @@ fn the_critic_its_follow_up_and_an_extra_lens_render_as_the_engines_do() {
     let prior = prior_found_summary(pool);
     let got = body(extra_lens_prompt(&ctx, "reviewer", &prior, &plan.repo_rules).unwrap());
     assert_eq!(got, want["extraLens"].as_str().unwrap());
+
+    // A review scoped to one directory: the scout told it, the extra lens's diff limited to it.
+    let scoped = PromptContext {
+        scope: input["scope"].as_str().map(str::to_owned),
+        ..ctx
+    };
+    let got = body(crate::prompts::scout_prompt(&scoped, &rust, &[]).unwrap());
+    assert_eq!(got, want["scoped"]["scout"].as_str().unwrap());
+    let got = body(extra_lens_prompt(&scoped, "reviewer", &prior, &plan.repo_rules).unwrap());
+    assert_eq!(got, want["scoped"]["extraLens"].as_str().unwrap());
 }
