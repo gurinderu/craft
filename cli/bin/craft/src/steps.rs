@@ -113,6 +113,10 @@ pub struct SubmitArgs {
     /// missing now is handed out again rather than counted as a failed attempt.
     #[arg(long)]
     pub resume: bool,
+    /// A task whose agent the host abandoned at its deadline; repeatable. It fails at once and is
+    /// not handed out again, and an answer its agent writes later is never read.
+    #[arg(long)]
+    pub abandoned: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -233,6 +237,7 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
         limit: args.limit.as_deref(),
         resume: args.resume,
         post: None,
+        abandoned: &args.abandoned,
     };
     print(&stamped(
         step::submit_with(&run, given.as_ref(), &said)?,

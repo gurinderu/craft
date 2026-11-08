@@ -169,3 +169,37 @@ fn a_resume_holds_the_answers_still_missing_rather_than_failing_them() {
         "{s}"
     );
 }
+
+#[test]
+fn a_task_abandoned_at_its_deadline_fails_at_once_and_its_late_answer_is_not_read() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, s) = small_run(repo.path(), out.path());
+    write_answer(&s, "lens-rust-intent-r1", &lens("intent", &[]).to_string());
+    write_answer(&s, "lens-rust-tests-r1", &lens("tests", &[]).to_string());
+    // The abandoned agent answers after all, once the host stopped waiting.
+    let late = lens(
+        "errors",
+        &[
+            json!({"severity": "High", "title": "late", "file": "src/lib.rs", "line": 1, "why": "w", "fix": "f"}),
+        ],
+    );
+    write_answer(&s, "lens-rust-errors-r1", &late.to_string());
+    let abandoned = ["lens-rust-errors-r1".to_owned()];
+    let said = Said {
+        abandoned: &abandoned,
+        ..Said::default()
+    };
+    let s = step::submit_with(&run, None, &said).unwrap();
+    assert_eq!(
+        (&s["done"], &s["verdict"]),
+        (&json!(true), &json!("INCOMPLETE")),
+        "not handed out again: the run ends without it — {s}"
+    );
+    let not_run = s["notRun"].to_string();
+    assert!(
+        not_run.contains("errors: abandoned at its deadline"),
+        "{not_run}"
+    );
+    assert_eq!(s["findings"], json!([]), "the late answer is never read");
+}
