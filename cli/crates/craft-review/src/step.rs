@@ -212,8 +212,9 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     Ok(next(dir, &run))
 }
 
-/// Unit mode when the run asks for it and goes on to its lenses: the units of each profile taking
-/// part, discovered in the repository's top level, and the slices of the change.
+/// The slices of the change when the run goes on to its lenses: under unit mode, when asked, the
+/// units of each profile taking part, discovered in the repository's top level, and their batches;
+/// else the normal mode's directory slices.
 fn choose_units(cwd: &Path, asked: bool, run: &mut RunState, profiles: &[Profile]) {
     run.units.asked = asked;
     if run.exit.is_some() {

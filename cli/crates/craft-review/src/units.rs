@@ -18,6 +18,8 @@ pub mod scope;
 pub mod seam;
 mod tasks;
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -88,6 +90,11 @@ pub struct Units {
     /// Why it is not in effect for a profile that took part, one warning line each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<String>,
+    /// The normal mode's directory slices of each profile unit mode is not in effect for, by
+    /// profile (`sliceDiff` in `lib/lens-scope.mjs`, as `lib/review-unit-slicing.mjs` cuts a change
+    /// with the mode off or fallen back); a profile whose change is not sliced has none.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub directory: BTreeMap<String, Vec<Slice>>,
 }
 
 impl Units {
@@ -97,10 +104,14 @@ impl Units {
         self.tracks.iter().find(|t| t.profile == profile)
     }
 
-    /// The slices `profile`'s sliceable lenses run over; none, unsliced.
+    /// The slices `profile`'s sliceable lenses run over: its unit batches, else its directory
+    /// slices; none, unsliced.
     #[must_use]
     pub fn slices(&self, profile: &str) -> &[Slice] {
-        self.track(profile).map_or(&[], |t| t.slices.as_slice())
+        match self.track(profile) {
+            Some(t) => &t.slices,
+            None => self.directory.get(profile).map_or(&[], Vec::as_slice),
+        }
     }
 }
 

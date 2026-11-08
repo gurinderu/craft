@@ -231,12 +231,14 @@ fn a_change_unit_mode_cannot_slice_runs_in_the_normal_mode_with_its_warning() {
 }
 
 #[test]
-fn without_the_flag_a_two_crate_change_runs_as_before() {
-    let repo = workspace(7, 120);
+fn without_the_flag_a_large_change_is_cut_by_directory_and_a_small_one_not_at_all() {
+    let small = workspace(3, 5);
     let out = tempfile::tempdir().unwrap();
-    let run = out.path().join("run");
-    step::start(&opts(repo.path(), out.path())).unwrap();
-    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    step::start(&opts(small.path(), out.path())).unwrap();
+    let s = submit(
+        &out.path().join("run"),
+        json!({"scout-rust": scout("small", &["errors"])}),
+    );
     assert_eq!(
         ids(&s),
         [
@@ -245,6 +247,32 @@ fn without_the_flag_a_two_crate_change_runs_as_before() {
             "lens-rust-tests-r1"
         ]
     );
+    let repo = workspace(7, 120);
+    let out = tempfile::tempdir().unwrap();
+    let run = out.path().join("run");
+    step::start(&opts(repo.path(), out.path())).unwrap();
+    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    // The normal mode's directory slicing: sliceable lenses once per directory slice, the
+    // whole-diff ones over everything, no contract lens and no coordinator.
+    assert_eq!(
+        ids(&s),
+        [
+            "lens-rust-errors-r1-s0",
+            "lens-rust-errors-r1-s1",
+            "lens-rust-intent-r1",
+            "lens-rust-tests-r1-s0",
+            "lens-rust-tests-r1-s1"
+        ]
+    );
+    let sliced = prompt_of(task(&s, "lens-rust-errors-r1-s1"));
+    assert_contains_all(
+        &sliced,
+        &[
+            "YOUR SLICE: `crates/b` — 7 changed file(s) of a larger diff.",
+            "':(literal)crates/b/src/f0.rs'",
+        ],
+    );
+    assert!(!sliced.contains("SCOPE —"));
     let mut s = submit(&run, answer_all(&s, &Map::new()));
     while s["done"] == json!(false) {
         s = submit(&run, answer_all(&s, &Map::new()));

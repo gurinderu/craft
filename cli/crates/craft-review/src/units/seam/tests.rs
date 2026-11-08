@@ -31,3 +31,29 @@ fn only_a_finding_a_question_named_is_dropped_confirmed_or_converted() {
     ));
     assert_eq!(section([].iter()), "");
 }
+
+#[test]
+fn a_disposition_of_the_second_lens_s_exact_copy_takes_the_finding_and_only_matches_count() {
+    let copy = json!({"source": "errors", "sources": ["errors", "tests"], "file": "crates/b/src/lib.rs", "line": 3, "title": "Leaks the handle", "severity": "High"});
+    let asked = |lens: &str, title: &str| json!({"lens": lens, "findingFile": "crates/b/src/lib.rs", "findingTitle": title});
+    let decide = |lens: &str, title: &str, action: &str| json!({"lens": lens, "findingFile": "crates/b/src/lib.rs", "findingTitle": title, "action": action, "why": "w"});
+    let questions = [
+        asked("tests", "Leaks the handle"),
+        asked("errors", "gone already"),
+    ];
+    let dispositions = [
+        decide("tests", "Leaks the handle", "drop"),
+        decide("errors", "gone already", "confirm"),
+    ];
+    let (kept, counts, aside) = apply(vec![copy], &dispositions, &questions);
+    assert!(kept.is_empty());
+    assert_eq!((aside.len(), aside[0].lens.as_str()), (1, "errors"));
+    assert_eq!(
+        counts,
+        Counts {
+            confirm: 0,
+            drop: 1,
+            convert: 0
+        }
+    );
+}

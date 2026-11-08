@@ -1,16 +1,17 @@
 //! Whether unit mode runs for each profile taking part, and over which slices (#362): the units its
-//! profile finds, the ones the change touches, and the batches of the change.
+//! profile finds, the ones the change touches, and the batches of the change; else the normal
+//! mode's directory slices.
 
 use std::path::Path;
 
 use super::batch::{BATCH_BUDGET, Graph, batch_by_unit};
-use super::scope::touched_units;
+use super::scope::{MAX_SLICES, UNIT_MIN_FILES, touched_units};
 use super::{UnitTrack, Units, dirs, discover};
 use crate::profile::Profile;
 use crate::state::Track;
 
 /// Unit mode for the run's `tracks` over the changed `files`, measured against `base` in the
-/// repository at `top`; off unless `asked`.
+/// repository at `top`; off unless `asked`, the directory slicing then.
 #[must_use]
 pub fn open(
     asked: bool,
@@ -24,18 +25,26 @@ pub fn open(
         asked,
         ..Units::default()
     };
-    if !asked {
-        return units;
-    }
     for p in profiles
         .iter()
         .filter(|p| tracks.iter().any(|t| t.profile == p.id))
     {
-        match open_track(top, base, files, p) {
-            Ok(t) => units.tracks.push(t),
-            Err(why) => units.notices.push(format!(
-                "Unit mode {why} — the review ran in the normal mode."
-            )),
+        if asked {
+            match open_track(top, base, files, p) {
+                Ok(t) => {
+                    units.tracks.push(t);
+                    continue;
+                }
+                Err(why) => units.notices.push(format!(
+                    "Unit mode {why} — the review ran in the normal mode."
+                )),
+            }
+        }
+        // The normal mode: the directory slicing, with the mode off or fallen back.
+        let owns = |f: &str| p.covers(f);
+        let slices = dirs::slice_diff(files, UNIT_MIN_FILES, MAX_SLICES, &owns);
+        if !slices.is_empty() {
+            units.directory.insert(p.id.clone(), slices);
         }
     }
     units
