@@ -80,7 +80,7 @@ fn judged(pairs: &[(usize, bool)]) -> Value {
 fn confirmed(indices: &[usize]) -> Value {
     let v: Vec<Value> = indices
         .iter()
-        .map(|i| json!({"index": i, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "seen"}))
+        .map(|i| json!({"index": i, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": "none", "reason": "seen"}))
         .collect();
     json!({"verdicts": v})
 }

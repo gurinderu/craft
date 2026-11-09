@@ -484,12 +484,98 @@
         "reachable": true,
         "premiseSupported": true,
         "reason": "r",
-        "harmSupported": true
+        "harmSupported": true,
+        "confirmedHarmLevel": "intent-unmet"
       },
       "expected": {
         "tier": "confirmed",
         "severity": "High",
         "route": "batch"
+      }
+    },
+    {
+      "name": "a vote naming intent-unmet on behaviour stated as intended raises nothing",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "intent-unmet",
+        "behaviourIntended": true
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "a vote naming no level (\"none\") raises nothing",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "none"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "an older vote with a null level raises nothing",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": null
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
       }
     },
     {
@@ -538,7 +624,8 @@
         "reachable": false,
         "premiseSupported": true,
         "reason": "r",
-        "harmSupported": true
+        "harmSupported": true,
+        "confirmedHarmLevel": "intent-unmet"
       },
       "expected": {
         "tier": "confirmed",
@@ -565,7 +652,8 @@
         "reachable": true,
         "premiseSupported": false,
         "reason": "r",
-        "harmSupported": true
+        "harmSupported": true,
+        "confirmedHarmLevel": "security"
       },
       "expected": {
         "tier": "suspected",
@@ -662,7 +750,73 @@
         "reachable": true,
         "premiseSupported": true,
         "reason": "r",
-        "harmSupported": true
+        "harmSupported": true,
+        "confirmedHarmLevel": "repo-rule"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "a cited repo-rule vote naming no level (\"none\") is not raised",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "repo-rule",
+        "harm": "callers see it",
+        "repoRule": {
+          "file": "AGENTS.md",
+          "text": "no panics"
+        }
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "none"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "behaviour stated as intended does not stop a repo-rule raise",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "repo-rule",
+        "harm": "callers see it",
+        "repoRule": {
+          "file": "AGENTS.md",
+          "text": "no panics"
+        }
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "repo-rule",
+        "behaviourIntended": true
       },
       "expected": {
         "tier": "confirmed",
@@ -758,7 +912,8 @@
           "reachable": true,
           "premiseSupported": true,
           "reason": "r",
-          "harmSupported": true
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet"
         },
         {
           "refuted": false,
@@ -766,7 +921,8 @@
           "reachable": true,
           "premiseSupported": true,
           "reason": "r",
-          "harmSupported": true
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet"
         },
         {
           "refuted": false,
@@ -774,7 +930,8 @@
           "reachable": true,
           "premiseSupported": true,
           "reason": "r",
-          "harmSupported": true
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet"
         }
       ],
       "expected": {
@@ -782,6 +939,57 @@
         "severity": "High",
         "why": "w",
         "harmVerified": "intent-unmet"
+      }
+    },
+    {
+      "name": "three votes name intent-unmet but state the behaviour intended: no harm verified",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet",
+          "behaviourIntended": true
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet",
+          "behaviourIntended": true
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet",
+          "behaviourIntended": true
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "why": "w"
       }
     },
     {
@@ -1218,7 +1426,8 @@
           "reachable": true,
           "premiseSupported": true,
           "reason": "r",
-          "harmSupported": true
+          "harmSupported": true,
+          "confirmedHarmLevel": "data-loss"
         },
         {
           "refuted": false,
@@ -1256,7 +1465,8 @@
           "reachable": true,
           "premiseSupported": true,
           "reason": "r",
-          "harmSupported": true
+          "harmSupported": true,
+          "confirmedHarmLevel": "data-loss"
         },
         {
           "refuted": false,
