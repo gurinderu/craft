@@ -102,6 +102,10 @@ pub struct StartOptions {
     /// How the mechanical gate runs its tools before the scouts; `None`, it does not run, and the
     /// report says so.
     pub gate: Option<GateSetup>,
+    /// The launching run's gate to take rather than run one (`--gate-from`, the directory
+    /// `craft review gate` wrote): its seeds on this run's files reach the lenses
+    /// ([`gate::alone::taken`]); over `gate` when both are given.
+    pub gate_from: Option<PathBuf>,
     /// The consumer's own agents to run as extra lenses, as the host names them (`extraLenses`):
     /// names separated by commas or spaces, or `off`; `None`, discovered on a light pass and off
     /// on a full review ([`crate::extra::request`]).
@@ -325,14 +329,17 @@ fn prepare(cwd: &Path, dir: &Path, opts: &StartOptions, run: &mut RunState) {
                 .as_ref()
                 .map(|setup| sources::for_repo(cwd, setup))
         });
-        let gated = opts
-            .gate
-            .as_ref()
-            .map(|setup| GateSetup {
-                scope: run.context.scope.clone(),
-                ..setup.clone()
-            })
-            .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir));
+        let gated = match &opts.gate_from {
+            Some(from) => Some(gate::alone::taken(from, &run.diff)),
+            None => opts
+                .gate
+                .as_ref()
+                .map(|setup| GateSetup {
+                    scope: run.context.scope.clone(),
+                    ..setup.clone()
+                })
+                .map(|setup| gate::run(cwd, &run.diff.base, &run.tracks, &setup, dir)),
+        };
         (sources.join(), gated)
     });
     match prepared {

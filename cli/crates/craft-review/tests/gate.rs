@@ -360,3 +360,92 @@ fn a_red_fresh_round_restarts_the_chain_so_the_next_does_not_resume_the_old_one(
         (&json!(1), &json!("full"))
     );
 }
+
+/// The gate `craft review gate` ran over `repo` with the tools in `tools`, kept in a directory of `out`.
+fn gate_alone(repo: &Path, out: &Path, tools: &Path) -> PathBuf {
+    let dir = out.join("gate");
+    let setup = GateSetup {
+        path: Some(tools.as_os_str().to_owned()),
+        ..GateSetup::default()
+    };
+    craft_review::gate::alone::alone(repo, None, &dir, &setup).unwrap();
+    dir
+}
+
+/// A start that takes the gate kept in `from` and runs none of its own.
+fn taking(repo: &Path, out: &Path, from: &Path) -> StartOptions {
+    StartOptions {
+        gate_from: Some(from.to_path_buf()),
+        ..opts(repo, out)
+    }
+}
+
+#[test]
+fn a_gate_taken_from_the_launching_run_seeds_the_lenses_and_says_where_it_came_from() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let tools = fake_cargo(
+        &[warning(
+            "clippy::needless_return",
+            "unneeded `return` statement",
+            1,
+        )],
+        &[],
+    );
+    let from = gate_alone(repo.path(), out.path(), tools.path());
+    let run = out.path().join("run");
+    let s = step::start(&taking(repo.path(), out.path(), &from)).unwrap();
+    assert_eq!(ids(&s), ["scout-rust"], "no gate of its own blocks or runs");
+    let s = submit(&run, json!({"scout-rust": scout("small", &["errors"])}));
+    let p = prompt_of(&s["tasks"][0]);
+    assert!(
+        p.contains("src/lib.rs:1 unneeded `return` statement"),
+        "the taken seed reaches the lens: {p}"
+    );
+    let r = report(&drive(&run, s));
+    common::assert_contains_all(
+        &r,
+        &[
+            &format!(
+                "## Gate\n\nRun once for the whole change by the launching run (`{}`), not by this one",
+                from.display()
+            ),
+            "- **rust**: pass",
+        ],
+    );
+}
+
+#[test]
+fn a_taken_red_gate_blocks_as_the_run_s_own_would() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let red = fake_cargo(&[error("mismatched types")], &[]);
+    let from = gate_alone(repo.path(), out.path(), red.path());
+    let done = step::start(&taking(repo.path(), out.path(), &from)).unwrap();
+    assert_eq!(done["verdict"], json!("Block"), "{done}");
+    assert!(report(&done).contains("⛔ Block — mechanical gate is red (rust)."));
+}
+
+#[test]
+fn a_gate_kept_for_another_head_is_not_used_and_the_report_says_why() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let red = fake_cargo(&[error("mismatched types")], &[]);
+    let from = gate_alone(repo.path(), out.path(), red.path());
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 2 }\n").unwrap();
+    git(repo.path(), &["commit", "-qam", "fix: f returns 2"]);
+    let run = out.path().join("run");
+    let s = step::start(&taking(repo.path(), out.path(), &from)).unwrap();
+    assert_eq!(ids(&s), ["scout-rust"], "a stale red gate does not block");
+    let r = report(&drive(&run, s));
+    common::assert_contains_all(
+        &r,
+        &[
+            &format!(
+                "## Gate\n\nNot run: the launching run's gate in `{}` was not used: it gated HEAD",
+                from.display()
+            ),
+            "the mechanical gate and its tool seeds (not run: the launching run's gate",
+        ],
+    );
+}

@@ -26,14 +26,19 @@ fn tools(line: Option<&str>) -> tempfile::TempDir {
     dir
 }
 
-/// The gate alone over `repo` with the tools in `path`.
-fn gate(repo: &Path, path: &Path) -> Value {
-    let out = tempfile::tempdir().unwrap();
+/// The gate alone over `repo` with the tools in `path`, kept under `out`.
+fn gate_in(repo: &Path, path: &Path, out: &Path) -> Value {
     let setup = GateSetup {
         path: Some(path.as_os_str().to_owned()),
         ..GateSetup::default()
     };
-    alone(repo, None, &out.path().join("gate"), &setup).unwrap()
+    alone(repo, None, &out.join("gate"), &setup).unwrap()
+}
+
+/// The gate alone over `repo` with the tools in `path`, kept in a directory dropped after.
+fn gate(repo: &Path, path: &Path) -> Value {
+    let out = tempfile::tempdir().unwrap();
+    gate_in(repo, path, out.path())
 }
 
 /// The fixture repository with a Cargo package at its top.
@@ -72,8 +77,14 @@ fn a_red_gate_is_said_as_the_review_says_it() {
 fn a_quiet_gate_passes_with_no_line() {
     let repo = package();
     let t = tools(None);
-    let got = gate(repo.path(), t.path());
+    let out = tempfile::tempdir().unwrap();
+    let got = gate_in(repo.path(), t.path(), out.path());
     assert_eq!(got["line"], json!(""), "{got}");
+    let kept = Path::new(got["dir"].as_str().unwrap()).join(craft_review::gate::alone::RESULT_FILE);
+    assert!(
+        kept.is_file(),
+        "the result is kept for the runs that take it"
+    );
     assert_eq!(got["gate"]["tracks"][0]["profile"], json!("rust"));
     assert_ne!(got["outcome"], json!("fail"));
 }
