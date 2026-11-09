@@ -10,6 +10,7 @@ use std::path::Path;
 
 use super::Status;
 use super::check::{Acc, Cx};
+use super::ci;
 use super::clippy::{Package, gate_check, pedantic};
 use super::semgrep::semgrep;
 
@@ -48,6 +49,11 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
             "the pedantic and nursery pass (`-- -W clippy::pedantic -W clippy::nursery`) on {ran} package(s): {} seed(s)",
             acc.seeds.len() - before
         ));
+    }
+    // After the pedantic pass, which a build CI stands for does not run (realm @nick/craft,
+    // node #482).
+    if acc.unbuilt && acc.status == Some(Status::Unknown) {
+        ci::from_ci(cx, acc);
     }
     semgrep(cx, acc);
 }

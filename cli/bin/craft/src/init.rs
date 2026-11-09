@@ -4,7 +4,10 @@
 //! file names now (node #470, option (a); [`memory`]), and the candidates the repository's
 //! deployment manifests name (the discovery of `lib/craft-externals.mjs`, node #435) as JSON; the
 //! host session asks the reviewer which systems the code talks to and at which deployed tag or
-//! commit, then `--write` stores exactly those.
+//! commit, then `--write` stores exactly those. Beside them, the CI map (node #482): the checks
+//! of the repository's workflows that carry clippy, test, fmt or build, which the gate reads when
+//! it cannot build the head itself; `--propose` prints their candidates, the session confirms each
+//! with the reviewer (node #483), and `--write --ci` records them ([`ci`]).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -18,6 +21,7 @@ use serde_json::{Value, json};
 
 use crate::review::find_craft_root;
 
+mod ci;
 mod memory;
 
 #[derive(Debug, clap::Args)]
@@ -37,6 +41,10 @@ pub struct InitArgs {
     /// An integration point: `<name>=<git url>@<tag or full commit>`; repeatable.
     #[arg(long = "point", requires = "write", value_name = "NAME=URL@REF")]
     pub points: Vec<String>,
+    /// A confirmed CI map entry as JSON — `{"check","signal","command","workflow"}`, the
+    /// workflow's hash read at the write; repeatable. The map is replaced like the points.
+    #[arg(long = "ci", requires = "write", value_name = "JSON")]
+    pub ci: Vec<String>,
     /// The project memory's `external` records as JSON on stdin (`-`, the only value): each one is
     /// proposed as an integration point with the revision its version file names now.
     #[arg(long = "memory-externals", requires = "propose", value_name = "-")]
@@ -50,6 +58,11 @@ pub struct InitArgs {
 /// `~/.craft`, from `HOME`.
 fn craft_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|h| Path::new(&h).join(".craft"))
+}
+
+/// `~/.craft/projects`, where each repository's profile is.
+pub fn projects_dir() -> Option<PathBuf> {
+    craft_home().map(|h| h.join("projects"))
 }
 
 /// Where a run started from this process finds the reviewer's profile and the sources cache.
@@ -70,7 +83,7 @@ fn print(value: &Value) -> Result<ExitCode> {
 }
 
 pub fn init(args: &InitArgs) -> Result<ExitCode> {
-    let projects = craft_home().context("HOME is not set")?.join("projects");
+    let projects = projects_dir().context("HOME is not set")?;
     let (path, common) = project::profile_path(&projects, &args.cwd)
         .with_context(|| format!("reading the repository {}", args.cwd.display()))?;
     if args.write {
@@ -79,15 +92,19 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
             .iter()
             .map(|p| IntegrationPoint::parse(p).map_err(anyhow::Error::msg))
             .collect::<Result<Vec<_>>>()?;
-        let profile = ProjectProfile::new(common, points)?;
+        let entries = ci::confirmed(&args.ci, &args.cwd)?;
+        let profile = ProjectProfile::new(common, points, entries)?;
         project::save(&path, &profile)?;
-        return print(&json!({"profile": path, "integrations": profile.integrations}));
+        return print(
+            &json!({"profile": path, "integrations": profile.integrations, "ci": profile.ci}),
+        );
     }
     let held = project::load(&path)?;
     let integrations = held
         .as_ref()
         .map(|p| p.integrations.clone())
         .unwrap_or_default();
+    let held_ci = held.as_ref().map(|p| p.ci.clone()).unwrap_or_default();
     let root = args.craft_root.clone().or_else(find_craft_root);
     let recalled = memory::recalled(args.memory_externals.as_deref())?;
     let imported = memory::import(root.as_deref(), &args.cwd, &recalled, &integrations);
@@ -98,7 +115,9 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "integrations": integrations,
         "memory": imported,
         "discovery": discovery,
-        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … (every point to keep; a branch is refused when a review prepares the sources)",
+        "ci": held_ci,
+        "ciCandidates": ci::proposed(&args.cwd),
+        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep; a branch is refused when a review prepares the sources)",
     }))
 }
 

@@ -1,7 +1,7 @@
 ---
 name: review-init
 description: >-
-  Set up your own review profile of a repository for the craft CLI review — `craft init` — kept outside the repository (~/.craft/projects/<id>/review.toml), never committed: the integration points, the external systems this code talks to over the network or through their API and contracts (an operator's kube-ovn, LINSTOR, a cloud API), each with its source git URL and the tag or full commit that counts as deployed. The review reads each one's source at that revision. It proposes the project memory's `external` records, each with the revision its version file names now, for you to confirm. Use before the first review of a repository, when a report says `not recorded: <system>`, or when a deployed version changes. Triggers: craft init, set up my review profile, which systems does this code integrate with, integration points for the review, the deployed version changed. Not for library dependencies (a review finds those itself), nor the project's shared memory (memory).
+  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or through their API (kube-ovn, LINSTOR, a cloud API), each with its source git URL and deployed tag or commit, which the review reads; it proposes the project memory's `external` records for you to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command line quoted from the workflow or the recipe it calls — the gate takes their result when it cannot build. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, or when the gate's build signal is unknown or its CI map missing or stale. Triggers: craft init, set up my review profile, integration points, the deployed version changed, CI map. Not for library dependencies (a review finds those itself), nor the project's shared memory (memory).
 ---
 
 # review-init — your review profile of a repository
@@ -41,7 +41,8 @@ The quoted heredoc hands the records over as written: the shell reads no `'`, `$
 them. With nothing recalled, drop the heredoc and `--memory-externals -`. A local build (`cargo build
 --release` in craft's `cli/`) can stand for `$CRAFT_BIN`. It prints one JSON object: `profile`
 (the file's path, outside the repository), `exists`, `integrations` (what the profile holds now:
-`name`, `repo`, `ref`), `memory` and `discovery`. It writes nothing.
+`name`, `repo`, `ref`), `memory`, `discovery`, `ci` (the CI map the profile holds now) and
+`ciCandidates`. It writes nothing.
 
 - `memory` — the recalled records as candidates, each with `system`, `repo` (its source), `ref`
   (the revision read now from its `versionFrom` file with its `versionMatch` pattern, or its
@@ -54,6 +55,13 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
   values, kustomizations, compose files, plain manifests, Terraform git modules) that neither the
   profile nor the memory covers, each with `system`, `repo` (empty or `repoGuessed` when unsure)
   and the `version` the manifest reads; `ran: false` with `why` when it could not run.
+- `ciCandidates` — what the repository's `.github/workflows/*.yml` hold for the CI map:
+  `resolved`, a job whose `run:` names the cargo command itself, each with `check` (the job's
+  `name:`, else its id — the name GitHub reports), `matrix`, `signal` (`clippy`, `test` for
+  `cargo test` or `cargo nextest`, `fmt`, `build` for `cargo build` or `cargo check`), `command`,
+  `workflow` and `ci` (the `--ci` that writes it); and `unresolved`, a job calling a recipe
+  (`just`, `make`, `cargo xtask`, a script) whose words hint at a signal, with its `runs` lines,
+  `hints` and `workflow`. `ran: false` with `why` when the workflows could not be read.
 
 ## 3. Find the rest in the code, then ask
 
@@ -78,18 +86,46 @@ it when they differ:
 Tell the reviewer the revision is the profile's word: when the deployment moves to another
 version, run this again.
 
+## 3b. The CI map: resolve, then ask
+
+The gate builds the branch with clippy itself. When it cannot — cargo ends with no compiler
+error, a private registry without a token, say — it reads the CI map and takes the result
+GitHub reports for the head's commit: a green mapped check passes its signal, a red one blocks
+the review, a pending one gives none. So an entry is a claim that a check **runs that command**;
+it is written only on the reviewer's word.
+
+- **Resolve each unresolved candidate** by reading the recipe its run line calls — the `justfile`
+  recipe, the `Makefile` target, the script, the `xtask` — in the repository, following it to
+  the cargo command it runs. Propose an entry only with the command line you saw there, quoted
+  as written (`cargo clippy --workspace --all-targets -- -D warnings`). A bare check name, or a
+  recipe you could not follow to a cargo command, is never coverage: leave it out and say so.
+- **Matrix jobs**: GitHub reports one check per combination, `<check> (<values>)`; the entry's
+  `check` is the job's name, and every run named `<check> (…)` must be green for its signal.
+  A `name:` holding `${{ … }}` is reported expanded — ask for the name the PR's checks show.
+- Then ask the reviewer in words, one numbered list beside the integration points: for each
+  entry, its check, signal, the command line and where you read it (the workflow, or the recipe
+  and its line). They confirm, drop, or correct each; add any check you missed.
+
+The profile also keeps each entry's workflow file hash, taken at the write: when the workflow
+changes, the gate skips that entry and says the CI map is stale — come back here.
+
 ## 4. Write
 
 ```sh
 "$CRAFT_BIN" init --write --cwd "$(git rev-parse --show-toplevel)" \
   --point 'kube-ovn=https://github.com/kubeovn/kube-ovn.git@v1.12.3' \
-  --point 'linstor=git@github.com:LINBIT/linstor-server.git@v1.29.0'
+  --point 'linstor=git@github.com:LINBIT/linstor-server.git@v1.29.0' \
+  --ci '{"check":"Rust","signal":"clippy","command":"cargo clippy --all-targets -- -D warnings","workflow":".github/workflows/ci.yml"}'
 ```
 
 `--write` replaces the whole list: pass every point to keep, the ones already there included.
+The same holds for the CI map: one `--ci` per confirmed entry — a resolved candidate's `ci` as
+printed, or the same JSON with the command line you quoted from the recipe — the ones already
+held included (from `ci`). An entry whose command does not run its signal's cargo command, or
+whose workflow file is missing, is refused and nothing is written.
 At most 8; a name is letters, digits, `.`, `_` or `-`. A confirmed memory record goes in as its
 `point`, as printed. A refused point is named on stderr and nothing is written; so is a profile
-written by a craft of another format. Report the file's path and the points written.
+written by a craft of another format. Report the file's path, the points and the CI map entries written.
 
 ## What the review does with it
 
@@ -99,3 +135,10 @@ it cannot fetch (no network, no git, a branch, an unknown tag) is named in the r
 **External sources** section, and that system is reviewed without its context; the review goes
 on. A finding that names a system the profile lacks prints `not recorded: <system>`: come back
 here.
+
+When the gate cannot build the branch, it reads the CI map and asks GitHub (`gh api`, the
+repository gh names from the checkout's remote) for the head commit's check runs and statuses.
+Its Gate section then reads, say, `clippy, test via CI (Rust, tests) for 1a2b3c4`; a red check
+blocks as a local red would; a check still running gives no signal. Without a map, without `gh`
+or its login, or offline, the gate stays unknown and says why; a stale entry is named with this
+skill as the way back.
