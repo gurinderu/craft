@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use super::*;
 
 /// A writer that answers as the adapter does — a checkpoint after a step that ended no phase is
-/// skipped, and not kept — and keeps every other call, answering from a script per command, in
+/// skipped, and not kept, unless the script has the writer unreached — and keeps every other call, answering from a script per command, in
 /// order; one with no answer left lands (a checkpoint into `/store/.partial/a`, the record filed
 /// into `/store/r.json`).
 #[derive(Default)]
@@ -45,7 +45,13 @@ fn phase_ended(request: &Value) -> bool {
 
 impl Writer for Fake {
     fn write(&self, call: &Call<'_>) -> Result<Value, WriteError> {
-        if call.command == "checkpoint"
+        let mut answers = self.answers.borrow_mut();
+        // An unreached writer never gets to replay the clock: its failure comes first.
+        let unreached = answers
+            .front()
+            .is_some_and(|(c, a)| *c == call.command && a.is_err());
+        if !unreached
+            && call.command == "checkpoint"
             && call.request["start"] == false
             && !phase_ended(call.request)
         {
@@ -54,7 +60,6 @@ impl Writer for Fake {
         self.calls
             .borrow_mut()
             .push((call.command.to_owned(), call.request.clone()));
-        let mut answers = self.answers.borrow_mut();
         if answers.front().is_some_and(|(c, _)| *c == call.command) {
             return answers.pop_front().map_or(Ok(Value::Null), |(_, a)| a);
         }
@@ -119,13 +124,13 @@ fn only_a_submit_that_ends_a_phase_writes_that_phases_checkpoint() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::default();
     open(run.path(), ctx(), "", &pending("lenses", 1), &w);
-    submitted(run.path(), &pending("lenses", 2), &host(2), &w).unwrap();
+    submitted(run.path(), &pending("lenses", 2), &host(2), Vec::new(), &w).unwrap();
     assert_eq!(
         w.commands(),
         ["checkpoint"],
         "a step in the same phase writes nothing"
     );
-    let said = submitted(run.path(), &pending("verify", 3), &host(3), &w).unwrap();
+    let said = submitted(run.path(), &pending("verify", 3), &host(3), Vec::new(), &w).unwrap();
     assert_eq!(said["lost"], json!([]));
     assert_eq!(w.commands(), ["checkpoint", "checkpoint"]);
     let req = w.request(1);
@@ -151,7 +156,7 @@ fn the_finishing_submit_writes_the_last_checkpoint_then_the_record_once() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::default();
     open(run.path(), ctx(), "", &pending("verify", 1), &w);
-    let said = submitted(run.path(), &finished(2), &host(4), &w).unwrap();
+    let said = submitted(run.path(), &finished(2), &host(4), Vec::new(), &w).unwrap();
     assert_eq!(said["record"], json!("filed"));
     assert_eq!(
         said["recordFile"],
@@ -181,7 +186,7 @@ fn the_finishing_submit_writes_the_last_checkpoint_then_the_record_once() {
         ]
     );
     assert_eq!(
-        file_again(run.path(), &w),
+        file_again(run.path(), Vec::new(), &w),
         None,
         "a filed record is not filed again"
     );
@@ -199,7 +204,7 @@ fn a_failed_checkpoint_is_said_and_every_later_write_rejoins_the_segments_direct
         said["lost"],
         json!(["phase checkpoint 'start' — craft-log-run FAILED: disk full"])
     );
-    submitted(run.path(), &finished(2), &host(1), &w).unwrap();
+    submitted(run.path(), &finished(2), &host(1), Vec::new(), &w).unwrap();
     assert_eq!(
         (
             w.request(1)["rejoin"].clone(),
@@ -222,7 +227,7 @@ fn a_record_that_does_not_land_never_fails_the_step_and_is_filed_again_as_a_retr
         said["lost"],
         json!(["the run record — node is not on the PATH"])
     );
-    let again = file_again(run.path(), &w).unwrap();
+    let again = file_again(run.path(), Vec::new(), &w).unwrap();
     assert_eq!(
         (again["verdict"].clone(), again["filing"]["record"].clone()),
         (json!("Approve"), json!("filed"))
@@ -233,7 +238,7 @@ fn a_record_that_does_not_land_never_fails_the_step_and_is_filed_again_as_a_retr
         (json!(false), json!(true))
     );
     assert_eq!(first["step"], retried["step"], "the same record sent again");
-    assert_eq!(file_again(run.path(), &w), None);
+    assert_eq!(file_again(run.path(), Vec::new(), &w), None);
 }
 
 #[test]
@@ -290,7 +295,7 @@ fn a_resume_files_a_new_segment_from_its_own_start_checkpoint() {
         session: "s2".into(),
         ..Host::default()
     };
-    submitted(run.path(), &pending("verify", 9), &resumed, &w).unwrap();
+    submitted(run.path(), &pending("verify", 9), &resumed, Vec::new(), &w).unwrap();
     let req = w.request(1);
     assert_eq!(
         (
@@ -311,27 +316,68 @@ fn a_resume_files_a_new_segment_from_its_own_start_checkpoint() {
 fn a_run_that_files_nothing_is_left_alone() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::default();
-    assert_eq!(submitted(run.path(), &finished(1), &host(1), &w), None);
-    assert_eq!(file_again(run.path(), &w), None);
     assert_eq!(
-        refile(run.path(), &w),
+        submitted(run.path(), &finished(1), &host(1), Vec::new(), &w),
+        None
+    );
+    assert_eq!(file_again(run.path(), Vec::new(), &w), None);
+    assert_eq!(
+        refile(run.path(), Vec::new(), &w),
         None,
         "nor is a run with no finished state re-filed"
     );
     assert!(w.commands().is_empty());
 }
 
+/// A stopped segment whose record failed, opened under `w`.
+fn stopped_unfiled(run: &std::path::Path, w: &Fake) {
+    let stopped = json!({"run": "/run", "done": true, "report": "/run/report.md", "verdict": "INCOMPLETE", "stopped": {"cause": "limit"}, "at": 1, "took": 1});
+    assert_eq!(
+        open(run, ctx(), "s1", &stopped, w)["record"],
+        json!("failed")
+    );
+}
+
 #[test]
-fn a_stopped_segments_unfiled_record_is_filed_on_resume_before_the_new_segment_opens() {
+fn a_stopped_parts_record_is_kept_and_filed_again_on_every_resume_until_it_lands() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::answering(vec![
         ("checkpoint", Ok(json!({"runDir": "/store/.partial/a"}))),
         ("finalize", Err(WriteError::NoNode)),
+        ("finalize", Err(WriteError::NoNode)),
+        ("finalize", Err(WriteError::NoNode)),
     ]);
-    let stopped = json!({"run": "/run", "done": true, "report": "/run/report.md", "verdict": "INCOMPLETE", "stopped": {"cause": "limit"}, "at": 1, "took": 1});
+    stopped_unfiled(run.path(), &w);
+    for _ in 0..2 {
+        let said = resuming(run.path(), &w);
+        assert_eq!(
+            said[0],
+            "the record of a stopped part of this run — node is not on the PATH"
+        );
+        assert!(
+            said[1].starts_with(
+                "1 stopped part(s) of this run still have no record — resume the run again"
+            ),
+            "{said:?}"
+        );
+    }
+    assert_eq!(summary(run.path()).unwrap()["pending"], json!(1));
+    let said = resuming(run.path(), &w);
+    assert!(said.is_empty(), "{said:?}");
+    assert_eq!(summary(run.path()).unwrap()["pending"], json!(0));
+    let finals: Vec<Value> = (1..5).map(|i| w.request(i)).collect();
     assert_eq!(
-        open(run.path(), ctx(), "s1", &stopped, &w)["record"],
-        json!("failed")
+        finals
+            .iter()
+            .map(|r| r["retry"].clone())
+            .collect::<Vec<_>>(),
+        [json!(false), json!(true), json!(true), json!(true)]
+    );
+    assert!(
+        finals
+            .iter()
+            .all(|r| r["step"] == finals[0]["step"] && r["dir"] == finals[0]["dir"]),
+        "the stopped part's record, byte for byte"
     );
     let resumed = Host {
         agents: Some(0),
@@ -339,25 +385,58 @@ fn a_stopped_segments_unfiled_record_is_filed_on_resume_before_the_new_segment_o
         session: "s2".into(),
         ..Host::default()
     };
-    let said = submitted(run.path(), &pending("lenses", 9), &resumed, &w).unwrap();
-    assert_eq!(said["lost"], json!([]));
+    submitted(run.path(), &pending("lenses", 9), &resumed, Vec::new(), &w).unwrap();
     assert_eq!(
-        w.commands(),
-        ["checkpoint", "finalize", "finalize", "checkpoint"]
-    );
-    let (first, again) = (w.request(1), w.request(2));
-    assert_eq!(
-        (first["retry"].clone(), again["retry"].clone()),
-        (json!(false), json!(true))
-    );
-    assert_eq!(
-        first["step"], again["step"],
-        "the stopped segment's record, byte for byte"
-    );
-    assert_eq!(
-        w.request(3)["start"],
+        w.request(5)["start"],
         json!(true),
-        "then the new segment's start"
+        "the new segment's own start"
+    );
+}
+
+#[test]
+fn an_unreached_writer_says_a_lost_checkpoint_only_for_a_step_that_may_have_ended_a_phase() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::default();
+    open(run.path(), ctx(), "", &pending("lenses", 1), &w);
+    let down = Fake::answering(vec![
+        ("checkpoint", Err(WriteError::NoNode)),
+        ("checkpoint", Err(WriteError::NoNode)),
+    ]);
+    let same = submitted(
+        run.path(),
+        &pending("lenses", 2),
+        &host(1),
+        Vec::new(),
+        &down,
+    )
+    .unwrap();
+    assert_eq!(same["lost"], json!([]), "no phase ended: nothing lost");
+    let moved = submitted(
+        run.path(),
+        &pending("verify", 3),
+        &host(2),
+        Vec::new(),
+        &down,
+    )
+    .unwrap();
+    assert_eq!(
+        moved["lost"],
+        json!(["phase checkpoint 'lenses' — node is not on the PATH"])
+    );
+}
+
+#[test]
+fn the_summary_carries_why_the_record_did_not_land() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::answering(vec![
+        ("checkpoint", Ok(json!({"runDir": "/d"}))),
+        ("finalize", Err(WriteError::NoNode)),
+    ]);
+    open(run.path(), ctx(), "", &finished(1), &w);
+    let s = summary(run.path()).unwrap();
+    assert_eq!(
+        s["finished"]["filing"]["lost"],
+        json!(["the run record — node is not on the PATH"])
     );
 }
 
@@ -366,7 +445,7 @@ fn a_segment_that_ended_files_nothing_more_until_it_is_resumed() {
     let run = tempfile::tempdir().unwrap();
     let w = Fake::default();
     open(run.path(), ctx(), "", &finished(1), &w);
-    let again = submitted(run.path(), &finished(2), &host(1), &w).unwrap();
+    let again = submitted(run.path(), &finished(2), &host(1), Vec::new(), &w).unwrap();
     assert_eq!(again["record"], json!("filed"));
     assert_eq!(
         w.commands(),

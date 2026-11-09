@@ -2,16 +2,17 @@
 //! (`--record`), the binary files a checkpoint as each of its phases ends and the run record when
 //! the run finishes, through `lib/cli-review-file.mjs` in craft's plugin root and the one write path
 //! behind it, `lib/craft-log-run.mjs` — the record's shape is that JavaScript's, never rebuilt here.
-//! What it needs between steps is kept beside the run's state in `filing.json`: the steps of the
-//! current segment with the task agents the host had dispatched by each (the figures are replayed
-//! from them), the directory the checkpoints went to, and whether the record is filed. A write that
+//! What it needs between steps is kept in `filing.json` ([`Filing`]). A write that
 //! does not land never fails a step: it is said in the step's `filing`, and a finished run whose
 //! record failed files it again on `--resume` ([`refile`]), marked a retry so the store answers
-//! `already filed` for an attempt that did land; a stopped run's `--resume` first files its stopped
-//! segment's record the same way when it did not land, then opens a new segment.
+//! `already filed` for an attempt that did land. A stopped segment whose record did not land is
+//! kept whole among the run's pending ones; every `--resume`, before anything else it does — even
+//! one refused for a moved checkout — files each pending record again the same way ([`resuming`]),
+//! and the step names any still pending.
 
 mod kept;
 pub mod node;
+mod resume;
 mod said;
 #[cfg(test)]
 mod tests;
@@ -22,9 +23,10 @@ use std::path::Path;
 
 use serde_json::Value;
 
-pub use kept::{Ctx, Filing, Host, Record, Told, state_path};
+pub use kept::{Ctx, Filing, Record, Told, state_path};
 use kept::{load, save};
 pub use node::NodeWriter;
+pub use resume::{Host, resuming};
 use said::outcome;
 pub use said::{summary, with_filing};
 pub use wire::{Call, WriteError, Writer};
@@ -41,39 +43,36 @@ pub fn open(run: &Path, ctx: Ctx, session: &str, step: &Value, w: &dyn Writer) -
 }
 
 /// Files what the submit that printed `step` closed, when the run files its telemetry; `None` when
-/// it does not. A resume opens a new segment, the ended one's record filed first when it did not
-/// land; a segment that ended — a stopped run submitted on — files nothing more.
-pub fn submitted(run: &Path, step: &Value, host: &Host, w: &dyn Writer) -> Option<Value> {
+/// it does not. `earlier` are the lines [`resuming`] said. A resume opens a new segment; a segment
+/// that ended — a stopped run submitted on — files nothing more.
+pub fn submitted(
+    run: &Path,
+    step: &Value,
+    host: &Host,
+    earlier: Vec<String>,
+    w: &dyn Writer,
+) -> Option<Value> {
     let mut filing = load(run)?;
-    let mut lost = Vec::new();
     if host.resume {
-        if let Some(ended) = unfiled(&filing) {
-            file_record(run, &mut filing, &ended, &mut lost, w);
-        }
         filing = Filing {
             ctx: filing.ctx,
             session: host.session.clone(),
+            pending: filing.pending,
             ..Filing::default()
         };
     } else if filing.finished.is_some() {
-        return Some(outcome(&filing, lost, true));
+        return Some(outcome(&filing, earlier, true));
     }
     if host.output_tokens.is_some() {
         filing.output_tokens = host.output_tokens;
     }
-    Some(record_step(
-        run,
-        filing,
-        step,
-        host.agents.unwrap_or(0),
-        lost,
-        w,
-    ))
+    let agents = host.agents.unwrap_or(0);
+    Some(record_step(run, filing, step, agents, earlier, w))
 }
 
 /// The finished step of the segment whose record is not in the store, `None` when it is or the
 /// segment has not ended.
-fn unfiled(filing: &Filing) -> Option<Value> {
+pub(super) fn unfiled(filing: &Filing) -> Option<Value> {
     filing
         .finished
         .clone()
@@ -83,19 +82,28 @@ fn unfiled(filing: &Filing) -> Option<Value> {
 /// A finished run whose record is not in the store, filed again: its finished step with what the
 /// write did; `None` when the run files no telemetry, is not finished — a stopped run is resumed,
 /// not re-filed — or its record is filed.
-pub fn refile(run: &Path, w: &dyn Writer) -> Option<Value> {
+pub fn refile(run: &Path, earlier: Vec<String>, w: &dyn Writer) -> Option<Value> {
     let done = crate::state::load(run).is_ok_and(|s| s.phase == crate::state::Phase::Done);
-    if done { file_again(run, w) } else { None }
+    if done {
+        file_again(run, earlier, w)
+    } else {
+        None
+    }
 }
 
 /// [`refile`] of a run known to be finished.
-fn file_again(run: &Path, w: &dyn Writer) -> Option<Value> {
+fn file_again(run: &Path, mut lost: Vec<String>, w: &dyn Writer) -> Option<Value> {
     let mut filing = load(run)?;
     let step = unfiled(&filing)?;
-    let mut lost = Vec::new();
     file_record(run, &mut filing, &step, &mut lost, w);
-    save(run, &filing, &mut lost);
+    keep(run, &mut filing, &mut lost);
     Some(with_filing(step, outcome(&filing, lost, true)))
+}
+
+/// Keeps `filing` with what its writes lost, for `status` to say why.
+fn keep(run: &Path, filing: &mut Filing, lost: &mut Vec<String>) {
+    filing.lost.clone_from(lost);
+    save(run, filing, lost);
 }
 
 /// Keeps `step`, asks for the checkpoint it may call for — the start's on a segment's first step,
@@ -117,7 +125,7 @@ fn record_step(
         filing.finished = Some(step.clone());
         file_record(run, &mut filing, step, &mut lost, w);
     }
-    save(run, &filing, &mut lost);
+    keep(run, &mut filing, &mut lost);
     outcome(&filing, lost, done)
 }
 

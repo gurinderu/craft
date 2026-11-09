@@ -246,7 +246,9 @@ from `content/`, which it compiles in, its plans, prompts and verification rules
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them; with `start --record` the run files its own telemetry
 through the plugin root's `lib/cli-review-file.mjs`, which builds the checkpoints and the record and hands them to
-`lib/craft-log-run.mjs`, keeping what it needs between steps in `filing.json`) and `crates/craft-tui` (progress as a phases → agents tree
+`lib/craft-log-run.mjs`, keeping what it needs between steps in `filing.json`, including the stopped parts whose
+record has not landed, which every `--resume` files again first; `craft review status` carries that `filing` — the
+record, its file and the step the run ended with — for a host that lost the step that said it) and `crates/craft-tui` (progress as a phases → agents tree
 on a terminal, one line per event otherwise). The toolchain is pinned in `cli/rust-toolchain.toml`;
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, and checks that the
 parity files the CLI owns (`verify-cases.json`, `plan-cases.json`, `prompt-cases.json`) regenerate unchanged, apart
