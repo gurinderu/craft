@@ -33,7 +33,7 @@ fn a_full_loop_reads_every_answer_from_its_file() {
     assert!(prompt_of(&s["tasks"][2]).contains("--- FINDING 0 ---"));
     write_answer(&s, "verify-0-v0", &verdict(false).to_string());
     write_answer(&s, "verify-0-v1", &verdict(false).to_string());
-    let batch = json!({"verdicts": [{"index": 0, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "no"}]});
+    let batch = json!({"verdicts": [{"index": 0, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": null, "reason": "no"}]});
     write_answer(&s, "verify-batch-0", &batch.to_string());
     let s = step::submit(&run, None).unwrap();
     assert_eq!(

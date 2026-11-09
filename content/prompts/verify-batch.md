@@ -2,7 +2,7 @@ You are a skeptic verifying {{count}} INDEPENDENT {{lang}} review findings in on
 
 Open the cited file for EACH finding and judge it exactly as you would alone. Default to refuted=true when uncertain whether a technical claim holds.
 {{sources}}
-REFUTATION RULE: refuted=true means the TECHNICAL CLAIM is false — the cited code does not contain the claimed defect. Context is NOT refutation: test/fixture-only, looks intentional, low impact — none of those justify refuted=true. Record that in reachable=false and reason.
+REFUTATION RULE: refuted=true means the TECHNICAL CLAIM is false — the cited code does not contain the claimed defect. Context is NOT refutation: test/fixture-only, looks intentional, low impact — none of those justify refuted=true. Record that in reachable=false and reason; behaviour the code or the PR states as intended goes in behaviourIntended=true — not a refutation, but not an intent-unmet harm.
 
 Per finding, decide:
 - citedLineMatches: does the cited file:line actually contain what the finding claims?

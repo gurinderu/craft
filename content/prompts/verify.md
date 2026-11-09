@@ -8,7 +8,7 @@ FINDING: [{{severity}}] {{title}}
 
 MECHANICAL CHECK FIRST: if a tool can decide this finding (a clippy lint, statix/deadnix rule, semgrep rule, cargo-audit advisory — infer from source/ruleId/title), RUN it scoped to the cited file; its output overrides your judgement in BOTH directions: tool still reports it → refuted=false; tool demonstrably no longer reports it → refuted=true (quote the output in reason).{{gate}}{{toolFallback}}
 
-REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream.
+REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — the cited code does not contain the claimed defect, or the deciding tool demonstrably no longer reports it. Context is NOT refutation: that the code is test/fixture/example-only, looks intentional, is unlikely to be built or run, or has low impact NEVER justifies refuted=true. Record that context in reachable=false and reason instead — severity is calibrated downstream. Behaviour the code or the PR states as intended goes in behaviourIntended=true: it does not refute the defect, but it is not an intent-unmet harm.
 
 {{exclusions}}{{sources}}Open the cited file and check:
 1. citedLineMatches: does {{at}} actually contain what the finding claims? (If the citation is wrong/hallucinated → citedLineMatches=false.)
@@ -17,4 +17,4 @@ REFUTATION RULE: refuted=true means the finding's TECHNICAL CLAIM is false — t
 4. premiseSupported: identify the finding's LOAD-BEARING premise — the one claim that, if false, makes the finding evaporate. If it lives outside the cited line (the dependency behaves this way, this is reachable from untrusted input, no caller guards it, the sibling does X), OPEN the `whereChecked` location and check it actually shows that. premiseSupported=false when the premise is off-site and `whereChecked` is empty, points somewhere that does not show it, or merely restates the cited line. premiseSupported=true when the finding is genuinely self-contained at the cited line, or the off-site evidence checks out. Do NOT set refuted=true just because a premise is uncited — unsupported is not disproven; that is what this field is for, and it demotes the finding downstream instead of killing it. {{dependencySource}}
 5. {{harmQuestion}}
 
-Return {refuted, citedLineMatches, reachable, premiseSupported, harmSupported, confirmedHarmLevel?, reason}.
+Return {refuted, citedLineMatches, reachable, premiseSupported, behaviourIntended, harmSupported, confirmedHarmLevel (a listed level or null), reason}.

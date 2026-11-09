@@ -57,7 +57,7 @@ fn verified(
         submit(&run, json!({"dedup-rust": {"groups": []}}));
     }
     let v: Vec<Value> = (0..found.len())
-        .map(|i| json!({"index": i, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "seen"}))
+        .map(|i| json!({"index": i, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": null, "reason": "seen"}))
         .collect();
     submit(&run, json!({"verify-batch-0": {"verdicts": v}}))
 }
