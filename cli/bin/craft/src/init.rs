@@ -41,8 +41,9 @@ pub struct InitArgs {
     /// An integration point: `<name>=<git url>@<tag or full commit>`; repeatable.
     #[arg(long = "point", requires = "write", value_name = "NAME=URL@REF")]
     pub points: Vec<String>,
-    /// A confirmed CI map entry as JSON — `{"check","signal","command","workflow"}`, the
-    /// workflow's hash read at the write; repeatable. The map is replaced like the points.
+    /// A CI map entry as JSON: a fresh confirmation `{"check","signal","command","workflow",
+    /// "sources"}`, its files hashed at the write, or a held entry exactly as `--propose` prints it
+    /// in `ci`, its hashes kept; repeatable. The map is replaced like the points.
     #[arg(long = "ci", requires = "write", value_name = "JSON")]
     pub ci: Vec<String>,
     /// The project memory's `external` records as JSON on stdin (`-`, the only value): each one is
@@ -117,7 +118,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "discovery": discovery,
         "ci": held_ci,
         "ciCandidates": ci::proposed(&args.cwd),
-        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep; a branch is refused when a review prepares the sources)",
+        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it; a branch is refused when a review prepares the sources)",
     }))
 }
 

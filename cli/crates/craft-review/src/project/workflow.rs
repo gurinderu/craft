@@ -1,5 +1,6 @@
 //! A GitHub Actions workflow file read for what the CI map needs (realm @nick/craft, node #482):
-//! each job under `jobs:` with its own `name:`, whether it runs a matrix, and its `run:` lines. A
+//! each job under `jobs:` with its own `name:`, whether it runs a matrix, its `run:` lines and the
+//! local actions or reusable workflows its `uses: ./…` runs. A
 //! line reader, not a YAML parser: workflow files are indented blocks, and these three keys sit at
 //! places their indent finds — no dependency is taken for them. What it misreads (anchors, flow
 //! mappings) only costs a candidate, which the reviewer confirms in words before it is recorded.
@@ -7,13 +8,14 @@
 use super::shell::joined;
 
 /// One job of a workflow: its id, its `name:` when it has one, whether a `matrix:` expands it,
-/// and each command line of its steps' `run:`.
+/// each command line of its steps' `run:`, and each local path a `uses: ./…` names, without `./`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
     pub id: String,
     pub name: Option<String>,
     pub matrix: bool,
     pub runs: Vec<String>,
+    pub uses: Vec<String>,
 }
 
 fn indent(l: &str) -> usize {
@@ -89,7 +91,19 @@ fn job(id: String, lines: &[&str]) -> Job {
         name,
         matrix,
         runs: runs(lines),
+        uses: local_uses(lines),
     }
+}
+
+/// Each local path the `uses:` keys among `lines` name (`./…`), without `./` or a trailing `/`.
+fn local_uses(lines: &[&str]) -> Vec<String> {
+    lines
+        .iter()
+        .filter_map(|l| step_key(l).1.strip_prefix("uses:"))
+        .map(|v| unquote(v.split(" #").next().unwrap_or(v).trim()))
+        .filter_map(|v| v.strip_prefix("./"))
+        .map(|v| v.trim_end_matches('/').to_owned())
+        .collect()
 }
 
 /// A line's column where its key starts, past a list item's `- `, and the text from there.

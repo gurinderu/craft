@@ -23,7 +23,7 @@ fn a_confirmed_entry_carries_the_hash_of_its_workflow_read_now() {
     let t = top();
     let e = clippy(t.path());
     assert_eq!((e.check.as_str(), e.signal), ("clippy", Signal::Clippy));
-    assert_eq!(e.workflow_hash.len(), 64);
+    assert_eq!(e.hashes[WF].len(), 64);
     assert!(e.fresh(t.path()));
     std::fs::write(t.path().join(WF), "jobs:\n  lint:\n").unwrap();
     assert!(!e.fresh(t.path()), "the workflow changed since");
@@ -58,7 +58,7 @@ fn a_bare_check_name_a_missing_workflow_or_a_path_outside_is_refused() {
             "one non-empty line",
         ),
     ] {
-        let err = CiEntry::confirmed(bad, t.path()).unwrap_err();
+        let err = CiEntry::confirmed(bad, t.path()).unwrap_err().to_string();
         assert!(err.contains(why), "{bad}: {err}");
     }
 }

@@ -25,7 +25,7 @@ pub(super) fn from_ci(cx: &Cx<'_>, acc: &mut Acc) {
     };
     let (fresh, stale): (Vec<&CiEntry>, Vec<&CiEntry>) = map.iter().partition(|e| e.fresh(cx.top));
     if !stale.is_empty() {
-        acc.notes.push(stale_note(&stale));
+        acc.notes.push(stale_note(&stale, cx.top));
     }
     if fresh.is_empty() {
         return;
@@ -67,8 +67,9 @@ fn map(projects: &std::path::Path, top: &std::path::Path) -> Result<Vec<CiEntry>
     }
 }
 
-fn stale_note(stale: &[&CiEntry]) -> String {
-    let files = unique(stale.iter().map(|e| e.workflow.as_str()));
+fn stale_note(stale: &[&CiEntry], top: &std::path::Path) -> String {
+    let changed: Vec<String> = stale.iter().flat_map(|e| e.changed(top)).collect();
+    let files = unique(changed.iter().map(String::as_str));
     let checks = unique(stale.iter().map(|e| e.check.as_str()));
     format!(
         "the CI map is stale: {} changed since it was confirmed, so {} skipped — run `craft init --propose` to confirm it again",

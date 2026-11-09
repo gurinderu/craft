@@ -18,6 +18,10 @@ use crate::sources::spec::SYSTEMS_MAX;
 
 pub mod candidates;
 pub mod ci;
+mod ci_error;
+mod ci_files;
+#[cfg(test)]
+mod ci_files_tests;
 #[cfg(test)]
 mod ci_tests;
 mod point;
@@ -26,7 +30,7 @@ mod signal;
 pub mod workflow;
 #[cfg(test)]
 mod workflow_tests;
-pub use ci::{CI_MAX, CiEntry, Signal};
+pub use ci::{CI_MAX, CiEntry, CiError, Signal};
 pub use point::IntegrationPoint;
 
 /// The profile's format; a profile of another is refused, not misread.
@@ -107,7 +111,7 @@ impl ProjectProfile {
             return Err(format!("more than {CI_MAX} CI map entries"));
         }
         for (i, e) in self.ci.iter().enumerate() {
-            e.check()?;
+            e.check().map_err(|e| e.to_string())?;
             let twice = |f: &CiEntry| f.check == e.check && f.signal == e.signal;
             if self.ci.iter().take(i).any(twice) {
                 return Err(format!(

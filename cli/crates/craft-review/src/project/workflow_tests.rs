@@ -37,6 +37,7 @@ jobs:
           --all
   docs:
     steps:
+      - uses: "./.github/actions/docs/" # local
       - run: make docs
 "#;
 
@@ -57,6 +58,7 @@ fn jobs_are_read_with_their_name_matrix_and_run_lines() {
                 "cd cli && cargo test --locked".into(),
                 "RUSTFLAGS=-Dwarnings cargo +nightly build --release".into(),
             ],
+            uses: Vec::new(),
         },
         "the `defaults: run:` mapping is no run line"
     );
@@ -66,6 +68,8 @@ fn jobs_are_read_with_their_name_matrix_and_run_lines() {
         ["just lint", "./scripts/check.sh --all"],
         "a folded block is one line"
     );
+    assert!(got[0].uses.is_empty(), "a remote action is not local");
+    assert_eq!(got[3].uses, [".github/actions/docs"]);
 }
 
 #[test]

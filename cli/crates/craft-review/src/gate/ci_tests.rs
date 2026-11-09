@@ -120,3 +120,30 @@ fn a_build_that_ran_does_not_read_ci() {
     assert_eq!(t.status, Status::Pass, "{t:?}");
     assert!(calls(&w, "gh").is_empty());
 }
+
+#[test]
+fn a_recipe_edit_marks_the_map_stale_and_its_entry_skipped() {
+    let w = world(&runs(&[("lint", "completed", "success")]), FMT_GREEN);
+    let top = w.repo.path();
+    std::fs::write(
+        top.join("justfile"),
+        "lint:\n    cargo clippy -- -D warnings\n",
+    )
+    .unwrap();
+    let json = format!(
+        r#"{{"check":"lint","signal":"clippy","command":"cargo clippy -- -D warnings","workflow":"{WF}","sources":["justfile"]}}"#
+    );
+    save(
+        w.projects.path(),
+        top,
+        vec![crate::project::CiEntry::confirmed(&json, top).unwrap()],
+    );
+    std::fs::write(top.join("justfile"), "lint:\n    cargo clippy\n").unwrap();
+    let (_, t) = gated(&w);
+    assert_eq!(t.status, Status::Unknown, "{t:?}");
+    let notes = t.notes.join("\n");
+    assert!(
+        notes.contains("CI map is stale: justfile changed"),
+        "{notes}"
+    );
+}
