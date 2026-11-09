@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.47.0](https://github.com/gurinderu/craft/compare/v0.46.0...v0.47.0) (2026-11-09)
+
+
+### Features
+
+* **cli:** publish a finished run's findings on its PR after the fact ([7b516ec](https://github.com/gurinderu/craft/commit/7b516ecacc1f500b5f8c3040d64afc17a1aa2ec9))
+* **cli:** publish a finished run's findings on its PR after the fact ([e295611](https://github.com/gurinderu/craft/commit/e2956116627077ca7c10494ce8ae9a38b6523dfe))
+
+
+### Bug Fixes
+
+* **cli:** harden publishing after the fact against review findings ([3d9a68c](https://github.com/gurinderu/craft/commit/3d9a68cafe710f12d91b8f9108dc1e8fd7879588))
+
 ## [0.46.0](https://github.com/gurinderu/craft/compare/v0.45.0...v0.46.0) (2026-11-09)
 
 
