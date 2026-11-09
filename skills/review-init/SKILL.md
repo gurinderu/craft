@@ -108,11 +108,25 @@ written only on the reviewer's word.
 - **List every file the command goes through** as the entry's `sources`, repository-relative:
   the `justfile`, the `Makefile`, the `xtask`'s source, the script, and each local action or
   reusable workflow the job runs (`uses: ./…` — a composite action's `action.yml`). The command
-  must be found, whitespace aside, in a `run:` line of the check's job or in a line of one of
+  must be run, whitespace aside, by a `run:` line of the check's job or by a line of one of
   these sources: a command quoted from a recipe with that recipe left out of `sources` is
   refused. A cargo alias lives in a `.cargo/config.toml` (or `.cargo/config`): the root's and
-  each one on the way from a job's `working-directory:` up to the root are hashed on their own
-  whenever they exist. An entry whose job runs a local `uses:` it does not list is refused.
+  each one on the way from a job's `working-directory:`, or from a run line's `cd <dir>`, up to
+  the root are hashed on their own whenever they exist. An entry whose job runs a local `uses:`
+  it does not list is refused.
+- **What counts as running it**: one command of the line (split at `&&`, `||`, `;`) is the
+  entry's command whole, or it followed by further arguments — never a piece of a longer word or
+  command. Its program is `cargo`, past `env` and `VAR=x` assignments, so `echo "cargo clippy"`
+  is not one. Refused: `--no-run`, `--help` or `--version` among its words, a trailing `&` or a
+  pipe, a `||` before it, or after it unless what follows is `exit <non-zero>` (`|| true`,
+  `|| :`, `|| exit 0` swallow the failure), a step or job whose `continue-on-error:` is anything
+  but `false`, and a comment — a `# …` after an inline `run:`, a source's comment line. The check
+  must name a job of the workflow (its `name:` or id, a matrix's `<name> (…)`): one naming none
+  is refused, not looked up in every job.
+- **Confirm the recipe is the one the job calls**: a source is read whole, so the command found
+  in a `justfile` or `Makefile` may sit in another recipe than the one the job's `run:` calls.
+  Before you propose the entry, follow the job's `run:` (`just lint`, `make check`) to its recipe
+  and see that this recipe runs the command; say which recipe and line in the list below.
 - **Matrix jobs**: GitHub reports one check per combination, `<check> (<values>)`; the entry's
   `check` is the job's name, and every run named `<check> (…)` must be green for its signal.
   A `name:` holding `${{ … }}` is reported expanded — ask for the name the PR's checks show.
@@ -122,7 +136,7 @@ written only on the reviewer's word.
 
 The profile also keeps the hash of each file an entry rests on — the workflow, each source, the
 cargo configs —, taken at the write: when any of them changes or a new cargo config appears on a
-job's path, or the entry's command is no longer found in its files, the gate skips that entry and
+job's path, or the entry's command is no longer run by its files, the gate skips that entry and
 says the CI map is stale, naming the file — come back here. The gate reads CI only for a working tree
 with no uncommitted changes to tracked files: CI built the head's commit, not your edits.
 

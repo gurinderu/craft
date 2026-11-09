@@ -19,6 +19,8 @@ use crate::sources::spec::SYSTEMS_MAX;
 pub mod candidates;
 pub mod ci;
 mod ci_configs;
+#[cfg(test)]
+mod ci_configs_tests;
 mod ci_error;
 mod ci_files;
 #[cfg(test)]
@@ -26,6 +28,11 @@ mod ci_files_tests;
 mod ci_ground;
 #[cfg(test)]
 mod ci_ground_tests;
+mod ci_match;
+#[cfg(test)]
+mod ci_match_tests;
+#[cfg(test)]
+mod ci_scope_tests;
 mod ci_shape;
 #[cfg(test)]
 mod ci_tests;
@@ -33,6 +40,9 @@ mod point;
 mod shell;
 mod signal;
 pub mod workflow;
+mod workflow_steps;
+#[cfg(test)]
+mod workflow_steps_tests;
 #[cfg(test)]
 mod workflow_tests;
 pub use ci::{CI_MAX, CiEntry, CiError, Signal};
