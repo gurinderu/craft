@@ -14,6 +14,6 @@ export const meta = {
 
 export async function __run() {
 // The craft release this engine shipped in, held to the plugin manifest by lib/check-workflows.mjs.
-const CRAFT_VERSION = '0.44.0' // x-release-please-version
+const CRAFT_VERSION = '0.45.0' // x-release-please-version
 return await runCliReview({ args, agent, parallel, phase, log, budget }, CRAFT_VERSION)
 }
