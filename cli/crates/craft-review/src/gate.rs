@@ -4,13 +4,13 @@
 //! bounded by one time budget, as stage 5 runs git. The engine hands this to an agent only because
 //! its sandbox spawns no process; reading a project's own lint recipe, which takes judgement, is
 //! the reviewer's at `craft init`, not the gate's. CI is read only when the gate's own build is
-//! impossible (cargo ended with no compiler error): then the checks the reviewer's CI map names for
-//! the head stand for the signals they carry (`gate/ci.rs`, realm @nick/craft, node #482), and
-//! without a map, gh or network the signal stays unknown. A red check this change is answerable
-//! for blocks the review before any lens; a clippy, statix or deadnix diagnostic on a line the
-//! change added, and any result of semgrep's repository rules in a changed file, is a seed finding
-//! every lens and verifier sees, carrying its `toolRule`; a tool that is not installed is named,
-//! and the review goes on.
+//! impossible (cargo ended with no compiler error), and it informs, never certifies (`gate/ci.rs`,
+//! realm @nick/craft, node #482): a red check the reviewer's CI map names for the head blocks; a
+//! green one is reported and the signal stays unknown, as it does without a map, gh or network.
+//! A red check this change is answerable for blocks the review before any lens; a clippy, statix
+//! or deadnix diagnostic on a line the change added, and any result of semgrep's repository rules
+//! in a changed file, is a seed finding every lens and verifier sees, carrying its `toolRule`; a
+//! tool that is not installed is named, and the review goes on.
 //! clippy and `nix flake check` build and run the branch's code (build scripts, proc macros,
 //! flake checks): a run started with `--no-gate` runs none of them, and says so.
 
@@ -27,6 +27,8 @@ pub mod alone;
 mod cause;
 mod check;
 mod ci;
+#[cfg(test)]
+mod ci_inform_tests;
 mod ci_read;
 #[cfg(test)]
 mod ci_read_tests;

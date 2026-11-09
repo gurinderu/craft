@@ -1,6 +1,7 @@
 //! What the CI map's fresh entries came to for the head, signal by signal, and how that verdict
-//! lands in the gate (realm @nick/craft, node #482): a red check fails the track, a Block like a
-//! local red; a green clippy passes it; anything else leaves it unknown, each silent signal named.
+//! lands in the gate (realm @nick/craft, node #482: CI informs, it never certifies): a red check
+//! fails the track, a Block like a local red; a green one is reported and passes nothing; the
+//! track stays unknown unless red, each silent signal named.
 
 use super::Status;
 use super::check::Acc;
@@ -80,13 +81,13 @@ pub(super) fn verdict<'a>(fresh: &[&'a CiEntry], seen: &Seen) -> Verdict<'a> {
     v
 }
 
-/// The verdict in `acc`: red fails it, a green clippy passes it, else it stays unknown.
+/// The verdict in `acc`: red fails it; green is reported, informing only; else it stays unknown.
 pub(super) fn apply(acc: &mut Acc, v: &Verdict<'_>, short: &str) {
     if !v.green.is_empty() {
         let signals: Vec<&str> = v.green.iter().map(|(s, _)| s.as_str()).collect();
         let checks = unique(v.green.iter().flat_map(|(_, c)| c.iter().copied()));
         acc.parts.push(format!(
-            "{} via CI ({}) for {short}",
+            "CI for {short}: {} green (checks {}) — informs only, not a pass",
             signals.join(", "),
             checks.join(", ")
         ));
@@ -110,18 +111,10 @@ pub(super) fn apply(acc: &mut Acc, v: &Verdict<'_>, short: &str) {
             s.as_str()
         ));
     }
-    let clippy = v.green.iter().any(|(s, _)| *s == Signal::Clippy);
-    let unmapped = !clippy && !v.silent.iter().any(|(s, _)| *s == Signal::Clippy);
-    if v.red.is_empty() && unmapped {
-        acc.notes
-            .push("the CI map names no clippy check, so the build signal stays unknown".to_owned());
-    }
-    acc.status = Some(if !v.red.is_empty() {
-        Status::Fail
-    } else if clippy {
-        Status::Pass
-    } else {
+    acc.status = Some(if v.red.is_empty() {
         Status::Unknown
+    } else {
+        Status::Fail
     });
 }
 

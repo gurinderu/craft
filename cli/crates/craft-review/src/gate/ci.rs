@@ -1,10 +1,11 @@
 //! CI as the gate's evidence when its own build is impossible (realm @nick/craft, node #482): cargo
 //! ended with no compiler error (a private registry without a token, say), so the gate reads the
-//! reviewer's CI map (node #483) and what GitHub reports for the head. A green mapped check passes
-//! its signal "via CI"; a red one fails it, a Block like a local red; a pending or absent one gives
-//! none. An entry one of whose files changed since it was confirmed, or whose command is no longer
-//! found in them, is skipped and the map named stale. A working tree with uncommitted changes is
-//! not what CI built for its head, so CI is not read. No map, no gh, no auth or no network: the gate stays as it was, with a note.
+//! reviewer's CI map (node #483) and what GitHub reports for the head. CI informs, it never
+//! certifies: a green mapped check is reported and the track stays unknown; a red one fails it, a
+//! Block like a local red; a pending or absent one gives no signal. An entry one of whose files
+//! changed since it was confirmed, or whose command is no longer found in them, is skipped and the
+//! map named stale. A working tree with uncommitted changes is not what CI built for its head, so
+//! CI is not read. No map, no gh, no auth or no network: the gate stays as it was, with a note.
 
 use super::check::{Acc, Cx};
 use super::ci_read::seen;
