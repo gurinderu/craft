@@ -121,14 +121,14 @@ pub fn deliver(dir: &Path, run: &mut RunState, setup: &PostSetup) -> Result<(), 
     write_report(dir, run)
 }
 
-/// What came of posting the run's sorted defects on the pull request of `branch` (the checked-out
-/// one's when `None`), a PR at another head handled by `moved`: `None` when the run has no
+/// What came of posting the run's sorted defects on the pull request `pr` names (a number or a
+/// branch; the checked-out branch's when `None`), a PR at another head handled by `moved`: `None` when the run has no
 /// sorting, `Err` when `moved` refused.
 fn post_sorted(
     dir: &Path,
     run: &RunState,
     setup: &PostSetup,
-    branch: Option<&str>,
+    pr: Option<&str>,
     moved: &dyn Fn(&str) -> Moved,
 ) -> Option<Result<Posted, String>> {
     let sorting = run.publish.sorting.as_ref()?;
@@ -149,7 +149,7 @@ fn post_sorted(
         let defects: Vec<Defect> = with_file.into_iter().cloned().collect();
         let target = gh::Target {
             head: &run.diff.head,
-            branch,
+            pr,
             moved,
         };
         match gh::post(Path::new(&run.context.repo), &target, &defects, dir, setup) {

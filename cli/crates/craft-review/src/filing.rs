@@ -75,19 +75,26 @@ pub fn submitted(
 }
 
 /// Files what publishing a finished run after the fact (`craft review comment`, its finished
-/// `step`) changed: the record learns the sorting and what was posted — amended in the store when it
-/// is filed there, else filed now with them — and a later re-file sends them too. Says what the
-/// writes did; `None` when the run files no telemetry.
+/// `step`) changed: the record learns the sorting and what was posted, amended in the store. A record
+/// not yet filed is first filed again exactly as first sent — the payload the store's retry proof is
+/// keyed by, so an earlier attempt that did land is recognised rather than filed twice — then
+/// amended; one that still does not land keeps that payload for a later re-file and the publication
+/// is said lost. Says what the writes did; `None` when the run files no telemetry.
 pub fn republished(run: &Path, step: &Value, w: &dyn Writer) -> Option<Value> {
     let mut filing = load(run)?;
     let mut lost = Vec::new();
-    filing.finished = Some(step.clone());
     // The record holds the review's work, not this command's: no later cost is enriched into it.
     filing.refiled = true;
+    if let Some(first) = unfiled(&filing) {
+        file_record(run, &mut filing, &first, &mut lost, w);
+    }
     if filing.record == Record::Filed && !filing.record_file.is_empty() {
+        filing.finished = Some(step.clone());
         write::publication(run, &filing, step, &mut lost, w);
     } else {
-        file_record(run, &mut filing, step, &mut lost, w);
+        lost.push(
+            "the publication in the run record — the record itself is not filed: publish again once `craft review submit --run <dir> --resume` has filed it".into(),
+        );
     }
     keep(run, &mut filing, &mut lost);
     Some(outcome(&filing, lost, true))

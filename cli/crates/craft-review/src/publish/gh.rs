@@ -13,10 +13,13 @@ use std::time::Duration;
 
 use super::body;
 use super::{Defect, Posted};
-use crate::gate::runner::{Ran, Runner};
+use crate::gate::runner::Runner;
 
+mod call;
 mod read;
 mod send;
+
+pub(super) use call::{Failed, gh, gh_said};
 
 use read::{Key, posted_already, pull_request};
 use send::To;
@@ -43,23 +46,6 @@ impl Default for PostSetup {
     }
 }
 
-/// Runs `gh args` in `repo`: its stdout, or why it gave none.
-pub(super) fn gh(runner: &Runner, repo: &Path, args: &[&str]) -> Result<String, String> {
-    let what = args.iter().take(2).copied().collect::<Vec<_>>().join(" ");
-    match runner.run(repo, "gh", args) {
-        Ran::Exited { ok: true, out, .. } => Ok(out),
-        Ran::Exited { err, .. } => Err(format!(
-            "gh {what} failed: {}",
-            err.lines().next().unwrap_or("no message").trim()
-        )),
-        Ran::Missing => Err("gh is not installed (no `gh` on the PATH)".into()),
-        Ran::TimedOut(_) => Err(format!(
-            "gh {what} did not finish within the posting budget"
-        )),
-        Ran::Broken(e) => Err(format!("gh {what} could not run: {e}")),
-    }
-}
-
 /// What a post when the PR's head is not the reviewed head does: names why it posts nothing
 /// (`Skip`, the outcome a finished run reports), posts on the reviewed commit and says how the head
 /// moved (`Post`), or is refused (`Refuse`), nothing posted and nothing kept.
@@ -69,15 +55,16 @@ pub(super) enum Moved {
     Refuse(String),
 }
 
-/// Where the defects go: the reviewed head they are posted on, the branch whose pull request it is
-/// (`None`: the checked-out one's), and what a PR at another head does.
+/// Where the defects go: the reviewed head they are posted on, the pull request — a number, or a
+/// branch whose pull request it is (`None`: the checked-out branch's) — and what a PR at another
+/// head does.
 pub(super) struct Target<'a> {
     pub(super) head: &'a str,
-    pub(super) branch: Option<&'a str>,
+    pub(super) pr: Option<&'a str>,
     pub(super) moved: &'a dyn Fn(&str) -> Moved,
 }
 
-/// Posts `defects` on the pull request of `target`'s branch in `repo`; `Err` only when a moved
+/// Posts `defects` on `target`'s pull request in `repo`; `Err` only when a moved
 /// head refuses it.
 pub(super) fn post(
     repo: &Path,
@@ -92,7 +79,7 @@ pub(super) fn post(
     };
     let dir = dir.join("publish");
     let runner = Runner::new(setup.budget, setup.path.clone(), dir.clone());
-    let pr = match pull_request(&runner, repo, target.branch) {
+    let pr = match pull_request(&runner, repo, target.pr) {
         Ok(pr) => pr,
         Err(e) => return Ok(p.failed_with(e)),
     };

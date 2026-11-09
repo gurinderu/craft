@@ -35,7 +35,7 @@ fn state(run: &Path) -> Value {
 fn a_run_finished_without_comment_posts_its_defects_as_a_comment_run_does() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let (run, gh, setup) = uncommented(repo.path(), out.path());
-    let s = publish::comment(&run, &setup).unwrap();
+    let s = publish::comment(&run, None, &setup).unwrap();
     assert_eq!((&s["done"], &s["verdict"]), (&json!(true), &json!("Block")));
     let sorting = &s["sorting"];
     assert_eq!(
@@ -89,8 +89,8 @@ fn a_run_finished_without_comment_posts_its_defects_as_a_comment_run_does() {
 fn publishing_a_run_twice_posts_nothing_again() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let (run, gh, setup) = uncommented(repo.path(), out.path());
-    publish::comment(&run, &setup).unwrap();
-    let s = publish::comment(&run, &setup).unwrap();
+    publish::comment(&run, None, &setup).unwrap();
+    let s = publish::comment(&run, None, &setup).unwrap();
     let pr = &s["prComments"];
     assert_eq!((&pr["posted"], &pr["already"]), (&json!(0), &json!(1)));
     assert_eq!(posted(&gh).len(), 1, "one comment on the PR after two");
@@ -101,7 +101,7 @@ fn a_line_github_refuses_goes_on_its_file_and_is_not_posted_twice() {
     let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
     let (run, gh, setup) = uncommented(repo.path(), out.path());
     std::fs::write(gh.join("no-lines"), "").unwrap();
-    let s = publish::comment(&run, &setup).unwrap();
+    let s = publish::comment(&run, None, &setup).unwrap();
     let pr = &s["prComments"];
     assert_eq!(
         (&pr["posted"], &pr["toFile"], &pr["failed"]),
@@ -113,9 +113,24 @@ fn a_line_github_refuses_goes_on_its_file_and_is_not_posted_twice() {
         (1, &json!("file"), &json!("src/lib.rs"))
     );
     assert!(report(&s).contains("1 posted on its file, GitHub refusing its line"));
-    let s = publish::comment(&run, &setup).unwrap();
+    let s = publish::comment(&run, None, &setup).unwrap();
     assert_eq!(s["prComments"]["already"], json!(1));
     assert_eq!(posted(&gh).len(), 1, "the file comment is the finding's");
+}
+
+#[test]
+fn a_422_said_on_a_later_line_of_gh_stderr_still_goes_on_its_file() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    let (run, gh, setup) = uncommented(repo.path(), out.path());
+    std::fs::write(gh.join("no-lines-late"), "").unwrap();
+    let s = publish::comment(&run, None, &setup).unwrap();
+    let pr = &s["prComments"];
+    assert_eq!(
+        (&pr["posted"], &pr["toFile"], &pr["failed"]),
+        (&json!(1), &json!(1), &json!(0)),
+        "{pr}"
+    );
+    assert_eq!(posted(&gh)[0]["subject_type"], json!("file"));
 }
 
 #[test]
@@ -127,7 +142,7 @@ fn a_pr_head_that_moved_elsewhere_is_posted_to_on_the_reviewed_commit() {
     common::git(repo.path(), &["add", "."]);
     common::git(repo.path(), &["commit", "-qm", "feat: another file"]);
     std::fs::write(gh.join("head"), head(repo.path())).unwrap();
-    let s = publish::comment(&run, &setup).unwrap();
+    let s = publish::comment(&run, None, &setup).unwrap();
     let pr = &s["prComments"];
     assert_eq!(pr["posted"], json!(1));
     let reason = pr["reason"].as_str().unwrap();
@@ -147,7 +162,9 @@ fn a_pr_head_that_rewrote_a_defects_line_is_refused_and_nothing_kept() {
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn f() -> u8 { 2 }\n").unwrap();
     common::git(repo.path(), &["commit", "-qam", "fix: f"]);
     std::fs::write(gh.join("head"), head(repo.path())).unwrap();
-    let e = publish::comment(&run, &setup).unwrap_err().to_string();
+    let e = publish::comment(&run, None, &setup)
+        .unwrap_err()
+        .to_string();
     assert!(
         e.starts_with("nothing was posted: the PR's head moved to"),
         "{e}"
@@ -173,7 +190,9 @@ fn a_pr_head_that_does_not_hold_the_reviewed_one_is_refused() {
         &["commit", "-q", "--amend", "-m", "feat: rewritten"],
     );
     std::fs::write(gh.join("head"), head(repo.path())).unwrap();
-    let e = publish::comment(&run, &setup).unwrap_err().to_string();
+    let e = publish::comment(&run, None, &setup)
+        .unwrap_err()
+        .to_string();
     assert!(e.contains("does not hold the reviewed head"), "{e}");
     assert!(posted(&gh).is_empty());
 }
@@ -190,7 +209,30 @@ fn an_unfinished_run_is_refused() {
         ..common::opts(repo.path(), out.path())
     })
     .unwrap();
-    let e = publish::comment(&run, &setup).unwrap_err().to_string();
+    let e = publish::comment(&run, None, &setup)
+        .unwrap_err()
+        .to_string();
     assert!(e.contains("has not finished: resume it first"), "{e}");
     assert!(!gh.join("calls").exists());
+}
+
+#[test]
+fn a_run_reviewed_on_a_detached_head_is_published_only_to_a_pr_named() {
+    let (repo, out) = (fixture(true), tempfile::tempdir().unwrap());
+    common::git(repo.path(), &["checkout", "-q", "--detach"]);
+    let (run, gh, setup) = uncommented(repo.path(), out.path());
+    common::git(repo.path(), &["checkout", "-q", "main"]);
+    let e = publish::comment(&run, None, &setup)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("was reviewed on a detached HEAD"), "{e}");
+    assert!(e.contains("--pr <number>"), "{e}");
+    assert!(
+        !gh.join("calls").exists(),
+        "gh is not asked for the checked-out branch's PR"
+    );
+    let s = publish::comment(&run, Some(7), &setup).unwrap();
+    assert_eq!(s["prComments"]["posted"], json!(1));
+    let calls = std::fs::read_to_string(gh.join("calls")).unwrap();
+    assert!(calls.starts_with("pr view 7 --json"), "{calls}");
 }

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::gh;
+use super::{Failed, gh_said};
 use crate::gate::runner::Runner;
 use crate::publish::Defect;
 
@@ -31,14 +31,17 @@ pub(super) struct To<'a> {
 
 impl To<'_> {
     /// Posts one comment through a request file named `name` in the directory.
-    fn send(&self, name: &str, req: &Value) -> Result<(), String> {
+    fn send(&self, name: &str, req: &Value) -> Result<(), Failed> {
         let file = self.dir.join(format!("{name}.json"));
         std::fs::create_dir_all(self.dir)
             .and_then(|()| std::fs::write(&file, req.to_string()))
-            .map_err(|e| format!("writing {}: {e}", file.display()))?;
+            .map_err(|e| Failed {
+                why: format!("writing {}: {e}", file.display()),
+                stderr: String::new(),
+            })?;
         let route = format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", self.pr);
         let input = file.display().to_string();
-        gh(
+        gh_said(
             self.runner,
             self.repo,
             &["api", "--method", "POST", &route, "--input", &input],
@@ -52,13 +55,14 @@ impl To<'_> {
         let name = format!("comment-{n}");
         match self.send(&name, &request(&d.file, d.line, self.head, body)) {
             Ok(()) => Ok(false),
-            Err(e) if d.line.is_some() && e.contains("HTTP 422") => self
+            Err(f) if d.line.is_some() && f.stderr.contains("HTTP 422") => self
                 .send(
                     &format!("{name}-file"),
                     &request(&d.file, None, self.head, body),
                 )
-                .map(|()| true),
-            Err(e) => Err(e),
+                .map(|()| true)
+                .map_err(|f| f.why),
+            Err(f) => Err(f.why),
         }
     }
 }

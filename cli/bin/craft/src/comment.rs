@@ -17,6 +17,10 @@ pub struct CommentArgs {
     /// The directory of the finished run `start` printed.
     #[arg(long)]
     pub run: PathBuf,
+    /// The pull request to post on, by number: needed for a run reviewed on a detached HEAD, else
+    /// the reviewed branch's pull request.
+    #[arg(long)]
+    pub pr: Option<u64>,
     /// The plugin root the run's telemetry is filed through, for a run whose telemetry knows none
     /// that holds the record writer, as `submit --record-root`.
     #[arg(long)]
@@ -28,7 +32,10 @@ pub fn comment(args: &CommentArgs) -> Result<ExitCode> {
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
     filing::adopt(&run, filing_root(args.record_root.as_deref()).as_deref());
-    let step = stamped(publish::comment(&run, &PostSetup::default())?, began);
+    let step = stamped(
+        publish::comment(&run, args.pr, &PostSetup::default())?,
+        began,
+    );
     match filing::republished(&run, &step, &filing::NodeWriter) {
         Some(filed) => print(&filing::with_filing(step, filed)),
         None => print(&step),

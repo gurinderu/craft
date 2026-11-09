@@ -19,7 +19,8 @@ use super::{lens, opts, scout, titled, verdict};
 /// A stand-in `gh` in `dir`: it logs each call, answers `pr view` with PR 7 at the head in
 /// `dir/head`, lists the comments it was asked to post (the request files it kept), keeps each
 /// posted request, fails every call while `dir/fail` exists, and refuses a comment on a line with
-/// GitHub's 422 while `dir/no-lines` exists.
+/// GitHub's 422 while `dir/no-lines` exists — on a later line of its stderr while
+/// `dir/no-lines-late` does.
 pub fn stand_in(dir: &Path, head: &str) -> PostSetup {
     std::fs::create_dir_all(dir.join("posted")).unwrap();
     std::fs::write(dir.join("head"), head).unwrap();
@@ -37,6 +38,7 @@ case "$1 $2" in
   "api --method") n=$(ls "$S/posted" | wc -l)
     while [ $# -gt 0 ]; do if [ "$1" = --input ]; then
       if [ -f "$S/no-lines" ] && grep -q '"line"' "$2"; then echo "gh: Validation Failed (HTTP 422)" >&2; exit 1; fi
+      if [ -f "$S/no-lines-late" ] && grep -q '"line"' "$2"; then printf 'gh: Validation Failed\npull_request_review_thread.line must be part of the diff (HTTP 422)\n' >&2; exit 1; fi
       cp "$2" "$S/posted/$((n+1)).json"; fi; shift; done ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
 esac

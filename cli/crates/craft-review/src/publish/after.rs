@@ -32,15 +32,22 @@ pub enum CommentError {
     NoCheckout(String),
     #[error("nothing was posted: {0}")]
     Refused(String),
+    #[error(
+        "the run in {} was reviewed on a detached HEAD, so no branch names its pull request: name it with `--pr <number>` (cli-review: pr=<number>)",
+        .0.display()
+    )]
+    Detached(PathBuf),
 }
 
-/// Sorts and posts the findings of the finished run in `dir` on its branch's pull request, keeps
+/// Sorts and posts the findings of the finished run in `dir` on the pull request `pr` names, else
+/// on its reviewed branch's — never the one checked out now, which may be another's — keeps
 /// what came of it in the run's state and report, and returns the run's finished step with it.
 ///
 /// # Errors
-/// When the run cannot be read or is not finished, read uncommitted work, its checkout is gone, the
+/// When the run cannot be read or is not finished, read uncommitted work, its checkout is gone, it
+/// was reviewed on a detached HEAD and no `pr` is named, the
 /// PR's head moved over a defect's line, or the report or state cannot be written.
-pub fn comment(dir: &Path, setup: &PostSetup) -> Result<Value, Error> {
+pub fn comment(dir: &Path, pr: Option<u64>, setup: &PostSetup) -> Result<Value, Error> {
     let mut run = state::load(dir)?;
     let verdict = match &run.verdict {
         Some(v) if run.phase == Phase::Done => v.clone(),
@@ -52,13 +59,18 @@ pub fn comment(dir: &Path, setup: &PostSetup) -> Result<Value, Error> {
     if !Path::new(&run.context.repo).is_dir() {
         return Err(CommentError::NoCheckout(run.context.repo.clone()).into());
     }
+    let which = match (pr, &run.chain.branch) {
+        (Some(n), _) => n.to_string(),
+        (None, Some(branch)) => branch.clone(),
+        (None, None) => return Err(CommentError::Detached(dir.to_owned()).into()),
+    };
     run.publish.asked = true;
     run.publish.posted = None;
     let found = super::candidates(&run);
     let changed = lines_at_head(&run);
     sort_into(&mut run, &found, changed.as_ref());
     let check = |pr_head: &str| moved(&run, pr_head);
-    let posted = post_sorted(dir, &run, setup, run.chain.branch.as_deref(), &check)
+    let posted = post_sorted(dir, &run, setup, Some(&which), &check)
         .unwrap_or_else(|| Ok(Posted::default()))
         .map_err(CommentError::Refused)?;
     run.publish.posted = Some(posted);
