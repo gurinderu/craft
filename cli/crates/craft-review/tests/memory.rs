@@ -149,6 +149,14 @@ fn a_finding_rejected_on_the_pr_is_set_aside_not_reported_again() {
             "prior decisions: 1 decision(s) given, 1 finding(s) set aside as rejected before, 0 raised again",
         ],
     );
+    // The finished step carries the report's memory part verbatim, for a parent that reads only it.
+    let sections = s["memorySections"].as_str().unwrap();
+    assert!(
+        sections.contains("## Rejected before (set aside — not in the verdict)\n- Medium")
+            && sections.contains("\n\n## Memory\n- memory: none — no memory configured"),
+        "{sections}"
+    );
+    assert!(report.contains(sections), "as it stands in the report");
 }
 
 #[test]

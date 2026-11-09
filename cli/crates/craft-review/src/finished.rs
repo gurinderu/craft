@@ -26,6 +26,7 @@ pub(crate) fn step(dir: &Path, run: &RunState, verdict: &str) -> Value {
         "lensScope": if run.context.re_review == ReScope::Fixes { "delta" } else { "full" },
         "round": run.chain.round.max(1), "ledger": run.chain.ledger, "reReview": re_review(run),
         "memory": run.memory.source.record(), "strict": run.context.strict,
+        "memorySections": report::memory_sections(run),
         "dimensions": telemetry::dimensions(run), "verification": telemetry::verification(run),
         "lensRounds": run.rounds.yields,
     });
