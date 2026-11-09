@@ -66,7 +66,7 @@ findings whose claims hold.
 
 They ship as **severity downgrades with `refuted=false`** instead. The same round produced a second
 instance: an unsupported premise also had to be routed to Suspected rather than refuted, because
-`adversarial-review` feeds its refuted list forward as "adversarially disproven — do not re-report",
+`adversarial-review` (since retired) fed its refuted list forward as "adversarially disproven — do not re-report",
 so a missing citation would have buried a possibly real defect for the rest of the run.
 
 - **Change:** when importing a rubric, map every verdict it produces onto craft's existing verdict

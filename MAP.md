@@ -92,7 +92,7 @@ with a skill for the rubric and degrades gracefully when a tool is absent.
 | `rust-architecture-reviewer` | whole crate/module dependency graph audit | `rust-architecture-review` |
 | `rust-security-scanner` | cargo-audit/deny/geiger + semgrep | `rust-security` |
 | `rust-miri` | `cargo +nightly miri test` (UB) | `rust-unsafe` |
-| `engine-service` | the `review` and `adversarial-review` engines' service steps (reading the diff, checkpoints and the run record, preparing external sources); defined with `omitClaudeMd: true`, so that it is not handed the project's instructions; not for review judgement | — |
+| `engine-service` | the engines' service steps (the `review` driver's `craft review` calls and the binary fetch, checkpoints and the run record); defined with `omitClaudeMd: true`, so that it is not handed the project's instructions; not for review judgement | — |
 
 clippy/test/coverage stay as commands inside `rust-reviewer` / the testing tooling — not separate
 agents (would duplicate).
@@ -103,25 +103,21 @@ Multi-agent orchestration scripts that compose the agents above (referencing the
 internal to the plugin, no external dependency). They are authored under `src/`; `integrations/claude-code/workflows/` holds the
 copies the harness loads, generated from `src/` without their line comments (`npm run build:engines`) and
 committed. The review's knowledge — lens briefs and prompt templates (`content/prompts/`, `{{name}}`
-placeholders) and the schemas its judging agents answer in (`content/schemas/<name>.schema.json`) — is data
-under `content/`, inlined into the engines by the build; the Rust and Nix profiles' rosters are also data
-(`content/profiles/rust.json`, `content/profiles/nix.json`, read by the Rust CLI), held to the engine's own by a
-parity test, and so is the CLI's general profile (`content/profiles/general.json`: adversarial-review's lenses,
-complexity among them behind a code-metrics index in both; that engine reads their briefs from the same files).
+placeholders), the schemas its agents answer in (`content/schemas/<name>.schema.json`) and the Rust, Nix and
+general profiles' rosters (`content/profiles/rust.json`, `nix.json`, `general.json`: the general lenses,
+complexity among them behind a code-metrics index) — is data under `content/`, compiled into the Rust CLI; the
+templates an engine still renders itself (memory recall among them) are inlined into it by the build.
 
 | Workflow | Composes | Output |
 |---|---|---|
-| `review` | **auto-detects language(s)** → per-profile (rust/nix) scout + gate + scout-scaled lens fan-out → loop-until-dry → adversarial + self-verification → merge | one Confirmed/Suspected report + verdict across all detected languages (the generic engine; `PROFILES.{rust,nix}` inline) |
-| `rust-review` / `nix-review` | thin pins → `workflow('review', {languages:['rust'\|'nix']})` | single-language review via the engine above |
-| `cli-review` | experimental driver of the Rust CLI's step protocol: the protocol was observed end to end in a live session (craft 0.41.0, a Rust diff, finished with Approve), the full-lens review that followed it not yet; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own; the binary files the run's telemetry itself (`--record`: a checkpoint as each phase ends, the record when the run finishes, through `lib/cli-review-file.mjs` and `lib/craft-log-run.mjs`; not yet observed live), the engine only the INCOMPLETE record of a run the binary never finished | a `## Verdict` block with the verdict line the binary printed, and the path of the report it wrote |
+| `review` | the review of a diff in any language, the driver of the Rust CLI's step protocol: the binary decides every step (each changed file to its profile — Rust, Nix or the general lenses —, the gate, the scouts, the lens rounds, verification, memory, re-review rounds chained under `~/.craft/runs/cli`); the protocol was observed end to end in a live session (craft 0.41.0, a Rust diff, finished with Approve), the full-lens review that followed it not yet; by design `engine-service` runs `craft review start`/`submit`, the tasks each step hands out run in parallel, each reading its prompt file and writing its answer file in the run directory, and the engine holds no review logic of its own; the binary files the run's telemetry itself (`--record`: a checkpoint as each phase ends, the record when the run finishes, through `lib/cli-review-file.mjs` and `lib/craft-log-run.mjs`; not yet observed live), the engine only the INCOMPLETE record of a run the binary never finished | a `## Verdict` block with the verdict line the binary printed, and the path of the report it wrote |
 | `rust-audit` | gate once + per-crate CLI review (gate off) + inter-crate contracts + architecture + crate-decomposition + security + miri + semver + build-matrix + deps + unused-crates (verified) + tests-cov (parallel) | one synthesized severity-ranked report |
 | `triage-findings` | gather → sift by project memory → validate (parallel, per finding) → plan (barrier) | one ordered fix plan (writing-plans format) + triage ledger; no edits |
-| `adversarial-review` | scout + codebase-memory warm-up → throttled finder lenses → 1 combined verifier per finding (3-lens panel for critical/high) → completeness critic with verified gaps | language-agnostic adversarial diff review with bounded fan-out and steady request rate (subscription-friendly); Confirmed/Suspected report + Block/Warning/Approve verdict. Distinct from `review --strict` (maintainability-block mode of the generic engine) |
 
 ## Documentation
 
 - `docs/LESSONS.md` — operational lessons not derivable from the code: stable-numbered evidence entries folded into principles. Add one when something was learned at a cost.
-- `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the `rust-review` / `rust-audit` / `triage-findings` workflows and the review agents.
+- `docs/observability.md` — run-record store (`~/.craft/runs/`) emitted by the `review` / `rust-audit` / `triage-findings` workflows (the review's through the craft binary) and the review agents.
 
 ## Cross-cutting skills (language-agnostic)
 
@@ -136,7 +132,7 @@ complexity among them behind a code-metrics index in both; that engine reads the
 | `review-rules` | ✅ | language-independent review rules every lens and verifier reads beside its language rubric: severity capped by the named harm (`severity.md`), finding classes CONV/LIFE/RECOV/EXT/WIRE/RACE/FAIL/TEST/DOCS/MAINT (`classes.md`), search sweeps — sibling sweep, early-exit diff, attribution check, context before judgment, consequence of a false claim (`sweeps.md`), shared exclusions FP-002/KEEP-* (`fp-rules.md`) | language-specific rules → `rust-review`/`nix-review`; race and compatibility catalogues → `distributed-races`/`compatibility` |
 | `memory` | ✅ | the project's decisions, project rules, lessons and open questions across sessions: one record shape, five verbs, deterministic backend order (explicit setting → memory MCP server by capability → harness project memory → `.craft/memory/` files on existing dir or consent → none), recall by scope + keywords returning only active matches; `backends.md` per store | run records, review ledger, telemetry → `addressing-findings` / `docs/observability.md` |
 | `review-init` | ✅ | `craft init`: the reviewer's own profile of a repository, outside it (`~/.craft/projects/<id>/review.toml`) — the integration points (external systems the code talks to) with their source URL and deployed tag or commit; propose (the memory's `external` records with the revision each one's version file names, and manifest discovery) → ask the reviewer → write | library dependencies (a review finds them itself); the project's shared facts → `memory` |
-| `develop` | ✅ | the development cycle up to a PR with craft's own tools: consumer roles first (a declared role or rule takes its phase, one line per phase says whose) → `memory` recall → work → review loop (`review` for Rust/Nix, `adversarial-review` otherwise → triage → `addressing-findings`), light by default — round 1 over the branch diff, each next over the fixed delta — until a round brings no open Medium+ finding, at most 4 rounds, then stop and tell the human → one full review (`rust-audit` / strict `review` / `adversarial-review` by stack) → one `develop-cycle` record in the run store → PR; main session only | planning, test-first, debugging method → the project's own process; working findings alone → `addressing-findings`; a single review → the review workflows |
+| `develop` | ✅ | the development cycle up to a PR with craft's own tools: consumer roles first (a declared role or rule takes its phase, one line per phase says whose) → `memory` recall → work → review loop (`review` → triage → `addressing-findings`), light by default — round 1 over the branch diff, each next over the fixed delta — until a round brings no open Medium+ finding, at most 4 rounds, then stop and tell the human → one full review (`rust-audit` beside a strict fresh `review` for files outside the crates / strict fresh `review` by stack) → one `develop-cycle` record in the run store → PR; main session only | planning, test-first, debugging method → the project's own process; working findings alone → `addressing-findings`; a single review → the review workflows |
 | `addressing-findings` | ✅ | the fix loop for review findings: gather (craft agents + GitHub PR comments) → normalize → triage (accept/reject/defer/needs-decision/conflict) → order → fix → verify → re-review → close the GitHub loop; triage always goes through the `triage-findings` workflow | the review *rubric* → `rust-review`; *running* the agents → `rust-audit`; *how* to fix → topic skills |
 
 > **Out of scope:** the generic engineering-process method (systematic debugging, verification,
@@ -217,7 +213,7 @@ that shaped this layer has been removed.
 ## Rust CLI
 
 `cli/` is a Cargo workspace for `craft review`, designed so the binary decides a review's work and
-a host (the `cli-review` engine above) runs its agents. The step protocol was observed end to end
+a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
 protocol, and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
@@ -226,14 +222,14 @@ any other language, `content/profiles/`), the mechanical gate the binary runs it
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
 lenses round after round until each profile's round finds nothing new or its plan's rounds are spent, the
-floor, roll-up and dedup of their one pool, then verification as the engine buys it — a batch vote per file group of Mediums, one
+floor, roll-up and dedup of their one pool, then verification as the plan buys it — a batch vote per file group of Mediums, one
 vote per other finding routed alone, and for a Critical or High a cheap vote plus an authoritative one, the rest of the
-plan's panel bought only when those two disagree — each finding's severity capped by the harm it names as the engines cap it
+plan's panel bought only when those two disagree — each finding's severity capped by the harm it names
 (strict mode spares a maintainability finding and blocks on a confirmed one at Medium or above), a finding the project's
 memory already rejected or deferred — recalled by one agent beside the scouts, plus the launcher's own records — set aside
 under its own section when the code in its record's scope is unchanged since the record's commit, a near miss between a
-record and a finding decided by the engine's match judge, then a finding a project rule covers set aside under its own,
-decided by the engine's rule judge (on a re-review a red team attacks each resolved Critical or High prior first;
+record and a finding decided by a match judge, then a finding a project rule covers set aside under its own,
+decided by a rule judge (on a re-review a red team attacks each resolved Critical or High prior first;
 the reviewed repository's own reviewing agents run as extra lenses beside the first round — named, or discovered on a light
 pass among the session project's `.claude/agents`; on a large or security-sensitive plan a completeness critic names roster
 lenses that should have run, which then run and whose findings are verified as a pass of their own; with `--unit-scope`,
@@ -244,7 +240,7 @@ sorts its findings into defects and doubtful ones and posts the defects on the b
 a line GitHub refuses going on its file; `craft review comment --run <dir>` does the same for a run already finished,
 its record amended with what came of it),
 then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
-from `content/`, which it compiles in, its plans, prompts and verification rules held to the engines' by the shared cases in
+from `content/`, which it compiles in, its plans, prompts and verification rules pinned by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
 schema in its `tasks/` and each answer in its `answers/`, so no model copies them; with `start --record` the run files its own telemetry
 through the plugin root's `lib/cli-review-file.mjs`, which builds the checkpoints and the record and hands them to
@@ -259,7 +255,7 @@ from `npm run gate`. The CLI's version is the plugin's: release-please moves `cl
 binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each release for Linux and macOS on x64
 and arm64 and Windows on x64; `lib/craft-bin.mjs ensure` fetches the one for this platform and version into
 `~/.craft/bin/<version>/`,
-which the `cli-review` engine runs when no `craftBin` is given.
+which the `review` engine runs when no `craftBin` is given.
 
 ## Codex delivery
 
