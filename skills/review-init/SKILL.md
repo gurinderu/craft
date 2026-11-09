@@ -1,7 +1,7 @@
 ---
 name: review-init
 description: >-
-  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or through their API (kube-ovn, LINSTOR, a cloud API), each with its source git URL and deployed tag or commit, which the review reads; it proposes the project memory's `external` records for you to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command line quoted from the workflow or the recipe it calls — the gate takes their result when it cannot build. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, or when the gate's build signal is unknown or its CI map missing or stale. Triggers: craft init, set up my review profile, integration points, the deployed version changed, CI map. Not for library dependencies (a review finds those itself), nor the project's shared memory (memory).
+  Your own review profile of a repository for the craft CLI review — `craft init` — kept outside it (~/.craft/projects/<id>/review.toml), never committed. Integration points: the external systems this code talks to over the network or through their API (kube-ovn, LINSTOR, a cloud API), each with its source git URL and deployed tag or commit, which the review reads; it proposes the project memory's `external` records for you to confirm. CI map: which GitHub CI check runs clippy, tests, fmt or the build, on a command quoted from the workflow or the recipe it calls — if the gate cannot build: red blocks, green informs, never passes. Use before a repository's first review, on `not recorded: <system>`, when a deployed version changes, or when the gate's build signal is unknown or its CI map missing or stale. Triggers: craft init, set up my review profile, integration points, the deployed version changed, CI map. Not for library dependencies (a review finds those itself), nor the project's shared memory (memory).
 ---
 
 # review-init — your review profile of a repository
@@ -94,8 +94,9 @@ version, run this again.
 
 The gate builds the branch with clippy itself. When it cannot — cargo ends with no compiler
 error, a private registry without a token, say — it reads the CI map and takes the result
-GitHub reports for the head's commit: a green mapped check passes its signal, a red one blocks
-the review, a pending one gives none; a run that ended `cancelled`, `skipped`, `timed_out`,
+GitHub reports for the head's commit: a red mapped check blocks the review; a green one is
+reported and passes nothing — CI informs, it never certifies, so the build signal stays unknown;
+a pending one gives none; a run that ended `cancelled`, `skipped`, `timed_out`,
 `startup_failure` or `action_required` gives none either (only `failure`, and a commit status in
 `failure` or `error`, is red). So an entry is a claim that a check **runs that command**; it is
 written only on the reviewer's word.
@@ -176,8 +177,9 @@ here.
 
 When the gate cannot build the branch, it reads the CI map and asks GitHub (`gh api`, the
 repository gh names from the checkout's remote) for the head commit's check runs and statuses.
-Its Gate section then reads, say, `clippy, test via CI (Rust, tests) for 1a2b3c4`; a red check
-blocks as a local red would; a check still running gives no signal. CI brings no findings on the
+A green CI reads in its Gate section, say, `CI for 1a2b3c4: clippy, test green (checks Rust,
+tests) — informs only, not a pass`, and the gate stays unknown; a red check blocks as a local red
+would; a check still running gives no signal. CI brings no findings on the
 change's lines, and the Gate section says so. A check of one name in several check suites (two
 workflows, a re-run in another event) counts in each, so a red in any blocks; within one suite
 the latest run counts. More check runs or statuses than one page of 100 gives no signal at all,

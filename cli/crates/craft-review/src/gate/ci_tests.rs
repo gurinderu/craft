@@ -1,13 +1,13 @@
-//! The gate's CI evidence when its own build is impossible (realm @nick/craft, node #482): green,
-//! red, pending and matrix checks of the head; a stale workflow; no map; gh failing; a head that
-//! built reading no CI.
+//! The gate's CI evidence when its own build is impossible (realm @nick/craft, node #482): a green
+//! check informs and passes nothing, a red one blocks; pending and matrix checks of the head; a
+//! stale workflow; no map; gh failing; a head that built reading no CI.
 
 use super::Status;
 use super::ci_world::{FMT_GREEN, WF, calls, gated, runs, save, short, world};
 use super::tests::tool;
 
 #[test]
-fn a_green_ci_for_the_head_passes_the_gate_its_build_could_not_establish() {
+fn a_green_ci_for_the_head_informs_the_report_and_leaves_the_gate_unknown() {
     let w = world(
         &runs(&[
             ("clippy", "completed", "success"),
@@ -16,9 +16,9 @@ fn a_green_ci_for_the_head_passes_the_gate_its_build_could_not_establish() {
         FMT_GREEN,
     );
     let (gate, t) = gated(&w);
-    assert_eq!(t.status, Status::Pass, "{t:?}");
+    assert_eq!(t.status, Status::Unknown, "{t:?}");
     let via = format!(
-        "clippy, test, fmt via CI (clippy, tests, fmt) for {}",
+        "CI for {}: clippy, test, fmt green (checks clippy, tests, fmt) — informs only, not a pass",
         short(&w)
     );
     assert!(t.provenance.contains(&via), "{}", t.provenance);

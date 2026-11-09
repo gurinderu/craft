@@ -17,7 +17,9 @@ fn every_run_of_a_matrix_check_counts_and_a_rerun_supersedes_within_its_suite() 
         FMT_GREEN,
     );
     let (_, t) = gated(&w);
-    assert_eq!(t.status, Status::Pass, "{t:?}");
+    assert_eq!(t.status, Status::Unknown, "{t:?}");
+    let green = format!("CI for {}: clippy, test, fmt green", short(&w));
+    assert!(t.provenance.contains(&green), "{}", t.provenance);
 }
 
 #[test]
@@ -111,7 +113,7 @@ fn a_tree_with_uncommitted_changes_does_not_read_ci_for_its_head() {
 }
 
 #[test]
-fn a_ci_pass_says_it_brings_no_line_seeds() {
+fn a_green_ci_says_it_brings_no_line_seeds() {
     let w = world(
         &runs(&[
             ("clippy", "completed", "success"),
@@ -120,9 +122,9 @@ fn a_ci_pass_says_it_brings_no_line_seeds() {
         FMT_GREEN,
     );
     let (_, t) = gated(&w);
-    assert_eq!(t.status, Status::Pass, "{t:?}");
-    let via = format!("via CI (clippy, tests, fmt) for {}", short(&w));
-    assert!(t.provenance.contains(&via), "{}", t.provenance);
+    assert_eq!(t.status, Status::Unknown, "{t:?}");
+    let via = "(checks clippy, tests, fmt) — informs only, not a pass";
+    assert!(t.provenance.contains(via), "{}", t.provenance);
     assert!(
         t.provenance
             .contains("no line seeds: CI results carry none"),
