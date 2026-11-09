@@ -83,7 +83,6 @@ pub(super) struct RecordDone {
 pub struct Call<'a> {
     pub run: &'a Path,
     pub root: &'a str,
-    pub repo: &'a str,
     /// `checkpoint` or `finalize`.
     pub command: &'a str,
     pub request: &'a Value,
