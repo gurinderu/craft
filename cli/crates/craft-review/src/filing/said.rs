@@ -37,8 +37,15 @@ pub(super) fn outcome(filing: &Filing, lost: Vec<String>, done: bool) -> Value {
     let mut v = json!({"runDir": filing.run_dir, "rejoin": filing.rejoin, "lost": lost});
     if let Some(obj) = v.as_object_mut().filter(|_| done) {
         obj.insert("record".into(), json!(filing.record));
+        // A re-file names its file apart: the work it records was not this invocation's, so a later
+        // run's cost is not enriched into it (lib/run-agents.mjs).
+        let key = if filing.refiled {
+            "refiledFile"
+        } else {
+            "recordFile"
+        };
         if !filing.record_file.is_empty() {
-            obj.insert("recordFile".into(), json!(filing.record_file));
+            obj.insert(key.into(), json!(filing.record_file));
         }
     }
     v
