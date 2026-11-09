@@ -27,7 +27,7 @@
     },
     "harmSupported": {
       "type": "boolean",
-      "description": "true only if the code shows the claimed harm (effect, who, recovery) as stated"
+      "description": "true only if the code shows a claimed harm (effect, who, recovery) as stated and its level holds: behaviour the code or the PR names as intended is not intent-unmet; repo-rule holds only where the cited rule governs the cited code"
     },
     "confirmedHarmLevel": {
       "type": "string",
@@ -43,7 +43,7 @@
         "text",
         "none"
       ],
-      "description": "when several harms are listed: the worst listed one the code shows; omit otherwise"
+      "description": "required when harmSupported is true: the worst listed level that holds; a vote without it confirms no level"
     },
     "reason": {
       "type": "string"

@@ -93,8 +93,9 @@ fn must_fix(c: &Claim) -> bool {
 }
 
 /// The harm a panel confirmed on `f` (`panelHarm`): the worst claim a strict majority of the
-/// shaped votes support, a vote naming a claim (`confirmedHarmLevel`, else the worst claimed, when
-/// `harmSupported` is true) supporting it and every lesser one.
+/// shaped votes support, a vote naming a claim (`confirmedHarmLevel`, when `harmSupported` is true)
+/// supporting it and every lesser one. A vote that names no level confirms none: the level is what
+/// is verified, not the effect (realm @nick/craft, node #407).
 pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
     let cs = claims(f);
     if cs.is_empty() || votes.is_empty() {
@@ -104,10 +105,7 @@ pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
         .iter()
         .filter(|v| v.get("harmSupported").and_then(Value::as_bool) == Some(true))
         .filter_map(|v| {
-            let named = match v.get("confirmedHarmLevel") {
-                None | Some(Value::Null) => cs.first().map(|c| c.level.as_str()),
-                Some(n) => n.as_str(),
-            }?;
+            let named = text(v, "confirmedHarmLevel")?;
             cs.iter()
                 .any(|c| c.level == named)
                 .then(|| level_rank(named))

@@ -70,8 +70,11 @@ Verification raises it when the verifier confirms a must-fix harm; synthesis nev
 
 - **The lens** sets severity from the harm it names, and writes the harm into the finding.
 - **The verifier** is shown the harm a finding claims (for a merged finding, every distinct harm its
-  lenses claimed, worst first) and says whether the code shows it (`harmSupported`) and which claim
-  held (`confirmedHarmLevel`). The harm a panel confirms becomes the finding's harm, with its own
+  lenses claimed, worst first) and confirms the harm's level, not only its effect: `harmSupported`
+  when the code shows the harm and its level holds, with the level that holds named in
+  `confirmedHarmLevel` — a vote that names no level confirms none. Behaviour the code or the PR names
+  as intended is a design question, not `intent-unmet`; a `repo-rule` holds only where its cited rule
+  governs the code. The harm a panel confirms becomes the finding's harm, with its own
   text: when it is must-fix the finding is raised to High, and when it is lesser the cap lowers the
   finding by it. A rejected harm leaves the base copy's own claim (the copy whose severity the
   finding carries), never another copy's worse one. A finding lowered because the path is
