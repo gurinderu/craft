@@ -523,7 +523,35 @@
       }
     },
     {
-      "name": "a vote naming no level (null) raises nothing",
+      "name": "a vote naming no level (\"none\") raises nothing",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "none"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "an older vote with a null level raises nothing",
       "finding": {
         "severity": "Low",
         "title": "t",
@@ -732,7 +760,7 @@
       }
     },
     {
-      "name": "a cited repo-rule vote naming no level (null) is not raised",
+      "name": "a cited repo-rule vote naming no level (\"none\") is not raised",
       "finding": {
         "severity": "Low",
         "title": "t",
@@ -755,7 +783,7 @@
         "premiseSupported": true,
         "reason": "r",
         "harmSupported": true,
-        "confirmedHarmLevel": null
+        "confirmedHarmLevel": "none"
       },
       "expected": {
         "tier": "confirmed",

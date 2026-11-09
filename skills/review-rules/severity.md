@@ -71,7 +71,7 @@ Verification raises it when the verifier confirms a must-fix harm; synthesis nev
 - **The lens** sets severity from the harm it names, and writes the harm into the finding.
 - **The verifier** is shown the harm a finding claims (for a merged finding, every distinct harm its
   lenses claimed, worst first) and confirms the harm's level, not only its effect: `harmSupported`
-  when the code shows the harm at a level that holds, that level named in `confirmedHarmLevel` (null
+  when the code shows the harm at a level that holds, that level named in `confirmedHarmLevel` (`none`
   when none holds — a vote that names none confirms none). Behaviour the code or the PR states as
   intended (`behaviourIntended`) does not refute the finding, but it is a design question, not
   `intent-unmet`: such a vote never confirms that level. The harm a panel confirms becomes the finding's harm, with its own

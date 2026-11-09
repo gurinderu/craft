@@ -47,10 +47,7 @@
             "description": "true only if the code shows a listed harm (effect, who, recovery) as stated at a level that holds; behaviour stated as intended is not intent-unmet"
           },
           "confirmedHarmLevel": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "enum": [
               "data-loss",
               "security",
@@ -61,10 +58,9 @@
               "operator-recovery",
               "self-healing",
               "text",
-              "none",
-              null
+              "none"
             ],
-            "description": "the worst listed level that holds, null when none holds or none is listed; a vote naming none confirms no level"
+            "description": "the worst listed level that holds; \"none\" when no listed level holds or none is listed — a vote naming \"none\" confirms no level"
           },
           "reason": {
             "type": "string"
