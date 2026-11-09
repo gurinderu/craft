@@ -67,10 +67,22 @@ pub struct Posted {
     pub failed: usize,
     /// The defects that name no file, which no review comment can carry.
     pub no_file: usize,
+    /// Of those posted, the ones posted on their file because GitHub refused their line (HTTP
+    /// 422: the line is outside the PR's diff).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub to_file: usize,
     /// One line: the PR posted to, or why nothing was.
     pub reason: String,
     /// gh's failure, '' when none.
     pub error: String,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if hands a reference"
+)]
+const fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl Posted {

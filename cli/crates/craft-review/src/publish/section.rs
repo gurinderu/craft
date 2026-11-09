@@ -51,8 +51,16 @@ pub(super) fn posted_line(p: &Posted) -> String {
     } else {
         format!(" · gh failed: {}", p.error)
     };
+    let to_file = if p.to_file == 0 {
+        String::new()
+    } else {
+        format!(
+            " · {} posted on its file, GitHub refusing its line as outside the PR's diff",
+            p.to_file
+        )
+    };
     format!(
-        "- {warn}posted {} of {} defect(s) · {} already on the PR (craft-finding marker), not posted again · {}{failed}{no_file}",
+        "- {warn}posted {} of {} defect(s) · {} already on the PR (craft-finding marker), not posted again · {}{to_file}{failed}{no_file}",
         p.posted, p.requested, p.already, p.reason
     )
 }

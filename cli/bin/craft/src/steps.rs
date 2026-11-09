@@ -179,7 +179,7 @@ pub struct GateArgs {
     pub dir: Option<PathBuf>,
 }
 
-fn print(value: &Value) -> Result<ExitCode> {
+pub(crate) fn print(value: &Value) -> Result<ExitCode> {
     let mut out = std::io::stdout().lock();
     writeln!(out, "{}", serde_json::to_string(value)?)?;
     Ok(ExitCode::SUCCESS)
@@ -193,7 +193,7 @@ fn ms(d: std::time::Duration) -> u64 {
 /// A step stamped with the wall clock the host has none of (the workflow sandbox reads no clock):
 /// `at`, when it was printed, and `took`, how long this command ran, both in milliseconds, from
 /// which the host tells its runtime figures apart by phase.
-fn stamped(mut step: Value, began: Instant) -> Value {
+pub(crate) fn stamped(mut step: Value, began: Instant) -> Value {
     // 0 on a clock set before the epoch: the host then reads no wall time from it.
     let at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -325,7 +325,7 @@ fn opened(
 /// Where the run's telemetry is filed through when the run knows no plugin root: the one `given`,
 /// the plugin root above the binary, else the one the harness names (`CLAUDE_PLUGIN_ROOT`) — the
 /// first that holds the record writer; `None`, and nothing can be filed.
-fn filing_root(given: Option<&Path>) -> Option<String> {
+pub(crate) fn filing_root(given: Option<&Path>) -> Option<String> {
     let harness = std::env::var_os("CLAUDE_PLUGIN_ROOT").map(PathBuf::from);
     let given = given.and_then(|g| std::path::absolute(g).ok());
     filing::found_root([given, find_craft_root(), harness])

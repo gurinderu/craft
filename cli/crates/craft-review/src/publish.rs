@@ -5,7 +5,8 @@
 //! with the craft-finding marker ([`gh`]), the doubtful ones listed for the reviewer, numbered as
 //! the run record keeps them for `lib/finding-post.mjs`. Every run, asked or not, counts the
 //! findings going against a memory record. The binary reads the changed lines with git, where the
-//! engine asks an agent for them.
+//! engine asks an agent for them. A run already finished is published the same way after the fact
+//! ([`comment`]).
 
 use std::path::Path;
 
@@ -16,7 +17,9 @@ use crate::gate::lines::Lines;
 use crate::report::Tier;
 use crate::state::{self, Phase, RunState};
 use crate::step::StepError;
+use gh::Moved;
 
+mod after;
 mod body;
 mod gh;
 mod kept;
@@ -27,6 +30,7 @@ mod sort;
 #[cfg(test)]
 mod tests;
 
+pub use after::{CommentError, comment};
 pub use gh::PostSetup;
 pub use kept::{Defect, Posted, Publish, Sorting};
 pub(crate) use section::section;
@@ -67,23 +71,25 @@ pub(crate) fn settle(run: &mut RunState) {
         return;
     }
     let changed = changed_lines(run);
-    let (defect, doubtful) = sort::sort(&found, changed.as_ref());
+    sort_into(run, &found, changed.as_ref());
+}
+
+/// Sorts `found` into the run's publication against the lines the diff `changed` (`None`: unknown),
+/// counting those going against memory.
+fn sort_into(run: &mut RunState, found: &[Value], changed: Option<&Lines>) {
+    let (defect, doubtful) = sort::sort(found, changed);
     let defects: Vec<Defect> = defect
         .iter()
         .map(|f| Defect {
             finding: f.clone(),
             file: sort::text(f, "file").trim().to_owned(),
-            line: sort::in_diff(changed.as_ref(), f)
+            line: sort::in_diff(changed, f)
                 .filter(|&inside| inside)
                 .map(|_| sort::line(f)),
         })
         .collect();
     let to_pr = |f: &Value| defect.contains(f);
-    run.publish.contradictions = Some(crate::memory::contradiction_record(
-        &found,
-        changed.as_ref(),
-        to_pr,
-    ));
+    run.publish.contradictions = Some(crate::memory::contradiction_record(found, changed, to_pr));
     let note = if changed.is_none() { NOT_JUDGED } else { "" };
     run.publish.sorting = Some(Sorting {
         defects,
@@ -98,12 +104,34 @@ pub(crate) fn settle(run: &mut RunState) {
 /// # Errors
 /// When the report cannot be written.
 pub fn deliver(dir: &Path, run: &mut RunState, setup: &PostSetup) -> Result<(), Error> {
-    let (Some(sorting), Some(verdict)) = (&run.publish.sorting, &run.verdict) else {
-        return Ok(());
-    };
-    if run.phase != Phase::Done || run.publish.posted.is_some() {
+    if run.verdict.is_none() || run.phase != Phase::Done || run.publish.posted.is_some() {
         return Ok(());
     }
+    let reviewed = short(&run.diff.head).to_owned();
+    let skip = |pr_head: &str| {
+        Moved::Skip(format!(
+            "the PR's head {} is not the reviewed head {reviewed}: push the branch and review again",
+            short(pr_head)
+        ))
+    };
+    let Some(Ok(posted)) = post_sorted(dir, run, setup, None, &skip) else {
+        return Ok(());
+    };
+    run.publish.posted = Some(posted);
+    write_report(dir, run)
+}
+
+/// What came of posting the run's sorted defects on the pull request `pr` names (a number or a
+/// branch; the checked-out branch's when `None`), a PR at another head handled by `moved`: `None` when the run has no
+/// sorting, `Err` when `moved` refused.
+fn post_sorted(
+    dir: &Path,
+    run: &RunState,
+    setup: &PostSetup,
+    pr: Option<&str>,
+    moved: &dyn Fn(&str) -> Moved,
+) -> Option<Result<Posted, String>> {
+    let sorting = run.publish.sorting.as_ref()?;
     let (with_file, no_file): (Vec<&Defect>, Vec<&Defect>) =
         sorting.defects.iter().partition(|d| !d.file.is_empty());
     let mut posted = if with_file.is_empty() {
@@ -119,19 +147,32 @@ pub fn deliver(dir: &Path, run: &mut RunState, setup: &PostSetup) -> Result<(), 
         }
     } else {
         let defects: Vec<Defect> = with_file.into_iter().cloned().collect();
-        gh::post(
-            Path::new(&run.context.repo),
-            &run.diff.head,
-            &defects,
-            dir,
-            setup,
-        )
+        let target = gh::Target {
+            head: &run.diff.head,
+            pr,
+            moved,
+        };
+        match gh::post(Path::new(&run.context.repo), &target, &defects, dir, setup) {
+            Ok(p) => p,
+            Err(why) => return Some(Err(why)),
+        }
     };
     posted.no_file = no_file.len();
-    run.publish.posted = Some(posted);
+    Some(Ok(posted))
+}
+
+/// A commit as the outcome names it, its first 12 characters.
+fn short(commit: &str) -> &str {
+    commit.get(..12).unwrap_or(commit)
+}
+
+/// Writes the finished run's report again, with what came of publishing.
+fn write_report(dir: &Path, run: &RunState) -> Result<(), Error> {
+    let Some(verdict) = &run.verdict else {
+        return Ok(());
+    };
     let path = state::report_path(dir);
-    let verdict = verdict.clone();
-    std::fs::write(&path, crate::report::markdown(run, &verdict))
+    std::fs::write(&path, crate::report::markdown(run, verdict))
         .map_err(|source| StepError::NoReport { path, source }.into())
 }
 
