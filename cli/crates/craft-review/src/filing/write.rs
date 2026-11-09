@@ -8,7 +8,8 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::wire::{
-    Call, CheckpointAsked, CheckpointDone, Common, RecordAsked, RecordDone, WriteError, Writer,
+    Call, CheckpointAsked, CheckpointDone, Common, PublicationAsked, RecordAsked, RecordDone,
+    WriteError, Writer,
 };
 use super::{Filing, Record, Told};
 
@@ -145,4 +146,27 @@ pub(super) fn record(
             done.reason
         ));
     }
+}
+
+/// The sorting and what was posted, from the finished `step`, amended in the record already filed:
+/// a failure said.
+pub(super) fn publication(
+    run: &Path,
+    filing: &Filing,
+    step: &Value,
+    lost: &mut Vec<String>,
+    w: &dyn Writer,
+) {
+    let asked = PublicationAsked {
+        common: Common::of(filing, false),
+        step,
+        record_file: &filing.record_file,
+    };
+    let why = match exchange::<_, RecordDone>(run, filing, "publication", &asked, w) {
+        Ok(d) if d.ok => return,
+        Ok(d) if d.reason.is_empty() => "the writer gave no reason".to_owned(),
+        Ok(d) => d.reason,
+        Err(e) => e.to_string(),
+    };
+    lost.push(format!("the publication in the run record — {why}"));
 }

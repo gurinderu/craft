@@ -147,28 +147,65 @@ pub fn unchanged_since(cwd: &Path, commit: &str, scope: &str) -> bool {
 /// # Errors
 /// When `cwd` is not in a working tree or `git` fails.
 pub fn zero_context_diff(cwd: &Path, base: &str) -> Result<String, GitError> {
-    if base.starts_with('-') {
-        return Err(GitError::NotACommit {
-            base: base.to_owned(),
-            repo: cwd.to_owned(),
-        });
+    not_an_option(cwd, &[base])?;
+    diff_u0(cwd, &["--merge-base", base])
+}
+
+/// The change from `from` to the commit `to` with no context lines, printed as
+/// [`zero_context_diff`] prints it: from their merge-base when `merge_base`, else from `from`
+/// itself.
+///
+/// # Errors
+/// When `cwd` is not in a working tree or `git` fails.
+pub fn zero_context_between(
+    cwd: &Path,
+    from: &str,
+    to: &str,
+    merge_base: bool,
+) -> Result<String, GitError> {
+    not_an_option(cwd, &[from, to])?;
+    if merge_base {
+        diff_u0(cwd, &["--merge-base", from, to])
+    } else {
+        diff_u0(cwd, &[from, to])
     }
+}
+
+/// Refuses a revision git would read as an option.
+fn not_an_option(cwd: &Path, revs: &[&str]) -> Result<(), GitError> {
+    match revs.iter().find(|r| r.starts_with('-')) {
+        Some(r) => Err(GitError::NotACommit {
+            base: (*r).to_owned(),
+            repo: cwd.to_owned(),
+        }),
+        None => Ok(()),
+    }
+}
+
+/// `git diff -U0` over `revs`, from the top level.
+fn diff_u0(cwd: &Path, revs: &[&str]) -> Result<String, GitError> {
     let top = toplevel(cwd)?;
-    git(
-        &top,
-        &[
-            "-c",
-            "core.quotePath=false",
-            "diff",
-            "-U0",
-            "--no-color",
-            "--no-ext-diff",
-            "--src-prefix=a/",
-            "--dst-prefix=b/",
-            "--merge-base",
-            base,
-        ],
-    )
+    let mut args = vec![
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "-U0",
+        "--no-color",
+        "--no-ext-diff",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+    ];
+    args.extend_from_slice(revs);
+    git(&top, &args)
+}
+
+/// Whether `commit` is `descendant` or an ancestor of it.
+#[must_use]
+pub fn holds(cwd: &Path, descendant: &str, commit: &str) -> bool {
+    ![commit, descendant]
+        .iter()
+        .any(|c| c.is_empty() || c.starts_with('-'))
+        && git(cwd, &["merge-base", "--is-ancestor", commit, descendant]).is_ok()
 }
 
 /// The top level of the working tree `cwd` is in.

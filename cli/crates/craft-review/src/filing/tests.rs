@@ -495,3 +495,71 @@ fn a_resume_whose_first_step_finishes_its_new_segment_names_its_own_record() {
         (json!("/store/r.json"), None)
     );
 }
+
+/// A run opened and finished through `w`, its record filed or not as the script says.
+fn finished_run(w: &Fake) -> tempfile::TempDir {
+    let run = tempfile::tempdir().unwrap();
+    open(run.path(), ctx(), "s1", &pending("scout", 1), w);
+    submitted(run.path(), &finished(9), &host(3), Vec::new(), w).unwrap();
+    run
+}
+
+fn published() -> Value {
+    let mut step = finished(20);
+    step["prComments"] = json!({"pr": 7, "posted": 1});
+    step["sorting"] = json!({"defect": 1, "doubtful": 0, "findings": []});
+    step
+}
+
+#[test]
+fn a_publication_after_the_fact_amends_the_filed_record_and_claims_no_cost() {
+    let w = Fake::default();
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    assert_eq!(w.commands().last().unwrap(), "publication");
+    let req = w.request(w.commands().len() - 1);
+    assert_eq!(
+        (&req["recordFile"], &req["step"]["prComments"]["posted"]),
+        (&json!("/store/r.json"), &json!(1))
+    );
+    assert_eq!(
+        (&said["lost"], &said["refiledFile"], &said["recordFile"]),
+        (&json!([]), &json!("/store/r.json"), &Value::Null),
+        "{said}"
+    );
+    let kept = kept::load(run.path()).unwrap();
+    assert_eq!(kept.finished.unwrap()["prComments"]["pr"], json!(7));
+}
+
+#[test]
+fn a_publication_over_a_record_that_never_landed_files_the_record_with_it() {
+    let w = Fake::answering(vec![(
+        "finalize",
+        Ok(json!({"ok": false, "reason": "store unwritable", "file": ""})),
+    )]);
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    assert_eq!(w.commands().last().unwrap(), "finalize");
+    let req = w.request(w.commands().len() - 1);
+    assert_eq!(
+        (&req["retry"], &req["step"]["prComments"]["pr"]),
+        (&json!(true), &json!(7))
+    );
+    assert_eq!(said["record"], json!("filed"), "{said}");
+}
+
+#[test]
+fn a_publication_that_does_not_land_is_said_and_a_run_filing_nothing_files_nothing() {
+    let w = Fake::answering(vec![(
+        "publication",
+        Ok(json!({"ok": false, "reason": "record not readable", "file": ""})),
+    )]);
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    assert_eq!(
+        said["lost"],
+        json!(["the publication in the run record — record not readable"])
+    );
+    let bare = tempfile::tempdir().unwrap();
+    assert_eq!(republished(bare.path(), &published(), &w), None);
+}

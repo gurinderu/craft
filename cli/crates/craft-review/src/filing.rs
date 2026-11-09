@@ -74,6 +74,25 @@ pub fn submitted(
     Some(record_step(run, filing, step, agents, earlier, w))
 }
 
+/// Files what publishing a finished run after the fact (`craft review comment`, its finished
+/// `step`) changed: the record learns the sorting and what was posted — amended in the store when it
+/// is filed there, else filed now with them — and a later re-file sends them too. Says what the
+/// writes did; `None` when the run files no telemetry.
+pub fn republished(run: &Path, step: &Value, w: &dyn Writer) -> Option<Value> {
+    let mut filing = load(run)?;
+    let mut lost = Vec::new();
+    filing.finished = Some(step.clone());
+    // The record holds the review's work, not this command's: no later cost is enriched into it.
+    filing.refiled = true;
+    if filing.record == Record::Filed && !filing.record_file.is_empty() {
+        write::publication(run, &filing, step, &mut lost, w);
+    } else {
+        file_record(run, &mut filing, step, &mut lost, w);
+    }
+    keep(run, &mut filing, &mut lost);
+    Some(outcome(&filing, lost, true))
+}
+
 /// The finished step of the segment whose record is not in the store, `None` when it is or the
 /// segment has not ended.
 pub(super) fn unfiled(filing: &Filing) -> Option<Value> {

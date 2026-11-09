@@ -5,6 +5,8 @@
     reason = "the fixture helpers fail the test loudly, like the tests they serve"
 )]
 
+pub mod post;
+
 use std::path::Path;
 use std::process::Command;
 

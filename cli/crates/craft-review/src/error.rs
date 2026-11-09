@@ -3,6 +3,7 @@
 use crate::content::ContentError;
 use crate::git::GitError;
 use crate::handoff::HandoffError;
+use crate::publish::CommentError;
 use crate::state::StateError;
 use crate::step::StepError;
 
@@ -19,4 +20,6 @@ pub enum Error {
     Handoff(#[from] HandoffError),
     #[error(transparent)]
     Content(#[from] ContentError),
+    #[error(transparent)]
+    Comment(#[from] CommentError),
 }
