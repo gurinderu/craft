@@ -150,6 +150,20 @@ pub struct StatusArgs {
     pub run: PathBuf,
 }
 
+#[derive(Debug, clap::Args)]
+pub struct GateArgs {
+    /// The repository whose change is gated.
+    #[arg(long, default_value = ".")]
+    pub cwd: PathBuf,
+    /// What the changes are measured against; the merge-base with origin's default branch when
+    /// absent.
+    #[arg(long)]
+    pub base: Option<String>,
+    /// Where the tools' output is kept; a new directory under ~/.craft/runs/cli when absent.
+    #[arg(long)]
+    pub dir: Option<PathBuf>,
+}
+
 fn print(value: &Value) -> Result<ExitCode> {
     let mut out = std::io::stdout().lock();
     writeln!(out, "{}", serde_json::to_string(value)?)?;
@@ -236,6 +250,20 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         Some(version) => print(&opened(&opts.run_dir, version, args.via.as_deref(), step)),
         None => print(&step),
     }
+}
+
+/// `craft review gate`: the mechanical gate alone, printed as one JSON value
+/// ([`craft_review::gate::alone::alone`]); a red gate is an outcome, not an error, so it exits 0.
+pub fn gate(args: &GateArgs) -> Result<ExitCode> {
+    let began = Instant::now();
+    let dir = match &args.dir {
+        Some(d) => d.clone(),
+        None => default_run_dir()?,
+    };
+    let dir = std::path::absolute(&dir).with_context(|| format!("resolving {}", dir.display()))?;
+    let setup = craft_review::gate::GateSetup::default();
+    let out = craft_review::gate::alone::alone(&args.cwd, args.base.as_deref(), &dir, &setup)?;
+    print(&stamped(out, began))
 }
 
 /// The harness session the host runs in, stamped on the run's telemetry.

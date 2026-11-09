@@ -237,7 +237,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
 
 /// Each profile's part of the changed `files`, and the files no profile covers that carry
 /// something to review.
-fn tracks_of(files: &[String], profiles: &[Profile]) -> (Vec<Track>, Vec<String>) {
+pub(crate) fn tracks_of(files: &[String], profiles: &[Profile]) -> (Vec<Track>, Vec<String>) {
     let tracks: Vec<Track> = coverage::assign(files, profiles)
         .into_iter()
         .filter_map(|(i, files)| Some(Track::new(&profiles.get(i)?.id, files)))
