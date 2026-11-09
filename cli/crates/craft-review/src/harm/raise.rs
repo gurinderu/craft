@@ -92,33 +92,40 @@ fn must_fix(c: &Claim) -> bool {
     ceiling(level) == Some("Critical")
 }
 
+/// The answer that names no level: `none` (or, from an older answer, null or nothing) confirms none.
+const NO_LEVEL: &str = "none";
+
+/// The level behaviour stated as intended never confirms.
+const INTENT_UNMET: &str = "intent-unmet";
+
 /// The harm a panel confirmed on `f` (`panelHarm`): the worst claim a strict majority of the
-/// shaped votes support, a vote naming a claim (`confirmedHarmLevel`, else the worst claimed, when
-/// `harmSupported` is true) supporting it and every lesser one.
+/// shaped votes support, a vote naming a claim (`confirmedHarmLevel`, when `harmSupported` is true)
+/// supporting it and every lesser one. Only a named level is confirmed, not an effect; and a vote
+/// that says the behaviour is intended (`behaviourIntended`) backs no `intent-unmet`, every other
+/// level as it names (realm @nick/craft, node #407).
 pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
     let cs = claims(f);
     if cs.is_empty() || votes.is_empty() {
         return None;
     }
-    let backed: Vec<usize> = votes
+    let backed: Vec<(usize, bool)> = votes
         .iter()
         .filter(|v| v.get("harmSupported").and_then(Value::as_bool) == Some(true))
         .filter_map(|v| {
-            let named = match v.get("confirmedHarmLevel") {
-                None | Some(Value::Null) => cs.first().map(|c| c.level.as_str()),
-                Some(n) => n.as_str(),
-            }?;
+            let named = text(v, "confirmedHarmLevel").filter(|n| *n != NO_LEVEL)?;
+            let intended = v.get("behaviourIntended").and_then(Value::as_bool) == Some(true);
             cs.iter()
                 .any(|c| c.level == named)
-                .then(|| level_rank(named))
+                .then(|| (level_rank(named), intended))
         })
         .collect();
     let need = votes.len() / 2 + 1;
     cs.iter()
         .find(|c| {
+            let rank = level_rank(&c.level);
             backed
                 .iter()
-                .filter(|b| **b <= level_rank(&c.level))
+                .filter(|(b, intended)| *b <= rank && !(*intended && c.level == INTENT_UNMET))
                 .count()
                 >= need
         })
