@@ -59,9 +59,13 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
   `resolved`, a job whose `run:` names the cargo command itself, each with `check` (the job's
   `name:`, else its id — the name GitHub reports), `matrix`, `signal` (`clippy`, `test` for
   `cargo test` or `cargo nextest`, `fmt`, `build` for `cargo build` or `cargo check`), `command`,
-  `workflow` and `ci` (the `--ci` that writes it); and `unresolved`, a job calling a recipe
-  (`just`, `make`, `cargo xtask`, a script) whose words hint at a signal, with its `runs` lines,
-  `hints` and `workflow`. `ran: false` with `why` when the workflows could not be read.
+  `workflow`, `uses` (the local actions or reusable workflows its job runs, `uses: ./…`), `ci`
+  (the `--ci` that writes it, those local files already among its `sources`) and, for a clippy
+  command that does not pass `-D warnings`, a `note`: a warning does not fail that check unless
+  the job denies warnings another way, so tell the reviewer before they confirm it; and
+  `unresolved`, a job calling a recipe (`just`, `make`, `cargo xtask`, a script) whose words hint
+  at a signal, with its `runs` lines, `hints`, `workflow` and `uses`. `ran: false` with `why`
+  when the workflows could not be read.
 
 ## 3. Find the rest in the code, then ask
 
@@ -91,14 +95,21 @@ version, run this again.
 The gate builds the branch with clippy itself. When it cannot — cargo ends with no compiler
 error, a private registry without a token, say — it reads the CI map and takes the result
 GitHub reports for the head's commit: a green mapped check passes its signal, a red one blocks
-the review, a pending one gives none. So an entry is a claim that a check **runs that command**;
-it is written only on the reviewer's word.
+the review, a pending one gives none; a run that ended `cancelled`, `skipped`, `timed_out`,
+`startup_failure` or `action_required` gives none either (only `failure`, and a commit status in
+`failure` or `error`, is red). So an entry is a claim that a check **runs that command**; it is
+written only on the reviewer's word.
 
 - **Resolve each unresolved candidate** by reading the recipe its run line calls — the `justfile`
   recipe, the `Makefile` target, the script, the `xtask` — in the repository, following it to
   the cargo command it runs. Propose an entry only with the command line you saw there, quoted
   as written (`cargo clippy --workspace --all-targets -- -D warnings`). A bare check name, or a
   recipe you could not follow to a cargo command, is never coverage: leave it out and say so.
+- **List every file the command goes through** as the entry's `sources`, repository-relative:
+  the `justfile`, the `Makefile`, the `xtask`'s source, the script, and each local action or
+  reusable workflow the job runs (`uses: ./…` — a composite action's `action.yml`). A cargo alias
+  lives in `.cargo/config.toml`, which is hashed on its own whenever it exists. An entry whose
+  job runs a local `uses:` it does not list is refused.
 - **Matrix jobs**: GitHub reports one check per combination, `<check> (<values>)`; the entry's
   `check` is the job's name, and every run named `<check> (…)` must be green for its signal.
   A `name:` holding `${{ … }}` is reported expanded — ask for the name the PR's checks show.
@@ -106,8 +117,10 @@ it is written only on the reviewer's word.
   entry, its check, signal, the command line and where you read it (the workflow, or the recipe
   and its line). They confirm, drop, or correct each; add any check you missed.
 
-The profile also keeps each entry's workflow file hash, taken at the write: when the workflow
-changes, the gate skips that entry and says the CI map is stale — come back here.
+The profile also keeps the hash of each file an entry rests on — the workflow, each source, the
+cargo config —, taken at the write: when any of them changes, the gate skips that entry and says
+the CI map is stale, naming the file — come back here. The gate reads CI only for a working tree
+with no uncommitted changes to tracked files: CI built the head's commit, not your edits.
 
 ## 4. Write
 
@@ -115,14 +128,19 @@ changes, the gate skips that entry and says the CI map is stale — come back he
 "$CRAFT_BIN" init --write --cwd "$(git rev-parse --show-toplevel)" \
   --point 'kube-ovn=https://github.com/kubeovn/kube-ovn.git@v1.12.3' \
   --point 'linstor=git@github.com:LINBIT/linstor-server.git@v1.29.0' \
-  --ci '{"check":"Rust","signal":"clippy","command":"cargo clippy --all-targets -- -D warnings","workflow":".github/workflows/ci.yml"}'
+  --ci '{"check":"Rust","signal":"clippy","command":"cargo clippy --all-targets -- -D warnings","workflow":".github/workflows/ci.yml","sources":[]}' \
+  --ci '{"check":"lint","signal":"clippy","command":"cargo clippy --workspace -- -D warnings","workflow":".github/workflows/ci.yml","sources":["justfile"]}'
 ```
 
 `--write` replaces the whole list: pass every point to keep, the ones already there included.
-The same holds for the CI map: one `--ci` per confirmed entry — a resolved candidate's `ci` as
-printed, or the same JSON with the command line you quoted from the recipe — the ones already
-held included (from `ci`). An entry whose command does not run its signal's cargo command, or
-whose workflow file is missing, is refused and nothing is written.
+The same holds for the CI map: one `--ci` per entry to keep. A fresh confirmation is a resolved
+candidate's `ci` as printed, or the same JSON with the command line you quoted from the recipe
+and the recipe files in `sources`; its files are hashed at the write. An entry already held is
+passed back exactly as `ci` prints it, `hashes` included: those are kept as recorded, so a
+stale entry stays stale until you confirm it again — then pass it without `hashes`, read anew.
+An entry whose command does not run its signal's cargo command, whose workflow or a source is
+missing, whose job runs a local `uses:` it does not list, or whose `hashes` miss one of its
+files, is refused and nothing is written.
 At most 8; a name is letters, digits, `.`, `_` or `-`. A confirmed memory record goes in as its
 `point`, as printed. A refused point is named on stderr and nothing is written; so is a profile
 written by a craft of another format. Report the file's path, the points and the CI map entries written.
@@ -139,6 +157,10 @@ here.
 When the gate cannot build the branch, it reads the CI map and asks GitHub (`gh api`, the
 repository gh names from the checkout's remote) for the head commit's check runs and statuses.
 Its Gate section then reads, say, `clippy, test via CI (Rust, tests) for 1a2b3c4`; a red check
-blocks as a local red would; a check still running gives no signal. Without a map, without `gh`
-or its login, or offline, the gate stays unknown and says why; a stale entry is named with this
-skill as the way back.
+blocks as a local red would; a check still running gives no signal. CI brings no findings on the
+change's lines, and the Gate section says so. A check of one name in several check suites (two
+workflows, a re-run in another event) counts in each, so a red in any blocks; within one suite
+the latest run counts. More check runs or statuses than one page of 100 gives no signal at all,
+as do uncommitted changes in the working tree. Without a map, without `gh` or its login, or
+offline, the gate stays unknown and says why; a stale entry is named with this skill as the way
+back.
