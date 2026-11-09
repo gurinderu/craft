@@ -199,7 +199,7 @@ fn a_full_run_goes_scout_lenses_two_rounds_dedup_verify_done() {
         json!({
             "verify-2-v0": verdict(false),
             "verify-2-v1": verdict(false),
-            "verify-batch-0": {"verdicts": [{"index": 0, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "documented"}]},
+            "verify-batch-0": {"verdicts": [{"index": 0, "refuted": true, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": null, "reason": "documented"}]},
         }),
     );
     assert_eq!(
@@ -402,7 +402,7 @@ fn a_batch_verdict_missing_an_index_is_asked_again() {
     );
     let s = submit(&run, json!({"dedup-rust": {"groups": []}}));
     assert_eq!(ids(&s), ["verify-batch-0"]);
-    let one = json!({"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "r"}]});
+    let one = json!({"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": null, "reason": "r"}]});
     let s = submit(&run, json!({"verify-batch-0": one}));
     assert!(prompt_of(&s["tasks"][0]).contains("no verdict for index 1"));
 }

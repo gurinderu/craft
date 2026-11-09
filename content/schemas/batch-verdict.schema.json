@@ -17,6 +17,9 @@
           "citedLineMatches",
           "reachable",
           "premiseSupported",
+          "behaviourIntended",
+          "harmSupported",
+          "confirmedHarmLevel",
           "reason"
         ],
         "properties": {
@@ -35,12 +38,19 @@
           "premiseSupported": {
             "type": "boolean"
           },
+          "behaviourIntended": {
+            "type": "boolean",
+            "description": "true when the code (a doc comment, a name, a test) or the PR states that the flagged behaviour is intended; false otherwise. It never refutes the finding: it only stops the intent-unmet harm level"
+          },
           "harmSupported": {
             "type": "boolean",
-            "description": "true only if the code shows a claimed harm (effect, who, recovery) as stated and its level holds: behaviour the code or the PR names as intended is not intent-unmet; repo-rule holds only where the cited rule governs the cited code"
+            "description": "true only if the code shows a listed harm (effect, who, recovery) as stated at a level that holds; behaviour stated as intended is not intent-unmet"
           },
           "confirmedHarmLevel": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "enum": [
               "data-loss",
               "security",
@@ -51,9 +61,10 @@
               "operator-recovery",
               "self-healing",
               "text",
-              "none"
+              "none",
+              null
             ],
-            "description": "required when harmSupported is true: the worst listed level that holds; a vote without it confirms no level"
+            "description": "the worst listed level that holds, null when none holds or none is listed; a vote naming none confirms no level"
           },
           "reason": {
             "type": "string"

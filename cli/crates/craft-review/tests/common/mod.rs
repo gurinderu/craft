@@ -95,7 +95,7 @@ pub fn titled(severity: &str, line: u32, title: &str) -> Value {
 }
 
 pub fn verdict(refuted: bool) -> Value {
-    json!({"refuted": refuted, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "reason": "seen"})
+    json!({"refuted": refuted, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": null, "reason": "seen"})
 }
 
 pub fn ids(step: &Value) -> Vec<String> {
