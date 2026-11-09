@@ -102,14 +102,21 @@ pub(super) fn calls(w: &World, tool: &str) -> String {
     std::fs::read_to_string(w.tools.path().join(format!("{tool}-calls"))).unwrap_or_default()
 }
 
+/// The head's check runs, all of one check suite, ids in their order.
 pub(super) fn runs(list: &[(&str, &str, &str)]) -> String {
+    let one: Vec<_> = list.iter().map(|(n, s, c)| (*n, *s, *c, 1)).collect();
+    suited(&one)
+}
+
+/// The head's check runs, each with its check suite's id, run ids in their order.
+pub(super) fn suited(list: &[(&str, &str, &str, u64)]) -> String {
     let runs: Vec<_> = list
         .iter()
         .enumerate()
-        .map(|(i, (name, status, conclusion))| serde_json::json!({"id": i + 1, "name": name, "status": status, "conclusion": conclusion}))
+        .map(|(i, (name, status, conclusion, suite))| serde_json::json!({"id": i + 1, "name": name, "status": status, "conclusion": conclusion, "check_suite": {"id": suite}}))
         .collect();
     serde_json::json!({"total_count": runs.len(), "check_runs": runs}).to_string()
 }
 
 pub(super) const FMT_GREEN: &str =
-    r#"{"state":"success","statuses":[{"context":"fmt","state":"success"}]}"#;
+    r#"{"state":"success","total_count":1,"statuses":[{"context":"fmt","state":"success"}]}"#;

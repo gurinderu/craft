@@ -29,6 +29,8 @@ mod check;
 mod ci;
 mod ci_read;
 #[cfg(test)]
+mod ci_read_tests;
+#[cfg(test)]
 mod ci_tests;
 mod ci_verdict;
 #[cfg(test)]
