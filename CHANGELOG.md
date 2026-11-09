@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.46.0](https://github.com/gurinderu/craft/compare/v0.45.0...v0.46.0) (2026-11-09)
+
+
+### Features
+
+* **rust-audit:** nest the CLI review per crate and run the mechanical gate once ([8367833](https://github.com/gurinderu/craft/commit/83678333c4c7e7ff1a7f0ba61206999a411feb3e))
+* **rust-audit:** nest the CLI review per crate and run the mechanical gate once ([8bb98ed](https://github.com/gurinderu/craft/commit/8bb98edecd45a2ae1d2005242eb762578fd09cdf))
+* **rust-audit:** run the gate first and hand its seeds to the per-crate reviews ([30f59a8](https://github.com/gurinderu/craft/commit/30f59a83aefd8f80fda702d5a1d8d447ffa9debe))
+
+
+### Bug Fixes
+
+* **cli:** file a run's record through a located plugin root and from the run directory ([1e401b5](https://github.com/gurinderu/craft/commit/1e401b5921eafa4f80cddd79f6acd7472b95f600))
+* **cli:** file a run's telemetry through a plugin root even when the binary is given alone ([be6c0c4](https://github.com/gurinderu/craft/commit/be6c0c4c92c000f8ca94e604cfc82579939eaa3e))
+* **cli:** file the run record from the run directory, and tell a gone working directory from a missing program ([db034d6](https://github.com/gurinderu/craft/commit/db034d60c95365fe9f575b368d4ac8849f2fca31))
+* **cli:** key a record filed after its worktree is gone as the live run's, and replace an uninstalled plugin root ([618f78e](https://github.com/gurinderu/craft/commit/618f78eed2bd538fe8863bc00dd18bb396e3efa5))
+* **cli:** use a located plugin root only to file the run, and re-file a record with the identity the run had ([2432705](https://github.com/gurinderu/craft/commit/243270537a3b704b6c32a2aa1d946c393d3f61cc))
+* **review:** a verifier stating the behaviour intended backs no intent-unmet ([6871b9f](https://github.com/gurinderu/craft/commit/6871b9f26c9cf85700c9c6050e553906f765efb8))
+* **review:** name no confirmed harm level with "none", not a nullable enum ([15b11bc](https://github.com/gurinderu/craft/commit/15b11bc147a21dae7587c0f066c0a75be080887d))
+* **review:** raise only on a verified harm level, not a confirmed effect ([0b2b29c](https://github.com/gurinderu/craft/commit/0b2b29c3052ec7da0360a167689b5d7788dd8d9d))
+* **review:** raise only on a verified harm level; intended behaviour is not intent-unmet ([3bfc256](https://github.com/gurinderu/craft/commit/3bfc2566c02be293a8fd2fe7291095fcd6db2a34))
+* **rust-audit:** lift each nested review's applied count; lift memory only where a review applied some ([5315a4b](https://github.com/gurinderu/craft/commit/5315a4bb03236e7ea8f9c10f9507e6b278893e1e))
+* **rust-audit:** lift the nested reviews' memory part; say gate gaps and by-design skips apart ([ddc76da](https://github.com/gurinderu/craft/commit/ddc76da0c9cb53c92fb1d663cca783bc9ab5b25b))
+
 ## [0.45.0](https://github.com/gurinderu/craft/compare/v0.44.0...v0.45.0) (2026-11-09)
 
 
