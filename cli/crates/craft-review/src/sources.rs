@@ -1,7 +1,7 @@
 //! The review's external sources (realm @nick/craft, node #430, the profile of node #467): the
 //! source of each integration point the reviewer's profile names, at the revision it deploys,
-//! fetched once into the sources cache by the binary itself — the step the engine gives a service
-//! agent and `lib/craft-source.mjs` (node #432). The directories reach the lenses that judge
+//! fetched once into the sources cache by the binary itself — the step the retired JS engine gave a
+//! service agent and a Node CLI (node #432). The directories reach the lenses that judge
 //! another system's behaviour and every verifier as an EXTERNAL SOURCES block ([`text`]), and the
 //! report says what was prepared and what was not: a system that could not be is reviewed without
 //! its context, and the review goes on.
