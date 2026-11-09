@@ -20,6 +20,10 @@ const WORKFLOW: &str = "jobs:
   lint:
     steps:
       - run: just lint
+  quick:
+    steps:
+      - uses: ./.github/actions/setup
+      - run: cargo clippy --all-targets
 ";
 
 fn git(dir: &Path, args: &[&str]) {
@@ -57,6 +61,8 @@ fn the_ci_map_is_proposed_from_the_workflows_written_as_confirmed_and_proposed_a
     let repo = tmp.path().join("repo");
     std::fs::create_dir_all(repo.join(".github/workflows")).unwrap();
     std::fs::write(repo.join(".github/workflows/ci.yml"), WORKFLOW).unwrap();
+    std::fs::create_dir_all(repo.join(".github/actions/setup")).unwrap();
+    std::fs::write(repo.join(".github/actions/setup/action.yml"), "runs:\n").unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
@@ -64,8 +70,19 @@ fn the_ci_map_is_proposed_from_the_workflows_written_as_confirmed_and_proposed_a
     let t = tmp.path();
     let first = json_of(&craft(t, &["init", "--propose", "--cwd", &r]));
     let found = &first["ciCandidates"];
-    assert_eq!(found["resolved"].as_array().unwrap().len(), 1, "{found}");
+    assert_eq!(found["resolved"].as_array().unwrap().len(), 2, "{found}");
     let clippy = &found["resolved"][0];
+    assert!(clippy.get("note").is_none(), "{clippy}");
+    let quick = &found["resolved"][1];
+    assert!(
+        quick["note"].as_str().unwrap().contains("-D warnings"),
+        "{quick}"
+    );
+    let quick_ci: Value = serde_json::from_str(quick["ci"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        quick_ci["sources"],
+        serde_json::json!([".github/actions/setup/action.yml"])
+    );
     assert_eq!(
         (&clippy["check"], &clippy["signal"]),
         (&"Rust".into(), &"clippy".into())
@@ -81,7 +98,8 @@ fn the_ci_map_is_proposed_from_the_workflows_written_as_confirmed_and_proposed_a
 
     let ci = clippy["ci"].as_str().unwrap();
     let wrote = json_of(&craft(t, &["init", "--write", "--cwd", &r, "--ci", ci]));
-    assert_eq!(wrote["ci"][0]["workflow_hash"].as_str().unwrap().len(), 64);
+    let wf = ".github/workflows/ci.yml";
+    assert_eq!(wrote["ci"][0]["hashes"][wf].as_str().unwrap().len(), 64);
     let again = json_of(&craft(t, &["init", "--propose", "--cwd", &r]));
     assert_eq!(again["ci"], wrote["ci"]);
 
@@ -91,4 +109,16 @@ fn the_ci_map_is_proposed_from_the_workflows_written_as_confirmed_and_proposed_a
     assert!(String::from_utf8_lossy(&refused.stderr).contains("does not run `cargo clippy`"));
     let kept = json_of(&craft(t, &["init", "--propose", "--cwd", &r]));
     assert_eq!(kept["ci"], wrote["ci"], "nothing written");
+
+    std::fs::write(repo.join(wf), format!("{WORKFLOW}  more:\n")).unwrap();
+    let held = kept["ci"][0].to_string();
+    let point = "x=https://example.com/x.git@v1.0.0";
+    let args = [
+        "init", "--write", "--cwd", &r, "--point", point, "--ci", &held,
+    ];
+    let rewrote = json_of(&craft(t, &args));
+    assert_eq!(
+        rewrote["ci"], wrote["ci"],
+        "a stale entry passed back stays stale"
+    );
 }
