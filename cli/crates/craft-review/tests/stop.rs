@@ -29,7 +29,7 @@ fn a_whole_round_dead_stops_the_run_with_the_limit_note_and_a_submit_resumes_it(
         (&json!(true), &json!("INCOMPLETE"))
     );
     let line = s["line"].as_str().unwrap();
-    let resume = format!("craft review submit --run '{}'", run.display());
+    let resume = format!("craft review submit --run '{}' --resume", run.display());
     for want in [
         "INCOMPLETE — stopped: every agent dispatched in lens round 1 died with no answer, most likely the account's usage limit or an outage. Resume once agents answer again: `",
         resume.as_str(),

@@ -1,6 +1,5 @@
-//! The two writes and how their answers are read: what `lib/cli-review-file.mjs` is handed for a
-//! checkpoint or the record, and what each answer does to the run's telemetry. A write that does
-//! not land is one line of `lost`, `<what> — <why>`, as the driver's notes word it.
+//! The two writes and what each answer does to the run's telemetry. A write that does not land is
+//! one line of `lost`, `<what> — <why>`, as the driver's notes word it.
 
 use std::path::Path;
 
@@ -8,45 +7,10 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use super::wire::{CheckpointAsked, CheckpointDone, Common, RecordAsked, RecordDone};
+use super::wire::{
+    Call, CheckpointAsked, CheckpointDone, Common, RecordAsked, RecordDone, WriteError, Writer,
+};
 use super::{Filing, Record};
-
-/// One write as the adapter is asked for it.
-#[derive(Debug, Clone, Copy)]
-pub struct Call<'a> {
-    pub run: &'a Path,
-    pub root: &'a str,
-    pub repo: &'a str,
-    /// `checkpoint` or `finalize`.
-    pub command: &'a str,
-    pub request: &'a Value,
-}
-
-/// Why a write did not come back with an answer.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum WriteError {
-    #[error("no craft plugin root is known to the run, so the record writer cannot be found")]
-    NoRoot,
-    #[error("node is not on the PATH")]
-    NoNode,
-    #[error("the record writer did not finish within {0} s")]
-    TimedOut(u64),
-    #[error("the record writer could not run: {0}")]
-    Broken(String),
-    #[error("the record writer exited non-zero: {0}")]
-    Exited(String),
-    #[error("the record writer printed no answer: {0}")]
-    NoAnswer(String),
-}
-
-/// Runs a write: the real one spawns node over the adapter ([`super::NodeWriter`]).
-pub trait Writer {
-    /// The JSON object the adapter answered.
-    ///
-    /// # Errors
-    /// When it could not be run or printed no answer.
-    fn write(&self, call: &Call<'_>) -> Result<Value, WriteError>;
-}
 
 fn send(
     run: &Path,
@@ -84,33 +48,43 @@ fn exchange<A: Serialize, D: DeserializeOwned>(
     serde_json::from_value(answer).map_err(|e| WriteError::NoAnswer(e.to_string()))
 }
 
-/// The checkpoint of `phase` (`start`, or the phase the last step ended): the directory it landed
-/// in kept for the next write, a failure said.
+/// The start's checkpoint, or the one of the phase the last step ended — which the adapter decides
+/// by replaying the driver's clock, answering `skipped` when none ended: the directory it landed in
+/// kept for the next write, a failure said.
 pub(super) fn checkpoint(
     run: &Path,
     filing: &mut Filing,
-    phase: &str,
+    start: bool,
     lost: &mut Vec<String>,
     w: &dyn Writer,
 ) {
     let armed = filing.run_dir.is_empty() && filing.failed;
-    filing.rejoin |= armed;
     let asked = CheckpointAsked {
         common: Common::of(filing, armed),
-        start: phase == "start",
+        start,
     };
-    let why = match exchange::<_, CheckpointDone>(run, filing, "checkpoint", &asked, w) {
-        Ok(d) if d.skipped => return,
+    let done = exchange::<_, CheckpointDone>(run, filing, "checkpoint", &asked, w);
+    if matches!(&done, Ok(d) if d.skipped) {
+        return;
+    }
+    filing.rejoin |= armed;
+    let (phase, why) = match done {
         Ok(d) if !d.run_dir.is_empty() => {
             filing.run_dir = d.run_dir;
             return;
         }
-        Ok(d) if !d.error.is_empty() => d.error,
-        Ok(_) => "the writer named no run directory".to_owned(),
-        Err(e) => e.to_string(),
+        Ok(d) if !d.error.is_empty() => (d.phase, d.error),
+        Ok(d) => (d.phase, "the writer named no run directory".to_owned()),
+        Err(e) => (String::new(), e.to_string()),
     };
     filing.failed = true;
-    lost.push(format!("phase checkpoint '{phase}' — {why}"));
+    let what = match (start, phase.as_str()) {
+        (true, _) => "phase checkpoint 'start'".to_owned(),
+        // The writer failed before it could say which phase ended.
+        (false, "") => "the checkpoint of the phase that ended".to_owned(),
+        (false, p) => format!("phase checkpoint '{p}'"),
+    };
+    lost.push(format!("{what} — {why}"));
 }
 
 /// The run's record from the finished `step`: filed, landed with a warning, or failed.
@@ -135,8 +109,10 @@ pub(super) fn record(
         RecordDone {
             ok: false,
             reason: e.to_string(),
+            file: String::new(),
         }
     });
+    filing.record_file = done.file;
     filing.record = if done.ok {
         Record::Filed
     } else {

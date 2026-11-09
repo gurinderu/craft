@@ -290,6 +290,7 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     {
         return print(&step);
     }
+    refuse_folded(&run, args)?;
     let said = step::Said {
         degraded: &args.degraded,
         limit: args.limit.as_deref(),
@@ -308,6 +309,22 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
         Some(filed) => print(&filing::with_filing(step, filed)),
         None => print(&step),
     }
+}
+
+/// A stopped run that files its telemetry goes on only by `--resume`, which files the stopped
+/// segment's record if it did not land and opens a new segment; a plain submit would go on in a
+/// segment whose checkpoints the stop already folded into its record.
+fn refuse_folded(run: &Path, args: &SubmitArgs) -> Result<()> {
+    let recording = filing::state_path(run).exists();
+    let stopped = || craft_review::state::load(run).is_ok_and(|s| s.stopped.is_some());
+    if recording && !args.resume && args.limit.is_none() && stopped() {
+        let d = run.display().to_string().replace('\'', r"'\''");
+        anyhow::bail!(
+            "the run in {} stopped and files its telemetry by segment: resume it with `craft review submit --run '{d}' --resume`",
+            run.display()
+        );
+    }
+    Ok(())
 }
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {
