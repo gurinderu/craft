@@ -13,6 +13,9 @@ use crate::state::Track;
 
 pub(super) const WF: &str = ".github/workflows/ci.yml";
 
+/// The workflow the world's CI map entries are found in.
+const MAPPED: &str = "jobs:\n  clippy:\n    steps:\n      - run: cargo clippy --all-targets -- -D warnings\n      - run: cargo test --locked\n      - run: cargo fmt --check\n";
+
 /// A cargo whose build is impossible: a registry without a token, no compiler message.
 pub(super) const UNBUILT: &str = r#"echo "$*" >> "${0%/*}/cargo-calls"
 echo 'error: failed to get `x` as a dependency' >&2; echo 'Caused by:' >&2; echo '  no token found for `fluence`' >&2; exit 101"#;
@@ -45,7 +48,7 @@ pub(super) fn world(runs: &str, statuses: &str) -> World {
     let repo = package(None);
     let top = repo.path();
     std::fs::create_dir_all(top.join(".github/workflows")).unwrap();
-    std::fs::write(top.join(WF), "jobs:\n  clippy:\n").unwrap();
+    std::fs::write(top.join(WF), MAPPED).unwrap();
     let (tools, projects) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     tool(tools.path(), "cargo", UNBUILT);
     tool(tools.path(), "gh", GH);

@@ -27,4 +27,12 @@ pub enum CiError {
         "{check}: its workflow runs `uses: ./{uses}`, which the entry's sources do not name — list the file it runs"
     )]
     LocalUses { check: String, uses: String },
+    #[error(
+        "{check}: the command {command:?} is not found in a `run:` line of its job in {workflow} nor in any of the entry's sources — list the file that spells it"
+    )]
+    Unfound {
+        check: String,
+        command: String,
+        workflow: String,
+    },
 }

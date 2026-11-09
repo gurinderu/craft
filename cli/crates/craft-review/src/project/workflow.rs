@@ -36,7 +36,7 @@ fn bare_key(t: &str) -> Option<&str> {
 }
 
 /// `"x"` or `'x'` as `x`.
-fn unquote(v: &str) -> &str {
+pub(super) fn unquote(v: &str) -> &str {
     let quoted = |q| v.strip_prefix(q).and_then(|r: &str| r.strip_suffix(q));
     quoted('"').or_else(|| quoted('\'')).unwrap_or(v)
 }

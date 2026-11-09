@@ -18,10 +18,15 @@ use crate::sources::spec::SYSTEMS_MAX;
 
 pub mod candidates;
 pub mod ci;
+mod ci_configs;
 mod ci_error;
 mod ci_files;
 #[cfg(test)]
 mod ci_files_tests;
+mod ci_ground;
+#[cfg(test)]
+mod ci_ground_tests;
+mod ci_shape;
 #[cfg(test)]
 mod ci_tests;
 mod point;

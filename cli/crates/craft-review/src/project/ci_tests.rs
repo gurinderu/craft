@@ -6,7 +6,11 @@ const WF: &str = ".github/workflows/ci.yml";
 fn top() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
-    std::fs::write(dir.path().join(WF), "jobs:\n  clippy:\n").unwrap();
+    std::fs::write(
+        dir.path().join(WF),
+        "jobs:\n  clippy:\n    steps:\n      - run: cargo clippy --all-targets -- -D warnings\n",
+    )
+    .unwrap();
     dir
 }
 
