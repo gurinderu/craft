@@ -195,3 +195,114 @@ fn no_gate_runs_no_tool_on_the_branch_and_says_so() {
     let ran = gate_of(&[]);
     assert_eq!(ran["tracks"][0]["profile"], "rust", "{ran}");
 }
+
+/// A fetched binary over the fixture: `review start --record`, the harness naming `harness` as its
+/// plugin root, then the scout's answer submitted with `submit_root` as `--craft-root` when given;
+/// the root the run's telemetry keeps for its writes after each.
+fn filing_roots(harness: Option<&Path>, submit_root: Option<&Path>) -> (Value, Value) {
+    let tmp = tempfile::tempdir().unwrap();
+    let code = tmp.path().join("repo");
+    std::fs::create_dir_all(&code).unwrap();
+    repo(&code);
+    let (exe, run) = (fetched(tmp.path()), tmp.path().join("run"));
+    let craft = |args: &[&str], root: Option<&Path>| {
+        let mut cmd = Command::new(&exe);
+        cmd.args(args).env_remove("CRAFT_ROOT");
+        match harness {
+            Some(h) => cmd.env("CLAUDE_PLUGIN_ROOT", h),
+            None => cmd.env_remove("CLAUDE_PLUGIN_ROOT"),
+        };
+        if let Some(r) = root {
+            cmd.arg("--craft-root").arg(r);
+        }
+        let out = cmd.output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let filing = std::fs::read_to_string(run.join("filing.json")).unwrap();
+        serde_json::from_str::<Value>(&filing).unwrap()["ctx"]["root"].clone()
+    };
+    let (code, run_dir) = (code.display().to_string(), run.display().to_string());
+    let started = craft(
+        &[
+            "review",
+            "start",
+            "--no-recall",
+            "--no-gate",
+            "--record",
+            "9.9.9",
+            "--cwd",
+            &code,
+            "--run-dir",
+            &run_dir,
+        ],
+        None,
+    );
+    let answers = tmp.path().join("answers.json");
+    std::fs::write(
+        &answers,
+        r#"{"scout-rust": {"sizeBucket": "small", "lenses": ["errors"], "isLibrary": false,
+        "securitySensitive": false, "intent": "", "churn": [], "repoRules": [], "notes": ""}}"#,
+    )
+    .unwrap();
+    let answers = answers.display().to_string();
+    let submitted = craft(
+        &["review", "submit", "--run", &run_dir, "--answers", &answers],
+        submit_root,
+    );
+    (started, submitted)
+}
+
+/// A plugin root as an installed copy holds it, with the run-record writer when `writer`.
+fn plugin_with_writer(d: &Path, writer: bool) {
+    plugin(d, "1.2.3");
+    if writer {
+        std::fs::create_dir_all(d.join("lib")).unwrap();
+        std::fs::write(d.join("lib/cli-review-file.mjs"), "").unwrap();
+    }
+}
+
+#[test]
+fn a_binary_given_no_root_files_through_the_harness_plugin_when_it_holds_the_writer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (held, bare) = (tmp.path().join("held"), tmp.path().join("bare"));
+    plugin_with_writer(&held, true);
+    plugin_with_writer(&bare, false);
+    let held_str = Value::from(held.display().to_string());
+    assert_eq!(filing_roots(Some(&held), None).0, held_str);
+    assert_eq!(
+        filing_roots(Some(&bare), None).0,
+        Value::Null,
+        "no writer there"
+    );
+}
+
+#[test]
+fn a_run_started_with_no_root_takes_the_one_a_later_submit_names_and_keeps_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let held = tmp.path().join("held");
+    plugin_with_writer(&held, true);
+    let (started, submitted) = filing_roots(None, Some(&held));
+    assert_eq!(
+        (started, submitted),
+        (Value::Null, Value::from(held.display().to_string()))
+    );
+}
+
+#[test]
+fn the_usage_limit_help_points_a_stopped_run_at_resume() {
+    let out = Command::new(env!("CARGO_BIN_EXE_craft"))
+        .args(["review", "submit", "--help"])
+        .output()
+        .unwrap();
+    let help = String::from_utf8_lossy(&out.stdout);
+    let limit = help
+        .split("--limit")
+        .nth(1)
+        .and_then(|s| s.split("--resume").next())
+        .unwrap();
+    assert!(!limit.contains("without it resumes"), "{limit}");
+    assert!(limit.contains("resets"), "{limit}");
+}
