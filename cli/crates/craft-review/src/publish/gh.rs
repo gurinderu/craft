@@ -15,11 +15,10 @@ use super::body;
 use super::{Defect, Posted};
 use crate::gate::runner::Runner;
 
-mod call;
 mod read;
 mod send;
 
-pub(super) use call::{Failed, gh, gh_said};
+pub(super) use crate::gh::{Failed, gh, gh_said};
 
 use read::{Key, posted_already, pull_request};
 use send::To;

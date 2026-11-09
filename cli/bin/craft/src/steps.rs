@@ -251,7 +251,10 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
             .as_deref()
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
         sources: crate::init::sources_setup(),
-        gate: (!args.no_gate).then(craft_review::gate::GateSetup::default),
+        gate: (!args.no_gate).then(|| craft_review::gate::GateSetup {
+            projects: crate::init::projects_dir(),
+            ..craft_review::gate::GateSetup::default()
+        }),
         gate_from: args
             .gate_from
             .as_deref()
@@ -287,7 +290,10 @@ pub fn gate(args: &GateArgs) -> Result<ExitCode> {
         None => default_run_dir()?,
     };
     let dir = std::path::absolute(&dir).with_context(|| format!("resolving {}", dir.display()))?;
-    let setup = craft_review::gate::GateSetup::default();
+    let setup = craft_review::gate::GateSetup {
+        projects: crate::init::projects_dir(),
+        ..craft_review::gate::GateSetup::default()
+    };
     let out = craft_review::gate::alone::alone(&args.cwd, args.base.as_deref(), &dir, &setup)?;
     print(&stamped(out, began))
 }
