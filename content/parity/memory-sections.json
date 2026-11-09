@@ -1,0 +1,3 @@
+{
+  "memorySections": "\n\n## Rejected before (set aside — not in the verdict)\n- Medium · `src/lib.rs:1` · f returns 1, not 0 · wrong · REJECTED BEFORE: 1 is the intended value — rev, 2026-05-01, https://github.com/o/r/pull/1#discussion_r1 (decision decision-6923fcb6b8) · matched by file:line+lens\n\n## Memory\n- memory: none — no memory configured (backend none); plus 1 passed by the launcher; id derived for 1 record(s): decision-6923fcb6b8 (f returns 1 instead of 0)\n- prior decisions: match judge: 1 disputed pair(s) judged, 0 the same\n- prior decisions: 1 decision(s) given, 1 finding(s) set aside as rejected before, 0 raised again\n"
+}

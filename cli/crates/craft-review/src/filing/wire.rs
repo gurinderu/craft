@@ -20,6 +20,11 @@ pub(super) struct Common<'a> {
     pub(super) rejoin: bool,
     pub(super) steps: &'a [Told],
     pub(super) head: &'a str,
+    /// The run's identity as it ran ([`super::Ctx`]), which the adapter files under when the
+    /// working copy `repo` is gone.
+    pub(super) git_dir: &'a str,
+    pub(super) branch: Option<&'a str>,
+    pub(super) dirty: bool,
 }
 
 impl<'a> Common<'a> {
@@ -32,6 +37,9 @@ impl<'a> Common<'a> {
             rejoin,
             steps: &filing.steps,
             head: &filing.ctx.head,
+            git_dir: &filing.ctx.git_dir,
+            branch: filing.ctx.branch.as_deref(),
+            dirty: filing.ctx.dirty,
         }
     }
 }
@@ -83,7 +91,6 @@ pub(super) struct RecordDone {
 pub struct Call<'a> {
     pub run: &'a Path,
     pub root: &'a str,
-    pub repo: &'a str,
     /// `checkpoint` or `finalize`.
     pub command: &'a str,
     pub request: &'a Value,
