@@ -1,5 +1,6 @@
 //! `craft`: the command line over craft's review.
 
+mod comment;
 mod init;
 mod review;
 mod steps;
@@ -36,6 +37,9 @@ enum ReviewCommand {
     Submit(steps::SubmitArgs),
     /// Print where a run stands.
     Status(steps::StatusArgs),
+    /// Publish a finished run's findings on its branch's pull request, as `start --comment` does
+    /// when the run finishes: the defects posted with `gh`, the doubtful ones listed in the report.
+    Comment(comment::CommentArgs),
     /// Run only the mechanical gate over the change and print how it came out: no run, no lens,
     /// no record (rust-audit's one gate for a workspace whose crates it reviews with `--no-gate`).
     Gate(steps::GateArgs),
@@ -90,6 +94,7 @@ async fn main() -> ExitCode {
         Command::Review(ReviewCommand::Start(args)) => steps::start(&args),
         Command::Review(ReviewCommand::Submit(args)) => steps::submit(&args),
         Command::Review(ReviewCommand::Status(args)) => steps::status(&args),
+        Command::Review(ReviewCommand::Comment(args)) => comment::comment(&args),
         Command::Review(ReviewCommand::Gate(args)) => steps::gate(&args),
         Command::Init(args) => init::init(&args),
     };

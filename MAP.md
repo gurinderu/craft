@@ -240,7 +240,9 @@ lenses that should have run, which then run and whose findings are verified as a
 off by default, each sliceable lens is confined to a batch of the Cargo crates the change touches, a contract lens runs
 on each touched crate, and after the rounds a coordinator answers the questions the confined lenses left in their answers,
 decides each finding that depends on one and judges the seam between the crates; with `--comment` the finished run
-sorts its findings into defects and doubtful ones and posts the defects on the branch's PR through `gh` itself, never twice),
+sorts its findings into defects and doubtful ones and posts the defects on the branch's PR through `gh` itself, never twice,
+a line GitHub refuses going on its file; `craft review comment --run <dir>` does the same for a run already finished,
+its record amended with what came of it),
 then a Markdown report of the findings by tier, the lenses that ran, the rounds and what the CLI does not run — rendered
 from `content/`, which it compiles in, its plans, prompts and verification rules held to the engines' by the shared cases in
 `content/parity/`, with the run's state in `state.json` of its run directory, each task's prompt and
