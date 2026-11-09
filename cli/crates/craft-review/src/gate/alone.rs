@@ -1,9 +1,11 @@
 //! The mechanical gate alone (`craft review gate`): the gate a review start runs, over the whole
-//! change, with no run, no lens and no record. rust-audit runs it once for the workspace before its
-//! per-crate reviews (realm @nick/craft, node #150), so clippy builds the workspace once rather than
-//! once per crate side by side on one target directory. The result — the gate and its seeds, as a
-//! start keeps its own — is written into the directory, and each per-crate run takes it
-//! (`review start --gate-from`, [`taken`]): the seeds on that run's files reach its lenses.
+//! change, with no run, no lens and no record (realm @nick/craft, node #472). rust-audit runs it
+//! once for the workspace before its per-crate reviews and before its own dimensions that build
+//! with cargo (realm @nick/craft, node #150), so clippy builds the workspace once and alone, rather
+//! than once per crate, or beside another build holding cargo's lock until the gate's budget is
+//! gone. The result — the gate and its seeds, as a start keeps its own — is written into the
+//! directory, and each per-crate run takes it (`review start --gate-from`, [`taken`]): the seeds on
+//! that run's files reach its lenses.
 
 use std::path::Path;
 
