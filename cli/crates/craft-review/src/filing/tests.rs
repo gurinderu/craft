@@ -5,8 +5,10 @@ use serde_json::{Value, json};
 
 use super::*;
 
-/// A writer that keeps every call and answers from a script, per command, in order; one with no
-/// answer left lands (a checkpoint into `/store/.partial/a`, the record filed).
+/// A writer that answers as the adapter does — a checkpoint after a step that ended no phase is
+/// skipped, and not kept — and keeps every other call, answering from a script per command, in
+/// order; one with no answer left lands (a checkpoint into `/store/.partial/a`, the record filed
+/// into `/store/r.json`).
 #[derive(Default)]
 struct Fake {
     calls: RefCell<Vec<(String, Value)>>,
@@ -30,8 +32,25 @@ impl Fake {
     }
 }
 
+/// Whether the adapter's clock replay finds a phase the last of `steps` ended.
+fn phase_ended(request: &Value) -> bool {
+    let steps = request["steps"].as_array().unwrap();
+    let [.., before, now] = steps.as_slice() else {
+        return false;
+    };
+    before["done"] == false
+        && before["phase"] != ""
+        && (now["done"] == true || now["phase"] != before["phase"])
+}
+
 impl Writer for Fake {
     fn write(&self, call: &Call<'_>) -> Result<Value, WriteError> {
+        if call.command == "checkpoint"
+            && call.request["start"] == false
+            && !phase_ended(call.request)
+        {
+            return Ok(json!({"skipped": true}));
+        }
         self.calls
             .borrow_mut()
             .push((call.command.to_owned(), call.request.clone()));
@@ -41,7 +60,7 @@ impl Writer for Fake {
         }
         Ok(match call.command {
             "checkpoint" => json!({"phase": "x", "runDir": "/store/.partial/a"}),
-            _ => json!({"ok": true, "reason": ""}),
+            _ => json!({"ok": true, "reason": "", "file": "/store/r.json"}),
         })
     }
 }
@@ -134,6 +153,11 @@ fn the_finishing_submit_writes_the_last_checkpoint_then_the_record_once() {
     open(run.path(), ctx(), "", &pending("verify", 1), &w);
     let said = submitted(run.path(), &finished(2), &host(4), &w).unwrap();
     assert_eq!(said["record"], json!("filed"));
+    assert_eq!(
+        said["recordFile"],
+        json!("/store/r.json"),
+        "the file the run's cost is enriched into"
+    );
     assert_eq!(w.commands(), ["checkpoint", "checkpoint", "finalize"]);
     let req = w.request(2);
     assert_eq!(req["step"]["verdict"], json!("Approve"));
@@ -295,4 +319,73 @@ fn a_run_that_files_nothing_is_left_alone() {
         "nor is a run with no finished state re-filed"
     );
     assert!(w.commands().is_empty());
+}
+
+#[test]
+fn a_stopped_segments_unfiled_record_is_filed_on_resume_before_the_new_segment_opens() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::answering(vec![
+        ("checkpoint", Ok(json!({"runDir": "/store/.partial/a"}))),
+        ("finalize", Err(WriteError::NoNode)),
+    ]);
+    let stopped = json!({"run": "/run", "done": true, "report": "/run/report.md", "verdict": "INCOMPLETE", "stopped": {"cause": "limit"}, "at": 1, "took": 1});
+    assert_eq!(
+        open(run.path(), ctx(), "s1", &stopped, &w)["record"],
+        json!("failed")
+    );
+    let resumed = Host {
+        agents: Some(0),
+        resume: true,
+        session: "s2".into(),
+        ..Host::default()
+    };
+    let said = submitted(run.path(), &pending("lenses", 9), &resumed, &w).unwrap();
+    assert_eq!(said["lost"], json!([]));
+    assert_eq!(
+        w.commands(),
+        ["checkpoint", "finalize", "finalize", "checkpoint"]
+    );
+    let (first, again) = (w.request(1), w.request(2));
+    assert_eq!(
+        (first["retry"].clone(), again["retry"].clone()),
+        (json!(false), json!(true))
+    );
+    assert_eq!(
+        first["step"], again["step"],
+        "the stopped segment's record, byte for byte"
+    );
+    assert_eq!(
+        w.request(3)["start"],
+        json!(true),
+        "then the new segment's start"
+    );
+}
+
+#[test]
+fn a_segment_that_ended_files_nothing_more_until_it_is_resumed() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::default();
+    open(run.path(), ctx(), "", &finished(1), &w);
+    let again = submitted(run.path(), &finished(2), &host(1), &w).unwrap();
+    assert_eq!(again["record"], json!("filed"));
+    assert_eq!(
+        w.commands(),
+        ["checkpoint", "finalize"],
+        "no second record for the same segment"
+    );
+}
+
+#[test]
+fn the_summary_names_the_record_and_the_step_the_segment_ended_with() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::default();
+    assert_eq!(summary(run.path()), None);
+    open(run.path(), ctx(), "", &finished(1), &w);
+    let s = summary(run.path()).unwrap();
+    assert_eq!(
+        (s["record"].clone(), s["recordFile"].clone()),
+        (json!("filed"), json!("/store/r.json"))
+    );
+    assert_eq!(s["finished"]["verdict"], json!("Approve"));
+    assert_eq!(s["finished"]["filing"]["record"], json!("filed"));
 }

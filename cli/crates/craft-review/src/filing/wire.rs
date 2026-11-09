@@ -1,7 +1,10 @@
 //! What the adapter (`lib/cli-review-file.mjs`) is handed for a checkpoint or the record, and what
-//! it answers: the field names its `common`, `checkpoint` and `finalize` read.
+//! it answers — the field names its `common`, `checkpoint` and `finalize` read — and the writer
+//! that carries them.
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
 use serde_json::Value;
 
 use super::{Filing, Told};
@@ -46,6 +49,7 @@ pub(super) struct CheckpointAsked<'a> {
 #[serde(default, rename_all = "camelCase")]
 pub(super) struct CheckpointDone {
     pub(super) skipped: bool,
+    pub(super) phase: String,
     pub(super) run_dir: String,
     pub(super) error: String,
 }
@@ -70,4 +74,43 @@ pub(super) struct RecordAsked<'a> {
 pub(super) struct RecordDone {
     pub(super) ok: bool,
     pub(super) reason: String,
+    /// The record file the store holds, as craft-log-run named it (`wrote` or `already filed`).
+    pub(super) file: String,
+}
+
+/// One write as the adapter is asked for it.
+#[derive(Debug, Clone, Copy)]
+pub struct Call<'a> {
+    pub run: &'a Path,
+    pub root: &'a str,
+    pub repo: &'a str,
+    /// `checkpoint` or `finalize`.
+    pub command: &'a str,
+    pub request: &'a Value,
+}
+
+/// Why a write did not come back with an answer.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WriteError {
+    #[error("no craft plugin root is known to the run, so the record writer cannot be found")]
+    NoRoot,
+    #[error("node is not on the PATH")]
+    NoNode,
+    #[error("the record writer did not finish within {0} s")]
+    TimedOut(u64),
+    #[error("the record writer could not run: {0}")]
+    Broken(String),
+    #[error("the record writer exited non-zero: {0}")]
+    Exited(String),
+    #[error("the record writer printed no answer: {0}")]
+    NoAnswer(String),
+}
+
+/// Runs a write: the real one spawns node over the adapter ([`super::NodeWriter`]).
+pub trait Writer {
+    /// The JSON object the adapter answered.
+    ///
+    /// # Errors
+    /// When it could not be run or printed no answer.
+    fn write(&self, call: &Call<'_>) -> Result<Value, WriteError>;
 }

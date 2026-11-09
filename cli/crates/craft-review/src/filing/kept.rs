@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::is_done;
 use crate::state::RunState;
 
 /// Where a run keeps its telemetry between steps.
@@ -105,6 +106,9 @@ pub struct Filing {
     pub output_tokens: Option<u64>,
     #[serde(default)]
     pub record: Record,
+    /// The record's file in the store, once it landed: what the run's cost is enriched into.
+    #[serde(default)]
+    pub record_file: String,
     /// The finished step the record was first attempted from, so a re-file sends the same record,
     /// and how many times it was attempted: kept before each attempt, so one cut off mid-write is
     /// sent again as a retry.
@@ -123,11 +127,6 @@ pub struct Host {
     /// It resumes the run (`--resume`): a new segment, filed apart, as a new host run files its own.
     pub resume: bool,
     pub session: String,
-}
-
-/// Whether `step` is the run's last: finished, or stopped to be resumed.
-pub(super) fn is_done(step: &Value) -> bool {
-    step.get("done").and_then(Value::as_bool).unwrap_or(false)
 }
 
 pub(super) fn load(run: &Path) -> Option<Filing> {
