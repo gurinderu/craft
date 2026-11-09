@@ -1,4 +1,4 @@
-//! The git half of the preparation, as `lib/source-checkout.mjs` does it (realm @nick/craft, node
+//! The git half of the preparation, as the retired Node CLI did it (realm @nick/craft, node
 //! #430): a shallow, prompt-free copy of a system's source at a tag or a commit, placed in the
 //! cache atomically. A branch is refused: the cache keys a copy by its revision and reuses it
 //! forever, so a moving name would be served stale. Leftover temporary copies of a run that died
