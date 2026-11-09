@@ -24,8 +24,14 @@ pub(super) fn cli_not_run(state: &RunState) -> String {
     }
     let took_part = |id: &str| state.tracks.iter().any(|t| t.profile == id);
     let gated = took_part("rust") || took_part("nix");
+    // A gate taken from the launching run but not usable says why, not that it was asked off.
+    let unusable = format!(
+        "the mechanical gate and its tool seeds (not run: {})",
+        state.gate.skipped
+    );
     if gated && !state.gate.skipped.is_empty() {
-        parts.insert(0, GATE_SKIPPED);
+        let asked_off = state.gate.skipped == crate::gate::Gate::not_asked().skipped;
+        parts.insert(0, if asked_off { GATE_SKIPPED } else { &unusable });
     } else {
         if took_part("rust") {
             parts.insert(0, RUST_GATE_NOT_RUN);

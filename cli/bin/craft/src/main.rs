@@ -31,11 +31,14 @@ enum Command {
 #[derive(Subcommand)]
 enum ReviewCommand {
     /// Open a run: compute the diff and print the first tasks.
-    Start(steps::StartArgs),
+    Start(Box<steps::StartArgs>),
     /// Hand in the answers to a run's pending tasks and print what comes next.
     Submit(steps::SubmitArgs),
     /// Print where a run stands.
     Status(steps::StatusArgs),
+    /// Run only the mechanical gate over the change and print how it came out: no run, no lens,
+    /// no record (rust-audit's one gate for a workspace whose crates it reviews with `--no-gate`).
+    Gate(steps::GateArgs),
     /// Run one probe agent end to end through a backend, with the progress view.
     Probe(ReviewArgs),
 }
@@ -87,6 +90,7 @@ async fn main() -> ExitCode {
         Command::Review(ReviewCommand::Start(args)) => steps::start(&args),
         Command::Review(ReviewCommand::Submit(args)) => steps::submit(&args),
         Command::Review(ReviewCommand::Status(args)) => steps::status(&args),
+        Command::Review(ReviewCommand::Gate(args)) => steps::gate(&args),
         Command::Init(args) => init::init(&args),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'
