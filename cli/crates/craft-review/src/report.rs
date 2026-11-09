@@ -258,16 +258,27 @@ fn in_verdict(state: &RunState) -> Vec<Value> {
         .collect()
 }
 
-/// The report's memory part as it stands in it, verbatim: what memory set aside, the rules
-/// covered and the findings going against a record, the `## Memory` line, what was refused, and
-/// the tools' finding titles. The finished step carries it (`memorySections`), so a parent engine
-/// that reads only the step's answer lifts it whole (rust-audit; realm @nick/craft, node #196).
+/// The report's memory part, verbatim: what memory set aside, the rules covered and the findings
+/// going against a record, the `## Memory` line followed by what the decisions and the rules did
+/// (the `prior decisions:` and `project rules:` notes the report lists under Notes — how many were
+/// given, set aside and raised again), what was refused, and the tools' finding titles. The finished
+/// step carries it (`memorySections`), so a parent engine that reads only the step's answer lifts
+/// each of its sections by heading (rust-audit's `liftPriorDecisionSections` and its memory line;
+/// realm @nick/craft, node #196).
 #[must_use]
 pub fn memory_sections(state: &RunState) -> String {
     let in_verdict = in_verdict(state);
+    let line = format!("\n## Memory\n- {}\n", state.memory.source.line());
+    let applied: String = state
+        .notes
+        .iter()
+        .filter(|n| n.starts_with("prior decisions: ") || n.starts_with("project rules: "))
+        .map(|n| format!("- {n}\n"))
+        .collect();
+    let memory = state.memory.report(&state.chain.deferred(), &in_verdict);
     format!(
         "{}{}",
-        state.memory.report(&state.chain.deferred(), &in_verdict),
+        memory.replacen(&line, &format!("{line}{applied}"), 1),
         crate::tool::titles_section(&in_verdict)
     )
 }

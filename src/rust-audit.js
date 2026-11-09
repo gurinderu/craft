@@ -552,7 +552,7 @@ const cliReview = launch => nestedWorkflow(workflow, 'cli-review', launch, log)
 // and no review builds the workspace again (realm @nick/craft, node #150). A red gate starts no review, as a review
 // stops before its lenses; a gate that did not answer or kept nothing leaves the reviews ungated (`gate=false`), said in
 // the log and the report. The dimensions that run cargo builds themselves (security, Miri, semver, build-matrix,
-// tests-cov) wait for it too, whatever its colour — run beside it they would hold cargo's build lock until its budget
+// tests-cov, and unused-crates, whose fallback `cargo +nightly udeps` builds) wait for it too, whatever its colour — run beside it they would hold cargo's build lock until its budget
 // is gone; the rest do not wait. Its answer is the `gate` dimension; its section is appended to the report once.
 /** @type {Promise<DimResult | null> | null} */
 let gateRun = null
@@ -715,7 +715,7 @@ dispatched.push('deps')
 // dev/bench/example-only usage), so every candidate is verified before it reaches the report: a
 // verifier tries HARD to prove the crate IS used and only the survivors are kept. Self-contained
 // find→verify pipeline inside one thunk so it composes with the flat `parallel(tasks)` fan-out.
-tasks.push(() => dispatchDim('unused-crates', (async () => {
+tasks.push(afterGate(() => dispatchDim('unused-crates', (async () => {
   const found = /** @type {FindingsResult | null} */ (await auditAgent(
     `Find UNUSED crates in this Rust workspace, in two classes:
 (a) ORPHAN workspace members — from \`cargo metadata --locked --format-version 1\` (if \`--locked\` refuses (Cargo.lock missing or stale), read them from \`cargo metadata --no-deps --format-version 1\` instead — it does not resolve dependencies, so it never writes Cargo.lock; there each member's \`dependencies\` entry with a \`path\` inside another member is an edge. Never run it without one of those two flags: a plain call rewrites the lockfile of the checkout under audit.), workspace members that NO other workspace member depends on (any dependency kind), EXCLUDING binaries (a [[bin]] target or src/main.rs) and published libraries (Cargo.toml \`publish\` is not false / it is meant for crates.io).
@@ -754,7 +754,7 @@ Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; defa
     )).then(v => wrapVerdict(c, v)),
   ))
   return unusedCratesResult(candidates, verdicts)
-})()))
+})())))
 dispatched.push('unused-crates')
 
 /** The tests-cov brief's mutation-testing clause: run it only when asked. @returns {string} */
@@ -828,7 +828,7 @@ const stripped = results.map(stripInternal)
  */
 function gateReport(g) {
   const notKept = gateNotKept ? `\n${GATE_NOT_KEPT}\n` : ''
-  return { gateSection: g?._gateSection ? `${g._gateSection}${notKept}` : notKept.trim(), redLead: gateRed(g) && g ? `${g.summary}\n\n` : '' }
+  return { gateSection: g?._gateSection ? `${g._gateSection}${notKept}` : notKept && `## Gate\n${notKept}`, redLead: gateRed(g) && g ? `${g.summary}\n\n` : '' }
 }
 const { gateSection, redLead } = gateReport(results.find(r => r.dimension === 'gate') ?? null)
 /** The appended tail every report form carries: the gate's section, then the nested reviews' prior-decision sections. */
