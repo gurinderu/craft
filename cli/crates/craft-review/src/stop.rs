@@ -148,7 +148,7 @@ pub(crate) fn hold(run: &mut RunState, stop: Stop) {
 /// How to resume the run in `dir`.
 fn resume(dir: &Path) -> String {
     let d = dir.display().to_string().replace('\'', r"'\''");
-    format!("craft review submit --run '{d}'")
+    format!("craft review submit --run '{d}' --resume")
 }
 
 /// The step of the stopped run in `dir`: done for the host, INCOMPLETE, its report written with

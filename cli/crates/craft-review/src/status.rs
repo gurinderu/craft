@@ -70,5 +70,9 @@ pub fn status(dir: &Path) -> Result<Value, StateError> {
     if let (Some(stop), Some(obj)) = (&run.stopped, s.as_object_mut()) {
         obj.insert("stopped".into(), json!(stop));
     }
+    // What the run's own telemetry filed, for a host that lost the step that said it.
+    if let (Some(filing), Some(obj)) = (crate::filing::summary(dir), s.as_object_mut()) {
+        obj.insert("filing".into(), filing);
+    }
     Ok(s)
 }
