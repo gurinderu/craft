@@ -8,6 +8,7 @@
 //! exist); `gate/nix_tests.rs` replays them. The transfer, TLS and HTTP 5xx/429/403 forms are built
 //! on the observed `unable to download '<url>': <why>` shape from curl's and nix's wording.
 
+use super::cause::final_error;
 use super::check::last_line;
 
 /// What nix's final error says when this machine, not the change, stopped it.
@@ -39,13 +40,6 @@ const NETWORK: [&str; 13] = [
     "Send failure",
     "HTTP error 429",
 ];
-
-/// nix's final error line, its indent trimmed; `None` when it printed none.
-fn final_error(err: &str) -> Option<&str> {
-    err.lines()
-        .map(str::trim)
-        .rfind(|l| l.starts_with("error: "))
-}
 
 /// The line that says why nix failed: its final error line, else its last line.
 pub(super) fn nix_why(err: &str) -> String {
