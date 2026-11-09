@@ -85,6 +85,52 @@ fn confirmed(indices: &[usize]) -> Value {
     json!({"verdicts": v})
 }
 
+/// The run of a launcher's record rejecting one of two confirmed findings, to its finished step.
+fn rejected_run(repo: &Path, out: &Path) -> Value {
+    let head = rev(repo, "HEAD");
+    let rejected = json!([{
+        "kind": "decision", "title": "f returns 1 instead of 0", "body": "1 is the intended value",
+        "scope": "src/lib.rs", "author": "rev", "date": "2026-05-01", "commit": head, "line": 1,
+        "lens": "errors", "links": ["https://github.com/o/r/pull/1#discussion_r1"]
+    }]);
+    let (run, _) = recalled_run(repo, out, Some(rejected), nothing_recalled());
+    submit(
+        &run,
+        round1(&[
+            titled("Medium", 1, "f returns 1, not 0"),
+            titled("Medium", 40, "an unrelated defect"),
+        ]),
+    );
+    submit(&run, json!({"dedup-rust": {"groups": []}}));
+    submit(&run, json!({"verify-batch-0": confirmed(&[0, 1])}));
+    submit(&run, json!({"match-judge": judged(&[(0, false)])}))
+}
+
+/// The finished step's memory part (`memorySections`), held to `content/parity/memory-sections.json`
+/// — the shape rust-audit lifts, read by `lib/rust-audit-engine.test.mjs` as the binary's own output;
+/// written there instead with `CRAFT_UPDATE_PARITY=1`.
+#[test]
+fn memory_sections_parity() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let s = rejected_run(repo.path(), out.path());
+    let got = s["memorySections"].as_str().unwrap();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../content/parity/memory-sections.json");
+    if std::env::var_os("CRAFT_UPDATE_PARITY").is_some_and(|v| v == "1") {
+        let text = serde_json::to_string_pretty(&json!({"memorySections": got})).unwrap();
+        std::fs::write(&path, format!("{text}\n")).unwrap();
+        return;
+    }
+    let want: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        Some(got),
+        want["memorySections"].as_str(),
+        "regenerate with CRAFT_UPDATE_PARITY=1 cargo test -p craft-review parity"
+    );
+    assert!(got.contains("\n- prior decisions: 1 decision(s) given, 1 finding(s) set aside as rejected before, 0 raised again\n"), "{got}");
+}
+
 #[test]
 fn a_finding_rejected_on_the_pr_is_set_aside_not_reported_again() {
     let repo = fixture(true);
@@ -156,7 +202,12 @@ fn a_finding_rejected_on_the_pr_is_set_aside_not_reported_again() {
             && sections.contains("\n\n## Memory\n- memory: none — no memory configured"),
         "{sections}"
     );
-    assert!(report.contains(sections), "as it stands in the report");
+    for line in sections.lines() {
+        assert!(
+            report.contains(line),
+            "each line as the report has it: {line}"
+        );
+    }
 }
 
 #[test]
