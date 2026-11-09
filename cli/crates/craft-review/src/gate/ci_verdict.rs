@@ -100,6 +100,10 @@ pub(super) fn apply(acc: &mut Acc, v: &Verdict<'_>, short: &str) {
             e.check, e.command
         ));
     }
+    if !v.green.is_empty() || !v.red.is_empty() {
+        acc.parts
+            .push("no line seeds: CI results carry none".to_owned());
+    }
     for (s, why) in &v.silent {
         acc.notes.push(format!(
             "CI gave no {} signal for {short}: {why}",

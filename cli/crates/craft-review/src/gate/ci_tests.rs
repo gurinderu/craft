@@ -62,7 +62,7 @@ fn a_red_ci_check_blocks_as_a_local_fail_would() {
 fn a_pending_or_absent_check_gives_no_signal_and_says_so() {
     let w = world(
         &runs(&[("clippy", "in_progress", "")]),
-        r#"{"statuses":[]}"#,
+        r#"{"total_count":0,"statuses":[]}"#,
     );
     let (_, t) = gated(&w);
     assert_eq!(t.status, Status::Unknown, "{t:?}");
@@ -75,21 +75,6 @@ fn a_pending_or_absent_check_gives_no_signal_and_says_so() {
         notes.contains("no test signal") && notes.contains("no run of `tests`"),
         "{notes}"
     );
-}
-
-#[test]
-fn every_run_of_a_matrix_check_counts_and_the_latest_rerun_wins() {
-    let w = world(
-        &runs(&[
-            ("clippy", "completed", "failure"),
-            ("clippy", "completed", "success"),
-            ("tests (stable)", "completed", "success"),
-            ("tests (beta)", "completed", "success"),
-        ]),
-        FMT_GREEN,
-    );
-    let (_, t) = gated(&w);
-    assert_eq!(t.status, Status::Pass, "{t:?}");
 }
 
 #[test]

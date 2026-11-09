@@ -2,14 +2,16 @@
 //! ended with no compiler error (a private registry without a token, say), so the gate reads the
 //! reviewer's CI map (node #483) and what GitHub reports for the head. A green mapped check passes
 //! its signal "via CI"; a red one fails it, a Block like a local red; a pending or absent one gives
-//! none. An entry whose workflow changed since it was confirmed is skipped and the map named
-//! stale. No map, no gh, no auth or no network: the gate stays as it was, with a note.
+//! none. An entry one of whose files changed since it was confirmed is skipped and the map named
+//! stale. A working tree with uncommitted changes is not what CI built for its head, so CI is not
+//! read. No map, no gh, no auth or no network: the gate stays as it was, with a note.
 
 use super::check::{Acc, Cx};
 use super::ci_read::seen;
 use super::ci_verdict::{apply, unique, verdict};
 use crate::project::{self, CiEntry};
 
+const DIRTY: &str = "CI was not read: the working tree has uncommitted changes, so CI for HEAD does not cover it — the build signal stays unknown";
 const NO_MAP: &str = "no CI map in the review profile, so the build signal stays unknown — `craft init --propose` proposes one";
 
 /// Reads CI for the head and folds it into `acc`, whose build signal is unknown.
@@ -27,6 +29,15 @@ pub(super) fn from_ci(cx: &Cx<'_>, acc: &mut Acc) {
     }
     if fresh.is_empty() {
         return;
+    }
+    match crate::git::dirty(cx.top) {
+        Ok(false) => {}
+        Ok(true) => return acc.notes.push(DIRTY.to_owned()),
+        Err(e) => {
+            return acc
+                .notes
+                .push(format!("CI was not read: no tree status ({e})"));
+        }
     }
     let head = match crate::git::git(cx.top, &["rev-parse", "HEAD"]) {
         Ok(h) => h.trim().to_owned(),
