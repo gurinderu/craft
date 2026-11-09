@@ -14,7 +14,7 @@ use crate::state::Track;
 pub(super) const WF: &str = ".github/workflows/ci.yml";
 
 /// The workflow the world's CI map entries are found in.
-const MAPPED: &str = "jobs:\n  clippy:\n    steps:\n      - run: cargo clippy --all-targets -- -D warnings\n      - run: cargo test --locked\n      - run: cargo fmt --check\n";
+const MAPPED: &str = "jobs:\n  clippy:\n    steps:\n      - run: cargo clippy --all-targets -- -D warnings\n  tests:\n    steps:\n      - run: cargo test --locked\n  fmt:\n    steps:\n      - run: cargo fmt --check\n  lint:\n    steps:\n      - run: just lint\n";
 
 /// A cargo whose build is impossible: a registry without a token, no compiler message.
 pub(super) const UNBUILT: &str = r#"echo "$*" >> "${0%/*}/cargo-calls"

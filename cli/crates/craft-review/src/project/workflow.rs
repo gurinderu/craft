@@ -5,10 +5,11 @@
 //! places their indent finds — no dependency is taken for them. What it misreads (anchors, flow
 //! mappings) only costs a candidate, which the reviewer confirms in words before it is recorded.
 
-use super::shell::joined;
+use super::workflow_steps::{job_tolerant, runs};
 
 /// One job of a workflow: its id, its `name:` when it has one, whether a `matrix:` expands it,
-/// each command line of its steps' `run:`, and each local path a `uses: ./…` names, without `./`.
+/// each command line of its steps' `run:` whose failure fails it (none when it or its step
+/// continues on error), and each local path a `uses: ./…` names, without `./`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
     pub id: String,
@@ -18,12 +19,12 @@ pub struct Job {
     pub uses: Vec<String>,
 }
 
-fn indent(l: &str) -> usize {
+pub(super) fn indent(l: &str) -> usize {
     l.len() - l.trim_start().len()
 }
 
 /// Neither blank nor a comment.
-fn meaningful(l: &str) -> bool {
+pub(super) fn meaningful(l: &str) -> bool {
     let t = l.trim();
     !t.is_empty() && !t.starts_with('#')
 }
@@ -90,7 +91,11 @@ fn job(id: String, lines: &[&str]) -> Job {
         id,
         name,
         matrix,
-        runs: runs(lines),
+        runs: if job_tolerant(lines, at) {
+            Vec::new()
+        } else {
+            runs(lines)
+        },
         uses: local_uses(lines),
     }
 }
@@ -107,41 +112,8 @@ fn local_uses(lines: &[&str]) -> Vec<String> {
 }
 
 /// A line's column where its key starts, past a list item's `- `, and the text from there.
-fn step_key(l: &str) -> (usize, &str) {
+pub(super) fn step_key(l: &str) -> (usize, &str) {
     let t = l.trim_start();
     let rest = t.strip_prefix("- ").map_or(t, str::trim_start);
     (l.len() - rest.len(), rest)
-}
-
-/// Each command line of the `run:` keys among `lines`: an inline value as one line, a literal
-/// block (`|`) line by line with its `\` continuations joined, a folded one (`>`) as one line; an
-/// empty value (`defaults: run:`, a mapping) is none.
-fn runs(lines: &[&str]) -> Vec<String> {
-    let mut out = Vec::new();
-    for (i, l) in lines.iter().enumerate() {
-        let (col, rest) = step_key(l);
-        let Some(value) = rest.strip_prefix("run:").map(str::trim) else {
-            continue;
-        };
-        if value.is_empty() {
-            continue;
-        }
-        if !value.starts_with(['|', '>']) {
-            out.push(unquote(value).to_owned());
-            continue;
-        }
-        let block: Vec<&str> = lines
-            .iter()
-            .skip(i + 1)
-            .take_while(|b| b.trim().is_empty() || indent(b) > col)
-            .map(|b| b.trim())
-            .filter(|b| !b.is_empty() && !b.starts_with('#'))
-            .collect();
-        if value.starts_with('>') {
-            out.push(block.join(" "));
-        } else {
-            out.extend(joined(&block));
-        }
-    }
-    out
 }

@@ -28,6 +28,10 @@ pub enum CiError {
     )]
     LocalUses { check: String, uses: String },
     #[error(
+        "{check}: the check matches no job of {workflow} — name a job's `name:` (or its id), as GitHub reports it"
+    )]
+    NoJob { check: String, workflow: String },
+    #[error(
         "{check}: the command {command:?} is not found in a `run:` line of its job in {workflow} nor in any of the entry's sources — list the file that spells it"
     )]
     Unfound {
