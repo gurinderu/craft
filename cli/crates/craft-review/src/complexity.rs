@@ -1,6 +1,5 @@
-//! A metrics-or-nothing lens, as adversarial-review runs its complexity lens (realm @nick/craft,
-//! node #421; `dropComplexityUnlessIndexed`, `finderPrompt` and `COMBINED_METRIC_INSTR` in
-//! `src/adversarial-review.js`): an index warm-up beside the scouts finds whether a code-metrics
+//! A metrics-or-nothing lens, as the JS adversarial-review engine ran its complexity lens before it was
+//! retired (realm @nick/craft, nodes #421, #445): an index warm-up beside the scouts finds whether a code-metrics
 //! index covers the repository, and without one the plan drops the lens; each of its findings
 //! carries the numbers it rests on, read from the graph — the engine sets no cutoff, and neither does
 //! this —, and one carrying none is dropped; its verifier re-reads

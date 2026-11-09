@@ -33,7 +33,7 @@ pub enum CommentError {
     #[error("nothing was posted: {0}")]
     Refused(String),
     #[error(
-        "the run in {} was reviewed on a detached HEAD, so no branch names its pull request: name it with `--pr <number>` (cli-review: pr=<number>)",
+        "the run in {} was reviewed on a detached HEAD, so no branch names its pull request: name it with `--pr <number>` (review: pr=<number>)",
         .0.display()
     )]
     Detached(PathBuf),

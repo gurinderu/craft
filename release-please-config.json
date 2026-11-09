@@ -13,14 +13,10 @@
         { "type": "json", "path": ".codex-plugin/plugin.json", "jsonpath": "$.version" },
         { "type": "generic", "path": "src/review.js" },
         { "type": "generic", "path": "integrations/claude-code/workflows/review.js" },
-        { "type": "generic", "path": "src/adversarial-review.js" },
-        { "type": "generic", "path": "integrations/claude-code/workflows/adversarial-review.js" },
         { "type": "generic", "path": "src/rust-audit.js" },
         { "type": "generic", "path": "integrations/claude-code/workflows/rust-audit.js" },
         { "type": "generic", "path": "src/triage-findings.js" },
         { "type": "generic", "path": "integrations/claude-code/workflows/triage-findings.js" },
-        { "type": "generic", "path": "src/cli-review.js" },
-        { "type": "generic", "path": "integrations/claude-code/workflows/cli-review.js" },
         { "type": "toml", "path": "cli/Cargo.toml", "jsonpath": "$.workspace.package.version" },
         { "type": "toml", "path": "cli/Cargo.lock", "jsonpath": "$.package[?(!@.source)].version" }
       ]
