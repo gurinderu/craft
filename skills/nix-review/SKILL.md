@@ -10,12 +10,12 @@ The rubric for reviewing Nix changes: run the mechanical gate first, then read t
 the severity checklist, then issue a verdict. This is the knowledge; the `craft:nix-reviewer` agent
 applies it to an actual diff and reports back.
 
-**The review entry point is the `craft:nix-review` workflow** (`workflows/nix-review.js`): it
-scout-scales depth to the diff, fans out the lenses below, grounds findings in tool output, and
-adversarially verifies each one. This skill is the rubric the workflow and the `nix-reviewer`
-lens worker apply.
+**The review entry point is the `craft:review` workflow** (the craft CLI's review, driven from Claude Code):
+it sends each changed Nix file to the Nix profile, scout-scales depth to the diff, fans out the lenses below,
+grounds findings in tool output, and verifies each one. This skill is the rubric its Nix lenses and the
+`nix-reviewer` lens worker apply.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
-`node "<this skill's base directory>/../../lib/engine-source-map.mjs" nix-review workflow.js:<line>:<column>`
+`node "<this skill's base directory>/../../lib/engine-source-map.mjs" review workflow.js:<line>:<column>`
 gives it in the plugin's source.
 Once a workflow run has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:

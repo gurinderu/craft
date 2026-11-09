@@ -8,9 +8,10 @@ description: >-
 
 The rubric for reviewing Rust changes: run the mechanical gate first, then read the diff against the severity checklist, then issue a verdict. This is the knowledge; the `craft:rust-reviewer` agent applies it to an actual diff and reports back.
 
-**The review entry point is the `craft:rust-review` workflow** (`workflows/rust-review.js`): it scout-scales
-depth to the diff, fans out the lenses below, grounds findings in tool output, and adversarially
-verifies each one. This skill is the rubric the workflow and the `rust-reviewer` lens worker apply.
+**The review entry point is the `craft:review` workflow** (the craft CLI's review, driven from Claude Code): it
+sends each changed Rust file to the Rust profile, scout-scales depth to the diff, fans out the lenses below,
+grounds findings in tool output, and verifies each one. This skill is the rubric its Rust lenses and the
+`rust-reviewer` lens worker apply.
 
 The workflow recalls the project's active decisions, open questions and project rules for the diff's paths
 itself, on every launch; `priorDecisions` (the object argument, never a string, each record with
@@ -38,13 +39,13 @@ defect, or do not post — as `craft:addressing-findings` says (its doubtful fin
 ### Pre-PR gate
 
 Self-review runs **before** the PR opens, not after. Before `gh pr create` on a Rust change, run
-the `craft:rust-review` (or generic `craft:review`) workflow on the branch diff, then close the loop —
+the `craft:review` workflow on the branch diff, then close the loop —
 triage the findings (`triage-findings`), fix them (`addressing-findings`), and re-review until the
 verdict is **Approve** (or **Warning** with each remaining item justified in the PR body). Only
 then open the PR. A one-shot review whose findings never loop back into fixes is not a gate; the
 PR isn't ready until the loop is green.
 If the workflow fails with `at workflow.js:<line>:<column>`, that place is in the bundled engine:
-`node "<this skill's base directory>/../../lib/engine-source-map.mjs" rust-review workflow.js:<line>:<column>`
+`node "<this skill's base directory>/../../lib/engine-source-map.mjs" review workflow.js:<line>:<column>`
 gives it in the plugin's source.
 Once a workflow run has ended (completed, failed or stopped — not while you may still resume it),
 fold its real cost into the records it filed:
@@ -197,7 +198,7 @@ named, it stays here.
 
 ### Maintainability bar — presumption of block (strict mode)
 
-By default the maintainability items above are **LOW** (optional, never block). When the review is dispatched in **strict mode** (the `craft:rust-review` workflow's `strict` flag, or an explicit "harsh maintainability review" request), they invert to a **presumption of block**: each is treated as a blocker *unless the author has clearly justified it in the diff or brief*. In strict mode, Approve additionally requires:
+By default the maintainability items above are **LOW** (optional, never block). When the review is dispatched in **strict mode** (the `craft:review` workflow's `strict` flag, or an explicit "harsh maintainability review" request), they invert to a **presumption of block**: each is treated as a blocker *unless the author has clearly justified it in the diff or brief*. In strict mode, Approve additionally requires:
 
 - no structural regression (a previously cohesive module didn't become more coupled or harder to scan);
 - no obvious simplification missed (the code-judo check above came up empty);
@@ -233,8 +234,8 @@ others (higher recall than one broad pass):
 | intent | does the change do what the brief/spec says? | `specs` |
 
 The workflow runs additional context-dependent lenses the scout selects — `reconciler` (controller
-correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); `workflows/review.js`
-is the authoritative lens set.
+correctness; reads the language-agnostic `distributed-races` catalogue) and `negative-space` (breakage the diff enables in unchanged code); the Rust profile,
+`content/profiles/rust.json`, is the authoritative lens set.
 
 **The optional pass — off by default.** Three lenses are not part of the standard fan-out, because
 on the measured run they returned no High findings at all while producing the bulk of the
