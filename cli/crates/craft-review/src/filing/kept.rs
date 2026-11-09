@@ -29,6 +29,16 @@ pub struct Ctx {
     /// The engine's craft version the run is filed under, and the parent engine of a nested run.
     pub craft_version: String,
     pub via: String,
+    /// The run's identity as it ran, for a record filed after its working copy is gone: the
+    /// repository's shared git directory (the round chain's key, empty when the run knew none),
+    /// its branch (`None` on a detached `HEAD`) and whether it read uncommitted work. Optional, so
+    /// a filing kept before them reads as one that knows none until it is completed from the state.
+    #[serde(default)]
+    pub git_dir: String,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub dirty: bool,
 }
 
 impl Ctx {
@@ -43,6 +53,19 @@ impl Ctx {
             root: run.context.craft_root.clone(),
             craft_version: craft_version.into(),
             via: via.into(),
+            ..Self::default()
+        }
+        .known_as(run)
+    }
+
+    /// `self` with the run's identity read off its state.
+    #[must_use]
+    pub(super) fn known_as(self, run: &RunState) -> Self {
+        Self {
+            git_dir: run.chain.repo.clone(),
+            branch: run.chain.branch.clone(),
+            dirty: run.diff.dirty,
+            ..self
         }
     }
 }
