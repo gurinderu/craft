@@ -22,6 +22,12 @@ pub fn section(gate: &Gate) -> String {
         };
     }
     let mut out = String::from("## Gate\n\n");
+    if !gate.from.is_empty() {
+        out.push_str(&format!(
+            "Run once for the whole change by the launching run (`{}`), not by this one; its tool seeds on this run's files reached the lenses.\n\n",
+            gate.from
+        ));
+    }
     for t in &gate.tracks {
         let ran = if t.provenance.is_empty() {
             "nothing ran"

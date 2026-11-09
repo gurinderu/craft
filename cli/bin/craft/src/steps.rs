@@ -60,6 +60,11 @@ pub struct StartArgs {
     /// names the gate as skipped.
     #[arg(long)]
     pub no_gate: bool,
+    /// Take the gate `craft review gate` ran once for the whole change and kept in this directory,
+    /// rather than run one: its tool seeds on this run's files reach the lenses, and the report's
+    /// Gate section says where it came from. A result for another HEAD or merge-base is not used.
+    #[arg(long, conflicts_with = "no_gate")]
+    pub gate_from: Option<PathBuf>,
     /// The repository's own reviewing agents to run as extra lenses, each over the whole change:
     /// their names, separated by commas or spaces, or `off`. Absent, a light pass discovers them
     /// among the agents the session's project declares under `.claude/agents` (when `--cwd` is that
@@ -160,6 +165,20 @@ pub struct StatusArgs {
     pub run: PathBuf,
 }
 
+#[derive(Debug, clap::Args)]
+pub struct GateArgs {
+    /// The repository whose change is gated.
+    #[arg(long, default_value = ".")]
+    pub cwd: PathBuf,
+    /// What the changes are measured against; the merge-base with origin's default branch when
+    /// absent.
+    #[arg(long)]
+    pub base: Option<String>,
+    /// Where the tools' output is kept; a new directory under ~/.craft/runs/cli when absent.
+    #[arg(long)]
+    pub dir: Option<PathBuf>,
+}
+
 fn print(value: &Value) -> Result<ExitCode> {
     let mut out = std::io::stdout().lock();
     writeln!(out, "{}", serde_json::to_string(value)?)?;
@@ -233,6 +252,12 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
             .map(|p| json_input(p).map_err(|e| format!("{e:#}"))),
         sources: crate::init::sources_setup(),
         gate: (!args.no_gate).then(craft_review::gate::GateSetup::default),
+        gate_from: args
+            .gate_from
+            .as_deref()
+            .map(std::path::absolute)
+            .transpose()
+            .context("resolving --gate-from")?,
         extra_lenses: args.extra_lenses.clone(),
         session: None,
         unit_scope: args.unit_scope,
@@ -251,6 +276,20 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         )),
         None => print(&step),
     }
+}
+
+/// `craft review gate`: the mechanical gate alone, printed as one JSON value
+/// ([`craft_review::gate::alone::alone`]); a red gate is an outcome, not an error, so it exits 0.
+pub fn gate(args: &GateArgs) -> Result<ExitCode> {
+    let began = Instant::now();
+    let dir = match &args.dir {
+        Some(d) => d.clone(),
+        None => default_run_dir()?,
+    };
+    let dir = std::path::absolute(&dir).with_context(|| format!("resolving {}", dir.display()))?;
+    let setup = craft_review::gate::GateSetup::default();
+    let out = craft_review::gate::alone::alone(&args.cwd, args.base.as_deref(), &dir, &setup)?;
+    print(&stamped(out, began))
 }
 
 /// The harness session the host runs in, stamped on the run's telemetry.
