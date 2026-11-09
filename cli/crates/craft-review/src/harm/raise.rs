@@ -92,6 +92,9 @@ fn must_fix(c: &Claim) -> bool {
     ceiling(level) == Some("Critical")
 }
 
+/// The answer that names no level: `none` (or, from an older answer, null or nothing) confirms none.
+const NO_LEVEL: &str = "none";
+
 /// The level behaviour stated as intended never confirms.
 const INTENT_UNMET: &str = "intent-unmet";
 
@@ -109,7 +112,7 @@ pub(crate) fn panel_harm(f: &Value, votes: &[&Value]) -> Option<String> {
         .iter()
         .filter(|v| v.get("harmSupported").and_then(Value::as_bool) == Some(true))
         .filter_map(|v| {
-            let named = text(v, "confirmedHarmLevel")?;
+            let named = text(v, "confirmedHarmLevel").filter(|n| *n != NO_LEVEL)?;
             let intended = v.get("behaviourIntended").and_then(Value::as_bool) == Some(true);
             cs.iter()
                 .any(|c| c.level == named)

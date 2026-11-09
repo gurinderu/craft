@@ -263,7 +263,7 @@ fn a_mixed_diff_plans_each_profile_over_its_own_files_and_settles_one_pool() {
     let s = submit(
         &run,
         json!({"verify-0-v0": verdict(false), "verify-0-v1": verdict(false),
-               "verify-batch-0": {"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": null, "reason": "seen"}]}}),
+               "verify-batch-0": {"verdicts": [{"index": 0, "refuted": false, "citedLineMatches": true, "reachable": true, "premiseSupported": true, "behaviourIntended": false, "harmSupported": false, "confirmedHarmLevel": "none", "reason": "seen"}]}}),
     );
     assert_eq!(
         s["verdict"],
