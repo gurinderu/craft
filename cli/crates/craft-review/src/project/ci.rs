@@ -2,8 +2,9 @@
 //! the signal it carries, the command line that coverage rests on, the workflow that runs it, the
 //! recipes and local actions the command goes through, and each file's hash when it was confirmed.
 //! The reviewer confirms each entry in words (node #483); a bare check name is never coverage, so
-//! an entry's command must name the signal's cargo command itself. The gate reads the map only when
-//! its own build is impossible, and skips an entry one of whose files changed since.
+//! an entry's command must name the signal's cargo command itself and be found in its job or one of
+//! its sources. The gate reads the map only when its own build is impossible, and skips an entry
+//! one of whose files changed since or whose command is no longer found in them.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -12,8 +13,8 @@ use serde::{Deserialize, Serialize};
 
 pub use super::ci_error::CiError;
 pub use super::ci_files::local_file;
-use super::ci_files::{changed, hashes, local_uses_listed, relative};
-use super::shell::signals_in;
+use super::ci_files::{changed, hashes, relative};
+use super::ci_ground::grounded;
 pub use super::signal::Signal;
 
 /// At most this many entries.
@@ -35,7 +36,7 @@ pub struct CiEntry {
     #[serde(default)]
     pub sources: Vec<String>,
     /// The SHA-256, hex, of each file the coverage rests on when it was confirmed — the workflow,
-    /// each source, and the cargo config when there was one — by path.
+    /// each source, and each cargo config its jobs' directories read — by path.
     pub hashes: BTreeMap<String, String>,
 }
 
@@ -54,9 +55,10 @@ struct Given {
 }
 
 impl CiEntry {
-    /// An entry from its JSON, then checked: a fresh confirmation's files are hashed under `top`
-    /// now, after each local `uses:` of its workflow is found among its sources; a held one keeps
-    /// the hashes it carries.
+    /// An entry from its JSON, then checked: a fresh confirmation's command and local `uses:` are
+    /// found in its workflow and sources under `top`, and its files hashed now; a held one keeps
+    /// the hashes it carries and is found the same while its files are the ones hashed — once one
+    /// changed it is stale, and [`Self::fresh`] finds it again before the gate trusts it.
     ///
     /// # Errors
     /// Why it is not one, a line for the reviewer.
@@ -65,78 +67,60 @@ impl CiEntry {
             given: json.to_owned(),
             why: e.to_string(),
         })?;
-        let check = g.check.trim().to_owned();
-        let recorded = match g.hashes {
-            Some(h) => h,
-            None => {
-                relative(&g.workflow)?;
-                g.sources.iter().try_for_each(|s| relative(s))?;
-                local_uses_listed(top, &g.workflow, &check, &g.sources)?;
-                let files: Vec<&str> = std::iter::once(g.workflow.as_str())
-                    .chain(g.sources.iter().map(String::as_str))
-                    .collect();
-                hashes(top, &files)?
-            }
-        };
-        let e = Self {
-            check,
+        let held = g.hashes.is_some();
+        let mut e = Self {
+            check: g.check.trim().to_owned(),
             signal: g.signal,
             command: g.command.trim().into(),
             workflow: g.workflow,
             sources: g.sources,
-            hashes: recorded,
+            hashes: g.hashes.unwrap_or_default(),
         };
-        e.check().map(|()| e)
+        if !held {
+            relative(&e.workflow)?;
+            e.sources.iter().try_for_each(|s| relative(s))?;
+            e.lines()?;
+            e.grounded(top)?;
+            let files: Vec<&str> = std::iter::once(e.workflow.as_str())
+                .chain(e.sources.iter().map(String::as_str))
+                .collect();
+            e.hashes = hashes(top, &e.workflow, &files)?;
+        }
+        e.check()?;
+        if held && e.changed(top).is_empty() {
+            e.grounded(top)?;
+        }
+        Ok(e)
     }
 
-    /// Whether the entry is one the gate can read: its files inside the repository, each hashed.
-    ///
-    /// # Errors
-    /// Why not, naming the check.
-    pub fn check(&self) -> Result<(), CiError> {
-        let at = &self.check;
-        let line = |s: &str| !s.is_empty() && s.len() <= 300 && !s.contains(['\n', '\r']);
-        if !line(at) {
-            return Err(CiError::Check(at.clone()));
-        }
-        if !line(&self.command) || !signals_in(&self.command).contains(&self.signal) {
-            return Err(CiError::Command {
-                check: at.clone(),
-                command: self.command.clone(),
-                signal: self.signal.as_str(),
-            });
-        }
-        self.hashes.keys().try_for_each(|p| relative(p))?;
-        let hex = |h: &String| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit());
-        let files = std::iter::once(&self.workflow).chain(&self.sources);
-        for f in files {
-            relative(f)?;
-            if !self.hashes.get(f).is_some_and(hex) {
-                return Err(CiError::Hash {
-                    check: at.clone(),
-                    path: f.clone(),
-                });
-            }
-        }
-        match self.hashes.iter().find(|(_, h)| !hex(h)) {
-            Some((p, _)) => Err(CiError::Hash {
-                check: at.clone(),
-                path: p.clone(),
-            }),
-            None => Ok(()),
-        }
+    /// Whether its command and local `uses:` are found in its workflow and sources under `top`.
+    fn grounded(&self, top: &Path) -> Result<(), CiError> {
+        grounded(
+            top,
+            &self.workflow,
+            &self.check,
+            &self.command,
+            &self.sources,
+        )
     }
 
     /// The files under `top` that are no longer the ones the entry was confirmed from, a cargo
-    /// config that appeared since included.
+    /// config its jobs read that appeared since included.
     #[must_use]
     pub fn changed(&self, top: &Path) -> Vec<String> {
-        changed(top, &self.hashes)
+        changed(top, &self.workflow, &self.hashes)
     }
 
-    /// Whether every file the entry rests on is still the one it was confirmed from.
+    /// Why the entry's command or local `uses:` is not found in its files under `top`, if so.
+    #[must_use]
+    pub fn unfound(&self, top: &Path) -> Option<String> {
+        self.grounded(top).err().map(|e| e.to_string())
+    }
+
+    /// Whether every file the entry rests on is still the one it was confirmed from, and its
+    /// command and local `uses:` are found in them.
     #[must_use]
     pub fn fresh(&self, top: &Path) -> bool {
-        self.changed(top).is_empty()
+        self.changed(top).is_empty() && self.unfound(top).is_none()
     }
 }

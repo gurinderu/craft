@@ -2,9 +2,9 @@
 //! ended with no compiler error (a private registry without a token, say), so the gate reads the
 //! reviewer's CI map (node #483) and what GitHub reports for the head. A green mapped check passes
 //! its signal "via CI"; a red one fails it, a Block like a local red; a pending or absent one gives
-//! none. An entry one of whose files changed since it was confirmed is skipped and the map named
-//! stale. A working tree with uncommitted changes is not what CI built for its head, so CI is not
-//! read. No map, no gh, no auth or no network: the gate stays as it was, with a note.
+//! none. An entry one of whose files changed since it was confirmed, or whose command is no longer
+//! found in them, is skipped and the map named stale. A working tree with uncommitted changes is
+//! not what CI built for its head, so CI is not read. No map, no gh, no auth or no network: the gate stays as it was, with a note.
 
 use super::check::{Acc, Cx};
 use super::ci_read::seen;
@@ -68,7 +68,16 @@ fn map(projects: &std::path::Path, top: &std::path::Path) -> Result<Vec<CiEntry>
 }
 
 fn stale_note(stale: &[&CiEntry], top: &std::path::Path) -> String {
-    let changed: Vec<String> = stale.iter().flat_map(|e| e.changed(top)).collect();
+    let changed: Vec<String> = stale
+        .iter()
+        .flat_map(|e| {
+            let files = e.changed(top);
+            match (files.is_empty(), e.unfound(top)) {
+                (true, Some(why)) => vec![format!("the entry of {} ({why})", e.check)],
+                _ => files,
+            }
+        })
+        .collect();
     let files = unique(changed.iter().map(String::as_str));
     let checks = unique(stale.iter().map(|e| e.check.as_str()));
     format!(

@@ -107,9 +107,12 @@ written only on the reviewer's word.
   recipe you could not follow to a cargo command, is never coverage: leave it out and say so.
 - **List every file the command goes through** as the entry's `sources`, repository-relative:
   the `justfile`, the `Makefile`, the `xtask`'s source, the script, and each local action or
-  reusable workflow the job runs (`uses: ./…` — a composite action's `action.yml`). A cargo alias
-  lives in `.cargo/config.toml`, which is hashed on its own whenever it exists. An entry whose
-  job runs a local `uses:` it does not list is refused.
+  reusable workflow the job runs (`uses: ./…` — a composite action's `action.yml`). The command
+  must be found, whitespace aside, in a `run:` line of the check's job or in a line of one of
+  these sources: a command quoted from a recipe with that recipe left out of `sources` is
+  refused. A cargo alias lives in a `.cargo/config.toml` (or `.cargo/config`): the root's and
+  each one on the way from a job's `working-directory:` up to the root are hashed on their own
+  whenever they exist. An entry whose job runs a local `uses:` it does not list is refused.
 - **Matrix jobs**: GitHub reports one check per combination, `<check> (<values>)`; the entry's
   `check` is the job's name, and every run named `<check> (…)` must be green for its signal.
   A `name:` holding `${{ … }}` is reported expanded — ask for the name the PR's checks show.
@@ -118,8 +121,9 @@ written only on the reviewer's word.
   and its line). They confirm, drop, or correct each; add any check you missed.
 
 The profile also keeps the hash of each file an entry rests on — the workflow, each source, the
-cargo config —, taken at the write: when any of them changes, the gate skips that entry and says
-the CI map is stale, naming the file — come back here. The gate reads CI only for a working tree
+cargo configs —, taken at the write: when any of them changes or a new cargo config appears on a
+job's path, or the entry's command is no longer found in its files, the gate skips that entry and
+says the CI map is stale, naming the file — come back here. The gate reads CI only for a working tree
 with no uncommitted changes to tracked files: CI built the head's commit, not your edits.
 
 ## 4. Write
@@ -138,9 +142,11 @@ candidate's `ci` as printed, or the same JSON with the command line you quoted f
 and the recipe files in `sources`; its files are hashed at the write. An entry already held is
 passed back exactly as `ci` prints it, `hashes` included: those are kept as recorded, so a
 stale entry stays stale until you confirm it again — then pass it without `hashes`, read anew.
-An entry whose command does not run its signal's cargo command, whose workflow or a source is
-missing, whose job runs a local `uses:` it does not list, or whose `hashes` miss one of its
-files, is refused and nothing is written.
+A held entry whose files are unchanged is checked as a fresh one is, so an edited one is not kept.
+An entry whose command does not run its signal's cargo command, or is found neither in its job's
+`run:` lines nor in a source it lists, whose workflow or a source is missing, whose job runs a
+local `uses:` it does not list, or whose `hashes` miss one of its files, is refused and nothing
+is written.
 At most 8; a name is letters, digits, `.`, `_` or `-`. A confirmed memory record goes in as its
 `point`, as printed. A refused point is named on stderr and nothing is written; so is a profile
 written by a craft of another format. Report the file's path, the points and the CI map entries written.
