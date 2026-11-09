@@ -197,9 +197,14 @@ fn no_gate_runs_no_tool_on_the_branch_and_says_so() {
 }
 
 /// A fetched binary over the fixture: `review start --record`, the harness naming `harness` as its
-/// plugin root, then the scout's answer submitted with `submit_root` as `--craft-root` when given;
-/// the root the run's telemetry keeps for its writes after each.
-fn filing_roots(harness: Option<&Path>, submit_root: Option<&Path>) -> (Value, Value) {
+/// plugin root and `start_root` as `--record-root` when given, then the scout's answer submitted
+/// with `submit_root` as `--record-root` when given;
+/// the root the run's telemetry keeps for its writes after each, and the root the prompts name.
+fn filing_roots(
+    harness: Option<&Path>,
+    start_root: Option<&Path>,
+    submit_root: Option<&Path>,
+) -> (Value, Value, Value) {
     let tmp = tempfile::tempdir().unwrap();
     let code = tmp.path().join("repo");
     std::fs::create_dir_all(&code).unwrap();
@@ -213,7 +218,7 @@ fn filing_roots(harness: Option<&Path>, submit_root: Option<&Path>) -> (Value, V
             None => cmd.env_remove("CLAUDE_PLUGIN_ROOT"),
         };
         if let Some(r) = root {
-            cmd.arg("--craft-root").arg(r);
+            cmd.arg("--record-root").arg(r);
         }
         let out = cmd.output().unwrap();
         assert!(
@@ -238,8 +243,11 @@ fn filing_roots(harness: Option<&Path>, submit_root: Option<&Path>) -> (Value, V
             "--run-dir",
             &run_dir,
         ],
-        None,
+        start_root,
     );
+    let state = std::fs::read_to_string(run.join("state.json")).unwrap();
+    let prompts_root =
+        serde_json::from_str::<Value>(&state).unwrap()["context"]["craftRoot"].clone();
     let answers = tmp.path().join("answers.json");
     std::fs::write(
         &answers,
@@ -252,7 +260,7 @@ fn filing_roots(harness: Option<&Path>, submit_root: Option<&Path>) -> (Value, V
         &["review", "submit", "--run", &run_dir, "--answers", &answers],
         submit_root,
     );
-    (started, submitted)
+    (started, submitted, prompts_root)
 }
 
 /// A plugin root as an installed copy holds it, with the run-record writer when `writer`.
@@ -271,9 +279,9 @@ fn a_binary_given_no_root_files_through_the_harness_plugin_when_it_holds_the_wri
     plugin_with_writer(&held, true);
     plugin_with_writer(&bare, false);
     let held_str = Value::from(held.display().to_string());
-    assert_eq!(filing_roots(Some(&held), None).0, held_str);
+    assert_eq!(filing_roots(Some(&held), None, None).0, held_str);
     assert_eq!(
-        filing_roots(Some(&bare), None).0,
+        filing_roots(Some(&bare), None, None).0,
         Value::Null,
         "no writer there"
     );
@@ -284,7 +292,7 @@ fn a_run_started_with_no_root_takes_the_one_a_later_submit_names_and_keeps_it() 
     let tmp = tempfile::tempdir().unwrap();
     let held = tmp.path().join("held");
     plugin_with_writer(&held, true);
-    let (started, submitted) = filing_roots(None, Some(&held));
+    let (started, submitted, _) = filing_roots(None, None, Some(&held));
     assert_eq!(
         (started, submitted),
         (Value::Null, Value::from(held.display().to_string()))
@@ -305,4 +313,17 @@ fn the_usage_limit_help_points_a_stopped_run_at_resume() {
         .unwrap();
     assert!(!limit.contains("without it resumes"), "{limit}");
     assert!(limit.contains("resets"), "{limit}");
+}
+
+#[test]
+fn a_record_root_files_the_run_and_names_nothing_in_the_prompts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let held = tmp.path().join("held");
+    plugin_with_writer(&held, true);
+    let (started, _, prompts_root) = filing_roots(None, Some(&held), None);
+    assert_eq!(
+        (started, prompts_root),
+        (Value::from(held.display().to_string()), Value::Null),
+        "filed through it; the prompts keep the binary's own root (none above a fetched one)"
+    );
 }
