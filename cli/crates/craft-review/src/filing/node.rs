@@ -1,6 +1,6 @@
 //! The real write: `node <root>/lib/cli-review-file.mjs <command> --input <file>`, run in the
-//! reviewed repository, the request in a file of the run's `filing/` directory and the answer the
-//! last line the adapter printed. Bounded as a gate tool is ([`crate::gate::runner`]): a hung writer
+//! run's `filing/` directory, which holds the request, the answer the last line the adapter
+//! printed. Bounded as a gate tool is ([`crate::gate::runner`]): a hung writer
 //! is killed and the review goes on without its record.
 
 use std::path::Path;
@@ -12,7 +12,7 @@ use super::wire::{Call, WriteError, Writer};
 use crate::gate::runner::{Ran, Runner};
 
 /// The adapter, inside craft's plugin root.
-const ADAPTER: &str = "lib/cli-review-file.mjs";
+pub(super) const ADAPTER: &str = "lib/cli-review-file.mjs";
 /// How long one write may take: craft-log-run reads git and the store, nothing slower.
 const BUDGET: Duration = Duration::from_secs(60);
 
@@ -22,20 +22,27 @@ pub struct NodeWriter;
 
 impl Writer for NodeWriter {
     fn write(&self, call: &Call<'_>) -> Result<Value, WriteError> {
-        let dir = call.run.join("filing");
-        let input = dir.join(format!("{}.json", call.command));
-        std::fs::create_dir_all(&dir)
-            .and_then(|()| std::fs::write(&input, call.request.to_string()))
-            .map_err(|e| WriteError::Broken(format!("writing {}: {e}", input.display())))?;
-        let adapter = Path::new(call.root).join(ADAPTER);
-        let (adapter, input) = (adapter.display().to_string(), input.display().to_string());
-        let ran = Runner::new(BUDGET, None, dir).run(
-            Path::new(call.repo),
-            "node",
-            &[&adapter, call.command, "--input", &input],
-        );
-        answer(ran)
+        run_writer(call, "node")
     }
+}
+
+/// One write through `program` over the adapter, run in the run's `filing/` directory: the
+/// reviewed repository is named in the request, and a run filed again after its worktree was
+/// removed still has somewhere to run.
+fn run_writer(call: &Call<'_>, program: &str) -> Result<Value, WriteError> {
+    let dir = call.run.join("filing");
+    let input = dir.join(format!("{}.json", call.command));
+    std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(&input, call.request.to_string()))
+        .map_err(|e| WriteError::Broken(format!("writing {}: {e}", input.display())))?;
+    let adapter = Path::new(call.root).join(ADAPTER);
+    let (adapter, input) = (adapter.display().to_string(), input.display().to_string());
+    let ran = Runner::new(BUDGET, None, dir.clone()).run(
+        &dir,
+        program,
+        &[&adapter, call.command, "--input", &input],
+    );
+    answer(ran)
 }
 
 /// The adapter's answer from what running it came to.
@@ -68,6 +75,29 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// A writer run as `sh` over a shell script at the adapter's place, which answers with the
+    /// directory it ran in.
+    #[test]
+    fn the_writer_runs_in_the_runs_filing_directory_whatever_became_of_the_reviewed_repo() {
+        let (root, run) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        std::fs::create_dir_all(root.path().join("lib")).unwrap();
+        std::fs::write(
+            root.path().join(ADAPTER),
+            "printf '{\"ok\":true,\"cwd\":\"%s\"}\\n' \"$(pwd -P)\"\n",
+        )
+        .unwrap();
+        let root_str = root.path().display().to_string();
+        let call = Call {
+            run: run.path(),
+            root: &root_str,
+            command: "finalize",
+            request: &json!({"repo": "/gone/worktree"}),
+        };
+        let got = run_writer(&call, "sh").unwrap();
+        let filing = run.path().join("filing").canonicalize().unwrap();
+        assert_eq!(got["cwd"], json!(filing.display().to_string()));
+    }
 
     #[test]
     fn the_answer_is_the_last_line_whatever_the_logger_printed_before_it() {
