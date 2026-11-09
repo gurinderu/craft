@@ -76,6 +76,16 @@ pub(super) struct RecordAsked<'a> {
     pub(super) output_tokens: Option<u64>,
 }
 
+/// What a finished run's publication after the fact amends in its filed record.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PublicationAsked<'a> {
+    #[serde(flatten)]
+    pub(super) common: Common<'a>,
+    pub(super) step: &'a Value,
+    pub(super) record_file: &'a str,
+}
+
 /// What the adapter answered the record: whether it landed, and the logger's warning or failure.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -91,7 +101,7 @@ pub(super) struct RecordDone {
 pub struct Call<'a> {
     pub run: &'a Path,
     pub root: &'a str,
-    /// `checkpoint` or `finalize`.
+    /// `checkpoint`, `finalize` or `publication`.
     pub command: &'a str,
     pub request: &'a Value,
 }

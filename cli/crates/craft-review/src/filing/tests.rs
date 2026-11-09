@@ -495,3 +495,119 @@ fn a_resume_whose_first_step_finishes_its_new_segment_names_its_own_record() {
         (json!("/store/r.json"), None)
     );
 }
+
+/// A run opened and finished through `w`, its record filed or not as the script says.
+fn finished_run(w: &Fake) -> tempfile::TempDir {
+    let run = tempfile::tempdir().unwrap();
+    open(run.path(), ctx(), "s1", &pending("scout", 1), w);
+    submitted(run.path(), &finished(9), &host(3), Vec::new(), w).unwrap();
+    run
+}
+
+fn published() -> Value {
+    let mut step = finished(20);
+    step["prComments"] = json!({"pr": 7, "posted": 1});
+    step["sorting"] = json!({"defect": 1, "doubtful": 0, "findings": []});
+    step
+}
+
+#[test]
+fn a_publication_after_the_fact_amends_the_filed_record_and_claims_no_cost() {
+    let w = Fake::default();
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    assert_eq!(w.commands().last().unwrap(), "publication");
+    let req = w.request(w.commands().len() - 1);
+    assert_eq!(
+        (&req["recordFile"], &req["step"]["prComments"]["posted"]),
+        (&json!("/store/r.json"), &json!(1))
+    );
+    assert_eq!(
+        (&said["lost"], &said["refiledFile"], &said["recordFile"]),
+        (&json!([]), &json!("/store/r.json"), &Value::Null),
+        "{said}"
+    );
+    let kept = kept::load(run.path()).unwrap();
+    assert_eq!(kept.finished.unwrap()["prComments"]["pr"], json!(7));
+}
+
+#[test]
+fn a_publication_over_a_record_that_never_landed_files_it_as_first_sent_then_amends_it() {
+    let w = Fake::answering(vec![(
+        "finalize",
+        Ok(json!({"ok": false, "reason": "store unwritable", "file": ""})),
+    )]);
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    let n = w.commands().len();
+    assert_eq!(w.commands()[n - 2..], ["finalize", "publication"]);
+    let refile = w.request(n - 2);
+    // The payload the first attempt sent, so the store's proof knows an attempt that did land.
+    assert_eq!(
+        (
+            &refile["retry"],
+            &refile["step"],
+            &refile["step"].get("prComments")
+        ),
+        (&json!(true), &finished(9), &None)
+    );
+    assert_eq!(w.request(n - 1)["recordFile"], json!("/store/r.json"));
+    assert_eq!(
+        (&said["record"], &said["lost"]),
+        (&json!("filed"), &json!([])),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_publication_whose_record_still_does_not_land_is_said_and_keeps_the_first_payload() {
+    let failed = || Ok(json!({"ok": false, "reason": "store unwritable", "file": ""}));
+    let w = Fake::answering(vec![("finalize", failed()), ("finalize", failed())]);
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    assert!(!w.commands().contains(&"publication".to_owned()));
+    let lost = said["lost"].to_string();
+    assert!(
+        lost.contains("the publication in the run record — the record itself is not filed"),
+        "{lost}"
+    );
+    assert_eq!(
+        kept::load(run.path()).unwrap().finished,
+        Some(finished(9)),
+        "a later re-file sends what the first did"
+    );
+}
+
+#[test]
+fn a_publication_that_does_not_land_is_said_and_a_run_filing_nothing_files_nothing() {
+    let w = Fake::answering(vec![(
+        "publication",
+        Ok(json!({"ok": false, "reason": "record not readable", "file": ""})),
+    )]);
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    assert_eq!(
+        said["lost"],
+        json!(["the publication in the run record — record not readable"])
+    );
+    let bare = tempfile::tempdir().unwrap();
+    assert_eq!(republished(bare.path(), &published(), &w), None);
+}
+
+#[test]
+fn reviewer_choices_a_publication_dropped_are_said() {
+    let w = Fake::answering(vec![(
+        "publication",
+        Ok(
+            json!({"ok": true, "reason": "dropped the choices of doubtful findings no longer listed: 3 (outside @ c.rs:1): defect", "file": "/store/r.json"}),
+        ),
+    )]);
+    let run = finished_run(&w);
+    let said = republished(run.path(), &published(), &w).unwrap();
+    assert_eq!(
+        said["lost"],
+        json!([
+            "the reviewer's sorting choices (the publication itself landed) — dropped the choices of doubtful findings no longer listed: 3 (outside @ c.rs:1): defect"
+        ])
+    );
+}
