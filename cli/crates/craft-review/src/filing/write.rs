@@ -28,7 +28,6 @@ fn send(
     w.write(&Call {
         run,
         root,
-        repo: &filing.ctx.repo,
         command,
         request,
     })

@@ -100,6 +100,11 @@ pub struct StartArgs {
     /// The parent engine a nested run's record is filed under.
     #[arg(long, requires = "record")]
     pub via: Option<String>,
+    /// The plugin root the run's telemetry is filed through, when it is not the one the prompts
+    /// name (`--craft-root`, else the one above the binary): the host's plugin, whose record writer
+    /// files the run. It names nothing in the prompts.
+    #[arg(long, requires = "record")]
+    pub record_root: Option<PathBuf>,
 }
 
 /// How deep a review goes.
@@ -123,8 +128,8 @@ pub struct SubmitArgs {
     #[arg(long)]
     pub degraded: Vec<String>,
     /// The account's usage limit, as an agent's error or short answer said it: the run keeps the
-    /// answers that came in and stops, INCOMPLETE, with its unanswered tasks held; a later submit
-    /// without it resumes the run once the limit resets.
+    /// answers that came in and stops, INCOMPLETE, with its unanswered tasks held; once the limit
+    /// resets, `--resume` goes on with the run.
     #[arg(long)]
     pub limit: Option<String>,
     /// The host resumes a run it lost (a stop it could not report, an interrupted host): an answer
@@ -141,6 +146,11 @@ pub struct SubmitArgs {
     /// For the run's telemetry: the output tokens the host's run has spent so far.
     #[arg(long)]
     pub output_tokens: Option<u64>,
+    /// The plugin root the run's telemetry is filed through, for a run whose telemetry knows none
+    /// that holds the record writer (started with none known, or its own uninstalled): its writes
+    /// go through it from now on. It names nothing in the prompts.
+    #[arg(long)]
+    pub record_root: Option<PathBuf>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -233,7 +243,12 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
     };
     let step = stamped(step::start(&opts)?, began);
     match &args.record {
-        Some(version) => print(&opened(&opts.run_dir, version, args.via.as_deref(), step)),
+        Some(version) => print(&opened(
+            &opts.run_dir,
+            version,
+            (args.via.as_deref(), args.record_root.as_deref()),
+            step,
+        )),
         None => print(&step),
     }
 }
@@ -244,11 +259,21 @@ fn session() -> String {
 }
 
 /// The started `step` with its telemetry opened: the start checkpoint written, and the record when
-/// the run ended at once.
-fn opened(run: &Path, version: &str, via: Option<&str>, step: Value) -> Value {
+/// the run ended at once. It files through `record_root` when that holds the record writer, else
+/// through the root the prompts name, else through one found ([`filing_root`]).
+fn opened(
+    run: &Path,
+    version: &str,
+    (via, record_root): (Option<&str>, Option<&Path>),
+    step: Value,
+) -> Value {
     let filing = match craft_review::state::load(run) {
         Ok(state) => {
-            let ctx = filing::Ctx::of(&state, version, via.unwrap_or_default());
+            let mut ctx = filing::Ctx::of(&state, version, via.unwrap_or_default());
+            let given = record_root.and_then(|r| std::path::absolute(r).ok());
+            ctx.root = filing::found_root([given])
+                .or(ctx.root)
+                .or_else(|| filing_root(None));
             filing::open(run, ctx, &session(), &step, &filing::NodeWriter)
         }
         Err(e) => {
@@ -256,6 +281,15 @@ fn opened(run: &Path, version: &str, via: Option<&str>, step: Value) -> Value {
         }
     };
     filing::with_filing(step, filing)
+}
+
+/// Where the run's telemetry is filed through when the run knows no plugin root: the one `given`,
+/// the plugin root above the binary, else the one the harness names (`CLAUDE_PLUGIN_ROOT`) — the
+/// first that holds the record writer; `None`, and nothing can be filed.
+fn filing_root(given: Option<&Path>) -> Option<String> {
+    let harness = std::env::var_os("CLAUDE_PLUGIN_ROOT").map(PathBuf::from);
+    let given = given.and_then(|g| std::path::absolute(g).ok());
+    filing::found_root([given, find_craft_root(), harness])
 }
 
 /// A JSON value the host passes, as a file or `-` for stdin.
@@ -282,6 +316,9 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
+    // A run started with no plugin root known, or whose own was uninstalled, files through one
+    // found now, kept for every later write: a resume re-files a lost record through it.
+    filing::adopt(&run, filing_root(args.record_root.as_deref()).as_deref());
     // Before anything else a resume does — even one refused below — the records of the run's
     // stopped parts that did not land are filed again; a finished run whose own record did not land
     // is filed again rather than refused.

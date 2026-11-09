@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+#[cfg(test)]
+mod tests;
+
 /// How often a running tool is checked for having exited.
 const POLL: Duration = Duration::from_millis(50);
 
@@ -18,7 +21,7 @@ const POLL: Duration = Duration::from_millis(50);
 pub(crate) enum Ran {
     /// It exited: its status (`None` killed by a signal), its stdout and its stderr.
     Exited { ok: bool, out: String, err: String },
-    /// No such program on the PATH.
+    /// No such program on the PATH (a working directory that is gone is [`Ran::Broken`]).
     Missing,
     /// The budget ran out before it exited: after how long it ran.
     TimedOut(Duration),
@@ -96,10 +99,17 @@ impl Runner {
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
         cmd.spawn().map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                Spawn::Missing
-            } else {
+            // A working directory that is gone fails the spawn as NotFound too: that is no
+            // missing program, and saying so would send its reader after the wrong cause.
+            if e.kind() != std::io::ErrorKind::NotFound {
                 Spawn::Other(format!("{program} could not start: {e}"))
+            } else if !cwd.is_dir() {
+                Spawn::Other(format!(
+                    "{program} could not start: its working directory {} does not exist",
+                    cwd.display()
+                ))
+            } else {
+                Spawn::Missing
             }
         })
     }
