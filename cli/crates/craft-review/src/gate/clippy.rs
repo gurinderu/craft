@@ -8,7 +8,8 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::Status;
-use super::check::{Acc, Cx, Seed, last_line};
+use super::cause::cargo_why;
+use super::check::{Acc, Cx, Seed};
 use super::lock::Lockfiles;
 
 /// A package clippy lints: its manifest, repository-relative, and its name when it is linted alone
@@ -184,7 +185,7 @@ pub(super) fn gate_check(cx: &Cx<'_>, acc: &mut Acc, package: &Package) -> Statu
         acc.parts.push(format!("{label}: did not finish"));
         acc.notes.push(format!(
             "{label} exited non-zero with no compiler error — the build signal is unknown: {}",
-            last_line(&err)
+            cargo_why(&err)
         ));
         return Status::Unknown;
     }

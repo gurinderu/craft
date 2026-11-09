@@ -19,6 +19,7 @@ use serde_json::Value;
 
 use crate::coverage::Exit;
 
+mod cause;
 mod check;
 mod clippy;
 pub(crate) mod lines;
