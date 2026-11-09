@@ -116,17 +116,14 @@ pub struct Filing {
     pub finished: Option<Value>,
     #[serde(default)]
     pub attempts: u32,
-}
-
-/// What the host says on a submit beside its answers.
-#[derive(Debug, Clone, Default)]
-pub struct Host {
-    /// The task agents it has dispatched so far, and the output tokens its run has spent.
-    pub agents: Option<u64>,
-    pub output_tokens: Option<u64>,
-    /// It resumes the run (`--resume`): a new segment, filed apart, as a new host run files its own.
-    pub resume: bool,
-    pub session: String,
+    /// What the writes after the segment's last step lost, `<what> — <why>`, so a host that lost
+    /// that step reads why from `status`.
+    #[serde(default)]
+    pub lost: Vec<String>,
+    /// Stopped segments of the run whose record has not landed, each kept whole — its finished
+    /// step, steps and directory — so it is sent again unchanged on every resume until it does.
+    #[serde(default)]
+    pub pending: Vec<Filing>,
 }
 
 pub(super) fn load(run: &Path) -> Option<Filing> {

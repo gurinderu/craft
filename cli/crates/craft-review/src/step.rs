@@ -441,8 +441,9 @@ enum Hold {
     Every,
 }
 
-/// [`submit`] with what the host `said`. A stopped run is resumed by a submit without a limit: its
-/// held tasks are handed out again, and nothing is read for them. A resume — of a stopped run, or
+/// [`submit`] with what the host `said`. A stopped run is resumed by a submit without a limit —
+/// `--resume`, as its stop says; the binary refuses a plain one for a run that files its telemetry
+/// (`bin/craft`, `refuse_folded`) — its held tasks handed out again, and nothing read for them. A resume — of a stopped run, or
 /// `said.resume` — goes on only over the tree the run started on ([`crate::resume`]).
 ///
 /// # Errors

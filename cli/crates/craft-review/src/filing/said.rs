@@ -7,16 +7,20 @@ use serde_json::{Value, json};
 use super::Filing;
 use super::kept::load;
 
-/// What the run's telemetry says of its record, for `status`: whether it is filed, its file, and the
-/// step the segment ended with as the host read it; `None` when the run files no telemetry.
+/// What the run's telemetry says of its record, for `status`: whether it is filed, its file, the
+/// step the segment ended with as the host read it, with what its writes lost, and how many stopped
+/// parts still wait for theirs; `None` when the run files no telemetry.
 #[must_use]
 pub fn summary(run: &Path) -> Option<Value> {
     let filing = load(run)?;
     let finished = filing
         .finished
         .clone()
-        .map(|step| with_filing(step, outcome(&filing, Vec::new(), true)));
-    Some(json!({"record": filing.record, "recordFile": filing.record_file, "finished": finished}))
+        .map(|step| with_filing(step, outcome(&filing, filing.lost.clone(), true)));
+    Some(json!({
+        "record": filing.record, "recordFile": filing.record_file, "finished": finished,
+        "pending": filing.pending.len(),
+    }))
 }
 
 /// `step` with the outcome of its telemetry under `filing`.

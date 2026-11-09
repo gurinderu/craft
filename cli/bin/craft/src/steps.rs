@@ -282,11 +282,16 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
-    // A finished run whose record did not land is filed again rather than refused.
-    if let Some(step) = args
-        .resume
-        .then(|| filing::refile(&run, &filing::NodeWriter))
-        .flatten()
+    // Before anything else a resume does — even one refused below — the records of the run's
+    // stopped parts that did not land are filed again; a finished run whose own record did not land
+    // is filed again rather than refused.
+    let earlier = if args.resume {
+        filing::resuming(&run, &filing::NodeWriter)
+    } else {
+        Vec::new()
+    };
+    if args.resume
+        && let Some(step) = filing::refile(&run, earlier.clone(), &filing::NodeWriter)
     {
         return print(&step);
     }
@@ -298,21 +303,30 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
         post: None,
         abandoned: &args.abandoned,
     };
-    let step = stamped(step::submit_with(&run, given.as_ref(), &said)?, began);
+    let stepped = step::submit_with(&run, given.as_ref(), &said).map_err(|e| {
+        // A refused resume still says what its re-filing of the stopped parts lost.
+        let told = if earlier.is_empty() {
+            String::new()
+        } else {
+            format!(" (the run's telemetry: {})", earlier.join("; "))
+        };
+        anyhow::anyhow!("{e:#}{told}")
+    });
+    let step = stamped(stepped?, began);
     let host = filing::Host {
         agents: args.agents,
         output_tokens: args.output_tokens,
         resume: args.resume,
         session: session(),
     };
-    match filing::submitted(&run, &step, &host, &filing::NodeWriter) {
+    match filing::submitted(&run, &step, &host, earlier, &filing::NodeWriter) {
         Some(filed) => print(&filing::with_filing(step, filed)),
         None => print(&step),
     }
 }
 
-/// A stopped run that files its telemetry goes on only by `--resume`, which files the stopped
-/// segment's record if it did not land and opens a new segment; a plain submit would go on in a
+/// A stopped run that files its telemetry goes on only by `--resume`, which keeps the stopped
+/// segment's record until it lands and opens a new segment; a plain submit would go on in a
 /// segment whose checkpoints the stop already folded into its record.
 fn refuse_folded(run: &Path, args: &SubmitArgs) -> Result<()> {
     let recording = filing::state_path(run).exists();

@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::wire::{
     Call, CheckpointAsked, CheckpointDone, Common, RecordAsked, RecordDone, WriteError, Writer,
 };
-use super::{Filing, Record};
+use super::{Filing, Record, Told};
 
 fn send(
     run: &Path,
@@ -64,7 +64,10 @@ pub(super) fn checkpoint(
         start,
     };
     let done = exchange::<_, CheckpointDone>(run, filing, "checkpoint", &asked, w);
-    if matches!(&done, Ok(d) if d.skipped) {
+    // Unreached, the writer could not say whether a phase ended: only a step that may have ended
+    // one can have lost its checkpoint.
+    let maybe = ended_maybe(&filing.steps);
+    if matches!(&done, Ok(d) if d.skipped) || (done.is_err() && !start && maybe.is_none()) {
         return;
     }
     filing.rejoin |= armed;
@@ -75,16 +78,28 @@ pub(super) fn checkpoint(
         }
         Ok(d) if !d.error.is_empty() => (d.phase, d.error),
         Ok(d) => (d.phase, "the writer named no run directory".to_owned()),
-        Err(e) => (String::new(), e.to_string()),
+        Err(e) => (maybe.unwrap_or_default(), e.to_string()),
     };
     filing.failed = true;
     let what = match (start, phase.as_str()) {
         (true, _) => "phase checkpoint 'start'".to_owned(),
-        // The writer failed before it could say which phase ended.
         (false, "") => "the checkpoint of the phase that ended".to_owned(),
         (false, p) => format!("phase checkpoint '{p}'"),
     };
     lost.push(format!("{what} — {why}"));
+}
+
+/// The phase the last of `steps` may have ended, when the adapter could not be reached to replay
+/// the driver's clock: the phase of the step before it, when it named one and the last step finished
+/// the run or names another — the clock's rule (`observe`, `lib/cli-review-clock.mjs`), used here
+/// only so an unreached writer's loss is said for a step that can have lost a checkpoint, and no
+/// other.
+fn ended_maybe(steps: &[Told]) -> Option<String> {
+    let [.., before, now] = steps else {
+        return None;
+    };
+    let ended = !before.done && !before.phase.is_empty() && (now.done || now.phase != before.phase);
+    ended.then(|| before.phase.clone())
 }
 
 /// The run's record from the finished `step`: filed, landed with a warning, or failed.
