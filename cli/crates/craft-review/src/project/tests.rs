@@ -36,7 +36,7 @@ fn a_profile_round_trips_through_its_file_and_keeps_unknown_sections_readable() 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("p/review.toml");
     assert_eq!(load(&path).unwrap(), None);
-    let p = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()]).unwrap();
+    let p = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()], Vec::new()).unwrap();
     save(&path, &p).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(
@@ -50,7 +50,7 @@ fn a_profile_round_trips_through_its_file_and_keeps_unknown_sections_readable() 
     // Written again: the points replaced, that section kept.
     save(
         &path,
-        &ProjectProfile::new("/r/.git".into(), Vec::new()).unwrap(),
+        &ProjectProfile::new("/r/.git".into(), Vec::new(), Vec::new()).unwrap(),
     )
     .unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
@@ -63,7 +63,7 @@ fn a_profile_round_trips_through_its_file_and_keeps_unknown_sections_readable() 
     std::fs::write(&path, "not = = toml").unwrap();
     save(
         &path,
-        &ProjectProfile::new(String::new(), Vec::new()).unwrap(),
+        &ProjectProfile::new(String::new(), Vec::new(), Vec::new()).unwrap(),
     )
     .unwrap_err();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "not = = toml");
@@ -80,7 +80,7 @@ fn another_format_a_point_named_twice_or_a_bad_point_is_refused() {
             .to_string()
             .contains("is not a review profile")
     );
-    ProjectProfile::new(String::new(), vec![kube_ovn(), kube_ovn()]).unwrap_err();
+    ProjectProfile::new(String::new(), vec![kube_ovn(), kube_ovn()], Vec::new()).unwrap_err();
     std::fs::write(
         &path,
         "version = 1\n[[integration]]\nname = \"x\"\nrepo = \"https://h/a\"\nref = \"a..b\"\n",
@@ -105,7 +105,7 @@ fn the_id_names_the_repository_and_tells_two_clones_apart() {
 fn a_write_over_a_stored_profile_of_another_format_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("review.toml");
-    let profile = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()]).unwrap();
+    let profile = ProjectProfile::new("/r/.git".into(), vec![kube_ovn()], Vec::new()).unwrap();
     for stored in [
         format!(
             "version = {}\n[lenses]\nskip = [\"compat\"]\n",

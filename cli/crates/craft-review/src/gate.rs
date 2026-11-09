@@ -2,11 +2,15 @@
 //! distinction of realm @nick/craft, node #238): per language profile, the binary runs the tools
 //! itself — clippy and semgrep for Rust; `nix flake check`, statix and deadnix for Nix — each
 //! bounded by one time budget, as stage 5 runs git. The engine hands this to an agent only because
-//! its sandbox spawns no process; reading CI and a project's own lint recipe, which takes judgement,
-//! is left out and named. A red check this change is answerable for blocks the review before any
-//! lens; a clippy, statix or deadnix diagnostic on a line the change added, and any result of
-//! semgrep's repository rules in a changed file, is a seed finding every lens and verifier
-//! sees, carrying its `toolRule`; a tool that is not installed is named, and the review goes on.
+//! its sandbox spawns no process; reading a project's own lint recipe, which takes judgement, is
+//! the reviewer's at `craft init`, not the gate's. CI is read only when the gate's own build is
+//! impossible (cargo ended with no compiler error): then the checks the reviewer's CI map names for
+//! the head stand for the signals they carry (`gate/ci.rs`, realm @nick/craft, node #482), and
+//! without a map, gh or network the signal stays unknown. A red check this change is answerable
+//! for blocks the review before any lens; a clippy, statix or deadnix diagnostic on a line the
+//! change added, and any result of semgrep's repository rules in a changed file, is a seed finding
+//! every lens and verifier sees, carrying its `toolRule`; a tool that is not installed is named,
+//! and the review goes on.
 //! clippy and `nix flake check` build and run the branch's code (build scripts, proc macros,
 //! flake checks): a run started with `--no-gate` runs none of them, and says so.
 
@@ -22,6 +26,13 @@ use crate::coverage::Exit;
 pub mod alone;
 mod cause;
 mod check;
+mod ci;
+mod ci_read;
+#[cfg(test)]
+mod ci_tests;
+mod ci_verdict;
+#[cfg(test)]
+mod ci_world;
 mod clippy;
 pub(crate) mod lines;
 mod lock;
@@ -55,6 +66,9 @@ pub struct GateSetup {
     /// inside one, clippy lints that package alone (`-p`), so per-crate runs of one workspace do
     /// not lint the same packages side by side.
     pub scope: Option<String>,
+    /// Where the reviewers' profiles are (`~/.craft/projects`): the CI map is read from the
+    /// repository's when the gate cannot build the head itself. `None`, CI is not read.
+    pub projects: Option<std::path::PathBuf>,
 }
 
 impl Default for GateSetup {
@@ -63,6 +77,7 @@ impl Default for GateSetup {
             budget: BUDGET,
             path: None,
             scope: None,
+            projects: None,
         }
     }
 }
@@ -186,6 +201,7 @@ pub fn run(
             lines: &lines,
             profile: &t.profile,
             scope: setup.scope.as_deref(),
+            projects: setup.projects.as_deref(),
         };
         let mut acc = Acc::default();
         if t.profile == "rust" {

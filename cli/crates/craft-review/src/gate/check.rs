@@ -21,6 +21,8 @@ pub(super) struct Cx<'a> {
     pub profile: &'a str,
     /// The directory the run reviews, repository-relative; `None`, the whole change.
     pub scope: Option<&'a str>,
+    /// Where the reviewers' profiles are, for the CI map; `None`, CI is not read.
+    pub projects: Option<&'a Path>,
 }
 
 impl Cx<'_> {
@@ -79,6 +81,9 @@ pub(super) struct Acc {
     pub missing: Vec<String>,
     pub notes: Vec<String>,
     pub seeds: Vec<Value>,
+    /// A build was impossible: cargo ended with no compiler error, so the signal is unknown and
+    /// CI may stand for it.
+    pub unbuilt: bool,
 }
 
 impl Acc {

@@ -182,6 +182,7 @@ pub(super) fn gate_check(cx: &Cx<'_>, acc: &mut Acc, package: &Package) -> Statu
         return Status::Fail;
     }
     if !ok {
+        acc.unbuilt = true;
         acc.parts.push(format!("{label}: did not finish"));
         acc.notes.push(format!(
             "{label} exited non-zero with no compiler error — the build signal is unknown: {}",
