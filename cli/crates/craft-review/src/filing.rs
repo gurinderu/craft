@@ -30,7 +30,7 @@ pub use kept::{Ctx, Filing, Record, Told, state_path};
 use kept::{load, save};
 pub use node::NodeWriter;
 pub use resume::{Host, resuming};
-pub use root::{adopt_root, found_root};
+pub use root::{adopt, found_root};
 use said::outcome;
 pub use said::{summary, with_filing};
 pub use wire::{Call, WriteError, Writer};

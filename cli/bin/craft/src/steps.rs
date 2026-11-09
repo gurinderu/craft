@@ -298,11 +298,9 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
-    // A run started with no plugin root known files through one found now, kept for every later
-    // write: a resume re-files a lost record through it.
-    if let Some(root) = filing_root(args.craft_root.as_deref()) {
-        filing::adopt_root(&run, &root);
-    }
+    // A run started with no plugin root known, or whose own was uninstalled, files through one
+    // found now, kept for every later write: a resume re-files a lost record through it.
+    filing::adopt(&run, filing_root(args.craft_root.as_deref()).as_deref());
     // Before anything else a resume does — even one refused below — the records of the run's
     // stopped parts that did not land are filed again; a finished run whose own record did not land
     // is filed again rather than refused.

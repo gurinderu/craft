@@ -62,7 +62,7 @@ fn a_run_started_with_no_root_files_its_record_through_one_found_later_and_keeps
     assert_eq!(said["record"], json!("failed"));
     assert!(w.0.borrow().is_empty());
 
-    adopt_root(run.path(), "/plugin");
+    adopt(run.path(), Some("/plugin"));
     let again = file_again(run.path(), Vec::new(), &w).unwrap();
     assert_eq!(again["filing"]["record"], json!("filed"));
     assert_eq!(*w.0.borrow(), ["/plugin"]);
@@ -75,6 +75,11 @@ fn a_run_started_with_no_root_files_its_record_through_one_found_later_and_keeps
 #[test]
 fn a_root_the_run_knows_is_kept_and_a_pending_part_with_none_takes_the_one_found() {
     let run = tempfile::tempdir().unwrap();
+    let (known, kept) = (plugin(true), plugin(true));
+    let (known, kept) = (
+        known.path().display().to_string(),
+        kept.path().display().to_string(),
+    );
     let part = |root: Option<&str>| Filing {
         ctx: Ctx {
             root: root.map(str::to_owned),
@@ -83,11 +88,11 @@ fn a_root_the_run_knows_is_kept_and_a_pending_part_with_none_takes_the_one_found
         ..Filing::default()
     };
     let filing = Filing {
-        pending: vec![part(None), part(Some("/kept"))],
-        ..part(Some("/known"))
+        pending: vec![part(None), part(Some(&kept))],
+        ..part(Some(&known))
     };
     save(run.path(), &filing, &mut Vec::new());
-    adopt_root(run.path(), "/found");
+    adopt(run.path(), Some("/found"));
     let roots = |f: &Filing| {
         std::iter::once(f)
             .chain(&f.pending)
@@ -96,13 +101,43 @@ fn a_root_the_run_knows_is_kept_and_a_pending_part_with_none_takes_the_one_found
     };
     assert_eq!(
         roots(&load(run.path()).unwrap()),
-        ["/known", "/found", "/kept"]
+        [known.as_str(), "/found", kept.as_str()]
     );
 }
 
 #[test]
 fn a_run_that_files_nothing_gets_no_telemetry_from_a_root_found() {
     let run = tempfile::tempdir().unwrap();
-    adopt_root(run.path(), "/found");
+    adopt(run.path(), Some("/found"));
     assert!(!state_path(run.path()).exists());
+}
+
+#[test]
+fn a_root_that_no_longer_holds_the_writer_is_replaced_by_the_one_found() {
+    let (run, kept, gone) = (tempfile::tempdir().unwrap(), plugin(true), plugin(false));
+    let at = |root: &tempfile::TempDir| Filing {
+        ctx: Ctx {
+            root: Some(root.path().display().to_string()),
+            ..rootless()
+        },
+        ..Filing::default()
+    };
+    let filing = Filing {
+        pending: vec![at(&kept)],
+        ..at(&gone)
+    };
+    save(run.path(), &filing, &mut Vec::new());
+    adopt(run.path(), Some("/found"));
+    let after = load(run.path()).unwrap();
+    assert_eq!(after.ctx.root.as_deref(), Some("/found"), "uninstalled");
+    assert_eq!(
+        after.pending[0].ctx.root,
+        Some(kept.path().display().to_string()),
+        "a root that still holds the writer is kept"
+    );
+    adopt(run.path(), None);
+    assert_eq!(
+        load(run.path()).unwrap().ctx.root.as_deref(),
+        Some("/found")
+    );
 }
