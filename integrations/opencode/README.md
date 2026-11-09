@@ -61,8 +61,8 @@ the plugin directory is linked from; if that fails, the hook is silent and the t
   still resolves them.
 - Workflow determinism rides on opencode's child-session API; the plugin retries sequentially and
   surfaces a clear error if a child session is stuck (opencode #8528 / #6573).
-- **No elastic `rust-review` engine.** The Claude Code `rust-review` workflow (scout-scaled lens
-  fan-out, loop-until-dry, adversarial + self-verification) has no opencode port. In `/rust-audit`
+- **No CLI-driven review.** The Claude Code `review` workflow (the driver of the `craft` binary's
+  step-by-step review: scout-planned lens rounds until dry, verification) has no opencode driver. In `/rust-audit`
   the **review** dimension is a single-pass `rust-reviewer` agent — there is no per-crate review
   fan-out and no inter-crate-contract dimension. The other audit dimensions (architecture,
   security, miri, crate-decomposition, semver, build-matrix, deps, unused-crates, tests-cov) do run.

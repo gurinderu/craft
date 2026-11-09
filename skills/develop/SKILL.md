@@ -91,9 +91,8 @@ the tree is dirty.
 ## Phase 4 — Review loop until convergence
 
 The review here is the project's declared reviewer or review rule when there is one. Otherwise it is
-the `craft:review` workflow, whatever the stack of the branch diff: it reviews Rust and Nix under its
-own profiles and sends the source files outside them to a nested `craft:adversarial-review` run,
-with one verdict — the worse of the two — and one report, the nested part labelled.
+the `craft:review` workflow, whatever the stack of the branch diff: it reviews Rust and Nix under their
+profiles and other source under its general lenses, in one run, with one verdict and one report.
 
 Once each engine run of this cycle has ended (completed, failed or stopped — not while you may still
 resume it), fold its real cost into the records it filed:
@@ -122,9 +121,6 @@ The engine's argument for each round, as an object (never a string):
   newest earlier run on the branch, whatever made the findings. Findings from elsewhere (a human's
   PR review) take `craft:addressing-findings` step 7's arguments: the commit that review was made on
   as `base`, with `fresh: true`.
-- The nested `craft:adversarial-review` part keeps no memory between runs, so `craft:review` gives it
-  the whole branch diff of those files on every round, light ones included: a finding of its
-  previous round that is still there is found again, and one that is gone was fixed.
 - Add `priorDecisions: [...]` only for records the store may not hold yet — rejections
   just read from PR threads, or a decision from this loop whose write failed — verbatim, each with
   its `kind`, `title` and `scope`. The engine recalls the project's active decisions, questions and
@@ -176,7 +172,7 @@ One **round** is:
    again before the next round.
 
 A finding marked as going against a project-memory record (`craft:review`'s **Contradicts project
-memory** section; `craft:adversarial-review`'s `contradictsMemory` field, the same lines) is a defect: fix it, or change the record with the human's word — never reject it
+memory** section) is a defect: fix it, or change the record with the human's word — never reject it
 as a doubt. A line there marked `not confirmed` is the exception: a doubt to check (verify it before
 fixing), not a certain defect; in `craft:review` with `comment` it is also listed under Doubtful, the
 record named first.
@@ -212,10 +208,8 @@ review before a PR) when there is one; otherwise by stack, over the whole branch
 
 | Diff | Full review |
 |---|---|
-| touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` (it reviews the Rust part only) — and, when the diff also holds Nix, the `craft:nix-review` workflow with `{ base: <trunk>, strict: true }`; when it holds code other than Rust and Nix, the `craft:adversarial-review` workflow over it, `{ diffBase: <trunk> }` |
-| anything else | the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` — the harsh maintainability bar over the Nix part, the source files outside its profiles through its nested adversarial review (`fresh`: without it the run would chain to the loop and scan the last delta only) |
-
-`adversarial-review` has no strict mode; `strict` reaches `craft:review`'s own profiles only.
+| touches Rust | the `craft:rust-audit` workflow, `{ base: <trunk> }` (it reviews the Rust crates only) — and, when the diff also holds files outside them (Nix or other source), the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` over the whole diff |
+| anything else | the `craft:review` workflow with `{ base: <trunk>, strict: true, fresh: true }` — the harsh maintainability bar over every profile (`fresh`: without it the run would chain to the loop and scan the last delta only) |
 
 Findings from the full review go through `craft:addressing-findings` like a loop round. An open
 Medium+ finding here reopens phase 4 within the same 4-round budget (the rounds already spent

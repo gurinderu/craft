@@ -78,8 +78,8 @@ not one of them: it is the main session's (→ "Who triages").
                that commit carries the merged code too, not the fix commits only: say so and ask
                the human: the whole PR (`base: <trunk>`, still `fresh: true`), or the fix
                commits named, or a base after the merge. Run the `craft:review` workflow, on a
-               diff in any language — it routes the source files outside its Rust and Nix
-               profiles to a nested adversarial review itself — with
+               diff in any language — Rust and Nix under their profiles, other source under
+               its general lenses — with
                `{ base: <that commit>, fresh: true, fullEvery: 0 }` when the findings did not
                come from its last round on this branch (a human's PR review, any other review):
                `fresh` keeps it from chaining to an older run on the branch, which would widen
@@ -443,8 +443,7 @@ it. A chosen one is posted only through `lib/finding-post.mjs`, with the marker;
 written to memory at once (a decision, or a project rule when the reason is a stance); the author's
 answer on a question thread is read by the thread rules → [doubtful.md](doubtful.md).
 
-A finding listed under **Contradicts project memory** (`adversarial-review`: its `contradictsMemory`
-field — that engine posts nothing, so it sorts nothing) goes against an active decision or project rule:
+A finding listed under **Contradicts project memory** goes against an active decision or project rule:
 it is a defect, never a doubt — unless its line is marked `not confirmed`: then it is a doubt to check
 (verify it before fixing), and in `review` with `comment` it is also listed under Doubtful, the record
 named first. Fix it, or — on the human's word — supersede the record it breaks; do not

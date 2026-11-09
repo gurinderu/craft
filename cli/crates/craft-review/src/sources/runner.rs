@@ -1,4 +1,4 @@
-//! git as the source preparation runs it (`execGit` and `gitEnv` in `lib/source-checkout.mjs`):
+//! git as the source preparation runs it (as the retired Node CLI ran it):
 //! never prompting, never acting on a repository the caller's environment points at, each command
 //! bounded in time and all of them by the preparation's budget, a failure one line.
 

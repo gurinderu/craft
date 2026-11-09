@@ -1,7 +1,7 @@
 ---
 name: review-init
 description: >-
-  Set up your own review profile of a repository for the craft CLI review — `craft init` — kept outside the repository (~/.craft/projects/<id>/review.toml), never committed: the integration points, the external systems this code talks to over the network or through their API and contracts (an operator's kube-ovn, LINSTOR, a cloud API), each with its source git URL and the tag or full commit that counts as deployed. The review reads each one's source at that revision. It proposes the project memory's `external` records, each with the revision its version file names now, for you to confirm. Use before the first cli-review of a repository, when a report says `not recorded: <system>`, or when a deployed version changes. Triggers: craft init, set up my review profile, which systems does this code integrate with, integration points for the review, the deployed version changed. Not for library dependencies (a review finds those itself), nor the project's shared memory (memory).
+  Set up your own review profile of a repository for the craft CLI review — `craft init` — kept outside the repository (~/.craft/projects/<id>/review.toml), never committed: the integration points, the external systems this code talks to over the network or through their API and contracts (an operator's kube-ovn, LINSTOR, a cloud API), each with its source git URL and the tag or full commit that counts as deployed. The review reads each one's source at that revision. It proposes the project memory's `external` records, each with the revision its version file names now, for you to confirm. Use before the first review of a repository, when a report says `not recorded: <system>`, or when a deployed version changes. Triggers: craft init, set up my review profile, which systems does this code integrate with, integration points for the review, the deployed version changed. Not for library dependencies (a review finds those itself), nor the project's shared memory (memory).
 ---
 
 # review-init — your review profile of a repository
@@ -23,7 +23,7 @@ The binary cannot ask you anything inside an agent session. So: **propose, ask, 
 ## 1. Recall the memory's external systems
 
 The project's shared memory may already record the systems the code relies on (`external`
-records, kept by the craft:memory skill). Recall them with that skill — every active `external`
+records, written by earlier craft releases; the profile is where these systems live now). Recall them with the craft:memory skill — every active `external`
 record, every scope — and keep the list as JSON, each record with `system`, `repo`, `scope` and
 `versionFrom` with `versionMatch`, or a stated `version`. None recalled, or no memory configured:
 go on without it.

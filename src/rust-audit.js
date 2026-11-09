@@ -18,11 +18,11 @@ import { cliReviewResult, cliDegraded, gateResult } from '../lib/rust-audit-nest
 
 export const meta = {
   name: 'rust-audit',
-  description: 'Full Rust crate audit — the mechanical gate once for the whole change, first, then a nested CLI review per crate in parallel (craft:cli-review, the craft binary\'s step protocol, each with path=<crate>, fresh and the gate\'s kept result as gateFrom, so its seeds reach that crate\'s lenses; a red gate starts no review; the nested CLI review is not yet observed live), inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
+  description: 'Full Rust crate audit — the mechanical gate once for the whole change, first, then a nested CLI review per crate in parallel (craft:review, the craft binary\'s step protocol, each with path=<crate>, fresh and the gate\'s kept result as gateFrom, so its seeds reach that crate\'s lenses; a red gate starts no review; the nested CLI review is not yet observed live), inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
   whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill, once, and hands them to the nested CLI reviews as priorDecisions with _recalled, so they do not recall again (the external-system records and the split into parts that recall returns have no carrier in a CLI review and stay on the memory line of this audit); priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. Pass {mutants:true} to include the slow mutation pass. The mechanical gate (clippy and semgrep, through the craft binary\'s `craft review gate`) BUILDS AND RUNS THE BRANCH\'S CODE on this machine, once, before the reviews, which take its result and seeds rather than gate again (with none kept, they run with gate=false); a red gate starts no review — each is NOT RUN (gate red) — and the audit\'s verdict is Block, its report led by the gate\'s line in the review\'s own words, the gate\'s section appended once; each review\'s answer carries its verdict, the path of the report the binary wrote and its findings, which the synthesis reads (not yet observed live). It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
-    { title: 'Audit', detail: 'parallel: the mechanical gate once (cli-review gateOnly), then per-crate CLI review taking it (gateFrom; none on a red gate) + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
+    { title: 'Audit', detail: 'parallel: the mechanical gate once (review gateOnly), then per-crate CLI review taking it (gateFrom; none on a red gate) + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
     { title: 'Verify', detail: 'adversarially verify unused-crate candidates before reporting' },
     { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report' },
   ],
@@ -60,7 +60,7 @@ const craftRootArg = textArg('craftRoot')
 /** @type {unknown} */
 const passedDecisions = A['priorDecisions']
 const passedList = Array.isArray(passedDecisions) ? /** @type {unknown[]} */ (passedDecisions) : []
-// The launcher's records counted as review and adversarial-review count them: the ones accepted, not the
+// The launcher's records counted as the reviews count them: the ones accepted, not the
 // raw list (realm @nick/craft, node #218).
 const passedRead = parsePriorDecisions(passedList).decisions
 const passedAccepted = passedRead.length
@@ -74,7 +74,7 @@ let memory = withDerived(initialMemory(passedAccepted, recalledByLauncher, A['_m
 // The audit's recall outcome when it found none: the nested reviews then recall nothing either (`_recalled`), and the
 // audit's own memory line names why. The nested CLI review takes a launcher's recall only as records
 // (`priorDecisions` with `_recalled`, the binary's `--prior-decisions` and `--no-recall`): the recall's note, its split
-// into parts (#218) and its external-system records (#431, #435) have no carrier there, and cli-review refuses them, so
+// into parts (#218) and its external-system records (#431, #435) have no carrier there, and review refuses them, so
 // they stay in this audit's own report and are not forwarded (realm @nick/craft, nodes #150, #196).
 let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
 // What every nested CLI launch inherits from this run, the gate's included: the parent's name and craftRoot (where its
@@ -544,10 +544,10 @@ function nestedReview(dimension, launched, read = cliReviewResult) {
 }
 
 /** The nested CLI review, by the name this registry carries (lib/nested-workflow.mjs). @param {Record<string, unknown>} launch */
-const cliReview = launch => nestedWorkflow(workflow, 'cli-review', launch, log)
+const cliReview = launch => nestedWorkflow(workflow, 'review', launch, log)
 
 // The mechanical gate — clippy and semgrep for Rust, which BUILD the branch's code — runs ONCE for the whole change,
-// FIRST, as the gate alone (cli-review gateOnly, the binary's `craft review gate`), which keeps its result and seeds in
+// FIRST, as the gate alone (review gateOnly, the binary's `craft review gate`), which keeps its result and seeds in
 // a directory: every review waits for it and takes it (`gateFrom`), so the seeds on its crate's lines reach its lenses
 // and no review builds the workspace again (realm @nick/craft, node #150). A red gate starts no review, as a review
 // stops before its lenses; a gate that did not answer or kept nothing leaves the reviews ungated (`gate=false`), said in

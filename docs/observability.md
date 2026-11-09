@@ -1,8 +1,10 @@
 # Observability — craft run records
 
-Every `rust-audit` / `rust-review` / `adversarial-review` / `triage-findings` run, and every
-directly-dispatched review agent, writes a structured record to a global per-user store so runs
-can be studied later.
+Every `review` / `rust-audit` / `triage-findings` run, and every directly-dispatched review agent,
+writes a structured record to a global per-user store so runs can be studied later. A `review` run's
+record is filed by the `craft` binary the workflow drives, under the name `review` with
+`driver: 'cli'`; a store also keeps what retired engines filed — the JS `review` (no `driver`),
+`cli-review`, `rust-review`, `nix-review`, `adversarial-review` — and the readers still read them.
 
 ## Store
 
@@ -53,7 +55,7 @@ A bump is cheap for re-review memory: the revision is **not** the finding-finger
 a prior round's fingerprints compare to this round's is decided by `FP_BASIS_SINCE` in the same file
 (the revisions at which each basis began), so a telemetry-only bump keeps every review loop's
 tombstones. Change that table, not only the revision, when `fingerprint()` changes what an `fp` means.
-The review engine decides that comparability itself, with the same table bundled into it — it is the side that computes the fingerprints — so a `review` record and each of its checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp. The analyzer's engine identity (`rN`) uses the engine's revision when a record carries it, and the logger's otherwise. The loader prints `priorFpRevisions` together with `priorFpRevisionsCheck` (the same list as a string), and the engine trusts the list only when the two still match after the model relay; a mismatch is recorded as `reReview.basisMismatch`.
+The retired JS review engine decided that comparability itself, with the same table bundled into it — it was the side that computed the fingerprints — so its `review` records and each of their checkpoints also carry `workflowEngineRevision`, the engine's revision, next to the logger's `engineRevision` stamp; the CLI review chains its rounds in the binary, under `~/.craft/runs/cli`. The analyzer's engine identity (`rN`) uses the engine's revision when a record carries it, and the logger's otherwise. The loader prints `priorFpRevisions` together with `priorFpRevisionsCheck` (the same list as a string), and that engine trusted the list only when the two still matched after the model relay; a mismatch is recorded as `reReview.basisMismatch`.
 
 `node lib/analyze-runs.mjs --engine latest` (or `--engine "claude-code 0.16.0 r2"`) slices to one
 engine; `--version` still exists and still filters, but a version slice is not an engine slice.
@@ -61,15 +63,15 @@ With no flag the report names the engines it spans **before** any rate, and says
 cannot separate them — a caveat under the numbers arrives after they have been read as a
 before/after. `engineRevision` is not in `indexProjection`: nothing outside the write script can stamp it, so as
 an index column it would only ever be whatever a caller guessed, and the one engine-aware reader
-loads the detail files anyway. This is also why every record-filing engine — `review`,
-`adversarial-review`, `rust-audit`, `triage-findings` — writes through
+loads the detail files anyway. This is also why every record-filing engine — `review` (through the
+`craft` binary), `rust-audit`, `triage-findings` — writes through
 `lib/craft-log-run.mjs` rather than instructing a model to assemble the record: an engine that
 computes the fields from a prompt cannot produce this one at all, so every record it files is
-excluded from `--engine latest` by construction. The shared write path is `lib/run-logging.mjs`,
-bundled into each engine.
+excluded from `--engine latest` by construction. The JS engines' shared write path is
+`lib/run-logging.mjs`, bundled into each; the binary's is `lib/cli-review-file.mjs`.
 Records written before these fields carry `null` and are outside any filter.
 
-Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` and `adversarial-review` record `0` (`refuteRate()` in `lib/run-record.mjs`), and `lib/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
+Workflows add: `scout`, `dimensions[]`, `verification {candidates, judged, confirmed, suspected, refuted, unverified, died, refuteRate}` (`refuteRate` is over what was *judged*. When nothing was, the engines differ: `rust-audit` records `null` — a run whose verifiers all died reports no rate rather than a rate of zero — while `review` records `0`, as the retired `adversarial-review` did (`refuteRate()` in `lib/run-record.mjs`, the binary's `refute_rate` alike), and `lib/analyze-runs.mjs` averages that `0` into the workflow's `avg refute` as it skips a `null`; `unverified` counts candidates no verifier ever judged — an unchecked Low/Info the engine spends no verifier on — and is reported **beside** `candidates`, not inside it, so it is outside the rate),
 `notRun[]`, `outputTokens` (the whole-run token **pool** — `budget.spent()`: input + output +
 parent-driver + cache, **not** output tokens. Its size tracks run TYPE: a re-review (`round > 1`)
 runs an extra Adjudicate phase (and periodically a whole-diff re-scan), so its pool is structurally larger than a
@@ -77,17 +79,17 @@ first-pass's. It is therefore not a clean output-cost figure and must not be com
 types — `lib/analyze-runs.mjs` splits it three ways on the PRESENCE and value of `round`: a
 first-pass pool (`round <= 1`), a re-review pool (`round > 1`), and a round-less pool for runs that
 carry no `round`. That third pool is keyed on the ABSENCE of the field, not on a cause the analyzer
-cannot know: only `review` stamps `round`, so every `adversarial-review` / `rust-audit` /
-`triage-findings` run is round-less, and even within `review` several current early-exit paths write
-`outputTokens` with no `round`. Each pool renders under a neutral, cause-free label —
+cannot know: only `review` stamps `round`, so every `rust-audit` / `triage-findings` run (and a retired
+`adversarial-review` one) is round-less, and even within `review` the retired JS engine's early-exit
+paths wrote `outputTokens` with no `round`. Each pool renders under a neutral, cause-free label —
 `(first-pass)`, `(re-review)`, `(round not recorded)` — and prints only when it holds runs, so a
 workflow that never stamps `round` shows just the round-less pool). The `scout`
-shape is workflow-specific — rust-review records `{size, lenses, model, maxRounds, verifyVotes}`,
-rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`,
-adversarial-review records `{size, lenses, indexed, batch}`; see each
-workflow's `logRun`/record assembly for the exact fields.
-When a craft agent type was not registered in the session, `review` and `rust-audit` record it the
-same way: `agentUnavailable[]` (the agent types the run learned are missing, sorted) and
+shape is workflow-specific — rust-audit records `{baseRef, crateCount, changedCrateCount, edgeCount, hasUnsafe}`;
+the retired engines recorded `{size, lenses, model, maxRounds, verifyVotes}` (rust-review) and
+`{size, lenses, indexed, batch}` (adversarial-review); see each workflow's `logRun`/record assembly
+(the review's: the binary's telemetry) for the exact fields.
+When a craft agent type was not registered in the session, `rust-audit` records it — as the retired
+JS `review` did, the same way: `agentUnavailable[]` (the agent types the run learned are missing, sorted) and
 `agentFallbacks` (per agent type, dispatches the generic subagent answered after the agent came back
 empty or with an unrecognised "not found"). `rust-audit` also folds in what each nested review said in
 its "Reviewer agent unavailable" section. Records written before this by `review` carry
@@ -103,7 +105,7 @@ again before validation; `issues` the findings deferred to an issue as not the P
 (where the sift's records came from, as `review` records it); `notRun[]` lists requested sources that
 failed to gather. It has no `scout`/`dimensions`/`verification`/`outputTokens`.
 The `rust-security-scanner` agent additionally records `toolsRun[]` (which cargo tools actually ran).
-rust-review records also carry `gate {status, provenance}` (always) and `failedChecks[]`
+Records of the retired rust-review also carry `gate {status, provenance}` (always) and `failedChecks[]`
 (gate-fail path only); these summary-only extras are NOT carried into the `index.jsonl` projection.
 
 Records carry a `runtime` field — `"claude-code"` for the Claude Code workflows/agents,
@@ -111,10 +113,10 @@ Records carry a `runtime` field — `"claude-code"` for the Claude Code workflow
 is `null` (no structured findings), and there is no `outputTokens` (no token meter) — so
 `findingsTotal` is `null` in their index projection.
 
-For rust-review, `dimensions[]` accounts for per-lens findings only — seed/gate findings
+For the retired rust-review, `dimensions[]` accounts for per-lens findings only — seed/gate findings
 (e.g. clippy-pedantic, semver-checks) are included in `findings.total` but are not attributed
 to a lens row, so the per-dimension counts may sum to less than `findings.total`.
-For adversarial-review the opposite skew applies: a deduped finding corroborated by several lenses
+For the retired adversarial-review the opposite skew applies: a deduped finding corroborated by several lenses
 counts in each corroborating lens's row, so per-dimension counts may sum to more than
 `findings.total`.
 
@@ -148,10 +150,12 @@ ended — the engine skills say so where they launch an engine. It finds the run
 `~/.claude/projects/<project>/<session>/subagents/workflows/<runId>/` (under `$CLAUDE_CONFIG_DIR` when
 set, or `--claude-home <dir>`), counting a directory a resumed session links in once, and refuses when
 it finds none or two. The records come from the run itself: each logger agent (labelled `log-run` or
-`log-run (<n>KB)`) whose command printed `wrote <file>` or `already filed <file>` names one. The agents
+`log-run (<n>KB)`) whose command printed `wrote <file>` or `already filed <file>` names one, and a
+review's record, which the `craft` binary files with no logger agent, is found through the step that
+names it. The agents
 are split by engine first: an agent of a nested engine carries the phase `▸ craft:<engine>` (or
 `▸ craft:<engine> #<n>` for a further instance — rust-audit nests one review per crate, the
-rust-review and nix-review entries nest `review`), and an agent without it belongs to the top-level
+retired rust-review and nix-review entries nested `review`), and an agent without it belongs to the top-level
 engine. A nested engine's record must be that engine's (its `name`), or the whole run is refused; a
 nested engine that filed no record counts under the top-level engine, with a warning, and the cost it
 lands in names it: `absorbed: [{engine, instance, agents}]`. A record path a logger printed outside the
@@ -209,8 +213,11 @@ Workflow scripts are sandboxed (no filesystem, no clock), so they assemble the r
 hand it to a cheap **logger agent** whose whole job is transport: it stages the record through a
 per-run `mktemp` file and runs `lib/craft-log-run.mjs`, which computes every field
 (`ts`/`project`/`commit`/`dirty`/`engineRevision`/`craftCommit`), names the file, appends the index
-line and verifies the readback. All four engines go through that one path — the prompt itself is
-built by `lib/run-logging.mjs` and bundled into each. A write that does not land is asserted, not
+line and verifies the readback. `rust-audit` and `triage-findings` go through that one path — the
+prompt itself is built by `lib/run-logging.mjs` and bundled into each. The `review` workflow's record
+is filed by the `craft` binary through `lib/cli-review-file.mjs` and the same `lib/craft-log-run.mjs`,
+with no logger agent; a logger agent files only the INCOMPLETE record of a run the binary never
+finished. A write that does not land is asserted, not
 inferred: the agent returns `{ok, error}`, and the engine puts the loss in its own report. The shaping helpers are tested in `lib/run-record.mjs`; the engines import them and the build
 bundles them in (the sandbox can't `import`). Standalone agents self-log via their `.md` Observability
 section, suppressed when run as a workflow sub-agent.
@@ -218,8 +225,8 @@ section, suppressed when run as a workflow sub-agent.
 ### When a record is missing
 
 The write can fail while the review itself is fine — a `craftRoot` that has moved, a dead logger
-agent, a damaged store. So an absent record is **not** evidence that a review never ran. The generic
-engine reports it instead of dying: every report it returns **leads** with a telemetry section naming
+agent, a damaged store. So an absent record is **not** evidence that a review never ran. The engines
+report it instead of dying: every report it returns **leads** with a telemetry section naming
 each write that did not land and why, and that section stays absent on a healthy run. It leads rather
 than trails so a consumer that truncates cannot clip it. Read the report, not the store's silence.
 
@@ -229,9 +236,7 @@ directory could not be folded into it. A run with both keeps the louder heading.
 fixed string will therefore miss the other.
 
 `review.js`, `rust-audit` and `triage-findings` render that section (from `telemetryLostSection` in
-`lib/review-coverage.mjs`, bundled into each). `adversarial-review` returns a structured object
-rather than report markdown, so it has **no section**: the same distinction reaches its `notRun`
-notes through `telemetryNotes()`.
+`lib/review-coverage.mjs`, bundled into each).
 
 ### Launching an engine from a checkout
 
@@ -266,8 +271,8 @@ run, because the transcripts are outside the workflow sandbox's reach.
 ## Three edits that deliberately did not refactor their host
 
 `lib/analyze-runs.mjs`'s aggregation loop, `lib/craft-log-run.mjs`'s
-`finalizeRun`, and `integrations/claude-code/workflows/review.js`'s `verifyPool` are each long and each
-mix concerns. Fixes landed inside all three anyway, without extraction, and
+`finalizeRun`, and the retired JS review engine's `verifyPool` (gone with it) were each long and each
+mixed concerns. Fixes landed inside all three anyway, without extraction, and
 that was a decision rather than an oversight: refactoring the hot review engine
 was ruled out of the branch that carried these fixes, because a restructuring of
 `verifyPool` and a correctness change to the same lines cannot be reviewed apart

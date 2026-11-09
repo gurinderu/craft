@@ -1,8 +1,7 @@
 //! A language profile as data: `content/profiles/<id>.json` names its lenses (each with its brief,
-//! model and flags), its scout rules and its rubric, as `PROFILES` in `lib/review-profiles.mjs`
-//! does for the engines; `lib/review-profile-parity.test.mjs` holds the two to one roster. Beside
-//! the engines' Rust and Nix profiles the CLI has `general`, adversarial-review's lenses over every
-//! file carrying code that neither takes (realm @nick/craft, node #421).
+//! model and flags), its scout rules and its rubric. Beside the Rust and Nix profiles there is
+//! `general`, the retired JS adversarial-review engine's lenses over every file carrying code that
+//! neither takes (realm @nick/craft, nodes #421, #445).
 
 use serde::Deserialize;
 
