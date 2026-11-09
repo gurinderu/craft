@@ -1,6 +1,5 @@
 import { normalizeArgs } from '../lib/workflow-args.mjs'
 import { parsePriorDecisions } from '../lib/prior-decisions.mjs'
-import { asList } from '../lib/external-source-spec.mjs'
 import { MEMORY_RECALL_SCHEMA, recallText, memoryRecord, initialMemory, withPassed, withDerived, withDerivedIds, mergeAndRead, memorySection, recallDecisions } from '../lib/memory-recall.mjs'
 import { summarizeFindings, worstVerdict, repoRefusal } from '../lib/run-record.mjs'
 import { wrapVerdict, tallyVerification, unusedCratesResult, unusedEvidence } from '../lib/audit-verification.mjs'
@@ -14,15 +13,16 @@ import { honestVerdictLine } from '../lib/honest-verdict.mjs'
 import { nestedPriorDecisionsSection } from '../lib/prior-decision-report.mjs'
 import { nestedWorkflow } from '../lib/nested-workflow.mjs'
 import { crateScope } from '../lib/rust-audit-crate-scope.mjs'
-import { reviewResult, normalizeDimensionVerdict, auditVerdict } from '../lib/rust-audit-verdict.mjs'
+import { normalizeDimensionVerdict, auditVerdict } from '../lib/rust-audit-verdict.mjs'
+import { cliReviewResult, cliDegraded, gateResult } from '../lib/rust-audit-nested.mjs'
 
 export const meta = {
   name: 'rust-audit',
-  description: 'Full Rust crate audit — per-crate review, inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
-  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill, once, and hands them to the nested reviews, which do not recall again; priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. Pass {mutants:true} to include the slow mutation pass. It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
+  description: 'Full Rust crate audit — the mechanical gate once for the whole change, first, then a nested CLI review per crate in parallel (craft:cli-review, the craft binary\'s step protocol, each with path=<crate>, fresh and the gate\'s kept result as gateFrom, so its seeds reach that crate\'s lenses; a red gate starts no review; the nested CLI review is not yet observed live), inter-crate contracts, architecture, crate decomposition, security, Miri, semver, build-matrix, deps, unused-crate detection (verified), and test/doc health in parallel, synthesized into one report',
+  whenToUse: 'Before a release or a big merge, when you want the comprehensive full review — every craft dimension run at once and consolidated into a single verdict. Pass {base} to fix the diff base; {priorDecisions: [<recalled decision records>]} — an object argument only; a string is refused by the nested reviews — is handed to the nested reviews. The engine itself always recalls the active decisions and questions for the paths of the diff through the craft:memory skill, once, and hands them to the nested CLI reviews as priorDecisions with _recalled, so they do not recall again (the external-system records and the split into parts that recall returns have no carrier in a CLI review and stay on the memory line of this audit); priorDecisions is optional and ADDS to that recall, never replaces it (merged by id, the recalled record kept on a clash; an empty list adds nothing; a passed record may leave out id when it carries kind, title and scope, the id then derived from them by the memory skill rule), and the report names both parts. Pass {mutants:true} to include the slow mutation pass. The mechanical gate (clippy and semgrep, through the craft binary\'s `craft review gate`) BUILDS AND RUNS THE BRANCH\'S CODE on this machine, once, before the reviews, which take its result and seeds rather than gate again (with none kept, they run with gate=false); a red gate starts no review — each is NOT RUN (gate red) — and the audit\'s verdict is Block, its report led by the gate\'s line in the review\'s own words, the gate\'s section appended once; each review\'s answer carries its verdict, the path of the report the binary wrote and its findings, which the synthesis reads (not yet observed live). It audits ONLY the checkout the session runs in: there is no `repo` argument, and passing one is refused with nothing run (use `craft:review` with repo=, or start a session inside that repository). It posts nothing to a PR: to post findings there run review with comment — never post findings by hand (they would lack the marker that ties a later rejection to its finding). Once a workflow run has ended (completed, failed or stopped — not while you may still resume it), fold its real cost into the records it filed: `node "<craft plugin root>/lib/craft-log-run.mjs" enrich-cost --run-id <wf_…>` (the plugin root is two directories above a craft skill\'s base directory), with the run id the Workflow completion names. Best-effort: if it fails, say so in one line and go on.',
   phases: [
     { title: 'Scout', detail: 'detect the diff base, unsafe code, and the workspace crates + dependency edges', model: 'haiku' },
-    { title: 'Audit', detail: 'parallel per-crate review + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
+    { title: 'Audit', detail: 'parallel: the mechanical gate once (cli-review gateOnly), then per-crate CLI review taking it (gateFrom; none on a red gate) + per-edge contracts + architecture + crate-decomposition + security + Miri + semver/build-matrix/deps/unused-crates/tests-cov' },
     { title: 'Verify', detail: 'adversarially verify unused-crate candidates before reporting' },
     { title: 'Synthesize', detail: 'merge every dimension into one severity-ranked report' },
   ],
@@ -71,30 +71,31 @@ const recalledByLauncher = A['_recalled'] === true
 let nestedPriorDecisions = withDerivedIds(passedDecisions)
 // A record without an id is counted by the id derived for it (realm @nick/craft, node #222).
 let memory = withDerived(initialMemory(passedAccepted, recalledByLauncher, A['_memory']), passedRead)
-// The audit's recall outcome when it found none, forwarded as `_memory` so each nested report names it.
+// The audit's recall outcome when it found none: the nested reviews then recall nothing either (`_recalled`), and the
+// audit's own memory line names why. The nested CLI review takes a launcher's recall only as records
+// (`priorDecisions` with `_recalled`, the binary's `--prior-decisions` and `--no-recall`): the recall's note, its split
+// into parts (#218) and its external-system records (#431, #435) have no carrier there, and cli-review refuses them, so
+// they stay in this audit's own report and are not forwarded (realm @nick/craft, nodes #150, #196).
 let nestedMemoryNote = recalledByLauncher ? recallText(A['_memory']) : ''
-// How the forwarded list splits — this audit's recall first, then its launcher's records — so each nested
-// review names both parts (realm @nick/craft, node #218); a launcher's own split passes through.
-/** @type {unknown} */
-let nestedMemoryParts = recalledByLauncher ? A['_memoryParts'] : undefined
-// The external-system records this audit's recall returned (realm @nick/craft, node #431), forwarded with the
-// rest so each nested review prepares their source itself; a launcher's own pass through.
-/** A launcher's forwarded list under `key`, when it recalled. @param {string} key */
-const fromLauncher = key => (recalledByLauncher ? asList(A[key]) : [])
-let nestedExternals = fromLauncher('_externals')
-// Every active external record whatever its scope, the nested reviews' filter of what is already recorded (node #435).
-let nestedKnownExternals = fromLauncher('_knownExternals')
-// What every nested review inherits from this run: craftRoot (the logger's home) and the project's
-// prior decisions with the flag that they are already recalled.
+// What every nested CLI launch inherits from this run, the gate's included: the parent's name and craftRoot (where its
+// driver finds the craft binary's fetcher).
+function nestedLaunchArgs() {
+  return {
+    _via: 'rust-audit',
+    ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
+  }
+}
+/**
+ * A per-crate (or whole-workspace) review's own arguments: a fresh run that runs no gate of its own (the gate runs once,
+ * first, below), with the project's prior decisions and the flag that they are already recalled.
+ */
 function nestedReviewArgs() {
   return {
-    ...(craftRootArg ? { craftRoot: craftRootArg } : {}),
+    ...(baseRef ? { base: baseRef } : {}),
+    fresh: true,
+    ...nestedLaunchArgs(),
     ...(nestedPriorDecisions != null ? { priorDecisions: nestedPriorDecisions } : {}),
     ...(memory.source !== 'none' || nestedMemoryNote ? { _recalled: true } : {}),
-    ...(nestedMemoryNote ? { _memory: nestedMemoryNote } : {}),
-    ...(nestedMemoryParts != null ? { _memoryParts: nestedMemoryParts } : {}),
-    ...(nestedExternals.length ? { _externals: nestedExternals } : {}),
-    ...(nestedKnownExternals.length ? { _knownExternals: nestedKnownExternals } : {}),
   }
 }
 
@@ -209,7 +210,7 @@ const UNUSED_VERDICT_SCHEMA = {
  * @typedef {{ candidates: number, confirmed: number, refuted: number, died: number, judged: number,
  *   refuteRate: number | null }} VerificationStats
  * @typedef {{ dimension: string, verdict: string, summary: string, findings: Finding[], evidence?: string,
- *   _verification?: VerificationStats, _priorDecisions?: string }} DimResult
+ *   _verification?: VerificationStats, _priorDecisions?: string, _gateSection?: string, _gateDir?: string }} DimResult
  */
 
 // The craft release that produced a run. Recorded on the run record and index line so an
@@ -328,10 +329,12 @@ async function genericAfterThrow(e, prompt, generic, at) {
 // nested report, so it reads the section back (readAgentUnavailableSection) and names the dimension.
 /** @type {{ dimension: string, missing: { agent: string, error: string }[], emptied: { agent: string, count: number, error?: string }[] }[]} */
 const nestedAgentNotes = []
+// A nested CLI review says it in its Degraded notes rather than the review engine's section; both are read.
 /** @param {string} dimension @param {unknown} reportIn */
 function noteNestedAgents(dimension, reportIn) {
   const got = readAgentUnavailableSection(reportIn)
-  if (got.missing.length || got.emptied.length) nestedAgentNotes.push({ dimension, ...got })
+  const emptied = [...got.emptied, ...cliDegraded(reportIn)]
+  if (got.missing.length || emptied.length) nestedAgentNotes.push({ dimension, missing: got.missing, emptied })
 }
 const agentSection = () => agentUnavailableSection(
   [
@@ -431,7 +434,7 @@ const { baseRef, hasUnsafe, repoRoot, crates, changedCrates, edges, notes: scout
 async function recallOnce() {
   if (recalledByLauncher) return
   const r = await recallDecisions(p => auditAgent(p, { label: 'memory-recall', phase: 'Scout', schema: MEMORY_RECALL_SCHEMA, effort: 'low' }), [], baseRef || baseArg)
-  const { merged, parts, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parsePriorDecisions, r.inactive)
+  const { merged, read, blocked, overrides } = mergeAndRead(r.decisions, passedList, parsePriorDecisions, r.inactive)
   memory = withDerived(withPassed(r.memory, passedAccepted, read.passed), read.prior.decisions)
   // A passed copy of a record the store withdrew or superseded is not forwarded; the audit names it on
   // its memory line, the nested reviews never see it (realm @nick/craft, node #224).
@@ -439,10 +442,6 @@ async function recallOnce() {
   // A passed copy dated later than the inactive record is forwarded, and named (realm @nick/craft, node #229).
   memory = { ...memory, why: [memory.why, ...blocked, ...overrides].join('; ') }
   nestedPriorDecisions = withDerivedIds(merged)
-  nestedExternals = asList(r.externals)
-  nestedKnownExternals = asList(r.knownExternals)
-  // With the K this audit's line prints, so each nested line counts the same records (realm @nick/craft, node #244).
-  nestedMemoryParts = { ...parts, accepted: passedAccepted }
   if (r.memory.source === 'none') nestedMemoryNote = r.memory.why || 'the recall found none'
   if (passedDecisions != null && passedDecisions !== '' && !Array.isArray(passedDecisions)) {
     log('⚠️ priorDecisions is not a list — not forwarded to the nested reviews')
@@ -495,7 +494,7 @@ phase('Audit')
 // claimed pass with no `Evidence:` line becomes INCOMPLETE by construction (invariant #53), and —
 // because the demoted string leads with INCOMPLETE — falls into couldNotRun/worstVerdict with no
 // change to the rollup. The `review`/`review:<crate>` sites pass it false: their verdict is grounded
-// by review.js's confirmed-finding count and their synthetic summary carries no marker, so gating
+// by the nested review's confirmed-finding count and their synthetic summary carries no marker, so gating
 // them would demote every honest zero-finding review (the one false-positive the design excludes).
 /**
  * @param {string} dimension
@@ -530,68 +529,101 @@ function dispatchDim(dimension, promise, opts = {}) {
  * (null) or one that reports a dead round of its own is one death (realm @nick/craft, node #299). A
  * report that came back carries back any limit the nested run reported.
  * @param {string} dimension @param {Promise<unknown>} launched  nestedWorkflow's report
+ * @param {(dimension: string, reportIn: unknown) => DimResult} [read]  how its answer becomes the dimension's result
  * @returns {Promise<DimResult | null>}
  */
-function nestedReview(dimension, launched) {
+function nestedReview(dimension, launched, read = cliReviewResult) {
   const died = auditLimit.observeDispatch()
   return launched.then(/** @param {unknown} reportIn */ reportIn => {
     if (reportIn == null || deathsInReport(reportIn)) died()
     if (reportIn == null) return null
     noteNestedAgents(dimension, reportIn)
     auditLimit.observeError(limitInReport(reportIn))
-    return reviewResult(dimension, reportIn)
+    return read(dimension, reportIn)
   })
 }
 
+/** The nested CLI review, by the name this registry carries (lib/nested-workflow.mjs). @param {Record<string, unknown>} launch */
+const cliReview = launch => nestedWorkflow(workflow, 'cli-review', launch, log)
+
+// The mechanical gate — clippy and semgrep for Rust, which BUILD the branch's code — runs ONCE for the whole change,
+// FIRST, as the gate alone (cli-review gateOnly, the binary's `craft review gate`), which keeps its result and seeds in
+// a directory: every review waits for it and takes it (`gateFrom`), so the seeds on its crate's lines reach its lenses
+// and no review builds the workspace again (realm @nick/craft, node #150). A red gate starts no review, as a review
+// stops before its lenses; a gate that did not answer or kept nothing leaves the reviews ungated (`gate=false`), said in
+// the log and the report. The dimensions that run cargo builds themselves (security, Miri, semver, build-matrix,
+// tests-cov, and unused-crates, whose fallback `cargo +nightly udeps` builds) wait for it too, whatever its colour — run beside it they would hold cargo's build lock until its budget
+// is gone; the rest do not wait. Its answer is the `gate` dimension; its section is appended to the report once.
+/** @type {Promise<DimResult | null> | null} */
+let gateRun = null
+/** The gate's one run, started by whichever task asks first. @returns {Promise<DimResult | null>} */
+const gateFirst = () => (gateRun ??= auditLimit.seen() ? Promise.resolve(null) : dispatchGate())
+/** @returns {Promise<DimResult | null>} */
+const dispatchGate = async () => (await dispatchDim('gate',
+  nestedReview('gate', cliReview({ gateOnly: true, ...(baseRef ? { base: baseRef } : {}), ...nestedLaunchArgs() }), (_, a) => gateResult(a)),
+  { deadReason: 'nested gate returned no result (died) — dimension NOT RUN', threw: msg => `gate failed: ${msg}`, evidenceGate: false })) ?? null
+/** The reviews the red gate kept from starting: NOT RUN, by design, not a failure. @type {string[]} */
+const gateBlocked = []
+/** Whether the gate came out red. @param {DimResult | null} g */
+const gateRed = g => g?.verdict === 'Block'
+/** A gate that answered but named no directory its result was kept in: the reviews then run ungated. */
+const GATE_NOT_KEPT = '⚠️ The gate named no directory its result was kept in, so every review ran with no gate of its own (gate=false) and no tool seeds reached their lenses.'
+let gateNotKept = false
+/** How a review takes the gate: the kept result, or none — said once when a gate that answered kept nothing. @param {DimResult | null} g */
+function gateArgs(g) {
+  if (g?._gateDir) return { gateFrom: g._gateDir }
+  if (g && !gateNotKept) log(GATE_NOT_KEPT)
+  gateNotKept ||= !!g
+  return { gate: false }
+}
+/** `thunk` once the gate's one run has answered, whatever it says: a dimension that runs cargo builds. @param {() => Promise<DimResult | null | undefined>} thunk */
+const afterGate = thunk => () => gateFirst().then(thunk)
+
 /** @type {Array<() => Promise<DimResult | null | undefined> | null>} */
-const tasks = []
+const tasks = [() => gateFirst()]
 /** @type {string[]} */
-const dispatched = []
+const dispatched = ['gate']
+
+/**
+ * Queues one nested review once the gate is in: none on a red gate (said, and named NOT RUN with its reason), else the
+ * CLI review over `scope` taking the gate.
+ * @param {string} dimension @param {Record<string, unknown>} scope  its `path`, or none for the whole workspace
+ */
+function queueReview(dimension, scope) {
+  tasks.push(() => gateFirst().then(g => {
+    if (gateRed(g)) {
+      gateBlocked.push(dimension)
+      log(`${dimension}: NOT RUN — the mechanical gate is red: ${g?.summary ?? ''}`)
+      return null
+    }
+    if (auditLimit.seen()) return null
+    // report==null is a dead nested engine (nested-workflow contract): nestedReview resolves it to null here so it
+    // lands in NOT RUN like any other death. A swallowed throw is a name that would not resolve OR a run that died;
+    // the "<dimension> failed:" wording keeps the two legible. evidenceGate:false — a review verdict is grounded by the
+    // nested review's confirmed-finding count, and its synthetic summary carries no `Evidence:` marker.
+    return dispatchDim(dimension, nestedReview(dimension, cliReview({ ...scope, ...nestedReviewArgs(), ...gateArgs(g) })),
+      { deadReason: 'nested review returned no result (died) — dimension NOT RUN', threw: msg => `${dimension} failed: ${msg}`, evidenceGate: false })
+  }))
+  dispatched.push(dimension)
+}
 
 // Review dimension — per-crate fan-out (feature A). changedCrates → diff-scoped; no base → all
-// crates; 0 or 1 crate → today's single whole-workspace review.
+// crates; 0 or 1 crate → one whole-workspace review.
 /** Queues the review dimension: one nested review per crate, or one for the whole workspace. */
 function pushReviewDims() {
   const reviewCrates = changedCrates.length ? changedCrates : (baseRef ? [] : crates)
-  if (reviewCrates.length > 1) {
-    for (const c of reviewCrates) {
-      const scope = crateScope(c.path, repoRoot)
-      if (scope == null) {
-        // Dispatching it unscoped would review the WHOLE workspace under this crate's label — the
-        // failure this family exists to end. A null thunk lands in the NOT-RUN bookkeeping, which is
-        // what an unmeasured crate actually is.
-        log(`⚠️ crate ${c.name}: path=${String(c.path)} could not be made repo-relative (repoRoot=${repoRoot || 'unresolved'}) — its per-crate review is NOT RUN rather than silently widened to the whole workspace`)
-        tasks.push(() => null)
-        dispatched.push(`review:${c.name}`)
-        continue
-      }
-      tasks.push(() => auditLimit.seen() ? null : dispatchDim(`review:${c.name}`,
-        // report==null is a dead nested engine (nested-workflow contract, line 875): nestedReview resolves
-        // it to null HERE so it lands in NOT RUN like any other death, and reviewResult only ever sees a
-        // report that came back — an unreadable verdict there is a real run, kept as a Warning in results.
-        nestedReview(`review:${c.name}`, nestedWorkflow(workflow, 'review', { base: baseRef, path: scope, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)),
-        // A swallowed throw is a name that would not resolve OR a run that died; keep the
-        // "review:<crate> failed:" wording so the reason (refusal vs death) stays legible and distinct.
-        // evidenceGate:false — a review verdict is grounded by review.js's confirmed-finding count, and
-        // reviewResult's synthetic summary carries no `Evidence:` marker; gating it would demote every
-        // honest zero-finding review.
-        { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
-          threw: msg => `review:${c.name} failed: ${msg}`, evidenceGate: false }))
-      dispatched.push(`review:${c.name}`)
+  if (reviewCrates.length <= 1) return queueReview('review', {})
+  for (const c of reviewCrates) {
+    const scope = crateScope(c.path, repoRoot)
+    if (scope != null) {
+      queueReview(`review:${c.name}`, { path: scope })
+      continue
     }
-  } else {
-    // Without craftRoot the child resolves its logger from CLAUDE_PLUGIN_ROOT alone and, in a checkout
-    // launch, cannot log at all — every nested record lost while the parent's lands.
-    tasks.push(() => auditLimit.seen() ? null : dispatchDim('review',
-      // As at the per-crate site: report==null is a dead nested engine — resolved to null before
-      // reviewResult so it lands in NOT RUN, not as a truthy Warning in results.
-      nestedReview('review', nestedWorkflow(workflow, 'review', baseRef ? { base: baseRef, languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }
-                                                                  : { languages: ['rust'], _via: 'rust-audit', ...nestedReviewArgs() }, log)),
-      // evidenceGate:false — as at the per-crate site: the review verdict is finding-count-grounded and
-      // reviewResult's summary carries no `Evidence:` marker, so the gate must not touch it.
-      { deadReason: 'nested review returned no result (died) — dimension NOT RUN',
-        threw: msg => `review failed: ${msg}`, evidenceGate: false }))
-    dispatched.push('review')
+    // Dispatching it unscoped would review the WHOLE workspace under this crate's label — the failure this family
+    // exists to end. A null thunk lands in the NOT-RUN bookkeeping, which is what an unmeasured crate actually is.
+    log(`⚠️ crate ${c.name}: path=${String(c.path)} could not be made repo-relative (repoRoot=${repoRoot || 'unresolved'}) — its per-crate review is NOT RUN rather than silently widened to the whole workspace`)
+    tasks.push(() => null)
+    dispatched.push(`review:${c.name}`)
   }
 }
 pushReviewDims()
@@ -632,19 +664,19 @@ tasks.push(() => dispatchDim('architecture', /** @type {Promise<FindingsResult |
 ))))
 dispatched.push('architecture')
 
-tasks.push(() => dispatchDim('security', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
+tasks.push(afterGate(() => dispatchDim('security', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
   `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is available) against the rust-security rubric (load the rust-security skill). Consolidate into a severity-ranked verdict and findings. If NONE of the tools is installed, so nothing was actually scanned, return verdict "INCOMPLETE (not run)" and name the missing tools — a scan that ran nothing is not an Approve.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
   { label: 'security', agentType: 'craft:rust-security-scanner', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
-))))
+)))))
 dispatched.push('security')
 
 /** Queues Miri when the workspace has unsafe code, or says it is skipped. */
 function pushMiriDim() {
   if (hasUnsafe) {
-    tasks.push(() => dispatchDim('miri', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
+    tasks.push(afterGate(() => dispatchDim('miri', /** @type {Promise<FindingsResult | null>} */ (safeAgent(
       `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric (load the rust-unsafe skill). Return a verdict (Clean / UB-found), or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.\n\nObservability: the rust-audit workflow records this run — do NOT write your own record.`,
       { label: 'miri', agentType: 'craft:rust-miri', phase: 'Audit', schema: FINDINGS_SCHEMA, model: 'opus' },
-    ))))
+    )))))
     dispatched.push('miri')
   } else {
     log('No unsafe code detected — skipping Miri.')
@@ -657,16 +689,16 @@ pushMiriDim()
 // `INCOMPLETE (not run)`, not Approve. Approve stays reserved for "the tool ran and found
 // nothing"; a reader of the dimension table must be able to tell those two apart. ----
 
-tasks.push(() => dispatchDim('semver', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
+tasks.push(afterGate(() => dispatchDim('semver', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Check public-API semver compatibility across the workspace's PUBLISHED crates. Run \`cargo semver-checks check-release\` (per published crate as needed). If \`cargo-semver-checks\` is not installed, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill (semver/publishing) and the rust-review api-design pass. Report breaking changes vs the published baseline as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran and crates you checked this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'semver', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-))))
+)))))
 dispatched.push('semver')
 
-tasks.push(() => dispatchDim('build-matrix', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
+tasks.push(afterGate(() => dispatchDim('build-matrix', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV: read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\` (or \`cargo +<rust-version> check\` if that toolchain is installed). Skip any tool/toolchain that is absent with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Load the rust-ecosystem skill. Report failing feature combinations or MSRV breakage as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (feature sets, MSRV checks) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'build-matrix', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-))))
+)))))
 dispatched.push('build-matrix')
 
 tasks.push(() => dispatchDim('deps', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
@@ -683,7 +715,7 @@ dispatched.push('deps')
 // dev/bench/example-only usage), so every candidate is verified before it reaches the report: a
 // verifier tries HARD to prove the crate IS used and only the survivors are kept. Self-contained
 // find→verify pipeline inside one thunk so it composes with the flat `parallel(tasks)` fan-out.
-tasks.push(() => dispatchDim('unused-crates', (async () => {
+tasks.push(afterGate(() => dispatchDim('unused-crates', (async () => {
   const found = /** @type {FindingsResult | null} */ (await auditAgent(
     `Find UNUSED crates in this Rust workspace, in two classes:
 (a) ORPHAN workspace members — from \`cargo metadata --locked --format-version 1\` (if \`--locked\` refuses (Cargo.lock missing or stale), read them from \`cargo metadata --no-deps --format-version 1\` instead — it does not resolve dependencies, so it never writes Cargo.lock; there each member's \`dependencies\` entry with a \`path\` inside another member is an edge. Never run it without one of those two flags: a plain call rewrites the lockfile of the checkout under audit.), workspace members that NO other workspace member depends on (any dependency kind), EXCLUDING binaries (a [[bin]] target or src/main.rs) and published libraries (Cargo.toml \`publish\` is not false / it is meant for crates.io).
@@ -722,17 +754,17 @@ Set confirmedUnused=true ONLY if it is genuinely unused and safe to remove; defa
     )).then(v => wrapVerdict(c, v)),
   ))
   return unusedCratesResult(candidates, verdicts)
-})()))
+})())))
 dispatched.push('unused-crates')
 
 /** The tests-cov brief's mutation-testing clause: run it only when asked. @returns {string} */
 function mutantsInstruction() {
   return runMutants ? ' Run `cargo mutants --timeout 60`, time-boxed, to surface weak spots (it is slow).' : ' Do NOT run cargo mutants (not requested via {mutants:true}).'
 }
-tasks.push(() => dispatchDim('tests-cov', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
+tasks.push(afterGate(() => dispatchDim('tests-cov', /** @type {Promise<FindingsResult | null>} */ (auditAgent(
   `Assess test effectiveness and docs. Run \`cargo llvm-cov --summary-only\` (overall coverage + worst-covered files) if \`cargo-llvm-cov\` is installed.${mutantsInstruction()} Build docs cleanly: \`cargo doc --no-deps\` (flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any tool that is not installed with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill (coverage/mutation/doctests) and rust-idioms (rustdoc). Report low-coverage hotspots, surviving mutants, broken doc links, and failing doctests as findings. Fill the \`evidence\` field with one line beginning \`Evidence:\` naming the exact commands you ran (coverage, doc build, doctests) this pass — a passing verdict with an empty evidence field is treated as INCOMPLETE, not trusted.`,
   { label: 'tests-cov', phase: 'Audit', schema: FINDINGS_SCHEMA, effort: 'low' },
-))))
+)))))
 dispatched.push('tests-cov')
 
 // Normalise every dimension verdict ONCE, here, so the aggregate, the persisted record and the
@@ -752,7 +784,10 @@ const results = (await auditLimit.round('the audit dimensions', () => parallel(t
 // Two intentional skips avoid NOT-RUN by never being pushed to `dispatched`: contracts (no touched
 // edges) and Miri (no unsafe) — those are genuine "nothing to check here", not "could not check".
 const ran = new Set(results.map(r => r.dimension))
-const notRun = dispatched.filter(d => !ran.has(d))
+// A review the red gate kept from starting is not in `notRun`, which the run store ranks as fragility a re-run fixes
+// (lib/analyze-runs.mjs): it is a decision a re-run makes again — the red gate is the verdict, as a review's own red
+// gate ends it before any lens — so it is said as NOT RUN (gate red) and filed apart, as `gateBlocked`.
+const notRun = dispatched.filter(d => !ran.has(d) && !gateBlocked.includes(d))
 if (auditLimit.seen()) notRun.unshift(auditLimit.note())
 // ANCHORED: only a verdict that is NOTHING BUT incomplete means "checked nothing". A severity-
 // suffixed one (`Block (INCOMPLETE)` from a partially-covered nested review) is a real finding
@@ -776,6 +811,7 @@ const incompleteDimensions = [...notRun, ...results.filter(r => /^\s*INCOMPLETE/
 /** Logs each kind of dimension that did not answer for its coverage. */
 function logGaps() {
   if (notRun.length) log(`No result from: ${notRun.join(', ')} — flagged NOT RUN in the report.`)
+  if (gateBlocked.length) log(`Not started, the mechanical gate is red: ${gateBlocked.join(', ')} — flagged NOT RUN (gate red) in the report.`)
   if (couldNotRun.length) log(`Tooling absent, nothing checked: ${couldNotRun.join(', ')} — flagged COULD NOT RUN in the report.`)
   if (noEvidence.length) log(`Reported a green but showed no Evidence: ${noEvidence.join(', ')} — flagged NO EVIDENCE (verdict not trusted) in the report.`)
 }
@@ -784,19 +820,32 @@ logGaps()
 const listOrNone = names => names.length ? names.join(', ') : 'none'
 
 const stripped = results.map(stripInternal)
+// The gate's section, appended to the report once (realm @nick/craft, node #150); '' when the gate did not answer.
+/**
+ * The gate's part of the report: its section, appended once, and — red — its line in the binary's own words, which
+ * leads the report as the audit's verdict (realm @nick/craft, node #150).
+ * @param {DimResult | null} g @returns {{ gateSection: string, redLead: string }}
+ */
+function gateReport(g) {
+  const notKept = gateNotKept ? `\n${GATE_NOT_KEPT}\n` : ''
+  return { gateSection: g?._gateSection ? `${g._gateSection}${notKept}` : notKept && `## Gate\n${notKept}`, redLead: gateRed(g) && g ? `${g.summary}\n\n` : '' }
+}
+const { gateSection, redLead } = gateReport(results.find(r => r.dimension === 'gate') ?? null)
+/** The appended tail every report form carries: the gate's section, then the nested reviews' prior-decision sections. */
+const tail = () => `${gateSection ? `\n\n${gateSection}` : ''}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}`
 
 phase('Synthesize')
 const report = await auditAgent(
-  `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`review:<crate>\` (one per crate reviewed), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
+  `You are consolidating a Rust audit. Below are JSON results from independent review agents. Dimensions come in families: \`gate\` (the mechanical gate — clippy and semgrep — run ONCE for the whole change; the engine appends its section below your report, so give it its row in the table and, if it is a Block, make the overall verdict Block quoting its summary verbatim, but do NOT restate its section; a verdict \`INCOMPLETE (gate not established)\` is a gate that did not run or could not establish its signal — a fetch of the binary that failed, the 300 s budget, a tool that would not run: render it \`GATE NOT ESTABLISHED\` with its summary as the cause, never as a pass and never as a missing tool unless the summary says so), \`review:<crate>\` (one per crate reviewed, each a CLI review that took this audit's one gate rather than running its own — never report a review's own gate as a second gate, skipped or missing; its first finding's detail names the report file it wrote, which you may read for detail, and the rest are the findings it reported), \`contract:<from>→<to>\` (one per inter-crate dependency edge), \`crate-decomposition\` (extract/merge recommendations), \`architecture\`, \`security\`, \`miri\`, and the tool dimensions \`semver\`/\`build-matrix\`/\`deps\`/\`unused-crates\` (verified orphan workspace members + unused dependencies)/\`tests-cov\`. Produce ONE markdown report — do not invent findings, only merge what is given:
 
 1. An **overall verdict** line — the worst case across all dimensions. If any dimension did not run, or could not run, mark the audit INCOMPLETE.
 2. A **dimension → verdict** table with one row per dimension present (list each \`review:<crate>\` and \`contract:<from>→<to>\` separately). Add a row for every dimension under NOT RUN below with verdict \`NOT RUN\` — its agent failed, so do not treat its absence as a pass. Any dimension listed under COULD NOT RUN below (verdict \`INCOMPLETE (not run)\`) must be rendered as \`COULD NOT RUN\` with a note naming the missing tool. Any dimension listed under NO EVIDENCE below (verdict \`INCOMPLETE (no evidence …)\`) must be rendered as \`NO EVIDENCE\` — it claimed a green but showed no work, so its verdict is not trusted; the tool may have run, so do NOT call it tooling-absent. NEVER render either as Approve or as a blank/green cell: a reader must be able to tell "ran, found nothing" from "never ran" from "claimed clean but showed nothing". Directly beneath the table, state in one line how many dimensions actually ran out of the total.
 3. **Findings by severity** (Critical first), each tagged with its dimension and location, plus a one-line fix direction.
 4. A short **"Fix first"** list — the few highest-leverage items across all dimensions.
 5. A **"Crate boundaries"** note: summarise the \`crate-decomposition\` extract/merge recommendations (driver + boundary), if any.
-6. If a \`review:*\` dimension's summary names a **gate provenance** (CI vs local), surface it in one line under the verdict.
 
 NOT RUN (no result — agent failed or was skipped): ${listOrNone(notRun)}
+NOT RUN (gate red — the mechanical gate is red, so these reviews were not started, as a review stops before its lenses; render each as \`NOT RUN (gate red)\` — never a pass, and not a failure of its own): ${listOrNone(gateBlocked)}
 COULD NOT RUN (agent reported back, but its tooling was absent so nothing was checked — treat as uncovered, never as a pass): ${listOrNone(couldNotRun)}
 NO EVIDENCE (agent claimed a green but showed no work, so its verdict is not trusted — the tool may have run; treat as uncovered, never as a pass, but do NOT assert its tooling was absent): ${listOrNone(noEvidence)}
 
@@ -855,6 +904,8 @@ const auditRecord = {
   // stores instead of a fabricated 0).
   verification: verificationRecord(uc),
   notRun,
+  // The reviews the red gate kept from starting, apart from `notRun` (above).
+  gateBlocked,
   couldNotRun,
   noEvidence,
   // Agent types that were not registered (so their dimensions ran on the generic subagent) and
@@ -873,7 +924,7 @@ await logRun(auditRecord)
 // telemetry marker is also empty, so nothing at all says the synthesis died.
 // Without a schema a live agent returns its final text, so anything but a non-blank string is a death:
 // a whitespace-only answer is no report either (realm @nick/craft, #136).
-if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 the synthesis did not run, so this audit has NO report; nothing here is an approval. ${limitStopAdvice(auditLimit, { version: CRAFT_VERSION, engine: 'rust-audit', checkpoints: false })}\n`
-if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
-return `${telemetryLostSection(telemetryLost)}${agentSection()}${honestVerdictLine(report, incompleteDimensions)}${nestedPriorDecisionsSection(results.map(r => ({ dimension: r.dimension, text: r._priorDecisions || '' })))}${memorySection(memory, true)}`
+if (auditLimit.seen()) return `${telemetryLostSection(telemetryLost)}${agentSection()}\u26a0\ufe0f INCOMPLETE \u2014 the synthesis did not run, so this audit has NO report; nothing here is an approval. ${limitStopAdvice(auditLimit, { version: CRAFT_VERSION, engine: 'rust-audit', checkpoints: false })}${tail()}\n`
+if (typeof report !== 'string' || !report.trim()) return `${telemetryLostSection(telemetryLost)}${agentSection()}${redLead}⚠️ INCOMPLETE — the Synthesize agent returned no result, so this audit has NO report. Nothing here is an approval; re-run it.${tail()}${memorySection(memory, true)}`
+return `${telemetryLostSection(telemetryLost)}${agentSection()}${redLead}${honestVerdictLine(report, incompleteDimensions)}${tail()}${memorySection(memory, true)}`
 }

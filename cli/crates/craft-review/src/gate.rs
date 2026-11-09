@@ -19,6 +19,7 @@ use serde_json::Value;
 
 use crate::coverage::Exit;
 
+pub mod alone;
 mod cause;
 mod check;
 mod clippy;
@@ -103,6 +104,10 @@ pub struct Gate {
     /// Why no gate ran at all, when none did.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub skipped: String,
+    /// The directory of the launching run's gate this run took rather than running its own
+    /// (`--gate-from`, [`alone::taken`]); empty when the run gated itself or not at all.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub from: String,
 }
 
 impl Gate {
@@ -114,6 +119,7 @@ impl Gate {
             skipped:
                 "skipped on request (`--no-gate`): no tool built, linted or ran the branch's code"
                     .into(),
+            from: String::new(),
         }
     }
 
