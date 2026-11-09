@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.45.0](https://github.com/gurinderu/craft/compare/v0.44.0...v0.45.0) (2026-11-09)
+
+
+### Features
+
+* **cli:** the craft binary files cli-review's telemetry itself ([ca02ef4](https://github.com/gurinderu/craft/commit/ca02ef4f0f94e5243c26f568f35d75a577fdec7b))
+* **cli:** the craft binary files cli-review's telemetry itself ([22a8afa](https://github.com/gurinderu/craft/commit/22a8afa2e40659304cc588f23717713113d0c230))
+
+
+### Bug Fixes
+
+* **cli:** keep a stopped part's record until it lands; cost only from the run's own filings ([0ee3548](https://github.com/gurinderu/craft/commit/0ee3548c97431fb884aca8bd7aa5493c3203af81))
+* **cli:** match a cli-review record's cost by what its filing says, not by step label alone ([3373192](https://github.com/gurinderu/craft/commit/3373192c56adfccfb1976de8f132fee56481dce7))
+* **cli:** name cargo's root cause when clippy exits with no compiler error ([1e3d768](https://github.com/gurinderu/craft/commit/1e3d76839e0704c9b7d0d42b2ab5bed4eb9bdb53))
+* **cli:** no second record for a lost submit; file a stopped run's record on resume ([cb25091](https://github.com/gurinderu/craft/commit/cb25091b288ba79f8ee2974e1b1de8910ae2c52a))
+
 ## [0.44.0](https://github.com/gurinderu/craft/compare/v0.43.0...v0.44.0) (2026-11-08)
 
 
