@@ -3,8 +3,10 @@
 //! project's own tree. `craft init` writes it; `craft review start` reads it. It holds the
 //! integration points — the external systems the project's code talks to over the network or
 //! through their API — each with its source and the revision that counts as deployed (a tag or a
-//! full commit, never a branch: node #430). Unknown keys are left for later sections (lens
-//! overrides, say), so an older binary reads a newer profile's integration points.
+//! full commit, never a branch: node #430), and the CI map — which check of the project's CI
+//! carries which signal, on which command line (node #482), the gate's evidence when it cannot
+//! build the head itself. Unknown keys are left for later sections (lens overrides, say), so an
+//! older binary reads a newer profile's integration points.
 
 use std::path::{Path, PathBuf};
 
@@ -14,7 +16,36 @@ use sha2::{Digest, Sha256};
 use crate::git;
 use crate::sources::spec::SYSTEMS_MAX;
 
+pub mod candidates;
+pub mod ci;
+mod ci_configs;
+#[cfg(test)]
+mod ci_configs_tests;
+mod ci_error;
+mod ci_files;
+#[cfg(test)]
+mod ci_files_tests;
+mod ci_ground;
+#[cfg(test)]
+mod ci_ground_tests;
+mod ci_match;
+#[cfg(test)]
+mod ci_match_tests;
+#[cfg(test)]
+mod ci_scope_tests;
+mod ci_shape;
+#[cfg(test)]
+mod ci_tests;
 mod point;
+mod shell;
+mod signal;
+pub mod workflow;
+mod workflow_steps;
+#[cfg(test)]
+mod workflow_steps_tests;
+#[cfg(test)]
+mod workflow_tests;
+pub use ci::{CI_MAX, CiEntry, CiError, Signal};
 pub use point::IntegrationPoint;
 
 /// The profile's format; a profile of another is refused, not misread.
@@ -52,19 +83,27 @@ pub struct ProjectProfile {
     pub repo: String,
     #[serde(default, rename = "integration")]
     pub integrations: Vec<IntegrationPoint>,
+    /// The CI map: always written, an empty one too, so a write replaces the one it held.
+    #[serde(default)]
+    pub ci: Vec<CiEntry>,
 }
 
 impl ProjectProfile {
     /// A profile of `repo` holding `points`, each checked, their names unique, at most
-    /// [`SYSTEMS_MAX`].
+    /// [`SYSTEMS_MAX`], and the CI map `ci`, at most [`CI_MAX`] entries, no check's signal twice.
     ///
     /// # Errors
-    /// The first point that fails, or too many, or a name twice.
-    pub fn new(repo: String, integrations: Vec<IntegrationPoint>) -> Result<Self, ProjectError> {
+    /// The first point or entry that fails, or too many, or one twice.
+    pub fn new(
+        repo: String,
+        integrations: Vec<IntegrationPoint>,
+        ci: Vec<CiEntry>,
+    ) -> Result<Self, ProjectError> {
         let p = Self {
             version: PROFILE_VERSION,
             repo,
             integrations,
+            ci,
         };
         p.check().map_err(ProjectError::Invalid)?;
         Ok(p)
@@ -81,6 +120,20 @@ impl ProjectProfile {
             p.check()?;
             if self.integrations.iter().take(i).any(|q| q.name == p.name) {
                 return Err(format!("{}: named twice", p.name));
+            }
+        }
+        if self.ci.len() > CI_MAX {
+            return Err(format!("more than {CI_MAX} CI map entries"));
+        }
+        for (i, e) in self.ci.iter().enumerate() {
+            e.check().map_err(|e| e.to_string())?;
+            let twice = |f: &CiEntry| f.check == e.check && f.signal == e.signal;
+            if self.ci.iter().take(i).any(twice) {
+                return Err(format!(
+                    "{}: its {} signal named twice",
+                    e.check,
+                    e.signal.as_str()
+                ));
             }
         }
         Ok(())

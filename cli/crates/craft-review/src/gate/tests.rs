@@ -51,6 +51,7 @@ pub(super) fn setup(path: &Path, budget: Duration) -> GateSetup {
         budget,
         path: Some(path.as_os_str().to_owned()),
         scope: None,
+        projects: None,
     }
 }
 
@@ -289,7 +290,7 @@ fn a_diagnostic_is_placed_from_the_package_it_was_reported_in() {
 }
 
 /// A repository with a package at its top, its lockfile `lock` committed when there is one.
-fn package(lock: Option<&str>) -> tempfile::TempDir {
+pub(super) fn package(lock: Option<&str>) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
     git(d, &["init", "-q", "-b", "main"]);

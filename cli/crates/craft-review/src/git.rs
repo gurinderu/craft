@@ -257,6 +257,15 @@ pub fn default_base(cwd: &Path) -> Result<String, GitError> {
         .ok_or(GitError::NoDefaultBase)
 }
 
+/// Whether tracked files in `cwd` differ from `HEAD` (untracked ones aside).
+///
+/// # Errors
+/// When `git` fails.
+pub fn dirty(cwd: &Path) -> Result<bool, GitError> {
+    let status = git(cwd, &["status", "--porcelain", "--untracked-files=no"])?;
+    Ok(!status.trim().is_empty())
+}
+
 /// Reads the change in `cwd` against `base`, or the remote default branch when `None`; with
 /// `scope`, a repository-relative directory or file ([`crate::scope`]), only the files under it.
 ///
@@ -275,9 +284,7 @@ pub fn read_diff(cwd: &Path, base: Option<&str>, scope: Option<&str>) -> Result<
     }
     let merge_base = git(cwd, &["merge-base", &base, "HEAD"])?.trim().to_owned();
     let head = git(cwd, &["rev-parse", "HEAD"])?.trim().to_owned();
-    let dirty = !git(cwd, &["status", "--porcelain", "--untracked-files=no"])?
-        .trim()
-        .is_empty();
+    let dirty = dirty(cwd)?;
     let worktree = worktree(cwd)?;
     // `top`: read from the top level, so the scope names the same path from any subdirectory;
     // `literal`: a directory name is no glob.
