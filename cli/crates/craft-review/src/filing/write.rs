@@ -163,7 +163,14 @@ pub(super) fn publication(
         record_file: &filing.record_file,
     };
     let why = match exchange::<_, RecordDone>(run, filing, "publication", &asked, w) {
-        Ok(d) if d.ok => return,
+        Ok(d) if d.ok && d.reason.is_empty() => return,
+        Ok(d) if d.ok => {
+            lost.push(format!(
+                "the reviewer's sorting choices (the publication itself landed) — {}",
+                d.reason
+            ));
+            return;
+        }
         Ok(d) if d.reason.is_empty() => "the writer gave no reason".to_owned(),
         Ok(d) => d.reason,
         Err(e) => e.to_string(),

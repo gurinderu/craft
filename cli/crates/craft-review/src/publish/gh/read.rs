@@ -17,14 +17,15 @@ pub(super) struct Pr {
     pub(super) head: String,
 }
 
-/// The pull request of `branch`, the checked-out branch's when `None`.
+/// The pull request `which` names — its number, or a branch whose pull request it is — the
+/// checked-out branch's when `None`.
 pub(super) fn pull_request(
     runner: &Runner,
     repo: &Path,
-    branch: Option<&str>,
+    which: Option<&str>,
 ) -> Result<Pr, String> {
     let mut args = vec!["pr", "view"];
-    args.extend(branch.filter(|b| !b.starts_with('-')));
+    args.extend(which.filter(|b| !b.starts_with('-')));
     args.extend(["--json", "number,url,headRefOid"]);
     let out = gh(runner, repo, &args).map_err(|e| {
         if e.starts_with("gh pr view failed") {
