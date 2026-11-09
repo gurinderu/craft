@@ -95,6 +95,7 @@ pub fn refile(run: &Path, earlier: Vec<String>, w: &dyn Writer) -> Option<Value>
 fn file_again(run: &Path, mut lost: Vec<String>, w: &dyn Writer) -> Option<Value> {
     let mut filing = load(run)?;
     let step = unfiled(&filing)?;
+    filing.refiled = true;
     file_record(run, &mut filing, &step, &mut lost, w);
     keep(run, &mut filing, &mut lost);
     Some(with_filing(step, outcome(&filing, lost, true)))

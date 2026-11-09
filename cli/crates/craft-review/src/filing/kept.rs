@@ -106,9 +106,13 @@ pub struct Filing {
     pub output_tokens: Option<u64>,
     #[serde(default)]
     pub record: Record,
-    /// The record's file in the store, once it landed: what the run's cost is enriched into.
+    /// The record's file in the store, once it landed: what the run's cost is enriched into; and
+    /// whether it was last filed again — a resume's re-file of a finished run — rather than for the
+    /// work of the invocation that filed it.
     #[serde(default)]
     pub record_file: String,
+    #[serde(default)]
+    pub refiled: bool,
     /// The finished step the record was first attempted from, so a re-file sends the same record,
     /// and how many times it was attempted: kept before each attempt, so one cut off mid-write is
     /// sent again as a retry.

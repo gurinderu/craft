@@ -232,6 +232,14 @@ fn a_record_that_does_not_land_never_fails_the_step_and_is_filed_again_as_a_retr
         (again["verdict"].clone(), again["filing"]["record"].clone()),
         (json!("Approve"), json!("filed"))
     );
+    assert_eq!(
+        (
+            again["filing"]["refiledFile"].clone(),
+            again["filing"].get("recordFile")
+        ),
+        (json!("/store/r.json"), None),
+        "a re-file names its file apart from a filing of its own work"
+    );
     let (first, retried) = (w.request(1), w.request(2));
     assert_eq!(
         (first["retry"].clone(), retried["retry"].clone()),
@@ -467,4 +475,22 @@ fn the_summary_names_the_record_and_the_step_the_segment_ended_with() {
     );
     assert_eq!(s["finished"]["verdict"], json!("Approve"));
     assert_eq!(s["finished"]["filing"]["record"], json!("filed"));
+}
+
+#[test]
+fn a_resume_whose_first_step_finishes_its_new_segment_names_its_own_record() {
+    let run = tempfile::tempdir().unwrap();
+    let w = Fake::default();
+    open(run.path(), ctx(), "s1", &pending("lenses", 1), &w);
+    let resumed = Host {
+        agents: Some(0),
+        resume: true,
+        session: "s2".into(),
+        ..Host::default()
+    };
+    let said = submitted(run.path(), &finished(9), &resumed, Vec::new(), &w).unwrap();
+    assert_eq!(
+        (said["recordFile"].clone(), said.get("refiledFile")),
+        (json!("/store/r.json"), None)
+    );
 }
