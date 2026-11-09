@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Record', detail: 'only for a run the binary never finished (its step unreadable, the round backstop, a resume refused) or a refused argument: an INCOMPLETE record filed through lib/craft-log-run.mjs into the directory the binary\'s checkpoints went to', model: 'haiku' },
   ],
 }
-const CRAFT_VERSION = '0.46.0' // x-release-please-version
+const CRAFT_VERSION = '0.47.0' // x-release-please-version
 function shq(s){return`'${String(s??"").replace(/'/g,"'\\''")}'`}function pluginScriptPrelude(craftRoot,version,repo,script,varName){let preamble=`${usablePredicate(repo)}${varName}=""
 ${varName}_WHY=""
 `,noteWhy=(label,why)=>`${varName}_WHY="\${${varName}_WHY}"${shq(label)}": ${why}; "
