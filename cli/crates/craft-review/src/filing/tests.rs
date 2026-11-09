@@ -79,6 +79,7 @@ fn ctx() -> Ctx {
         root: Some("/plugin".into()),
         craft_version: "0.44.0".into(),
         via: "rust-audit".into(),
+        ..Ctx::default()
     }
 }
 
