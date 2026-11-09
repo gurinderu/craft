@@ -18,6 +18,7 @@ pub mod extra;
 pub mod filing;
 mod finished;
 pub mod gate;
+mod gh;
 pub mod git;
 #[cfg(test)]
 mod golden;
