@@ -8,8 +8,8 @@ use std::process::ExitCode;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use craft_review::{prompts, status, step};
-use serde_json::{Map, Value};
+use craft_review::{filing, prompts, status, step};
+use serde_json::{Map, Value, json};
 
 use crate::review::find_craft_root;
 
@@ -92,6 +92,14 @@ pub struct StartArgs {
     /// whole again.
     #[arg(long)]
     pub nested: bool,
+    /// File the run's telemetry under this craft version, as the cli-review engine's own run: a
+    /// checkpoint as each phase ends and the run record when it finishes, through the plugin
+    /// root's `lib/cli-review-file.mjs` and `node`. Absent, nothing is filed.
+    #[arg(long, value_name = "CRAFT_VERSION")]
+    pub record: Option<String>,
+    /// The parent engine a nested run's record is filed under.
+    #[arg(long, requires = "record")]
+    pub via: Option<String>,
 }
 
 /// How deep a review goes.
@@ -127,6 +135,12 @@ pub struct SubmitArgs {
     /// not handed out again, and an answer its agent writes later is never read.
     #[arg(long)]
     pub abandoned: Vec<String>,
+    /// For the run's telemetry (`start --record`): the task agents the host has dispatched so far.
+    #[arg(long)]
+    pub agents: Option<u64>,
+    /// For the run's telemetry: the output tokens the host's run has spent so far.
+    #[arg(long)]
+    pub output_tokens: Option<u64>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -217,7 +231,31 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         optional: args.optional.clone(),
         nested: args.nested,
     };
-    print(&stamped(step::start(&opts)?, began))
+    let step = stamped(step::start(&opts)?, began);
+    match &args.record {
+        Some(version) => print(&opened(&opts.run_dir, version, args.via.as_deref(), step)),
+        None => print(&step),
+    }
+}
+
+/// The harness session the host runs in, stamped on the run's telemetry.
+fn session() -> String {
+    std::env::var("CLAUDE_CODE_SESSION_ID").unwrap_or_default()
+}
+
+/// The started `step` with its telemetry opened: the start checkpoint written, and the record when
+/// the run ended at once.
+fn opened(run: &Path, version: &str, via: Option<&str>, step: Value) -> Value {
+    let filing = match craft_review::state::load(run) {
+        Ok(state) => {
+            let ctx = filing::Ctx::of(&state, version, via.unwrap_or_default());
+            filing::open(run, ctx, &session(), &step, &filing::NodeWriter)
+        }
+        Err(e) => {
+            json!({"runDir": "", "rejoin": false, "lost": [format!("the run's telemetry — {e}")]})
+        }
+    };
+    filing::with_filing(step, filing)
 }
 
 /// A JSON value the host passes, as a file or `-` for stdin.
@@ -244,6 +282,14 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
+    // A finished run whose record did not land is filed again rather than refused.
+    if let Some(step) = args
+        .resume
+        .then(|| filing::refile(&run, &filing::NodeWriter))
+        .flatten()
+    {
+        return print(&step);
+    }
     let said = step::Said {
         degraded: &args.degraded,
         limit: args.limit.as_deref(),
@@ -251,10 +297,17 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
         post: None,
         abandoned: &args.abandoned,
     };
-    print(&stamped(
-        step::submit_with(&run, given.as_ref(), &said)?,
-        began,
-    ))
+    let step = stamped(step::submit_with(&run, given.as_ref(), &said)?, began);
+    let host = filing::Host {
+        agents: args.agents,
+        output_tokens: args.output_tokens,
+        resume: args.resume,
+        session: session(),
+    };
+    match filing::submitted(&run, &step, &host, &filing::NodeWriter) {
+        Some(filed) => print(&filing::with_filing(step, filed)),
+        None => print(&step),
+    }
 }
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {

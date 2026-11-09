@@ -15,6 +15,7 @@ pub mod critic;
 mod dedup;
 mod error;
 pub mod extra;
+pub mod filing;
 mod finished;
 pub mod gate;
 pub mod git;
