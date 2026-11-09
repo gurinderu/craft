@@ -31,7 +31,7 @@ enum Command {
 #[derive(Subcommand)]
 enum ReviewCommand {
     /// Open a run: compute the diff and print the first tasks.
-    Start(steps::StartArgs),
+    Start(Box<steps::StartArgs>),
     /// Hand in the answers to a run's pending tasks and print what comes next.
     Submit(steps::SubmitArgs),
     /// Print where a run stands.
