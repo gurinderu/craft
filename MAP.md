@@ -254,7 +254,8 @@ from `npm run gate`. The CLI's version is the plugin's: release-please moves `cl
 `cli/Cargo.lock` with the manifest, and its `cli-binaries` job attaches `craft-<target>.tar.gz` (the
 binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each release for Linux and macOS on x64
 and arm64 and Windows on x64; `lib/craft-bin.mjs ensure` fetches the one for this platform and version into
-`~/.craft/bin/<version>/`,
+`~/.craft/bin/<version>/` (through the REST API, `lib/release-asset.mjs`, when the download URL answers 5xx or
+not at all; `GITHUB_TOKEN` or `GH_TOKEN`, if set, is sent to the API only),
 which the `review` engine runs when no `craftBin` is given.
 
 ## Codex delivery
