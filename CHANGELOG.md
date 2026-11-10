@@ -3,8 +3,17 @@
 ## [0.48.0](https://github.com/gurinderu/craft/compare/v0.47.0...v0.48.0) (2026-11-10)
 
 
+### ⚠ BREAKING CHANGES
+
+* `craft:review` is now the driver of the Rust CLI and the only review. The workflows `craft:adversarial-review`, `craft:cli-review`, `craft:rust-review` and `craft:nix-review` are removed: run `craft:review` (rust-audit nests it).
+* The JS review engine's arguments are gone (`languages`, `deadlineMs`, `files`, `maxRetries`, `unitBatches`, `_memory` and others). A run given one of them stops INCOMPLETE.
+* The memory skill's `record-external` and `discover-externals` verbs are removed, and `external` memory records no longer feed the review's sources. `craft init --propose` imports them into the reviewer profile as candidates.
+* When the gate cannot build the head, a green CI check no longer passes it. Through the CI map in the reviewer profile (`craft init --propose`), green is reported and red blocks.
+
+
 ### Features
 
+* make the Rust CLI driver the only review ([3665d47](https://github.com/gurinderu/craft/commit/3665d476))
 * read the head's CI for the gate when cargo cannot build it ([b3c7c20](https://github.com/gurinderu/craft/commit/b3c7c207a55e8dfb29ecda5d9b1a668dd4965bf2))
 * take the head's CI for the gate when cargo cannot build it ([500e892](https://github.com/gurinderu/craft/commit/500e8923343f8bb6c438703957cbddcc73bcc87d))
 
