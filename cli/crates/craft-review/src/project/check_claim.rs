@@ -1,20 +1,24 @@
-//! What a check claims among the jobs of its workflow (realm @nick/craft, node #482): the gate
-//! counts each run named `<check>` or `<check> (…)` for an entry, so `--write` refuses an entry
-//! when a job other than its own is reported so — one whose literal head (its name up to the first
-//! `${{`) starts with `<check> (`, or another job whose name reports as `<check>` that does not run
-//! the entry's command by a `run:` line of its own (a source is read whole, so it cannot show
-//! which job calls it) — and when its check names one expanded run of a job whose name holds `${{`
-//! in its trailing ` (…)`, whose other runs it would never see. `--propose` leaves a colliding
-//! candidate unresolved, with the refusal as its note.
+//! What a check claims among the jobs of every workflow of the repository (realm @nick/craft, node
+//! #482): the gate counts each run named `<check>` or `<check> (…)` on the head, whatever workflow
+//! ran it, so an entry is refused — at `--write`, and skipped by the gate — when a job other than
+//! its own is reported so: one whose literal head (its name up to the first `${{`) starts with
+//! `<check> (`, another job whose name reports as `<check>` that does not run the entry's command by
+//! a `run:` line of its own (a source is read whole, so it cannot show which job calls it), or a job
+//! GitHub expands into runs `<prefix> (…)` — a `${{` in its trailing ` (…)`, or a matrix under a
+//! literal name — beside a job reported as `<check>` itself. Without such a job, a check under a
+//! job's expanded runs names one of them, whose other runs it would never see. `--propose` leaves a
+//! colliding candidate of one workflow unresolved, with the refusal as its note.
 
 use std::path::Path;
 
-use super::candidates::{Candidate, Resolved, Unresolved};
 use super::check_name::{OPEN, check_of, unexpanded};
 use super::ci_error::CiError;
 use super::ci_ground::read;
 use super::ci_match::runs_in;
-use super::workflow::{Job, jobs};
+use super::workflow::{Job, jobs, workflow_files};
+
+/// A job and the workflow file it is in.
+pub(super) type Placed<'a> = (&'a str, &'a Job);
 
 fn name(j: &Job) -> &str {
     j.name.as_deref().unwrap_or(&j.id)
@@ -25,83 +29,101 @@ fn head(j: &Job) -> &str {
     name(j).split_once(OPEN).map_or(name(j), |(h, _)| h)
 }
 
+/// Whether GitHub reports `j`'s runs as `check`.
+fn reports(j: &Job, check: &str) -> bool {
+    check_of(name(j)).is_ok_and(|c| c == check)
+}
+
+/// The prefix of `j`'s runs when GitHub expands it into runs `<prefix> (…)`: a `${{` in its
+/// trailing ` (…)`, or a matrix under a literal name.
+fn spread(j: &Job) -> Option<&str> {
+    let n = name(j);
+    if unexpanded(n) {
+        check_of(n).ok()
+    } else {
+        j.matrix.then_some(n)
+    }
+}
+
 /// The job other than `check`'s own whose runs the gate would count for it, as the refusal.
-fn collision(all: &[Job], check: &str, command: &str) -> Option<CiError> {
+pub(super) fn collision(all: &[Placed<'_>], check: &str, command: &str) -> Option<CiError> {
     let matrix = format!("{check} (");
-    let reports = |j: &Job| check_of(name(j)).is_ok_and(|c| c == check);
-    if let Some(j) = all
+    let refusal =
+        |&(workflow, j): &Placed<'_>| (check.to_owned(), name(j).to_owned(), workflow.to_owned());
+    if let Some(p) = all
         .iter()
-        .find(|j| !reports(j) && head(j).starts_with(&matrix))
+        .find(|(_, j)| !reports(j, check) && head(j).starts_with(&matrix))
     {
+        let (check, job, workflow) = refusal(p);
         return Some(CiError::Sibling {
-            check: check.to_owned(),
-            job: name(j).to_owned(),
+            check,
+            job,
+            workflow,
         });
     }
-    let same: Vec<&Job> = all.iter().filter(|j| reports(j)).collect();
+    let same: Vec<&Placed<'_>> = all.iter().filter(|(_, j)| reports(j, check)).collect();
     let runs = |j: &Job| j.runs.iter().any(|l| runs_in(l, command));
-    let stray = same.iter().find(|j| !runs(j)).filter(|_| same.len() > 1);
-    stray.map(|j| CiError::Shared {
-        check: check.to_owned(),
-        job: name(j).to_owned(),
+    let stray = same
+        .iter()
+        .find(|(_, j)| !runs(j))
+        .filter(|_| same.len() > 1);
+    stray.map(|p| {
+        let (check, job, workflow) = refusal(p);
+        CiError::Shared {
+            check,
+            job,
+            workflow,
+        }
     })
 }
 
-/// The refusal of a `check` that names one expanded run of a job whose name GitHub expands.
-fn one_run(all: &[Job], check: &str) -> Option<CiError> {
-    all.iter().find_map(|j| {
-        let n = name(j);
-        let prefix = check_of(n).ok().filter(|_| unexpanded(n))?;
-        let one = check
-            .strip_prefix(prefix)
-            .is_some_and(|r| r.starts_with(" ("));
-        one.then(|| CiError::OneRun {
-            check: check.to_owned(),
-            job: n.to_owned(),
-            prefix: prefix.to_owned(),
-        })
+/// The refusal of a `check` under a job's expanded runs `<prefix> (…)`: one run of it, or — beside
+/// a job reported as `check` itself — a collision with it.
+fn one_run(all: &[Placed<'_>], check: &str) -> Option<CiError> {
+    let under = |p: &str| check.strip_prefix(p).is_some_and(|r| r.starts_with(" ("));
+    let &(workflow, j) = all.iter().find(|(_, j)| spread(j).is_some_and(under))?;
+    let (check, job, workflow) = (check.to_owned(), name(j).to_owned(), workflow.to_owned());
+    if all.iter().any(|(_, o)| reports(o, &check)) {
+        return Some(CiError::Sibling {
+            check,
+            job,
+            workflow,
+        });
+    }
+    let prefix = spread(j).unwrap_or_default().to_owned();
+    Some(CiError::OneRun {
+        check,
+        job,
+        workflow,
+        prefix,
     })
 }
 
-/// Refuses an entry whose `check` names one expanded run, or collides with another job of its
-/// `workflow` read under `top`, for its `command`.
+/// Refuses an entry of `workflow` whose `check` names one expanded run, or collides with another
+/// job, for its `command`, of any workflow under `top`.
 pub(super) fn claimed(
     top: &Path,
     workflow: &str,
     check: &str,
     command: &str,
 ) -> Result<(), CiError> {
-    let all = jobs(&read(top, workflow)?);
+    let unlisted = |error| CiError::Unreadable {
+        path: ".github/workflows".to_owned(),
+        error,
+    };
+    let mut files = workflow_files(top).map_err(unlisted)?;
+    if !files.iter().any(|f| f == workflow) {
+        files.push(workflow.to_owned());
+    }
+    let read_all: Vec<(String, Vec<Job>)> = files
+        .into_iter()
+        .map(|f| read(top, &f).map(|t| (f, jobs(&t))))
+        .collect::<Result<_, _>>()?;
+    let all: Vec<Placed<'_>> = read_all
+        .iter()
+        .flat_map(|(f, js)| js.iter().map(move |j| (f.as_str(), j)))
+        .collect();
     one_run(&all, check)
         .or_else(|| collision(&all, check, command))
         .map_or(Ok(()), Err)
-}
-
-/// `found`, each resolved candidate that collides with another job of `all` left unresolved.
-pub(super) fn unclaimed(all: &[Job], found: Vec<Candidate>) -> Vec<Candidate> {
-    let one = |c| match c {
-        Candidate::Resolved(r) => match collision(all, &r.check, &r.command) {
-            Some(e) => Candidate::Unresolved(collided(r, e.to_string())),
-            None => Candidate::Resolved(r),
-        },
-        u @ Candidate::Unresolved(_) => u,
-    };
-    found.into_iter().map(one).collect()
-}
-
-/// The unresolved form of resolved `r`, `why` it collides leading its note.
-fn collided(r: Resolved, why: String) -> Unresolved {
-    let note = match r.note {
-        Some(n) => format!("{why}; {n}"),
-        None => why,
-    };
-    Unresolved {
-        check: r.check,
-        matrix: r.matrix,
-        runs: vec![r.command],
-        hints: vec![r.signal],
-        workflow: r.workflow,
-        uses: r.uses,
-        note: Some(note),
-    }
 }
