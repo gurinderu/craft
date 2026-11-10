@@ -97,3 +97,15 @@ fn a_change_with_no_gated_profile_has_nothing_to_gate() {
     assert_eq!(got["outcome"], json!("none"), "{got}");
     assert_eq!(got["section"], json!(""));
 }
+
+#[test]
+fn a_gate_with_its_tool_missing_is_unknown_and_its_line_says_it_was_not_established() {
+    let repo = package();
+    let empty = tempfile::tempdir().unwrap();
+    let got = gate(repo.path(), empty.path());
+    assert_eq!(got["outcome"], json!("unknown"), "{got}");
+    assert_eq!(
+        got["line"],
+        json!("the gate was not established locally (rust: unknown); no CI check informed it")
+    );
+}

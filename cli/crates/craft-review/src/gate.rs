@@ -43,16 +43,24 @@ mod clippy;
 pub(crate) mod lines;
 mod lock;
 mod nix;
+mod nix_answer;
+#[cfg(test)]
+mod nix_bare_tests;
+#[cfg(test)]
+mod nix_broken_tests;
 mod nix_fault;
 mod nix_lint;
 #[cfg(test)]
 mod nix_tests;
+#[cfg(test)]
+mod nothing_tests;
 pub(crate) mod runner;
 mod rust;
 mod section;
 mod semgrep;
 #[cfg(test)]
 mod tests;
+pub mod unknown;
 
 use check::{Acc, Cx};
 pub use section::section;
@@ -88,7 +96,10 @@ impl Default for GateSetup {
     }
 }
 
-/// Whether a profile's gate passed, failed, or could not be established.
+/// Whether a profile's gate passed, failed, could not be established, or had nothing to establish
+/// — changed `.rs` files no Cargo package holds, or a Nix change with no `flake.nix` whose linters
+/// ran clean: nothing to gate is no unknown signal and caps no verdict (realm @nick/craft, node
+/// #487).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -96,6 +107,7 @@ pub enum Status {
     Fail,
     #[default]
     Unknown,
+    Nothing,
 }
 
 /// One profile's gate as it came out.
