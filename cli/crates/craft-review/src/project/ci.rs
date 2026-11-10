@@ -11,6 +11,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+pub use super::check_name::unexpanded;
 pub use super::ci_error::CiError;
 pub use super::ci_files::local_file;
 use super::ci_files::{changed, hashes, relative};
@@ -76,6 +77,9 @@ impl CiEntry {
             sources: g.sources,
             hashes: g.hashes.unwrap_or_default(),
         };
+        if unexpanded(&e.check) {
+            return Err(CiError::Unexpanded(e.check));
+        }
         if !held {
             relative(&e.workflow)?;
             e.sources.iter().try_for_each(|s| relative(s))?;

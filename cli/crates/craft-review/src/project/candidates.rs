@@ -9,6 +9,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use super::check_name::{check_of, expanded};
 use super::shell::{cargo_sub, commands, hints, recipe};
 use super::signal::Signal;
 use super::workflow::{Job, jobs};
@@ -38,6 +39,9 @@ pub struct Unresolved {
     pub hints: Vec<Signal>,
     pub workflow: String,
     pub uses: Vec<String>,
+    /// What the reviewer should know before resolving it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,9 +65,22 @@ fn note(signal: Signal, command: &str) -> Option<String> {
     (signal == Signal::Clippy && !denies).then(|| NO_DENY.to_owned())
 }
 
-/// The candidates of one job of `workflow`.
+/// The candidates of one job of `workflow`: under the check its name reports as, or one
+/// unresolved with a note when GitHub expands its name past any check.
 fn of_job(workflow: &str, j: &Job) -> Vec<Candidate> {
-    let check = j.name.clone().unwrap_or_else(|| j.id.clone());
+    let name = j.name.as_deref().unwrap_or(&j.id);
+    match check_of(name) {
+        Ok(check) => checked(workflow, j, check),
+        Err(note) => expanded(workflow, j, name, note)
+            .map(Candidate::Unresolved)
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// The candidates of job `j` of `workflow`, whose runs GitHub reports as `check`.
+fn checked(workflow: &str, j: &Job, check: &str) -> Vec<Candidate> {
+    let check = check.to_owned();
     let mut out = Vec::new();
     let mut open = Vec::new();
     for c in j.runs.iter().flat_map(|l| commands(l)) {
@@ -90,6 +107,7 @@ fn of_job(workflow: &str, j: &Job) -> Vec<Candidate> {
             hints: hinted,
             workflow: workflow.to_owned(),
             uses: j.uses.clone(),
+            note: None,
         }));
     }
     out

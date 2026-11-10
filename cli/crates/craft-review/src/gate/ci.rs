@@ -10,6 +10,7 @@
 use super::check::{Acc, Cx};
 use super::ci_read::seen;
 use super::ci_verdict::{apply, unique, verdict};
+use crate::project::ci::unexpanded;
 use crate::project::{self, CiEntry};
 
 const DIRTY: &str = "CI was not read: the working tree has uncommitted changes, so CI for HEAD does not cover it — the build signal stays unknown";
@@ -24,6 +25,7 @@ pub(super) fn from_ci(cx: &Cx<'_>, acc: &mut Acc) {
         Ok(m) => m,
         Err(note) => return acc.notes.push(note),
     };
+    let map = expanded(map, acc);
     let (fresh, stale): (Vec<&CiEntry>, Vec<&CiEntry>) = map.iter().partition(|e| e.fresh(cx.top));
     if !stale.is_empty() {
         acc.notes.push(stale_note(&stale, cx.top));
@@ -54,6 +56,20 @@ pub(super) fn from_ci(cx: &Cx<'_>, acc: &mut Acc) {
             "CI was not read ({why}), so the build signal stays unknown"
         )),
     }
+}
+
+/// The entries of `map` a run can match: one whose check holds an unexpanded `${{ … }}` matches
+/// none, so it is skipped and named in `acc`'s notes.
+fn expanded(map: Vec<CiEntry>, acc: &mut Acc) -> Vec<CiEntry> {
+    let (dead, live): (Vec<CiEntry>, Vec<CiEntry>) =
+        map.into_iter().partition(|e| unexpanded(&e.check));
+    for e in &dead {
+        acc.notes.push(format!(
+            "the CI map entry `{}` was skipped: its check name holds an unexpanded expression, which GitHub expands in each run's name, so no run matches it — run `craft init --propose` to confirm it again",
+            e.check
+        ));
+    }
+    live
 }
 
 /// The CI map of the repository at `top`, or the note why there is none to read.
