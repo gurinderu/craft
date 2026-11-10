@@ -67,8 +67,8 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
   the job denies warnings another way, so tell the reviewer before they confirm it; and
   `unresolved`, a job calling a recipe (`just`, `make`, `cargo xtask`, a script) whose words hint
   at a signal, with its `runs` lines, `hints`, `workflow` and `uses` — or a job whose `name:`
-  holds `${{ … }}` elsewhere, with a `note`: GitHub expands it in each run's name, so no entry
-  can name its runs; leave it out and say so. An entry whose `check` holds `${{` is refused at
+  holds `${{ … }}` elsewhere, or a cargo job whose check collides with a sibling job (below),
+  each with a `note`: no entry can name its runs apart; leave it out and say so. An entry whose `check` holds `${{` is refused at
   `--write`. `ran: false` with `why` when the workflows could not be read.
 
 ## 3. Find the rest in the code, then ask
@@ -135,7 +135,12 @@ written only on the reviewer's word.
 - **Matrix jobs**: GitHub reports one check per combination, `<check> (<values>)`; the entry's
   `check` is the job's name, and every run named `<check> (…)` must be green for its signal.
   A `name:` holding `${{ … }}` is reported expanded: the entry's `check` is its literal part
-  before the trailing ` (…)` (as proposed), never the literal expression nor one expanded run.
+  before the trailing ` (…)` (as proposed), never the literal expression nor one expanded run
+  (`Build (amd64)` is refused at `--write`, told to name `Build`). The gate counts every run
+  named `<check> (…)`, so a sibling job reported so — `Build (docs)` beside
+  `Build (${{ matrix.arch }})`, or another `Build (${{ … }})` job whose own `run:` lines do not
+  run the command — makes the check unmappable: `--propose` lists it unresolved with a note,
+  `--write` refuses it; tell the reviewer, and leave it out unless a job is renamed.
 - Then ask the reviewer in words, one numbered list beside the integration points: for each
   entry, its check, signal, the command line and where you read it (the workflow, or the recipe
   and its line). They confirm, drop, or correct each; add any check you missed.

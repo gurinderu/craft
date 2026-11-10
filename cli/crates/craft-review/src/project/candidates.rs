@@ -9,6 +9,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use super::check_claim::unclaimed;
 use super::check_name::{check_of, expanded};
 use super::shell::{cargo_sub, commands, hints, recipe};
 use super::signal::Signal;
@@ -116,10 +117,9 @@ fn checked(workflow: &str, j: &Job, check: &str) -> Vec<Candidate> {
 /// The candidates of the workflow `text` at `workflow`, job by job.
 #[must_use]
 pub fn candidates_in(workflow: &str, text: &str) -> Vec<Candidate> {
-    jobs(text)
-        .iter()
-        .flat_map(|j| of_job(workflow, j))
-        .collect()
+    let all = jobs(text);
+    let found = all.iter().flat_map(|j| of_job(workflow, j)).collect();
+    unclaimed(&all, found)
 }
 
 /// The candidates of every `.github/workflows/*.yml` or `*.yaml` under `top`, by file name; none
