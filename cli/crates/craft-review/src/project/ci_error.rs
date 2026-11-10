@@ -14,19 +14,28 @@ pub enum CiError {
     )]
     Unexpanded(String),
     #[error(
-        "{check}: GitHub also reports the job {job:?} as `{check} (…)`, and the gate counts each such run for this check — rename one of the jobs so their checks differ, or leave the entry out"
+        "{check}: GitHub can also report the job {job:?} of `{workflow}` under this check, as `{check}` or `{check} (…)`, and the gate counts each such run for it — rename one of the jobs so their checks differ, or leave the entry out"
     )]
-    Sibling { check: String, job: String },
+    Sibling {
+        check: String,
+        job: String,
+        workflow: String,
+    },
     #[error(
-        "{check}: the job {job:?} is reported as `{check}` too, and the gate counts its runs for this check, but no `run:` line of that job runs the entry's command — rename one of the jobs, or leave the entry out"
+        "{check}: the job {job:?} of `{workflow}` is reported as `{check}` too, and the gate counts its runs for this check, but no `run:` line of that job runs the entry's command — rename one of the jobs, or leave the entry out"
     )]
-    Shared { check: String, job: String },
+    Shared {
+        check: String,
+        job: String,
+        workflow: String,
+    },
     #[error(
-        "{check}: the check names one expanded run of the job {job:?}, so the gate never sees its other runs — name the check `{prefix}`"
+        "{check}: the check names one expanded run of the job {job:?} of `{workflow}`, so the gate never sees its other runs — name the check `{prefix}`"
     )]
     OneRun {
         check: String,
         job: String,
+        workflow: String,
         prefix: String,
     },
     #[error(

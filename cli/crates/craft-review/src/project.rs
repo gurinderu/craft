@@ -18,8 +18,11 @@ use crate::sources::spec::SYSTEMS_MAX;
 
 pub mod candidates;
 mod check_claim;
+mod check_claim_propose;
 #[cfg(test)]
 mod check_claim_tests;
+#[cfg(test)]
+mod check_claim_wide_tests;
 mod check_name;
 #[cfg(test)]
 mod check_name_tests;

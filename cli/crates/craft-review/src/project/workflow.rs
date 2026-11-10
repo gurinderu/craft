@@ -5,7 +5,11 @@
 //! places their indent finds — no dependency is taken for them. What it misreads (anchors, flow
 //! mappings) only costs a candidate, which the reviewer confirms in words before it is recorded.
 
+use std::path::Path;
+
 use super::workflow_steps::{job_tolerant, runs};
+
+const WORKFLOWS: &str = ".github/workflows";
 
 /// One job of a workflow: its id, its `name:` when it has one, whether a `matrix:` expands it,
 /// each command line of its steps' `run:` whose failure fails it (none when it or its step
@@ -116,4 +120,19 @@ pub(super) fn step_key(l: &str) -> (usize, &str) {
     let t = l.trim_start();
     let rest = t.strip_prefix("- ").map_or(t, str::trim_start);
     (l.len() - rest.len(), rest)
+}
+
+/// The repository-relative path of every `.github/workflows/*.yml` or `*.yaml` under `top`, sorted;
+/// none when there is no such directory.
+pub(super) fn workflow_files(top: &Path) -> std::io::Result<Vec<String>> {
+    let mut files = match std::fs::read_dir(top.join(WORKFLOWS)) {
+        Ok(d) => d
+            .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
+            .collect::<std::io::Result<Vec<String>>>()?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    files.retain(|f| f.ends_with(".yml") || f.ends_with(".yaml"));
+    files.sort();
+    Ok(files.iter().map(|f| format!("{WORKFLOWS}/{f}")).collect())
 }

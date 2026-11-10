@@ -101,8 +101,17 @@ impl CiEntry {
     /// Whether it may be written: its check claims no other job's runs nor one expanded run of
     /// its own, and it is [grounded](Self::grounded).
     fn written(&self, top: &Path) -> Result<(), CiError> {
-        claimed(top, &self.workflow, &self.check, &self.command)?;
+        self.claims(top)?;
         self.grounded(top)
+    }
+
+    /// Whether its check claims no other job's runs, in any workflow under `top`, nor one expanded
+    /// run of a job.
+    ///
+    /// # Errors
+    /// The job it collides with or names one run of, a line for the reviewer.
+    pub fn claims(&self, top: &Path) -> Result<(), CiError> {
+        claimed(top, &self.workflow, &self.check, &self.command)
     }
 
     /// Whether its command and local `uses:` are found in its workflow and sources under `top`.

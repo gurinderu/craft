@@ -29,3 +29,31 @@ fn a_held_check_holding_an_expression_is_named_and_skipped() {
         "{notes}"
     );
 }
+
+#[test]
+fn a_held_entry_a_sibling_workflow_added_since_collides_with_is_named_and_skipped() {
+    let w = world(
+        &runs(&[
+            ("tests (docs)", "completed", "failure"),
+            ("tests", "completed", "success"),
+        ]),
+        FMT_GREEN,
+    );
+    let docs = ".github/workflows/docs.yml";
+    let wf = "jobs:\n  docs:\n    name: tests (docs)\n    steps:\n      - run: mdbook test\n";
+    std::fs::write(w.repo.path().join(docs), wf).unwrap();
+    let (_, t) = gated(&w);
+    assert_ne!(
+        t.status,
+        Status::Fail,
+        "the sibling's red is not counted: {t:?}"
+    );
+    let notes = t.notes.join("\n");
+    assert!(
+        notes.contains("the CI map entry `tests` was skipped")
+            && notes.contains("\"tests (docs)\"")
+            && notes.contains(docs)
+            && notes.contains("craft init --propose"),
+        "{notes}"
+    );
+}

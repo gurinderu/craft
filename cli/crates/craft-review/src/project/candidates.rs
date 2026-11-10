@@ -9,11 +9,11 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::check_claim::unclaimed;
+use super::check_claim_propose::unclaimed;
 use super::check_name::{check_of, expanded};
 use super::shell::{cargo_sub, commands, hints, recipe};
 use super::signal::Signal;
-use super::workflow::{Job, jobs};
+use super::workflow::{Job, jobs, workflow_files};
 
 /// A resolved candidate: the job's check, the signal, and the command line that gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -119,29 +119,17 @@ fn checked(workflow: &str, j: &Job, check: &str) -> Vec<Candidate> {
 pub fn candidates_in(workflow: &str, text: &str) -> Vec<Candidate> {
     let all = jobs(text);
     let found = all.iter().flat_map(|j| of_job(workflow, j)).collect();
-    unclaimed(&all, found)
+    unclaimed(workflow, &all, found)
 }
 
-/// The candidates of every `.github/workflows/*.yml` or `*.yaml` under `top`, by file name; none
-/// when there is no such directory.
+/// The candidates of every workflow under `top` ([`workflow_files`]), by file name.
 ///
 /// # Errors
 /// When the directory or a workflow cannot be read.
 pub fn candidates(top: &Path) -> std::io::Result<Vec<Candidate>> {
-    let dir = top.join(".github/workflows");
-    let mut files = match std::fs::read_dir(&dir) {
-        Ok(d) => d
-            .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
-            .collect::<std::io::Result<Vec<String>>>()?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e),
-    };
-    files.retain(|f| f.ends_with(".yml") || f.ends_with(".yaml"));
-    files.sort();
     let mut out = Vec::new();
-    for f in files {
-        let text = std::fs::read_to_string(dir.join(&f))?;
-        out.extend(candidates_in(&format!(".github/workflows/{f}"), &text));
+    for f in workflow_files(top)? {
+        out.extend(candidates_in(&f, &std::fs::read_to_string(top.join(&f))?));
     }
     Ok(out)
 }

@@ -136,11 +136,14 @@ written only on the reviewer's word.
   `check` is the job's name, and every run named `<check> (…)` must be green for its signal.
   A `name:` holding `${{ … }}` is reported expanded: the entry's `check` is its literal part
   before the trailing ` (…)` (as proposed), never the literal expression nor one expanded run
-  (`Build (amd64)` is refused at `--write`, told to name `Build`). The gate counts every run
-  named `<check> (…)`, so a sibling job reported so — `Build (docs)` beside
+  (`Build (amd64)` is refused at `--write`, told to name `Build`; so is one run of a matrix job
+  named `Build`). The gate counts every run named `<check>` or `<check> (…)` from every workflow
+  of the repo, so a sibling job reported so in any of them — `Build (docs)` beside
   `Build (${{ matrix.arch }})`, or another `Build (${{ … }})` job whose own `run:` lines do not
-  run the command — makes the check unmappable: `--propose` lists it unresolved with a note,
-  `--write` refuses it; tell the reviewer, and leave it out unless a job is renamed.
+  run the command — makes the check unmappable: `--propose` lists it unresolved with a note when
+  the sibling shares its workflow, `--write` refuses it either way, and the gate skips a held
+  entry a workflow added since collides with, with a note to run `craft init --propose`; tell
+  the reviewer, and leave it out unless a job is renamed.
 - Then ask the reviewer in words, one numbered list beside the integration points: for each
   entry, its check, signal, the command line and where you read it (the workflow, or the recipe
   and its line). They confirm, drop, or correct each; add any check you missed.
