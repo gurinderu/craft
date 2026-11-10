@@ -88,12 +88,14 @@ pub(super) struct Acc {
 
 impl Acc {
     /// Folds one primary check's outcome in: any fail fails it, any unknown leaves it unknown
-    /// unless it failed, and it passes only when every one passed.
+    /// unless it failed, any pass passes the rest, and it has nothing to gate only when no check
+    /// had anything.
     pub(super) fn check(&mut self, s: Status) {
         self.status = Some(match (self.status, s) {
             (Some(Status::Fail), _) | (_, Status::Fail) => Status::Fail,
             (Some(Status::Unknown), _) | (_, Status::Unknown) => Status::Unknown,
-            (Some(Status::Pass) | None, Status::Pass) => Status::Pass,
+            (Some(Status::Pass), _) | (_, Status::Pass) => Status::Pass,
+            (Some(Status::Nothing) | None, Status::Nothing) => Status::Nothing,
         });
     }
 

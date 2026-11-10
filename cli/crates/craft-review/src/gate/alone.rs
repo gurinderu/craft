@@ -33,10 +33,11 @@ pub struct Kept {
 }
 
 /// How the gate came out as a whole: `fail` when a profile's gate is red, else `unknown` when one
-/// could not be established, else `pass`; `none` when no profile of the change has a gate.
+/// could not be established, else `pass`; `none` when no profile of the change has a gate, or
+/// each one that has had nothing to gate.
 #[must_use]
 pub fn outcome(gate: &Gate) -> &'static str {
-    if gate.tracks.is_empty() {
+    if gate.tracks.iter().all(|t| t.status == Status::Nothing) {
         "none"
     } else if gate.exit().is_some() {
         "fail"
