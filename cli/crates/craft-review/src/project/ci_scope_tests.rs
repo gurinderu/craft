@@ -54,6 +54,10 @@ fn a_check_naming_no_job_of_its_workflow_is_refused() {
         "jobs:\n  lint:\n    name: Lint\n    strategy:\n      matrix:\n        os: [a, b]\n    steps:\n      - run: {CLIPPY}\n"
     );
     let t = top(&matrix, "");
-    CiEntry::confirmed(&entry("Lint (a, b)", "clippy", CLIPPY, "[]"), t.path()).unwrap();
+    CiEntry::confirmed(&entry("Lint", "clippy", CLIPPY, "[]"), t.path()).unwrap();
+    let one = CiEntry::confirmed(&entry("Lint (a, b)", "clippy", CLIPPY, "[]"), t.path())
+        .unwrap_err()
+        .to_string();
+    assert!(one.contains("name the check `Lint`"), "{one}");
     CiEntry::confirmed(&entry("lint", "clippy", CLIPPY, "[]"), t.path()).unwrap_err();
 }

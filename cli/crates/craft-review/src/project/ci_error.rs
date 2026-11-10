@@ -10,6 +10,35 @@ pub enum CiError {
     #[error("{0:?}: a check is one non-empty line")]
     Check(String),
     #[error(
+        "{0:?}: the check holds an unexpanded `${{{{ … }}}}` expression, which GitHub expands in each run's name, so it matches no run — name the literal part before the job name's trailing ` (…)`, as `craft init --propose` proposes it"
+    )]
+    Unexpanded(String),
+    #[error(
+        "{check}: GitHub can also report the job {job:?} of `{workflow}` under this check, as `{check}` or `{check} (…)`, and the gate counts each such run for it — rename one of the jobs so their checks differ, or leave the entry out"
+    )]
+    Sibling {
+        check: String,
+        job: String,
+        workflow: String,
+    },
+    #[error(
+        "{check}: the job {job:?} of `{workflow}` is reported as `{check}` too, and the gate counts its runs for this check, but no `run:` line of that job runs the entry's command — rename one of the jobs, or leave the entry out"
+    )]
+    Shared {
+        check: String,
+        job: String,
+        workflow: String,
+    },
+    #[error(
+        "{check}: the check names one expanded run of the job {job:?} of `{workflow}`, so the gate never sees its other runs — name the check `{prefix}`"
+    )]
+    OneRun {
+        check: String,
+        job: String,
+        workflow: String,
+        prefix: String,
+    },
+    #[error(
         "{check}: the command {command:?} does not run `cargo {signal}` — quote the command line the check runs"
     )]
     Command {

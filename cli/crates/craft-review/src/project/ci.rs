@@ -11,6 +11,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::check_claim::claimed;
+pub use super::check_name::unexpanded;
 pub use super::ci_error::CiError;
 pub use super::ci_files::local_file;
 use super::ci_files::{changed, hashes, relative};
@@ -76,11 +78,14 @@ impl CiEntry {
             sources: g.sources,
             hashes: g.hashes.unwrap_or_default(),
         };
+        if unexpanded(&e.check) {
+            return Err(CiError::Unexpanded(e.check));
+        }
         if !held {
             relative(&e.workflow)?;
             e.sources.iter().try_for_each(|s| relative(s))?;
             e.lines()?;
-            e.grounded(top)?;
+            e.written(top)?;
             let files: Vec<&str> = std::iter::once(e.workflow.as_str())
                 .chain(e.sources.iter().map(String::as_str))
                 .collect();
@@ -88,9 +93,25 @@ impl CiEntry {
         }
         e.check()?;
         if held && e.changed(top).is_empty() {
-            e.grounded(top)?;
+            e.written(top)?;
         }
         Ok(e)
+    }
+
+    /// Whether it may be written: its check claims no other job's runs nor one expanded run of
+    /// its own, and it is [grounded](Self::grounded).
+    fn written(&self, top: &Path) -> Result<(), CiError> {
+        self.claims(top)?;
+        self.grounded(top)
+    }
+
+    /// Whether its check claims no other job's runs, in any workflow under `top`, nor one expanded
+    /// run of a job.
+    ///
+    /// # Errors
+    /// The job it collides with or names one run of, a line for the reviewer.
+    pub fn claims(&self, top: &Path) -> Result<(), CiError> {
+        claimed(top, &self.workflow, &self.check, &self.command)
     }
 
     /// Whether its command and local `uses:` are found in its workflow and sources under `top`.

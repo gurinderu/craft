@@ -4,15 +4,18 @@
 //! certifies: a green mapped check is reported and the track stays unknown; a red one fails it, a
 //! Block like a local red; a pending or absent one gives no signal. An entry one of whose files
 //! changed since it was confirmed, or whose command is no longer found in them, is skipped and the
-//! map named stale. A working tree with uncommitted changes is not what CI built for its head, so
+//! map named stale; one the workflows now refuse as `craft init --write` would — a sibling job in
+//! any workflow claims its runs, a workflow added since included — is skipped with a note. A working tree with uncommitted changes is not what CI built for its head, so
 //! CI is not read. No map, no gh, no auth or no network: the gate stays as it was, with a note.
 
 use super::check::{Acc, Cx};
 use super::ci_read::seen;
 use super::ci_verdict::{apply, unique, verdict};
+use crate::project::ci::unexpanded;
 use crate::project::{self, CiEntry};
 
 const DIRTY: &str = "CI was not read: the working tree has uncommitted changes, so CI for HEAD does not cover it — the build signal stays unknown";
+const UNEXPANDED: &str = "its check name holds an unexpanded expression, which GitHub expands in each run's name, so no run matches it";
 const NO_MAP: &str = "no CI map in the review profile, so the build signal stays unknown — `craft init --propose` proposes one";
 
 /// Reads CI for the head and folds it into `acc`, whose build signal is unknown.
@@ -24,6 +27,7 @@ pub(super) fn from_ci(cx: &Cx<'_>, acc: &mut Acc) {
         Ok(m) => m,
         Err(note) => return acc.notes.push(note),
     };
+    let map = matchable(map, cx.top, acc);
     let (fresh, stale): (Vec<&CiEntry>, Vec<&CiEntry>) = map.iter().partition(|e| e.fresh(cx.top));
     if !stale.is_empty() {
         acc.notes.push(stale_note(&stale, cx.top));
@@ -54,6 +58,32 @@ pub(super) fn from_ci(cx: &Cx<'_>, acc: &mut Acc) {
             "CI was not read ({why}), so the build signal stays unknown"
         )),
     }
+}
+
+/// The entries of `map` the gate may read runs for; each other is skipped and named in `acc`'s
+/// notes with [`skipped`]'s reason.
+fn matchable(map: Vec<CiEntry>, top: &std::path::Path, acc: &mut Acc) -> Vec<CiEntry> {
+    let mut live = Vec::new();
+    for e in map {
+        match skipped(&e, top) {
+            Some(why) => acc.notes.push(format!(
+                "the CI map entry `{}` was skipped: {why} — run `craft init --propose` to confirm it again",
+                e.check
+            )),
+            None => live.push(e),
+        }
+    }
+    live
+}
+
+/// Why no run is read for `e`: its check holds an unexpanded `${{ … }}`, which no run is named, or
+/// the workflows under `top` now refuse it as `--write` would — a sibling job claims its runs, or
+/// it names one expanded run.
+fn skipped(e: &CiEntry, top: &std::path::Path) -> Option<String> {
+    if unexpanded(&e.check) {
+        return Some(UNEXPANDED.to_owned());
+    }
+    e.claims(top).err().map(|why| why.to_string())
 }
 
 /// The CI map of the repository at `top`, or the note why there is none to read.

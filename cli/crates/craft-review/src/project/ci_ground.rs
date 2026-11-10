@@ -7,12 +7,13 @@
 
 use std::path::Path;
 
+use super::check_name::check_of;
 use super::ci_error::CiError;
 use super::ci_match::runs_in;
 use super::shell::joined;
 use super::workflow::{Job, jobs, unquote};
 
-fn read(top: &Path, path: &str) -> Result<String, CiError> {
+pub(super) fn read(top: &Path, path: &str) -> Result<String, CiError> {
     std::fs::read_to_string(top.join(path)).map_err(|error| CiError::Unreadable {
         path: path.to_owned(),
         error,
@@ -20,10 +21,12 @@ fn read(top: &Path, path: &str) -> Result<String, CiError> {
 }
 
 /// The jobs of `workflow`'s `text` that `check` names — its `name:` (or id), a matrix job's
-/// `<name> (…)` runs too —; refused when it names none.
+/// `<name> (…)` runs too, a `name:` GitHub expands read as the check it reports as —; refused when
+/// it names none.
 fn checked_jobs(text: &str, workflow: &str, check: &str) -> Result<Vec<Job>, CiError> {
     let named = |j: &Job| {
         let n = j.name.as_deref().unwrap_or(&j.id);
+        let n = check_of(n).unwrap_or(n);
         n == check || check.strip_prefix(n).is_some_and(|r| r.starts_with(" ("))
     };
     let mine: Vec<Job> = jobs(text).into_iter().filter(named).collect();
