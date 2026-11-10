@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use super::branch::{self, Lookup};
 use super::{Chain, Fate, PriorFinding, PriorRun};
 use crate::chain::{self, Prior};
 use crate::git::{self, Diff, GitError};
@@ -66,7 +67,8 @@ fn quiet_deferral(cwd: &Path, row: &LedgerRow) -> bool {
 /// The chain of the run about to start in `cwd`: its key, its round and the prior round it builds
 /// on under `runs`, unless `fresh` asks for a new chain or the run is `nested` (a parent engine
 /// launched it, so it stays out of the chain). `base` is the branch's own base, `scope` the
-/// directory of the change the run reviews (`None`, the whole change).
+/// directory of the change the run reviews (`None`, the whole change); on a detached `HEAD`,
+/// `lookup` asks gh for the pull request whose branch keys the chain ([`branch::resolve`]).
 ///
 /// # Errors
 /// When `cwd`'s git directory cannot be read.
@@ -77,10 +79,15 @@ pub fn begin(
     full_every: u32,
     base: &str,
     scope: Option<&str>,
+    lookup: Lookup<'_>,
 ) -> Result<Chain, GitError> {
+    // A nested run stays out of the chain, so gh is not asked for one.
+    let gh = lookup.gh.filter(|_| !nested);
+    let resolved = branch::resolve(cwd, Lookup { gh, ..lookup });
     let mut chain = Chain {
         repo: git::common_dir(cwd)?,
-        branch: git::branch(cwd),
+        branch: resolved.name.clone(),
+        branch_from: resolved.from.clone(),
         scope: scope.unwrap_or_default().to_owned(),
         round: 1,
         base: base.to_owned(),
@@ -99,7 +106,7 @@ pub fn begin(
         chain::locate(runs, cwd, key, fresh)
     };
     match found {
-        Err(why) => chain.unchained = Some(why.reason().to_owned()),
+        Err(why) => chain.unchained = Some(branch::unchained(why, &resolved)),
         Ok(Prior { dir, record }) => {
             chain.round = record.round.saturating_add(1);
             if chain::periodic_rescan(chain.round, full_every) {
