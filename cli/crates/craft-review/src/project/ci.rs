@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use super::check_claim::claimed;
 pub use super::check_name::unexpanded;
 pub use super::ci_error::CiError;
+use super::ci_files::changed;
 pub use super::ci_files::local_file;
-use super::ci_files::{changed, hashes, relative};
 use super::ci_ground::grounded;
 pub use super::signal::Signal;
 
@@ -70,37 +70,20 @@ impl CiEntry {
             why: e.to_string(),
         })?;
         let held = g.hashes.is_some();
-        let mut e = Self {
+        Self {
             check: g.check.trim().to_owned(),
             signal: g.signal,
             command: g.command.trim().into(),
             workflow: g.workflow,
             sources: g.sources,
             hashes: g.hashes.unwrap_or_default(),
-        };
-        if unexpanded(&e.check) {
-            return Err(CiError::Unexpanded(e.check));
         }
-        if !held {
-            relative(&e.workflow)?;
-            e.sources.iter().try_for_each(|s| relative(s))?;
-            e.lines()?;
-            e.written(top)?;
-            let files: Vec<&str> = std::iter::once(e.workflow.as_str())
-                .chain(e.sources.iter().map(String::as_str))
-                .collect();
-            e.hashes = hashes(top, &e.workflow, &files)?;
-        }
-        e.check()?;
-        if held && e.changed(top).is_empty() {
-            e.written(top)?;
-        }
-        Ok(e)
+        .checked(top, held)
     }
 
     /// Whether it may be written: its check claims no other job's runs nor one expanded run of
     /// its own, and it is [grounded](Self::grounded).
-    fn written(&self, top: &Path) -> Result<(), CiError> {
+    pub(super) fn written(&self, top: &Path) -> Result<(), CiError> {
         self.claims(top)?;
         self.grounded(top)
     }
