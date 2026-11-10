@@ -3,10 +3,17 @@
 ## [0.49.0](https://github.com/gurinderu/craft/compare/v0.48.0...v0.49.0) (2026-11-10)
 
 
+### ⚠ Verdict changes on upgrade
+
+* A review no longer gives Approve when a gate signal it asked for stays unknown. That happens when a tool is missing, clippy runs past the gate's 300 s budget (a cold cargo build can), or `nix flake check` hits a machine or network fault. The verdict is then at most Warning, and the line says "the gate was not established locally" and names the CI it saw. A gate with nothing to establish (no Cargo package holds the changed files; a Nix change without a flake whose linters ran clean) and a gate switched off with `gate=false` still Approve.
+* A green CI check never passes a gate signal, in the binary or in the agent-run review (the rust-review and nix-review skills, the Rust/Nix agents in both deliveries). A red check that runs the signal blocks, even with no local tool.
+* The security scan gives Approve only when all its tools ran locally clean. A partial scan is at most Warning.
+* In rust-audit, an unknown gate dimension reads Warning instead of INCOMPLETE.
+
+
 ### Features
 
 * chain a detached HEAD's review rounds on its pull request's head branch ([71552e6](https://github.com/gurinderu/craft/commit/71552e662cd7bed068b58b8139ca66c4db37febd))
-* chain a detached HEAD's review rounds on its pull request's head branch ([4fa55ef](https://github.com/gurinderu/craft/commit/4fa55ef24c089250354ae6cff93c480260f7f61f))
 
 
 ### Bug Fixes
@@ -15,7 +22,6 @@
 * CI informs and never certifies, in the agent-run review too; an unestablished gate gives Warning ([b9f36f5](https://github.com/gurinderu/craft/commit/b9f36f56b76cc1209aadcc0110789fa0fa6ad079))
 * count a Nix linter as run only on a well-formed answer ([a22d523](https://github.com/gurinderu/craft/commit/a22d523c90111fae1f2335600b7a1430544afd2b))
 * fetch the craft binary through the REST API when the release download URL fails ([609d7a3](https://github.com/gurinderu/craft/commit/609d7a33965521ae09c1e824dc99e5d05ecabc30))
-* fetch the craft binary through the REST API when the release download URL fails ([ab47186](https://github.com/gurinderu/craft/commit/ab47186cd3cbf04f69510626906146bd554f5e17))
 * give an unestablished gate Warning, not INCOMPLETE, in the review skills and agents ([49dc573](https://github.com/gurinderu/craft/commit/49dc57373c09b647e15c111260aca1900c03619c))
 * keep a gate with nothing to establish from capping the verdict ([d41b45b](https://github.com/gurinderu/craft/commit/d41b45bccd4697a767a5a3ef617478b703a7ac20))
 * key a fork PR's detached chain on owner:branch and comment on the PR that named it ([f31a395](https://github.com/gurinderu/craft/commit/f31a3957323b095174a2acfe647b5ffd240e3c20))
