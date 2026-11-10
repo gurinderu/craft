@@ -32,19 +32,13 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
 }
 
 /// statix and deadnix on `files`; the linters that gave no well-formed answer on all of them.
+/// statix is local in the provenance only when it ran on every file: what stopped it on one has
+/// already named its own state, which wins.
 fn lint(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) -> Vec<&'static str> {
     let mut not_run = Vec::new();
-    let mut ran = 0;
-    for f in files {
-        if !statix(cx, acc, f) {
-            break;
-        }
-        ran += 1;
-    }
-    if ran > 0 {
+    if files.iter().all(|f| statix(cx, acc, f)) {
         acc.parts.push(format!("{STATIX}: local"));
-    }
-    if ran < files.len() {
+    } else {
         not_run.push("statix");
     }
     if !deadnix(cx, acc, files) {

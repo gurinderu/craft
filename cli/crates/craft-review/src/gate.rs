@@ -51,6 +51,8 @@ mod nix_broken_tests;
 mod nix_fault;
 mod nix_lint;
 #[cfg(test)]
+mod nix_provenance_tests;
+#[cfg(test)]
 mod nix_tests;
 #[cfg(test)]
 mod nothing_tests;
