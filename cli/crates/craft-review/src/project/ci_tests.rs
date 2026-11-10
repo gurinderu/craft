@@ -97,23 +97,3 @@ fn one_checks_signal_twice_is_refused() {
     let e = clippy(t.path());
     ProjectProfile::new(String::new(), Vec::new(), vec![e.clone(), e]).unwrap_err();
 }
-
-#[test]
-fn a_held_entry_is_refused_as_its_write_would_refuse_it() {
-    let t = top();
-    let e = clippy(t.path());
-    assert!(e.refusal(t.path()).is_none(), "written fine");
-    let other = ".github/workflows/other.yml";
-    let sibling =
-        "jobs:\n  docs:\n    name: clippy (docs)\n    steps:\n      - run: mdbook build\n";
-    std::fs::write(t.path().join(other), sibling).unwrap();
-    let held = serde_json::to_string(&e).unwrap();
-    let write = CiEntry::confirmed(&held, t.path()).unwrap_err().to_string();
-    assert_eq!(e.refusal(t.path()).map(|r| r.to_string()), Some(write));
-    let expr = CiEntry {
-        check: "clippy (${{ matrix.arch }})".into(),
-        ..e
-    };
-    let why = expr.refusal(t.path()).unwrap().to_string();
-    assert!(why.contains("unexpanded"), "{why}");
-}

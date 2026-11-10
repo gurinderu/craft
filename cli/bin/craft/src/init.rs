@@ -43,7 +43,8 @@ pub struct InitArgs {
     pub points: Vec<String>,
     /// A CI map entry as JSON: a fresh confirmation `{"check","signal","command","workflow",
     /// "sources"}`, its files hashed at the write, or a held entry exactly as `--propose` prints it
-    /// in `ci`, its hashes kept; repeatable. The map is replaced like the points.
+    /// in `ci`, its hashes kept (one printed with `unusable` is dropped or replaced, never passed
+    /// back); repeatable. The map is replaced like the points.
     #[arg(long = "ci", requires = "write", value_name = "JSON")]
     pub ci: Vec<String>,
     /// The project memory's `external` records as JSON on stdin (`-`, the only value): each one is
@@ -118,7 +119,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "discovery": discovery,
         "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
-        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it; a branch is refused when a review prepares the sources)",
+        "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it, one with `unusable` dropped or replaced; a branch is refused when a review prepares the sources)",
     }))
 }
 

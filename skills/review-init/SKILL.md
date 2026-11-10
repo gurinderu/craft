@@ -171,8 +171,9 @@ and the recipe files in `sources`; its files are hashed at the write. An entry a
 passed back exactly as `ci` prints it, `hashes` included: those are kept as recorded, so a
 stale entry stays stale until you confirm it again — then pass it without `hashes`, read anew.
 A held entry whose files are unchanged is checked as a fresh one is, so an edited one is not kept.
-A held entry printed with `refused` (the reason `--write` would give) would refuse the whole
-write: drop it, or replace it with a fresh confirmation the refusal allows.
+A held entry printed with `unusable` cannot be kept as it is: the gate skips it with that reason
+and `--write` refuses it (or, stale, keeps it dead) — drop it, or replace it with a fresh
+confirmation the reason allows; never pass `unusable` back.
 An entry whose command does not run its signal's cargo command, or is found neither in its job's
 `run:` lines nor in a source it lists, whose workflow or a source is missing, whose job runs a
 local `uses:` it does not list, or whose `hashes` miss one of its files, is refused and nothing

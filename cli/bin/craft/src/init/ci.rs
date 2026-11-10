@@ -2,7 +2,7 @@
 //! candidates the repository's workflows hold — resolved ones with the `--ci` that writes each,
 //! unresolved ones with the run lines whose recipe the session reads — and `--write` records the
 //! entries the reviewer confirmed: a fresh one with its files' hashes read now, a held one (as
-//! `ci` prints it) with the hashes it carries; `ci` gives a held one it would refuse the refusal.
+//! `ci` prints it) with the hashes it carries; `ci` names why a held one cannot be kept as it is.
 
 use std::path::Path;
 
@@ -25,15 +25,16 @@ pub fn confirmed(given: &[String], cwd: &Path) -> Result<Vec<CiEntry>> {
         .collect()
 }
 
-/// The profile's `entries` as `ci` prints them, each one `--write` would refuse passed back with
-/// the refusal it gives as `refused`; as they are when the repository's top cannot be read.
+/// The profile's `entries` as `ci` prints them, each one that cannot be kept as it is — the gate
+/// skips it, or `--write` refuses it passed back — with why as `unusable`; as they are when the
+/// repository's top cannot be read.
 pub fn held(entries: &[CiEntry], cwd: &Path) -> Vec<Value> {
     let top = git::toplevel(cwd).ok();
     let one = |e: &CiEntry| {
         let mut v = json!(e);
-        let why = top.as_deref().and_then(|t| e.refusal(t));
+        let why = top.as_deref().and_then(|t| e.unusable(t));
         if let (Some(o), Some(why)) = (v.as_object_mut(), why) {
-            o.insert("refused".into(), Value::String(why.to_string()));
+            o.insert("unusable".into(), Value::String(why.to_string()));
         }
         v
     };

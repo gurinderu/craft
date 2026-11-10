@@ -37,6 +37,9 @@ mod ci_files_tests;
 mod ci_ground;
 #[cfg(test)]
 mod ci_ground_tests;
+mod ci_keep;
+#[cfg(test)]
+mod ci_keep_tests;
 mod ci_match;
 #[cfg(test)]
 mod ci_match_tests;
