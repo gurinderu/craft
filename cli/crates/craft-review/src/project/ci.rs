@@ -70,14 +70,28 @@ impl CiEntry {
             why: e.to_string(),
         })?;
         let held = g.hashes.is_some();
-        let mut e = Self {
+        Self {
             check: g.check.trim().to_owned(),
             signal: g.signal,
             command: g.command.trim().into(),
             workflow: g.workflow,
             sources: g.sources,
             hashes: g.hashes.unwrap_or_default(),
-        };
+        }
+        .checked(top, held)
+    }
+
+    /// Why `--write` would refuse this entry passed back in its held form (as `ci` prints it), if
+    /// it would: the same check [`Self::confirmed`] runs on it.
+    #[must_use]
+    pub fn refusal(&self, top: &Path) -> Option<CiError> {
+        self.clone().checked(top, true).err()
+    }
+
+    /// The entry checked under `top` as [`Self::confirmed`] does: `held` keeps its hashes, else its
+    /// files are hashed now.
+    fn checked(self, top: &Path, held: bool) -> Result<Self, CiError> {
+        let mut e = self;
         if unexpanded(&e.check) {
             return Err(CiError::Unexpanded(e.check));
         }
