@@ -16,7 +16,7 @@ Worth running when the crate (or a dependency you vendor) contains `unsafe`. If 
 
 ## Workflow
 
-0. **Check CI first.** If the current branch's PR has a green *required* check named `miri` (`gh pr checks --json name,state,bucket,link`; degrade to local if `gh`/PR is absent, unauthenticated, offline, or the check is pending), you may consume it as the soundness signal and note `via CI · PR #N`. Miri jobs in CI are rare, so you will usually run it locally as below. This mirrors the CI-aware gate in the `rust-review` skill.
+0. **Read CI — it informs, never certifies.** If the current branch's PR has a check named `miri` (`gh pr checks --json name,state,bucket,link`; skip this if `gh`/PR is absent, unauthenticated, offline, or the check is pending): a red one is a soundness failure to report; a green one is reported (`CI green for miri · PR #N`) but is never the soundness signal — still run Miri locally as below, and if it cannot run, say MIRI DID NOT RUN. This mirrors the gate in the `rust-review` skill.
 1. **Check Miri is available** (it's a nightly component):
    ```bash
    rustup toolchain list | grep -q nightly || { echo "nightly not installed - MIRI DID NOT RUN, soundness NOT verified"; exit 0; }

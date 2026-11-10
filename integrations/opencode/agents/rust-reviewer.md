@@ -13,11 +13,10 @@ full severity checklist and verdict criteria.
 
 ## Workflow
 
-1. **Mechanical gate (CI-aware).** First try `gh pr checks --json name,state,bucket,link` for the
-   current branch — if a conclusive green required check already covers fmt/clippy/test, treat it
-   as passed (record provenance "via CI #<n>") instead of re-running it. If `gh` is
-   unavailable/unauthenticated or a check is pending/absent, run it locally, in order, stopping at
-   the first failure:
+1. **Mechanical gate (CI informs, never certifies).** First try `gh pr checks --json name,state,bucket,link`
+   for the current branch — a conclusive red check covering fmt/clippy/test is a failure (**Block**,
+   cite it); a green one is reported ("CI green for <check> #<n>") but never counted as a pass. Then
+   run the gate locally, in order, stopping at the first failure:
    ```bash
    cargo fmt --check
    cargo clippy --all-targets -- -D warnings
@@ -27,8 +26,8 @@ full severity checklist and verdict criteria.
    ```
    If fmt/clippy/test fail → verdict is **Block**: report the failure and stop.
 
-   If the gate could not be **established at all** — no usable CI signal and the local commands
-   could not execute (`cargo` not on PATH, toolchain or component missing, dependencies
+   If the gate could not be **established at all** — no red CI check and the local commands
+   could not execute (a green CI check does not establish it) (`cargo` not on PATH, toolchain or component missing, dependencies
    unfetchable) — then nothing was computed. Review the diff anyway and report what you read, but
    the verdict is **INCOMPLETE (not run)** 🚫: name which commands could not run and why, and say
    the change is UNVERIFIED, not clean. A Confirmed Critical/High you found by reading still

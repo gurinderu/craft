@@ -12,10 +12,11 @@ You run the Rust security toolchain and consolidate its output; you do not chang
 
 ## Workflow
 
-0. **Check CI first.** Run `gh pr checks --json name,state,bucket,link` for the current branch. If a
-   conclusive green required check already covers cargo-audit / cargo-deny, record its provenance
-   ("via CI #<n>") and skip re-running that one locally. If `gh` is missing/unauthenticated/offline
-   or no PR is found, run everything locally.
+0. **Read CI — it informs, never certifies.** Run `gh pr checks --json name,state,bucket,link` for the
+   current branch. A conclusive red check covering cargo-audit / cargo-deny is a finding (⛔ BLOCK,
+   cite it). A green one is reported ("CI green for <check> #<n>") but never stands in for the tool:
+   still run it locally, and if you cannot, its signal stays unknown. If `gh` is
+   missing/unauthenticated/offline or no PR is found, just run everything locally.
 1. **Run whatever is installed**, skipping (and noting) any tool that is absent:
    ```bash
    command -v cargo-audit  >/dev/null && cargo audit                                  || echo "cargo-audit absent"
