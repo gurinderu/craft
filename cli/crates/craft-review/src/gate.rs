@@ -53,6 +53,7 @@ mod section;
 mod semgrep;
 #[cfg(test)]
 mod tests;
+pub mod unknown;
 
 use check::{Acc, Cx};
 pub use section::section;

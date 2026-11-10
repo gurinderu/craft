@@ -50,8 +50,9 @@ pub fn outcome(gate: &Gate) -> &'static str {
 /// Runs the gate over the change in `cwd` against `base` (the merge-base with origin's default
 /// branch when `None`), the tools' output and the result ([`RESULT_FILE`]) kept under `dir`, and
 /// returns it as one JSON value: the base and head it read, its `outcome`, the red gate's verdict
-/// line as a review words it (`''` when not red), the report's gate section, the gate itself and
-/// the directory a run takes it from.
+/// line as a review words it, or why an unknown one is not established ([`super::unknown`]; `''`
+/// when it passed), the report's gate section, the gate itself and the directory a run takes it
+/// from.
 ///
 /// # Errors
 /// When the repository or base cannot be read, the profiles cannot be loaded, or `dir` cannot be
@@ -83,7 +84,12 @@ pub fn alone(
     };
     let text = serde_json::to_string(&kept).unwrap_or_default();
     std::fs::write(dir.join(RESULT_FILE), text).map_err(no_dir)?;
-    let line = gate.exit().map(|e| e.line).unwrap_or_default();
+    // An unknown gate's line names why and the CI it saw (realm @nick/craft, node #487).
+    let line = gate
+        .exit()
+        .map(|e| e.line)
+        .or_else(|| super::unknown::reason(&gate))
+        .unwrap_or_default();
     Ok(json!({
         "base": diff.base,
         "head": diff.head,
