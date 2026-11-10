@@ -56,9 +56,11 @@ CI check that runs the command still blocks** (required or not — most repos ha
 protection; required-ness governs whether RED blocks a merge, and never turns GREEN into a signal
 you did not compute).
 
-With no `flake.nix`, the gate is the linters (step 3) and nothing else applies: `nix flake
-check`, `nix eval` and `nix build` have no flake to evaluate. Both linters run clean — nothing to
-gate, no gap; one missing, timed out or broken — NOT ESTABLISHED, at most **Warning**.
+With no `flake.nix`, `nix flake check`, `nix eval` and `nix build` have no flake to evaluate: the
+gate is the linters (step 3) and the formatter (step 2). Both linters run clean — nothing to gate,
+no gap; one missing, timed out or broken — NOT ESTABLISHED, at most **Warning**.
+The formatter check applies whenever the repository names a formatter, with a flake or
+without, and a red one blocks; with no formatter named it is skipped, and that is no gap.
 
 Establish each signal:
 
@@ -69,8 +71,8 @@ Establish each signal:
    If `gh` is missing, unauthenticated, offline, or finds no PR → fall straight through to the
    local gate (never fail on detection).
 
-2. **Formatter** — if a conclusive check (required or not) whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`,
-   `format`) is conclusive:
+2. **Formatter** — only when the repository names one (see above). If a conclusive check
+   (required or not) whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`, `format`) is conclusive:
    - failed → gate red → **Block**;
    - green → report `CI green for <check> · PR #N`; the signal stays unknown — run it locally;
    - absent/pending → run locally:

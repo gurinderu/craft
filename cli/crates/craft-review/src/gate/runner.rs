@@ -19,8 +19,13 @@ const POLL: Duration = Duration::from_millis(50);
 /// What running a tool came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Ran {
-    /// It exited: its status (`None` killed by a signal), its stdout and its stderr.
-    Exited { ok: bool, out: String, err: String },
+    /// It exited: success, its code (`None` killed by a signal), its stdout and its stderr.
+    Exited {
+        ok: bool,
+        code: Option<i32>,
+        out: String,
+        err: String,
+    },
     /// No such program on the PATH (a working directory that is gone is [`Ran::Broken`]).
     Missing,
     /// The budget ran out before it exited: after how long it ran.
@@ -132,6 +137,7 @@ fn wait(mut child: Child, limit: Duration, out: &Path, err: &Path) -> Ran {
                 return match (read(out), read(err)) {
                     (Ok(out), Ok(err)) => Ran::Exited {
                         ok: status.success(),
+                        code: status.code(),
                         out,
                         err,
                     },

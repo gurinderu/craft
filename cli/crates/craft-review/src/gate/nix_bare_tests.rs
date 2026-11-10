@@ -8,7 +8,7 @@ use super::tests::{nix_track, repo, setup, tool};
 use super::{Gate, Status, alone, run, unknown};
 
 /// The gate over the test repository with its `flake.nix` removed and `tools` on PATH.
-fn bare(tools: &[(&str, &str)]) -> Gate {
+pub(super) fn bare(tools: &[(&str, &str)]) -> Gate {
     let (repo, dir, run_dir) = (
         repo(),
         tempfile::tempdir().unwrap(),

@@ -48,7 +48,9 @@ fn run_writer(call: &Call<'_>, program: &str) -> Result<Value, WriteError> {
 /// The adapter's answer from what running it came to.
 fn answer(ran: Ran) -> Result<Value, WriteError> {
     match ran {
-        Ran::Exited { ok: true, out, err } => out
+        Ran::Exited {
+            ok: true, out, err, ..
+        } => out
             .lines()
             .rev()
             .find(|l| !l.trim().is_empty())
@@ -104,6 +106,7 @@ mod tests {
         let out = "wrote /store/r.json\n{\"ok\":true,\"reason\":\"\"}\n".to_owned();
         let ran = Ran::Exited {
             ok: true,
+            code: Some(0),
             out,
             err: String::new(),
         };
@@ -114,6 +117,7 @@ mod tests {
     fn a_writer_that_could_not_run_says_why() {
         let failed = Ran::Exited {
             ok: false,
+            code: Some(1),
             out: String::new(),
             err: "x\ncli-review-file: the input cannot be read\n".into(),
         };
@@ -126,6 +130,7 @@ mod tests {
         assert_eq!(answer(Ran::Missing), Err(WriteError::NoNode));
         let silent = Ran::Exited {
             ok: true,
+            code: Some(0),
             out: "not json\n".into(),
             err: String::new(),
         };
