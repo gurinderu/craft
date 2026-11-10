@@ -1,6 +1,6 @@
 ---
 name: rust-security-scanner
-description: Runs the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep), consolidates the findings against the rust-security rubric, and returns a severity-ranked report with an Approve/Warning/Block verdict — or INCOMPLETE (not run) when no tool was available to run. Use to security-scan a Rust project or before a release.
+description: Runs the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep), consolidates the findings against the rust-security rubric, and returns a severity-ranked report with an Approve/Warning/Block verdict — Block on a red CI audit/deny check even when no local tool ran, else INCOMPLETE (not run) when no tool was available to run. Use to security-scan a Rust project or before a release.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -10,7 +10,7 @@ You run the Rust security toolchain and report. You judge; you don't fix. Apply 
 
 ## Workflow
 
-0. **Read CI (audit/deny) — it informs, never certifies.** If the current branch has a PR, read the checks whose name matches `audit` or `deny` — `gh pr checks --json name,state,bucket,link`; skip this if `gh`/PR is absent, unauthenticated, offline, or the check is pending/unrecognized. A red one is a finding (⛔ BLOCK, cite the check and link). A green one is reported (`CI green for <check>`) but never stands in for the tool: still run it locally below, and if you cannot, that tool's signal stays unknown. `geiger` and `semgrep` are almost never in CI — always run them locally. This mirrors the gate in the `rust-review` skill. Record provenance (`local`, plus `CI green for <check> · PR #N` when CI is green) in the Tools line.
+0. **Read CI (audit/deny) — it informs, never certifies.** If the current branch has a PR, read the checks whose name matches `audit` or `deny` — `gh pr checks --json name,state,bucket,link`; skip this if `gh`/PR is absent, unauthenticated, offline, or the check is pending/unrecognized. A red one is a finding (⛔ BLOCK, cite the check and link) — and it blocks even when no tool can run locally below: a red check that runs the tool is a failure whoever ran it. A green one is reported (`CI green for <check>`) but never stands in for the tool: still run it locally below, and if you cannot, that tool's signal stays unknown. `geiger` and `semgrep` are almost never in CI — always run them locally. This mirrors the gate in the `rust-review` skill. Record provenance (`local`, plus `CI green for <check> · PR #N` when CI is green) in the Tools line.
 
 1. **Run the tools** (each may be absent — note "not installed" and continue, don't fail the run):
    ```bash
@@ -27,10 +27,12 @@ You run the Rust security toolchain and report. You judge; you don't fix. Apply 
    taint that can't reach; keep what's real.
 3. **Consolidate** across tools — dedupe (a CVE may appear in both audit and deny) and rank by
    severity.
-4. **Verdict** — exactly one of **Approve** ✅ / **Warning** ⚠️ / **Block** ⛔ per the rubric —
-   **unless NO tool ran at all**, in which case the verdict is **INCOMPLETE (not run)** 🚫.
+4. **Verdict** — exactly one of **Approve** ✅ / **Warning** ⚠️ / **Block** ⛔ per the rubric.
+   A red covering CI check from step 0 is a **Block** whatever ran locally — even with no tool
+   installed; name the check as the source. Otherwise, **if NO tool ran at all**, the verdict is
+   **INCOMPLETE (not run)** 🚫.
    An Approve is a claim about what the tools did not find, and it only holds over what was
-   actually scanned. If `toolsRun` is empty, nothing was scanned: report `INCOMPLETE (not run)`,
+   actually scanned. If `toolsRun` is empty and no CI check is red, nothing was scanned: report `INCOMPLETE (not run)`,
    name every missing tool, and say plainly that the project's security posture is UNKNOWN, not
    clean. A partial run (some tools present, some absent) still gets a normal verdict, but the
    Tools line must name what was missing so the reader can size the gap.
@@ -57,7 +59,23 @@ Evidence: ran cargo-audit, cargo-deny, and cargo-geiger; read Cargo.lock and the
 Block — 1 vulnerable dependency with a fix available.
 ```
 
-When nothing could run, the whole report is that fact:
+When no tool could run but a covering CI check is red, the red check is the verdict:
+
+```
+## Tools
+audit (not installed) · deny (not installed) · geiger (not installed) · semgrep (not installed)
+CI red: audit · PR #123 (a red CI check, not a tool run)
+
+## Findings
+⛔ BLOCK · CI audit · the audit check is red for this head · <its link> · fix what it reports
+
+Evidence: read `gh pr checks` (audit red); attempted cargo-audit, cargo-deny, cargo-geiger, and semgrep — none installed.
+
+## Verdict
+Block — the CI audit check is red; no security tool ran locally.
+```
+
+When nothing could run and no covering CI check is red, the whole report is that fact:
 
 ```
 ## Tools
@@ -85,8 +103,10 @@ because logging failed.
 Append ONE compact JSON line to `~/.craft/runs/index.jsonl` (run `mkdir -p ~/.craft/runs` first),
 using a single atomic append (`printf '%s\n' "$LINE" >> ~/.craft/runs/index.jsonl`):
 
-`{"schemaVersion":1,"runtime":"claude-code","ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-security-scanner","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Approve|Warning|Block|INCOMPLETE (not run)>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null,"toolsRun":["cargo-audit","cargo-deny"]}`
+`{"schemaVersion":1,"runtime":"claude-code","ts":"<date -u +%Y-%m-%dT%H-%M-%SZ>","kind":"agent","name":"rust-security-scanner","project":"<pwd>","commit":"<git rev-parse --short HEAD, empty if none>","dirty":<true if git status --porcelain is non-empty, else false>,"verdict":"<Approve|Warning|Block|INCOMPLETE (not run)>","findings":{"total":<n>,"bySeverity":{"Critical":0,"High":0,"Medium":0,"Low":0,"Info":0}},"nested":false,"via":null,"toolsRun":["cargo-audit","cargo-deny"],"ciRed":[]}`
 
-Set `toolsRun` to the tools that actually ran (omit ones that were absent). An empty `toolsRun`
-and a verdict of `Approve` is a contradiction the aggregate cannot detect — if `toolsRun` is
-empty, the verdict MUST be `INCOMPLETE (not run)`.
+Set `toolsRun` to the tools that actually ran (omit ones that were absent), and `ciRed` to the
+red covering CI checks from step 0 (`[]` when none) — a red CI check is not a tool run, so it never
+goes into `toolsRun`. An empty `toolsRun` and a verdict of `Approve` is a contradiction the
+aggregate cannot detect — if `toolsRun` is empty, the verdict MUST be `Block` when `ciRed` is not
+empty, and `INCOMPLETE (not run)` otherwise.
