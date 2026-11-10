@@ -1,6 +1,6 @@
 ---
 name: rust-security-scanner
-description: Runs the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep), consolidates the findings against the rust-security rubric, and returns a severity-ranked report with an Approve/Warning/Block verdict — Block on a red CI audit/deny check even when no local tool ran, else INCOMPLETE (not run) when no tool was available to run. Use to security-scan a Rust project or before a release.
+description: Runs the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep), consolidates the findings against the rust-security rubric, and returns a severity-ranked report with an Approve/Warning/Block verdict — Block on a red CI audit/deny check even when no local tool ran, at most Warning when a tool could not run locally (a green CI check only informs), Approve only when every tool ran locally clean, else INCOMPLETE (not run) when no tool was available to run. Use to security-scan a Rust project or before a release.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -34,8 +34,11 @@ You run the Rust security toolchain and report. You judge; you don't fix. Apply 
    An Approve is a claim about what the tools did not find, and it only holds over what was
    actually scanned. If `toolsRun` is empty and no CI check is red, nothing was scanned: report `INCOMPLETE (not run)`,
    name every missing tool, and say plainly that the project's security posture is UNKNOWN, not
-   clean. A partial run (some tools present, some absent) still gets a normal verdict, but the
-   Tools line must name what was missing so the reader can size the gap.
+   clean. A partial run (some tools ran, some could not — not installed, timed out, broken, or
+   stopped by this machine or its network) gives at most **Warning**, never Approve, even when a
+   green CI check covers the missing tool (it only informs): name each tool that did not run in
+   the Tools line and the verdict. **Approve** needs every security tool to have run locally and
+   come back clean.
 
    Immediately before the verdict, emit one line beginning `Evidence:` that names the concrete work
    of this pass — the tools you actually ran and the files you read — never invented. A passing
@@ -109,4 +112,5 @@ Set `toolsRun` to the tools that actually ran (omit ones that were absent), and 
 red covering CI checks from step 0 (`[]` when none) — a red CI check is not a tool run, so it never
 goes into `toolsRun`. An empty `toolsRun` and a verdict of `Approve` is a contradiction the
 aggregate cannot detect — if `toolsRun` is empty, the verdict MUST be `Block` when `ciRed` is not
-empty, and `INCOMPLETE (not run)` otherwise.
+empty, and `INCOMPLETE (not run)` otherwise. Likewise `Approve` needs all four tools in
+`toolsRun`; with any of them absent the verdict is at most `Warning`.
