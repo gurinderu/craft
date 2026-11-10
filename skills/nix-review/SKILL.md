@@ -1,7 +1,7 @@
 ---
 name: nix-review
 description: >-
-  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules; language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
+  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules; language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (at most Warning when the gate could not be established; INCOMPLETE only when the review itself could not run), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
 ---
 
 # Nix Review
@@ -74,7 +74,7 @@ Establish each signal:
      alejandra --check .        # or: nixpkgs-fmt --check $(find . -name '*.nix')
      ```
 
-3. **Linters** — if absent from CI, run locally:
+3. **Linters** — always run locally, whatever CI shows (a green CI check only informs):
    ```bash
    statix check
    deadnix --fail
@@ -100,13 +100,15 @@ Establish each signal:
    |---|---|---|
    | Ran locally and passed | PASSED | continue |
    | Failed (a local run, or a red CI check that runs it) | FAILED | **Block** |
-   | Could not run locally (a green CI check, if any, only reported) | **NOT ESTABLISHED** | **INCOMPLETE (not run)** — never Approve |
+   | Could not run locally (a green CI check, if any, only informs) | **NOT ESTABLISHED** | **Warning** at most — never Approve |
 
-   Read the diff and report findings anyway, but the verdict is `INCOMPLETE (not run)`: name what
-   was missing and say the change is UNVERIFIED, not clean. A Confirmed CRITICAL/HIGH found by
-   reading still wins — that is a **Block**. A *partial* gate (statix ran, `nix flake check` did
-   not) is a normal verdict with the gap named in the `## Gate` line; INCOMPLETE is only for
-   nothing having run, so the marker keeps meaning something.
+   Read the diff and report findings anyway, but the verdict is **Warning**: say the gate was not
+   established locally, name what was missing, report the CI you saw beside it, and say the change
+   is UNVERIFIED, not clean. A Confirmed CRITICAL/HIGH found by reading still wins — that is a
+   **Block**. A *partly unknown* gate (statix ran, `nix flake check` did not) caps the same way:
+   at most **Warning**, the gap named in the `## Gate` line. An unestablished gate is never
+   INCOMPLETE: INCOMPLETE means the review itself could not run (no diff to read, the lenses
+   failed).
 
 If any signal is red (a local run, or a red CI check that runs it), stop and report — don't
 review further. A green gate — green by your own runs — is the floor, not the ceiling.
@@ -260,10 +262,10 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 
 | Verdict | When |
 |---|---|
-| **Approve** ✅ | gate green by your own runs (a green CI check never counts), no **Confirmed** CRITICAL/HIGH/MEDIUM |
-| **Warning** ⚠️ | gate green by your own runs (a green CI check never counts), **Confirmed** MEDIUM only — Suspected items listed but don't block |
+| **Approve** ✅ | every gate signal green by your own runs (a green CI check never counts), no **Confirmed** CRITICAL/HIGH/MEDIUM |
+| **Warning** ⚠️ | **Confirmed** MEDIUM at most over a gate green by your own runs, **or** a gate NOT ESTABLISHED or partly unknown (Step 1, item 5) with nothing Confirmed CRITICAL/HIGH — Suspected items listed but don't block |
 | **Block** ⛔ | gate red (a local run, or a red CI check that runs the command), or any **Confirmed** CRITICAL/HIGH |
-| **INCOMPLETE (not run)** 🚫 | gate NOT ESTABLISHED (Step 1, item 5) — nothing in it could execute — and nothing Confirmed CRITICAL/HIGH was found by reading |
+| **INCOMPLETE** 🚫 | the review itself could not run — no diff to read, or the lenses failed — so nothing was judged; never for a gate that could not be established |
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md)
 catalog ID when the finding maps to one (e.g. `PUR-001`); novel findings need no ID. Be specific
@@ -271,7 +273,9 @@ and cite the line; a finding without a location isn't actionable.
 
 "Gate green / red" is read from Step 1 — green only from your own run; red from your own run
 or a red CI check that runs the command. Cite which in the `## Gate` line of the output, and report
-a green CI check there as `CI green for <check>` beside a signal that stays unknown.
+a green CI check there as `CI green for <check>` beside a signal that stays unknown. When the gate
+could not be established, in whole or in part, the `## Gate` line says so (`NOT ESTABLISHED — nix
+not on PATH`, with the CI you saw) and the verdict is at most Warning, never Approve.
 
 ## Proving a claim — what proves what
 

@@ -1,7 +1,7 @@
 ---
 name: rust-review
 description: >-
-  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines (language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (and INCOMPLETE when the gate could not run at all), how to dispatch the craft review agents, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode) and its review agents are not in Codex; the rubric applies anywhere. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
+  Rust code-review rubric — the cargo quality gate, a severity-tiered checklist (safety, error handling, ownership, concurrency, performance, API quality), a public-API pass against the Rust API Guidelines (language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (at most Warning when the gate could not be established; INCOMPLETE only when the review itself could not run), how to dispatch the craft review agents, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Rust code or a diff, deciding if it's mergeable, or reviewing a public API. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode) and its review agents are not in Codex; the rubric applies anywhere. Triggers: code review, is this mergeable, dispatch reviewer, public API, what proves done.
 ---
 
 # Rust Review
@@ -89,11 +89,11 @@ Establish each signal:
    |---|---|---|
    | The command ran locally and passed | PASSED | continue to Step 2 |
    | The command failed (a local run, or a red CI check that runs it) | FAILED | **Block**, cite the failure |
-   | The command could not run locally (a green CI check, if any, only reported) | **NOT ESTABLISHED** | **INCOMPLETE (not run)** — never Approve |
+   | The command could not run locally (a green CI check, if any, only informs) | **NOT ESTABLISHED** | **Warning** at most — never Approve |
 
-   With the gate NOT ESTABLISHED, you may still read the diff and report findings — a human read is worth something — but the verdict cannot be **Approve**: an Approve asserts the mechanical gate is green, and here it was never computed. Report the verdict `INCOMPLETE (not run)`, name exactly which commands could not execute and why, and say plainly that the change is UNVERIFIED, not clean. If the read turns up a Critical or High, that still wins: a **Block** on found evidence outranks INCOMPLETE.
+   With the gate NOT ESTABLISHED, still read the diff and report findings — a human read is worth something — but the verdict cannot be **Approve**: an Approve asserts the mechanical gate is green by your own run, and here it was never computed. The verdict is **Warning**: say plainly that the gate was not established locally, name exactly which commands could not execute and why, report the CI you saw beside it (`CI green for <check>` informs only), and say the change is UNVERIFIED, not clean. If the read turns up a Confirmed Critical or High, that still wins: **Block**.
 
-   Partial execution is not INCOMPLETE: if `cargo test` ran but `clippy` is unavailable (CI green for it or not), that is a normal verdict with the gap named in the provenance line. INCOMPLETE is reserved for **nothing in the gate ran** — a marker that fires on healthy runs teaches readers to ignore it.
+   A gate that is partly unknown caps the same way: if `cargo test` ran but `clippy` is unavailable (CI green for it or not), the clippy signal is unknown, so with nothing Confirmed CRITICAL/HIGH the verdict is **Warning**, the gap named in the provenance line. An unestablished gate is never INCOMPLETE: INCOMPLETE means the review itself could not run (no diff to read, the lenses failed).
 
 If any `fmt`/`clippy`/`test`/`build` signal is red (a local run, or a red CI check that runs it), stop and report — don't review further. A green gate — green by your own runs — is the floor, not the ceiling: it means the change is *reviewable*, not that it's good.
 
@@ -387,16 +387,16 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 
 | Verdict | When |
 |---|---|
-| **Approve** ✅ | gate green by your own runs (a green CI check never counts), no **Confirmed** CRITICAL/HIGH/MEDIUM |
-| **Warning** ⚠️ | gate green by your own runs (a green CI check never counts), **Confirmed** MEDIUM only — Suspected items listed but don't block |
+| **Approve** ✅ | every gate signal green by your own runs (a green CI check never counts), no **Confirmed** CRITICAL/HIGH/MEDIUM |
+| **Warning** ⚠️ | **Confirmed** MEDIUM at most over a gate green by your own runs, **or** a gate NOT ESTABLISHED or partly unknown (Step 1, item 4) with nothing Confirmed CRITICAL/HIGH — Suspected items listed but don't block |
 | **Block** ⛔ | gate red (a local run, or a red CI check that runs the command), or any **Confirmed** CRITICAL/HIGH |
-| **INCOMPLETE (not run)** 🚫 | gate NOT ESTABLISHED (Step 1, item 4) — nothing in it could execute — and nothing Confirmed CRITICAL/HIGH was found by reading |
+| **INCOMPLETE** 🚫 | the review itself could not run — no diff to read, or the lenses failed — so nothing was judged; never for a gate that could not be established |
 
 In **strict mode**, the maintainability bar applies: a Confirmed maintainability finding (code judo missed, file-size explosion, spaghetti branching, hacky abstraction) is a **presumptive Block** unless the author justified it — escalated from its default LOW. Outside strict mode those findings stay LOW (optional) unless a harm is named.
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md) catalog ID when the finding maps to one (e.g. `CON-003`); novel findings need no ID. Be specific and cite the line; a finding without a location isn't actionable.
 
-"Gate green / red" is read from Step 1 — green only from your own run; red from your own run or a red CI check that runs the command. Cite which in the `## Gate` line of the output, and report a green CI check there as `CI green for <check>` beside a signal that stays unknown. When the gate could not be established at all, the `## Gate` line says so (`NOT ESTABLISHED — cargo not on PATH`) and the verdict is `INCOMPLETE (not run)`, never Approve: silence from a gate that never ran is not a pass.
+"Gate green / red" is read from Step 1 — green only from your own run; red from your own run or a red CI check that runs the command. Cite which in the `## Gate` line of the output, and report a green CI check there as `CI green for <check>` beside a signal that stays unknown. When the gate could not be established, in whole or in part, the `## Gate` line says so (`NOT ESTABLISHED — cargo not on PATH`, with the CI you saw) and the verdict is at most Warning, never Approve: silence from a gate that never ran is not a pass.
 
 ## Requesting a review & acting on the verdict
 
