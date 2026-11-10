@@ -17,6 +17,9 @@ use crate::git;
 use crate::sources::spec::SYSTEMS_MAX;
 
 pub mod candidates;
+mod check_name;
+#[cfg(test)]
+mod check_name_tests;
 pub mod ci;
 mod ci_configs;
 #[cfg(test)]

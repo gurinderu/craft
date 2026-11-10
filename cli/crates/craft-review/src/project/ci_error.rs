@@ -10,6 +10,10 @@ pub enum CiError {
     #[error("{0:?}: a check is one non-empty line")]
     Check(String),
     #[error(
+        "{0:?}: the check holds an unexpanded `${{{{ … }}}}` expression, which GitHub expands in each run's name, so it matches no run — name the literal part before the job name's trailing ` (…)`, as `craft init --propose` proposes it"
+    )]
+    Unexpanded(String),
+    #[error(
         "{check}: the command {command:?} does not run `cargo {signal}` — quote the command line the check runs"
     )]
     Command {

@@ -57,15 +57,19 @@ them. With nothing recalled, drop the heredoc and `--memory-externals -`. A loca
   and the `version` the manifest reads; `ran: false` with `why` when it could not run.
 - `ciCandidates` — what the repository's `.github/workflows/*.yml` hold for the CI map:
   `resolved`, a job whose `run:` names the cargo command itself, each with `check` (the job's
-  `name:`, else its id — the name GitHub reports), `matrix`, `signal` (`clippy`, `test` for
+  `name:`, else its id — the name GitHub reports; a `name:` holding `${{ … }}` in a trailing
+  ` (…)` gives its literal part before it, `Build (${{ matrix.arch }})` the check `Build`, which
+  each run `Build (…)` counts for), `matrix`, `signal` (`clippy`, `test` for
   `cargo test` or `cargo nextest`, `fmt`, `build` for `cargo build` or `cargo check`), `command`,
   `workflow`, `uses` (the local actions or reusable workflows its job runs, `uses: ./…`), `ci`
   (the `--ci` that writes it, those local files already among its `sources`) and, for a clippy
   command that does not pass `-D warnings`, a `note`: a warning does not fail that check unless
   the job denies warnings another way, so tell the reviewer before they confirm it; and
   `unresolved`, a job calling a recipe (`just`, `make`, `cargo xtask`, a script) whose words hint
-  at a signal, with its `runs` lines, `hints`, `workflow` and `uses`. `ran: false` with `why`
-  when the workflows could not be read.
+  at a signal, with its `runs` lines, `hints`, `workflow` and `uses` — or a job whose `name:`
+  holds `${{ … }}` elsewhere, with a `note`: GitHub expands it in each run's name, so no entry
+  can name its runs; leave it out and say so. An entry whose `check` holds `${{` is refused at
+  `--write`. `ran: false` with `why` when the workflows could not be read.
 
 ## 3. Find the rest in the code, then ask
 
@@ -130,7 +134,8 @@ written only on the reviewer's word.
   and see that this recipe runs the command; say which recipe and line in the list below.
 - **Matrix jobs**: GitHub reports one check per combination, `<check> (<values>)`; the entry's
   `check` is the job's name, and every run named `<check> (…)` must be green for its signal.
-  A `name:` holding `${{ … }}` is reported expanded — ask for the name the PR's checks show.
+  A `name:` holding `${{ … }}` is reported expanded: the entry's `check` is its literal part
+  before the trailing ` (…)` (as proposed), never the literal expression nor one expanded run.
 - Then ask the reviewer in words, one numbered list beside the integration points: for each
   entry, its check, signal, the command line and where you read it (the workflow, or the recipe
   and its line). They confirm, drop, or correct each; add any check you missed.

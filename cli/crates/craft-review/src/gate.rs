@@ -28,6 +28,8 @@ mod cause;
 mod check;
 mod ci;
 #[cfg(test)]
+mod ci_expr_tests;
+#[cfg(test)]
 mod ci_inform_tests;
 mod ci_read;
 #[cfg(test)]
