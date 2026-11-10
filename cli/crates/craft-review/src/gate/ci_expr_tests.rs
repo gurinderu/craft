@@ -24,7 +24,7 @@ fn a_held_check_holding_an_expression_is_named_and_skipped() {
     let notes = t.notes.join("\n");
     assert!(
         notes.contains("clippy (${{ matrix.arch }})")
-            && notes.contains("check name holds an unexpanded expression")
+            && notes.contains("holds an unexpanded `${{ … }}` expression")
             && notes.contains("craft init --propose"),
         "{notes}"
     );

@@ -1,6 +1,6 @@
-//! `craft init --propose` and the CI map it holds (realm @nick/craft, node #482): a held entry
-//! `--write` would refuse — its check holding an expression, or a job of another workflow reported
-//! under it — carries the refusal `--write` gives as `refused`; one written fine carries none.
+//! `craft init --propose` and the CI map it holds (realm @nick/craft, node #482): a held entry that
+//! cannot be kept as it is — `--write` refuses it passed back, or the gate skips it — carries why
+//! as `unusable`, the write's own reason; one written fine, or only stale, carries none.
 //! HOME is a temporary directory.
 #![expect(
     clippy::unwrap_used,
@@ -48,54 +48,70 @@ fn json_of(out: &Output) -> Value {
     serde_json::from_slice(&out.stdout).unwrap()
 }
 
-/// The refusal `--write` gives for `held` passed back as `ci` prints it.
+/// The refusal `--write` gives for `held` passed back as `ci` prints it, `unusable` left out.
 fn write_refusal(t: &Path, r: &str, held: &Value) -> String {
+    let mut held = held.clone();
+    held.as_object_mut().unwrap().remove("unusable");
     let out = craft(
         t,
         &["init", "--write", "--cwd", r, "--ci", &held.to_string()],
     );
     assert!(!out.status.success(), "{held}");
-    String::from_utf8_lossy(&out.stderr).into_owned()
+    let err = String::from_utf8_lossy(&out.stderr);
+    err.trim().strip_prefix("craft: ").unwrap().to_owned()
+}
+
+/// The held entry `--propose` prints now, and why it cannot be kept, if so.
+fn held(t: &Path, r: &str) -> (Value, Option<String>) {
+    let out = json_of(&craft(t, &["init", "--propose", "--cwd", r]));
+    let e = out.get("ci").and_then(|c| c.get(0)).cloned().unwrap();
+    let why = e.get("unusable").map(|w| w.as_str().unwrap().to_owned());
+    (e, why)
 }
 
 #[test]
-fn a_held_entry_the_write_would_refuse_is_proposed_with_its_refusal() {
+fn a_held_entry_that_cannot_be_kept_is_proposed_with_why() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path().join("repo");
+    let (wf, docs) = (".github/workflows/ci.yml", ".github/workflows/docs.yml");
     std::fs::create_dir_all(repo.join(".github/workflows")).unwrap();
-    std::fs::write(repo.join(".github/workflows/ci.yml"), WORKFLOW).unwrap();
+    std::fs::write(repo.join(wf), WORKFLOW).unwrap();
     git(&repo, &["init", "-q", "-b", "main"]);
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "-qm", "init"]);
     let (r, t) = (repo.display().to_string(), tmp.path());
     let first = json_of(&craft(t, &["init", "--propose", "--cwd", &r]));
     let ci = first["ciCandidates"]["resolved"][0]["ci"].as_str().unwrap();
-    json_of(&craft(t, &["init", "--write", "--cwd", &r, "--ci", ci]));
-    let fine = json_of(&craft(t, &["init", "--propose", "--cwd", &r]));
-    assert!(fine["ci"][0].get("refused").is_none(), "{fine}");
+    let wrote = json_of(&craft(t, &["init", "--write", "--cwd", &r, "--ci", ci]));
+    let (fine, why) = held(t, &r);
+    assert_eq!((&fine, why), (&wrote["ci"][0], None), "written fine");
 
-    let docs = "jobs:\n  docs:\n    name: Rust (docs)\n    steps:\n      - run: mdbook build\n";
-    std::fs::write(repo.join(".github/workflows/docs.yml"), docs).unwrap();
-    let sibling = json_of(&craft(t, &["init", "--propose", "--cwd", &r]));
-    let why = sibling["ci"][0]["refused"].as_str().unwrap();
+    let sibling = "jobs:\n  docs:\n    name: Rust (docs)\n    steps:\n      - run: mdbook build\n";
+    std::fs::write(repo.join(docs), sibling).unwrap();
+    let (e, why) = held(t, &r);
+    let why = why.unwrap();
     assert!(why.contains("\"Rust (docs)\""), "{why}");
-    let mut held = sibling["ci"][0].clone();
-    held.as_object_mut().unwrap().remove("refused");
-    assert!(
-        write_refusal(t, &r, &held).contains(why),
-        "the write's own reason"
-    );
+    assert_eq!(write_refusal(t, &r, &e), why, "the write's own reason");
 
-    let profile = fine["profile"].as_str().unwrap();
+    std::fs::remove_file(repo.join(docs)).unwrap();
+    std::fs::write(repo.join(wf), format!("{WORKFLOW}  more:\n")).unwrap();
+    let (stale, why) = held(t, &r);
+    assert_eq!(
+        (&stale, why),
+        (&fine, None),
+        "stale, kept until confirmed again"
+    );
+    std::fs::write(repo.join(docs), sibling).unwrap();
+    let (_, why) = held(t, &r);
+    let why = why.unwrap();
+    assert!(why.contains("\"Rust (docs)\""), "the gate skips it: {why}");
+
+    let profile = first["profile"].as_str().unwrap();
     let text = std::fs::read_to_string(profile).unwrap();
     let expr = text.replace("check = \"Rust\"", "check = \"Rust (${{ matrix.arch }})\"");
     std::fs::write(profile, expr).unwrap();
-    let again = json_of(&craft(t, &["init", "--propose", "--cwd", &r]));
-    assert!(
-        again["ci"][0]["refused"]
-            .as_str()
-            .unwrap()
-            .contains("unexpanded"),
-        "{again}"
-    );
+    let (e, why) = held(t, &r);
+    let why = why.unwrap();
+    assert!(why.contains("unexpanded"), "{why}");
+    assert_eq!(write_refusal(t, &r, &e), why, "the write's own reason");
 }
