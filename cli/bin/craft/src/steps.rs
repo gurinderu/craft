@@ -97,6 +97,10 @@ pub struct StartArgs {
     /// whole again.
     #[arg(long)]
     pub nested: bool,
+    /// The pull request under review: on a detached HEAD its head branch keys the chain of review
+    /// rounds. Absent, gh is asked for the open pull request whose head is HEAD.
+    #[arg(long, value_name = "NUMBER")]
+    pub pr: Option<u64>,
     /// File the run's telemetry under this craft version, as the review engine's own run: a
     /// checkpoint as each phase ends and the run record when it finishes, through the plugin
     /// root's `lib/cli-review-file.mjs` and `node`. Absent, nothing is filed.
@@ -268,6 +272,8 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         comment: args.comment,
         optional: args.optional.clone(),
         nested: args.nested,
+        pr: args.pr,
+        chain_gh: Some(craft_review::publish::PostSetup::default()),
     };
     let step = stamped(step::start(&opts)?, began);
     match &args.record {
