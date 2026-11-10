@@ -5,6 +5,9 @@ use serde_json::Value;
 use crate::coverage;
 use crate::state::{RunState, Track};
 
+mod gate_cap;
+#[cfg(test)]
+mod gate_cap_tests;
 mod light;
 mod rereview;
 #[cfg(test)]
@@ -33,9 +36,10 @@ pub fn tier_counts(state: &RunState) -> [usize; 4] {
 }
 
 /// The run's verdict: a coverage exit's own; else Block on a confirmed Critical or High, Warning on
-/// a confirmed Medium, Approve otherwise — and, when something the review needed did not run
-/// (`not_run`, where every finding verification failed to judge is named), INCOMPLETE in place of
-/// Approve and a red verdict marked ` (INCOMPLETE)`, as `honestVerdict`; otherwise, when changed
+/// a confirmed Medium or an asked gate that stayed unknown (`gate_cap`), Approve otherwise — and,
+/// when something the review needed did not run (`not_run`, where every finding verification
+/// failed to judge is named), INCOMPLETE in place of Approve and a red or capped verdict marked
+/// ` (INCOMPLETE)`, as `honestVerdict`; otherwise, when changed
 /// files that carry code went unreviewed (`coverage::gap`), marked ` (PARTIAL COVERAGE)`, as
 /// `verdictSuffix` in `lib/review-coverage.mjs`: a hole a re-run will not fill.
 #[must_use]
@@ -60,6 +64,12 @@ pub fn verdict_line(state: &RunState, verdict: &str) -> String {
             "{verdict} — {}: this verdict covers only the files its language profiles reviewed",
             coverage::note(&gap)
         ),
+    };
+    // An unknown gate says why it holds the verdict (realm @nick/craft, node #487).
+    let line = match gate_cap::reason(state) {
+        Some(why) if line == verdict => format!("{line} — {why}"),
+        Some(why) => format!("{line} · {why}"),
+        None => line,
     };
     let line = if strict_escalates(state) {
         format!(
@@ -93,6 +103,8 @@ fn severity_verdict(state: &RunState) -> String {
     if let Some(exit) = state.exit.as_ref().filter(|_| worst == "Approve") {
         return exit.verdict.clone();
     }
+    // After the exit: a red gate's Block stands over another profile's unknown one.
+    let worst = gate_cap::cap(state, worst);
     match (state.not_run.is_empty(), worst) {
         (true, w) => w.into(),
         (false, "Approve") => "INCOMPLETE".into(),
