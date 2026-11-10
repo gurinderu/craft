@@ -7,6 +7,15 @@ use crate::state::RunState;
 
 /// One line on the round: its number and what it built on and reviewed.
 pub(crate) fn rereview_line(state: &RunState) -> String {
+    let line = round_line(state);
+    match &state.chain.branch_from {
+        Some(from) => format!("{line}; {from}"),
+        None => line,
+    }
+}
+
+/// The round's number and what it built on and reviewed.
+fn round_line(state: &RunState) -> String {
     let c = &state.chain;
     let Some(prior) = &c.prior else {
         let why = c.unchained.as_deref().unwrap_or("no chain was read");

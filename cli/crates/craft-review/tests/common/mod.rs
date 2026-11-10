@@ -7,6 +7,7 @@
 
 pub mod exe;
 pub mod post;
+pub mod pr_gh;
 
 use std::path::Path;
 use std::process::Command;
@@ -78,6 +79,8 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
         comment: false,
         optional: None,
         nested: false,
+        pr: None,
+        chain_gh: None,
     }
 }
 
