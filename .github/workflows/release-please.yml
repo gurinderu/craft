@@ -100,7 +100,7 @@ jobs:
   # claude-code-plugin branch (the first such release creates it) — claude-code-plugin.yml. The marketplace entry
   # installs the plugin from this branch.
   claude-code-plugin:
-    needs: release-please
+    needs: [release-please, cli-binaries]
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     permissions:
       contents: write
