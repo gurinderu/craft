@@ -1,6 +1,6 @@
 ---
 name: rust-miri
-description: Runs the unsafe code under Miri to detect undefined behavior (out-of-bounds, use-after-free, alignment violations, data races, leaks) and reports what it finds against the rust-unsafe rubric — reporting INCOMPLETE (not run) when nightly or miri is unavailable, never Clean. Use for crates containing unsafe code, after writing/changing unsafe, or before releasing a crate with unsafe.
+description: Runs the unsafe code under Miri to detect undefined behavior (out-of-bounds, use-after-free, alignment violations, data races, leaks) and reports what it finds against the rust-unsafe rubric — reporting UB-found on a red CI miri check even when it cannot run Miri itself, and INCOMPLETE (not run) when nightly or miri is unavailable with no red CI miri check, never Clean. Use for crates containing unsafe code, after writing/changing unsafe, or before releasing a crate with unsafe.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -16,7 +16,7 @@ Worth running when the crate (or a dependency you vendor) contains `unsafe`. If 
 
 ## Workflow
 
-0. **Read CI — it informs, never certifies.** If the current branch's PR has a check named `miri` (`gh pr checks --json name,state,bucket,link`; skip this if `gh`/PR is absent, unauthenticated, offline, or the check is pending): a red one is a soundness failure to report; a green one is reported (`CI green for miri · PR #N`) but is never the soundness signal — still run Miri locally as below, and if it cannot run, say MIRI DID NOT RUN. This mirrors the gate in the `rust-review` skill.
+0. **Read CI — it informs, never certifies.** If the current branch's PR has a check named `miri` (`gh pr checks --json name,state,bucket,link`; skip this if `gh`/PR is absent, unauthenticated, offline, or the check is pending): a red one is a soundness failure — the verdict is **UB-found** (⛔ Block) even when nightly or miri is missing locally, and the report names the CI check as the source; a green one is reported (`CI green for miri · PR #N`) but is never the soundness signal — still run Miri locally as below, and if it cannot run, say MIRI DID NOT RUN. This mirrors the gate in the `rust-review` skill.
 1. **Check Miri is available** (it's a nightly component):
    ```bash
    rustup toolchain list | grep -q nightly || { echo "nightly not installed - MIRI DID NOT RUN, soundness NOT verified"; exit 0; }
@@ -24,8 +24,9 @@ Worth running when the crate (or a dependency you vendor) contains `unsafe`. If 
    cargo +nightly miri --version >/dev/null 2>&1 || { echo "miri not available - MIRI DID NOT RUN, soundness NOT verified"; exit 0; }
    ```
    The script exits 0 in both cases so the dispatch does not fail — but a zero exit here means
-   **Miri never ran**, not that it ran clean. In either case stop and report the verdict
-   `INCOMPLETE (not run)` (see below). `Clean` is reserved for a Miri run that actually happened.
+   **Miri never ran**, not that it ran clean. In either case stop: with a red CI `miri` check from
+   step 0 the verdict is **UB-found**, sourced to that check; with none it is `INCOMPLETE (not run)`
+   (see below). `Clean` is reserved for a Miri run that actually happened.
 2. **Run the test suite under Miri** (it interprets the code, catching UB at runtime):
    ```bash
    cargo +nightly miri test 2>&1 | tail -100
@@ -55,9 +56,10 @@ Block — Miri detected undefined behavior.
 The verdict vocabulary has **three** values, not two:
 
 - **Clean** — Miri ran and found no UB on the paths the tests exercise.
-- **UB-found** — Miri ran and found undefined behavior. ⛔ Block.
+- **UB-found** — Miri ran and found undefined behavior, or a red CI `miri` check reports it (name
+  the check as the source, e.g. `CI miri red · PR #N`, when Miri could not run here). ⛔ Block.
 - **INCOMPLETE (not run)** — nightly or `miri` was unavailable, or no test could execute under
-  Miri, so nothing was interpreted. Soundness is UNVERIFIED, not verified. Report it exactly as
+  Miri, so nothing was interpreted, and no CI `miri` check is red. Soundness is UNVERIFIED, not verified. Report it exactly as
   that string, and say which piece was missing:
 
 Immediately before the verdict, emit one line beginning `Evidence:` that names the concrete work of
@@ -82,7 +84,7 @@ Map each finding to the `unsafe` site and the violated invariant (reference the 
 comment if present — its claim is what failed). If Miri is clean: report "no UB detected" but
 note Miri only covers paths the tests exercise — it's not a proof of soundness for untested code.
 If Miri isn't installable or the tests can't run under it, the verdict is `INCOMPLETE (not run)`
-— never `Clean`. Say explicitly what was missing rather than implying the code is sound.
+— never `Clean` — unless a CI `miri` check is red, which makes it `UB-found`. Say explicitly what was missing rather than implying the code is sound.
 
 ## Observability
 
