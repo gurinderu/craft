@@ -195,14 +195,17 @@ fn a_tool_not_installed_is_named_and_the_review_goes_on() {
     let s = step::start(&gated(repo.path(), out.path(), empty.path())).unwrap();
     assert_eq!(ids(&s), ["scout-rust"], "the review goes on");
     let done = drive(&run, s);
+    // An absent tool is no failure, and no pass: the unknown gate caps the verdict at Warning
+    // (realm @nick/craft, node #487).
     assert_eq!(
         done["verdict"],
-        json!("Approve"),
-        "an absent tool is no failure"
+        json!("Warning"),
+        "an absent tool is no pass"
     );
     common::assert_contains_all(
         &report(&done),
         &[
+            "Warning — the gate was not established locally (rust: unknown); no CI check informed it",
             "- **rust**: unknown — `cargo clippy --manifest-path Cargo.toml --all-targets`: not installed",
             "  - Not installed, skipped (the review went on without them): cargo, semgrep",
         ],
@@ -427,6 +430,21 @@ fn a_taken_red_gate_blocks_as_the_run_s_own_would() {
 }
 
 #[test]
+fn a_taken_gate_that_stayed_unknown_caps_the_run_at_warning() {
+    let repo = package();
+    let out = tempfile::tempdir().unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    let from = gate_alone(repo.path(), out.path(), empty.path());
+    let run = out.path().join("run");
+    let s = step::start(&taking(repo.path(), out.path(), &from)).unwrap();
+    let done = drive(&run, s);
+    assert_eq!(done["verdict"], json!("Warning"), "{done}");
+    assert!(
+        report(&done).contains("Warning — the gate was not established locally (rust: unknown)")
+    );
+}
+
+#[test]
 fn a_gate_kept_for_another_head_is_not_used_and_the_report_says_why() {
     let repo = package();
     let out = tempfile::tempdir().unwrap();
@@ -437,7 +455,10 @@ fn a_gate_kept_for_another_head_is_not_used_and_the_report_says_why() {
     let run = out.path().join("run");
     let s = step::start(&taking(repo.path(), out.path(), &from)).unwrap();
     assert_eq!(ids(&s), ["scout-rust"], "a stale red gate does not block");
-    let r = report(&drive(&run, s));
+    let done = drive(&run, s);
+    // A refused gate is no unknown signal: it caps nothing (realm @nick/craft, node #487).
+    assert_eq!(done["verdict"], json!("Approve"), "{done}");
+    let r = report(&done);
     common::assert_contains_all(
         &r,
         &[

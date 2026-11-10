@@ -1,7 +1,7 @@
 ---
 name: rust-security
 description: >-
-  Rust security review — dependencies for known vulnerabilities (cargo-audit/RUSTSEC), licenses and supply chain (cargo-deny), unsafe surface (cargo-geiger), and code patterns (semgrep). Use when security-reviewing a Rust project, vetting dependencies, checking for vulnerable crates or license issues, or setting up a security gate. Triggers: CVE, RUSTSEC, cargo-audit, cargo-deny, cargo-geiger, semgrep.
+  Rust security review — dependencies for known vulnerabilities (cargo-audit/RUSTSEC), licenses and supply chain (cargo-deny), unsafe surface (cargo-geiger), and code patterns (semgrep). Approve only when every tool ran locally clean; a tool that did not run caps it at Warning, a red CI check blocks, a green one only informs. Use when security-reviewing a Rust project, vetting dependencies, checking for vulnerable crates or license issues, or setting up a security gate. Triggers: CVE, RUSTSEC, cargo-audit, cargo-deny, cargo-geiger, semgrep.
 ---
 
 # Rust Security
@@ -36,9 +36,13 @@ Same shape as `rust-review`:
 
 | Verdict | When |
 |---|---|
-| **Block** ⛔ | a vulnerable dep with a known exploit/fix available; a real injection/secret/taint finding; a denied license |
-| **Warning** ⚠️ | advisories with no fix yet (mitigate/track), unmaintained-crate warnings, high unsafe surface |
-| **Approve** ✅ | clean audit/deny, no high-confidence code findings |
+| **Block** ⛔ | a vulnerable dep with a known exploit/fix available; a real injection/secret/taint finding; a denied license; a red CI audit/deny check, even when no tool ran locally |
+| **Warning** ⚠️ | advisories with no fix yet (mitigate/track), unmaintained-crate warnings, high unsafe surface; a partial scan — a tool not installed, timed out or broken locally (name each one) |
+| **Approve** ✅ | every tool (`cargo audit`, `cargo deny`, `cargo geiger`, `semgrep`) ran locally and came out clean, no high-confidence code findings |
+
+CI informs, never certifies: a red CI check that runs a tool blocks, a green one is reported
+(`CI green for <check>`) but never stands in for a tool that did not run here — that tool's signal
+stays unknown, so the verdict is at most Warning, never Approve.
 
 Report each finding as `severity · source(tool) · what · why exploitable · fix/mitigation`.
 
