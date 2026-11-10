@@ -45,7 +45,9 @@ fn a_detached_head_one_pr_heads_chains_with_the_round_of_its_branch() {
     let from = "chain branch `main` from PR #1488 (detached HEAD)";
     assert_eq!(c["branchFrom"], json!(from));
     let asked = calls(&keep.path().join("gh"));
-    let want = format!("pr list --search {head} --state open --json number,headRefName,headRefOid");
+    let want = format!(
+        "pr list --search {head} --state open --json number,headRefName,headRefOid,isCrossRepository,headRepositoryOwner"
+    );
     assert!(asked.contains(&want), "{asked}");
 
     let run = runs.path().join("r2");

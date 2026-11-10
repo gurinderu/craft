@@ -62,9 +62,17 @@ pub fn rev(repo: &Path, r: &str) -> String {
     String::from_utf8(out.stdout).unwrap().trim().to_owned()
 }
 
-/// A pull request as `gh --json number,headRefName,headRefOid` prints it.
+/// A same-repository pull request as gh prints the fields the chain asks for.
 pub fn pr(number: u64, branch: &str, oid: &str) -> Value {
-    json!({"number": number, "headRefName": branch, "headRefOid": oid})
+    json!({"number": number, "headRefName": branch, "headRefOid": oid, "isCrossRepository": false})
+}
+
+/// A pull request from `owner`'s fork, its head branch `branch`.
+pub fn fork_pr(number: u64, owner: &str, branch: &str, oid: &str) -> Value {
+    let mut p = pr(number, branch, oid);
+    p["isCrossRepository"] = json!(true);
+    p["headRepositoryOwner"] = json!({"id": "U_1", "login": owner, "name": owner});
+    p
 }
 
 /// A fixture on a detached `HEAD`, with round 1 of `main` filed in `runs/r1` at `HEAD~1`.
