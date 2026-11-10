@@ -116,7 +116,7 @@ pub fn init(args: &InitArgs) -> Result<ExitCode> {
         "integrations": integrations,
         "memory": imported,
         "discovery": discovery,
-        "ci": held_ci,
+        "ci": ci::held(&held_ci, &args.cwd),
         "ciCandidates": ci::proposed(&args.cwd),
         "write": "craft init --write --point <name>=<git url>@<tag or full commit> … --ci '<entry JSON>' … (every point and CI entry to keep, a held entry as `ci` prints it; a branch is refused when a review prepares the sources)",
     }))
