@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.49.1](https://github.com/gurinderu/craft/compare/v0.49.0...v0.49.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **init:** name the refusal of a held CI entry in --propose ([719b8e7](https://github.com/gurinderu/craft/commit/719b8e7af8067dad6ae3f8f94f294c35b61ad0b1))
+* **init:** name why a held CI entry can't be kept in --propose ([5923954](https://github.com/gurinderu/craft/commit/59239548bf3ce4dc661b17a6eaa0d14f879cace0))
+* **init:** share the gate's skip reason with --propose as unusable ([9883981](https://github.com/gurinderu/craft/commit/988398157a5bd66d74aff80abdd4bf9b38354ce7))
+
 ## [0.49.0](https://github.com/gurinderu/craft/compare/v0.48.0...v0.49.0) (2026-11-10)
 
 
