@@ -1,5 +1,6 @@
-//! Nothing to gate is not an unknown signal: a Nix change in a repository with no `flake.nix`, or
-//! a Rust file no Cargo package holds, leaves the gate nothing to establish, so it caps nothing.
+//! Nothing to gate is not an unknown signal: a Nix change with no `flake.nix` whose linters ran
+//! clean, or a Rust file no Cargo package holds, leaves the gate nothing to establish, so it caps
+//! nothing.
 
 use std::time::Duration;
 

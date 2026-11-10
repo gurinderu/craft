@@ -2,8 +2,8 @@
 //! Approve, and the verdict line says so with the CI the gate saw (realm @nick/craft, node #487: a
 //! green CI check never stands for a gate signal craft did not establish itself). A gate switched
 //! off on purpose (`--no-gate`) or a refused `--gate-from` has no track, and a profile with nothing
-//! to gate (no `flake.nix`, no Cargo package holding the files) is no unknown signal: neither caps
-//! anything; findings still raise the verdict.
+//! to gate (changed `.rs` files no Cargo package holds, or no `flake.nix` and its linters ran
+//! clean) is no unknown signal: neither caps anything; findings still raise the verdict.
 
 use crate::gate::unknown;
 use crate::state::RunState;

@@ -2,37 +2,59 @@
 //! check` when the repository is a flake — red is a gate failure, unless what stopped it is this
 //! machine (no network, flakes off), which leaves the signal unknown — then statix (anti-idioms)
 //! and deadnix (dead bindings) on the changed `.nix` files, each diagnostic on a line the change
-//! added a seed (`MNT-001`, Low).
+//! added a seed (`MNT-001`, Low). With no flake the linters are the gate and must run.
 
 use super::Status;
 use super::check::{Acc, Cx};
 use super::nix_fault::{machine_fault, nix_why};
 use super::nix_lint::{STATIX, deadnix, statix};
 
-/// The Nix gate over `cx`.
+/// The Nix gate over `cx`. With no `flake.nix` its linters are the whole gate: both run clean is
+/// nothing to gate, one that did not run leaves the signal unknown (realm @nick/craft, node #487).
+/// With a flake, `nix flake check` alone sets it.
 pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
-    let s = flake_check(cx, acc);
+    let flake = cx.top.join("flake.nix").is_file();
+    let s = flake_check(cx, acc, flake);
     acc.check(s);
     let files = cx.present(".nix");
     if files.is_empty() {
         return;
     }
-    let mut ran = false;
-    for f in &files {
+    let not_run = lint(cx, acc, &files);
+    if !flake && !not_run.is_empty() {
+        acc.notes.push(format!(
+            "with no flake.nix the linters are the Nix gate, and {} did not run here — its signal is unknown, not a pass",
+            not_run.join(" and ")
+        ));
+        acc.check(Status::Unknown);
+    }
+}
+
+/// statix and deadnix on `files`; the linters that did not run on all of them.
+fn lint(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) -> Vec<&'static str> {
+    let mut not_run = Vec::new();
+    let mut ran = 0;
+    for f in files {
         if !statix(cx, acc, f) {
             break;
         }
-        ran = true;
+        ran += 1;
     }
-    if ran {
+    if ran > 0 {
         acc.parts.push(format!("{STATIX}: local"));
     }
-    deadnix(cx, acc, &files);
+    if ran < files.len() {
+        not_run.push("statix");
+    }
+    if !deadnix(cx, acc, files) {
+        not_run.push("deadnix");
+    }
+    not_run
 }
 
 /// `nix flake check` at the top level, when there is a `flake.nix`.
-fn flake_check(cx: &Cx<'_>, acc: &mut Acc) -> Status {
-    if !cx.top.join("flake.nix").is_file() {
+fn flake_check(cx: &Cx<'_>, acc: &mut Acc, flake: bool) -> Status {
+    if !flake {
         acc.parts.push("nix flake check: no flake.nix".into());
         return Status::Nothing;
     }
