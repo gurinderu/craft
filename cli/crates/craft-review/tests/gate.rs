@@ -59,10 +59,7 @@ fn fake_cargo(gate: &[String], pedantic: &[String]) -> tempfile::TempDir {
 }
 
 fn write_tool(dir: &Path, name: &str, script: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    let path = dir.join(name);
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    common::exe::write_executable(&dir.join(name), script).unwrap();
 }
 
 /// The fixture repository with a Cargo package at its top, so clippy has a package to lint.

@@ -6,7 +6,8 @@
 //! when they ignore SIGTERM and only the SIGKILL after the grace ends them.
 #![cfg(target_os = "linux")]
 
-use std::os::unix::fs::PermissionsExt;
+mod common;
+
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -18,8 +19,7 @@ fn stand_in(dir: &Path, prelude: &str) -> std::io::Result<PathBuf> {
     let body = format!(
         "#!/bin/sh\n{prelude}\nsleep 300 &\necho $! > grandchild\necho $$ > pid.tmp; mv pid.tmp pid\nwait\n"
     );
-    std::fs::write(&path, body)?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    common::write_executable(&path, &body)?;
     Ok(path)
 }
 
