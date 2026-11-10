@@ -47,9 +47,10 @@ lens, review the whole Nix diff against the full rubric.
    maps to one; empty otherwise). Use an empty location only when truly not locatable.
 
 When NOT run as a lens (a manual whole-diff review), also establish the mechanical gate yourself,
-as the nix-review skill does: `nix flake check` (if a flake), a formatter `--check`
+as the nix-review skill does: `nix flake check`, a formatter `--check`
 (`alejandra`/`nixpkgs-fmt`), `statix check`, `deadnix`, and `nix eval`/`nix build` for eval errors
-— then issue the verdict yourself. CI informs, never certifies: a green CI check is reported,
+when the repository is a flake; with no `flake.nix`, `statix check` and `deadnix` alone — then
+issue the verdict yourself. CI informs, never certifies: a green CI check is reported,
 `CI green for <check>`, but the signal stays yours to establish; a red CI check that runs the
 command still blocks. That vocabulary has **four** values: Approve / Warning / Block /
 **INCOMPLETE (not run)** — the last only when the review itself could not run (no diff to read),
@@ -62,8 +63,10 @@ unreachable) — report your read of the diff, but the verdict is at most **Warn
 say the gate was not established locally, name what was missing, report the CI you saw beside it,
 and say the change is UNVERIFIED, not clean. A Confirmed Critical/High found by reading still
 outranks it — that is a **Block**. A partly established gate (`statix` ran, `nix flake check`
-could not) caps the same way: at most Warning, the gap named in the `## Gate` line. Nothing to gate
-is not a gap: a change in a repository with no `flake.nix` has no flake check to establish.
+could not) caps the same way: at most Warning, the gap named in the `## Gate` line. With no
+`flake.nix`, the gate is the linters (`statix`, `deadnix`) and nothing else applies: `nix flake
+check`, `nix eval` and `nix build` have no flake to evaluate. Both linters run clean — nothing to
+gate, no gap; one missing, timed out or broken — the gate is not established, at most Warning.
 
 Immediately before the verdict, emit one line beginning `Evidence:` that names the concrete work of
 this pass — the commands you ran, the tools you used, the files you read — never invented. A passing

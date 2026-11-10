@@ -56,6 +56,10 @@ CI check that runs the command still blocks** (required or not — most repos ha
 protection; required-ness governs whether RED blocks a merge, and never turns GREEN into a signal
 you did not compute).
 
+With no `flake.nix`, the gate is the linters (step 3) and nothing else applies: `nix flake
+check`, `nix eval` and `nix build` have no flake to evaluate. Both linters run clean — nothing to
+gate, no gap; one missing, timed out or broken — NOT ESTABLISHED, at most **Warning**.
+
 Establish each signal:
 
 1. **Detect the PR's CI** for the current branch:
@@ -80,7 +84,7 @@ Establish each signal:
    deadnix --fail
    ```
 
-4. **Flake check / build / eval** — if a conclusive check (required or not) matching `flake-check`, `nix build`, or
+4. **Flake check / build / eval** (a flake only) — if a conclusive check (required or not) matching `flake-check`, `nix build`, or
    `nix eval` is conclusive:
    - failed → gate red → **Block**;
    - green → report `CI green for <check> · PR #N`; the signal stays unknown — run it locally;
