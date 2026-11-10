@@ -96,6 +96,11 @@ pub struct Chain {
     /// ([`branch::resolve`]); absent for a checked-out branch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch_from: Option<String>,
+    /// The pull request under review, which a run asked to comment publishes on: the one given
+    /// (`pr`), else the one whose head named the branch on a detached `HEAD`; absent, the
+    /// checked-out branch's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr: Option<u64>,
     /// The directory of the change the run reviews (`path`), the chain's key beside them; empty,
     /// the whole change.
     #[serde(skip_serializing_if = "String::is_empty")]

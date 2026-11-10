@@ -88,6 +88,7 @@ pub fn begin(
         repo: git::common_dir(cwd)?,
         branch: resolved.name.clone(),
         branch_from: resolved.from.clone(),
+        pr: resolved.pr,
         scope: scope.unwrap_or_default().to_owned(),
         round: 1,
         base: base.to_owned(),
