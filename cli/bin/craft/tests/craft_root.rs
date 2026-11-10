@@ -52,10 +52,20 @@ fn plugin(d: &Path, version: &str) {
 }
 
 /// The built binary copied to `dir/bin/<v>/craft`, as the fetcher lays it out: no checkout above it.
+///
+/// A `cp` child makes the copy, not `std::fs::copy`. A write handle opened in this process is
+/// inherited by any child another test thread forks meanwhile, and stays open until that child execs,
+/// so running the copy fails with ETXTBSY. A rename would not help: the leaked handle points at the
+/// inode. Opened only inside `cp`, the handle is closed by the time `cp` exits.
 fn fetched(dir: &Path) -> PathBuf {
     let bin = dir.join("bin/9.9.9/craft");
     std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-    std::fs::copy(env!("CARGO_BIN_EXE_craft"), &bin).unwrap();
+    let ok = Command::new("cp")
+        .arg(env!("CARGO_BIN_EXE_craft"))
+        .arg(&bin)
+        .status()
+        .unwrap();
+    assert!(ok.success(), "cp of the built binary");
     std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
     bin
 }
