@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.48.0](https://github.com/gurinderu/craft/compare/v0.47.0...v0.48.0) (2026-11-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* `craft:review` is now the driver of the Rust CLI and the only review. The workflows `craft:adversarial-review`, `craft:cli-review`, `craft:rust-review` and `craft:nix-review` are removed: run `craft:review` (rust-audit nests it).
+* The JS review engine's arguments are gone (`languages`, `deadlineMs`, `files`, `maxRetries`, `unitBatches`, `_memory` and others). A run given one of them stops INCOMPLETE.
+* The memory skill's `record-external` and `discover-externals` verbs are removed, and `external` memory records no longer feed the review's sources. `craft init --propose` imports them into the reviewer profile as candidates.
+* When the gate cannot build the head, a green CI check no longer passes it. Through the CI map in the reviewer profile (`craft init --propose`), green is reported and red blocks.
+
+
+### Features
+
+* make the Rust CLI driver the only review ([3665d47](https://github.com/gurinderu/craft/commit/3665d476))
+* read the head's CI for the gate when cargo cannot build it ([b3c7c20](https://github.com/gurinderu/craft/commit/b3c7c207a55e8dfb29ecda5d9b1a668dd4965bf2))
+* take the head's CI for the gate when cargo cannot build it ([500e892](https://github.com/gurinderu/craft/commit/500e8923343f8bb6c438703957cbddcc73bcc87d))
+
+
+### Bug Fixes
+
+* **ci:** move the plugin branch only after the release binaries are attached ([49de1b5](https://github.com/gurinderu/craft/commit/49de1b50bc4de9223b9764c28278ab95d9b1e2cc))
+* ground a CI map entry only on a whole command whose failure fails its job ([59450a5](https://github.com/gurinderu/craft/commit/59450a5c70c1b1cbc48e708e4420a1abe3f9415d))
+* hash every file a CI map entry rests on and keep held entries' hashes ([47400e9](https://github.com/gurinderu/craft/commit/47400e97a0360b4534565b97a02ac3f7a5c8a530))
+* read CI only for a clean tree, per check suite and whole ([c9afcae](https://github.com/gurinderu/craft/commit/c9afcaedd5a860d1ad95f84aae2022c8651b9fec))
+* release blockers for 0.48.0: binaries before the plugin branch, a named harness refusal ([450e642](https://github.com/gurinderu/craft/commit/450e6423e41da0e3ffcb5fecd640a873099f3e19))
+* report a green CI check without passing the gate ([6e60846](https://github.com/gurinderu/craft/commit/6e60846f5e5938f89634e43b8d83f0e338fd40f2))
+* require a CI map entry's command in its job or a listed source ([082efc9](https://github.com/gurinderu/craft/commit/082efc983e50aa9ce92875c768a6d1888c3a0371))
+* say plainly when the harness refused a craft command ([5bb4c22](https://github.com/gurinderu/craft/commit/5bb4c22679640ae12f80c88f33292a93baded98b))
+* spell the allow rule as the refused command spells the binary ([a2cebd1](https://github.com/gurinderu/craft/commit/a2cebd1c46c7cec63f7ee5f79edbd1b885af7333))
+
 ## [0.47.0](https://github.com/gurinderu/craft/compare/v0.46.0...v0.47.0) (2026-11-09)
 
 
