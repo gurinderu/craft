@@ -114,7 +114,10 @@ pub fn deliver(dir: &Path, run: &mut RunState, setup: &PostSetup) -> Result<(), 
             short(pr_head)
         ))
     };
-    let Some(Ok(posted)) = post_sorted(dir, run, setup, None, &skip) else {
+    // A detached HEAD has no branch for a bare `gh pr view` to find its PR by, so the PR the chain
+    // was resolved from is named (realm @nick/craft, node #104).
+    let pr = run.chain.pr.map(|n| n.to_string());
+    let Some(Ok(posted)) = post_sorted(dir, run, setup, pr.as_deref(), &skip) else {
         return Ok(());
     };
     run.publish.posted = Some(posted);

@@ -15,6 +15,7 @@ use serde_json::Value;
 use crate::ledger::LedgerRow;
 
 mod absorb;
+pub mod branch;
 mod carry;
 mod carry_check;
 mod judge;
@@ -91,6 +92,15 @@ pub struct Chain {
     /// The repository's shared git directory and the branch: the chain's key.
     pub repo: String,
     pub branch: Option<String>,
+    /// Where the branch came from when a pull request named it, on a detached `HEAD`
+    /// ([`branch::resolve`]); absent for a checked-out branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_from: Option<String>,
+    /// The pull request under review, which a run asked to comment publishes on: the one given
+    /// (`pr`), else the one whose head named the branch on a detached `HEAD`; absent, the
+    /// checked-out branch's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr: Option<u64>,
     /// The directory of the change the run reviews (`path`), the chain's key beside them; empty,
     /// the whole change.
     #[serde(skip_serializing_if = "String::is_empty")]

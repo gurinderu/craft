@@ -130,6 +130,24 @@ pub struct StartOptions {
     /// A parent engine launched the run (`nested`): it builds on no earlier round of the branch
     /// and files no round record for a later one, as the engine keeps a nested run out of the chain.
     pub nested: bool,
+    /// The pull request under review (`pr`): on a detached `HEAD` its head branch keys the round
+    /// chain ([`rereview::branch`]); `None`, gh is asked for the open one whose head is `HEAD`.
+    pub pr: Option<u64>,
+    /// How gh is asked for that pull request; `None`, it is not asked and a detached `HEAD`
+    /// chains nothing.
+    pub chain_gh: Option<PostSetup>,
+}
+
+impl StartOptions {
+    /// How the run in `dir` asks gh for the pull request a detached `HEAD` heads, its output kept
+    /// in `dir/chain`.
+    fn chain_lookup(&self, dir: &Path) -> rereview::branch::Lookup<'_> {
+        rereview::branch::Lookup {
+            pr: self.pr,
+            gh: self.chain_gh.as_ref(),
+            dir: dir.join("chain"),
+        }
+    }
 }
 
 /// Opens a run in `opts.run_dir` and hands out its first tasks.
@@ -160,6 +178,7 @@ pub fn start(opts: &StartOptions) -> Result<Value, Error> {
         opts.full_every,
         &branch_diff.base,
         scope.as_deref(),
+        opts.chain_lookup(dir),
     )?;
     let spec = branch_diff.log.chars().take(SPEC_MAX).collect();
     // The memory is recalled for the branch's paths, not only those a re-review's fix commits touch.
