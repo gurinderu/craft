@@ -2,7 +2,8 @@
 //! check` when the repository is a flake — red is a gate failure, unless what stopped it is this
 //! machine (no network, flakes off), which leaves the signal unknown — then statix (anti-idioms)
 //! and deadnix (dead bindings) on the changed `.nix` files, each diagnostic on a line the change
-//! added a seed (`MNT-001`, Low). With no flake the linters are the gate and must run.
+//! added a seed (`MNT-001`, Low). With no flake the linters are the gate and must run: give a
+//! well-formed answer (`gate/nix_answer.rs`).
 
 use super::Status;
 use super::check::{Acc, Cx};
@@ -10,8 +11,8 @@ use super::nix_fault::{machine_fault, nix_why};
 use super::nix_lint::{STATIX, deadnix, statix};
 
 /// The Nix gate over `cx`. With no `flake.nix` its linters are the whole gate: both run clean is
-/// nothing to gate, one that did not run leaves the signal unknown (realm @nick/craft, node #487).
-/// With a flake, `nix flake check` alone sets it.
+/// nothing to gate, one that did not run or broke leaves the signal unknown (realm @nick/craft,
+/// node #487). With a flake, `nix flake check` alone sets it.
 pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
     let flake = cx.top.join("flake.nix").is_file();
     let s = flake_check(cx, acc, flake);
@@ -23,14 +24,14 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
     let not_run = lint(cx, acc, &files);
     if !flake && !not_run.is_empty() {
         acc.notes.push(format!(
-            "with no flake.nix the linters are the Nix gate, and {} did not run here — its signal is unknown, not a pass",
+            "with no flake.nix the linters are the Nix gate, and {} gave no well-formed answer here — its signal is unknown, not a pass",
             not_run.join(" and ")
         ));
         acc.check(Status::Unknown);
     }
 }
 
-/// statix and deadnix on `files`; the linters that did not run on all of them.
+/// statix and deadnix on `files`; the linters that gave no well-formed answer on all of them.
 fn lint(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) -> Vec<&'static str> {
     let mut not_run = Vec::new();
     let mut ran = 0;

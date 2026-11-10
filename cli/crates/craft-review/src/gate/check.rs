@@ -107,7 +107,7 @@ impl Acc {
         ran: Ran,
     ) -> Option<(bool, String, String)> {
         match ran {
-            Ran::Exited { ok, out, err } => return Some((ok, out, err)),
+            Ran::Exited { ok, out, err, .. } => return Some((ok, out, err)),
             Ran::Missing => self.missing(label, tool),
             Ran::TimedOut(d) => {
                 self.parts.push(format!("{label}: timed out"));

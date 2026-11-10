@@ -43,8 +43,11 @@ mod clippy;
 pub(crate) mod lines;
 mod lock;
 mod nix;
+mod nix_answer;
 #[cfg(test)]
 mod nix_bare_tests;
+#[cfg(test)]
+mod nix_broken_tests;
 mod nix_fault;
 mod nix_lint;
 #[cfg(test)]
