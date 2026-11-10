@@ -11,11 +11,9 @@
 use super::check::{Acc, Cx};
 use super::ci_read::seen;
 use super::ci_verdict::{apply, unique, verdict};
-use crate::project::ci::unexpanded;
 use crate::project::{self, CiEntry};
 
 const DIRTY: &str = "CI was not read: the working tree has uncommitted changes, so CI for HEAD does not cover it — the build signal stays unknown";
-const UNEXPANDED: &str = "its check name holds an unexpanded expression, which GitHub expands in each run's name, so no run matches it";
 const NO_MAP: &str = "no CI map in the review profile, so the build signal stays unknown — `craft init --propose` proposes one";
 
 /// Reads CI for the head and folds it into `acc`, whose build signal is unknown.
@@ -76,14 +74,10 @@ fn matchable(map: Vec<CiEntry>, top: &std::path::Path, acc: &mut Acc) -> Vec<CiE
     live
 }
 
-/// Why no run is read for `e`: its check holds an unexpanded `${{ … }}`, which no run is named, or
-/// the workflows under `top` now refuse it as `--write` would — a sibling job claims its runs, or
-/// it names one expanded run.
+/// Why no run is read for `e`: the shared [`CiEntry::unmatched`], which `craft init --propose`
+/// names on the held entry too.
 fn skipped(e: &CiEntry, top: &std::path::Path) -> Option<String> {
-    if unexpanded(&e.check) {
-        return Some(UNEXPANDED.to_owned());
-    }
-    e.claims(top).err().map(|why| why.to_string())
+    e.unmatched(top).map(|why| why.to_string())
 }
 
 /// The CI map of the repository at `top`, or the note why there is none to read.
