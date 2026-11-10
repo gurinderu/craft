@@ -76,15 +76,15 @@ pub(super) fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
 }
 
 /// deadnix on `files`: one JSON line per file with dead bindings. Its diagnostics name no rule:
-/// the message, which names the binding, tells two of them apart.
-pub(super) fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) {
+/// the message, which names the binding, tells two of them apart. False when it did not run.
+pub(super) fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) -> bool {
     let label = "`deadnix -o json`";
     // `--`: a changed file named like an option (deadnix's `-e` edits files) stays a file.
     let mut args = vec!["-o", "json", "--"];
     args.extend(files);
     let Some((_, out, _)) = acc.exited(label, "deadnix", cx.runner.run(cx.top, "deadnix", &args))
     else {
-        return;
+        return false;
     };
     for v in out
         .lines()
@@ -126,4 +126,5 @@ pub(super) fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) {
         }
     }
     acc.parts.push(format!("{label}: local"));
+    true
 }
