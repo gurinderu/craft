@@ -1,10 +1,10 @@
 ---
 name: memory
 description: >-
-  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too), external systems the code relies on — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question, record-external, discover-externals (systems found in deployment manifests, recorded on the human's yes). Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later, record the external system, find the external systems we deploy. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
+  Memory of the consumer project's own facts — decisions on review findings, project rules (a stance on a class of findings), lessons, open questions (deferred findings too) — kept across sessions in the project's own store (a setting, an MCP server, harness memory, .craft/memory). Verbs: recall(topic, scope), record-decision, record-rule, record-lesson, record-question; the `external` records earlier releases wrote are recalled only for `craft init` to import. Use when such a fact should outlive the session, before working on a path to learn what was decided there, or before a craft review (its engine recalls itself; priorDecisions only adds). Triggers: remember this decision, record why we rejected, make it a project rule, what did we decide about, note this lesson, open question for later. Not for memory leaks or usage (rust-performance, rust-ownership), nor craft's run records and ledger.
 ---
 
-# Memory — the project's decisions, rules, lessons, questions and external systems
+# Memory — the project's decisions, rules, lessons and questions
 
 Facts about the consumer's project that outlive a session: *why* a finding was rejected, which
 whole class of findings the project accepts, what a painful bug taught, what is still open. This skill is an **abstraction** over whatever store the
@@ -20,8 +20,6 @@ project already has; it never invents one. craft's machine memory — the run st
 | `record-rule` | title (the rule), scope, body (why), author, links; `lens` to narrow it | one `rule` record |
 | `record-lesson` | title, scope, body, links | one `lesson` record |
 | `record-question` | title, scope, body (what would answer it), links; author, commit and `deferred: true` for a deferred finding | one `question` record |
-| `record-external` | system, repo, versionFrom and versionMatch — or version, only when no repo file names it — scope (the paths that rely on it), body (what the code relies on), links | one `external` record |
-| `discover-externals` | — (the whole repository) | the candidates the deployment manifests name, shown; an `external` record for each the human confirms (below) |
 
 A record answered or overturned is not edited away: write the new record with a link to the old
 one and set the old one's `status` to `superseded` (or `withdrawn` when it was simply wrong). An
@@ -48,58 +46,12 @@ answered question becomes a `decision` that supersedes it.
   system, repo, versionFrom, versionMatch, version   an `external` record only (below)
 ```
 
-**An external system** the consumer's code relies on — another project's controller, an API server,
-a service whose behaviour a review must check against its source (kube-ovn, KubeVirt, the
-apiserver), not a library dependency the lockfile already pins — is an `external` record: `title`
-= `system` = its name (letters, digits, `.`, `_`, `-`); `repo` = the git URL of its source
-(`https://…`, `ssh://…` or `git@host:path`); `versionFrom` = the repo-relative file that holds the
-version the consumer deploys (a chart's values, a manifest, `go.mod`, `Cargo.lock`); `versionMatch` =
-a regular expression with exactly one capture group that reads the tag or commit from that file;
-`scope` = the consumer's paths that rely on it; `body` = what the code relies on. The version is read
-from the file at review time, so it follows every upgrade. Only when no file in the repository names
-it — an operator that talks to kube-ovn or KubeVirt but does not deploy them — ask the human for the
-deployed tag or commit and record it as `version` instead of `versionFrom` and `versionMatch` (never
-write both; a record that has both uses the file). Tell the human plainly that a stated version goes stale silently on an upgrade and must be
-stated again then; the review report marks it `(recorded version, not read from a file)`. A review
-recalls these records with the others; its lenses on lifecycle, compatibility and races then read
-the system's source at that version from craft's cache (`~/.craft/sources`), and its report names a
-system a finding leaned on that has no record — `not recorded: <system>`: record it on the human's
-word with `record-external`. When the diff touches a deployment manifest naming a system no record
-covers, the report prints a `candidate:` line with every field filled (system, repo or `repo
-unknown`, versionFrom, versionMatch, a suggested scope): record it on the human's word with
-`record-external`, or run `discover-externals`. A review never writes one itself.
-
-## discover-externals
-
-Finds the external systems the consumer deploys and memory has no record of, from its deployment
-manifests: a Helm chart's `Chart.yaml` (appVersion with its `sources:`, each dependency's version)
-and values (an image's repository and tag), a kustomization's `images:`, docker-compose and plain
-Kubernetes `image:` lines, Terraform modules sourced `git::…?ref=…`. A library dependency a
-lockfile pins is not one, nor a `flake.lock` input (build tooling — a flake input the code really
-talks to at run time is recorded by hand with `record-external`), nor the repository's own
-application (a repo equal to its `origin` remote, or a chart naming no `sources:`).
-Code derives every field; nothing is written without the human's answer.
-
-1. Recall the project's active `external` records, every scope.
-2. Run the discovery CLI over the repository, the recalled records on stdin as a JSON list of
-   `{system, repo, versionFrom, version}` so that what they cover is left out (none recalled: drop the pipe
-   and `--known -`):
-   `printf '%s' '<that list>' | node "<this skill's base directory>/../../lib/craft-externals.mjs" discover --repo-root "$(git rev-parse --show-toplevel)" --known -`.
-   It prints `{"candidates": [...]}`: `system`, `repo` (empty when no manifest names it;
-   `repoGuessed: true` when only an image on ghcr.io suggests it), `versionFrom`, `versionMatch`,
-   `version` (what the pattern reads today), `scope` (the manifest's directory, a suggestion) and
-   at times a `note`; `more` counts those past its bound (narrow by fixing these first); `unread`
-   names each manifest it could not read, with why; `walkCut`, when present, says the walk stopped
-   at its bound and files past it were not read — tell the human the search was cut, never present
-   the list as complete, and offer a rerun with `--paths` naming the manifests that matter. An
-   `{"error"}` is reported as it is; no candidates — say so (and, with `walkCut`, that the walk was cut).
-3. Show them to the human as a numbered list, every field, a guessed or unknown repo said plainly,
-   and ask which to record, and whether to correct `repo` (the git URL of the system's source) or
-   `scope` (the consumer's paths that rely on the system, not just the manifest's directory); ask
-   what the code relies on for `body`, or offer one line from what the manifest shows.
-4. Only after that answer, write each confirmed candidate with `record-external`: `system`,
-   `versionFrom` and `versionMatch` as printed, `repo` and `scope` as confirmed or corrected. A
-   declined or unanswered candidate is not written, nor one still without a repo: say which.
+**An external system** the consumer's code relies on was kept by earlier craft releases as an `external`
+record (`title` = `system`, `repo` = the git URL of its source, `versionFrom` with `versionMatch` — the file and
+pattern that read the deployed version — or a stated `version`, `scope`, `body`). No new one is written: the
+systems a review reads the source of now live in the reviewer's own profile of the repository, written by
+`craft init` (`craft:review-init`), which proposes these records as its candidates. Recall them only for
+that import — every active `external` record, every scope — and never pass them as `priorDecisions`.
 
 **A decision on a review finding** carries all of `author`, `commit` and a link to where it was
 made (the PR thread, the review comment): the review engine names them when it sets the finding
@@ -131,10 +83,9 @@ finding, and the code changing under it does not lift it. A review applies it af
 finding inside the scope (and of the lens, when given) a judge asks whether the concern the finding
 raises is exactly what the rule declares acceptable. A covered finding leaves the verdict and the PR
 comments and is listed under **Covered by project rules** with the rule's id, its statement and the
-judge's why (`adversarial-review`: its `coveredByRule` and `ruleNotices` fields). A finding a judge (the
+judge's why. A finding a judge (the
 decisions' or the rules') says goes against an active record is not set aside: it stays in the verdict marked
-with the record (`memoryContradicts`), listed under **Contradicts project memory** (`adversarial-review`: its
-`contradictsMemory` field), and — in `review` with `comment`, the one that posts — goes to the PR as a defect
+with the record (`memoryContradicts`), listed under **Contradicts project memory**, and — in `review` with `comment`, the one that posts — goes to the PR as a defect
 even when a doubt sign holds; a line there marked `not confirmed` is a doubt to check (verify it before
 fixing), not a certain defect, and in `review` with `comment` it is also listed under Doubtful, the record
 named first. A Critical finding is raised even under a rule, named there as raised; a finding the
@@ -252,20 +203,17 @@ rule 3. Never put secrets, credentials or personal data in a record, whatever th
 
 ## Before a review — `priorDecisions`
 
-A craft review workflow (`review`, `rust-review`, `nix-review`, `adversarial-review`, or
-`rust-audit`, which recalls once and hands the result to its nested reviews) **always recalls
+A craft review workflow (`review`, or `rust-audit`, which recalls once and hands the result to its nested reviews) **always recalls
 itself**: one read-only agent runs this recall (or, if the skill is unavailable, the backend order
 above) on every launch. Passing `priorDecisions` never replaces that recall — the passed records
 are **added** to the recalled ones (one per `id`; on a clash the recalled record wins, being the
-store's current state; a passed record the store withdrew or superseded is held back and named, unless it is dated later), and the report's `memory:` line names both parts (`adversarial-review`:
-its `memory` field). A session recalls for its own work as below; it passes records only when it
+store's current state; a passed record the store withdrew or superseded is held back and named, unless it is dated later), and the report's `memory:` line names both parts. A session recalls for its own work as below; it passes records only when it
 holds some the store may not — rejections just read from PR threads, say — and never relies on
 passing to stand in for the engine's recall.
 
 1. `recall(<no topic>, <each path of the diff>)` — `git diff --name-only <base>...HEAD`. Decisions,
    questions and project rules (`kind: decision`, `kind: question`, `kind: rule`), **active** only;
-   never lessons. A review engine also recalls the `external` records, in a list of their own: they
-   set no finding aside and are never passed as `priorDecisions`.
+   never lessons.
 2. To add records, pass them to the workflow as the argument `priorDecisions` — **only in an object argument**,
    `{ …, priorDecisions: [<records>] }`: a list of the records in the shape above, as recalled —
    `id`, `kind`, `title`, `scope`, `body`, `date`, `author`, `commit`, `deferred`, `lens`, `links` — nothing rewritten,
@@ -288,8 +236,7 @@ passing to stand in for the engine's recall.
    no `kind` or `scope` to derive one from, a field past
    its bound, a control character in `id`, `scope` or `commit`, a scope outside the repo or holding
    characters other than letters, digits and `._@+/ -`),
-   is refused and named — the report's **Prior decisions not applied** section (`adversarial-review`:
-   its `priorDecisionsNotApplied` and `rejectedBefore` fields) — narrow the recall.
+   is refused and named — the report's **Prior decisions not applied** section — narrow the recall.
 
 ## Subagents
 
