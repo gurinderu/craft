@@ -13,7 +13,7 @@ use super::ci_match::runs_in;
 use super::shell::joined;
 use super::workflow::{Job, jobs, unquote};
 
-fn read(top: &Path, path: &str) -> Result<String, CiError> {
+pub(super) fn read(top: &Path, path: &str) -> Result<String, CiError> {
     std::fs::read_to_string(top.join(path)).map_err(|error| CiError::Unreadable {
         path: path.to_owned(),
         error,

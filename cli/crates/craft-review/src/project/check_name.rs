@@ -8,7 +8,7 @@ use super::shell::{cargo_sub, commands, hints, recipe};
 use super::signal::Signal;
 use super::workflow::Job;
 
-const OPEN: &str = "${{";
+pub(super) const OPEN: &str = "${{";
 
 /// Whether a check holds an expression GitHub would have expanded: no run is named so.
 #[must_use]
