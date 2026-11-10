@@ -1,7 +1,7 @@
 ---
 name: nix-review
 description: >-
-  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules; language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (and INCOMPLETE when nix and the linters are all unavailable, so the gate never ran), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
+  Nix code-review rubric — the flake quality gate (nix flake check, formatter --check, statix, deadnix, nix build/eval), a severity-tiered checklist (purity, reproducibility, injection, packaging, dev-env, modules; language-independent severity, classes and sweeps come from review-rules), the Approve/Warning/Block verdict (at most Warning when the gate could not be established; INCOMPLETE only when the review itself could not run), the "what proves what" table, and posting findings on a PR (defects only; doubtful ones go to the human first). Use when reviewing Nix code or a flake, checking for impure derivations or IFD, or deciding if a change is mergeable. Its review workflow needs Claude Code's Workflow tool (not in Codex or OpenCode); the rubric applies anywhere. Triggers: nix review, review flake, statix, deadnix, nix flake check, impure derivation, IFD.
 ---
 
 # Nix Review
@@ -45,12 +45,22 @@ defect, or do not post — as `craft:addressing-findings` says (its doubtful fin
 - Deciding whether changes are safe to commit or merge
 - A self-check before opening a PR
 
-## Step 1 — Establish the gate (CI-aware)
+## Step 1 — Establish the gate (CI informs, never certifies)
 
 The mechanical gate is non-negotiable: formatter `--check`, `statix check`, `deadnix`,
 `nix flake check`, and `nix build` / `nix eval` must be green before human-style review is worth
-doing. But **before running a check locally, ask whether CI already computed it on this PR; if a
-conclusive check covers it and is green (required or not — most repos have no branch protection, so demanding `required` would make this shortcut dead code; required-ness governs whether RED blocks a merge, not whether GREEN is trustworthy), consume that result instead of recomputing.**
+doing. **You establish each signal yourself, by running its command. CI informs, it never
+certifies: a green CI check is reported (`CI green for <check>`), but the signal it covers stays
+unknown until your own run computes it, and no verdict — Approve least of all — rests on it. A red
+CI check that runs the command still blocks** (required or not — most repos have no branch
+protection; required-ness governs whether RED blocks a merge, and never turns GREEN into a signal
+you did not compute).
+
+With no `flake.nix`, `nix flake check`, `nix eval` and `nix build` have no flake to evaluate: the
+gate is the linters (step 3) and the formatter (step 2). Both linters run clean — nothing to gate,
+no gap; one missing, timed out or broken — NOT ESTABLISHED, at most **Warning**.
+The formatter check applies whenever the repository names a formatter, with a flake or
+without, and a red one blocks; with no formatter named it is skipped, and that is no gap.
 
 Establish each signal:
 
@@ -61,50 +71,53 @@ Establish each signal:
    If `gh` is missing, unauthenticated, offline, or finds no PR → fall straight through to the
    local gate (never fail on detection).
 
-2. **Formatter** — if a conclusive check (required or not) whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`,
-   `format`) is conclusive:
-   - green → **PASSED** (record provenance `via CI · PR #N`);
+2. **Formatter** — only when the repository names one (see above). If a conclusive check
+   (required or not) whose name matches (`alejandra`, `nixpkgs-fmt`, `fmt`, `format`) is conclusive:
    - failed → gate red → **Block**;
+   - green → report `CI green for <check> · PR #N`; the signal stays unknown — run it locally;
    - absent/pending → run locally:
      ```bash
      alejandra --check .        # or: nixpkgs-fmt --check $(find . -name '*.nix')
      ```
 
-3. **Linters** — if absent from CI, run locally:
+3. **Linters** — always run locally, whatever CI shows (a green CI check only informs):
    ```bash
    statix check
    deadnix --fail
    ```
 
-4. **Flake check / build / eval** — if a conclusive check (required or not) matching `flake-check`, `nix build`, or
+4. **Flake check / build / eval** (a flake only) — if a conclusive check (required or not) matching `flake-check`, `nix build`, or
    `nix eval` is conclusive:
-   - green → **PASSED**;
    - failed → gate red → **Block**;
+   - green → report `CI green for <check> · PR #N`; the signal stays unknown — run it locally;
    - absent/pending → run locally:
      ```bash
      nix flake check
      nix build                  # or: nix build .#<target>
      ```
 
-5. **The gate could not be established** — the third outcome. CI gave no usable signal *and*
+5. **The gate could not be established** — the third outcome. No red CI check covers it *and*
    nothing could execute locally: `nix` is not on PATH, flakes are disabled, evaluation cannot
    fetch its locked inputs (offline, an input unreachable), and no linter (`statix`, `deadnix`, a
-   formatter) is installed either. Nothing was evaluated — that is neither red nor green.
+   formatter) is installed either. Nothing was evaluated — that is neither red nor green. A green
+   CI check does not change that: it is reported beside a gate that stays NOT ESTABLISHED.
 
    | What happened | Gate status | Verdict |
    |---|---|---|
-   | Ran and passed (CI or local) | PASSED | continue |
-   | Ran and failed | FAILED | **Block** |
-   | Could not run at all | **NOT ESTABLISHED** | **INCOMPLETE (not run)** — never Approve |
+   | Ran locally and passed | PASSED | continue |
+   | Failed (a local run, or a red CI check that runs it) | FAILED | **Block** |
+   | Could not run locally (a green CI check, if any, only informs) | **NOT ESTABLISHED** | **Warning** at most — never Approve |
 
-   Read the diff and report findings anyway, but the verdict is `INCOMPLETE (not run)`: name what
-   was missing and say the change is UNVERIFIED, not clean. A Confirmed CRITICAL/HIGH found by
-   reading still wins — that is a **Block**. A *partial* gate (statix ran, `nix flake check` did
-   not) is a normal verdict with the gap named in the `## Gate` line; INCOMPLETE is only for
-   nothing having run, so the marker keeps meaning something.
+   Read the diff and report findings anyway, but the verdict is **Warning**: say the gate was not
+   established locally, name what was missing, report the CI you saw beside it, and say the change
+   is UNVERIFIED, not clean. A Confirmed CRITICAL/HIGH found by reading still wins — that is a
+   **Block**. A *partly unknown* gate (statix ran, `nix flake check` did not) caps the same way:
+   at most **Warning**, the gap named in the `## Gate` line. An unestablished gate is never
+   INCOMPLETE: INCOMPLETE means the review itself could not run (no diff to read, the lenses
+   failed).
 
-If any signal is red (CI or local), stop and report — don't review further. A green gate is
-the floor, not the ceiling.
+If any signal is red (a local run, or a red CI check that runs it), stop and report — don't
+review further. A green gate — green by your own runs — is the floor, not the ceiling.
 
 ## Step 1.5 — Resolve flake input context
 
@@ -255,17 +268,20 @@ Every finding (lens or seed) is checked before it can be Confirmed:
 
 | Verdict | When |
 |---|---|
-| **Approve** ✅ | gate green (CI or local), no **Confirmed** CRITICAL/HIGH/MEDIUM |
-| **Warning** ⚠️ | gate green (CI or local), **Confirmed** MEDIUM only — Suspected items listed but don't block |
-| **Block** ⛔ | gate red (CI or local), or any **Confirmed** CRITICAL/HIGH |
-| **INCOMPLETE (not run)** 🚫 | gate NOT ESTABLISHED (Step 1, item 5) — nothing in it could execute — and nothing Confirmed CRITICAL/HIGH was found by reading |
+| **Approve** ✅ | every gate signal green by your own runs (a green CI check never counts), no **Confirmed** CRITICAL/HIGH/MEDIUM |
+| **Warning** ⚠️ | **Confirmed** MEDIUM at most over a gate green by your own runs, **or** a gate NOT ESTABLISHED or partly unknown (Step 1, item 5) with nothing Confirmed CRITICAL/HIGH — Suspected items listed but don't block |
+| **Block** ⛔ | gate red (a local run, or a red CI check that runs the command), or any **Confirmed** CRITICAL/HIGH |
+| **INCOMPLETE** 🚫 | the review itself could not run — no diff to read, or the lenses failed — so nothing was judged; never for a gate that could not be established |
 
 Report findings as `severity · file:line · [rule-id] · what · why · fix`. Cite the [rules.md](rules.md)
 catalog ID when the finding maps to one (e.g. `PUR-001`); novel findings need no ID. Be specific
 and cite the line; a finding without a location isn't actionable.
 
-"Gate green / red" is read from Step 1 — the signal may come from a green CI check or a
-local run. Cite which in the `## Gate` line of the output.
+"Gate green / red" is read from Step 1 — green only from your own run; red from your own run
+or a red CI check that runs the command. Cite which in the `## Gate` line of the output, and report
+a green CI check there as `CI green for <check>` beside a signal that stays unknown. When the gate
+could not be established, in whole or in part, the `## Gate` line says so (`NOT ESTABLISHED — nix
+not on PATH`, with the CI you saw) and the verdict is at most Warning, never Approve.
 
 ## Proving a claim — what proves what
 
@@ -282,9 +298,9 @@ local run. Cite which in the `## Gate` line of the output.
 | secret not in store | runtime secret management confirmed (agenix/sops-nix) | "looks encrypted" |
 | bug fixed | re-run the case that reproduced it → passes | code changed |
 
-A green **CI check** (required or not) for the same command is also valid proof of that command (see
-Step 1 — Establish the gate). The point of the table is that *some* fresh authoritative signal
-exists — CI or local — not that you must re-run it yourself.
+A green **CI check** (required or not) for the same command is not proof of that command: report it
+(`CI green for <check>`) and still produce the fresh signal yourself (see Step 1 — Establish the
+gate). A red one is proof the command fails.
 
 ## Boundaries
 

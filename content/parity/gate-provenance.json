@@ -1,0 +1,3 @@
+{
+  "nixFlakelessLinted": "nix flake check: no flake.nix · `statix check -o json`: local · `deadnix -o json`: local"
+}
