@@ -45,12 +45,7 @@ esac
 "#
     );
     let gh = dir.join("gh");
-    std::fs::write(&gh, script).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    super::exe::write_executable(&gh, &script).unwrap();
     let path = std::env::join_paths(
         std::iter::once(dir.to_path_buf())
             .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),

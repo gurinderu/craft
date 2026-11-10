@@ -1,17 +1,14 @@
 //! The claude-code backend against a stand-in `claude`: a shell script that answers with the real
 //! reply fixture, or fails, or hangs. What a stop leaves behind: `claude_code_stop.rs`.
 
-use std::os::unix::fs::PermissionsExt;
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use craft_agent::anthropic_api::AnthropicApi;
 use craft_agent::claude_code::ClaudeCode;
 use craft_agent::{AgentBackend, AgentError, AgentRequest};
-
-/// Held by each test for its whole run: a script written while another test forks keeps a write
-/// handle open in that child until it execs, and running the script then fails with ETXTBSY.
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 const FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -20,8 +17,7 @@ const FIXTURE: &str = concat!(
 
 fn script(dir: &Path, body: &str) -> std::io::Result<PathBuf> {
     let path = dir.join("claude");
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n"))?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    common::write_executable(&path, &format!("#!/bin/sh\n{body}\n"))?;
     Ok(path)
 }
 
@@ -46,7 +42,6 @@ fn backend(command: PathBuf, timeout: Duration) -> ClaudeCode {
 
 #[tokio::test]
 async fn the_prompt_goes_on_stdin_and_the_reply_is_read() {
-    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     // The stand-in keeps what it was given, so the test sees the prompt and the argv.
     let cmd = script(
@@ -73,7 +68,6 @@ async fn the_prompt_goes_on_stdin_and_the_reply_is_read() {
 
 #[tokio::test]
 async fn a_non_zero_exit_carries_the_code_and_stderr() {
-    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let cmd = script(dir.path(), "cat >/dev/null; echo boom >&2; exit 3").unwrap();
     let err = backend(cmd, Duration::from_secs(10))
@@ -88,7 +82,6 @@ async fn a_non_zero_exit_carries_the_code_and_stderr() {
 
 #[tokio::test]
 async fn a_child_that_exits_unread_still_reports_its_exit_and_stderr() {
-    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let cmd = script(dir.path(), "echo nope >&2; exit 4").unwrap();
     // Far past a pipe's buffer, so the write meets the closed pipe.
@@ -108,7 +101,6 @@ async fn a_child_that_exits_unread_still_reports_its_exit_and_stderr() {
 
 #[tokio::test]
 async fn a_run_past_the_timeout_is_killed() {
-    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let cmd = script(dir.path(), "exec sleep 30").unwrap();
     let err = backend(cmd, Duration::from_millis(200))
@@ -120,7 +112,6 @@ async fn a_run_past_the_timeout_is_killed() {
 
 #[tokio::test]
 async fn a_missing_command_is_a_spawn_error() {
-    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let err = backend(dir.path().join("absent"), Duration::from_secs(1))
         .run(&request(dir.path()))

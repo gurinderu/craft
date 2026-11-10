@@ -7,11 +7,11 @@ use std::time::Duration;
 use super::{GateSetup, Status, run};
 use crate::state::Track;
 
+#[path = "../../tests/common/exe.rs"]
+mod exe;
+
 pub(super) fn tool(dir: &Path, name: &str, script: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    let path = dir.join(name);
-    std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    exe::write_executable(&dir.join(name), &format!("#!/bin/sh\n{script}\n")).unwrap();
 }
 
 fn git(dir: &Path, args: &[&str]) {

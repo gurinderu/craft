@@ -2,8 +2,9 @@
 //! stand-in `claude` starts a grandchild in that group, and both must be gone soon after.
 #![cfg(target_os = "linux")]
 
+mod common;
+
 use std::num::NonZeroUsize;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,9 +13,6 @@ use craft_agent::claude_code::ClaudeCode;
 use craft_agent::runner::{Batch, run_until};
 use craft_agent::{AgentBackend, AgentError, AgentRequest};
 
-/// See `claude_code_spawn.rs`: a script written while another test forks fails with ETXTBSY.
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 /// Starts a grandchild, records both pids (the child's last, so its file means both are there),
 /// and waits on the grandchild. `prelude` runs first.
 fn stand_in(dir: &Path, prelude: &str) -> std::io::Result<PathBuf> {
@@ -22,8 +20,7 @@ fn stand_in(dir: &Path, prelude: &str) -> std::io::Result<PathBuf> {
     let body = format!(
         "#!/bin/sh\n{prelude}\nsleep 300 &\necho $! > grandchild\necho $$ > pid.tmp; mv pid.tmp pid\nwait\n"
     );
-    std::fs::write(&path, body)?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+    common::write_executable(&path, &body)?;
     Ok(path)
 }
 
@@ -102,7 +99,6 @@ async fn stop_once_started(prelude: &str) -> std::io::Result<(tempfile::TempDir,
 
 #[tokio::test]
 async fn a_stop_ends_the_agent_and_what_it_started() {
-    let _serial = SERIAL.lock().await;
     let (dir, took) = stop_once_started("").await.unwrap();
     assert!(took < Duration::from_secs(10), "{took:?}");
     for name in ["pid", "grandchild"] {
@@ -112,7 +108,6 @@ async fn a_stop_ends_the_agent_and_what_it_started() {
 
 #[tokio::test]
 async fn a_group_that_ignores_sigterm_is_killed_after_the_grace() {
-    let _serial = SERIAL.lock().await;
     // An ignored signal stays ignored across fork and exec, so the grandchild ignores it too.
     let (dir, _took) = stop_once_started("trap '' TERM").await.unwrap();
     for name in ["pid", "grandchild"] {
@@ -122,7 +117,6 @@ async fn a_group_that_ignores_sigterm_is_killed_after_the_grace() {
 
 #[tokio::test]
 async fn a_timeout_ends_the_agent_and_what_it_started() {
-    let _serial = SERIAL.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let cmd = stand_in(dir.path(), "").unwrap();
     let err = backend(cmd, Duration::from_millis(500))
