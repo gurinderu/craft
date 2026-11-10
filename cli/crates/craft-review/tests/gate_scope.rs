@@ -50,16 +50,13 @@ fn workspace(root: &str) -> tempfile::TempDir {
 
 /// A `cargo` and a `semgrep` that each append their arguments to `<dir>/<tool>.log`.
 fn logging_tools(dir: &Path) {
-    use std::os::unix::fs::PermissionsExt;
     for (tool, out) in [("cargo", ""), ("semgrep", "printf '%s' '{\"results\":[]}'")] {
         let log = dir.join(format!("{tool}.log"));
         let script = format!(
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n{out}\n",
             log.display()
         );
-        let path = dir.join(tool);
-        std::fs::write(&path, script).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        common::exe::write_executable(&dir.join(tool), &script).unwrap();
     }
 }
 

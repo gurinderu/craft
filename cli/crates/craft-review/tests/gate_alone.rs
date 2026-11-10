@@ -17,12 +17,10 @@ use serde_json::{Value, json};
 
 /// A directory holding a `cargo` that prints `line` (a clippy JSON line), or nothing.
 fn tools(line: Option<&str>) -> tempfile::TempDir {
-    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let body = line.map_or(":".to_owned(), |l| format!("printf '%s\\n' '{l}'"));
-    let path = dir.path().join("cargo");
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    common::exe::write_executable(&dir.path().join("cargo"), &format!("#!/bin/sh\n{body}\n"))
+        .unwrap();
     dir
 }
 
