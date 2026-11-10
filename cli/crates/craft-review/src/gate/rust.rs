@@ -23,6 +23,7 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
     if manifests.is_empty() {
         acc.parts
             .push("clippy: no Cargo package holds the changed files".into());
+        acc.check(Status::Nothing);
     }
     if manifests.len() > PACKAGES_MAX {
         let rest: Vec<&str> = manifests

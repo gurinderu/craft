@@ -8,6 +8,7 @@ fn status(s: Status) -> &'static str {
         Status::Pass => "pass",
         Status::Fail => "FAIL",
         Status::Unknown => "unknown",
+        Status::Nothing => "nothing to gate",
     }
 }
 

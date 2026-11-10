@@ -47,6 +47,8 @@ mod nix_fault;
 mod nix_lint;
 #[cfg(test)]
 mod nix_tests;
+#[cfg(test)]
+mod nothing_tests;
 pub(crate) mod runner;
 mod rust;
 mod section;
@@ -89,7 +91,9 @@ impl Default for GateSetup {
     }
 }
 
-/// Whether a profile's gate passed, failed, or could not be established.
+/// Whether a profile's gate passed, failed, could not be established, or had nothing to establish
+/// — no `flake.nix`, no Cargo package holding the changed files: nothing to gate is no unknown
+/// signal and caps no verdict (realm @nick/craft, node #487).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -97,6 +101,7 @@ pub enum Status {
     Fail,
     #[default]
     Unknown,
+    Nothing,
 }
 
 /// One profile's gate as it came out.

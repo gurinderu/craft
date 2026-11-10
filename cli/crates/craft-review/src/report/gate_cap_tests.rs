@@ -113,3 +113,16 @@ fn a_green_gate_approves_and_a_gate_taken_from_the_launcher_is_capped_the_same()
     };
     assert_eq!(verdict(&run(&[], taken)), "Warning");
 }
+
+#[test]
+fn nothing_to_gate_is_no_unknown_signal_and_keeps_its_approve() {
+    let s = run(
+        &[],
+        gated(track(
+            Status::Nothing,
+            "clippy: no Cargo package holds the changed files",
+        )),
+    );
+    assert_eq!(verdict(&s), "Approve");
+    assert_eq!(verdict_line(&s, "Approve"), "Approve");
+}

@@ -34,7 +34,7 @@ pub(super) fn gate(cx: &Cx<'_>, acc: &mut Acc) {
 fn flake_check(cx: &Cx<'_>, acc: &mut Acc) -> Status {
     if !cx.top.join("flake.nix").is_file() {
         acc.parts.push("nix flake check: no flake.nix".into());
-        return Status::Unknown;
+        return Status::Nothing;
     }
     let args = [
         "--extra-experimental-features",
