@@ -17,6 +17,8 @@
     "test": "vitest run",
     "gate": "node lib/gate.mjs",
     "lint": "eslint lib integrations/opencode/plugin knip.config.js .dependency-cruiser.mjs --max-warnings 0",
+    "format": "prettier --write .",
+    "check:format": "prettier --check .",
     "build:engines": "node lib/build-engines.mjs",
     "check:engines": "node lib/build-engines.mjs --check",
     "check:workflows": "node lib/check-workflows.mjs",
@@ -46,6 +48,7 @@
     "eslint-plugin-sonarjs": "4.2.2",
     "jscpd": "5.4.0",
     "knip": "6.39.0",
+    "prettier": "3.10.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.0",
     "vitest": "5.0.3"
