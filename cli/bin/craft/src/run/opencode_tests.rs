@@ -154,3 +154,26 @@ fn an_unreadable_agent_list_is_said_and_no_refusal() {
     assert_eq!(got.agents, None);
     assert!(heard.borrow()[0].contains("down"), "{:?}", heard.borrow());
 }
+
+#[test]
+fn an_unreadable_agent_list_on_1x_runs_every_task_on_review_task() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("opencode");
+    write_executable(
+        &path,
+        "#!/bin/sh\ncase \"$1\" in --version) echo '1.19.5';; *) echo down >&2; exit 1;; esac\n",
+    )
+    .unwrap();
+    let got = preflight(&path, dir.path(), &|_| {}).unwrap();
+    assert_eq!(
+        got,
+        Ready {
+            agents: Some(vec![TASK_AGENT.to_owned()]),
+            archived: false,
+        }
+    );
+    let list = got.agents.unwrap_or_default();
+    let placed = placement(&task(Some("rust-reviewer"), None), Some(&list));
+    assert_eq!(placed.agent, TASK_AGENT, "never the subagent itself");
+    assert_eq!(placed.degraded.as_deref(), Some("rust-reviewer"));
+}

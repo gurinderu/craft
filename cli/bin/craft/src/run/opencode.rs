@@ -141,6 +141,9 @@ pub(crate) fn preflight(command: &Path, repo: &Path, log: &dyn Fn(&str)) -> Resu
             "the craft OpenCode agents are not installed or are out of date: rerun integrations/opencode/install.sh (this opencode has no `{TASK_AGENT}` agent, which every review task runs on read-only)"
         ));
     }
+    // A 1.x list that could not be read is taken as `review-task` alone: a subagent named to its
+    // `run` would run as the writable default agent, so none is ever named there.
+    let agents = agents.or_else(|| (major < 2).then(|| vec![TASK_AGENT.to_owned()]));
     Ok(Ready {
         agents,
         archived: major >= 2,
