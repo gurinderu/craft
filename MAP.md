@@ -132,7 +132,7 @@ templates an engine still renders itself (memory recall among them) are inlined 
 | `review-rules` | ✅ | language-independent review rules every lens and verifier reads beside its language rubric: severity capped by the named harm (`severity.md`), finding classes CONV/LIFE/RECOV/EXT/WIRE/RACE/FAIL/TEST/DOCS/MAINT (`classes.md`), search sweeps — sibling sweep, early-exit diff, attribution check, context before judgment, consequence of a false claim (`sweeps.md`), shared exclusions FP-002/KEEP-* (`fp-rules.md`) | language-specific rules → `rust-review`/`nix-review`; race and compatibility catalogues → `distributed-races`/`compatibility` |
 | `memory` | ✅ | the project's decisions, project rules, lessons and open questions across sessions: one record shape, five verbs, deterministic backend order (explicit setting → memory MCP server by capability → harness project memory → `.craft/memory/` files on existing dir or consent → none), recall by scope + keywords returning only active matches; `backends.md` per store | run records, review ledger, telemetry → `addressing-findings` / `docs/observability.md` |
 | `review-init` | ✅ | `craft init`: the reviewer's own profile of a repository, outside it (`~/.craft/projects/<id>/review.toml`) — the integration points (external systems the code talks to) with their source URL and deployed tag or commit; propose (the memory's `external` records with the revision each one's version file names, and manifest discovery) → ask the reviewer → write | library dependencies (a review finds them itself); the project's shared facts → `memory` |
-| `codex-review` | 🧪 new, not yet observed in a real Codex session | Codex only: the review from a Codex session — one command, `lib/codex-review.mjs`, drives the `craft` binary's step protocol with each task its own `codex exec`; the `review` workflow's arguments plus `concurrency` and `codexModels` | Claude Code (the `review` workflow); a review by hand (`rust-review`, `nix-review`) |
+| `codex-review` | 🧪 new, not yet observed in a real Codex session | Codex only: the review from a Codex session — one command, `bin/craft review run --backend codex`, the `craft` binary's own driver with each task its own `codex exec`; the binary's flags (`--base`, `--depth`, `--run`, `--concurrency`, `--models`, …) | Claude Code (the `review` workflow); a review by hand (`rust-review`, `nix-review`) |
 | `develop` | ✅ | the development cycle up to a PR with craft's own tools: consumer roles first (a declared role or rule takes its phase, one line per phase says whose) → `memory` recall → work → review loop (`review` → triage → `addressing-findings`), light by default — round 1 over the branch diff, each next over the fixed delta — until a round brings no open Medium+ finding, at most 4 rounds, then stop and tell the human → one full review (`rust-audit` beside a strict fresh `review` for files outside the crates / strict fresh `review` by stack) → one `develop-cycle` record in the run store → PR; main session only | planning, test-first, debugging method → the project's own process; working findings alone → `addressing-findings`; a single review → the review workflows |
 | `addressing-findings` | ✅ | the fix loop for review findings: gather (craft agents + GitHub PR comments) → normalize → triage (accept/reject/defer/needs-decision/conflict) → order → fix → verify → re-review → close the GitHub loop; triage always goes through the `triage-findings` workflow | the review *rubric* → `rust-review`; *running* the agents → `rust-audit`; *how* to fix → topic skills |
 
@@ -208,8 +208,9 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 `integrations/opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
 (skills shared verbatim by symlink; 4 translated agent files and `review-task`, the read-only agent of the review's tasks; one TS plugin for OpenCode 1.x and 2.x —
 its default export carries both entries, and a host layer (`host.ts`, with `host-v1.ts` and `host-v2.ts`)
-gives the `rust-audit` and `triage-findings` workflows, the `review` tool (the `craft` binary's step loop with child
-sessions on the shared process-per-task loop, `lib/opencode-review.mjs`, not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime;
+gives the `rust-audit` and `triage-findings` workflows, the `review` tool (`bin/craft review run --backend opencode --events json`
+through `lib/craft-review-run.mjs`, on the calling session's model, each task its own `opencode run` on `review-task`; the
+on 1.x without `--archived` and with subagent tasks on `review-task`; the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime;
 a symlink `install.sh` that also installs the plugin's locked dependencies). Single source of truth: the skills are not duplicated. The design spec
 that shaped this layer has been removed.
 
@@ -219,8 +220,9 @@ that shaped this layer has been removed.
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
-protocol, and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
-under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, or the general lenses for source in
+protocol; `craft review run --backend codex|pi|opencode`, which drives that protocol itself to the verdict, each task its own
+`codex exec`, `pi -p` or `opencode run` process, its progress as lines or `--events json`; and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a
+backend — the `claude`, `codex`, `pi` or `opencode` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, or the general lenses for source in
 any other language, `content/profiles/`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
@@ -260,7 +262,11 @@ binary at the archive root, `craft.exe` for Windows) and its `.sha256` to each r
 and arm64 and Windows on x64; `lib/craft-bin.mjs ensure` fetches the one for this platform and version into
 `~/.craft/bin/<version>/` (through the REST API, `lib/release-asset.mjs`, when the download URL answers 5xx or
 not at all; `GITHUB_TOKEN` or `GH_TOKEN`, if set, is sent to the API only),
-which the `review` engine runs when no `craftBin` is given.
+which the `review` engine runs when no `craftBin` is given. The other hosts reach the same cache through `bin/craft`
+at the repository root, a POSIX `sh` wrapper carrying the plugin version (release-please moves it): it runs
+`~/.craft/bin/<version>/craft`, first downloading the release archive and its `.sha256` with `curl` or `wget` and
+checking it with `sha256sum` or `shasum` when the cache lacks it (no Windows), `CRAFT_BIN` naming a local build and
+`CRAFT_ROOT` defaulting to the plugin root.
 
 ## Codex delivery
 
@@ -268,11 +274,10 @@ which the `review` engine runs when no `craftBin` is given.
 `skills/` and hooks file (`integrations/claude-code/hooks/hooks.json`, named by the manifest's `hooks`) to the
 Codex CLI. Its plugin root is the repository root: Codex leaves symlinks out of the copy it installs
 (`integrations/codex/README.md`). Codex has no Workflow tool, so `rust-audit`, `triage-findings` and
-craft:develop's loop do not run there. The review has its own driver, new and not yet observed running in a real
-Codex session (its loop is tested against fake binaries only): the `codex-review` skill has the
-session run `lib/codex-review.mjs`, a Node script that drives the same `craft` binary's step protocol as the
-`review` workflow and runs each task as its own `codex exec --ephemeral -s read-only` process, with the
-prompt body of the craft agent the task names (`integrations/claude-code/agents/`) before the task's prompt.
+craft:develop's loop do not run there. The review, new and not yet observed running in a real Codex session: the
+`codex-review` skill has the session run `bin/craft review run --backend codex`, the `craft` binary's own driver, which
+runs each task as its own `codex exec --ephemeral -s read-only` process, with the prompt body of the craft agent the
+task names (`integrations/claude-code/agents/`) before the task's prompt.
 
 ## Deliveries
 
@@ -284,7 +289,7 @@ HTTPS), which each release rebuilds from this directory with the links dereferen
 (`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
 so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` holds the pi package's `craft-review` skill: the repository is a pi
-package (`pi install git:github.com/gurinderu/craft`) whose manifest, the root `package.json`'s `pi` key, loads only that
-skill, which runs the review's pi driver, `lib/pi-review.mjs` — new, seen running end to end from a checkout, not yet as an
-installed pi package; it and the Codex driver are hosts of one process-per-task runner,
-`lib/task-process-*.mjs`.
+package (`pi install git:github.com/gurinderu/craft`) whose manifest, the root `package.json`'s `pi` key, loads that
+skill and one extension, `lib/pi-extension.mjs`, whose `craft_review` tool runs `bin/craft review run --backend pi
+--events json` (`lib/craft-review-run.mjs`, shared with the OpenCode tool), streams its progress and draws the verdict,
+findings and report — new, seen running end to end from a checkout, not yet as an installed pi package.

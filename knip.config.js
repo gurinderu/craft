@@ -48,9 +48,11 @@ export default {
         '!lib/engine-harness.mjs!',
         '!lib/sandbox-globals.mjs!',
         '!lib/logger-replay.mjs!',
-        '!lib/codex-review-fakes.mjs!',
-        '!lib/pi-review-fakes.mjs!',
+        '!lib/write-executable.mjs!',
       ],
+      // pi supplies its TUI module to the extensions it loads (lib/pi-extension.mjs, lib/pi-tui.d.ts; realm
+      // @nick/craft, node #504): no dependency of this repository.
+      ignoreDependencies: ['@earendil-works/pi-tui'],
     },
     'integrations/opencode/plugin': {
       // Loaded by opencode from plugins/craft-rust (integrations/opencode/install.sh links it there), not imported.

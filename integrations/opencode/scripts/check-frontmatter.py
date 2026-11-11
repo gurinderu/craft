@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validate opencode agent/command/skill frontmatter. Usage: check-frontmatter.py <kind> <file>..."""
+import os
 import sys, re
 
 def parse_frontmatter(path):
@@ -31,9 +32,14 @@ def parse_frontmatter(path):
 
 def fail(p, msg): raise SystemExit(f"{p}: {msg}")
 
+# Agents the review binary starts with `opencode run --agent`: opencode 1.19.5 puts a subagent named there on its
+# default agent, so these are `all`, kept out of the agent picker by `hidden` (observed on 1.19.5 and 2.2.7).
+RUN_AGENTS = {"review-task"}
+
 def check_agent(p, fm):
     if "description" not in fm: fail(p, "missing description")
-    if fm.get("mode") != "subagent": fail(p, "mode must be subagent")
+    modes = ("subagent", "all") if os.path.basename(p)[:-3] in RUN_AGENTS else ("subagent",)
+    if fm.get("mode") not in modes: fail(p, "mode must be " + " or ".join(modes))
     if fm.get("hidden") not in (True, "true"): fail(p, "hidden must be true")
     if "model" in fm: fail(p, "must NOT pin model (inherit session model)")
     tools = fm.get("tools")

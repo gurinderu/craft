@@ -224,6 +224,11 @@ fn default_run_dir() -> Result<PathBuf> {
 }
 
 pub fn start(args: &StartArgs) -> Result<ExitCode> {
+    print(&start_step(args)?)
+}
+
+/// The step `start` prints, its telemetry opened when `--record` asks for it.
+pub(crate) fn start_step(args: &StartArgs) -> Result<Value> {
     let began = Instant::now();
     let root = args.craft_root.clone().or_else(find_craft_root);
     let (craft_root, craft_version) = match root {
@@ -277,15 +282,15 @@ pub fn start(args: &StartArgs) -> Result<ExitCode> {
         chain_gh: Some(craft_review::publish::PostSetup::default()),
     };
     let step = stamped(step::start(&opts)?, began);
-    match &args.record {
-        Some(version) => print(&opened(
+    Ok(match &args.record {
+        Some(version) => opened(
             &opts.run_dir,
             version,
             (args.via.as_deref(), args.record_root.as_deref()),
             step,
-        )),
-        None => print(&step),
-    }
+        ),
+        None => step,
+    })
 }
 
 /// `craft review gate`: the mechanical gate alone, printed as one JSON value
@@ -364,6 +369,11 @@ fn given_answers(path: &Path) -> Result<Map<String, Value>> {
 }
 
 pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
+    print(&submit_step(args)?)
+}
+
+/// The step `submit` prints, with what its telemetry write did.
+pub(crate) fn submit_step(args: &SubmitArgs) -> Result<Value> {
     let began = Instant::now();
     let given = args.answers.as_deref().map(given_answers).transpose()?;
     let run = std::path::absolute(&args.run)
@@ -382,7 +392,7 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
     if args.resume
         && let Some(step) = filing::refile(&run, earlier.clone(), &filing::NodeWriter)
     {
-        return print(&step);
+        return Ok(step);
     }
     refuse_folded(&run, args)?;
     let said = step::Said {
@@ -408,10 +418,12 @@ pub fn submit(args: &SubmitArgs) -> Result<ExitCode> {
         resume: args.resume,
         session: session(),
     };
-    match filing::submitted(&run, &step, &host, earlier, &filing::NodeWriter) {
-        Some(filed) => print(&filing::with_filing(step, filed)),
-        None => print(&step),
-    }
+    Ok(
+        match filing::submitted(&run, &step, &host, earlier, &filing::NodeWriter) {
+            Some(filed) => filing::with_filing(step, filed),
+            None => step,
+        },
+    )
 }
 
 /// A stopped run that files its telemetry goes on only by `--resume`, which keeps the stopped
@@ -432,4 +444,9 @@ fn refuse_folded(run: &Path, args: &SubmitArgs) -> Result<()> {
 
 pub fn status(args: &StatusArgs) -> Result<ExitCode> {
     print(&status::status(&args.run)?)
+}
+
+/// Where the run in `run` stands, as `status` prints it.
+pub(crate) fn status_step(run: &Path) -> Result<Value> {
+    Ok(status::status(run)?)
 }

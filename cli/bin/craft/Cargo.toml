@@ -12,6 +12,8 @@ clap.workspace = true
 craft-agent.workspace = true
 craft-review.workspace = true
 craft-tui.workspace = true
+regex.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync"] }
 

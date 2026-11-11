@@ -6,7 +6,7 @@ import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 import type { Part, TextPart } from "@opencode-ai/sdk"
 import { stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from "./host.ts"
-import { agentNames, errorOf, extractText, field, lastModel } from "./host-v1-read.ts"
+import { errorOf, extractText, field, lastModel } from "./host-v1-read.ts"
 import { shellIn } from "./shell.mjs"
 
 export { extractText, lastModel }
@@ -22,7 +22,6 @@ export interface V1Client {
       body: { agent: string; parts: TextIn[]; model?: { providerID: string; modelID: string } }
     }): Promise<unknown>
   }
-  app: { agents(): Promise<unknown> }
 }
 
 // The child's prompt, run to its reply; an abort (the caller's deadline) stops the session — `session.abort`, observed
@@ -60,9 +59,6 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
     async callerModel(sessionID) {
       return lastModel(await client.session.messages({ path: { id: sessionID } }))
     },
-    async agents() {
-      return agentNames(await client.app.agents())
-    },
   }
 }
 
@@ -70,7 +66,12 @@ function v1Tool(host: Host, spec: ToolSpec) {
   const args = Object.fromEntries(
     Object.entries(spec.args).map(([k, a]) => [k, a.optional ? tool.schema.string().optional() : tool.schema.string()]),
   )
-  return tool({ description: spec.description, args, execute: (raw, context) => spec.run(host, stringArgs(spec, raw), { sessionID: context.sessionID }) })
+  return tool({
+    description: spec.description,
+    args,
+    execute: (raw, context) =>
+      spec.run(host, stringArgs(spec, raw), { sessionID: context.sessionID, signal: context.abort, progress: (title) => context.metadata({ title }) }),
+  })
 }
 
 // The words the human (or the parent agent) wrote: the message's own text parts.

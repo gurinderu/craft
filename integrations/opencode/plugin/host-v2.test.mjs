@@ -85,20 +85,21 @@ test('only a finished assistant turn is a reply', () => {
   assert.equal(finishedReply([assistant(' a ')]), 'a')
 })
 
-test('a tool spec becomes a JSON Schema tool whose result is text content', async () => {
+test('a tool spec becomes a JSON Schema tool whose result is text content, a titled answer its output', async () => {
   /** @type {unknown[]} */
   const ran = []
   const spec = {
     name: 'probe', description: 'd', args: { base: { optional: true }, locator: { optional: false } },
-    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => { ran.push([args, call]); return 'out' },
+    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => { ran.push([args, call]); return { title: 't', output: 'out' } },
   }
   const def = v2Tool(v2Host(fakeCtx().ctx), spec)
   assert.deepEqual(def.input, {
     type: 'object', properties: { base: { type: 'string' }, locator: { type: 'string' } }, required: ['locator'], additionalProperties: false,
   })
-  const result = await def.execute({ locator: 'x' }, { sessionID: 's', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
+  const signal = new AbortController().signal
+  const result = await def.execute({ locator: 'x' }, { sessionID: 's', messageID: 'm', id: 'c', agent: 'build', signal })
   assert.deepEqual(result, { content: [{ type: 'text', text: 'out' }] })
-  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 's' }]])
+  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 's', signal }]])
 })
 
 test('setup registers the tools, hooks the prompt, maps the events, and disposes all of it', async () => {
@@ -129,7 +130,7 @@ test('setup registers the tools, hooks the prompt, maps the events, and disposes
   assert.equal(f.disposed(), 2)
 })
 
-test('a deadline interrupts the session and stops the polling; the agents are listed', async () => {
+test('a deadline interrupts the session and stops the polling', async () => {
   const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }]])
   const stop = new AbortController()
   const ctx = f.ctx
@@ -138,18 +139,18 @@ test('a deadline interrupts the session and stops the polling; the agents are li
   await assert.rejects(v2Host(ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
   assert.deepEqual(f.sent.filter(e => Array.isArray(e) && e[0] === 'wait').length, 1, 'no read after the abort')
   assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
-  assert.deepEqual([...await v2Host(ctx, 0).agents() ?? []], ['build', 'review-task'])
 })
 
-test('every workflow on the 2.x entry refuses up front, says so in its description, and opens no session', async () => {
+test('the audit and the triage on the 2.x entry refuse up front and say so; the review runs as it is', async () => {
   const f = fakeCtx()
   await v2Setup(f.ctx, onV2(TOOLS), { childCreated: () => {}, compacted: async () => {}, message: async () => {} })
   assert.deepEqual(f.tools.map(t => t.name), ['rust-audit', 'triage-findings', 'review'], 'all three stay registered')
-  for (const tool of f.tools) {
+  const [review, ...workflows] = [f.tools.find(t => t.name === 'review'), ...f.tools.filter(t => t.name !== 'review')]
+  assert.equal(review?.description, TOOLS.find(t => t.name === 'review')?.description, 'the review goes through opencode run, not child sessions')
+  for (const tool of workflows) {
     const out = await tool.execute({ locator: 'x' }, { sessionID: 'ses_set', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
     assert.match(out.content[0].text, new RegExp(`INCOMPLETE — craft's \`${tool.name}\` does not yet work in OpenCode 2\\.x: .*A route through \`opencode run\` is in progress; until it ships, use OpenCode 1\\.x, Claude Code, Codex or pi\\. Nothing ran\\.`))
     assert.match(tool.description, /^Not available on OpenCode 2\.x yet/)
-    if (tool.name === 'review') assert.match(out.content[0].text, /^## Verdict\n\n⚠️ INCOMPLETE/, 'the review answers with its verdict block')
   }
   assert.equal(f.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
 })

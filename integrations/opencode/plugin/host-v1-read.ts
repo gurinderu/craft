@@ -36,12 +36,6 @@ export function lastModel(res: unknown): ModelRef | undefined {
   return undefined
 }
 
-// The agents' names an `app.agents()` answer lists (observed on opencode 1.19.5: `{ data: [{ name }] }`).
-export function agentNames(res: unknown): Set<string> {
-  const list = field(res, "data") ?? res
-  return new Set((Array.isArray(list) ? list : []).map((a) => field(a, "name")).filter((n): n is string => typeof n === "string"))
-}
-
 // What a prompt that failed answered: 1.19.5 answers an unknown agent with `{ error: { name, data: { message } } }`
 // rather than throwing (observed), so the error is lifted out; '' when the answer is no error.
 export function errorOf(res: unknown): string {

@@ -27,6 +27,7 @@ fn stand_in(dir: &Path, prelude: &str) -> std::io::Result<PathBuf> {
 fn request(cwd: &Path) -> AgentRequest {
     AgentRequest {
         label: "probe".into(),
+        agent: None,
         prompt: "the prompt".into(),
         model: None,
         schema: None,

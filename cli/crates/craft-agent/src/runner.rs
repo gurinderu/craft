@@ -170,6 +170,7 @@ mod tests {
     fn req(label: &str) -> AgentRequest {
         AgentRequest {
             label: label.into(),
+            agent: None,
             prompt: String::new(),
             model: None,
             schema: None,
