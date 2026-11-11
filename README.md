@@ -126,7 +126,9 @@ codex plugin add craft@craft
 
 Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
 skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines `rust-audit` and
-`triage-findings` and the review loop of `craft:develop` do not run there. The review does: the `craft:codex-review`
+`triage-findings` and the review loop of `craft:develop` do not run there. The review has a Codex route, new and not
+yet observed running in a real Codex session (only its loop is tested, against fake `craft` and `codex` binaries;
+the hooks tell a session to review the diff itself when the command cannot run or fails): the `craft:codex-review`
 skill has the session run one command, `node <plugin root>/lib/codex-review.mjs [key=value ...]`, which drives the
 same `craft` binary as the `craft:review` workflow, takes the same arguments, and runs each review task as its own
 `codex exec --ephemeral -s read-only` process with the session's login — in parallel, 4 at once by default

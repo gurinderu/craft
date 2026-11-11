@@ -20,6 +20,11 @@ Run it **once, in this session**, never in a subagent, and relay what it prints 
 `## Verdict` block, the report's path and the `## Findings` list — then read the report file it
 names for the details. Do not review the diff yourself beside it.
 
+This route is new and not yet observed running in a real Codex session. If the command cannot
+run here, or fails without a `## Verdict` block, say so plainly and review the diff yourself
+instead: the checklist of `craft:rust-review` (Rust) or `craft:nix-review` (Nix), otherwise read
+the diff for defects, and report the findings by severity with file:line.
+
 How to run it:
 - It runs long (minutes to an hour on a large diff): give the shell call the longest timeout
   your tool allows.
