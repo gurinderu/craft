@@ -219,8 +219,9 @@ that shaped this layer has been removed.
 a host (the `review` engine above) runs its agents. The step protocol was observed end to end
 in a live session (craft 0.41.0, a Rust diff, finished with Approve); the full-lens review it runs
 now is not yet observed live. `bin/craft` (the command: `craft review start | submit | status`, the step
-protocol, and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a backend — the `claude` CLI today — and many
-under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, or the general lenses for source in
+protocol; `craft review run --backend codex|pi`, which drives that protocol itself to the verdict, each task its own
+`codex exec` or `pi -p` process; and `craft review probe`, one agent end to end), `crates/craft-agent` (one agent run through a
+backend — the `claude`, `codex` or `pi` CLI — and many under a concurrency cap), `crates/craft-review` (the steps — each changed file to one profile (Rust, Nix, or the general lenses for source in
 any other language, `content/profiles/`), the mechanical gate the binary runs itself before any lens (clippy and semgrep
 for Rust, nix flake check, statix and deadnix for Nix: a red check blocks, a diagnostic on a changed line is a seed the
 lenses and verifiers see, a tool not installed is named), a scout per profile whose answer plans its lenses over its own files, the
