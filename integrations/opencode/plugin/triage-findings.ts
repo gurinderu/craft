@@ -1,7 +1,7 @@
 // Mirrors workflows/triage-findings.js: gather → validate each finding against the code (parallel)
 // → render one ordered fix plan + triage ledger. No edits. Delegates the per-finding code-check to
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
-import type { PluginCtx } from "./index.ts"
+import type { Host } from "./host.ts"
 import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
 import { buildTriageRecord, hasPlanMarkerLine, hasOutcomeLine, writeRecord } from "./run-record.mjs"
 import { existsSync, readFileSync } from "node:fs"
@@ -139,7 +139,7 @@ export function splitFindings(blob: string): { findings: string[]; dropped: numb
   return { findings, dropped: Math.max(0, s.items.length - MAX_FINDINGS), skipped: s.skipped }
 }
 
-export async function runTriageFindings(ctx: PluginCtx, args: { locator: string }): Promise<string> {
+export async function runTriageFindings(ctx: Host, args: { locator: string }): Promise<string> {
   const blob = gather(args.locator)
   const { findings, dropped, skipped } = splitFindings(blob)
   if (findings.length === 0) return "No findings parsed from the locator."

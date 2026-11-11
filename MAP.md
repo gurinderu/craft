@@ -206,9 +206,10 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 ## opencode adapter
 
 `integrations/opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
-(skills shared verbatim by symlink; 4 translated agent files; a TS/Bun plugin hosting the
-`rust-audit` and `triage-findings` workflows and craft's work hook on `chat.message` and `event`;
-a symlink `install.sh`). Single source of truth: the skills are not duplicated. The design spec
+(skills shared verbatim by symlink; 4 translated agent files; one TS plugin for OpenCode 1.x and 2.x —
+its default export carries both entries, and a host layer (`host.ts`, with `host-v1.ts` and `host-v2.ts`)
+gives the `rust-audit` and `triage-findings` workflows and craft's work hook one surface on either runtime;
+a symlink `install.sh` that also installs the plugin's locked dependencies). Single source of truth: the skills are not duplicated. The design spec
 that shaped this layer has been removed.
 
 ## Rust CLI

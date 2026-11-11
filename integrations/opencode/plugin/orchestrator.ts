@@ -3,10 +3,8 @@
 // session is created but never executes within STUCK_MS, retry the failed jobs one at a time;
 // if a job still yields nothing, surface a clear, actionable error rather than hang.
 //
-// Signatures (client.session.create / client.session.prompt) follow the opencode SDK docs and are
-// NOT type-checked: PluginCtx.client is `any` and nothing here imports @opencode-ai/sdk, so `tsc`
-// passes whatever the SDK's real shapes are. A mismatch shows only at runtime, in opencode.
-import type { PluginCtx } from "./index.ts"
+// A child session is the host's (host.ts): this file sees only `runChild`, on either OpenCode runtime.
+import type { Host, ModelRef } from "./host.ts"
 
 // A dimension that runs `cargo clippy --all-targets` and `cargo test` on a real workspace takes
 // minutes, not seconds. The old 90s ceiling therefore fired on essentially every Rust repository
@@ -35,34 +33,14 @@ export const ENGINE_SESSIONS = new Set<string>()
 // Spawn one child session bound to a hidden agent and return its final text. NOT exported: both
 // callers moved to runAnswering/fanOut, and an exported un-gated spawn is exactly the bypass this
 // file closes everywhere else — the next caller would get no predicate and no deadline.
-async function runAgent(ctx: PluginCtx, agentName: string, prompt: string): Promise<string> {
-  const session = await ctx.client.session.create({ body: { title: `craft:${agentName}` } })
-  const path = { id: session.id ?? session.data?.id }
-  if (typeof path.id === "string") ENGINE_SESSIONS.add(path.id)
-  const res = await ctx.client.session.prompt({
-    path,
-    body: { agent: agentName, parts: [{ type: "text", text: prompt }] },
+function runAgent(host: Host, job: Job): Promise<string> {
+  return host.runChild({
+    title: `craft:${job.agent || "default"}`,
+    agent: job.agent,
+    prompt: job.prompt,
+    ...(job.model === undefined ? {} : { model: job.model }),
+    onSession: (id) => ENGINE_SESSIONS.add(id),
   })
-  // The prompt result carries the assistant message; pull text out defensively across shapes.
-  return extractText(res)
-}
-
-// The parts of a message, wherever the response shape keeps them.
-function partsOf(root: any): any[] {
-  return root?.parts ?? root?.data?.parts ?? root?.message?.parts ?? []
-}
-
-function extractText(res: any): string {
-  // Normalize a streaming/array response to its last message before reading parts, so an array
-  // shape isn't mistaken for "no output" (which would mis-mark a successful job NOT RUN).
-  const root = Array.isArray(res) ? res[res.length - 1] : res
-  const parts = partsOf(root)
-  const text = parts
-    .filter((p: any) => p?.type === "text" && typeof p.text === "string")
-    .map((p: any) => p.text)
-    .join("\n")
-    .trim()
-  return text || (typeof root?.text === "string" ? root.text.trim() : "")
 }
 
 // `answered` is what makes a job's answer an ANSWER rather than merely output. Without it liveness was
@@ -82,6 +60,8 @@ export interface Job {
   // jobs looking for a line their prompt never mentioned — the same wrong-cause reporting this file
   // fixed for timeout-versus-silence.
   requires?: string
+  // The child's model; absent runs it on the session's own (realm @nick/craft, #465).
+  model?: ModelRef
 }
 
 // One call, held to the same standard as a fan-out job. The consolidation step used to bypass all of
@@ -90,7 +70,7 @@ export interface Job {
 // non-empty, so it was treated as the report AND filed as a verdict, and parseVerdict falls through
 // to Approve. A hung synthesis also hung the whole run, since only dimensions had a deadline.
 export async function runAnswering(
-  ctx: PluginCtx,
+  ctx: Host,
   agent: string,
   prompt: string,
   answered: (text: string) => boolean,
@@ -111,9 +91,9 @@ export interface JobResult { label: string; ok: boolean; text: string }
 // deadline reported as "no output" sent people to look for an opencode bug.
 type Failure = "timeout" | "empty" | "unanswered" | "error" | "budget"
 
-async function tryOne(ctx: PluginCtx, job: Job): Promise<JobResult & { why?: Failure }> {
+async function tryOne(ctx: Host, job: Job): Promise<JobResult & { why?: Failure }> {
   try {
-    const out = await withTimeout(runAgent(ctx, job.agent, job.prompt), job.timeoutMs ?? STUCK_MS)
+    const out = await withTimeout(runAgent(ctx, job), job.timeoutMs ?? STUCK_MS)
     if (out && typeof out === "object" && (out as any).__timeout) {
       return { label: job.label, ok: false, text: "", why: "timeout" }
     }
@@ -181,7 +161,7 @@ const RETRY_BUDGET_MS = 30 * 60_000
 // The budget is a PARAMETER, not only a constant, because a test that cannot shrink it cannot reach
 // the clipping branch at all: with thirty minutes remaining, `Math.min(job.timeoutMs, left)` is
 // always the job's own value, so the assertion held whether or not the clipping existed.
-export async function fanOut(ctx: PluginCtx, jobs: Job[], retryBudgetMs = RETRY_BUDGET_MS): Promise<JobResult[]> {
+export async function fanOut(ctx: Host, jobs: Job[], retryBudgetMs = RETRY_BUDGET_MS): Promise<JobResult[]> {
   // Pass 1: concurrent. Each result travels with its job, so pass 2 reads no parallel array.
   const slots: { job: Job; result: JobResult & { why?: Failure } }[] = await Promise.all(
     jobs.map(async (job) => ({ job, result: await tryOne(ctx, job) })),

@@ -1,0 +1,117 @@
+// The 2.x side of the host against a fake `ctx` shaped as opencode-v2.d.ts pins it (observed on 2.2.7).
+import { test } from 'vitest'
+import assert from 'node:assert/strict'
+import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
+
+const assistant = (/** @type {string} */ text) => ({ type: 'assistant', finish: 'stop', content: [{ type: 'reasoning', text: 'hm' }, { type: 'text', text }] })
+
+/** @param {unknown[][]} contexts what successive `context` reads return */
+function fakeCtx(contexts = []) {
+  /** @type {unknown[]} */
+  const sent = []
+  /** @type {any[]} */
+  const tools = []
+  /** @type {Record<string, (input: any) => unknown>} */
+  const hooks = {}
+  /** @type {any[]} */
+  const queue = []
+  let disposed = 0
+  const reg = { dispose: async () => { disposed++ } }
+  const ctx = /** @type {import('./opencode-v2.js').V2Context} */ (/** @type {unknown} */ ({
+    app: { version: '2.2.7' },
+    location: { directory: '/repo', project: { directory: '/root' } },
+    tool: { transform: async (/** @type {any} */ edit) => { edit({ add: (/** @type {any} */ d) => tools.push(d) }); return reg } },
+    session: {
+      create: async (/** @type {unknown} */ input) => { sent.push(['create', input]); return { id: 'ses_1' } },
+      prompt: async (/** @type {unknown} */ input) => { sent.push(['prompt', input]) },
+      wait: async () => { sent.push(['wait']) },
+      context: async () => contexts.shift() ?? [],
+      hook: async (/** @type {string} */ name, /** @type {any} */ cb) => { hooks[name] = cb; return reg },
+    },
+    event: {
+      subscribe: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => (queue.length ? { done: false, value: queue.shift() } : { done: true, value: undefined }),
+          return: async () => ({ done: true, value: undefined }),
+        }),
+      }),
+    },
+  }))
+  return { ctx, sent, tools, hooks, queue, disposed: () => disposed }
+}
+
+test('a child session is created with its agent and model, prompted, and read once it has finished', async () => {
+  // The first read finds only the admitted prompt: `wait` can return before the loop starts.
+  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }, assistant('VERDICT: APPROVE')]])
+  /** @type {string[]} */
+  const named = []
+  const text = await v2Host(f.ctx, 0).runChild({
+    title: 'craft:rust-reviewer', agent: 'rust-reviewer', prompt: 'p',
+    model: { providerID: 'anthropic', modelID: 'claude-x' }, onSession: id => named.push(id),
+  })
+  assert.equal(text, 'VERDICT: APPROVE')
+  assert.deepEqual(named, ['ses_1'])
+  assert.deepEqual(f.sent, [
+    ['create', { title: 'craft:rust-reviewer', agent: 'rust-reviewer', model: { providerID: 'anthropic', id: 'claude-x' } }],
+    ['prompt', { sessionID: 'ses_1', text: 'p' }],
+    ['wait'], ['wait'],
+  ])
+})
+
+test('the default agent and model are left to the session', async () => {
+  const f = fakeCtx([[assistant('x')]])
+  await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p' })
+  assert.deepEqual(f.sent[0], ['create', { title: 't' }])
+})
+
+test('only a finished assistant turn is a reply', () => {
+  assert.equal(finishedReply([]), null)
+  assert.equal(finishedReply([{ type: 'user' }]), null)
+  assert.equal(finishedReply([{ type: 'assistant', content: [{ type: 'text', text: 'half' }] }]), null, 'still streaming')
+  assert.equal(finishedReply([{ type: 'assistant', time: { created: 1, completed: 2 } }]), '', 'finished, said nothing')
+  assert.equal(finishedReply([assistant(' a ')]), 'a')
+})
+
+test('a tool spec becomes a JSON Schema tool whose result is text content', async () => {
+  /** @type {unknown[]} */
+  const ran = []
+  const spec = {
+    name: 'probe', description: 'd', args: { base: { optional: true }, locator: { optional: false } },
+    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args) => { ran.push(args); return 'out' },
+  }
+  const def = v2Tool(v2Host(fakeCtx().ctx), spec)
+  assert.deepEqual(def.input, {
+    type: 'object', properties: { base: { type: 'string' }, locator: { type: 'string' } }, required: ['locator'], additionalProperties: false,
+  })
+  const result = await def.execute({ locator: 'x' }, { sessionID: 's', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
+  assert.deepEqual(result, { content: [{ type: 'text', text: 'out' }] })
+  assert.deepEqual(ran, [{ base: undefined, locator: 'x' }])
+})
+
+test('setup registers the tools, hooks the prompt, maps the events, and disposes all of it', async () => {
+  const f = fakeCtx()
+  /** @type {unknown[]} */
+  const seen = []
+  const work = {
+    childCreated: (/** @type {unknown[]} */ ...a) => { seen.push(['child', ...a]) },
+    compacted: async (/** @type {string} */ s) => { seen.push(['compacted', s]) },
+    message: async (/** @type {string} */ s, /** @type {string} */ p, /** @type {unknown} */ a, /** @type {(t: string) => boolean} */ deliver) => {
+      seen.push(['message', s, p, a, deliver('craft lines')])
+    },
+  }
+  f.queue.push(
+    { type: 'session.created', data: { sessionID: 'top' } },
+    { type: 'session.created', data: { sessionID: 'c', parentID: 'p', agent: 'general' } },
+    { type: 'session.compaction.ended', data: { sessionID: 'p' } },
+  )
+  const spec = { name: 'probe', description: 'd', args: {}, run: async () => '' }
+  const dispose = await v2Setup(f.ctx, [spec], work)
+  assert.deepEqual(f.tools.map(t => t.name), ['probe'])
+  const input = { sessionID: 'p', messageID: 'm', prompt: { text: 'review it' }, delivery: 'steer' }
+  await f.hooks['prompt']?.(input)
+  assert.equal(input.prompt.text, 'review it\n\ncraft lines', 'the lines are appended to the prompt itself')
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(seen, [['child', 'c', 'p', 'general'], ['compacted', 'p'], ['message', 'p', 'review it', undefined, true]])
+  await dispose()
+  assert.equal(f.disposed(), 2)
+})

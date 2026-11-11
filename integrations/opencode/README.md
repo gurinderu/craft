@@ -16,11 +16,17 @@ integrations/opencode/install.sh --global   # ~/.config/opencode
 Then restart opencode (or reopen the project) so it rescans `skills/`, `agents/`, `commands/`,
 and `plugins/`.
 
+### OpenCode 1.x and 2.x
+
+One plugin serves both lines: its default export carries a 1.x entry (`server`) and a 2.x entry
+(`setup`), and each runtime reads its own. Both were seen loading it — opencode 1.19.5 and 2.2.7.
+
 ### Plugin dependencies
 
-opencode auto-loads the plugin from `plugins/craft-rust` and Bun installs its `package.json`
-dependencies on startup. If your opencode version doesn't auto-install them, add
-`@opencode-ai/plugin` and `@opencode-ai/sdk` to your opencode tree's `package.json` and restart.
+opencode loads the plugin from `plugins/craft-rust.ts`, a link to `plugin/index.ts` (1.x loads only
+files from `plugins/`, not directories). opencode 2.x does not install a plugin
+directory's dependencies, so `install.sh` runs `npm ci --omit=dev` in `integrations/opencode/plugin`
+when they are missing; without npm, run it there yourself before starting opencode.
 
 ## Use
 
@@ -44,11 +50,13 @@ a model). Tune by task — strongest model + high effort where reasoning is heav
 
 ## Containment
 
-The plugin registers the two workflow tools and one narrow hook: craft's hook at the moment of work.
-Its `event` hook only remembers which sessions are subagents' and notes compactions; its
-`chat.message` hook only appends a short synthetic text part to a message asking for review work
-(findings, PR comments, a review), in a repo that declares its own agents or work rules, once per
-request kind (findings, review) per session — silent everywhere else, off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in
+The plugin registers the workflow tools and one narrow hook: craft's hook at the moment of work.
+It only remembers which sessions are subagents' and notes compactions, and adds a few short lines
+to a message asking for review work (findings, PR comments, a review), in a repo that declares its
+own agents or work rules, once per request kind (findings, review) per session. On 1.x the lines
+arrive as a synthetic part after the message (`chat.message`); 2.x has no such hook, so they are
+appended to the prompt's own text through the session `prompt` hook and read as part of the
+message. Silent everywhere else, off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in
 `AGENTS.md` / `CLAUDE.md`. Each firing appends one line to `~/.craft/hooks.jsonl`. No permission or
 tool-call interception. It talks only to the local opencode server, opens no ports, and makes no
 outbound calls. Installed project-scoped by default. The hook loads craft's `lib/` from the checkout
@@ -61,6 +69,9 @@ the plugin directory is linked from; if that fails, the hook is silent and the t
   still resolves them.
 - Workflow determinism rides on opencode's child-session API; the plugin retries sequentially and
   surfaces a clear error if a child session is stuck (opencode #8528 / #6573).
+- **On 2.x the child-session reply is read but not yet seen.** The plugin admits the prompt, waits for
+  the session to go idle and reads its last finished assistant message. Loading, tool registration and
+  a tool run were seen on opencode 2.2.7; a child session answered by a real model was not.
 - **No CLI-driven review.** The Claude Code `review` workflow (the driver of the `craft` binary's
   step-by-step review: scout-planned lens rounds until dry, verification) has no opencode driver. In `/rust-audit`
   the **review** dimension is a single-pass `rust-reviewer` agent — there is no per-crate review
