@@ -761,25 +761,13 @@ function tsStamp(d) {
 }
 
 /**
+ * The workspace the record describes, and how to probe it (host.ts's Workspace: shell.mjs on both runtimes).
  * @typedef {{
  *   worktree?: string | undefined,
  *   directory?: string | undefined,
- *   $: (strings: TemplateStringsArray, ...exprs: any[]) => { quiet(): Promise<{ stdout?: { toString(): string } | null | undefined }> },
+ *   sh: (cmd: string) => Promise<string>,
  * }} ShellCtx
  */
-
-/**
- * @param {ShellCtx} ctx
- * @param {string} cmd
- */
-async function sh(ctx, cmd) {
-  try {
-    const r = await ctx.$`bash -lc ${cmd}`.quiet()
-    return (r.stdout?.toString?.() ?? String(r.stdout ?? '')).trim()
-  } catch {
-    return ''
-  }
-}
 
 // The index line goes through the same lock the Claude Code delivery's craft-log-run takes for every
 // writer of index.jsonl (lib/index-lock.mjs, realm @nick/craft, node #401): both deliveries share one
@@ -805,9 +793,9 @@ export async function writeRecord(ctx, record) {
   try {
     const dir = runsDir()
     const ts = tsStamp(new Date())
-    const project = ctx.worktree || ctx.directory || (await sh(ctx, 'pwd'))
-    const commit = await sh(ctx, 'git rev-parse --short HEAD 2>/dev/null')
-    const dirty = (await sh(ctx, 'git status --porcelain 2>/dev/null')).length > 0
+    const project = ctx.worktree || ctx.directory || (await ctx.sh('pwd'))
+    const commit = await ctx.sh('git rev-parse --short HEAD 2>/dev/null')
+    const dirty = (await ctx.sh('git status --porcelain 2>/dev/null')).length > 0
     const full = { ...record, ts, project, commit, dirty }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, `${ts}-${full.kind}-${full.name}.json`), JSON.stringify(full, null, 2) + '\n')

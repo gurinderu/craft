@@ -50,13 +50,31 @@ done
 for f in "$SCRIPT_DIR"/agents/*.md;   do [ -e "$f" ] && link "$f" "$TARGET/agents/$(basename "$f")"; done
 for f in "$SCRIPT_DIR"/commands/*.md; do [ -e "$f" ] && link "$f" "$TARGET/commands/$(basename "$f")"; done
 
-# Plugin — symlink the whole directory as ONE plugin (opencode auto-loads it from plugins/).
-[ -d "$SCRIPT_DIR/plugin" ] && link "$SCRIPT_DIR/plugin" "$TARGET/plugins/craft-rust"
+# Plugin — ONE file link to its entry: opencode 1.x discovers only `plugins/*.{ts,js}` files (a directory link
+# is never loaded there), 2.x takes files and directories alike. An earlier install's directory link is
+# retired, so 2.x does not load the plugin twice.
+if [ -d "$SCRIPT_DIR/plugin" ]; then
+  old="$TARGET/plugins/craft-rust"
+  if [ -L "$old" ] && [ "$(readlink "$old")" = "$SCRIPT_DIR/plugin" ]; then rm "$old"; echo "  - $old (directory link replaced)"; fi
+  link "$SCRIPT_DIR/plugin/index.ts" "$TARGET/plugins/craft-rust.ts"
+fi
+
+# Plugin dependencies — opencode 2.x does not install a plugin directory's package.json (1.x did, through
+# Bun), so install the locked production closure here when it is missing. An existing tree is left alone:
+# a checkout that ran `npm ci` for development keeps its dev dependencies.
+if [ -d "$SCRIPT_DIR/plugin" ] && [ ! -d "$SCRIPT_DIR/plugin/node_modules/@opencode-ai/plugin" ]; then
+  if command -v npm >/dev/null 2>&1; then
+    echo "  installing the plugin's locked dependencies (npm ci --omit=dev)"
+    npm ci --prefix "$SCRIPT_DIR/plugin" --omit=dev --no-audit --no-fund
+  else
+    echo "  ! npm not found: run 'npm ci --omit=dev' in $SCRIPT_DIR/plugin before starting opencode" >&2
+  fi
+fi
 
 cat <<EOF
 
 Done.
   • Restart opencode (or reopen the project) so it rescans skills/agents/commands/plugins.
-  • If opencode does not auto-install the plugin's deps, add @opencode-ai/plugin and
-    @opencode-ai/sdk to "$TARGET/package.json" and restart. See integrations/opencode/README.md.
+  • The plugin's dependencies live in its own directory ($SCRIPT_DIR/plugin/node_modules);
+    see integrations/opencode/README.md.
 EOF

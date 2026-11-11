@@ -1,10 +1,12 @@
-// The OpenCode side of craft's hook at the moment of work: what it reads from OpenCode's hooks and writes back.
+// The OpenCode side of craft's hook at the moment of work: the core (work-hook.ts), driven through the 1.x
+// adapter's `chat.message` and `event` (host-v1.ts). The 2.x adapter's own mapping is in host-v2.test.mjs.
 import { afterAll, test } from 'vitest'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { workHooks } from './work-hook.ts'
+import { v1WorkHooks } from './host-v1.ts'
+import { workHook } from './work-hook.ts'
 
 /** @type {string[]} */
 const made = []
@@ -17,7 +19,7 @@ function setup(engine = new Set()) {
   fs.mkdirSync(path.join(root, '.claude', 'agents'), { recursive: true })
   fs.writeFileSync(path.join(root, '.claude', 'agents', 'dev.md'), '')
   const home = tmp()
-  const hooks = workHooks(root, engine, home, {})
+  const hooks = v1WorkHooks(workHook(root, engine, home, {}))
   // The fakes carry only the fields the hook reads.
   const message = /** @type {(input: any, output: any) => Promise<void>} */ (hooks['chat.message'])
   const event = /** @type {(input: any) => Promise<void>} */ (hooks.event)
