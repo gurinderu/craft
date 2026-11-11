@@ -1,6 +1,7 @@
 //! The pull request a detached `HEAD`'s chain came from: a fork's PR keys its chain on
 //! `<owner>:<head branch>`, which no local branch can be named, so it never joins a local branch's
-//! rounds; and a run asked to comment publishes on that PR, a given `pr=` winning.
+//! rounds; and a run asked to comment, or published after the fact, publishes on that PR, a given
+//! `pr=` winning.
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
@@ -116,4 +117,25 @@ fn a_given_pr_is_posted_on_whatever_names_the_chain() {
     commented(runs.path(), "r1", s, &post);
     let asked = calls(&keep.path().join("post"));
     assert!(asked.starts_with("pr view 1500 --json"), "{asked}");
+}
+
+#[test]
+fn a_detached_run_published_after_the_fact_posts_on_the_pr_that_named_its_chain() {
+    let (keep, runs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let repo = detached(runs.path());
+    let head = rev(repo.path(), "HEAD");
+    let list = json!([pr(1488, "main", &head)]).to_string();
+    let gh = pr_gh(&keep.path().join("gh"), &list, "");
+    let post = stand_in(&keep.path().join("post"), &head);
+    let s = begin(repo.path(), runs.path(), "r2", &gh, (None, false));
+    commented(runs.path(), "r2", s, &post);
+    assert_eq!(
+        calls(&keep.path().join("post")),
+        "",
+        "nothing posted while it ran"
+    );
+    let s = craft_review::publish::comment(&runs.path().join("r2"), None, &post).unwrap();
+    assert_eq!(s["prComments"]["posted"], json!(1), "{s}");
+    let asked = calls(&keep.path().join("post"));
+    assert!(asked.starts_with("pr view 1488 --json"), "{asked}");
 }

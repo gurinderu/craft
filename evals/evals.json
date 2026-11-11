@@ -400,5 +400,21 @@
       "Selects addressing-findings, not develop: the change already exists and only its findings are to be worked.",
       "Does not run the whole development cycle (roles, recall, full review, PR)."
     ]
+  },
+  {
+    "skills": ["codex-review"],
+    "query": "(In a Codex CLI session with the craft plugin) Review this branch against main and tell me whether it's mergeable.",
+    "expected_behavior": [
+      "Selects codex-review and runs its one command, node <plugin root>/lib/codex-review.mjs, in this session outside the sandbox — not a subagent, not a review by hand beside it.",
+      "Relays the printed ## Verdict block and ## Findings list, and reads the report file it names for details."
+    ]
+  },
+  {
+    "skills": ["develop"],
+    "query": "(In a Claude Code session) Review my branch and loop on the findings until it's green, then open the PR.",
+    "expected_behavior": [
+      "Does not select codex-review: in Claude Code the review is the craft:review workflow, here inside develop's loop.",
+      "Runs the review through the Workflow tool, not through node lib/codex-review.mjs."
+    ]
   }
 ]
