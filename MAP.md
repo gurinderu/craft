@@ -283,4 +283,6 @@ HTTPS), which each release rebuilds from this directory with the links dereferen
 so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` holds the pi package's `craft-review` skill: the repository is a pi
 package (`pi install git:github.com/gurinderu/craft`) whose manifest, the root `package.json`'s `pi` key, loads only that
-skill, which runs the review's pi driver, `lib/pi-review.mjs`.
+skill, which runs the review's pi driver, `lib/pi-review.mjs` — new and not yet observed running in a real pi session (its
+loop is tested against fake binaries only); it and the Codex driver are hosts of one process-per-task runner,
+`lib/task-process-*.mjs`.

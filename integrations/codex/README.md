@@ -15,7 +15,7 @@ root, so the commands reach `lib/` there.
 The review has a Codex route, new and not yet observed running in a real Codex session (its loop is tested
 against fake `craft` and `codex` binaries only): its own driver, `lib/codex-review.mjs`, which the `codex-review` skill has the
 session run: a Node script over the `craft` binary's step protocol, sharing the Claude Code driver's command lines,
-step reader and answer (`lib/cli-review-*.mjs`), each task its own `codex exec --ephemeral -s read-only
+step reader and answer (`lib/cli-review-*.mjs`) and the process-per-task runner it shares with the pi driver (`lib/task-process-*.mjs`), each task its own `codex exec --ephemeral -s read-only
 --output-schema <schema> -o <answer> -C <repo> -`, the prompt on stdin. Codex has no agent types, so a task naming a
 craft agent runs with that agent's prompt body from `integrations/claude-code/agents/` (a real directory in the
 plugin root) before its own prompt; and Codex sends `--output-schema` in the API's strict mode, so a task schema with
