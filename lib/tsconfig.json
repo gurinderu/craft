@@ -34,6 +34,7 @@
   "include": [
     "**/*.mjs",
     "content-modules.d.ts",
+    "pi-tui.d.ts",
     "../integrations/opencode/plugin/run-record.mjs",
     "../.dependency-cruiser.mjs"
   ],
