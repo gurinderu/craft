@@ -32,7 +32,8 @@ when they are missing; without npm, run it there yourself before starting openco
 
 - **Skills** — auto-discovered; opencode's `skill` tool lists all of craft's skills and routes by description.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`
-  are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
+  and `review-task` are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch
+  them. `review-task` exists only for `/review`'s tasks.
 - **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/review [key=value ...]`.
 
 ## Review
@@ -44,10 +45,14 @@ binary named, and hands the batch back until the binary is done. The answer is t
 `## Verdict` block. This route is new: it is covered by tests against a fake binary and fake
 sessions, and has not yet been seen in a real OpenCode session.
 
-- A task that names `rust-reviewer` runs on the hidden `rust-reviewer` agent; any other task runs
-  on the session's default agent, with the matching Claude Code agent's prompt (or the reviewed
-  repository's own `.claude/agents/<name>.md`) before the task.
-- Models: each task runs on the session's model unless `opencodeModels=` maps the binary's tiers —
+- Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
+  every other on the hidden `review-task` agent (both have write and edit off), with the matching
+  Claude Code agent's prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the
+  task. A task still runs read-only commands (git, grep, the build's own checks) through bash.
+- Each task's child session nests under the session that called `/review`.
+- Models: each task runs on the calling session's model — the one that session recorded: on 1.x its
+  newest message's, on 2.x the model set on the session; when it recorded none, OpenCode's default —
+  unless `opencodeModels=` maps the binary's tiers —
   one `provider/model` for all, or `opus=provider/model,haiku=provider/model` (env
   `CRAFT_OPENCODE_MODELS`). `concurrency=<n>` caps the child sessions at once (default 4, env
   `CRAFT_OPENCODE_CONCURRENCY`).
@@ -76,9 +81,9 @@ The plugin registers the workflow tools and one narrow hook: craft's hook at the
 It only remembers which sessions are subagents' and notes compactions, and adds a few short lines
 to a message asking for review work (findings, PR comments, a review), in a repo that declares its
 own agents or work rules, once per request kind (findings, review) per session. On 1.x the lines
-arrive as a synthetic part after the message (`chat.message`); 2.x has no such hook, so they are
-appended to the prompt's own text through the session `prompt` hook and read as part of the
-message. Silent everywhere else, off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in
+arrive as a synthetic part after the message (`chat.message`). 2.x has no such hook, so they are
+appended to the prompt's own text through the session `prompt` hook: **on 2.x the lines appear
+inside the user's message text**, as if the user had written them, and stay in the history. Silent everywhere else, off with `CRAFT_ROLE_HOOK=0` or a `craft-role-hook: off` line in
 `AGENTS.md` / `CLAUDE.md`. Each firing appends one line to `~/.craft/hooks.jsonl`. No permission or
 tool-call interception. It talks only to the local opencode server, opens no ports, and makes no
 outbound calls. Installed project-scoped by default. The hook loads craft's `lib/` from the checkout

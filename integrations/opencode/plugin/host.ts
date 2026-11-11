@@ -17,6 +17,8 @@ export interface ChildRequest {
   agent: string
   prompt: string
   model?: ModelRef
+  // The session the child nests under (OpenCode's parentID): the one that called the tool, when known.
+  parentID?: string
   // Called with the child session's id as soon as it exists, before the prompt runs.
   onSession?: (id: string) => void
 }
@@ -33,6 +35,13 @@ export interface Host extends Workspace {
   // Run one child session to its end and return its final text ("" when it said nothing). Throws when the
   // runtime refuses the session; a hang is the caller's to bound (orchestrator.ts).
   runChild(req: ChildRequest): Promise<string>
+  // The model a session runs on, as the runtime records it; undefined when it records none (the runtime's default).
+  callerModel(sessionID: string): Promise<ModelRef | undefined>
+}
+
+// The tool call as the runtime hands it over: the session that called the tool.
+export interface ToolCall {
+  sessionID?: string
 }
 
 // A tool both runtimes register. Every argument is a string; each side builds its own schema from `args`.
@@ -40,7 +49,7 @@ export interface ToolSpec {
   name: string
   description: string
   args: Record<string, { optional: boolean; description?: string }>
-  run(host: Host, args: Record<string, string | undefined>): Promise<string>
+  run(host: Host, args: Record<string, string | undefined>, call: ToolCall): Promise<string>
 }
 
 // craft's hook at the moment of work, as the runtimes feed it (work-hook.ts). `deliver` places the lines the
