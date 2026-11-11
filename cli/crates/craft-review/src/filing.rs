@@ -19,6 +19,7 @@ mod root_tests;
 mod said;
 #[cfg(test)]
 mod tests;
+mod unfinished;
 mod wire;
 mod write;
 
@@ -33,6 +34,7 @@ pub use resume::{Host, resuming};
 pub use root::{adopt, found_root};
 use said::outcome;
 pub use said::{summary, with_filing};
+pub use unfinished::unfinished;
 pub use wire::{Call, WriteError, Writer};
 
 /// Opens the run's telemetry after `start` printed `step`: the start checkpoint, and the record when
