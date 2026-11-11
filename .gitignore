@@ -8,3 +8,13 @@ reports/mutation/
 stryker-setup-*.js
 .vitest/
 cli/target/
+.worktrees/
+.claude/agents/reader.md
+.claude/agents/recaller.md
+.claude/agents/worker.md
+.claude/agents/designer.md
+.claude/agents/weaver.md
+.claude/agents/ingester.md
+.claude/agents/reviewer.md
+.claude/agents/verifier.md
+.claude/agents/deputy-chief-of-staff.md
