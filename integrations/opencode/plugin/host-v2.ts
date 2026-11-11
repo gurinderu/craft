@@ -9,7 +9,7 @@ import { shellIn } from "./shell.mjs"
 // How long to wait between reads of a child session that is not yet done.
 const POLL_MS = 500
 
-// `replyMs`: each child session's own reply deadline (host-v2-reply.ts), clamped to the caller's `deadlineMs`.
+// `replyMs`: each child session's own idle deadline (host-v2-reply.ts), clamped to the caller's `deadlineMs`.
 export function v2Host(ctx: V2Context, pollMs = POLL_MS, replyMs = replyDeadlineMs(process.env)): Host {
   const directory = ctx.location.directory
   return {
