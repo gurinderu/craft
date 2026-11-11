@@ -47,7 +47,7 @@ enum ReviewCommand {
     /// Run one probe agent end to end through a backend, with the progress view.
     Probe(ReviewArgs),
     /// Run the whole review in one command: the binary drives its steps itself, each task run as
-    /// its own process of the host's CLI (`codex exec`, `pi -p`), and prints the verdict.
+    /// its own process of the host's CLI (`codex exec`, `pi -p`, `opencode run`), and prints the verdict.
     Run(Box<run::RunArgs>),
 }
 

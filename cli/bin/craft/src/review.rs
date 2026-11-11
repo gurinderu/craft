@@ -121,6 +121,7 @@ async fn run_one<B: AgentBackend + 'static>(
 
     let request = AgentRequest {
         label: spec.id.clone(),
+        agent: None,
         prompt: spec.prompt,
         model: spec.model,
         schema: spec.schema,

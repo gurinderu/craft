@@ -1,7 +1,7 @@
-//! The host CLI a review's tasks run in (realm @nick/craft, nodes #491, #495, #499): Codex or pi —
-//! how a task becomes its agent's request, what the host says when no account is logged in, and how
-//! to log in. Each host's own command line is its backend's (`craft_agent::codex`,
-//! `craft_agent::pi`).
+//! The host CLI a review's tasks run in (realm @nick/craft, nodes #491, #495, #499, #502): Codex,
+//! pi or opencode — how a task becomes its agent's request, what the host says when no account is
+//! logged in, and how to log in. Each host's own command line is its backend's
+//! (`craft_agent::codex`, `craft_agent::pi`, `craft_agent::opencode`).
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use super::HostKind;
 use super::models::ModelTable;
+use super::opencode::placement;
 use super::task::{Task, headed, skill_line, spell_root};
 
 /// What Codex says with no account logged in (observed with codex-cli 0.167.0).
@@ -30,6 +31,8 @@ pub(crate) struct Host {
     pub(crate) models: ModelTable,
     /// The host's CLI.
     pub(crate) command: PathBuf,
+    /// The agents opencode lists, `None` when unknown or for another host.
+    pub(crate) agents: Option<Vec<String>>,
 }
 
 impl Host {
@@ -38,6 +41,7 @@ impl Host {
         match self.kind {
             HostKind::Codex => "Codex",
             HostKind::Pi => "pi",
+            HostKind::OpenCode => "OpenCode",
         }
     }
 
@@ -46,6 +50,9 @@ impl Host {
         let (re, how) = match self.kind {
             HostKind::Codex => (&*CODEX_LOGIN, "run `codex login`"),
             HostKind::Pi => (&*PI_LOGIN, "run `pi` and `/login`"),
+            // What opencode says with no provider logged in is not observed (lib/opencode-review*.mjs
+            // knows nothing of it either): such a failure is an ordinary one.
+            HostKind::OpenCode => return None,
         };
         let found = re.as_ref()?.find(said)?.as_str().trim();
         let name = self.name();
@@ -66,19 +73,26 @@ impl Host {
                 .map_err(|e| format!("{} could not be read: {e}", p.display()))
         };
         let prompt = read(&task.prompt_file)?;
-        let (prompt, schema) = match self.kind {
+        let (prompt, schema, agent) = match self.kind {
             HostKind::Codex => {
                 let schema: Value = serde_json::from_str(&read(&task.schema_file)?)
                     .map_err(|e| format!("its schema is not JSON: {e}"))?;
-                (codex_input(body, &prompt, root), Some(schema))
+                (codex_input(body, &prompt, root), Some(schema), None)
             }
             HostKind::Pi => {
                 let file = pi_prompt_file(task, &prompt, root)?;
-                (pi_message(body, task, &file, root), None)
+                (pi_message(body, task, &file, root), None, None)
+            }
+            HostKind::OpenCode => {
+                let place = placement(task, self.agents.as_deref());
+                let body = if place.own { "" } else { body };
+                let file = pi_prompt_file(task, &prompt, root)?;
+                (pi_message(body, task, &file, root), None, Some(place.agent))
             }
         };
         Ok(AgentRequest {
             label: task.id.clone(),
+            agent,
             prompt,
             model: self.models.get(&task.model).cloned(),
             schema,
@@ -99,7 +113,7 @@ pub(crate) fn codex_input(body: &str, prompt: &str, root: &Path) -> String {
     spell_root(&headed(body, &task), root)
 }
 
-/// The prompt file a pi task reads: its own, or — where it names craft's files under
+/// The prompt file a pi or opencode task reads: its own, or — where it names craft's files under
 /// `${CLAUDE_PLUGIN_ROOT}`, which pi's read tool does not expand — a copy beside it with the root
 /// written in.
 fn pi_prompt_file(task: &Task, prompt: &str, root: &Path) -> Result<PathBuf, String> {
@@ -113,7 +127,7 @@ fn pi_prompt_file(task: &Task, prompt: &str, root: &Path) -> Result<PathBuf, Str
     Ok(file)
 }
 
-/// The message a pi task is given: the agent's body, if any, then the task, which reads its prompt
+/// The message a pi or opencode task is given: the agent's body, if any, then the task, which reads its prompt
 /// file and prints its answer in a `craft-answer` block, then where craft's skills are.
 pub(crate) fn pi_message(body: &str, task: &Task, prompt_file: &Path, root: &Path) -> String {
     let what = format!(

@@ -16,9 +16,12 @@ use craft_agent::runner::run_all;
 use craft_agent::{AgentBackend, AgentError, AgentReply, AgentRequest};
 
 use super::deadline::deadline_of;
+use super::events::Event;
 use super::host::Host;
 use super::outcome::{Outcome, outcome_of};
-use super::task::{Task, rubric_of};
+use super::prepare::{Prepared, prepare};
+use super::task::Task;
+use super::watch::{Named, watch};
 
 /// What a round runs with.
 pub(crate) struct RoundCtx<'a> {
@@ -29,6 +32,8 @@ pub(crate) struct RoundCtx<'a> {
     /// Every task's deadline, in place of its kind's (tests).
     pub(crate) deadline: Option<Duration>,
     pub(crate) log: &'a dyn Fn(&str),
+    /// Where each event of the round goes (`--events json`).
+    pub(crate) emit: &'a dyn Fn(Event),
 }
 
 /// What came of a round.
@@ -83,27 +88,14 @@ pub(crate) async fn run_round<B: AgentBackend + 'static>(
     round: usize,
     ctx: &RoundCtx<'_>,
 ) -> RoundResult {
-    let mut outcomes: BTreeMap<usize, Outcome> = BTreeMap::new();
-    let mut requests = Vec::new();
-    let mut ran = Vec::new();
-    let mut missing: BTreeMap<String, u64> = BTreeMap::new();
-    for (i, task) in tasks.iter().enumerate() {
-        // A stale answer from an earlier attempt is never read as this one's.
-        let _gone = std::fs::remove_file(&task.answer_file);
-        let rubric = rubric_of(task, ctx.root, ctx.repo);
-        if !rubric.missing().is_empty() {
-            *missing.entry(rubric.missing().to_owned()).or_default() += 1;
-        }
-        match ctx.host.request(task, &rubric.body, (ctx.root, ctx.repo)) {
-            Ok(r) => {
-                requests.push(r);
-                ran.push(i);
-            }
-            Err(why) => {
-                outcomes.insert(i, Outcome::Unanswered { why, said: None });
-            }
-        }
-    }
+    let prepared = prepare(tasks, ctx);
+    let notes = prepared.notes(round, ctx.host.name());
+    let Prepared {
+        requests,
+        ran,
+        mut outcomes,
+        ..
+    } = prepared;
     let deadlines = tasks
         .iter()
         .map(|t| {
@@ -119,15 +111,25 @@ pub(crate) async fn run_round<B: AgentBackend + 'static>(
         deadlines,
         stopped: AtomicBool::new(false),
     });
-    let (events, _unwatched) = tokio::sync::mpsc::unbounded_channel();
-    let replies = run_all(gated, requests, ctx.concurrency, events).await;
+    let named = Named::of(&requests, &ran, tasks);
+    let (events, heard) = tokio::sync::mpsc::unbounded_channel();
+    let (replies, ()) = tokio::join!(
+        run_all(gated, requests, ctx.concurrency, events),
+        watch(heard, &named, ctx.emit)
+    );
     for (i, reply) in ran.into_iter().zip(replies) {
         if let Some(task) = tasks.get(i) {
             outcomes.insert(i, outcome_of(task, reply, ctx.host));
         }
     }
-    let notes = missing.into_iter().map(|(agent, n)| format!("round {round}: {n} task(s) named `{agent}`, whose prompt body the {} driver did not find, and ran on the bare task prompt — this run is weaker than a normal one, not broken.", ctx.host.name())).collect();
-    gather(tasks, &outcomes, notes, ctx.log)
+    let r = gather(tasks, &outcomes, notes, ctx.log);
+    for note in &r.degraded {
+        (ctx.emit)(Event::Degraded { note: note.clone() });
+    }
+    if let Some(text) = &r.limit {
+        (ctx.emit)(Event::UsageLimit { text: text.clone() });
+    }
+    r
 }
 
 /// The round's result from each task's outcome, the tasks never started left out.

@@ -105,6 +105,7 @@ mod tests {
     fn argv_isolates_the_process_and_ends_with_the_prompt() {
         let request = AgentRequest {
             label: "t".into(),
+            agent: None,
             prompt: "--do this".into(),
             model: Some("openai-codex/gpt-6-luna".into()),
             schema: None,

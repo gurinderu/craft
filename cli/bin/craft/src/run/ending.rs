@@ -27,6 +27,10 @@ pub(crate) enum Ending {
 pub(crate) struct Answer {
     pub(crate) text: String,
     pub(crate) finished: bool,
+    /// The finished step, when the binary finished the run.
+    pub(crate) step: Option<Value>,
+    /// The run directory, once the run had one.
+    pub(crate) run: Option<String>,
 }
 
 /// `answer`, then each note that says something.
@@ -54,6 +58,8 @@ fn publish_after<P: Protocol>(d: &Driver<'_, P>, run: &Path) -> Answer {
     let stopped = |why: String| Answer {
         text: stopped_answer(&why),
         finished: false,
+        step: None,
+        run: Some(run.display().to_string()),
     };
     match d.proto.comment(run) {
         Err(e) => stopped(format!(
@@ -68,6 +74,8 @@ fn publish_after<P: Protocol>(d: &Driver<'_, P>, run: &Path) -> Answer {
             Answer {
                 text: with_notes(&finished_answer(&step, &again), &[r.lost.section()]),
                 finished: true,
+                run: Some(run.display().to_string()),
+                step: Some(step),
             }
         }
     }
@@ -75,6 +83,7 @@ fn publish_after<P: Protocol>(d: &Driver<'_, P>, run: &Path) -> Answer {
 
 fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Answer {
     let log = |l: &str| d.log(l);
+    let run = r.run.as_ref().map(|p| p.display().to_string());
     match ending {
         Ending::Finished(step) => {
             let cut = cut_short(text(&step, "verdict"));
@@ -88,6 +97,8 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
             Answer {
                 text: with_notes(&finished_answer(&step, &again), &[said, notes]),
                 finished: !cut,
+                step: Some(step),
+                run,
             }
         }
         Ending::Unrecorded(why) => {
@@ -96,6 +107,8 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
             Answer {
                 text: with_notes(&answer, &[said_section(&r.said), r.lost.section()]),
                 finished: false,
+                step: None,
+                run,
             }
         }
         Ending::Stopped(why) => {
@@ -112,6 +125,8 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
                     &[said_section(&r.said), r.lost.section()],
                 ),
                 finished: false,
+                step: None,
+                run,
             }
         }
     }

@@ -105,6 +105,7 @@ mod tests {
     fn request() -> AgentRequest {
         AgentRequest {
             label: "probe".into(),
+            agent: None,
             prompt: "hi".into(),
             model: Some("haiku".into()),
             schema: Some(json!({"type": "object"})),
