@@ -4,6 +4,7 @@
 //! (node #89). There the chain takes the head branch of the pull request `HEAD` heads, so a run on
 //! the branch and a run in a detached worktree of its PR build on each other.
 //! A fork's PR keys it on `<owner>:<head branch>` instead ([`pr`]), so it joins no local branch.
+//! A pull request given (`pr=`) is checked first: `HEAD` must be its head ([`head`]).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -12,6 +13,7 @@ use crate::gate::runner::Runner;
 use crate::git;
 use crate::publish::PostSetup;
 
+mod head;
 mod pr;
 
 use pr::{Named, given, heading};
@@ -19,8 +21,9 @@ use pr::{Named, given, heading};
 /// How long asking gh for the pull request may take: the run waits for it before its first task.
 const BUDGET: Duration = Duration::from_secs(20);
 
-/// What gh is asked on a detached `HEAD`: the pull request given (`pr`), else the open one whose
-/// head is `HEAD`; `gh` `None`, it is not asked. Its output is kept in `dir`.
+/// What gh is asked: the pull request given (`pr`), whose head `HEAD` must be, else, on a detached
+/// `HEAD`, the open one whose head is `HEAD`; `gh` `None`, it is not asked. Its output is kept in
+/// `dir`.
 #[derive(Debug, Clone)]
 pub struct Lookup<'a> {
     pub pr: Option<u64>,
@@ -30,46 +33,93 @@ pub struct Lookup<'a> {
 
 /// The chain's branch, and where it came from or why there is none: `name` with `from` when a
 /// pull request named it, `None` with `why` when nothing did; neither said for a checked-out one.
-/// `pr` is the pull request under review: the one given, else the one that named `name`.
+/// `pr` is the pull request under review: the one given, else the one that named `name`. `note`
+/// says a given PR's head went unchecked, gh asked but not telling.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ChainBranch {
     pub name: Option<String>,
     pub from: Option<String>,
     pub why: Option<String>,
     pub pr: Option<u64>,
+    pub note: Option<String>,
 }
 
 /// The branch `cwd`'s run is chained on.
-#[must_use]
-pub fn resolve(cwd: &Path, lookup: Lookup<'_>) -> ChainBranch {
-    if let Some(name) = git::branch(cwd) {
-        return ChainBranch {
-            name: Some(name),
-            pr: lookup.pr,
+///
+/// # Errors
+/// The refusal, when a pull request is given and gh names it a head other than `HEAD`
+/// (realm @nick/craft, node #468).
+pub fn resolve(cwd: &Path, lookup: Lookup<'_>) -> Result<ChainBranch, String> {
+    let branch = git::branch(cwd);
+    if lookup.pr.is_none() && branch.is_some() {
+        return Ok(ChainBranch {
+            name: branch,
             ..ChainBranch::default()
-        };
+        });
     }
-    let found = match (lookup.gh, git::git(cwd, &["rev-parse", "HEAD"])) {
-        (None, _) => Err("gh was not asked which pull request this HEAD heads".to_owned()),
-        (_, Err(e)) => Err(format!("git could not name HEAD: {e}")),
-        (Some(setup), Ok(head)) => {
-            let runner = Runner::new(setup.budget.min(BUDGET), setup.path.clone(), lookup.dir);
-            match lookup.pr {
-                Some(n) => given(&runner, cwd, n),
-                None => heading(&runner, cwd, head.trim()),
-            }
+    let found = ask(cwd, &lookup)?;
+    let unchecked = lookup.pr.filter(|_| lookup.gh.is_some());
+    Ok(chained(branch, lookup.pr, unchecked, found))
+}
+
+/// What gh says of the pull request: the one given, refused when its head is not `HEAD`, else the
+/// one `HEAD` heads; the inner `Err` says why none was named.
+fn ask(cwd: &Path, lookup: &Lookup<'_>) -> Result<Result<Named, String>, String> {
+    let (setup, head) = match (lookup.gh, git::git(cwd, &["rev-parse", "HEAD"])) {
+        (None, _) => {
+            return Ok(Err(
+                "gh was not asked which pull request this HEAD heads".to_owned()
+            ));
         }
+        (_, Err(e)) => return Ok(Err(format!("git could not name HEAD: {e}"))),
+        (Some(setup), Ok(head)) => (setup, head.trim().to_owned()),
     };
-    match found {
-        Ok(Named { name, from, pr }) => ChainBranch {
+    let runner = Runner::new(
+        setup.budget.min(BUDGET),
+        setup.path.clone(),
+        lookup.dir.clone(),
+    );
+    let Some(n) = lookup.pr else {
+        return Ok(heading(&runner, cwd, &head));
+    };
+    match given(&runner, cwd, n) {
+        Ok(named) if !named.head.is_empty() && named.head != head => {
+            Err(head::mismatch(cwd, n, &named.head, &head))
+        }
+        found => Ok(found),
+    }
+}
+
+/// The chain `found` names: the checked-out `branch` whatever gh said, else the PR's branch, else
+/// none and why; a given PR (`unchecked`, gh asked) gh could not tell of is noted.
+fn chained(
+    branch: Option<String>,
+    pr: Option<u64>,
+    unchecked: Option<u64>,
+    found: Result<Named, String>,
+) -> ChainBranch {
+    let note = |why: &str| {
+        unchecked.map(|n| {
+            format!("pr={n}: PR #{n}'s head was not checked against HEAD, so this checkout was reviewed as it is: {why}")
+        })
+    };
+    match (branch, found) {
+        (Some(name), found) => ChainBranch {
+            name: Some(name),
+            pr,
+            note: found.err().and_then(|why| note(&why)),
+            ..ChainBranch::default()
+        },
+        (None, Ok(Named { name, from, pr, .. })) => ChainBranch {
             name: Some(name),
             from: Some(from),
-            why: None,
             pr: Some(pr),
+            ..ChainBranch::default()
         },
-        Err(why) => ChainBranch {
+        (None, Err(why)) => ChainBranch {
+            note: note(&why),
             why: Some(why),
-            pr: lookup.pr,
+            pr,
             ..ChainBranch::default()
         },
     }

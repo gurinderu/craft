@@ -8,18 +8,20 @@ use serde_json::Value;
 use crate::gate::runner::Runner;
 use crate::gh::gh;
 
-/// What a pull request names the chain: its branch, where that came from, and its number.
+/// What a pull request names the chain: its branch, where that came from, its number, and its
+/// head commit as gh names it (empty when gh named none).
 pub(super) struct Named {
     pub(super) name: String,
     pub(super) from: String,
     pub(super) pr: u64,
+    pub(super) head: String,
 }
 
 /// The fields gh is asked for a pull request.
 const FIELDS: &str = "number,headRefName,headRefOid,isCrossRepository,headRepositoryOwner";
 
-/// The head branch of pull request `n`, given (`pr`): it names the chain whatever its head is now,
-/// as the ancestry check keeps a round of a rewritten history out of it.
+/// The head branch and head commit of pull request `n`, given (`pr`): the branch names a detached
+/// `HEAD`'s chain, the commit is what `HEAD` must be ([`super::head`]).
 pub(super) fn given(runner: &Runner, cwd: &Path, n: u64) -> Result<Named, String> {
     let v = ask(
         runner,
@@ -89,7 +91,17 @@ fn named(pr: &Value, how: &str) -> Result<Named, String> {
         head.to_owned()
     };
     let from = format!("chain branch `{name}` from PR #{n} ({how})");
-    Ok(Named { name, from, pr: n })
+    let oid = pr
+        .get("headRefOid")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    Ok(Named {
+        name,
+        from,
+        pr: n,
+        head: oid,
+    })
 }
 
 fn number(pr: &Value) -> u64 {
