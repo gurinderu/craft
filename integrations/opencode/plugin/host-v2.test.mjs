@@ -2,7 +2,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
-import { TOOLS } from './tools.ts'
+import { onV2, TOOLS } from './tools.ts'
 
 const assistant = (/** @type {string} */ text) => ({ type: 'assistant', finish: 'stop', content: [{ type: 'reasoning', text: 'hm' }, { type: 'text', text }] })
 
@@ -141,11 +141,21 @@ test('a deadline interrupts the session and stops the polling; the agents are li
   assert.deepEqual([...await v2Host(ctx, 0).agents() ?? []], ['build', 'review-task'])
 })
 
-test('the review tool on a 2.x without review-task refuses up front and opens no session', async () => {
+test('the review on the 2.x entry refuses up front and opens no session', async () => {
   const f = fakeCtx()
-  f.ctx.agent.list = /** @type {any} */ (async () => ({ location: { directory: '/repo' }, data: [{ id: 'build' }, { id: 'rust-reviewer' }] }))
-  const review = TOOLS.find(t => t.name === 'review')
-  const answer = await review?.run(v2Host(f.ctx), {}, { sessionID: 'ses_set' })
-  assert.match(String(answer), /INCOMPLETE — the craft OpenCode agents are not installed or are out of date: rerun integrations\/opencode\/install\.sh/)
+  const work = { childCreated: () => {}, compacted: async () => {}, message: async () => {} }
+  await v2Setup(f.ctx, onV2(TOOLS), work)
+  const review = f.tools.find(t => t.name === 'review')
+  const out = await review.execute({}, { sessionID: 'ses_set', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
+  assert.match(out.content[0].text, /INCOMPLETE — craft's review does not yet work in OpenCode 2\.x: its child sessions never answered in testing \(craft 0\.50\.0, OpenCode 2\.2\.7\)\. Use OpenCode 1\.x, Claude Code, Codex or pi for now; the next craft release moves OpenCode onto a different route\. Nothing ran\./)
   assert.equal(f.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
+  assert.deepEqual(f.tools.map(t => t.name), TOOLS.map(t => t.name), 'rust-audit and triage-findings are registered as they are')
+})
+
+test('a wait that never returns does not hold the polling past the abort', async () => {
+  const f = fakeCtx()
+  const stop = new AbortController()
+  f.ctx.session.wait = () => { setTimeout(() => stop.abort(), 5); return new Promise(() => {}) }
+  await assert.rejects(v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
+  assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
 })
