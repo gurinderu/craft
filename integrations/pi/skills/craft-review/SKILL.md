@@ -16,6 +16,12 @@ Run it **once, in this session**, with the bash tool, and relay what it prints o
 `## Verdict` block, the report's path and the `## Findings` list — then read the report file it
 names for the details. Do not review the diff yourself beside it.
 
+This route is new and not yet observed running in a real pi session. If the command cannot run
+here, or fails without a `## Verdict` block, say so plainly and review the diff yourself instead:
+the checklist in `<package root>/skills/rust-review/SKILL.md` (Rust) or
+`<package root>/skills/nix-review/SKILL.md` (Nix), otherwise read the diff for defects, and report
+the findings by severity with file:line.
+
 How to run it:
 - It runs long (minutes to an hour on a large diff): give the bash call no timeout, or the
   longest one you can.
