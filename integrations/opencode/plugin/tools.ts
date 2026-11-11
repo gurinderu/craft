@@ -13,7 +13,8 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 
 // The review is the craft binary's own driver with its opencode backend, run through the plugin's bin/craft
 // (lib/craft-review-run.mjs; realm @nick/craft, nodes #499, #503): each task an `opencode run` on craft's read-only
-// agents, every tier on the calling session's model unless the flags name `--models`. lib/ is loaded from the
+// agents, every tier on the calling session's model unless the flags name `--models` or the environment
+// `CRAFT_OPENCODE_MODELS`, which the binary reads itself. lib/ is loaded from the
 // checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin copy without
 // lib/ keeps its other tools.
 const hasModels = (words: string[]) => words.some((w) => w === "--models" || w.startsWith("--models="))
@@ -21,7 +22,8 @@ const hasModels = (words: string[]) => words.some((w) => w === "--models" || w.s
 async function runReview(host: Host, args: string, call: ToolCall): Promise<ToolAnswer> {
   const review = await import("../../../lib/craft-review-run.mjs")
   const words = review.flagWords(args)
-  const model = hasModels(words) || !call.sessionID ? undefined : await host.callerModel(call.sessionID).catch(() => undefined)
+  const mapped = hasModels(words) || Boolean(process.env["CRAFT_OPENCODE_MODELS"])
+  const model = mapped || !call.sessionID ? undefined : await host.callerModel(call.sessionID).catch(() => undefined)
   const outcome = await review.runReview({
     backend: "opencode",
     args: model ? [...words, "--models", `${model.providerID}/${model.modelID}`] : words,

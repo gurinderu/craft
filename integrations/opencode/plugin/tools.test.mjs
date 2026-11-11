@@ -18,10 +18,12 @@ function fakeHost(model) {
   }
 }
 
-const saved = process.env['CRAFT_BIN']
+const saved = { bin: process.env['CRAFT_BIN'], models: process.env['CRAFT_OPENCODE_MODELS'] }
 afterEach(() => {
-  if (saved === undefined) delete process.env['CRAFT_BIN']
-  else process.env['CRAFT_BIN'] = saved
+  if (saved.bin === undefined) delete process.env['CRAFT_BIN']
+  else process.env['CRAFT_BIN'] = saved.bin
+  if (saved.models === undefined) delete process.env['CRAFT_OPENCODE_MODELS']
+  else process.env['CRAFT_OPENCODE_MODELS'] = saved.models
 })
 
 /** A fake binary that keeps its argv beside itself and prints a run's events and answer. @returns {string} its argv file */
@@ -52,6 +54,14 @@ test('flags that name the models keep them, and a call with no session runs on o
   assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --models=a/b')
   await review?.run(fakeHost({ providerID: 'p', modelID: 'm' }), {}, {})
   assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json')
+})
+
+test('CRAFT_OPENCODE_MODELS keeps the session model off the flags: the binary maps the tiers from it', async () => {
+  const argv = fakeBinary()
+  process.env['CRAFT_OPENCODE_MODELS'] = 'a/b'
+  const review = TOOLS.find(t => t.name === 'review')
+  await review?.run(fakeHost({ providerID: 'p', modelID: 'm' }), { args: '--base main' }, { sessionID: 'ses_caller' })
+  assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main')
 })
 
 test('the plugin offers the review beside the audit and the triage', () => {
