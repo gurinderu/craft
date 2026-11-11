@@ -1,7 +1,7 @@
 // craft-rust opencode plugin — one module for both OpenCode runtimes. Its default export carries both entries:
 //   • `server(input)` — 1.x reads `{id, server}` (observed on opencode 1.19.5) and gets the 1.x hooks (host-v1.ts)
 //   • `setup(ctx)`    — 2.x reads `{id, setup}` (observed on opencode 2.2.7, which ignores `server`) and gets the
-//                       same tools (each refusing up front there: tools.ts, onV2) and hook through ctx.tool /
+//                       same tools (the audit and the triage refusing up front there: tools.ts, onV2) and hook through ctx.tool /
 //                       ctx.session / ctx.event (host-v2.ts)
 // CONTAINED:
 //   • registers craft's workflow tools (tools.ts)

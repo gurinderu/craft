@@ -49,45 +49,49 @@ opencode. The links point into this checkout, but a pull does not change what is
 - **Skills** — auto-discovered; opencode's `skill` tool lists all of craft's skills and routes by description.
   `install.sh` leaves out `develop` and `codex-review`, which drive the review through Claude Code's
   Workflow tool and `codex exec`; in OpenCode the review is `/review`.
-- **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`
-  and `review-task` are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch
-  them. `review-task` exists only for `/review`'s tasks.
-- **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/review [key=value ...]`.
+- **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner` and `rust-miri`
+  are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
+  `review-task` exists only for `/review`'s tasks: hidden too, but `mode: all`, because the binary
+  starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a subagent
+  (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
+  outside the reviewed repository (`external_directory: allow`): its task's prompt file is in the
+  run directory under `~/.craft`, and 1.19.5's `run` stops on the permission question otherwise.
+- **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/review [flags ...]`.
   Each workflow's child sessions nest under the session that called it.
 
 ## Review
 
-`/review` runs craft's review through the `review` tool. The `craft` binary decides every step —
-the gate, the scouts, the lenses round after round, verification, the verdict — and the tool runs
-each step's tasks as child sessions, writes each task's final JSON message to the answer file the
-binary named, and hands the batch back until the binary is done. The answer is the binary's
-`## Verdict` block. This route is new: it is covered by tests against a fake binary and fake
-sessions, and has not yet been seen in a real OpenCode session.
+`/review` runs craft's review through the `review` tool, which runs the `craft` binary's own driver:
+`<checkout>/bin/craft review run --backend opencode --events json`. `bin/craft` runs the binary of this
+plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version>/` the first time
+(`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
+lenses round after round, verification, the verdict — and runs each task as its own `opencode run`
+process. On 1.x the tool's title follows the run's progress; the answer is the binary's `## Verdict`
+block and findings, as markdown. On 1.x the tasks' sessions are not archived (1.19.5's `run` takes no
+`--archived`), and a task of a subagent such as `rust-reviewer` runs on `review-task` with that
+agent's prompt (1.x `run` puts a subagent on its default agent, which writes). The binary's 1.19.5
+path was seen reaching the model as `review-task`; the tool itself is covered by tests against a fake
+binary, not yet seen in a real OpenCode session.
 
-On OpenCode 2.x `/review`, `/rust-audit` and `/triage-findings` refuse up front, INCOMPLETE, and
-run nothing: their child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). A route
-through `opencode run` is in progress; until it ships, use OpenCode 1.x, Claude Code, Codex or pi.
-The refusal itself is tested against fake hosts only, not yet seen in a real OpenCode 2.x.
+On OpenCode 2.x `/rust-audit` and `/triage-findings` refuse up front, INCOMPLETE, and run nothing:
+their child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7); use OpenCode 1.x,
+Claude Code, Codex or pi for them. `/review` is not refused: its tasks run as `opencode run`
+processes, not child sessions. The refusal itself is tested against fake hosts only, not yet seen in
+a real OpenCode 2.x.
 
 - Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
-  every other on the hidden `review-task` agent (both have write and edit off), with the matching
-  Claude Code agent's prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the
-  task. A task still runs read-only commands (git, grep, the build's own checks) through bash.
-- Each task's child session nests under the session that called `/review`.
-- Models: each task runs on the calling session's model — the one that session recorded: on 1.x its
+  every other on `review-task` (both have write and edit off), with the matching Claude Code agent's
+  prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the task. A task still
+  runs read-only commands (git, grep, the build's own checks) through bash.
+- Models: every tier runs on the calling session's model — the one that session recorded: on 1.x its
   newest message's, on 2.x the model set on the session; when it recorded none, OpenCode's default —
-  unless `opencodeModels=` maps the binary's tiers —
-  one `provider/model` for all, or `opus=provider/model,haiku=provider/model` (env
-  `CRAFT_OPENCODE_MODELS`). `concurrency=<n>` caps the child sessions at once (default 4, env
-  `CRAFT_OPENCODE_CONCURRENCY`).
-- The review's own arguments are the Claude Code workflow's: `base=`, `pr=`, `repo=`, `depth=`,
-  `run=<dir>` to resume a stopped run, `craftBin=` for a local build. The binary is the release of
-  this plugin's version, fetched once.
-- A task past its deadline is abandoned and its child session stopped (`session.abort` on 1.x,
-  `session.interrupt` on 2.x); a failed one is handed out again by the binary; the first usage-limit
-  error stops new tasks and ends the run INCOMPLETE with how to resume it.
-- A child that answers nothing is tried once more, alone — the same mitigation `/rust-audit` and
-  `/triage-findings` use for opencode's child-session bugs (#8528 / #6573).
+  unless the flags name `--models`: one `provider/model` for all, or
+  `opus=provider/model,haiku=provider/model` (env `CRAFT_OPENCODE_MODELS`). `--concurrency <n>` caps
+  the tasks at once (default 4, env `CRAFT_OPENCODE_CONCURRENCY`).
+- The flags are the binary's: `--base`, `--depth light|full`, `--pr`, `--comment`, `--path`,
+  `--run <dir>` to resume a stopped run, `--no-gate`, ….
+- A failed task is handed out again by the binary; the first usage-limit error stops new tasks and
+  ends the run INCOMPLETE with how to resume it.
 - If this OpenCode has no `review-task` agent (an install from before it), the review refuses to
   start, INCOMPLETE, and says to rerun `install.sh`; it never runs a task on another, writable agent.
 - If this OpenCode has no `rust-reviewer` agent, its tasks run on `review-task` with the

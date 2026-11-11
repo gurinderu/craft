@@ -162,7 +162,7 @@ fn discover(
 /// JSON; its `{"error"}` is an error.
 fn externals(root: Option<&Path>, cwd: &Path, args: &[&str], stdin: &Value) -> Result<Value> {
     let root = root.context("no craft plugin root: pass --craft-root")?;
-    let script = root.join("lib/craft-externals.mjs");
+    let script = craft_review::prompts::plugin_path(root, "lib/craft-externals.mjs");
     anyhow::ensure!(
         script.is_file(),
         "no lib/craft-externals.mjs under {}",

@@ -10,14 +10,9 @@
 //! loaded, not verified.
 
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::time::Duration;
 
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
-
-use crate::process_group::{self, GroupGuard};
-use crate::{AgentBackend, AgentError, AgentReply, AgentRequest, reply};
+use crate::{AgentBackend, AgentError, AgentReply, AgentRequest, reply, subprocess};
 
 /// Runs agents through the `claude` CLI.
 #[derive(Debug, Clone)]
@@ -74,45 +69,19 @@ impl ClaudeCode {
         }
         argv
     }
-
-    async fn spawn(&self, request: &AgentRequest) -> Result<std::process::Output, AgentError> {
-        let mut command = Command::new(&self.command);
-        command
-            .args(self.argv(request))
-            .current_dir(&request.cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        process_group::isolate(&mut command);
-        let mut child = command.spawn().map_err(|source| AgentError::Spawn {
-            command: self.command.display().to_string(),
-            source,
-        })?;
-        // Lives until this future ends or is dropped (a timeout, a stop): then the child's process
-        // group is stopped.
-        let _group = GroupGuard::new(child.id());
-        if let Some(mut stdin) = child.stdin.take() {
-            // A child that exits without reading its prompt breaks the pipe; its exit status and
-            // stderr, read below, say why, so the broken pipe is not the error reported.
-            if let Err(e) = feed(&mut stdin, request.prompt.as_bytes()).await
-                && e.kind() != std::io::ErrorKind::BrokenPipe
-            {
-                return Err(e.into());
-            }
-        }
-        Ok(child.wait_with_output().await?)
-    }
-}
-
-/// Writes the prompt and closes stdin, so the child sees its end.
-async fn feed(stdin: &mut tokio::process::ChildStdin, prompt: &[u8]) -> std::io::Result<()> {
-    stdin.write_all(prompt).await?;
-    stdin.shutdown().await
 }
 
 impl AgentBackend for ClaudeCode {
     async fn run(&self, request: &AgentRequest) -> Result<AgentReply, AgentError> {
-        let output = tokio::time::timeout(self.timeout, self.spawn(request))
+        let argv = self.argv(request);
+        let spawn = subprocess::Spawn {
+            program: &self.command,
+            args: &argv,
+            cwd: &request.cwd,
+            env: &[],
+            stdin: request.prompt.as_bytes(),
+        };
+        let output = tokio::time::timeout(self.timeout, subprocess::output(spawn))
             .await
             .map_err(|_elapsed| AgentError::TimedOut(self.timeout))??;
         if !output.status.success() {
@@ -136,6 +105,7 @@ mod tests {
     fn request() -> AgentRequest {
         AgentRequest {
             label: "probe".into(),
+            agent: None,
             prompt: "hi".into(),
             model: Some("haiku".into()),
             schema: Some(json!({"type": "object"})),
