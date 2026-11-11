@@ -34,7 +34,7 @@ The corpus deliberately mixes two kinds of case:
 
 Covered high-traffic skills: `rust-review`, `nix-review`, `debugging`, `addressing-findings`,
 `rust-testing`, `rust-errors`, `rust-ownership`, `rust-concurrency`, `rust-performance`, `specs`,
-`distributed-races`, `compatibility`, `memory`, `develop`.
+`distributed-races`, `compatibility`, `memory`, `develop`, `codex-review`.
 
 ## Running it
 
