@@ -6,6 +6,10 @@ set -euo pipefail
 # Repo root = two levels above this script's dir (integrations/opencode/), so the script works from anywhere.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# The same two directories as the file system spells them, symlinks resolved: an earlier install run through another
+# path to this checkout made its links in that spelling.
+SCRIPT_DIR_P="$(cd "$SCRIPT_DIR" && pwd -P)"
+REPO_ROOT_P="$(cd "$REPO_ROOT" && pwd -P)"
 
 SCOPE="project"
 for arg in "$@"; do
@@ -64,20 +68,26 @@ for f in "$SCRIPT_DIR"/commands/*.md; do [ -e "$f" ] && link "$f" "$TARGET/comma
 made() { local d; for d in "${MADE[@]+"${MADE[@]}"}"; do [ "$d" = "$1" ] && return 0; done; return 1; }
 for l in "$TARGET"/skills/* "$TARGET"/agents/* "$TARGET"/commands/* "$TARGET"/plugins/*; do
   [ -L "$l" ] || continue
-  case "$(readlink "$l")" in "$REPO_ROOT"/skills/*|"$SCRIPT_DIR"/*) ;; *) continue ;; esac
+  case "$(readlink "$l")" in "$REPO_ROOT"/skills/*|"$SCRIPT_DIR"/*|"$REPO_ROOT_P"/skills/*|"$SCRIPT_DIR_P"/*) ;; *) continue ;; esac
   made "$l" || { rm "$l"; echo "  - $l (stale)"; }
 done
 
 # Plugin dependencies — opencode 2.x does not install a plugin directory's package.json (1.x did, through Bun), so
-# install the locked closure here when it is missing or older than the lockfile (a pull that moved the lock), as npm's
-# own record of the installed tree, node_modules/.package-lock.json, dates it. Not on every run: `npm ci` deletes the
-# tree first, under an opencode that has the plugin loaded. A tree that holds dev packages (a development checkout's
-# `npm ci`) is reinstalled whole, so it keeps them.
+# install the locked closure here when it is missing, or when npm's own record of the installed tree
+# (node_modules/.package-lock.json) is older than the lockfile (a pull that moved the lock). A tree with no npm record
+# (Bun's, another installer's) that has the dependencies is left alone rather than risk stripping it. Not on every
+# run: `npm ci` deletes the tree first, under an opencode that has the plugin loaded. A tree that holds dev packages
+# (a development checkout's `npm ci`) is reinstalled whole, so it keeps them.
 PLUGIN="$SCRIPT_DIR/plugin"
 INSTALLED="$PLUGIN/node_modules/.package-lock.json"
-if [ -d "$PLUGIN" ] && { [ ! -d "$PLUGIN/node_modules/@opencode-ai/plugin" ] || [ "$PLUGIN/package-lock.json" -nt "$INSTALLED" ]; }; then
+deps_stale() {
+  [ -d "$PLUGIN/node_modules/@opencode-ai/plugin" ] || return 0
+  [ -f "$INSTALLED" ] && [ "$PLUGIN/package-lock.json" -nt "$INSTALLED" ]
+}
+dev_tree() { [ -d "$PLUGIN/node_modules/typescript" ] || { [ -f "$INSTALLED" ] && grep -q '"dev": *true' "$INSTALLED"; }; }
+if [ -d "$PLUGIN" ] && deps_stale; then
   omit="--omit=dev"
-  if [ -f "$INSTALLED" ] && grep -q '"dev": *true' "$INSTALLED"; then omit=""; fi
+  if dev_tree; then omit=""; fi
   if command -v npm >/dev/null 2>&1; then
     echo "  installing the plugin's locked dependencies (npm ci ${omit:-with dev dependencies})"
     npm ci --prefix "$PLUGIN" ${omit:+"$omit"} --no-audit --no-fund

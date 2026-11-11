@@ -26,8 +26,9 @@ One plugin serves both lines: its default export carries a 1.x entry (`server`) 
 opencode loads the plugin from `plugins/craft-rust.ts`, a link to `plugin/index.ts` (1.x loads only
 files from `plugins/`, not directories). opencode 2.x does not install a plugin
 directory's dependencies, so `install.sh` runs `npm ci --omit=dev` in `integrations/opencode/plugin`
-whenever the installed tree is missing or older than `package-lock.json`; without npm, run it there
-yourself before starting opencode.
+whenever the dependencies are missing or npm's record of them is older than `package-lock.json` (a tree
+with dev packages is reinstalled with them; one another installer laid out is left alone); without npm,
+run it there yourself before starting opencode.
 
 ## Upgrading
 
