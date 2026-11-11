@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.50.0](https://github.com/gurinderu/craft/compare/v0.49.1...v0.50.0) (2026-11-11)
+
+
+### Features
+
+* **codex:** run craft:review from Codex through a Node driver of the craft CLI ([cd9b81a](https://github.com/gurinderu/craft/commit/cd9b81ad3db269eb3cc25ab01a31e85f32c78f34))
+* **codex:** run craft:review in a Codex session through the CLI step protocol ([00371da](https://github.com/gurinderu/craft/commit/00371da048ff7d782da18af9abc5a3c50ff1f4af))
+* **opencode:** drive craft's review from OpenCode through child sessions ([b2a6e29](https://github.com/gurinderu/craft/commit/b2a6e29ab1bb07622838951035bdc9cf5f3993ab))
+* **opencode:** load and run the plugin on OpenCode 1.x and 2.x ([1ee47ec](https://github.com/gurinderu/craft/commit/1ee47ecd115a4cfad215f97c640068684c2fe386))
+* **opencode:** one plugin for OpenCode 1.x and 2.x, and craft:review through child sessions ([de501dc](https://github.com/gurinderu/craft/commit/de501dc48aa4fca19fc733761c6810d91ca1dc1d))
+* **opencode:** run the review on the shared task runner, read-only and nested ([463e002](https://github.com/gurinderu/craft/commit/463e0021441ad0a42079f13cf746dfc9403053de))
+* **pi:** run craft:review from pi through a Node driver of the craft CLI ([d32eb81](https://github.com/gurinderu/craft/commit/d32eb816baeb45660d9a81b7bd44f2d222695afb))
+* **pi:** run craft:review in a pi session; one process-per-task runner for Codex and pi ([0a1d0dd](https://github.com/gurinderu/craft/commit/0a1d0dd35ab26f6edbbc790b80a6ddbcef777d57))
+
+
+### Bug Fixes
+
+* **codex:** file the review's unfinished runs, say lost telemetry, mark the route unobserved ([079b500](https://github.com/gurinderu/craft/commit/079b500ae9abe4f7d8aeabd25d0724d3107625ca))
+* **codex:** leave a failed task to the binary's retries, abandon only a late one ([c53240e](https://github.com/gurinderu/craft/commit/c53240e42b0cd39eaecae47a49d9fd0cb4f58256))
+* **codex:** withhold an unfinished run's record only for a resume of an unknown repository ([d01c539](https://github.com/gurinderu/craft/commit/d01c53958fa48934caa936c3f532db7287c4e05e))
+* **craft-bin:** send X-GitHub-Api-Version to the GitHub API only ([9f47296](https://github.com/gurinderu/craft/commit/9f47296ff7bb3e50a1ef1e3a4d00d73900f67b0f))
+* nest the audit and triage sessions, keep codex-review out of OpenCode, correct pi notes ([93c29d5](https://github.com/gurinderu/craft/commit/93c29d5b1726a3d205e32da591e718060aacdc7e))
+* **opencode:** one child-run unit, stopped at its deadline, with a rust-reviewer fallback ([888bd27](https://github.com/gurinderu/craft/commit/888bd27a24e8ebfe9e48a3e2240cbf6d93332eca))
+* **opencode:** re-read a still-loading agent list, own links by their resolved target ([bb5563e](https://github.com/gurinderu/craft/commit/bb5563e35a40eda887787fe1ed63244db0ec2ca5))
+* **opencode:** refuse a review without review-task and keep install.sh current on upgrade ([a5c0afd](https://github.com/gurinderu/craft/commit/a5c0afd61fe3273512762e065258a169fe4eae98))
+* **opencode:** refuse a review without the read-only agent, and make install.sh an upgrade path ([47fc4f7](https://github.com/gurinderu/craft/commit/47fc4f7ac1053add055b9b791689bd114c316849))
+* **opencode:** trust only a non-empty agent list, keep foreign and dev trees, match both checkout spellings ([e457a2c](https://github.com/gurinderu/craft/commit/e457a2c11a8698ffaeec85d4e461f603b9cda9e2))
+* **pi:** leave failed tasks to the binary, stop on a missing login, point at the skills ([c0d0889](https://github.com/gurinderu/craft/commit/c0d08896ddbac2250ba8471bd9abdf36df9c918a))
+* **pi:** match the answer fences with literal patterns ([d5d826a](https://github.com/gurinderu/craft/commit/d5d826acff07a86dcfa5c5a65241e63f3577df5b))
+* **pi:** read the answer from its own fence, anchored to line starts ([04ec43c](https://github.com/gurinderu/craft/commit/04ec43c9bff01d527d9e324ac59f156e214daef8))
+* **pi:** take the answer from pi's output and keep task processes isolated ([daf5392](https://github.com/gurinderu/craft/commit/daf53921d6563bd40bbb824077242bbe19c35dd5))
+* **review:** exit 1 on any run cut short, 0 on nothing to review ([7a2362f](https://github.com/gurinderu/craft/commit/7a2362fccbf427c73bc292985bf0b34bf976bc0a))
+* **review:** post after the fact on the PR that named a detached run's chain ([ae0a6f0](https://github.com/gurinderu/craft/commit/ae0a6f0f2ef722210974464a1237dfe2855fe7b8))
+* **review:** refuse pr= beside gateOnly=true instead of dropping it ([3f05ee9](https://github.com/gurinderu/craft/commit/3f05ee9e6cfcb4fae89a7e53797a31a1f754a97a))
+* **review:** say a pull request is consulted when a detached run is unchained ([4de551f](https://github.com/gurinderu/craft/commit/4de551f7bd32927fe4d6301cc839eb090ca21862))
+* **review:** say what dead agents wrote, exit 1 on INCOMPLETE, read argv as an object ([8f575b9](https://github.com/gurinderu/craft/commit/8f575b9c97e85924c395bfad596181b01a633ab1))
+
 ## [0.49.1](https://github.com/gurinderu/craft/compare/v0.49.0...v0.49.1) (2026-11-10)
 
 
