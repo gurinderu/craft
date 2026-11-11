@@ -38,7 +38,7 @@ export interface Workspace {
 export interface Host extends Workspace {
   // Run one child session to its end and return its final text ("" when it said nothing). Throws when the
   // runtime refuses the session; a hang is the caller's to bound (orchestrator.ts), and on 2.x also the
-  // session's own reply deadline (host-v2-reply.ts).
+  // session's own idle deadline (host-v2-reply.ts).
   runChild(req: ChildRequest): Promise<string>
   // The model a session runs on, as the runtime records it; undefined when it records none (the runtime's default).
   callerModel(sessionID: string): Promise<ModelRef | undefined>
