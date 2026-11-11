@@ -4,7 +4,7 @@
 //! (node #89). There the chain takes the head branch of the pull request `HEAD` heads, so a run on
 //! the branch and a run in a detached worktree of its PR build on each other.
 //! A fork's PR keys it on `<owner>:<head branch>` instead ([`pr`]), so it joins no local branch.
-//! A pull request given (`pr=`) is checked first: `HEAD` must be its head ([`head`]).
+//! A pull request given (`pr=`) is checked first: `HEAD` must be or hold its head ([`head`]).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -21,9 +21,9 @@ use pr::{Named, given, heading};
 /// How long asking gh for the pull request may take: the run waits for it before its first task.
 const BUDGET: Duration = Duration::from_secs(20);
 
-/// What gh is asked: the pull request given (`pr`), whose head `HEAD` must be, else, on a detached
-/// `HEAD`, the open one whose head is `HEAD`; `gh` `None`, it is not asked. Its output is kept in
-/// `dir`.
+/// What gh is asked: the pull request given (`pr`), whose head `HEAD` must be or hold, else, on a
+/// detached `HEAD`, the open one whose head is `HEAD`; `gh` `None`, it is not asked. Its output is
+/// kept in `dir`.
 #[derive(Debug, Clone)]
 pub struct Lookup<'a> {
     pub pr: Option<u64>,

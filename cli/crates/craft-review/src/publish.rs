@@ -108,10 +108,14 @@ pub fn deliver(dir: &Path, run: &mut RunState, setup: &PostSetup) -> Result<(), 
         return Ok(());
     }
     let reviewed = short(&run.diff.head).to_owned();
+    // Pushed, the finished run is published as it stands, with no new review (realm @nick/craft,
+    // node #270).
     let skip = |pr_head: &str| {
         Moved::Skip(format!(
-            "the PR's head {} is not the reviewed head {reviewed}: push the branch and review again",
-            short(pr_head)
+            "the PR's head {} is not the reviewed head {reviewed}: push the branch, then publish this finished run without a new review — `run={} comment=true` (`craft review comment --run {}`)",
+            short(pr_head),
+            dir.display(),
+            dir.display()
         ))
     };
     // A detached HEAD has no branch for a bare `gh pr view` to find its PR by, so the PR the chain
