@@ -24,15 +24,12 @@ fn profile_task(profile: &str, lens: &str, round: u32, answer: Option<Value>) ->
             slice: None,
         },
     );
-    match answer {
-        Some(a) => {
-            t.answer = Some(a);
-            t.state = TaskState::Answered;
-        }
-        None => {
-            t.state = TaskState::Failed;
-            t.error = Some("it does not match the schema".into());
-        }
+    if let Some(a) = answer {
+        t.answer = Some(a);
+        t.state = TaskState::Answered;
+    } else {
+        t.state = TaskState::Failed;
+        t.error = Some("it does not match the schema".into());
     }
     t
 }

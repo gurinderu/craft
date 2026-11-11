@@ -71,7 +71,7 @@ impl Progress {
                 }
             }
             ProgressEvent::Started { agent } => {
-                self.set(&agent, |row| row.status = Status::Running)
+                self.set(&agent, |row| row.status = Status::Running);
             }
             ProgressEvent::Finished {
                 agent,

@@ -134,7 +134,7 @@ pub fn prepare(points: &[IntegrationPoint], cache: Result<&Path, &str>, git: &Gi
     let root = match cache {
         Ok(r) => r,
         Err(why) => {
-            out.unreachable = why.to_owned();
+            why.clone_into(&mut out.unreachable);
             return out;
         }
     };

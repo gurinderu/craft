@@ -20,10 +20,11 @@ fn strings(v: &Value) -> Vec<String> {
 }
 
 /// `s` without the working-directory line it opens with.
-fn body(ctx: &PromptContext, s: String) -> String {
-    s.strip_prefix(&repo_directive(&ctx.repo))
-        .unwrap()
-        .to_owned()
+fn body(ctx: &PromptContext, mut s: String) -> String {
+    let directive = repo_directive(&ctx.repo);
+    assert!(s.starts_with(&directive), "no working-directory line: {s}");
+    s.replace_range(..directive.len(), "");
+    s
 }
 
 #[test]

@@ -87,7 +87,7 @@ pub fn begin(
 ) -> Result<(Chain, Option<String>), Error> {
     // A nested run stays out of the chain, so gh is not asked for one.
     let gh = lookup.gh.filter(|_| !nested);
-    let mut resolved = branch::resolve(cwd, Lookup { gh, ..lookup }).map_err(StepError::PrHead)?;
+    let mut resolved = branch::resolve(cwd, &Lookup { gh, ..lookup }).map_err(StepError::PrHead)?;
     let mut chain = Chain {
         repo: git::common_dir(cwd)?,
         branch: resolved.name.clone(),

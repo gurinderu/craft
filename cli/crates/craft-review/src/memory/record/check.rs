@@ -29,7 +29,6 @@ const KINDS: [&str; 3] = ["decision", "question", "rule"];
 /// What is wrong with a text field of the anchor; '' when it is absent or fit.
 fn anchor_text_problem(o: &Map<String, Value>, k: &str, max: usize) -> String {
     match o.get(k) {
-        None | Some(Value::Null) => String::new(),
         Some(Value::String(s)) if js_len(s.trim()) > max => {
             format!(
                 ": {k} is {} chars, over the {max}-char ceiling",
@@ -37,7 +36,7 @@ fn anchor_text_problem(o: &Map<String, Value>, k: &str, max: usize) -> String {
             )
         }
         Some(Value::String(s)) if has_control(s) => format!(": {k} contains a control character"),
-        Some(Value::String(_)) => String::new(),
+        None | Some(Value::Null | Value::String(_)) => String::new(),
         v @ Some(_) => format!(": {k} {} is not a string", json(v)),
     }
 }

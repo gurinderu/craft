@@ -85,7 +85,7 @@ fn effective_level(f: &Value) -> Option<&str> {
     (!truthy(f.get("harm")) && LINT_SEED_SOURCES.contains(&source)).then_some("none")
 }
 
-fn note(f: &mut Map<String, Value>, why: String) {
+fn note(f: &mut Map<String, Value>, why: &str) {
     let old = f
         .get("why")
         .and_then(Value::as_str)
@@ -110,7 +110,7 @@ pub(crate) fn cap(f: &Value) -> Value {
             "lowered to {top} from {severity}: harm cap — harm level {level} allows at most {top}"
         );
         out.insert("severity".into(), Value::String(top.to_owned()));
-        note(&mut out, why);
+        note(&mut out, &why);
     }
     Value::Object(out)
 }

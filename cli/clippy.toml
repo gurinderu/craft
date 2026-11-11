@@ -11,3 +11,7 @@ allow-dbg-in-tests = true
 # count is its own metric, not Sonar's); no exception — a function over it is
 # rebuilt (realm @nick/craft, node #155).
 cognitive-complexity-threshold = 15
+
+# Product names written as prose in doc comments, not code (`doc_markdown`);
+# `..` keeps clippy's default list.
+doc-valid-idents = ["OpenCode", ".."]

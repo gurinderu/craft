@@ -228,17 +228,16 @@ impl Rounds {
             for f in found.into_iter().flatten() {
                 let f = pooled(f, profile, lens, *round);
                 let at = key(&f);
-                match self
+                if let Some(g) = self
                     .pool
                     .iter_mut()
                     .chain(fresh.iter_mut())
                     .find(|g| key(g) == at)
                 {
-                    Some(g) => note_exact_copy(g, &f),
-                    None => {
-                        fresh.push(f);
-                        *added.entry(profile.clone()).or_insert(0) += 1;
-                    }
+                    note_exact_copy(g, &f);
+                } else {
+                    fresh.push(f);
+                    *added.entry(profile.clone()).or_insert(0) += 1;
                 }
             }
         }
