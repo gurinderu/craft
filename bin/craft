@@ -12,7 +12,7 @@
 # A failure prints one line on stderr naming what is missing, and exits 127.
 set -u
 
-version=0.50.0 # x-release-please-version
+version=0.50.1 # x-release-please-version
 
 die() {
   printf 'craft: %s\n' "$1" >&2
