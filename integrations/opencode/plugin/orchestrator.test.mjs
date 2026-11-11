@@ -21,7 +21,7 @@ import { hasVerdictLine, parseVerdict } from './run-record.mjs'
 
 // Answers keyed by agent name; a function may answer differently per attempt, which is how the
 // sequential retry is exercised.
-/** @typedef {string | Error | ((nth: number) => unknown)} Answer */
+/** @typedef {string | Error | ((nth: number) => string | Promise<string>)} Answer */
 /**
  * @param {Record<string, Answer>} answers
  * @param {string[]} [calls]
@@ -34,15 +34,15 @@ function fakeCtx(answers, calls = []) {
     // and nothing here reads it.
     directory: '',
     worktree: '',
-    sh: async () => '',
-    callerModel: async () => undefined,
+    sh: () => Promise.resolve(''),
+    callerModel: () => Promise.resolve(undefined),
     runChild: async ({ agent }) => {
       calls.push(agent)
       const nth = calls.filter(a => a === agent).length - 1
       const given = answers[agent]
       const answer = typeof given === 'function' ? await given(nth) : given
       if (answer instanceof Error) throw answer
-      return String(answer ?? '')
+      return answer ?? ''
     },
   }
 }
@@ -358,7 +358,7 @@ test('quoting the instructions is not answering them', async () => {
   }
 })
 
-test('a dimension table does not overrule the verdict line above it', async () => {
+test('a dimension table does not overrule the verdict line above it', () => {
   // The boundary teaching the reader about tables INTRODUCED, and it is a severity inversion, which
   // is worse than any not-run: a synthesis states its overall verdict as a line of its own and then
   // tables the dimensions, so last-wins across both let the final table ROW decide. `VERDICT: BLOCK`

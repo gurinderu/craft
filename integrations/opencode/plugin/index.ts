@@ -22,7 +22,7 @@ import { workHook } from './work-hook.ts'
 
 const craft: PluginModule & { id: string; setup(ctx: V2Context): Promise<() => Promise<void>> } = {
   id: 'craft-rust',
-  server: async (input: PluginInput) => v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS)),
+  server: (input: PluginInput) => Promise.resolve(v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS))),
   setup: ctx => v2Setup(ctx, onV2(TOOLS), workHook(ctx.location.directory, ENGINE_SESSIONS)),
 }
 

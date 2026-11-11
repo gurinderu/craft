@@ -816,7 +816,7 @@ export async function writeRecord(ctx, record) {
     await appendIndex(dir, JSON.stringify(indexProjection(full)))
   } catch (e) {
     try {
-      console.error(`craft observability: failed to write run record: ${/** @type {{ message?: unknown } | null | undefined} */ (e)?.message ?? e}`)
+      console.error(`craft observability: failed to write run record: ${String(/** @type {{ message?: unknown } | null | undefined} */ (e)?.message ?? e)}`)
     } catch {
       /* ignore */
     }

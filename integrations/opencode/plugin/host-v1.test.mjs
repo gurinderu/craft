@@ -10,21 +10,21 @@ function fakeClient(reply) {
   return {
     sent,
     session: {
-      create: async (/** @type {unknown} */ req) => {
+      create: (/** @type {unknown} */ req) => {
         sent.push(['create', req])
-        return { data: { id: 'ses_1' } }
+        return Promise.resolve({ data: { id: 'ses_1' } })
       },
-      prompt: async (/** @type {unknown} */ req) => {
+      prompt: (/** @type {unknown} */ req) => {
         sent.push(['prompt', req])
-        return reply
+        return Promise.resolve(reply)
       },
-      abort: async (/** @type {unknown} */ req) => {
+      abort: (/** @type {unknown} */ req) => {
         sent.push(['abort', req])
-        return { data: true }
+        return Promise.resolve({ data: true })
       },
-      messages: async (/** @type {unknown} */ req) => {
+      messages: (/** @type {unknown} */ req) => {
         sent.push(['messages', req])
-        return { data: [{ info: { role: 'user', model: { providerID: 'p', modelID: 'm' } } }, { info: { role: 'assistant' } }] }
+        return Promise.resolve({ data: [{ info: { role: 'user', model: { providerID: 'p', modelID: 'm' } } }, { info: { role: 'assistant' } }] })
       },
     },
   }
@@ -102,11 +102,10 @@ test('each tool spec becomes a 1.x tool that hands its string arguments, the abo
     name: 'probe',
     description: 'd',
     args: { base: { optional: true }, locator: { optional: false } },
-    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {import('./host.ts').ToolCall} */ call) => {
-      const { progress, ...rest } = call
-      progress?.('half way')
-      ran.push([args, rest])
-      return { title: 't', output: 'out' }
+    run: (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {import('./host.ts').ToolCall} */ call) => {
+      call.progress?.('half way')
+      ran.push([args, Object.fromEntries(Object.entries(call).filter(([k]) => k !== 'progress'))])
+      return Promise.resolve({ title: 't', output: 'out' })
     },
   }
   const work = { childCreated() {}, compacted: async () => {}, message: async () => {} }
@@ -141,10 +140,10 @@ test('each tool spec becomes a 1.x tool that hands its string arguments, the abo
 test('a deadline stops the session and gives up on it; a refused prompt throws its error', async () => {
   const stop = new AbortController()
   const hung = fakeClient(null)
-  hung.session.prompt = async (/** @type {unknown} */ req) => {
+  hung.session.prompt = (/** @type {unknown} */ req) => {
     hung.sent.push(['prompt', req])
     stop.abort()
-    return { data: {} }
+    return Promise.resolve({ data: {} })
   }
   await assert.rejects(
     v1Host({ client: hung, directory: '', worktree: '' }).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }),

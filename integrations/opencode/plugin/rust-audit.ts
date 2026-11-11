@@ -171,7 +171,7 @@ ${blob}${VERDICT_RULE}`
   // The catch is belt-and-braces and unreachable today: `tryOne` already catches everything
   // `runAgent` can throw, and `notRunNote` cannot throw. Kept so a future throw kills one step
   // rather than the whole audit; no falsifier reaches it, and it is not claimed as covered.
-  const synthesis = await runAnswering(ctx, '', synthPrompt, hasVerdictLine, undefined, 'VERDICT: line').catch(e => ({
+  const synthesis = await runAnswering(ctx, '', synthPrompt, hasVerdictLine, undefined, 'VERDICT: line').catch((e: unknown) => ({
     ok: false,
     text: '',
     note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}`,

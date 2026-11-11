@@ -94,12 +94,18 @@ export interface JobResult {
 // deadline reported as "no output" sent people to look for an opencode bug.
 type Failure = 'timeout' | 'empty' | 'unanswered' | 'error' | 'budget'
 
+/** The race's timeout marker, read as the runtime may hand anything back. */
+function isTimeout(out: unknown): boolean {
+  return Boolean(out && typeof out === 'object' && '__timeout' in out && out.__timeout)
+}
+
 async function tryOne(ctx: Host, job: Job): Promise<JobResult & { why?: Failure }> {
   // A child past its deadline is stopped, not only left behind: its session would otherwise keep running.
   const stop = new AbortController()
   try {
-    const out = await withTimeout(runAgent(ctx, job, stop.signal), job.timeoutMs ?? STUCK_MS)
-    if (out && typeof out === 'object' && (out as any).__timeout) {
+    // Read as unknown: the host's answer crosses a runtime boundary, so its declared string is not trusted here.
+    const out: unknown = await withTimeout(runAgent(ctx, job, stop.signal), job.timeoutMs ?? STUCK_MS)
+    if (isTimeout(out)) {
       stop.abort()
       return { label: job.label, ok: false, text: '', why: 'timeout' }
     }

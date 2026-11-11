@@ -25,12 +25,12 @@ function fakeCtx(answerFor) {
     seen,
     directory: '/repo',
     worktree: '/repo',
-    sh: async () => '',
-    callerModel: async () => undefined,
-    runChild: async (/** @type {ChildRequest} */ { agent, prompt }) => {
+    sh: () => Promise.resolve(''),
+    callerModel: () => Promise.resolve(undefined),
+    runChild: (/** @type {ChildRequest} */ { agent, prompt }) => {
       const isSynthesis = /consolidating a Rust audit/.test(prompt)
       seen.push(isSynthesis ? 'synthesis' : agent || 'dimension')
-      return answerFor({ agent, isSynthesis }) ?? ''
+      return Promise.resolve(answerFor({ agent, isSynthesis }) ?? '')
     },
   }
 }
@@ -189,7 +189,7 @@ test('a dimension that answers without a verdict is not counted as having run', 
     })
     await runRustAudit(ctx, {})
     const r = record(dir)
-    const security = (r.dimensions ?? []).find(d => d.dimension === 'security')
+    const security = r.dimensions.find(d => d.dimension === 'security')
     assert.ok(security, 'the dimension is present in the record')
     assert.equal(security.ran, false, 'and is marked as not having run')
     assert.match(r.verdict, /INCOMPLETE/, 'so the audit as a whole is incomplete, not approved')
