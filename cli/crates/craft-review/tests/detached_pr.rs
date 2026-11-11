@@ -110,7 +110,8 @@ fn a_given_pr_is_posted_on_whatever_names_the_chain() {
     let (keep, runs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let repo = common::fixture(true);
     let head = rev(repo.path(), "HEAD");
-    let gh = pr_gh(&keep.path().join("gh"), "[]", "");
+    let view = pr(1500, "main", &head).to_string();
+    let gh = pr_gh(&keep.path().join("gh"), "[]", &view);
     let post = stand_in(&keep.path().join("post"), &head);
     let s = begin(repo.path(), runs.path(), "r1", &gh, (Some(1500), true));
     assert_eq!(chain(&runs.path().join("r1"))["branch"], json!("main"));
