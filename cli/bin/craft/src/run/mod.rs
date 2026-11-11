@@ -53,7 +53,7 @@ pub enum HostKind {
     Codex,
     /// `pi -p`, isolated and with read-only tools, one per task.
     Pi,
-    /// `opencode run` (2.x) on craft's read-only agents, one per task.
+    /// `opencode run` on craft's read-only agents, one per task.
     #[value(name = "opencode")]
     OpenCode,
 }
@@ -115,7 +115,8 @@ fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host,
     let (concurrency, mut host, root) =
         concurrency_of(args).and_then(|c| Ok((c, host_of(args)?, root_of(args)?)))?;
     if host.kind == HostKind::OpenCode {
-        host.agents = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;
+        let ready = opencode::preflight(&host.command, repo, &|l| sink.log(l))?;
+        (host.agents, host.archived) = (ready.agents, ready.archived);
     }
     Ok((concurrency, host, root))
 }

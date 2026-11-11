@@ -139,6 +139,7 @@ fn opencode(command: PathBuf) -> OpenCode {
         command,
         timeout: Duration::from_secs(10),
         env: Vec::new(),
+        archived: true,
     }
 }
 

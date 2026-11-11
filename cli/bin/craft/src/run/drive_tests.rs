@@ -204,6 +204,7 @@ impl Bench {
             models,
             command: self.path("host"),
             agents: self.agents.clone(),
+            archived: true,
         };
         let (root, repo) = (self.path("root"), self.path("repo"));
         let again = |run: &str| {

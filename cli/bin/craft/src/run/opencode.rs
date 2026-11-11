@@ -1,5 +1,5 @@
 //! What the `opencode` host needs before its first task and for each (realm @nick/craft, nodes
-//! #496, #502): a 2.x opencode, whose agents include craft's read-only `review-task`; and the agent
+//! #499, #502): an opencode whose agents include craft's read-only `review-task`; and the agent
 //! each task runs as — `rust-reviewer` for its own tasks, `review-task` with the Claude Code
 //! agent's body for every other, and for a `rust-reviewer` task when that agent is missing, said
 //! degraded.
@@ -91,36 +91,49 @@ fn agents_of(said: &str) -> Option<Vec<String>> {
     Some(ids)
 }
 
-/// The agents a review can run on, or why it cannot run: a 1.x opencode's `run` takes no `--archived`
-/// and prints its help instead of running (observed on 1.19.5), and an opencode without
-/// `review-task` would run every task on another agent or fail it. `log` hears a list it could not
-/// read.
-pub(crate) fn preflight(
-    command: &Path,
-    repo: &Path,
-    log: &dyn Fn(&str),
-) -> Result<Option<Vec<String>>, String> {
+/// The agents a 1.x `run --agent` runs as named, from `opencode agent list`: one `<name> (<mode>)`
+/// line each, between the permission tables it prints. A `subagent` is left out — 1.19.5 runs the
+/// default agent, which writes, in its place (observed) — so a task of one runs on `review-task`.
+fn agents_listed(said: &str) -> Option<Vec<String>> {
+    let names: Vec<String> = said
+        .lines()
+        .filter_map(|l| l.strip_suffix(')')?.split_once(" ("))
+        .filter(|(name, mode)| !name.contains(' ') && ["primary", "all"].contains(mode))
+        .map(|(name, _)| name.to_owned())
+        .collect();
+    (!names.is_empty()).then_some(names)
+}
+
+/// What a review runs on in this opencode: the agents it lists (`None` when the list cannot be
+/// read), and whether its `run` archives a session (2.x; 1.19.5's takes no `--archived`).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Ready {
+    pub(crate) agents: Option<Vec<String>>,
+    pub(crate) archived: bool,
+}
+
+/// The opencode a review can run on, or why it cannot run: an opencode without `review-task`
+/// would run every task on another agent or fail it. On 1.x, `review-task` runs as named only as
+/// a `mode: all` agent (1.19.5 puts a subagent named to `run --agent` on its default agent, which
+/// writes; observed). `log` hears a list it could not read.
+pub(crate) fn preflight(command: &Path, repo: &Path, log: &dyn Fn(&str)) -> Result<Ready, String> {
     let version = stdout_of(command, &["--version"], repo)?;
-    match major_of(&version) {
-        Some(n) if n >= 2 => {}
-        Some(_) => {
-            return Err(format!(
-                "opencode {} is a 1.x opencode: its `run` takes no `--archived`, so no review task runs on it — upgrade to opencode 2.x",
-                version.trim()
-            ));
-        }
-        None => {
-            return Err(format!(
-                "`{} --version` said {:?}, not a version",
-                command.display(),
-                version.trim()
-            ));
-        }
-    }
-    let agents = stdout_of(command, &["debug", "agents"], repo)
+    let Some(major) = major_of(&version) else {
+        return Err(format!(
+            "`{} --version` said {:?}, not a version",
+            command.display(),
+            version.trim()
+        ));
+    };
+    let list: &[&str] = if major >= 2 {
+        &["debug", "agents"]
+    } else {
+        &["agent", "list"]
+    };
+    let agents = stdout_of(command, list, repo)
         .map_err(|e| log(&format!("⚠️ opencode's agents could not be listed ({e}); each task runs on its agent unchecked")))
         .ok()
-        .and_then(|said| agents_of(&said));
+        .and_then(|said| if major >= 2 { agents_of(&said) } else { agents_listed(&said) });
     if let Some(list) = &agents
         && !list.iter().any(|a| a == TASK_AGENT)
     {
@@ -128,7 +141,10 @@ pub(crate) fn preflight(
             "the craft OpenCode agents are not installed or are out of date: rerun integrations/opencode/install.sh (this opencode has no `{TASK_AGENT}` agent, which every review task runs on read-only)"
         ));
     }
-    Ok(agents)
+    Ok(Ready {
+        agents,
+        archived: major >= 2,
+    })
 }
 
 #[cfg(test)]

@@ -25,6 +25,8 @@ pub struct OpenCode {
     pub timeout: Duration,
     /// Variables set for every run on top of craft's own environment.
     pub env: Vec<(String, String)>,
+    /// Whether each run's session is archived (`--archived`, 2.x); a 1.x `run` takes no such flag.
+    pub archived: bool,
 }
 
 impl Default for OpenCode {
@@ -33,15 +35,16 @@ impl Default for OpenCode {
             command: PathBuf::from("opencode"),
             timeout: Duration::from_secs(2 * 60 * 60),
             env: Vec::new(),
+            archived: true,
         }
     }
 }
 
 impl OpenCode {
-    /// The argv for one run, its session archived — out of the session lists (2.x); the prompt
-    /// goes on stdin.
+    /// The argv for one run, its session archived — out of the session lists — when `archived`
+    /// (2.x); the prompt goes on stdin.
     #[must_use]
-    pub fn argv(request: &AgentRequest) -> Vec<String> {
+    pub fn argv(request: &AgentRequest, archived: bool) -> Vec<String> {
         let mut argv: Vec<String> = ["run", "--format", "json"].map(String::from).into();
         if let Some(agent) = &request.agent {
             argv.push("--agent".into());
@@ -51,7 +54,9 @@ impl OpenCode {
             argv.push("--model".into());
             argv.push(model.clone());
         }
-        argv.push("--archived".into());
+        if archived {
+            argv.push("--archived".into());
+        }
         argv
     }
 }
@@ -67,7 +72,7 @@ fn said(errors: &[String], stdout: &[u8]) -> String {
 
 impl AgentBackend for OpenCode {
     async fn run(&self, request: &AgentRequest) -> Result<AgentReply, AgentError> {
-        let argv = Self::argv(request);
+        let argv = Self::argv(request, self.archived);
         let spawn = subprocess::Spawn {
             program: &self.command,
             args: &argv,
@@ -121,7 +126,7 @@ mod tests {
             cwd: PathBuf::from("/repo"),
         };
         assert_eq!(
-            OpenCode::argv(&request),
+            OpenCode::argv(&request, true),
             [
                 "run",
                 "--format",
@@ -139,8 +144,13 @@ mod tests {
             ..request
         };
         assert_eq!(
-            OpenCode::argv(&bare),
+            OpenCode::argv(&bare, true),
             ["run", "--format", "json", "--archived"]
+        );
+        assert_eq!(
+            OpenCode::argv(&bare, false),
+            ["run", "--format", "json"],
+            "a 1.x run is not archived"
         );
     }
 }

@@ -33,6 +33,8 @@ pub(crate) struct Host {
     pub(crate) command: PathBuf,
     /// The agents opencode lists, `None` when unknown or for another host.
     pub(crate) agents: Option<Vec<String>>,
+    /// Whether opencode archives each task's session (2.x); true for another host.
+    pub(crate) archived: bool,
 }
 
 impl Host {
