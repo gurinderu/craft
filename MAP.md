@@ -276,4 +276,6 @@ marketplace (`.claude-plugin/marketplace.json`) installs it from the `claude-cod
 HTTPS), which each release rebuilds from this directory with the links dereferenced into real files
 (`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
 so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
-Codex delivery's place at the root, and `integrations/pi/` is planned.
+Codex delivery's place at the root, and `integrations/pi/` holds the pi package's `craft-review` skill: the repository is a pi
+package (`pi install git:github.com/gurinderu/craft`) whose manifest, the root `package.json`'s `pi` key, loads only that
+skill, which runs the review's pi driver, `lib/pi-review.mjs`.

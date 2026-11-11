@@ -76,7 +76,7 @@ craft/
 │   │   └── skills, lib, content, src, README.md -> ../../…   # symlinks; the release branch holds them as real files
 │   ├── opencode/          # the OpenCode adapter layer (agents, commands, plugin, install.sh)
 │   ├── codex/             # where the Codex delivery lives, and why its manifest stays at the root
-│   └── pi/                # planned
+│   └── pi/                # the pi package's craft-review skill (the package manifest is the root package.json's `pi` key)
 ├── src/                   # the workflow scripts as authored
 ├── lib/                   # tested helpers shared (bundled) by the workflows; the hooks' scripts
 ├── content/               # prompts and schemas the engines and the CLI render
