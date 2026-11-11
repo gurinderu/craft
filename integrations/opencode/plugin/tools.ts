@@ -39,6 +39,18 @@ async function runReview(host: Host, args: string, call: ToolCall): Promise<stri
   })
 }
 
+// The review's answer on OpenCode 2.x, before any child session: no 2.x child session was seen answering.
+const REVIEW_ON_V2 = "craft's review does not yet work in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). Use OpenCode 1.x, Claude Code, Codex or pi for now; the next craft release moves OpenCode onto a different route. Nothing ran."
+
+async function refuseReview(): Promise<string> {
+  const { stoppedAnswer } = await import("../../../lib/cli-review-verdict.mjs")
+  return stoppedAnswer(REVIEW_ON_V2)
+}
+
+/** The tools as the 2.x entry (`setup`) registers them: the review refuses up front; the others are the same. */
+export const onV2 = (tools: readonly ToolSpec[]): ToolSpec[] =>
+  tools.map((spec) => (spec.name === "review" ? { ...spec, run: refuseReview } : spec))
+
 export const TOOLS: readonly ToolSpec[] = [
   {
     name: "rust-audit",

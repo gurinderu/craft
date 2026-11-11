@@ -109,6 +109,7 @@ test('the review tool on a 1.x without review-task refuses up front and opens no
   const client = fakeClient({ text: 'ok' })
   const review = TOOLS.find(t => t.name === 'review')
   const answer = await review?.run(v1Host({ client, directory: '/r', worktree: '/r' }), {}, { sessionID: 'ses_caller' })
+  assert.doesNotMatch(String(answer), /does not yet work in OpenCode 2\.x/, '1.x runs the review as before')
   assert.match(String(answer), /INCOMPLETE — the craft OpenCode agents are not installed or are out of date: rerun integrations\/opencode\/install\.sh/)
   assert.equal(client.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
 })

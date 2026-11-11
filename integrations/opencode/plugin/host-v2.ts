@@ -23,13 +23,22 @@ export function finishedReply(messages: readonly V2Message[]): string | null {
 
 const STOPPED = "the child session was stopped at its deadline"
 
+// `work`, or a rejection as soon as `signal` aborts: a `wait` that never returns does not hold the loop past the abort.
+function untilAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work
+  const aborted = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(new Error(STOPPED)), { once: true })
+  })
+  return Promise.race([work, aborted])
+}
+
 // `wait` may resolve before the admitted prompt's loop has started, so idle is read as "look again", and
 // only a finished assistant message is an answer (UNOBSERVED with a real model: opencode-v2.d.ts). An abort (the
-// caller's deadline) ends the polling: the session itself is interrupted by `stopOnAbort`.
+// caller's deadline) ends the polling, even mid-`wait`: the session itself is interrupted by `stopOnAbort`.
 async function awaitReply(ctx: V2Context, sessionID: string, pollMs: number, signal?: AbortSignal): Promise<string> {
   for (let i = 0; i < MAX_POLLS; i++) {
     if (signal?.aborted) throw new Error(STOPPED)
-    await ctx.session.wait({ sessionID })
+    await untilAbort(ctx.session.wait({ sessionID }), signal)
     if (signal?.aborted) throw new Error(STOPPED)
     const reply = finishedReply(await ctx.session.context({ sessionID }))
     if (reply !== null) return reply
