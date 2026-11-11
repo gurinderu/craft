@@ -1,5 +1,5 @@
-//! The loop end to end against a stand-in binary ([`Fake`], as `lib/codex-review-fakes.mjs`'s
-//! fake `craft` behaves) and stand-in host CLIs: shell scripts that act on a word in their task's
+//! The loop end to end against a stand-in binary ([`Fake`], acting as the step protocol's binary
+//! does) and stand-in host CLIs: shell scripts that act on a word in their task's
 //! prompt — FAIL fails, FAIL-ONCE fails the first time, HANG outlives its deadline, LIMIT says the
 //! usage limit, NOLOGIN says no account is logged in — and otherwise answer.
 

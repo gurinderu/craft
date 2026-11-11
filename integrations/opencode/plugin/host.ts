@@ -39,13 +39,20 @@ export interface Host extends Workspace {
   runChild(req: ChildRequest): Promise<string>
   // The model a session runs on, as the runtime records it; undefined when it records none (the runtime's default).
   callerModel(sessionID: string): Promise<ModelRef | undefined>
-  // The agents the runtime has, by the name a child session takes; null when it cannot say.
-  agents(): Promise<Set<string> | null>
 }
 
-// The tool call as the runtime hands it over: the session that called the tool.
+// The tool call as the runtime hands it over: the session that called the tool, the signal that aborts the call, and
+// where a running tool says how far it got (1.x shows it as the tool's title; 2.x has no such place).
 export interface ToolCall {
   sessionID?: string
+  signal?: AbortSignal
+  progress?(title: string): void
+}
+
+// A tool's answer with a title of its own, where the runtime shows one (1.x); 2.x takes only the output.
+export interface ToolAnswer {
+  title: string
+  output: string
 }
 
 // A tool both runtimes register. Every argument is a string; each side builds its own schema from `args`.
@@ -53,7 +60,7 @@ export interface ToolSpec {
   name: string
   description: string
   args: Record<string, { optional: boolean; description?: string }>
-  run(host: Host, args: Record<string, string | undefined>, call: ToolCall): Promise<string>
+  run(host: Host, args: Record<string, string | undefined>, call: ToolCall): Promise<string | ToolAnswer>
 }
 
 // craft's hook at the moment of work, as the runtimes feed it (work-hook.ts). `deliver` places the lines the
