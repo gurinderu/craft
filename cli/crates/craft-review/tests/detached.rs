@@ -141,7 +141,8 @@ fn gh_failing_keeps_the_detached_run_unchained_and_a_branch_never_asks() {
 
     std::fs::remove_file(dir.join("calls")).unwrap();
     git(repo.path(), &["checkout", "-q", "main"]);
-    let (_, c) = start(repo.path(), runs.path(), "r3", &gh, Some(1488));
+    // No PR given, a checked-out branch is asked of no PR: given one, its head is checked (pr_head.rs).
+    let (_, c) = start(repo.path(), runs.path(), "r3", &gh, None);
     assert_eq!((&c["branch"], &c["round"]), (&json!("main"), &json!(2)));
     assert_eq!(c["branchFrom"], Value::Null);
     assert_eq!(calls(&dir), "");

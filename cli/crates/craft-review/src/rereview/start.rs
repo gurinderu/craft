@@ -5,9 +5,11 @@ use std::path::Path;
 use super::branch::{self, Lookup};
 use super::{Chain, Fate, PriorFinding, PriorRun};
 use crate::chain::{self, Prior};
+use crate::error::Error;
 use crate::git::{self, Diff, GitError};
 use crate::ledger::LedgerRow;
 use crate::prompts::ReScope;
+use crate::step::StepError;
 
 /// The prior round's rows: tombstones apart, every other row a prior finding with its starting fate.
 /// `quiet` says of a `deferred` row whether its deferral may be carried without an adjudicator.
@@ -68,10 +70,12 @@ fn quiet_deferral(cwd: &Path, row: &LedgerRow) -> bool {
 /// on under `runs`, unless `fresh` asks for a new chain or the run is `nested` (a parent engine
 /// launched it, so it stays out of the chain). `base` is the branch's own base, `scope` the
 /// directory of the change the run reviews (`None`, the whole change); on a detached `HEAD`,
-/// `lookup` asks gh for the pull request whose branch keys the chain ([`branch::resolve`]).
+/// `lookup` asks gh for the pull request whose branch keys the chain ([`branch::resolve`]). With
+/// the chain comes a note for the report when a given pull request's head went unchecked.
 ///
 /// # Errors
-/// When `cwd`'s git directory cannot be read.
+/// When `cwd`'s git directory cannot be read, or a given pull request's head is not `HEAD`
+/// ([`StepError::PrHead`]).
 pub fn begin(
     cwd: &Path,
     runs: &Path,
@@ -80,10 +84,10 @@ pub fn begin(
     base: &str,
     scope: Option<&str>,
     lookup: Lookup<'_>,
-) -> Result<Chain, GitError> {
+) -> Result<(Chain, Option<String>), Error> {
     // A nested run stays out of the chain, so gh is not asked for one.
     let gh = lookup.gh.filter(|_| !nested);
-    let resolved = branch::resolve(cwd, Lookup { gh, ..lookup });
+    let mut resolved = branch::resolve(cwd, Lookup { gh, ..lookup }).map_err(StepError::PrHead)?;
     let mut chain = Chain {
         repo: git::common_dir(cwd)?,
         branch: resolved.name.clone(),
@@ -123,7 +127,7 @@ pub fn begin(
             take_ledger(&mut chain, record.ledger, &|row| quiet_deferral(cwd, row));
         }
     }
-    Ok(chain)
+    Ok((chain, resolved.note.take()))
 }
 
 /// What the run's lenses review: the branch's diff on a first review or a re-scan, else the fix
