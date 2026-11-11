@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.50.1](https://github.com/gurinderu/craft/compare/v0.50.0...v0.50.1) (2026-11-11)
+
+
+### ⚠ Behaviour changes on upgrade
+
+* **OpenCode 2.x:** craft's `review`, `rust-audit` and `triage-findings` now refuse up front with an INCOMPLETE answer that names the tool, and open no session. Their child sessions did not answer on OpenCode 2.2.7, and a review hung in its first phase. A route through `opencode run` is in progress. Until it ships, use OpenCode 1.x, Claude Code, Codex or pi. OpenCode 1.x is unchanged.
+* **`pr=<n>` (`--pr`):** a review now refuses to start when HEAD does not hold that PR's head, for example when it is run from `main`. It suggests `gh pr checkout <n>` instead. A HEAD that is ahead of the PR's head (fixes not pushed yet) is still reviewed, with a note to push before publishing. If gh can't be reached, the review runs as before, with a note.
+
+
+### Bug Fixes
+
+* **opencode:** refuse craft's tools up front on OpenCode 2.x ([757bb69](https://github.com/gurinderu/craft/commit/757bb6967b723ddcb3c3eda3fcec5b38755b6a22))
+* **review:** refuse pr= when HEAD doesn't hold the PR's head ([f96a964](https://github.com/gurinderu/craft/commit/f96a964997f20fbba7f11c6445316177de1dcf78))
+
 ## [0.50.0](https://github.com/gurinderu/craft/compare/v0.49.1...v0.50.0) (2026-11-11)
 
 
