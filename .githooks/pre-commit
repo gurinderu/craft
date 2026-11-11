@@ -1,7 +1,7 @@
 #!/bin/sh
 # Fast checks on the staged files only (wired by `npm ci`/`npm install` through the `prepare` script, which sets
-# core.hooksPath to .githooks): Prettier on staged JS/TS/JSON/YAML, ESLint on the staged lint-scope
-# files, `cargo fmt --check` when Rust is staged. Each check runs only when its files are staged; a needed
+# core.hooksPath to .githooks): Prettier on staged JS/TS/JSON/YAML, ESLint on the staged files in the `lint`
+# script's scope, `cargo fmt --check` when Rust is staged. Each check runs only when its files are staged; a needed
 # tool that is missing stops the commit with how to install it. It reads the working-tree copy of each staged file.
 # Not the gate: run `npm run gate` before pushing.
 set -u
@@ -16,7 +16,7 @@ staged=$(git diff --cached --name-only --diff-filter=ACMR)
 pick() { printf '%s\n' "$staged" | grep -E "$1"; }
 
 formattable=$(pick '\.(js|mjs|cjs|ts|mts|cts|json|yml|yaml)$')
-lintable=$(pick '^(lib/.*\.mjs|integrations/opencode/plugin/[^/]*\.(mjs|ts)|knip\.config\.js|\.dependency-cruiser\.mjs)$')
+lintable=$(pick '^((lib|integrations/opencode/plugin)/.*\.(js|mjs|cjs|ts)|knip\.config\.js|\.dependency-cruiser\.mjs)$' | grep -v '/node_modules/')
 rust=$(pick '^cli/.*\.rs$')
 
 bin=node_modules/.bin
