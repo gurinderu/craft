@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use super::kept::{Ctx, load, save};
 use super::node::ADAPTER;
+use crate::prompts::plugin_path;
 
 /// The first of `candidates` that holds the adapter: the binary's own plugin root, then the one the
 /// harness names (`CLAUDE_PLUGIN_ROOT`).
@@ -17,7 +18,7 @@ pub fn found_root(candidates: impl IntoIterator<Item = Option<PathBuf>>) -> Opti
         .into_iter()
         .flatten()
         .filter(|r| !r.as_os_str().is_empty())
-        .find(|r| r.join(ADAPTER).is_file())
+        .find(|r| plugin_path(r, ADAPTER).is_file())
         .map(|r| r.display().to_string())
 }
 
@@ -46,7 +47,7 @@ pub fn adopt(run: &Path, root: Option<&str>) {
 
 /// `ctx` takes `root` unless the root it knows still holds the adapter; whether it did.
 fn rooted(ctx: &mut Ctx, root: &str) -> bool {
-    let holds = |r: &str| !r.is_empty() && Path::new(r).join(ADAPTER).is_file();
+    let holds = |r: &str| !r.is_empty() && plugin_path(Path::new(r), ADAPTER).is_file();
     if ctx.root.as_deref().is_some_and(holds) || ctx.root.as_deref() == Some(root) {
         return false;
     }
