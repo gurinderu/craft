@@ -49,7 +49,7 @@ pub struct ChainBranch {
 /// # Errors
 /// The refusal, when a pull request is given and `HEAD` does not hold the head gh names for it
 /// (realm @nick/craft, node #468).
-pub fn resolve(cwd: &Path, lookup: Lookup<'_>) -> Result<ChainBranch, String> {
+pub fn resolve(cwd: &Path, lookup: &Lookup<'_>) -> Result<ChainBranch, String> {
     let branch = git::branch(cwd);
     if lookup.pr.is_none() && branch.is_some() {
         return Ok(ChainBranch {
@@ -57,7 +57,7 @@ pub fn resolve(cwd: &Path, lookup: Lookup<'_>) -> Result<ChainBranch, String> {
             ..ChainBranch::default()
         });
     }
-    let Asked { found, ahead } = ask(cwd, &lookup)?;
+    let Asked { found, ahead } = ask(cwd, lookup)?;
     let unchecked = lookup.pr.filter(|_| lookup.gh.is_some());
     let mut chain = chained(branch, lookup.pr, unchecked, found);
     chain.note = chain.note.or(ahead);

@@ -51,10 +51,8 @@ fn adjudicated(prior: usize, answer: Option<Value>) -> Task {
     t
 }
 
-fn said(status: &str, line: i64, attack: &str) -> Option<Value> {
-    Some(
-        json!({"status": status, "currentLine": line, "note": "n", "invariant": "i", "attack": attack}),
-    )
+fn said(status: &str, line: i64, attack: &str) -> Value {
+    json!({"status": status, "currentLine": line, "note": "n", "invariant": "i", "attack": attack})
 }
 
 #[test]
@@ -95,11 +93,11 @@ fn each_answer_gives_its_prior_a_fate_and_a_dead_adjudicator_keeps_it_open() {
             .collect(),
     );
     let tasks = [
-        adjudicated(0, said("resolved", 9, "")),
-        adjudicated(1, said("resolved", 0, "x breaks it")),
-        adjudicated(2, said("still-open", 0, "")),
-        adjudicated(3, said("regressed", 0, "a new hole")),
-        adjudicated(4, said("cannot-tell", 0, "")),
+        adjudicated(0, Some(said("resolved", 9, ""))),
+        adjudicated(1, Some(said("resolved", 0, "x breaks it"))),
+        adjudicated(2, Some(said("still-open", 0, ""))),
+        adjudicated(3, Some(said("regressed", 0, "a new hole"))),
+        adjudicated(4, Some(said("cannot-tell", 0, ""))),
         adjudicated(5, None),
     ];
     let notes = judge(&mut c, &tasks);
@@ -126,7 +124,7 @@ fn each_answer_gives_its_prior_a_fate_and_a_dead_adjudicator_keeps_it_open() {
     let mut again = chained(vec![c.priors[1].row.clone()]);
     judge(
         &mut again,
-        &[adjudicated(0, said("still-open", 0, "y too"))],
+        &[adjudicated(0, Some(said("still-open", 0, "y too")))],
     );
     assert_eq!(again.priors[0].row.why, "w — fix incomplete: y too");
     assert_eq!(c.gating().len(), 5);
@@ -145,7 +143,7 @@ fn a_verified_repeat_is_absorbed_onto_its_prior_and_a_returning_one_is_marked() 
         row("fixed one", "R2", "closed", "confirmed"),
     ]);
     c.tombstones[0].why = "resolved in round 4".into();
-    judge(&mut c, &[adjudicated(0, said("still-open", 3, ""))]);
+    judge(&mut c, &[adjudicated(0, Some(said("still-open", 3, "")))]);
     let mut found = vec![
         settled("R1", 3, "High", "confirmed"),
         settled("R2", 5, "High", "suspected"),
@@ -186,8 +184,8 @@ fn a_more_severe_finding_or_one_beside_a_relocated_prior_is_never_swallowed() {
     judge(
         &mut c,
         &[
-            adjudicated(0, said("still-open", 3, "")),
-            adjudicated(1, said("still-open", 3, "")),
+            adjudicated(0, Some(said("still-open", 3, ""))),
+            adjudicated(1, Some(said("still-open", 3, ""))),
         ],
     );
     let mut found = vec![
@@ -289,7 +287,10 @@ fn a_changed_set_aside_prior_reopens_and_takes_its_re_report_at_a_moved_line() {
     );
     assert_eq!(ledger(&c, &found).len(), 1, "no row is added on a re-scan");
     let mut again = chained(ledger(&c, &found));
-    judge(&mut again, &[adjudicated(0, said("still-open", 0, ""))]);
+    judge(
+        &mut again,
+        &[adjudicated(0, Some(said("still-open", 0, "")))],
+    );
     assert!(
         !again.priors[0].located,
         "currentLine 0 is not found: the old line, the file-and-rule key"
@@ -351,8 +352,8 @@ fn the_ledger_carries_the_open_the_settled_and_the_tombstones() {
     judge(
         &mut c,
         &[
-            adjudicated(0, said("resolved", 0, "")),
-            adjudicated(1, said("still-open", 0, "")),
+            adjudicated(0, Some(said("resolved", 0, ""))),
+            adjudicated(1, Some(said("still-open", 0, ""))),
         ],
     );
     let settled = [
@@ -441,7 +442,7 @@ fn an_absorbed_host_comes_back_next_round_to_be_adjudicated_with_its_absorbed_si
     let mut c = chained(vec![row("open one", "R1", "open", "confirmed")]);
     judge(
         &mut c,
-        &[adjudicated(0, said("still-open", 3, "still there"))],
+        &[adjudicated(0, Some(said("still-open", 3, "still there")))],
     );
     let mut found = vec![settled("R1", 3, "Medium", "confirmed")];
     absorb(&mut c, &mut found);
@@ -490,7 +491,7 @@ fn a_red_team_runs_on_the_model_it_is_handed_not_a_fixed_one() {
         sources: crate::sources::Sources::default(),
         scope: None,
     };
-    let answered = [adjudicated(0, said("resolved", 3, ""))];
+    let answered = [adjudicated(0, Some(said("resolved", 3, "")))];
     for model in [Model::Sonnet, Model::Opus] {
         let t = attack_tasks(&ctx, &c, &answered, model).unwrap();
         assert_eq!(

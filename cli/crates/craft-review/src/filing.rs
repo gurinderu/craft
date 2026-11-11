@@ -67,7 +67,7 @@ pub fn submitted(
             ..Filing::default()
         };
     } else if filing.finished.is_some() {
-        return Some(outcome(&filing, earlier, true));
+        return Some(outcome(&filing, &earlier, true));
     }
     if host.output_tokens.is_some() {
         filing.output_tokens = host.output_tokens;
@@ -99,7 +99,7 @@ pub fn republished(run: &Path, step: &Value, w: &dyn Writer) -> Option<Value> {
         );
     }
     keep(run, &mut filing, &mut lost);
-    Some(outcome(&filing, lost, true))
+    Some(outcome(&filing, &lost, true))
 }
 
 /// The finished step of the segment whose record is not in the store, `None` when it is or the
@@ -130,7 +130,7 @@ fn file_again(run: &Path, mut lost: Vec<String>, w: &dyn Writer) -> Option<Value
     filing.refiled = true;
     file_record(run, &mut filing, &step, &mut lost, w);
     keep(run, &mut filing, &mut lost);
-    Some(with_filing(step, outcome(&filing, lost, true)))
+    Some(with_filing(step, outcome(&filing, &lost, true)))
 }
 
 /// Keeps `filing` with what its writes lost, for `status` to say why.
@@ -159,7 +159,7 @@ fn record_step(
         file_record(run, &mut filing, step, &mut lost, w);
     }
     keep(run, &mut filing, &mut lost);
-    outcome(&filing, lost, done)
+    outcome(&filing, &lost, done)
 }
 
 /// One attempt at the record, counted and kept before it is made.

@@ -7,9 +7,12 @@ use crate::{AgentBackend, AgentError, AgentReply, AgentRequest};
 pub struct AnthropicApi;
 
 impl AgentBackend for AnthropicApi {
-    async fn run(&self, _request: &AgentRequest) -> Result<AgentReply, AgentError> {
-        Err(AgentError::NotYet {
+    fn run(
+        &self,
+        _request: &AgentRequest,
+    ) -> impl Future<Output = Result<AgentReply, AgentError>> + Send {
+        std::future::ready(Err(AgentError::NotYet {
             backend: "anthropic-api",
-        })
+        }))
     }
 }

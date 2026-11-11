@@ -40,7 +40,7 @@ pub(crate) fn placement(task: &Task, agents: Option<&[String]>) -> Placement {
         _ => Placement {
             agent: TASK_AGENT.to_owned(),
             own: false,
-            degraded: own.map(|a| a.to_owned()),
+            degraded: own.map(str::to_owned),
         },
     }
 }

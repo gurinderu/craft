@@ -53,7 +53,7 @@ fn failing(line: &str) -> Vec<&str> {
 fn runs_cargo(words: &[&str]) -> bool {
     words
         .iter()
-        .find(|w| **w != "env" && !(w.contains('=') && !w.starts_with('-')))
+        .find(|w| **w != "env" && (!w.contains('=') || w.starts_with('-')))
         .is_some_and(|w| *w == "cargo")
 }
 

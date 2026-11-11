@@ -100,7 +100,7 @@ fn with_skill_id(x: Value) -> Value {
             && s.get(6..).is_some_and(|r| !r.trim_start().is_empty())
     });
     let (id, sid) = (text(o.get("id")), skill_record_id(&o));
-    if id.is_empty() || sid.is_empty() || sid == id || !(stored || !skill_form(&id)) {
+    if id.is_empty() || sid.is_empty() || sid == id || (!stored && skill_form(&id)) {
         return Value::Object(o);
     }
     let mut links = links;

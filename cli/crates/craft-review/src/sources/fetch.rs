@@ -11,7 +11,7 @@ use super::Git;
 use super::spec::{is_commit_id, v_spelling};
 
 /// A temporary copy older than this belongs to a run that died, not one still cloning.
-const STALE_TMP: Duration = Duration::from_secs(60 * 60);
+const STALE_TMP: Duration = Duration::from_hours(1);
 
 impl Git {
     /// The revision to fetch: a full commit id as it is, a tag the remote lists, else that tag's

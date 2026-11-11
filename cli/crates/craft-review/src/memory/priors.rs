@@ -98,14 +98,13 @@ impl Memory {
         if self.decisions.is_empty() || judged.is_empty() {
             return;
         }
-        let prepared = match &kept {
-            Some(asked) => apply::prepare_asked(&judged, &self.decisions, asked),
-            None => {
-                let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
-                apply::prepare(&judged, &self.decisions, &check)
-            }
+        let prepared = if let Some(asked) = &kept {
+            apply::prepare_asked(&judged, &self.decisions, asked)
+        } else {
+            let check = |ds: &[&PriorDecision]| scope_check(repo, ds);
+            apply::prepare(&judged, &self.decisions, &check)
         };
-        let out = apply::apply(judged, prepared, answer);
+        let out = apply::apply(judged, &prepared, answer);
         self.set_aside = commit(settled, chain, out.kept, out.set_aside);
         notes.extend(out.notes.iter().map(|n| format!("prior decisions: {n}")));
         self.refused.extend(out.refused);
@@ -198,11 +197,10 @@ fn commit(
         match take_prior(&f) {
             Some((i, f)) => {
                 if let Some(p) = chain.priors.get_mut(i) {
-                    p.row.why = f
-                        .get("why")
+                    f.get("why")
                         .and_then(Value::as_str)
                         .unwrap_or("")
-                        .to_owned();
+                        .clone_into(&mut p.row.why);
                     p.contradicts = f.get(CONTRADICTS).cloned();
                 }
             }

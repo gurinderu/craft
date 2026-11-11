@@ -100,7 +100,7 @@ impl Sink {
     /// A progress line: printed, or as a `log` event. A failed write loses only progress.
     pub(crate) fn log(self, line: &str) {
         if self.json {
-            self.emit(Event::Log {
+            self.emit(&Event::Log {
                 line: line.to_owned(),
             });
         } else {
@@ -109,11 +109,11 @@ impl Sink {
     }
 
     /// An event, written only in the event stream.
-    pub(crate) fn emit(self, event: Event) {
+    pub(crate) fn emit(self, event: &Event) {
         if !self.json {
             return;
         }
-        if let Ok(line) = serde_json::to_string(&event) {
+        if let Ok(line) = serde_json::to_string(event) {
             let _unlogged = writeln!(std::io::stderr().lock(), "{line}");
         }
     }

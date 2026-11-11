@@ -42,7 +42,6 @@ pub(super) fn read(p: &Pairs, n: usize, answer: Option<&Value>) -> Read {
         match v {
             Some(v) if v.same => first(out.covers.get_mut(fi), v),
             Some(v) if v.violates => first(out.against.get_mut(fi), v),
-            Some(_) => {}
             None if !out.unjudged.iter().any(|(f, _)| *f == fi) => {
                 let why = if i < sent {
                     why.to_owned()
@@ -51,7 +50,7 @@ pub(super) fn read(p: &Pairs, n: usize, answer: Option<&Value>) -> Read {
                 };
                 out.unjudged.push((fi, why));
             }
-            None => {}
+            Some(_) | None => {}
         }
     }
     out

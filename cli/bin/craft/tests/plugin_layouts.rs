@@ -17,7 +17,7 @@ use std::process::Command;
 
 /// A stand-in `codex exec`: the prompt appended to `FAKE_LOG`, and to `-o` the smallest value the
 /// `--output-schema` admits — null where it may be, else the first enum value or an empty one.
-const FAKE_CODEX: &str = r#"#!/usr/bin/env node
+const FAKE_CODEX: &str = r"#!/usr/bin/env node
 const fs = require('node:fs')
 const argv = process.argv.slice(2)
 const at = f => argv[argv.indexOf(f) + 1]
@@ -32,7 +32,7 @@ const fill = s => {
 }
 fs.appendFileSync(process.env.FAKE_LOG, fs.readFileSync(0, 'utf8') + '\n')
 fs.writeFileSync(at('-o'), JSON.stringify(fill(JSON.parse(fs.readFileSync(at('--output-schema'), 'utf8')))))
-"#;
+";
 
 fn checkout() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")

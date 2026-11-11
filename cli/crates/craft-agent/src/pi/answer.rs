@@ -2,8 +2,8 @@
 //! its answer as one JSON object in a fence of its own, opened with ```` ```craft-answer ````.
 //!
 //! The object in the last such block is the answer: an example printed after it, in a `json`
-//! fence or bare, is not. The object is found by its balanced braces, strings skipped, so a ```
-//! inside a JSON string closes nothing. Without such a block, the answer is the last object in
+//! fence or bare, is not. The object is found by its balanced braces, strings skipped, so a
+//! ```` ``` ```` inside a JSON string closes nothing. Without such a block, the answer is the last object in
 //! the output that parses, fenced or bare — so an example printed in a `json` fence before the
 //! answer does not win over it. Nothing more is checked here: the binary validates the answer
 //! against its schema and hands a bad one back for a retry.

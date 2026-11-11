@@ -92,7 +92,7 @@ fn refusals(
 
 /// Applies the prepared records to `findings`, `answer` the match judge's when it was asked
 /// (`None`: it gave none).
-pub(super) fn apply(findings: Vec<Value>, p: Prepared, answer: Option<&Value>) -> Applied {
+pub(super) fn apply(findings: Vec<Value>, p: &Prepared, answer: Option<&Value>) -> Applied {
     let mut out = Applied {
         notes: p.notes.clone(),
         ..Applied::default()
@@ -103,7 +103,7 @@ pub(super) fn apply(findings: Vec<Value>, p: Prepared, answer: Option<&Value>) -
     }
     let m = judged::matched(&findings, &p.ds, &p.plans, &p.asked, answer);
     out.notes.extend(m.notes.iter().cloned());
-    out.refused = m.refused.clone();
+    out.refused.clone_from(&m.refused);
     out.refused
         .extend(refusals(&findings, &p.ds, &m.matches, &p.scope));
     let mut reraised = 0;
