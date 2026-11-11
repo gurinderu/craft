@@ -20,12 +20,14 @@ function fakeCtx(contexts = []) {
   const ctx = /** @type {import('./opencode-v2.js').V2Context} */ (/** @type {unknown} */ ({
     app: { version: '2.2.7' },
     location: { directory: '/repo', project: { directory: '/root' } },
+    agent: { list: async () => ({ location: { directory: '/repo' }, data: [{ id: 'build' }, { id: 'review-task' }] }) },
     tool: { transform: async (/** @type {any} */ edit) => { edit({ add: (/** @type {any} */ d) => tools.push(d) }); return reg } },
     session: {
       create: async (/** @type {unknown} */ input) => { sent.push(['create', input]); return { id: 'ses_1' } },
       get: async (/** @type {{ sessionID: string }} */ { sessionID }) => (sessionID === 'ses_set' ? { id: sessionID, model: { providerID: 'p', id: 'm', variant: 'default' } } : { id: sessionID }),
       prompt: async (/** @type {unknown} */ input) => { sent.push(['prompt', input]) },
       wait: async () => { sent.push(['wait']) },
+      interrupt: async (/** @type {unknown} */ input) => { sent.push(['interrupt', input]); return { interrupted: true } },
       context: async () => contexts.shift() ?? [],
       hook: async (/** @type {string} */ name, /** @type {any} */ cb) => { hooks[name] = cb; return reg },
     },
@@ -124,4 +126,16 @@ test('setup registers the tools, hooks the prompt, maps the events, and disposes
   assert.deepEqual(seen, [['child', 'c', 'p', 'general'], ['compacted', 'p'], ['message', 'p', 'review it', undefined, true]])
   await dispose()
   assert.equal(f.disposed(), 2)
+})
+
+test('a deadline interrupts the session and stops the polling; the agents are listed', async () => {
+  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }]])
+  const stop = new AbortController()
+  const ctx = f.ctx
+  const wait = ctx.session.wait
+  ctx.session.wait = async (input) => { await wait(input); stop.abort() }
+  await assert.rejects(v2Host(ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
+  assert.deepEqual(f.sent.filter(e => Array.isArray(e) && e[0] === 'wait').length, 1, 'no read after the abort')
+  assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
+  assert.deepEqual([...await v2Host(ctx, 0).agents() ?? []], ['build', 'review-task'])
 })

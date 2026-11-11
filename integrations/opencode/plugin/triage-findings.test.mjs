@@ -159,7 +159,7 @@ function fakeCtx(answerFor, prompts = []) {
     directory: '/repo',
     worktree: '/repo',
     sh: async () => '',
-    callerModel: async () => undefined,
+    callerModel: async () => undefined, agents: async () => null,
     runChild: async (/** @type {import('./host.ts').ChildRequest} */ { prompt }) => {
       prompts.push(prompt)
       return answerFor({ isPlan: /ordered fix plan/i.test(prompt) })

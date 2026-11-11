@@ -10,12 +10,12 @@
 //   • intercepts NO permission, tool call or model request
 //   • talks only to the local opencode server; opens no ports, no outbound network, no telemetry; the hook
 //     writes one line per firing to ~/.craft/hooks.jsonl
-//   • the 4 review subagents stay hidden (their own frontmatter: hidden: true)
+//   • the 5 review subagents stay hidden (their own frontmatter: hidden: true)
 import type { PluginInput, PluginModule } from "@opencode-ai/plugin"
 import { v1Hooks } from "./host-v1.ts"
 import { v2Setup } from "./host-v2.ts"
 import type { V2Context } from "./opencode-v2.js"
-import { ENGINE_SESSIONS } from "./orchestrator.ts"
+import { ENGINE_SESSIONS } from "./child-run.ts"
 import { TOOLS } from "./tools.ts"
 import { workHook } from "./work-hook.ts"
 

@@ -5,40 +5,44 @@
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 import type { Part, TextPart } from "@opencode-ai/sdk"
-import { stringArgs, type Host, type ModelRef, type ToolSpec, type WorkHook } from "./host.ts"
+import { stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from "./host.ts"
+import { agentNames, errorOf, extractText, field, lastModel } from "./host-v1-read.ts"
 import { shellIn } from "./shell.mjs"
+
+export { extractText, lastModel }
 
 type TextIn = { type: "text"; text: string }
 export interface V1Client {
   session: {
     create(req: { body: { title: string; parentID?: string } }): Promise<unknown>
     messages(req: { path: { id: string } }): Promise<unknown>
+    abort(req: { path: { id: string } }): Promise<unknown>
     prompt(req: {
       path: { id: unknown }
       body: { agent: string; parts: TextIn[]; model?: { providerID: string; modelID: string } }
     }): Promise<unknown>
   }
+  app: { agents(): Promise<unknown> }
 }
 
-const field = (v: unknown, k: string): unknown => (typeof v === "object" && v !== null ? (v as Record<string, unknown>)[k] : undefined)
-
-// The parts of a message, wherever the response shape keeps them.
-function partsOf(root: unknown): unknown[] {
-  const found = [field(root, "parts"), field(field(root, "data"), "parts"), field(field(root, "message"), "parts")].find(Array.isArray)
-  return found ?? []
-}
-
-export function extractText(res: unknown): string {
-  // Normalize a streaming/array response to its last message before reading parts, so an array
-  // shape isn't mistaken for "no output" (which would mis-mark a successful job NOT RUN).
-  const root: unknown = Array.isArray(res) ? res[res.length - 1] : res
-  const text = partsOf(root)
-    .filter((p) => field(p, "type") === "text" && typeof field(p, "text") === "string")
-    .map((p) => String(field(p, "text")))
-    .join("\n")
-    .trim()
-  const top = field(root, "text")
-  return text || (typeof top === "string" ? top.trim() : "")
+// The child's prompt, run to its reply; an abort (the caller's deadline) stops the session — `session.abort`, observed
+// on opencode 1.19.5 — and gives up on it. A prompt the server refused throws its error.
+async function prompted(client: V1Client, id: unknown, req: ChildRequest): Promise<string> {
+  const stop = () => { if (typeof id === "string") client.session.abort({ path: { id } }).catch(() => undefined) }
+  req.signal?.addEventListener("abort", stop, { once: true })
+  try {
+    const model = req.model && { providerID: req.model.providerID, modelID: req.model.modelID }
+    const res = await client.session.prompt({
+      path: { id },
+      body: { agent: req.agent, parts: [{ type: "text", text: req.prompt }], ...(model ? { model } : {}) },
+    })
+    if (req.signal?.aborted) throw new Error("the child session was stopped at its deadline")
+    const failed = errorOf(res)
+    if (failed) throw new Error(failed)
+    return extractText(res)
+  } finally {
+    req.signal?.removeEventListener("abort", stop)
+  }
 }
 
 export function v1Host(input: { client: V1Client; directory: string; worktree: string }): Host {
@@ -51,31 +55,15 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
       const session = await client.session.create({ body: { title: req.title, ...(req.parentID ? { parentID: req.parentID } : {}) } })
       const id = field(session, "id") ?? field(field(session, "data"), "id")
       if (typeof id === "string") req.onSession?.(id)
-      const model = req.model && { providerID: req.model.providerID, modelID: req.model.modelID }
-      const res = await client.session.prompt({
-        path: { id },
-        body: { agent: req.agent, parts: [{ type: "text", text: req.prompt }], ...(model ? { model } : {}) },
-      })
-      return extractText(res)
+      return prompted(client, id, req)
     },
     async callerModel(sessionID) {
       return lastModel(await client.session.messages({ path: { id: sessionID } }))
     },
+    async agents() {
+      return agentNames(await client.app.agents())
+    },
   }
-}
-
-// The model a session's newest message names (observed on opencode 1.19.5): a user message's `model`, an assistant
-// message's `providerID`/`modelID`.
-export function lastModel(res: unknown): ModelRef | undefined {
-  const list = field(res, "data") ?? res
-  const infos = Array.isArray(list) ? list.map((m) => field(m, "info")) : []
-  for (const info of infos.reverse()) {
-    const own = field(info, "model")
-    const providerID = field(own, "providerID") ?? field(info, "providerID")
-    const modelID = field(own, "modelID") ?? field(info, "modelID")
-    if (typeof providerID === "string" && typeof modelID === "string") return { providerID, modelID }
-  }
-  return undefined
 }
 
 function v1Tool(host: Host, spec: ToolSpec) {

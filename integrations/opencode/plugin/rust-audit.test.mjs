@@ -26,7 +26,7 @@ function fakeCtx(answerFor) {
     directory: '/repo',
     worktree: '/repo',
     sh: async () => '',
-    callerModel: async () => undefined,
+    callerModel: async () => undefined, agents: async () => null,
     runChild: async (/** @type {ChildRequest} */ { agent, prompt }) => {
       const isSynthesis = /consolidating a Rust audit/.test(prompt)
       seen.push(isSynthesis ? 'synthesis' : agent || 'dimension')

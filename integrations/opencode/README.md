@@ -62,8 +62,13 @@ sessions, and has not yet been seen in a real OpenCode session.
 - The review's own arguments are the Claude Code workflow's: `base=`, `pr=`, `repo=`, `depth=`,
   `run=<dir>` to resume a stopped run, `craftBin=` for a local build. The binary is the release of
   this plugin's version, fetched once.
-- A task past its deadline is abandoned, a failed one is handed out again by the binary, and the
-  first usage-limit error stops new tasks and ends the run INCOMPLETE with how to resume it.
+- A task past its deadline is abandoned and its child session stopped (`session.abort` on 1.x,
+  `session.interrupt` on 2.x); a failed one is handed out again by the binary; the first usage-limit
+  error stops new tasks and ends the run INCOMPLETE with how to resume it.
+- A child that answers nothing is tried once more, alone — the same mitigation `/rust-audit` and
+  `/triage-findings` use for opencode's child-session bugs (#8528 / #6573).
+- If this OpenCode has no `rust-reviewer` agent, its tasks run on `review-task` with the
+  rust-reviewer prompt, and the run is reported as degraded.
 
 ## Model strategy
 

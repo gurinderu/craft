@@ -21,6 +21,8 @@ export interface ChildRequest {
   parentID?: string
   // Called with the child session's id as soon as it exists, before the prompt runs.
   onSession?: (id: string) => void
+  // Aborted when the caller gives up (its deadline): the host stops the child session and gives up on its reply.
+  signal?: AbortSignal
 }
 
 // Where the workflows run and how they read it. `sh` runs one read-only probe through `bash -lc` in
@@ -37,6 +39,8 @@ export interface Host extends Workspace {
   runChild(req: ChildRequest): Promise<string>
   // The model a session runs on, as the runtime records it; undefined when it records none (the runtime's default).
   callerModel(sessionID: string): Promise<ModelRef | undefined>
+  // The agents the runtime has, by the name a child session takes; null when it cannot say.
+  agents(): Promise<Set<string> | null>
 }
 
 // The tool call as the runtime hands it over: the session that called the tool.
