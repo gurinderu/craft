@@ -1,0 +1,80 @@
+#!/bin/sh
+# The craft binary of this plugin version, for the hosts that run it from a shell — Codex, pi, OpenCode
+# (realm @nick/craft, node #500). It runs ~/.craft/bin/<version>/craft with every argument; when that is
+# not there, it downloads the release's craft-<target>.tar.gz and its .sha256 (GitHub release v<version>),
+# checks the SHA-256, unpacks the binary into that place and runs it. The cache and its layout are
+# lib/craft-bin.mjs's, so both deliveries share one copy. Windows is not covered: it has no sh.
+#
+#   CRAFT_BIN=<path>            run this binary instead (a local build)
+#   CRAFT_RELEASE_BASE=<url>    download from here instead of the GitHub release
+#   CRAFT_ROOT=<dir>            the plugin root the binary reads; by default the directory above this script
+#
+# A failure prints one line on stderr naming what is missing, and exits 127.
+set -u
+
+version=0.50.0 # x-release-please-version
+
+die() {
+  printf 'craft: %s\n' "$1" >&2
+  exit 127
+}
+
+here=$(cd "$(dirname "$0")/.." && pwd -P) || die "cannot find the plugin root above $0"
+CRAFT_ROOT=${CRAFT_ROOT:-$here}
+export CRAFT_ROOT
+
+if [ -n "${CRAFT_BIN:-}" ]; then
+  [ -x "$CRAFT_BIN" ] && [ -f "$CRAFT_BIN" ] || die "CRAFT_BIN=$CRAFT_BIN is not an executable file"
+  exec "$CRAFT_BIN" "$@"
+fi
+
+[ -n "${HOME:-}" ] || die "HOME is not set: no place for ~/.craft/bin/$version"
+dir=$HOME/.craft/bin/$version
+bin=$dir/craft
+if [ -f "$bin" ] && [ -x "$bin" ]; then
+  exec "$bin" "$@"
+fi
+
+case "$(uname -s)/$(uname -m)" in
+  Linux/x86_64 | Linux/amd64) target=x86_64-unknown-linux-musl ;;
+  Linux/aarch64 | Linux/arm64) target=aarch64-unknown-linux-musl ;;
+  Darwin/x86_64) target=x86_64-apple-darwin ;;
+  Darwin/arm64 | Darwin/aarch64) target=aarch64-apple-darwin ;;
+  *) die "no released craft binary for $(uname -s)/$(uname -m): build it from cli/ and set CRAFT_BIN" ;;
+esac
+
+if command -v curl >/dev/null 2>&1; then
+  fetch() { curl -fsL --retry 2 -o "$2" "$1"; }
+elif command -v wget >/dev/null 2>&1; then
+  fetch() { wget -q -O "$2" "$1"; }
+else
+  die "neither curl nor wget is on the PATH to download the craft binary $version"
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  digest() { sha256sum "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+  digest() { shasum -a 256 "$1"; }
+else
+  die "neither sha256sum nor shasum is on the PATH to check the craft binary $version"
+fi
+
+asset=craft-$target.tar.gz
+base=${CRAFT_RELEASE_BASE:-https://github.com/gurinderu/craft/releases/download/v$version}
+mkdir -p "$dir" || die "cannot create $dir"
+tmp=$(mktemp -d "$dir/.fetch-XXXXXX") || die "cannot create a temporary directory in $dir"
+fail() {
+  rm -rf "$tmp"
+  die "$1"
+}
+
+fetch "$base/$asset" "$tmp/$asset" || fail "could not download $base/$asset"
+fetch "$base/$asset.sha256" "$tmp/$asset.sha256" || fail "could not download $base/$asset.sha256"
+expected=$(sed -n '1s/^\([0-9a-fA-F]\{64\}\).*/\1/p' "$tmp/$asset.sha256" | tr 'A-F' 'a-f')
+[ -n "$expected" ] || fail "$asset.sha256 holds no SHA-256"
+actual=$(digest "$tmp/$asset" | cut -d' ' -f1)
+[ "$actual" = "$expected" ] || fail "$asset: SHA-256 $actual is not the published $expected"
+tar -xzf "$tmp/$asset" -C "$tmp" craft 2>/dev/null || fail "could not unpack craft from $asset"
+[ -f "$tmp/craft" ] && [ ! -L "$tmp/craft" ] || fail "craft in $asset is not a regular file"
+chmod 755 "$tmp/craft" && mv -f "$tmp/craft" "$bin" || fail "could not install $bin"
+rm -rf "$tmp"
+exec "$bin" "$@"
