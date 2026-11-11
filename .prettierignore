@@ -17,6 +17,10 @@ content/
 cli/
 .jscpd-baseline.json
 .release-please-manifest.json
+# The JSON manifests release-please rewrites with its own serializer (release-please-config.json `extra-files`).
+integrations/claude-code/.claude-plugin/plugin.json
+.claude-plugin/marketplace.json
+.codex-plugin/plugin.json
 # Stryker's leftovers (gitignored).
 .stryker-tmp/
 reports/
