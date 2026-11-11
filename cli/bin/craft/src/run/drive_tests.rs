@@ -154,6 +154,8 @@ struct Bench {
     deadline: Option<Duration>,
     agents: Option<Vec<String>>,
     events: RefCell<Vec<Event>>,
+    /// A stopping signal's exit status, sent this long after the drive starts.
+    stop_after: Option<(Duration, u8)>,
 }
 
 impl Bench {
@@ -184,6 +186,7 @@ impl Bench {
             deadline: None,
             agents: None,
             events: RefCell::default(),
+            stop_after: None,
         }
     }
 
@@ -218,6 +221,17 @@ impl Bench {
             deadline: self.deadline,
             log: &|_| {},
             emit: &|e| self.events.borrow_mut().push(e),
+            stop: {
+                let (send, stop) = tokio::sync::watch::channel(None);
+                if let Some((after, code)) = self.stop_after {
+                    tokio::spawn(async move {
+                        tokio::time::sleep(after).await;
+                        let _gone = send.send(Some(code));
+                        std::future::pending::<()>().await;
+                    });
+                }
+                stop
+            },
         };
         drive(
             &Driver {
@@ -431,6 +445,48 @@ async fn a_submit_that_fails_is_asked_of_status_and_the_run_said_where_it_stands
         answer.text
     );
     assert_eq!(fake.filed.borrow().len(), 1);
+}
+
+#[tokio::test]
+async fn a_stopping_signal_stops_the_round_s_tasks_and_files_the_run_incomplete() {
+    let mut bench = Bench::new(HostKind::Codex);
+    bench.stop_after = Some((Duration::from_millis(500), 143));
+    let fake = bench.fake(vec![Spec("slow", "HANG", None), Spec("b", "HANG", None)]);
+    let answer = bench.drive(&fake).await;
+    tokio::task::spawn_blocking(craft_agent::settle_stops)
+        .await
+        .unwrap();
+    assert!(!answer.finished);
+    assert!(
+        answer
+            .text
+            .contains("INCOMPLETE — review run was stopped by a signal (exit 143)"),
+        "{}",
+        answer.text
+    );
+    assert!(answer.text.contains("To resume it"), "{}", answer.text);
+    assert!(fake.submits.borrow().is_empty(), "nothing is submitted");
+    assert_eq!(
+        *fake.filed.borrow(),
+        ["review run was stopped by a signal (exit 143)"]
+    );
+    let pids: Vec<String> = std::fs::read_dir(bench.path("log"))
+        .unwrap()
+        .filter_map(|e| {
+            let name = e.unwrap().file_name().to_string_lossy().into_owned();
+            name.strip_prefix("call-").map(str::to_owned)
+        })
+        .collect();
+    assert_eq!(pids.len(), 2, "both tasks started");
+    for pid in pids {
+        let alive = std::process::Command::new("kill")
+            .args(["-0", "--", &format!("-{pid}")])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success();
+        assert!(!alive, "the group of task process {pid} is left behind");
+    }
 }
 
 #[path = "opencode_drive_tests.rs"]

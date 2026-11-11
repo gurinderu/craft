@@ -122,6 +122,16 @@ fn ready(args: &RunArgs, repo: &Path, sink: Sink) -> Result<(NonZeroUsize, Host,
 }
 
 pub async fn run(args: RunArgs) -> Result<ExitCode> {
+    // Before any task starts, so no stopping signal finds craft without a handler while a task's
+    // process group is up: the round in flight stops its tasks, and the run is filed INCOMPLETE
+    // with how to resume it (realm @nick/craft, node #40).
+    let signal = crate::review::stop_signal();
+    let (stopping, stop) = tokio::sync::watch::channel(None);
+    tokio::spawn(async move {
+        if let Some(code) = signal.await {
+            let _gone = stopping.send(Some(code));
+        }
+    });
     let sink = Sink {
         json: args.events == Some(EventFormat::Json),
     };
@@ -170,12 +180,13 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
             deadline: None,
             log: &log,
             emit: &emit,
+            stop: stop.clone(),
         },
         again: &again,
     };
     let answer = ending::drive(&driver, args.run.as_deref().map(Path::new), comment).await;
     say(&mut std::io::stdout().lock(), &answer.text)?;
-    let code = u8::from(!answer.finished);
+    let code = (*stop.borrow()).unwrap_or(u8::from(!answer.finished));
     sink.emit(Event::result(answer.step.as_ref(), answer.run, code));
     Ok(ExitCode::from(code))
 }

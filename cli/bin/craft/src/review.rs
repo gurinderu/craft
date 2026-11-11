@@ -209,7 +209,7 @@ async fn stopped_by(
 /// `None` when none could be registered. Each would otherwise end craft by default, with no drop
 /// run, and leave the agents' groups behind.
 #[cfg(unix)]
-fn stop_signal() -> impl Future<Output = Option<u8>> {
+pub(crate) fn stop_signal() -> impl Future<Output = Option<u8>> {
     use tokio::signal::unix::{Signal, SignalKind, signal};
     async fn arrival(signal: &mut Option<Signal>) -> Option<()> {
         match signal {
@@ -234,7 +234,7 @@ fn stop_signal() -> impl Future<Output = Option<u8>> {
 
 /// Off unix only Ctrl-C stops the run.
 #[cfg(not(unix))]
-async fn stop_signal() -> Option<u8> {
+pub(crate) async fn stop_signal() -> Option<u8> {
     tokio::signal::ctrl_c().await.ok().map(|()| INTERRUPTED)
 }
 
