@@ -12,7 +12,8 @@ The manifest names the Claude Code delivery's hooks file, `./integrations/claude
 its `hooks` field; Codex runs those hooks with `${CLAUDE_PLUGIN_ROOT}` set to its cached copy of the repository
 root, so the commands reach `lib/` there.
 
-The review runs in Codex through its own driver, `lib/codex-review.mjs`, which the `codex-review` skill has the
+The review has a Codex route, new and not yet observed running in a real Codex session (its loop is tested
+against fake `craft` and `codex` binaries only): its own driver, `lib/codex-review.mjs`, which the `codex-review` skill has the
 session run: a Node script over the `craft` binary's step protocol, sharing the Claude Code driver's command lines,
 step reader and answer (`lib/cli-review-*.mjs`), each task its own `codex exec --ephemeral -s read-only
 --output-schema <schema> -o <answer> -C <repo> -`, the prompt on stdin. Codex has no agent types, so a task naming a
