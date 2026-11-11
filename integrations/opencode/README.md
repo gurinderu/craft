@@ -26,7 +26,23 @@ One plugin serves both lines: its default export carries a 1.x entry (`server`) 
 opencode loads the plugin from `plugins/craft-rust.ts`, a link to `plugin/index.ts` (1.x loads only
 files from `plugins/`, not directories). opencode 2.x does not install a plugin
 directory's dependencies, so `install.sh` runs `npm ci --omit=dev` in `integrations/opencode/plugin`
-when they are missing; without npm, run it there yourself before starting opencode.
+whenever the dependencies are missing or npm's record of them is older than `package-lock.json` (a tree
+with dev packages is reinstalled with them; one another installer laid out is left alone); without npm,
+run it there yourself before starting opencode.
+
+## Upgrading
+
+After `git pull` (or checking out a new tag), rerun `install.sh` with the same scope, then restart
+opencode. The links point into this checkout, but a pull does not change what is linked:
+
+- it relinks the plugin as one file, `plugins/craft-rust.ts` — opencode 1.x never loads the older
+  directory link, so without the rerun the plugin silently stops loading there;
+- it installs the plugin's locked dependencies again (`npm ci --omit=dev`) — opencode 2.x does not;
+- it links agents and commands added since the last install (`review-task`, `/review`) — they are
+  linked file by file, so a new one is missing until the rerun — and removes its links whose target
+  is gone or no longer installed (`codex-review`, the old plugin directory link).
+
+`/review` refuses to start when the `review-task` agent is missing and says to rerun `install.sh`.
 
 ## Use
 
@@ -67,6 +83,8 @@ sessions, and has not yet been seen in a real OpenCode session.
   error stops new tasks and ends the run INCOMPLETE with how to resume it.
 - A child that answers nothing is tried once more, alone — the same mitigation `/rust-audit` and
   `/triage-findings` use for opencode's child-session bugs (#8528 / #6573).
+- If this OpenCode has no `review-task` agent (an install from before it), the review refuses to
+  start, INCOMPLETE, and says to rerun `install.sh`; it never runs a task on another, writable agent.
 - If this OpenCode has no `rust-reviewer` agent, its tasks run on `review-task` with the
   rust-reviewer prompt, and the run is reported as degraded.
 

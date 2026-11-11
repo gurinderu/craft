@@ -2,6 +2,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
+import { TOOLS } from './tools.ts'
 
 const assistant = (/** @type {string} */ text) => ({ type: 'assistant', finish: 'stop', content: [{ type: 'reasoning', text: 'hm' }, { type: 'text', text }] })
 
@@ -138,4 +139,13 @@ test('a deadline interrupts the session and stops the polling; the agents are li
   assert.deepEqual(f.sent.filter(e => Array.isArray(e) && e[0] === 'wait').length, 1, 'no read after the abort')
   assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
   assert.deepEqual([...await v2Host(ctx, 0).agents() ?? []], ['build', 'review-task'])
+})
+
+test('the review tool on a 2.x without review-task refuses up front and opens no session', async () => {
+  const f = fakeCtx()
+  f.ctx.agent.list = /** @type {any} */ (async () => ({ location: { directory: '/repo' }, data: [{ id: 'build' }, { id: 'rust-reviewer' }] }))
+  const review = TOOLS.find(t => t.name === 'review')
+  const answer = await review?.run(v2Host(f.ctx), {}, { sessionID: 'ses_set' })
+  assert.match(String(answer), /INCOMPLETE — the craft OpenCode agents are not installed or are out of date: rerun integrations\/opencode\/install\.sh/)
+  assert.equal(f.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
 })
