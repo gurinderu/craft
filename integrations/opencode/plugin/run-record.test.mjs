@@ -7,8 +7,16 @@ import { readFileSync as readFile } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join as joinPath } from 'node:path'
 import {
-  parseVerdict, buildAuditRecord, buildTriageRecord, indexProjection, writeRecord,
-  hasEvidence, EVIDENCE_MARKER, EVIDENCE_LINE, auditDimensions, auditSynthesisInput,
+  parseVerdict,
+  buildAuditRecord,
+  buildTriageRecord,
+  indexProjection,
+  writeRecord,
+  hasEvidence,
+  EVIDENCE_MARKER,
+  EVIDENCE_LINE,
+  auditDimensions,
+  auditSynthesisInput,
 } from './run-record.mjs'
 
 test('parseVerdict picks the worst signal in the text', () => {
@@ -100,13 +108,13 @@ test('parseVerdict reads the structured VERDICT: line, last one wins', () => {
 test('parseVerdict does not fire on an agent quoting its own instruction (failure A)', () => {
   // Every dimension prompt plants the literal `INCOMPLETE (not run)` in the model's context. An
   // unanchored whole-text match turned a clean run that MENTIONED the instruction into a not-run.
-  assert.equal(parseVerdict(
-    'I was instructed to report INCOMPLETE (not run) if the toolchain is absent.\n' +
-    'cargo-audit was present and ran cleanly.\n\nVerdict: Approve',
-  ), 'Approve')
-  assert.equal(parseVerdict(
-    'I was instructed to report INCOMPLETE (not run) if absent. It ran cleanly.\n\nVERDICT: APPROVE',
-  ), 'Approve')
+  assert.equal(
+    parseVerdict(
+      'I was instructed to report INCOMPLETE (not run) if the toolchain is absent.\n' + 'cargo-audit was present and ran cleanly.\n\nVerdict: Approve',
+    ),
+    'Approve',
+  )
+  assert.equal(parseVerdict('I was instructed to report INCOMPLETE (not run) if absent. It ran cleanly.\n\nVERDICT: APPROVE'), 'Approve')
 })
 
 test('parseVerdict does not read an emphasised prose adjective as a verdict (failure B)', () => {
@@ -133,7 +141,9 @@ test('buildAuditRecord rolls the top-level verdict up worst-wins over the dimens
       { label: 'security', ok: true, text: 'VERDICT: APPROVE' },
       { label: 'semver', ok: true, text: 'cargo-semver-checks absent.\n\nVERDICT: INCOMPLETE' },
     ],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'All good.\n\nVERDICT: APPROVE',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'All good.\n\nVERDICT: APPROVE',
   })
   assert.equal(rec.verdict, 'INCOMPLETE (not run)')
   assert.deepEqual(rec.incomplete, ['semver'])
@@ -144,7 +154,9 @@ test('buildAuditRecord rolls the top-level verdict up worst-wins over the dimens
       { label: 'review', ok: true, text: 'VERDICT: BLOCK' },
       { label: 'deps', ok: true, text: 'VERDICT: INCOMPLETE' },
     ],
-    baseRef: '', hasUnsafe: false, synthesisText: 'VERDICT: WARNING',
+    baseRef: '',
+    hasUnsafe: false,
+    synthesisText: 'VERDICT: WARNING',
   })
   assert.equal(rec2.verdict, 'Block (INCOMPLETE)')
   assert.deepEqual(rec2.incomplete, ['deps'])
@@ -159,7 +171,9 @@ test('buildAuditRecord suffixes the verdict so partial coverage survives worst-w
       { label: 'review', ok: true, text: 'VERDICT: WARNING' },
       { label: 'deps', ok: true, text: 'VERDICT: INCOMPLETE' },
     ],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'VERDICT: WARNING',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'VERDICT: WARNING',
   })
   assert.equal(warned.verdict, 'Warning (INCOMPLETE)')
   assert.deepEqual(warned.incomplete, ['deps'])
@@ -170,7 +184,9 @@ test('buildAuditRecord suffixes the verdict so partial coverage survives worst-w
       { label: 'review', ok: true, text: 'VERDICT: WARNING' },
       { label: 'miri', ok: false, text: '' },
     ],
-    baseRef: 'main', hasUnsafe: true, synthesisText: 'VERDICT: WARNING',
+    baseRef: 'main',
+    hasUnsafe: true,
+    synthesisText: 'VERDICT: WARNING',
   })
   assert.equal(crashed.verdict, 'Warning (INCOMPLETE)')
   assert.deepEqual(crashed.incomplete, [])
@@ -181,12 +197,16 @@ test('buildAuditRecord suffixes the verdict so partial coverage survives worst-w
     // A trusted green now carries an `Evidence:` line (invariant #53, ported): without it the gate
     // would demote this to INCOMPLETE, which is a different test. Here we want a real clean dimension.
     results: [{ label: 'review', ok: true, text: 'Evidence: ran cargo clippy/test.\n\nVERDICT: APPROVE' }],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'VERDICT: APPROVE',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'VERDICT: APPROVE',
   })
   assert.equal(clean.verdict, 'Approve')
   const nothing = buildAuditRecord({
     results: [{ label: 'deps', ok: true, text: 'VERDICT: INCOMPLETE' }],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'VERDICT: APPROVE',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'VERDICT: APPROVE',
   })
   assert.equal(nothing.verdict, 'INCOMPLETE (not run)')
 })
@@ -212,7 +232,9 @@ test('buildAuditRecord assembles dimensions, notRun, and a null findings field',
       { label: 'security', ok: true, text: 'Approve — clean\nEvidence: ran cargo-audit and cargo-deny.' },
       { label: 'architecture', ok: false, text: '' },
     ],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'overall verdict: Warning',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'overall verdict: Warning',
   })
   assert.equal(rec.schemaVersion, 1)
   assert.equal(rec.runtime, 'opencode')
@@ -289,7 +311,7 @@ test('hasEvidence tolerates case and a stray space before the colon (held identi
   assert.equal(hasEvidence('EVIDENCE: ran cargo test'), true)
   assert.equal(hasEvidence('evidence: ran cargo test'), true)
   assert.equal(hasEvidence('Evidence : ran cargo test'), true)
-  assert.equal(hasEvidence('**EVIDENCE:** ran cargo test'), true)     // case AND decoration together
+  assert.equal(hasEvidence('**EVIDENCE:** ran cargo test'), true) // case AND decoration together
   // Not weakened on the other axis: buried and decorated-but-empty stay false, in any case.
   assert.equal(hasEvidence('the EVIDENCE: is buried after a word'), false)
   assert.equal(hasEvidence('**EVIDENCE:**'), false)
@@ -306,7 +328,9 @@ test('a green whose only "Evidence:" is buried in a finding is demoted, not trus
   // happens to contain the marker. Before the line-anchoring fix buildAuditRecord trusted it.
   const rec = buildAuditRecord({
     results: [{ label: 'security', ok: true, text: 'Reviewed for the `Evidence:` marker pattern; none found.\n\nVERDICT: APPROVE' }],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'Consolidated.\n\nVERDICT: APPROVE',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'Consolidated.\n\nVERDICT: APPROVE',
   })
   assert.match(rec.verdict, /INCOMPLETE/, 'a buried marker no longer waves the green through')
   assert.deepEqual(rec.noEvidence, ['security'])
@@ -319,12 +343,14 @@ test('the opencode tool-dimension marker (EVIDENCE_RULE) is built from the gate 
   // marker from EVIDENCE_MARKER. RED before rust-audit.ts imports and interpolates it.
   const here = dirname(fileURLToPath(import.meta.url))
   const src = readFile(joinPath(here, 'rust-audit.ts'), 'utf8')
-  assert.match(src, /import\s*\{[^}]*\bEVIDENCE_MARKER\b[^}]*\}\s*from\s*["']\.\/run-record\.mjs["']/,
-    'rust-audit.ts must import EVIDENCE_MARKER from run-record.mjs')
+  assert.match(
+    src,
+    /import\s*\{[^}]*\bEVIDENCE_MARKER\b[^}]*\}\s*from\s*["']\.\/run-record\.mjs["']/,
+    'rust-audit.ts must import EVIDENCE_MARKER from run-record.mjs',
+  )
   const decl = src.slice(src.indexOf('const EVIDENCE_RULE'))
   assert.ok(decl.startsWith('const EVIDENCE_RULE'), 'EVIDENCE_RULE is declared')
-  assert.match(decl.slice(0, 500), /EVIDENCE_MARKER/,
-    'EVIDENCE_RULE must build its marker from EVIDENCE_MARKER, not a hardcoded string')
+  assert.match(decl.slice(0, 500), /EVIDENCE_MARKER/, 'EVIDENCE_RULE must build its marker from EVIDENCE_MARKER, not a hardcoded string')
 })
 
 test('buildAuditRecord demotes a self-reported green with no Evidence line to INCOMPLETE', () => {
@@ -332,12 +358,14 @@ test('buildAuditRecord demotes a self-reported green with no Evidence line to IN
   // was trusted exactly as before, so invariant #53 was unenforced here. It must now demote.
   const rec = buildAuditRecord({
     results: [{ label: 'security', ok: true, text: 'All clean.\n\nVERDICT: APPROVE' }],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'Consolidated.\n\nVERDICT: APPROVE',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'Consolidated.\n\nVERDICT: APPROVE',
   })
   assert.match(rec.verdict, /INCOMPLETE/, 'a claimed green with nothing shown is not trusted')
   assert.deepEqual(rec.noEvidence, ['security'], 'it lands in the noEvidence bucket')
   assert.deepEqual(rec.incomplete, [], 'and NOT in incomplete — the tool may have run, this is not tooling-absent')
-  const security = rec.dimensions.find((d) => d.dimension === 'security')
+  const security = rec.dimensions.find(d => d.dimension === 'security')
   assert.ok(security)
   assert.match(security.verdict, /^INCOMPLETE \(no evidence/, 'the demoted dimension keeps the honest verdict')
 })
@@ -345,7 +373,9 @@ test('buildAuditRecord demotes a self-reported green with no Evidence line to IN
 test('a green WITH an Evidence line survives the gate', () => {
   const rec = buildAuditRecord({
     results: [{ label: 'security', ok: true, text: 'cargo-audit clean.\nEvidence: ran cargo-audit over 214 crates.\n\nVERDICT: APPROVE' }],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE',
   })
   assert.equal(rec.verdict, 'Approve', 'shown work keeps the green')
   assert.deepEqual(rec.noEvidence, [])
@@ -357,7 +387,9 @@ test('the gate reads the NORMALISED verdict — an off-vocabulary green with no 
   // dimension that ended `VERDICT: APPROVE` after a Healthy body with no Evidence line is demoted.
   const rec = buildAuditRecord({
     results: [{ label: 'architecture', ok: true, text: 'Healthy layering.\n\nVERDICT: APPROVE' }],
-    baseRef: 'main', hasUnsafe: false, synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE',
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'Evidence: merged.\n\nVERDICT: APPROVE',
   })
   assert.match(rec.verdict, /INCOMPLETE/)
   assert.deepEqual(rec.noEvidence, ['architecture'])
@@ -454,14 +486,33 @@ test('a triage record can say the plan never came and what went untriaged', () =
 
 test('indexProjection carries runtime and nulls findingsTotal when findings is null', () => {
   const rec = {
-    schemaVersion: 1, runtime: 'opencode', ts: 'T', kind: 'workflow', name: 'rust-audit',
-    project: '/p', commit: 'abc', dirty: true, verdict: 'Approve', findings: null,
-    nested: false, via: null, dimensions: [{ dimension: 'x' }],
+    schemaVersion: 1,
+    runtime: 'opencode',
+    ts: 'T',
+    kind: 'workflow',
+    name: 'rust-audit',
+    project: '/p',
+    commit: 'abc',
+    dirty: true,
+    verdict: 'Approve',
+    findings: null,
+    nested: false,
+    via: null,
+    dimensions: [{ dimension: 'x' }],
   }
   assert.deepEqual(indexProjection(rec), {
-    schemaVersion: 1, runtime: 'opencode', ts: 'T', kind: 'workflow', name: 'rust-audit',
-    project: '/p', commit: 'abc', dirty: true, verdict: 'Approve', findingsTotal: null,
-    nested: false, via: null,
+    schemaVersion: 1,
+    runtime: 'opencode',
+    ts: 'T',
+    kind: 'workflow',
+    name: 'rust-audit',
+    project: '/p',
+    commit: 'abc',
+    dirty: true,
+    verdict: 'Approve',
+    findingsTotal: null,
+    nested: false,
+    via: null,
   })
 })
 
@@ -476,10 +527,15 @@ test('writeRecord writes a detail file and appends one index line', async () => 
     sh: async cmd => (cmd.includes('rev-parse') ? 'abc1234' : ''), // status --porcelain → clean
   }
   try {
-    await writeRecord(ctx, buildAuditRecord({
-      results: [{ label: 'security', ok: true, text: 'Approve' }],
-      baseRef: 'main', hasUnsafe: false, synthesisText: 'Approve',
-    }))
+    await writeRecord(
+      ctx,
+      buildAuditRecord({
+        results: [{ label: 'security', ok: true, text: 'Approve' }],
+        baseRef: 'main',
+        hasUnsafe: false,
+        synthesisText: 'Approve',
+      }),
+    )
     const lines = readFileSync(join(dir, 'index.jsonl'), 'utf8').trim().split('\n')
     assert.equal(lines.length, 1)
     const line = JSON.parse(lines[0] ?? '')
@@ -491,14 +547,14 @@ test('writeRecord writes a detail file and appends one index line', async () => 
     assert.equal(line.dirty, false)
     assert.equal(line.findingsTotal, null)
     assert.match(line.ts, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/)
-    const detail = readdirSync(dir).filter((f) => f.endsWith('.json'))
+    const detail = readdirSync(dir).filter(f => f.endsWith('.json'))
     assert.equal(detail.length, 1)
   } finally {
     delete process.env['CRAFT_RUNS_DIR']
   }
 })
 
-test('writeRecord appends under the store\'s index lock: it takes over a dead writer\'s stale lock', async () => {
+test("writeRecord appends under the store's index lock: it takes over a dead writer's stale lock", async () => {
   const dir = mkdtempSync(join(tmpdir(), 'craft-obs-'))
   process.env['CRAFT_RUNS_DIR'] = dir
   const lock = join(dir, 'index.jsonl.lock')
@@ -526,16 +582,18 @@ test('a run that was never consolidated is not filed as Approve', () => {
     { label: 'review', ok: true, text: 'nothing found\nEvidence: ran cargo clippy/test; read the changed files.\n\nVERDICT: APPROVE' },
     { label: 'tests-cov', ok: true, text: 'coverage fine\nEvidence: ran cargo llvm-cov and cargo test --doc.\n\nVERDICT: APPROVE' },
   ]
-  const fallback = '## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\n' +
-    results.map(r => `### ${r.label}\n\n${r.text}`).join('\n\n')
+  const fallback = '## ⚠️ INCOMPLETE (not run) — the audit was not consolidated\n\n' + results.map(r => `### ${r.label}\n\n${r.text}`).join('\n\n')
 
   const died = buildAuditRecord({ results, baseRef: 'main', hasUnsafe: false, synthesisText: fallback, synthesized: false })
   assert.match(died.verdict, /INCOMPLETE/, 'a run that was not consolidated cannot be an Approve')
 
   // And the ordinary path is unaffected: a real synthesis still decides with the dimensions.
   const lived = buildAuditRecord({
-    results, baseRef: 'main', hasUnsafe: false,
-    synthesisText: 'all clear\n\nVERDICT: APPROVE', synthesized: true,
+    results,
+    baseRef: 'main',
+    hasUnsafe: false,
+    synthesisText: 'all clear\n\nVERDICT: APPROVE',
+    synthesized: true,
   })
   assert.equal(lived.verdict, 'Approve')
 })
@@ -547,7 +605,6 @@ test('the default keeps every existing caller honest', () => {
   const r = buildAuditRecord({ results, baseRef: '', hasUnsafe: false, synthesisText: 'VERDICT: WARNING' })
   assert.equal(r.verdict, 'Warning')
 })
-
 
 test('an unconsolidated audit is partial in the record, at every severity', async () => {
   // Not only when every dimension approved. `worstOf` lifts the all-Approve case to INCOMPLETE by

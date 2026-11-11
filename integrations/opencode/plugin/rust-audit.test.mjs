@@ -59,8 +59,7 @@ test('a refusing synthesis is not a report, and is not filed as a verdict', asyn
   // became the report AND was read for a verdict — parseVerdict falls through to Approve, so the
   // store recorded an approval for a run nobody consolidated.
   await withStore(async dir => {
-    const ctx = fakeCtx(({ isSynthesis }) =>
-      isSynthesis ? 'I am not able to consolidate this audit.' : 'checked\n\nVERDICT: APPROVE')
+    const ctx = fakeCtx(({ isSynthesis }) => (isSynthesis ? 'I am not able to consolidate this audit.' : 'checked\n\nVERDICT: APPROVE'))
     const report = await runRustAudit(ctx, {})
     assert.match(report, /INCOMPLETE \(not run\) — the audit was not consolidated/, 'the reader is told')
     assert.ok(!/^I am not able/.test(report), 'and is not handed the refusal as the report')
@@ -80,8 +79,7 @@ test('the reader is told WHY the synthesis failed, not merely that it did', asyn
   // dropped both the cause and the text. The fan-out path keeps them on purpose; this one was held
   // to the same gate but not the same reporting.
   await withStore(async () => {
-    const ctx = fakeCtx(({ isSynthesis }) =>
-      isSynthesis ? 'I am not able to consolidate this audit.' : 'checked\n\nVERDICT: APPROVE')
+    const ctx = fakeCtx(({ isSynthesis }) => (isSynthesis ? 'I am not able to consolidate this audit.' : 'checked\n\nVERDICT: APPROVE'))
     const refused = await runRustAudit(ctx, {})
     assert.match(refused, /answered, but without the VERDICT: line/, 'a refusal is named as an unanswered one')
     assert.match(refused, /I am not able to consolidate/, 'and its own words are shown')
@@ -169,7 +167,8 @@ test('a faithful consolidation that reuses the input lines is used, not thrown a
 test('a real synthesis is used, and the store matches it', async () => {
   await withStore(async dir => {
     const ctx = fakeCtx(({ isSynthesis }) =>
-      isSynthesis ? '# Audit\n\nall dimensions clean\n\nVERDICT: APPROVE' : 'checked\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE')
+      isSynthesis ? '# Audit\n\nall dimensions clean\n\nVERDICT: APPROVE' : 'checked\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE',
+    )
     const report = await runRustAudit(ctx, {})
     assert.match(report, /all dimensions clean/)
     assert.ok(!/was not consolidated/.test(report))
@@ -184,7 +183,9 @@ test('a dimension that answers without a verdict is not counted as having run', 
   await withStore(async dir => {
     const ctx = fakeCtx(({ agent, isSynthesis }) => {
       if (isSynthesis) return 'consolidated\n\nVERDICT: APPROVE'
-      return agent === 'rust-security-scanner' ? 'I cannot run those tools here.' : 'checked\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE'
+      return agent === 'rust-security-scanner'
+        ? 'I cannot run those tools here.'
+        : 'checked\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE'
     })
     await runRustAudit(ctx, {})
     const r = record(dir)

@@ -10,8 +10,14 @@ import { workHook } from './work-hook.ts'
 
 /** @type {string[]} */
 const made = []
-afterAll(() => { for (const dir of made) fs.rmSync(dir, { recursive: true, force: true }) })
-const tmp = () => { const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'craft-oc-plugin-'))); made.push(d); return d }
+afterAll(() => {
+  for (const dir of made) fs.rmSync(dir, { recursive: true, force: true })
+})
+const tmp = () => {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'craft-oc-plugin-')))
+  made.push(d)
+  return d
+}
 
 function setup(engine = new Set()) {
   const root = tmp()
@@ -23,7 +29,12 @@ function setup(engine = new Set()) {
   // The fakes carry only the fields the hook reads.
   const message = /** @type {(input: any, output: any) => Promise<void>} */ (hooks['chat.message'])
   const event = /** @type {(input: any) => Promise<void>} */ (hooks.event)
-  const log = () => fs.readFileSync(path.join(home, '.craft', 'hooks.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+  const log = () =>
+    fs
+      .readFileSync(path.join(home, '.craft', 'hooks.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map(l => JSON.parse(l))
   return { message, event, log }
 }
 
@@ -38,7 +49,10 @@ test('a review request gets one synthetic part after its own, logged as chat.mes
   const out = output('s1', 'address the review findings')
   await message({ sessionID: 's1', agent: 'build' }, out)
   assert.equal(out.parts.length, 2)
-  assert.deepEqual({ ...out.parts[1], text: undefined }, { id: 'prt_1-craft', sessionID: 's1', messageID: 'msg_1', type: 'text', text: undefined, synthetic: true })
+  assert.deepEqual(
+    { ...out.parts[1], text: undefined },
+    { id: 'prt_1-craft', sessionID: 's1', messageID: 'msg_1', type: 'text', text: undefined, synthetic: true },
+  )
   const text = String(out.parts[1]?.['text'])
   assert.match(text, /make one call: load the addressing-findings skill with the skill tool/)
   assert.equal(text.split('\n').length, 8)
@@ -48,7 +62,14 @@ test('a review request gets one synthetic part after its own, logged as chat.mes
   const review = output('s1', 'review it')
   await message({ sessionID: 's1' }, review)
   assert.match(String(review.parts[1]?.['text']), /make one call: for Rust code, load the rust-review skill/, 'the other class speaks its own lines')
-  assert.deepEqual(log().map(e => [e.event, e.harness, e.session, e.spoke, e.kind]), [['chat.message', 'opencode', 's1', true, 'findings'], ['chat.message', 'opencode', 's1', false, 'findings'], ['chat.message', 'opencode', 's1', true, 'review']])
+  assert.deepEqual(
+    log().map(e => [e.event, e.harness, e.session, e.spoke, e.kind]),
+    [
+      ['chat.message', 'opencode', 's1', true, 'findings'],
+      ['chat.message', 'opencode', 's1', false, 'findings'],
+      ['chat.message', 'opencode', 's1', true, 'review'],
+    ],
+  )
   await event({ event: { type: 'session.compacted', properties: { sessionID: 's1' } } })
   const after = output('s1', 'review again')
   await message({ sessionID: 's1' }, after)
@@ -71,7 +92,13 @@ test('a subagent session hears its lines on its first message only; engine sessi
   const engine = output('engine', 'review this diff')
   await message({ sessionID: 'engine', agent: 'rust-reviewer' }, engine)
   assert.equal(engine.parts.length, 1)
-  assert.deepEqual(log().map(e => [e.session, e.agent]), [['p', undefined], ['p', 'general']])
+  assert.deepEqual(
+    log().map(e => [e.session, e.agent]),
+    [
+      ['p', undefined],
+      ['p', 'general'],
+    ],
+  )
 })
 
 test('a message with nothing to build the part on is logged as unsaid, and bad input never throws', async () => {

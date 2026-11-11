@@ -10,10 +10,22 @@ function fakeClient(reply) {
   return {
     sent,
     session: {
-      create: async (/** @type {unknown} */ req) => { sent.push(['create', req]); return { data: { id: 'ses_1' } } },
-      prompt: async (/** @type {unknown} */ req) => { sent.push(['prompt', req]); return reply },
-      abort: async (/** @type {unknown} */ req) => { sent.push(['abort', req]); return { data: true } },
-      messages: async (/** @type {unknown} */ req) => { sent.push(['messages', req]); return { data: [{ info: { role: 'user', model: { providerID: 'p', modelID: 'm' } } }, { info: { role: 'assistant' } }] } },
+      create: async (/** @type {unknown} */ req) => {
+        sent.push(['create', req])
+        return { data: { id: 'ses_1' } }
+      },
+      prompt: async (/** @type {unknown} */ req) => {
+        sent.push(['prompt', req])
+        return reply
+      },
+      abort: async (/** @type {unknown} */ req) => {
+        sent.push(['abort', req])
+        return { data: true }
+      },
+      messages: async (/** @type {unknown} */ req) => {
+        sent.push(['messages', req])
+        return { data: [{ info: { role: 'user', model: { providerID: 'p', modelID: 'm' } } }, { info: { role: 'assistant' } }] }
+      },
     },
   }
 }
@@ -24,18 +36,27 @@ test('a child session is created, named to the orchestrator, and prompted with t
   const named = []
   const host = v1Host({ client, directory: '/repo', worktree: '/repo' })
   const text = await host.runChild({
-    title: 'craft:rust-reviewer', agent: 'rust-reviewer', prompt: 'p',
-    model: { providerID: 'anthropic', modelID: 'claude-x' }, onSession: id => named.push(id),
+    title: 'craft:rust-reviewer',
+    agent: 'rust-reviewer',
+    prompt: 'p',
+    model: { providerID: 'anthropic', modelID: 'claude-x' },
+    onSession: id => named.push(id),
   })
   assert.equal(text, 'done')
   assert.deepEqual(named, ['ses_1'])
   assert.deepEqual(client.sent, [
     ['create', { body: { title: 'craft:rust-reviewer' } }],
-    ['prompt', { path: { id: 'ses_1' }, body: { agent: 'rust-reviewer', parts: [{ type: 'text', text: 'p' }], model: { providerID: 'anthropic', modelID: 'claude-x' } } }],
+    [
+      'prompt',
+      {
+        path: { id: 'ses_1' },
+        body: { agent: 'rust-reviewer', parts: [{ type: 'text', text: 'p' }], model: { providerID: 'anthropic', modelID: 'claude-x' } },
+      },
+    ],
   ])
 })
 
-test('a child nests under its parent, and the caller\'s model is its newest message\'s', async () => {
+test("a child nests under its parent, and the caller's model is its newest message's", async () => {
   const client = fakeClient({ text: 'ok' })
   const host = v1Host({ client, directory: '', worktree: '' })
   await host.runChild({ title: 't', agent: '', prompt: 'p', parentID: 'ses_parent' })
@@ -43,7 +64,10 @@ test('a child nests under its parent, and the caller\'s model is its newest mess
   assert.deepEqual(await host.callerModel('ses_parent'), { providerID: 'p', modelID: 'm' })
   assert.deepEqual(client.sent.at(-1), ['messages', { path: { id: 'ses_parent' } }])
   // The shapes observed on opencode 1.19.5: a user message's `model`, an assistant's own ids; none at all.
-  assert.deepEqual(lastModel({ data: [{ info: { role: 'user', model: { providerID: 'a', modelID: 'b' } } }, { info: { role: 'assistant', providerID: 'c', modelID: 'd' } }] }), { providerID: 'c', modelID: 'd' })
+  assert.deepEqual(
+    lastModel({ data: [{ info: { role: 'user', model: { providerID: 'a', modelID: 'b' } } }, { info: { role: 'assistant', providerID: 'c', modelID: 'd' } }] }),
+    { providerID: 'c', modelID: 'd' },
+  )
   assert.equal(lastModel({ data: [{ info: { role: 'user' } }] }), undefined)
   assert.equal(lastModel(null), undefined)
 })
@@ -75,7 +99,9 @@ test('each tool spec becomes a 1.x tool that hands its string arguments, the abo
   /** @type {unknown[]} */
   const ran = []
   const spec = {
-    name: 'probe', description: 'd', args: { base: { optional: true }, locator: { optional: false } },
+    name: 'probe',
+    description: 'd',
+    args: { base: { optional: true }, locator: { optional: false } },
     run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {import('./host.ts').ToolCall} */ call) => {
       const { progress, ...rest } = call
       progress?.('half way')
@@ -92,10 +118,22 @@ test('each tool spec becomes a 1.x tool that hands its string arguments, the abo
   /** @type {unknown[]} */
   const titles = []
   const abort = new AbortController().signal
-  const out = await probe.execute({ locator: 'x', base: 3 }, /** @type {any} */ ({ sessionID: 'ses_caller', abort, metadata: (/** @type {unknown} */ m) => titles.push(m) }))
+  const out = await probe.execute(
+    { locator: 'x', base: 3 },
+    /** @type {any} */ ({ sessionID: 'ses_caller', abort, metadata: (/** @type {unknown} */ m) => titles.push(m) }),
+  )
   assert.deepEqual(out, { title: 't', output: 'out' }, 'a titled answer reaches 1.x as it is')
-  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 'ses_caller', signal: abort }]], 'only string arguments reach the spec, with the caller and its abort')
-  assert.deepEqual(titles, [{ title: 'half way' }], 'progress is the tool\'s title')
+  assert.deepEqual(
+    ran,
+    [
+      [
+        { base: undefined, locator: 'x' },
+        { sessionID: 'ses_caller', signal: abort },
+      ],
+    ],
+    'only string arguments reach the spec, with the caller and its abort',
+  )
+  assert.deepEqual(titles, [{ title: 'half way' }], "progress is the tool's title")
   assert.equal(typeof hooks['chat.message'], 'function')
   assert.equal(typeof hooks.event, 'function')
 })
@@ -103,8 +141,15 @@ test('each tool spec becomes a 1.x tool that hands its string arguments, the abo
 test('a deadline stops the session and gives up on it; a refused prompt throws its error', async () => {
   const stop = new AbortController()
   const hung = fakeClient(null)
-  hung.session.prompt = async (/** @type {unknown} */ req) => { hung.sent.push(['prompt', req]); stop.abort(); return { data: {} } }
-  await assert.rejects(v1Host({ client: hung, directory: '', worktree: '' }).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
+  hung.session.prompt = async (/** @type {unknown} */ req) => {
+    hung.sent.push(['prompt', req])
+    stop.abort()
+    return { data: {} }
+  }
+  await assert.rejects(
+    v1Host({ client: hung, directory: '', worktree: '' }).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }),
+    /stopped at its deadline/,
+  )
   assert.deepEqual(hung.sent.at(-1), ['abort', { path: { id: 'ses_1' } }])
   // As opencode 1.19.5 answers an unknown agent (observed): an error object, not a throw.
   const refused = fakeClient({ error: { name: 'UnknownError', data: { message: 'Unexpected server error.' } } })

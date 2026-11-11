@@ -8,14 +8,7 @@
   },
   "repository": "https://github.com/gurinderu/craft",
   "license": "MIT",
-  "keywords": [
-    "codex",
-    "skills",
-    "rust",
-    "nix",
-    "code-review",
-    "craft"
-  ],
+  "keywords": ["codex", "skills", "rust", "nix", "code-review", "craft"],
   "skills": "./skills/",
   "hooks": "./integrations/claude-code/hooks/hooks.json",
   "interface": {

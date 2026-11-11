@@ -2,45 +2,44 @@
 // the tools, and `event` / `chat.message` feed the work hook. The client calls are held to a narrow local
 // shape rather than the SDK's generated types: the shapes below are the ones the plugin has always sent
 // (opencode 1.x SDK docs), and the response is read defensively across the shapes a session may return.
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
-import { tool } from "@opencode-ai/plugin"
-import type { Part, TextPart } from "@opencode-ai/sdk"
-import { stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from "./host.ts"
-import { errorOf, extractText, field, lastModel } from "./host-v1-read.ts"
-import { shellIn } from "./shell.mjs"
+import type { Hooks, PluginInput } from '@opencode-ai/plugin'
+import { tool } from '@opencode-ai/plugin'
+import type { Part, TextPart } from '@opencode-ai/sdk'
+import { stringArgs, type ChildRequest, type Host, type ToolSpec, type WorkHook } from './host.ts'
+import { errorOf, extractText, field, lastModel } from './host-v1-read.ts'
+import { shellIn } from './shell.mjs'
 
 export { extractText, lastModel }
 
-type TextIn = { type: "text"; text: string }
+type TextIn = { type: 'text'; text: string }
 export interface V1Client {
   session: {
     create(req: { body: { title: string; parentID?: string } }): Promise<unknown>
     messages(req: { path: { id: string } }): Promise<unknown>
     abort(req: { path: { id: string } }): Promise<unknown>
-    prompt(req: {
-      path: { id: unknown }
-      body: { agent: string; parts: TextIn[]; model?: { providerID: string; modelID: string } }
-    }): Promise<unknown>
+    prompt(req: { path: { id: unknown }; body: { agent: string; parts: TextIn[]; model?: { providerID: string; modelID: string } } }): Promise<unknown>
   }
 }
 
 // The child's prompt, run to its reply; an abort (the caller's deadline) stops the session — `session.abort`, observed
 // on opencode 1.19.5 — and gives up on it. A prompt the server refused throws its error.
 async function prompted(client: V1Client, id: unknown, req: ChildRequest): Promise<string> {
-  const stop = () => { if (typeof id === "string") client.session.abort({ path: { id } }).catch(() => undefined) }
-  req.signal?.addEventListener("abort", stop, { once: true })
+  const stop = () => {
+    if (typeof id === 'string') client.session.abort({ path: { id } }).catch(() => undefined)
+  }
+  req.signal?.addEventListener('abort', stop, { once: true })
   try {
     const model = req.model && { providerID: req.model.providerID, modelID: req.model.modelID }
     const res = await client.session.prompt({
       path: { id },
-      body: { agent: req.agent, parts: [{ type: "text", text: req.prompt }], ...(model ? { model } : {}) },
+      body: { agent: req.agent, parts: [{ type: 'text', text: req.prompt }], ...(model ? { model } : {}) },
     })
-    if (req.signal?.aborted) throw new Error("the child session was stopped at its deadline")
+    if (req.signal?.aborted) throw new Error('the child session was stopped at its deadline')
     const failed = errorOf(res)
     if (failed) throw new Error(failed)
     return extractText(res)
   } finally {
-    req.signal?.removeEventListener("abort", stop)
+    req.signal?.removeEventListener('abort', stop)
   }
 }
 
@@ -52,8 +51,8 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
     sh: shellIn(directory),
     async runChild(req) {
       const session = await client.session.create({ body: { title: req.title, ...(req.parentID ? { parentID: req.parentID } : {}) } })
-      const id = field(session, "id") ?? field(field(session, "data"), "id")
-      if (typeof id === "string") req.onSession?.(id)
+      const id = field(session, 'id') ?? field(field(session, 'data'), 'id')
+      if (typeof id === 'string') req.onSession?.(id)
       return prompted(client, id, req)
     },
     async callerModel(sessionID) {
@@ -63,56 +62,61 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
 }
 
 function v1Tool(host: Host, spec: ToolSpec) {
-  const args = Object.fromEntries(
-    Object.entries(spec.args).map(([k, a]) => [k, a.optional ? tool.schema.string().optional() : tool.schema.string()]),
-  )
+  const args = Object.fromEntries(Object.entries(spec.args).map(([k, a]) => [k, a.optional ? tool.schema.string().optional() : tool.schema.string()]))
   return tool({
     description: spec.description,
     args,
     execute: (raw, context) =>
-      spec.run(host, stringArgs(spec, raw), { sessionID: context.sessionID, signal: context.abort, progress: (title) => context.metadata({ title }) }),
+      spec.run(host, stringArgs(spec, raw), { sessionID: context.sessionID, signal: context.abort, progress: title => context.metadata({ title }) }),
   })
 }
 
 // The words the human (or the parent agent) wrote: the message's own text parts.
 function promptOf(parts: Part[]): string {
-  return parts.filter((p): p is TextPart => p.type === "text" && !p.synthetic && !p.ignored).map(p => p.text).join("\n")
+  return parts
+    .filter((p): p is TextPart => p.type === 'text' && !p.synthetic && !p.ignored)
+    .map(p => p.text)
+    .join('\n')
 }
 
 // The added part sorts after the message's last one: an id built on that part's own.
 function syntheticPart(parts: Part[], text: string): TextPart | null {
   const last = parts.at(-1)
-  if (!last || typeof last.id !== "string") return null
-  return { id: `${last.id}-craft`, sessionID: last.sessionID, messageID: last.messageID, type: "text", text, synthetic: true }
+  if (!last || typeof last.id !== 'string') return null
+  return { id: `${last.id}-craft`, sessionID: last.sessionID, messageID: last.messageID, type: 'text', text, synthetic: true }
 }
 
 /** The work hook on 1.x: `event` names subagent sessions and compactions, `chat.message` gains a synthetic part. */
-export function v1WorkHooks(work: WorkHook): Required<Pick<Hooks, "event" | "chat.message">> {
+export function v1WorkHooks(work: WorkHook): Required<Pick<Hooks, 'event' | 'chat.message'>> {
   return {
     async event({ event }) {
       try {
-        if (event.type === "session.created" && event.properties.info.parentID) {
+        if (event.type === 'session.created' && event.properties.info.parentID) {
           work.childCreated(event.properties.info.id, event.properties.info.parentID)
-        } else if (event.type === "session.compacted") {
+        } else if (event.type === 'session.compacted') {
           await work.compacted(event.properties.sessionID)
         }
-      } catch { /* silence */ }
+      } catch {
+        /* silence */
+      }
     },
-    async "chat.message"(input, output) {
+    async 'chat.message'(input, output) {
       try {
         const parts = output.parts
-        await work.message(input.sessionID, promptOf(parts), input.agent, (text) => {
+        await work.message(input.sessionID, promptOf(parts), input.agent, text => {
           const part = syntheticPart(parts, text)
           if (part) parts.push(part)
           return part !== null
         })
-      } catch { /* silence */ }
+      } catch {
+        /* silence */
+      }
     },
   }
 }
 
 /** Everything the 1.x runtime gets from `server()`: the tools and the work hook. */
-export function v1Hooks(input: Pick<PluginInput, "directory" | "worktree"> & { client: unknown }, tools: readonly ToolSpec[], work: WorkHook): Hooks {
+export function v1Hooks(input: Pick<PluginInput, 'directory' | 'worktree'> & { client: unknown }, tools: readonly ToolSpec[], work: WorkHook): Hooks {
   const host = v1Host({ client: input.client as V1Client, directory: input.directory, worktree: input.worktree })
-  return { ...v1WorkHooks(work), tool: Object.fromEntries(tools.map((t) => [t.name, v1Tool(host, t)])) }
+  return { ...v1WorkHooks(work), tool: Object.fromEntries(tools.map(t => [t.name, v1Tool(host, t)])) }
 }
