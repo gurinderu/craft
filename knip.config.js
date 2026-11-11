@@ -49,6 +49,7 @@ export default {
         '!lib/sandbox-globals.mjs!',
         '!lib/logger-replay.mjs!',
         '!lib/codex-review-fakes.mjs!',
+        '!lib/pi-review-fakes.mjs!',
       ],
     },
     'integrations/opencode/plugin': {
