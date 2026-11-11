@@ -4,7 +4,9 @@
   "type": "module",
   "description": "Dev-only tooling for the craft plugin repo. craft itself ships no runtime dependencies.",
   "pi": {
-    "extensions": [],
+    "extensions": [
+      "./lib/pi-extension.mjs"
+    ],
     "skills": [
       "./integrations/pi/skills"
     ],
