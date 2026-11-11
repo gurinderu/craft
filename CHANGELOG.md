@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.50.1](https://github.com/gurinderu/craft/compare/v0.50.0...v0.50.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **opencode:** bound each 2.x child session's reply with its own deadline ([1841863](https://github.com/gurinderu/craft/commit/1841863b7e58c2d59ec01fad8abbb9462a36c4b0))
+* **opencode:** make the 2.x child session bound an idle deadline ([72284a5](https://github.com/gurinderu/craft/commit/72284a5c0aa1256209e563bcec889d9254ef78ac))
+* **opencode:** refuse craft's tools up front on OpenCode 2.x ([d5e20ab](https://github.com/gurinderu/craft/commit/d5e20ab1832b3ff4756137fe8f8e347258a9321e))
+* **opencode:** refuse every workflow on OpenCode 2.x, without lib/ ([757bb69](https://github.com/gurinderu/craft/commit/757bb6967b723ddcb3c3eda3fcec5b38755b6a22))
+* **opencode:** refuse the review up front on OpenCode 2.x ([d4093f3](https://github.com/gurinderu/craft/commit/d4093f34a5e7cb69bac6f795f6c9711b11f0539f))
+* **review:** point a moved-head skip at publishing the finished run ([6b556cb](https://github.com/gurinderu/craft/commit/6b556cbcda59637b439ed88fcfdfbfcba63e64ae))
+* **review:** refuse a start whose HEAD is not the head of the given pr ([eb26957](https://github.com/gurinderu/craft/commit/eb2695722a812371b9f64f73627cbe955870489e))
+* **review:** refuse pr= when HEAD doesn't hold the PR's head ([16fdec5](https://github.com/gurinderu/craft/commit/16fdec58407597134905fe50af824e5f08ff5a25))
+* **review:** review a HEAD ahead of the given pr's head, noting the push ([f96a964](https://github.com/gurinderu/craft/commit/f96a964997f20fbba7f11c6445316177de1dcf78))
+
+
+### Reverts
+
+* drop the 2.x child session reply deadline ([81237e6](https://github.com/gurinderu/craft/commit/81237e651ec033ac4146944afe9326e4f23c9cfd))
+
 ## [0.50.0](https://github.com/gurinderu/craft/compare/v0.49.1...v0.50.0) (2026-11-11)
 
 
