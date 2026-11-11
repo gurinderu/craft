@@ -6,8 +6,7 @@ set -euo pipefail
 # Repo root = two levels above this script's dir (integrations/opencode/), so the script works from anywhere.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-# The same two directories as the file system spells them, symlinks resolved: an earlier install run through another
-# path to this checkout made its links in that spelling.
+# The same two directories as the file system spells them, symlinks resolved: what the stale-link pass compares with.
 SCRIPT_DIR_P="$(cd "$SCRIPT_DIR" && pwd -P)"
 REPO_ROOT_P="$(cd "$REPO_ROOT" && pwd -P)"
 
@@ -65,10 +64,20 @@ for f in "$SCRIPT_DIR"/commands/*.md; do [ -e "$f" ] && link "$f" "$TARGET/comma
 # Stale links — one an earlier install made from this checkout (it points at a skill or into integrations/opencode/)
 # that this run did not make: its target is gone, or no longer installed (codex-review, the plugin's directory link).
 # A link pointing anywhere else, and every real file, is left alone.
+# Ownership is judged on the target with its directories' symlinks resolved, so a link made through any spelling of
+# this checkout matches. Portable (no `readlink -f`): the nearest existing directory resolved by `pwd -P`, the rest of
+# the path — a dead target's missing part — kept as it is.
 made() { local d; for d in "${MADE[@]+"${MADE[@]}"}"; do [ "$d" = "$1" ] && return 0; done; return 1; }
+resolved() {  # resolved <link>
+  local p rest=""
+  p="$(readlink "$1")"
+  case "$p" in /*) ;; *) p="$(dirname "$1")/$p" ;; esac
+  while [ ! -d "$p" ]; do rest="/$(basename "$p")$rest"; p="$(dirname "$p")"; done
+  echo "$(cd "$p" && pwd -P)$rest"
+}
 for l in "$TARGET"/skills/* "$TARGET"/agents/* "$TARGET"/commands/* "$TARGET"/plugins/*; do
   [ -L "$l" ] || continue
-  case "$(readlink "$l")" in "$REPO_ROOT"/skills/*|"$SCRIPT_DIR"/*|"$REPO_ROOT_P"/skills/*|"$SCRIPT_DIR_P"/*) ;; *) continue ;; esac
+  case "$(resolved "$l")" in "$REPO_ROOT_P"/skills/*|"$SCRIPT_DIR_P"/*) ;; *) continue ;; esac
   made "$l" || { rm "$l"; echo "  - $l (stale)"; }
 done
 
