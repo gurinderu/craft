@@ -206,10 +206,10 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 ## opencode adapter
 
 `integrations/opencode/` is a thin, contained adapter layer that makes the collection usable from opencode
-(skills shared verbatim by symlink; 4 translated agent files; one TS plugin for OpenCode 1.x and 2.x —
+(skills shared verbatim by symlink; 4 translated agent files and `review-task`, the read-only agent of the review's tasks; one TS plugin for OpenCode 1.x and 2.x —
 its default export carries both entries, and a host layer (`host.ts`, with `host-v1.ts` and `host-v2.ts`)
 gives the `rust-audit` and `triage-findings` workflows, the `review` tool (the `craft` binary's step loop with child
-sessions, `lib/opencode-review.mjs`, not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime;
+sessions on the shared process-per-task loop, `lib/opencode-review.mjs`, not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime;
 a symlink `install.sh` that also installs the plugin's locked dependencies). Single source of truth: the skills are not duplicated. The design spec
 that shaped this layer has been removed.
 

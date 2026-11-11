@@ -35,6 +35,7 @@ function fakeCtx(answers, calls = []) {
     directory: '',
     worktree: '',
     sh: async () => '',
+    callerModel: async () => undefined,
     runChild: async ({ agent }) => {
       calls.push(agent)
       const nth = calls.filter(a => a === agent).length - 1

@@ -3,7 +3,7 @@
 // PluginContext lacks `tool`, `session` and `event`. Read from the opencode 2.2.7 binary
 // (nix opencode2-2.2.7: the plugin loader's `{id, effect} | {id, setup}` check and the promise-side context
 // it builds) and observed by a probe plugin loaded in `opencode serve` 2.2.7: the context's keys, a session
-// created and read back, an admitted prompt, the `prompt` hook rewriting its text, a JSON Schema tool added
+// created (nested by `parentID`, with a model) and read back, an admitted prompt, the `prompt` hook rewriting its text, a JSON Schema tool added
 // and executed, and `session.created` events. What no probe could reach without a model — a child session's
 // reply after a real agent loop — is marked UNOBSERVED. Re-read this against the binary on each 2.x bump.
 
@@ -31,6 +31,8 @@ export interface V2ModelRef {
 export interface V2Session {
   id: string
   parentID?: string
+  // Present once set: at creation or by `switchModel` (observed).
+  model?: V2ModelRef
   agent?: string
   title?: string
 }
@@ -64,6 +66,7 @@ export interface V2Context {
   }
   session: {
     create(input: { title?: string; agent?: string; model?: V2ModelRef; parentID?: string }): Promise<V2Session>
+    get(input: { sessionID: string }): Promise<V2Session>
     // Admits the input and schedules the agent loop (`resume: false` admits it without running the loop).
     prompt(input: { sessionID: string; text: string; resume?: boolean }): Promise<unknown>
     // Experimental in 2.2.7: resolves when the session's agent loop is idle.

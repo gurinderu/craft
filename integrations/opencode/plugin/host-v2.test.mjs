@@ -23,6 +23,7 @@ function fakeCtx(contexts = []) {
     tool: { transform: async (/** @type {any} */ edit) => { edit({ add: (/** @type {any} */ d) => tools.push(d) }); return reg } },
     session: {
       create: async (/** @type {unknown} */ input) => { sent.push(['create', input]); return { id: 'ses_1' } },
+      get: async (/** @type {{ sessionID: string }} */ { sessionID }) => (sessionID === 'ses_set' ? { id: sessionID, model: { providerID: 'p', id: 'm', variant: 'default' } } : { id: sessionID }),
       prompt: async (/** @type {unknown} */ input) => { sent.push(['prompt', input]) },
       wait: async () => { sent.push(['wait']) },
       context: async () => contexts.shift() ?? [],
@@ -58,6 +59,15 @@ test('a child session is created with its agent and model, prompted, and read on
   ])
 })
 
+test('a child nests under its parent, and the caller\'s model is the one its session records', async () => {
+  const f = fakeCtx([[assistant('x')]])
+  const host = v2Host(f.ctx, 0)
+  await host.runChild({ title: 't', agent: '', prompt: 'p', parentID: 'ses_parent' })
+  assert.deepEqual(f.sent[0], ['create', { title: 't', parentID: 'ses_parent' }])
+  assert.deepEqual(await host.callerModel('ses_set'), { providerID: 'p', modelID: 'm' })
+  assert.equal(await host.callerModel('ses_unset'), undefined, 'a session that set none runs on the runtime default')
+})
+
 test('the default agent and model are left to the session', async () => {
   const f = fakeCtx([[assistant('x')]])
   await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p' })
@@ -77,7 +87,7 @@ test('a tool spec becomes a JSON Schema tool whose result is text content', asyn
   const ran = []
   const spec = {
     name: 'probe', description: 'd', args: { base: { optional: true }, locator: { optional: false } },
-    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args) => { ran.push(args); return 'out' },
+    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => { ran.push([args, call]); return 'out' },
   }
   const def = v2Tool(v2Host(fakeCtx().ctx), spec)
   assert.deepEqual(def.input, {
@@ -85,7 +95,7 @@ test('a tool spec becomes a JSON Schema tool whose result is text content', asyn
   })
   const result = await def.execute({ locator: 'x' }, { sessionID: 's', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
   assert.deepEqual(result, { content: [{ type: 'text', text: 'out' }] })
-  assert.deepEqual(ran, [{ base: undefined, locator: 'x' }])
+  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 's' }]])
 })
 
 test('setup registers the tools, hooks the prompt, maps the events, and disposes all of it', async () => {

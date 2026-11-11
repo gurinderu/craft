@@ -44,10 +44,16 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
         title: req.title,
         ...(req.agent ? { agent: req.agent } : {}),
         ...(req.model ? { model: { providerID: req.model.providerID, id: req.model.modelID } } : {}),
+        ...(req.parentID ? { parentID: req.parentID } : {}),
       })
       req.onSession?.(session.id)
       await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
       return awaitReply(ctx, session.id, pollMs)
+    },
+    // The session's own model, set at creation or by a switch (observed on opencode 2.2.7); none when it has none.
+    async callerModel(sessionID) {
+      const model = (await ctx.session.get({ sessionID })).model
+      return model ? { providerID: model.providerID, modelID: model.id } : undefined
     },
   }
 }
@@ -59,7 +65,7 @@ export function v2Tool(host: Host, spec: ToolSpec): V2ToolDefinition {
     name: spec.name,
     description: spec.description,
     input: { type: "object", properties, required, additionalProperties: false },
-    execute: async (input) => ({ content: [{ type: "text", text: await spec.run(host, stringArgs(spec, input)) }] }),
+    execute: async (input, call) => ({ content: [{ type: "text", text: await spec.run(host, stringArgs(spec, input), { sessionID: call.sessionID }) }] }),
   }
 }
 

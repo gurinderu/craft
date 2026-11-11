@@ -5,13 +5,14 @@
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 import type { Part, TextPart } from "@opencode-ai/sdk"
-import { stringArgs, type Host, type ToolSpec, type WorkHook } from "./host.ts"
+import { stringArgs, type Host, type ModelRef, type ToolSpec, type WorkHook } from "./host.ts"
 import { shellIn } from "./shell.mjs"
 
 type TextIn = { type: "text"; text: string }
 export interface V1Client {
   session: {
-    create(req: { body: { title: string } }): Promise<unknown>
+    create(req: { body: { title: string; parentID?: string } }): Promise<unknown>
+    messages(req: { path: { id: string } }): Promise<unknown>
     prompt(req: {
       path: { id: unknown }
       body: { agent: string; parts: TextIn[]; model?: { providerID: string; modelID: string } }
@@ -47,7 +48,7 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
     worktree,
     sh: shellIn(directory),
     async runChild(req) {
-      const session = await client.session.create({ body: { title: req.title } })
+      const session = await client.session.create({ body: { title: req.title, ...(req.parentID ? { parentID: req.parentID } : {}) } })
       const id = field(session, "id") ?? field(field(session, "data"), "id")
       if (typeof id === "string") req.onSession?.(id)
       const model = req.model && { providerID: req.model.providerID, modelID: req.model.modelID }
@@ -57,14 +58,31 @@ export function v1Host(input: { client: V1Client; directory: string; worktree: s
       })
       return extractText(res)
     },
+    async callerModel(sessionID) {
+      return lastModel(await client.session.messages({ path: { id: sessionID } }))
+    },
   }
+}
+
+// The model a session's newest message names (observed on opencode 1.19.5): a user message's `model`, an assistant
+// message's `providerID`/`modelID`.
+export function lastModel(res: unknown): ModelRef | undefined {
+  const list = field(res, "data") ?? res
+  const infos = Array.isArray(list) ? list.map((m) => field(m, "info")) : []
+  for (const info of infos.reverse()) {
+    const own = field(info, "model")
+    const providerID = field(own, "providerID") ?? field(info, "providerID")
+    const modelID = field(own, "modelID") ?? field(info, "modelID")
+    if (typeof providerID === "string" && typeof modelID === "string") return { providerID, modelID }
+  }
+  return undefined
 }
 
 function v1Tool(host: Host, spec: ToolSpec) {
   const args = Object.fromEntries(
     Object.entries(spec.args).map(([k, a]) => [k, a.optional ? tool.schema.string().optional() : tool.schema.string()]),
   )
-  return tool({ description: spec.description, args, execute: (raw) => spec.run(host, stringArgs(spec, raw)) })
+  return tool({ description: spec.description, args, execute: (raw, context) => spec.run(host, stringArgs(spec, raw), { sessionID: context.sessionID }) })
 }
 
 // The words the human (or the parent agent) wrote: the message's own text parts.
