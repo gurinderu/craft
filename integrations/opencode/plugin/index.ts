@@ -1,55 +1,28 @@
-// craft-rust opencode plugin — CONTAINED:
-//   • registers the two craft workflow tools (via the `tool` hook)
-//   • and craft's hook at the moment of work (work-hook.ts): `event` only remembers subagent sessions and logs
-//     compactions, `chat.message` only appends lines to a review request in a repo that declares its roles or work
-//     rules — silent elsewhere, off with CRAFT_ROLE_HOOK=0 (realm @nick/craft, node #288)
-//   • installs NONE of: chat.params / tool.execute.* / permission.ask
-//   • talks only to the injected local `client`; opens no ports, no outbound network, no telemetry; the hook
+// craft-rust opencode plugin — one module for both OpenCode runtimes. Its default export carries both entries:
+//   • `server(input)` — 1.x reads `{id, server}` (observed on opencode 1.19.5) and gets the 1.x hooks (host-v1.ts)
+//   • `setup(ctx)`    — 2.x reads `{id, setup}` (observed on opencode 2.2.7, which ignores `server`) and gets the
+//                       same tools and hook through ctx.tool / ctx.session / ctx.event (host-v2.ts)
+// CONTAINED:
+//   • registers craft's workflow tools (tools.ts)
+//   • and craft's hook at the moment of work (work-hook.ts): it only remembers subagent sessions, logs
+//     compactions, and adds lines to a review request in a repo that declares its roles or work rules —
+//     silent elsewhere, off with CRAFT_ROLE_HOOK=0 (realm @nick/craft, node #288)
+//   • intercepts NO permission, tool call or model request
+//   • talks only to the local opencode server; opens no ports, no outbound network, no telemetry; the hook
 //     writes one line per firing to ~/.craft/hooks.jsonl
-//   • the 4 review subagents stay hidden (their own frontmatter: hidden: true)
-//
-// The plugin's own shape — the `Plugin` signature, `tool({ description, args, execute })` and
-// `tool.schema` — is type-checked by `tsc` against the installed @opencode-ai/plugin. The session
-// calls are NOT: PluginCtx.client (and `$`) is `any` and nothing here imports @opencode-ai/sdk, so
-// `tsc` passes whatever the SDK's real shapes are; a mismatch there shows only at runtime, in opencode.
-import type { Plugin } from "@opencode-ai/plugin"
-import { tool } from "@opencode-ai/plugin"
-import { ENGINE_SESSIONS } from "./orchestrator.ts"
-import { runRustAudit } from "./rust-audit.ts"
-import { runTriageFindings } from "./triage-findings.ts"
-import { workHooks } from "./work-hook.ts"
+//   • the 5 review subagents stay hidden (their own frontmatter: hidden: true)
+import type { PluginInput, PluginModule } from "@opencode-ai/plugin"
+import { v1Hooks } from "./host-v1.ts"
+import { v2Setup } from "./host-v2.ts"
+import type { V2Context } from "./opencode-v2.js"
+import { ENGINE_SESSIONS } from "./child-run.ts"
+import { TOOLS } from "./tools.ts"
+import { workHook } from "./work-hook.ts"
 
-// The subset of the plugin input that our orchestration needs.
-export interface PluginCtx {
-  client: any        // @opencode-ai/sdk client (session.create / session.prompt)
-  $: any             // Bun shell ($`...`)
-  directory: string
-  worktree: string
+const craft: PluginModule & { id: string; setup(ctx: V2Context): Promise<() => Promise<void>> } = {
+  id: "craft-rust",
+  server: async (input: PluginInput) => v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS)),
+  setup: (ctx) => v2Setup(ctx, TOOLS, workHook(ctx.location.directory, ENGINE_SESSIONS)),
 }
 
-const CraftRustPlugin: Plugin = async ({ client, $, directory, worktree }) => {
-  const ctx: PluginCtx = { client, $, directory, worktree }
-  return {
-    ...workHooks(directory, ENGINE_SESSIONS),
-    tool: {
-      "rust-audit": tool({
-        description:
-          "Full Rust crate audit: fan out the craft review agents (reviewer, architecture, security, and Miri if unsafe is present) and synthesize one severity-ranked report. Optional arg `base` fixes the diff base ref.",
-        args: { base: tool.schema.string().optional() },
-        async execute(args: { base?: string }) {
-          return await runRustAudit(ctx, args)
-        },
-      }),
-      "triage-findings": tool({
-        description:
-          "Validate review findings against the code and render one ordered fix plan + triage ledger (no edits). Arg `locator` points at the findings source (a report path, PR ref, or pasted findings).",
-        args: { locator: tool.schema.string() },
-        async execute(args: { locator: string }) {
-          return await runTriageFindings(ctx, args)
-        },
-      }),
-    },
-  }
-}
-
-export default CraftRustPlugin
+export default craft

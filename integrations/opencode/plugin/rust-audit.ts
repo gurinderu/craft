@@ -3,7 +3,7 @@
 // unused-crates, tests-cov, on the default session model) → synthesize. The Claude-Code-only
 // review engine (the craft CLI driven through Claude Code's Workflow tool) has no opencode equivalent, so the "review" dimension is a single-pass
 // rust-reviewer (no per-crate / inter-crate-contract fan-out); see integrations/opencode/README.md parity caveats.
-import type { PluginCtx } from "./index.ts"
+import type { Host } from "./host.ts"
 import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
 import { auditSynthesisInput, buildAuditRecord, hasVerdictLine, writeRecord, EVIDENCE_MARKER } from "./run-record.mjs"
 
@@ -33,16 +33,7 @@ const EVIDENCE_RULE =
   `ran and files you read this pass (never invented) — a passing verdict with an empty \`${EVIDENCE_MARKER}\` ` +
   `line is treated as INCOMPLETE, not trusted.`
 
-async function sh(ctx: PluginCtx, cmd: string): Promise<string> {
-  try {
-    const r = await ctx.$`bash -lc ${cmd}`.quiet()
-    return (r.stdout?.toString?.() ?? String(r.stdout ?? "")).trim()
-  } catch {
-    return ""
-  }
-}
-
-async function scout(ctx: PluginCtx, base?: string): Promise<{ baseRef: string; hasUnsafe: boolean }> {
+async function scout(ctx: Host, base?: string): Promise<{ baseRef: string; hasUnsafe: boolean }> {
   let baseRef = base ?? ""
   if (!baseRef) {
     for (const c of [
@@ -50,20 +41,20 @@ async function scout(ctx: PluginCtx, base?: string): Promise<{ baseRef: string; 
       "git merge-base HEAD main 2>/dev/null",
       "git rev-parse HEAD~1 2>/dev/null",
     ]) {
-      baseRef = await sh(ctx, c)
+      baseRef = await ctx.sh(c)
       if (baseRef) break
     }
   }
-  // sh() returns "" on both "no matches" and "shell/command failed". Append a marker that only
+  // ctx.sh() returns "" on both "no matches" and "shell/command failed". Append a marker that only
   // prints if the shell actually ran, so we can mirror workflows/rust-audit.js's `?? true`
   // fail-safe: when unsafe-detection does not resolve, run Miri anyway.
-  const probe = await sh(ctx, `grep -rlE "\\bunsafe\\b" --include='*.rs' . 2>/dev/null | head -n1; echo "__scout_ok__"`)
+  const probe = await ctx.sh(`grep -rlE "\\bunsafe\\b" --include='*.rs' . 2>/dev/null | head -n1; echo "__scout_ok__"`)
   const ranOk = probe.includes("__scout_ok__")
   const hasMatch = probe.replace("__scout_ok__", "").trim().length > 0
   return { baseRef, hasUnsafe: hasMatch || !ranOk }
 }
 
-export async function runRustAudit(ctx: PluginCtx, args: { base?: string }): Promise<string> {
+export async function runRustAudit(ctx: Host, args: { base?: string }): Promise<string> {
   const { baseRef, hasUnsafe } = await scout(ctx, args.base)
   const diffNote = baseRef
     ? `Diff base: \`${baseRef}\`.`

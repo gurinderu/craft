@@ -14,12 +14,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runRustAudit } from './rust-audit.ts'
 
-/** @typedef {{ body?: { agent?: string, parts?: { text?: string }[] } }} PromptRequest */
+/** @typedef {import('./host.ts').ChildRequest} ChildRequest */
 
-// `$` is Bun's shell used as a tagged template; every call in the audit is a read-only probe whose
-// failure the code already tolerates, so answering "" for all of them is faithful.
-const shell = () => Object.assign(() => ({ quiet: async () => ({ stdout: '' }) }), {})
-
+// Every probe in the audit is read-only and its failure is already tolerated, so "" for all of them is faithful.
 /** @param {(q: { agent: string, isSynthesis: boolean }) => string | null} answerFor */
 function fakeCtx(answerFor) {
   /** @type {string[]} */
@@ -28,18 +25,12 @@ function fakeCtx(answerFor) {
     seen,
     directory: '/repo',
     worktree: '/repo',
-    $: shell(),
-    client: {
-      session: {
-        create: async () => ({ id: 's' }),
-        prompt: async (/** @type {PromptRequest} */ { body }) => {
-          const agent = body?.agent ?? ''
-          const isSynthesis = /consolidating a Rust audit/.test(body?.parts?.[0]?.text ?? '')
-          seen.push(isSynthesis ? 'synthesis' : agent || 'dimension')
-          const text = answerFor({ agent, isSynthesis })
-          return { parts: [{ type: 'text', text }] }
-        },
-      },
+    sh: async () => '',
+    callerModel: async () => undefined, agents: async () => null,
+    runChild: async (/** @type {ChildRequest} */ { agent, prompt }) => {
+      const isSynthesis = /consolidating a Rust audit/.test(prompt)
+      seen.push(isSynthesis ? 'synthesis' : agent || 'dimension')
+      return answerFor({ agent, isSynthesis }) ?? ''
     },
   }
 }
@@ -118,12 +109,12 @@ test('an echoed synthesis cannot lift the record above what the dimensions said'
         ? '- use-after-free in src/x.rs:10\n\nVERDICT: BLOCK'
         : `- ${agent}: nothing found\nEvidence: ran the checks and read the changed files.\n\nVERDICT: APPROVE`
     })
-    const inner = ctx.client.session.prompt
-    ctx.client.session.prompt = async (/** @type {PromptRequest} */ req) => {
-      const text = req?.body?.parts?.[0]?.text ?? ''
+    const inner = ctx.runChild
+    ctx.runChild = async (/** @type {ChildRequest} */ req) => {
+      const text = req.prompt
       if (/consolidating a Rust audit/.test(text)) {
         const blob = text.slice(text.indexOf('RESULTS:') + 'RESULTS:'.length).trim()
-        return { parts: [{ type: 'text', text: `I cannot consolidate this. The results were:\n\n${blob}` }] }
+        return `I cannot consolidate this. The results were:\n\n${blob}`
       }
       return inner(req)
     }
@@ -145,9 +136,9 @@ test('a faithful consolidation that reuses the input lines is used, not thrown a
       }
       return null
     })
-    const inner = ctx.client.session.prompt
-    ctx.client.session.prompt = async (/** @type {PromptRequest} */ req) => {
-      const text = req?.body?.parts?.[0]?.text ?? ''
+    const inner = ctx.runChild
+    ctx.runChild = async (/** @type {ChildRequest} */ req) => {
+      const text = req.prompt
       if (/consolidating a Rust audit/.test(text)) {
         const findings = text.split('\n').filter(l => l.startsWith('- '))
         const merged = [
@@ -164,7 +155,7 @@ test('a faithful consolidation that reuses the input lines is used, not thrown a
           '',
           'VERDICT: WARNING',
         ].join('\n')
-        return { parts: [{ type: 'text', text: merged }] }
+        return merged
       }
       return inner(req)
     }
