@@ -40,12 +40,12 @@ pub enum CommentError {
 }
 
 /// Sorts and posts the findings of the finished run in `dir` on the pull request `pr` names, else
-/// on its reviewed branch's — never the one checked out now, which may be another's — keeps
+/// on the one its chain was resolved from, else on its reviewed branch's — never the one checked out now, which may be another's — keeps
 /// what came of it in the run's state and report, and returns the run's finished step with it.
 ///
 /// # Errors
 /// When the run cannot be read or is not finished, read uncommitted work, its checkout is gone, it
-/// was reviewed on a detached HEAD and no `pr` is named, the
+/// was reviewed on a detached HEAD and no `pr` is named nor its chain's, the
 /// PR's head moved over a defect's line, or the report or state cannot be written.
 pub fn comment(dir: &Path, pr: Option<u64>, setup: &PostSetup) -> Result<Value, Error> {
     let mut run = state::load(dir)?;
@@ -59,7 +59,9 @@ pub fn comment(dir: &Path, pr: Option<u64>, setup: &PostSetup) -> Result<Value, 
     if !Path::new(&run.context.repo).is_dir() {
         return Err(CommentError::NoCheckout(run.context.repo.clone()).into());
     }
-    let which = match (pr, &run.chain.branch) {
+    // A run on a detached HEAD whose chain a pull request named posts on that PR, as `deliver`
+    // does; a branch name would ask gh for the checkout's branch, not the reviewed one.
+    let which = match (pr.or(run.chain.pr), &run.chain.branch) {
         (Some(n), _) => n.to_string(),
         (None, Some(branch)) => branch.clone(),
         (None, None) => return Err(CommentError::Detached(dir.to_owned()).into()),
