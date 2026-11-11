@@ -2,7 +2,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
-import { TOOLS } from './tools.ts'
+import { onV2, TOOLS } from './tools.ts'
 
 const assistant = (/** @type {string} */ text) => ({ type: 'assistant', finish: 'stop', content: [{ type: 'reasoning', text: 'hm' }, { type: 'text', text }] })
 
@@ -141,11 +141,37 @@ test('a deadline interrupts the session and stops the polling; the agents are li
   assert.deepEqual([...await v2Host(ctx, 0).agents() ?? []], ['build', 'review-task'])
 })
 
-test('the review tool on a 2.x without review-task refuses up front and opens no session', async () => {
+test('every workflow on the 2.x entry refuses up front, says so in its description, and opens no session', async () => {
   const f = fakeCtx()
-  f.ctx.agent.list = /** @type {any} */ (async () => ({ location: { directory: '/repo' }, data: [{ id: 'build' }, { id: 'rust-reviewer' }] }))
-  const review = TOOLS.find(t => t.name === 'review')
-  const answer = await review?.run(v2Host(f.ctx), {}, { sessionID: 'ses_set' })
-  assert.match(String(answer), /INCOMPLETE — the craft OpenCode agents are not installed or are out of date: rerun integrations\/opencode\/install\.sh/)
+  await v2Setup(f.ctx, onV2(TOOLS), { childCreated: () => {}, compacted: async () => {}, message: async () => {} })
+  assert.deepEqual(f.tools.map(t => t.name), ['rust-audit', 'triage-findings', 'review'], 'all three stay registered')
+  for (const tool of f.tools) {
+    const out = await tool.execute({ locator: 'x' }, { sessionID: 'ses_set', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
+    assert.match(out.content[0].text, new RegExp(`INCOMPLETE — craft's \`${tool.name}\` does not yet work in OpenCode 2\\.x: .*A route through \`opencode run\` is in progress; until it ships, use OpenCode 1\\.x, Claude Code, Codex or pi\\. Nothing ran\\.`))
+    assert.match(tool.description, /^Not available on OpenCode 2\.x yet/)
+    if (tool.name === 'review') assert.match(out.content[0].text, /^## Verdict\n\n⚠️ INCOMPLETE/, 'the review answers with its verdict block')
+  }
   assert.equal(f.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
+})
+
+test('the polling leaves no abort listener behind, however many reads it takes', async () => {
+  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }], [assistant('done')]])
+  const stop = new AbortController()
+  let live = 0
+  let most = 0
+  const add = stop.signal.addEventListener.bind(stop.signal)
+  const remove = stop.signal.removeEventListener.bind(stop.signal)
+  stop.signal.addEventListener = (/** @type {any[]} */ ...a) => { most = Math.max(most, ++live); add(.../** @type {[any, any, any]} */ (a)) }
+  stop.signal.removeEventListener = (/** @type {any[]} */ ...a) => { live--; remove(.../** @type {[any, any]} */ (a)) }
+  assert.equal(await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), 'done')
+  assert.equal(live, 0)
+  assert.ok(most <= 2, `at most the session's stop and one poll's listener at once, saw ${most}`)
+})
+
+test('a wait that never returns does not hold the polling past the abort', async () => {
+  const f = fakeCtx()
+  const stop = new AbortController()
+  f.ctx.session.wait = () => { setTimeout(() => stop.abort(), 5); return new Promise(() => {}) }
+  await assert.rejects(v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
+  assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
 })
