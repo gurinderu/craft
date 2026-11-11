@@ -76,7 +76,7 @@ craft/
 │   │   └── skills, lib, content, src, README.md -> ../../…   # symlinks; the release branch holds them as real files
 │   ├── opencode/          # the OpenCode adapter layer (agents, commands, plugin, install.sh)
 │   ├── codex/             # where the Codex delivery lives, and why its manifest stays at the root
-│   └── pi/                # planned
+│   └── pi/                # the pi package's craft-review skill (new, not yet observed in a real pi session)
 ├── src/                   # the workflow scripts as authored
 ├── lib/                   # tested helpers shared (bundled) by the workflows; the hooks' scripts
 ├── content/               # prompts and schemas the engines and the CLI render
@@ -125,10 +125,16 @@ codex plugin add craft@craft
 ```
 
 Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
-skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines (`craft:review`,
-`rust-audit`, `triage-findings`) and the review loop of `craft:develop` do not run there,
-and the review agents under `integrations/claude-code/agents/` are not shipped to it: the hooks tell a Codex session to review the diff
-itself. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
+skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines `rust-audit` and
+`triage-findings` and the review loop of `craft:develop` do not run there. The review has a Codex route, new and not
+yet observed running in a real Codex session (only its loop is tested, against fake `craft` and `codex` binaries;
+the hooks tell a session to review the diff itself when the command cannot run or fails): the `craft:codex-review`
+skill has the session run one command, `node <plugin root>/lib/codex-review.mjs [key=value ...]`, which drives the
+same `craft` binary as the `craft:review` workflow, takes the same arguments, and runs each review task as its own
+`codex exec --ephemeral -s read-only` process with the session's login — in parallel, 4 at once by default
+(`concurrency=<n>`), on the session's model unless `codexModels=<model>` or `codexModels=opus=<m>,sonnet=<m>,haiku=<m>`
+(or `CRAFT_CODEX_MODELS`) names one per tier. The command writes under `~/.craft` and starts model calls, so it runs
+outside Codex's sandbox. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
 
 ## Workflows
 
