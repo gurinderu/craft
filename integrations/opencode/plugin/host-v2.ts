@@ -2,15 +2,51 @@
 // `ctx.tool` registers the tools with a JSON Schema input (no Effect, no zod: 2.2.7 accepts plain JSON Schema),
 // and the session `prompt` hook plus `ctx.event` feed the work hook.
 import { stringArgs, type Host, type ToolSpec, type WorkHook } from "./host.ts"
-import type { V2Context, V2Event, V2ToolDefinition } from "./opencode-v2.js"
-import { replyDeadlineMs, replyOf } from "./host-v2-reply.ts"
+import type { V2Context, V2Event, V2Message, V2ToolDefinition } from "./opencode-v2.js"
 import { shellIn } from "./shell.mjs"
 
-// How long to wait between reads of a child session that is not yet done.
+// How long to wait between reads of a child session that is not yet done, and how many reads before giving
+// up. The orchestrator's own deadline (orchestrator.ts) is the real bound; this only keeps the loop from
+// outliving it by much.
 const POLL_MS = 500
+const MAX_POLLS = 3 * 60 * 60 * 2
 
-// `replyMs`: each child session's own idle deadline (host-v2-reply.ts), clamped to the caller's `deadlineMs`.
-export function v2Host(ctx: V2Context, pollMs = POLL_MS, replyMs = replyDeadlineMs(process.env)): Host {
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+// The text of the session's last message, when it is a finished assistant turn; null while it is not.
+export function finishedReply(messages: readonly V2Message[]): string | null {
+  const last = messages.at(-1)
+  if (!last || last.type !== "assistant") return null
+  if (last.finish === undefined && last.time?.completed === undefined) return null
+  return (last.content ?? []).filter((c) => c.type === "text" && typeof c.text === "string").map((c) => c.text).join("\n").trim()
+}
+
+const STOPPED = "the child session was stopped at its deadline"
+
+// `wait` may resolve before the admitted prompt's loop has started, so idle is read as "look again", and
+// only a finished assistant message is an answer (UNOBSERVED with a real model: opencode-v2.d.ts). An abort (the
+// caller's deadline) ends the polling: the session itself is interrupted by `stopOnAbort`.
+async function awaitReply(ctx: V2Context, sessionID: string, pollMs: number, signal?: AbortSignal): Promise<string> {
+  for (let i = 0; i < MAX_POLLS; i++) {
+    if (signal?.aborted) throw new Error(STOPPED)
+    await ctx.session.wait({ sessionID })
+    if (signal?.aborted) throw new Error(STOPPED)
+    const reply = finishedReply(await ctx.session.context({ sessionID }))
+    if (reply !== null) return reply
+    await pause(pollMs)
+  }
+  return ""
+}
+
+// On abort, interrupt the session's agent loop (`session.interrupt`, observed on opencode 2.2.7); the returned function
+// stops listening.
+function stopOnAbort(ctx: V2Context, sessionID: string, signal: AbortSignal | undefined): () => void {
+  const stop = () => { ctx.session.interrupt({ sessionID }).catch(() => undefined) }
+  signal?.addEventListener("abort", stop, { once: true })
+  return () => signal?.removeEventListener("abort", stop)
+}
+
+export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
   const directory = ctx.location.directory
   return {
     directory,
@@ -24,9 +60,13 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS, replyMs = replyDeadline
         ...(req.parentID ? { parentID: req.parentID } : {}),
       })
       req.onSession?.(session.id)
-      const ms = Math.min(replyMs, req.deadlineMs ?? Infinity)
-      const send = () => ctx.session.prompt({ sessionID: session.id, text: req.prompt })
-      return replyOf(ctx, session.id, send, { ms, pollMs, ...(req.signal ? { signal: req.signal } : {}) })
+      const unlisten = stopOnAbort(ctx, session.id, req.signal)
+      try {
+        await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
+        return await awaitReply(ctx, session.id, pollMs, req.signal)
+      } finally {
+        unlisten()
+      }
     },
     // The session's own model, set at creation or by a switch (observed on opencode 2.2.7); none when it has none.
     async callerModel(sessionID) {

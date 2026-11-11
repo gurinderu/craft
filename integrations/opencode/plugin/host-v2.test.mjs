@@ -1,7 +1,7 @@
 // The 2.x side of the host against a fake `ctx` shaped as opencode-v2.d.ts pins it (observed on 2.2.7).
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { v2Host, v2Setup, v2Tool } from './host-v2.ts'
+import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
 import { TOOLS } from './tools.ts'
 
 const assistant = (/** @type {string} */ text) => ({ type: 'assistant', finish: 'stop', content: [{ type: 'reasoning', text: 'hm' }, { type: 'text', text }] })
@@ -75,6 +75,14 @@ test('the default agent and model are left to the session', async () => {
   const f = fakeCtx([[assistant('x')]])
   await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p' })
   assert.deepEqual(f.sent[0], ['create', { title: 't' }])
+})
+
+test('only a finished assistant turn is a reply', () => {
+  assert.equal(finishedReply([]), null)
+  assert.equal(finishedReply([{ type: 'user' }]), null)
+  assert.equal(finishedReply([{ type: 'assistant', content: [{ type: 'text', text: 'half' }] }]), null, 'still streaming')
+  assert.equal(finishedReply([{ type: 'assistant', time: { created: 1, completed: 2 } }]), '', 'finished, said nothing')
+  assert.equal(finishedReply([assistant(' a ')]), 'a')
 })
 
 test('a tool spec becomes a JSON Schema tool whose result is text content', async () => {
