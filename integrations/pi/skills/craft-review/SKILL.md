@@ -24,6 +24,8 @@ How to run it:
   trust), and starts `pi -p` processes that call the model with this pi installation's login.
 - It prints `run=<directory>` on stderr as soon as the run starts. If the call is cut off or the
   run stops on the usage limit, resume it with `run=<that directory>` alone.
+- If it says pi is not logged in, tell the human to log in to pi (`pi`, then `/login`) and
+  resume with the `run=` it names.
 
 Arguments are the review's own, as `key=value` words (or one JSON object argument, the only way
 to pass `priorDecisions` or a list of `extraLenses`):
