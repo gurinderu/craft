@@ -5,6 +5,7 @@ import tseslint from 'typescript-eslint'
 import sonarjs from 'eslint-plugin-sonarjs'
 import { COMPLEXITY_RULES } from './lib/complexity-rules.mjs'
 import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
+import { presetRules } from './lib/eslint-preset.mjs'
 
 // Lint scope: the .mjs files under lib/ and integrations/opencode/plugin/, integrations/opencode/plugin/*.ts, knip.config.js and
 // .dependency-cruiser.mjs (both decide what a gate sees; tsc checks their JSDoc types — a test imports the
@@ -27,7 +28,7 @@ import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 // go quiet, so loading this config throws unless both installs are whole (lib/lint-prerequisites.mjs).
 assertLintPrerequisites(import.meta.dirname)
 
-const strictTypeChecked = tseslint.configs.strictTypeChecked.find(c => c.name === 'typescript-eslint/strict-type-checked')?.rules ?? {}
+const strictTypeChecked = presetRules(tseslint.configs.strictTypeChecked, 'typescript-eslint/strict-type-checked')
 
 const typeAware = {
   ...strictTypeChecked,
