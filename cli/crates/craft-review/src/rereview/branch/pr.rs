@@ -21,7 +21,8 @@ pub(super) struct Named {
 const FIELDS: &str = "number,headRefName,headRefOid,isCrossRepository,headRepositoryOwner";
 
 /// The head branch and head commit of pull request `n`, given (`pr`): the branch names a detached
-/// `HEAD`'s chain, the commit is what `HEAD` must be ([`super::head`]).
+/// `HEAD`'s chain whatever its head is now, as the ancestry check keeps a round of a rewritten
+/// history out of it; the commit is what `HEAD` must be or hold ([`super::head`]).
 pub(super) fn given(runner: &Runner, cwd: &Path, n: u64) -> Result<Named, String> {
     let v = ask(
         runner,

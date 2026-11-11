@@ -47,7 +47,7 @@ pub struct ChainBranch {
 /// The branch `cwd`'s run is chained on.
 ///
 /// # Errors
-/// The refusal, when a pull request is given and gh names it a head other than `HEAD`
+/// The refusal, when a pull request is given and `HEAD` does not hold the head gh names for it
 /// (realm @nick/craft, node #468).
 pub fn resolve(cwd: &Path, lookup: Lookup<'_>) -> Result<ChainBranch, String> {
     let branch = git::branch(cwd);
@@ -57,21 +57,34 @@ pub fn resolve(cwd: &Path, lookup: Lookup<'_>) -> Result<ChainBranch, String> {
             ..ChainBranch::default()
         });
     }
-    let found = ask(cwd, &lookup)?;
+    let Asked { found, ahead } = ask(cwd, &lookup)?;
     let unchecked = lookup.pr.filter(|_| lookup.gh.is_some());
-    Ok(chained(branch, lookup.pr, unchecked, found))
+    let mut chain = chained(branch, lookup.pr, unchecked, found);
+    chain.note = chain.note.or(ahead);
+    Ok(chain)
 }
 
-/// What gh says of the pull request: the one given, refused when its head is not `HEAD`, else the
-/// one `HEAD` heads; the inner `Err` says why none was named.
-fn ask(cwd: &Path, lookup: &Lookup<'_>) -> Result<Result<Named, String>, String> {
+/// What gh said: the pull request that names the chain, or why none does; and, `HEAD` ahead of a
+/// given PR's head, the note saying so.
+struct Asked {
+    found: Result<Named, String>,
+    ahead: Option<String>,
+}
+
+/// What gh says of the pull request: the one given, refused when `HEAD` does not hold its head,
+/// else the one `HEAD` heads.
+fn ask(cwd: &Path, lookup: &Lookup<'_>) -> Result<Asked, String> {
+    let none = |why: String| Asked {
+        found: Err(why),
+        ahead: None,
+    };
     let (setup, head) = match (lookup.gh, git::git(cwd, &["rev-parse", "HEAD"])) {
         (None, _) => {
-            return Ok(Err(
-                "gh was not asked which pull request this HEAD heads".to_owned()
+            return Ok(none(
+                "gh was not asked which pull request this HEAD heads".to_owned(),
             ));
         }
-        (_, Err(e)) => return Ok(Err(format!("git could not name HEAD: {e}"))),
+        (_, Err(e)) => return Ok(none(format!("git could not name HEAD: {e}"))),
         (Some(setup), Ok(head)) => (setup, head.trim().to_owned()),
     };
     let runner = Runner::new(
@@ -80,14 +93,17 @@ fn ask(cwd: &Path, lookup: &Lookup<'_>) -> Result<Result<Named, String>, String>
         lookup.dir.clone(),
     );
     let Some(n) = lookup.pr else {
-        return Ok(heading(&runner, cwd, &head));
+        return Ok(Asked {
+            found: heading(&runner, cwd, &head),
+            ahead: None,
+        });
     };
-    match given(&runner, cwd, n) {
-        Ok(named) if !named.head.is_empty() && named.head != head => {
-            Err(head::mismatch(cwd, n, &named.head, &head))
-        }
-        found => Ok(found),
-    }
+    let found = given(&runner, cwd, n);
+    let ahead = match &found {
+        Ok(named) if !named.head.is_empty() => head::check(cwd, n, &named.head, &head)?,
+        _ => None,
+    };
+    Ok(Asked { found, ahead })
 }
 
 /// The chain `found` names: the checked-out `branch` whatever gh said, else the PR's branch, else

@@ -97,8 +97,8 @@ pub struct StartArgs {
     /// whole again.
     #[arg(long)]
     pub nested: bool,
-    /// The pull request under review, whose head HEAD must be: another HEAD is refused before any
-    /// task. On a detached HEAD its head branch keys the chain of review rounds. Absent, gh is
+    /// The pull request under review, whose head HEAD must be or hold: a HEAD that does not hold it
+    /// is refused before any task. On a detached HEAD its head branch keys the chain of review rounds. Absent, gh is
     /// asked for the open pull request whose head is HEAD.
     #[arg(long, value_name = "NUMBER")]
     pub pr: Option<u64>,
