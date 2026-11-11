@@ -5,6 +5,7 @@
     reason = "the fixture helpers fail the test loudly, like the tests they serve"
 )]
 
+#[path = "../../../../test-support/exe.rs"]
 pub mod exe;
 pub mod post;
 pub mod pr_gh;

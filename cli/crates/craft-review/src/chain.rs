@@ -94,7 +94,8 @@ pub struct Prior {
 pub enum Unchained {
     /// The caller asked for a new chain.
     Fresh,
-    /// `HEAD` is on no branch (detached), so there is no chain to key it on.
+    /// `HEAD` is on no branch (detached) and no pull request named one, so there is no chain to
+    /// key it on.
     NoBranch,
     /// No finished round of this branch is on `HEAD`'s history.
     NoPriorRound,
@@ -112,7 +113,7 @@ impl Unchained {
         match self {
             Self::Fresh => "fresh: a new chain was asked for",
             Self::NoBranch => {
-                "no branch (a detached HEAD): findings do not carry to a later run; check out a branch to chain review rounds"
+                "no branch (a detached HEAD) and no pull request named one: findings do not carry to a later run; name its pull request (`pr=`) or check out a branch to chain review rounds"
             }
             Self::NoPriorRound => "no earlier round of this branch is on HEAD's history",
             Self::Restarted => {
