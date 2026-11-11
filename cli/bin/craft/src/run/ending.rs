@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::drive::{Driver, Running, is_done, steps};
 use super::protocol::{Protocol, Said};
-use super::report::{cut_short, finished_answer, said_section, stopped_answer, text};
+use super::report::{cut_short, finished_answer, resume_hint, said_section, stopped_answer, text};
 
 /// How the loop ended.
 #[derive(Debug)]
@@ -18,6 +18,8 @@ pub(crate) enum Ending {
     Finished(Value),
     /// The loop stopped before the binary finished the run, and why.
     Stopped(String),
+    /// A stopping signal ended the loop: its round's tasks stopped, the exit status it asks for.
+    Signalled(u8),
     /// The binary finished the run but kept no finished step to file its record from.
     Unrecorded(String),
 }
@@ -111,6 +113,7 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
                 run,
             }
         }
+        Ending::Signalled(code) => signalled(d, code, r),
         Ending::Stopped(why) => {
             let filed = r.run.as_deref().and_then(|run| {
                 d.proto
@@ -129,6 +132,32 @@ fn ended<P: Protocol>(d: &Driver<'_, P>, ending: Ending, r: &mut Running) -> Ans
                 run,
             }
         }
+    }
+}
+
+/// A run a stopping signal ended: filed INCOMPLETE with that reason, answered with how to resume.
+fn signalled<P: Protocol>(d: &Driver<'_, P>, code: u8, r: &mut Running) -> Answer {
+    let log = |l: &str| d.log(l);
+    let why = format!("review run was stopped by a signal (exit {code})");
+    let run = r.run.as_ref().map(|p| p.display().to_string());
+    for line in r
+        .run
+        .as_deref()
+        .and_then(|run| d.proto.unfinished(run, &why))
+        .into_iter()
+        .flatten()
+    {
+        r.lost.note_line(line, &log);
+    }
+    let resume = run
+        .as_deref()
+        .map(|run| resume_hint(run, &(d.again)(run)))
+        .unwrap_or_default();
+    Answer {
+        text: with_notes(&stopped_answer(&why), &[resume, r.lost.section()]),
+        finished: false,
+        step: None,
+        run,
     }
 }
 

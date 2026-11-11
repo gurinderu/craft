@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use craft_agent::runner::run_all;
+use craft_agent::runner::{Batch, run_until};
 use craft_agent::{AgentBackend, AgentError, AgentReply, AgentRequest};
 
 use super::deadline::deadline_of;
@@ -34,6 +34,9 @@ pub(crate) struct RoundCtx<'a> {
     pub(crate) log: &'a dyn Fn(&str),
     /// Where each event of the round goes (`--events json`).
     pub(crate) emit: &'a dyn Fn(Event),
+    /// The exit status of a stopping signal once one arrived: the round's tasks are stopped then
+    /// (realm @nick/craft, node #40).
+    pub(crate) stop: tokio::sync::watch::Receiver<Option<u8>>,
 }
 
 /// What came of a round.
@@ -113,10 +116,30 @@ pub(crate) async fn run_round<B: AgentBackend + 'static>(
     });
     let named = Named::of(&requests, &ran, tasks);
     let (events, heard) = tokio::sync::mpsc::unbounded_channel();
-    let (replies, ()) = tokio::join!(
-        run_all(gated, requests, ctx.concurrency, events),
+    let mut stop = ctx.stop.clone();
+    let stopped = async move {
+        // A sender gone without a signal never stops the round.
+        if stop.wait_for(Option::is_some).await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    let (batch, ()) = tokio::join!(
+        run_until(gated, requests, ctx.concurrency, events, stopped),
         watch(heard, &named, ctx.emit)
     );
+    let replies: Vec<_> = match batch {
+        Batch::Complete(replies) => replies,
+        Batch::Stopped(slots) => slots
+            .into_iter()
+            .map(|s| {
+                s.unwrap_or_else(|| {
+                    Err(AgentError::Failed {
+                        subtype: "stopped".into(),
+                    })
+                })
+            })
+            .collect(),
+    };
     for (i, reply) in ran.into_iter().zip(replies) {
         if let Some(task) = tasks.get(i) {
             outcomes.insert(i, outcome_of(task, reply, ctx.host));

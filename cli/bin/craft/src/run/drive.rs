@@ -120,6 +120,10 @@ async fn rounds<P: Protocol>(
         let phase = at.get("phase").and_then(Value::as_str).unwrap_or_default();
         announce(d, (round, phase), &tasks, &mut last_phase);
         let res = round_of(&d.round, &tasks, round).await;
+        // A stopping signal cut the round short (its tasks' groups stopped): nothing is submitted.
+        if let Some(code) = *d.round.stop.borrow() {
+            return Ending::Signalled(code);
+        }
         let said = heard(r, res);
         // Not logged in: no task can answer, so nothing is submitted; a resume hands the step's
         // missing answers out again.
