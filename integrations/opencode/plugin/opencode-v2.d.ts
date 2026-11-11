@@ -61,6 +61,9 @@ export interface V2Event {
 export interface V2Context {
   app: { version: string }
   location: { directory: string; project?: { directory?: string } }
+  agent: {
+    list(): Promise<{ data: { id: string }[] }>
+  }
   tool: {
     transform(edit: (editor: { add(definition: V2ToolDefinition): void }) => void): Promise<V2Registration>
   }
@@ -71,6 +74,8 @@ export interface V2Context {
     prompt(input: { sessionID: string; text: string; resume?: boolean }): Promise<unknown>
     // Experimental in 2.2.7: resolves when the session's agent loop is idle.
     wait(input: { sessionID: string }): Promise<unknown>
+    // Stops the session's agent loop; `{ interrupted: false }` when it was idle (observed).
+    interrupt(input: { sessionID: string }): Promise<unknown>
     context(input: { sessionID: string }): Promise<V2Message[]>
     hook(name: "prompt", callback: (input: V2PromptHookInput) => Promise<void> | void): Promise<V2Registration>
   }

@@ -35,7 +35,7 @@ function fakeCtx(answers, calls = []) {
     directory: '',
     worktree: '',
     sh: async () => '',
-    callerModel: async () => undefined,
+    callerModel: async () => undefined, agents: async () => null,
     runChild: async ({ agent }) => {
       calls.push(agent)
       const nth = calls.filter(a => a === agent).length - 1
@@ -700,4 +700,14 @@ test('a job left over when the budget is spent is not attempted, and says so', a
   const rs = await fanOut(ctx, jobs, 30)
   const skipped = rs.filter(r => /retry budget for this run was already spent/.test(r.text))
   assert.ok(skipped.length >= 1, 'at least one job is honestly reported as never retried')
+})
+
+test('a job past its deadline has its child session told to stop', async () => {
+  const ctx = fakeCtx({})
+  /** @type {AbortSignal | undefined} */
+  let seen
+  ctx.runChild = (req) => { seen = req.signal; return new Promise(() => {}) }
+  const r = await runAnswering(ctx, 'slow', 'p', hasVerdictLine, 20)
+  assert.equal(r.ok, false)
+  assert.equal(seen?.aborted, true)
 })

@@ -2,16 +2,19 @@
 // model unless the review's table chose one, and marked as the review's own sessions.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { ENGINE_SESSIONS } from './orchestrator.ts'
+import { ENGINE_SESSIONS } from './child-run.ts'
 import { TOOLS, nestedUnder, reviewChild } from './tools.ts'
+
+/** @type {boolean[]} whether the child was marked the engine's while it ran */
+const live = []
 
 /** @returns {import('./host.ts').Host & { asked: import('./host.ts').ChildRequest[] }} */
 function fakeHost() {
   /** @type {import('./host.ts').ChildRequest[]} */
   const asked = []
   return {
-    asked, directory: '/r', worktree: '/r', sh: async () => '', callerModel: async () => undefined,
-    runChild: async req => { asked.push(req); req.onSession?.('ses_child'); return 'done' },
+    asked, directory: '/r', worktree: '/r', sh: async () => '', callerModel: async () => undefined, agents: async () => null,
+    runChild: async req => { asked.push(req); req.onSession?.('ses_child'); live.push(ENGINE_SESSIONS.has('ses_child')); return 'done' },
   }
 }
 
@@ -22,7 +25,8 @@ test('a review task nests under the caller and takes its model unless the table 
   await child({ title: 't', agent: 'review-task', prompt: 'x' })
   await child({ title: 't', agent: 'review-task', prompt: 'x', model: { providerID: 'p', modelID: 'mapped' } })
   assert.deepEqual(host.asked.map(r => [r.parentID, r.model?.modelID]), [['ses_caller', 'caller'], ['ses_caller', 'mapped']])
-  assert.ok(ENGINE_SESSIONS.has('ses_child'), 'the work hook stays silent in it')
+  assert.deepEqual(live.slice(-2), [true, true], 'the work hook stays silent in it while it runs')
+  assert.equal(ENGINE_SESSIONS.has('ses_child'), false, 'and forgets it once it ended')
 })
 
 test('without a caller the child is top-level on the runtime default', async () => {

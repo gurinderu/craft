@@ -3,8 +3,11 @@
 // session is created but never executes within STUCK_MS, retry the failed jobs one at a time;
 // if a job still yields nothing, surface a clear, actionable error rather than hang.
 //
-// A child session is the host's (host.ts): this file sees only `runChild`, on either OpenCode runtime.
+// A child session is the host's (host.ts), run through the one child-run unit every workflow shares (child-run.ts):
+// marked as the engine's while it runs, stopped at its deadline, its retries alone through the shared queue.
+import { runChildSession, solo } from "./child-run.ts"
 import type { Host, ModelRef } from "./host.ts"
+
 
 // A dimension that runs `cargo clippy --all-targets` and `cargo test` on a real workspace takes
 // minutes, not seconds. The old 90s ceiling therefore fired on essentially every Rust repository
@@ -27,19 +30,16 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | { __timeout: tru
   })
 }
 
-// The sessions this plugin's workflows opened: craft's hook at the moment of work stays silent there (work-hook.ts).
-export const ENGINE_SESSIONS = new Set<string>()
-
 // Spawn one child session bound to a hidden agent and return its final text. NOT exported: both
 // callers moved to runAnswering/fanOut, and an exported un-gated spawn is exactly the bypass this
 // file closes everywhere else — the next caller would get no predicate and no deadline.
-function runAgent(host: Host, job: Job): Promise<string> {
-  return host.runChild({
+function runAgent(host: Host, job: Job, signal: AbortSignal): Promise<string> {
+  return runChildSession(host, {
     title: `craft:${job.agent || "default"}`,
     agent: job.agent,
     prompt: job.prompt,
     ...(job.model === undefined ? {} : { model: job.model }),
-    onSession: (id) => ENGINE_SESSIONS.add(id),
+    signal,
   })
 }
 
@@ -92,9 +92,12 @@ export interface JobResult { label: string; ok: boolean; text: string }
 type Failure = "timeout" | "empty" | "unanswered" | "error" | "budget"
 
 async function tryOne(ctx: Host, job: Job): Promise<JobResult & { why?: Failure }> {
+  // A child past its deadline is stopped, not only left behind: its session would otherwise keep running.
+  const stop = new AbortController()
   try {
-    const out = await withTimeout(runAgent(ctx, job), job.timeoutMs ?? STUCK_MS)
+    const out = await withTimeout(runAgent(ctx, job, stop.signal), job.timeoutMs ?? STUCK_MS)
     if (out && typeof out === "object" && (out as any).__timeout) {
+      stop.abort()
       return { label: job.label, ok: false, text: "", why: "timeout" }
     }
     const text = String(out)
@@ -184,7 +187,7 @@ export async function fanOut(ctx: Host, jobs: Job[], retryBudgetMs = RETRY_BUDGE
     const timeoutMs = Math.min(job.timeoutMs ?? STUCK_MS, left)
     const effective: Job = { ...job, timeoutMs }
     const clipped = timeoutMs < (job.timeoutMs ?? STUCK_MS)
-    const retry = await tryOne(ctx, effective)
+    const retry = await solo(() => tryOne(ctx, effective))
     slot.result = retry.ok
       ? retry
       : { label: job.label, ok: false, text: notRunNote(effective, retry.why, retry.text, clipped) }

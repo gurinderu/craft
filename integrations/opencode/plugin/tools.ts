@@ -1,7 +1,7 @@
 // The tools craft registers in OpenCode, once for both runtimes: host-v1.ts turns each into a `tool()`,
 // host-v2.ts into a `ctx.tool` definition with a JSON Schema input.
 import type { ChildRequest, Host, ModelRef, ToolCall, ToolSpec } from "./host.ts"
-import { ENGINE_SESSIONS } from "./orchestrator.ts"
+import { retryingEmpty } from "./child-run.ts"
 import { runRustAudit } from "./rust-audit.ts"
 import { runTriageFindings } from "./triage-findings.ts"
 
@@ -15,11 +15,13 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
 // The review driver lives in craft's lib/ (lib/opencode-review.mjs), loaded from the checkout the plugin is linked from
 // when the tool runs, as the work hook loads its modules: a plugin copy without lib/ keeps its other tools.
 // A review task's child session: nested under the calling session, on that session's model unless the review's table
-// mapped the task's tier, and one of the review's own loop, so the work hook stays silent there (work-hook.ts).
+// mapped the task's tier, through the child-run unit the audit's fan-out shares (child-run.ts) — marked as the engine's
+// while it runs, and an empty reply tried once more alone, the #8528/#6573 mitigation.
 export function reviewChild(host: Host, parent: string | undefined, callerModel: ModelRef | undefined) {
+  const nested = nestedUnder(host, parent)
   return (req: ChildRequest): Promise<string> => {
     const model = req.model ?? callerModel
-    return nestedUnder(host, parent).runChild({ ...req, ...(model ? { model } : {}), onSession: (id) => ENGINE_SESSIONS.add(id) })
+    return retryingEmpty(nested, { ...req, ...(model ? { model } : {}) })
   }
 }
 
@@ -27,8 +29,10 @@ async function runReview(host: Host, args: string, call: ToolCall): Promise<stri
   const { reviewInOpenCode } = await import("../../../lib/opencode-review.mjs")
   const parent = call.sessionID
   const callerModel = parent ? await host.callerModel(parent).catch(() => undefined) : undefined
+  const agents = await host.agents().catch(() => null)
   return reviewInOpenCode(args, {
     directory: host.directory,
+    agents,
     runChild: reviewChild(host, parent, callerModel),
     log: (line) => console.error(`craft review: ${line}`),
   })

@@ -21,16 +21,29 @@ export function finishedReply(messages: readonly V2Message[]): string | null {
   return (last.content ?? []).filter((c) => c.type === "text" && typeof c.text === "string").map((c) => c.text).join("\n").trim()
 }
 
+const STOPPED = "the child session was stopped at its deadline"
+
 // `wait` may resolve before the admitted prompt's loop has started, so idle is read as "look again", and
-// only a finished assistant message is an answer (UNOBSERVED with a real model: opencode-v2.d.ts).
-async function awaitReply(ctx: V2Context, sessionID: string, pollMs: number): Promise<string> {
+// only a finished assistant message is an answer (UNOBSERVED with a real model: opencode-v2.d.ts). An abort (the
+// caller's deadline) ends the polling: the session itself is interrupted by `stopOnAbort`.
+async function awaitReply(ctx: V2Context, sessionID: string, pollMs: number, signal?: AbortSignal): Promise<string> {
   for (let i = 0; i < MAX_POLLS; i++) {
+    if (signal?.aborted) throw new Error(STOPPED)
     await ctx.session.wait({ sessionID })
+    if (signal?.aborted) throw new Error(STOPPED)
     const reply = finishedReply(await ctx.session.context({ sessionID }))
     if (reply !== null) return reply
     await pause(pollMs)
   }
   return ""
+}
+
+// On abort, interrupt the session's agent loop (`session.interrupt`, observed on opencode 2.2.7); the returned function
+// stops listening.
+function stopOnAbort(ctx: V2Context, sessionID: string, signal: AbortSignal | undefined): () => void {
+  const stop = () => { ctx.session.interrupt({ sessionID }).catch(() => undefined) }
+  signal?.addEventListener("abort", stop, { once: true })
+  return () => signal?.removeEventListener("abort", stop)
 }
 
 export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
@@ -47,13 +60,23 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
         ...(req.parentID ? { parentID: req.parentID } : {}),
       })
       req.onSession?.(session.id)
-      await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
-      return awaitReply(ctx, session.id, pollMs)
+      const unlisten = stopOnAbort(ctx, session.id, req.signal)
+      try {
+        await ctx.session.prompt({ sessionID: session.id, text: req.prompt })
+        return await awaitReply(ctx, session.id, pollMs, req.signal)
+      } finally {
+        unlisten()
+      }
     },
     // The session's own model, set at creation or by a switch (observed on opencode 2.2.7); none when it has none.
     async callerModel(sessionID) {
       const model = (await ctx.session.get({ sessionID })).model
       return model ? { providerID: model.providerID, modelID: model.id } : undefined
+    },
+    // The agents' ids `agent.list` answers (observed on opencode 2.2.7: `{ location, data: [{ id, … }] }`).
+    async agents() {
+      const res = await ctx.agent.list()
+      return new Set(res.data.map((a) => a.id))
     },
   }
 }

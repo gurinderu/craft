@@ -12,8 +12,10 @@ function fakeClient(reply) {
     session: {
       create: async (/** @type {unknown} */ req) => { sent.push(['create', req]); return { data: { id: 'ses_1' } } },
       prompt: async (/** @type {unknown} */ req) => { sent.push(['prompt', req]); return reply },
+      abort: async (/** @type {unknown} */ req) => { sent.push(['abort', req]); return { data: true } },
       messages: async (/** @type {unknown} */ req) => { sent.push(['messages', req]); return { data: [{ info: { role: 'user', model: { providerID: 'p', modelID: 'm' } } }, { info: { role: 'assistant' } }] } },
     },
+    app: { agents: async () => ({ data: [{ name: 'build' }, { name: 'rust-reviewer' }] }) },
   }
 }
 
@@ -88,4 +90,16 @@ test('each tool spec becomes a 1.x tool that hands its string arguments to the s
   assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 'ses_caller' }]], 'only string arguments reach the spec, with the caller')
   assert.equal(typeof hooks['chat.message'], 'function')
   assert.equal(typeof hooks.event, 'function')
+})
+
+test('a deadline stops the session and gives up on it; a refused prompt throws its error; the agents are listed', async () => {
+  const stop = new AbortController()
+  const hung = fakeClient(null)
+  hung.session.prompt = async (/** @type {unknown} */ req) => { hung.sent.push(['prompt', req]); stop.abort(); return { data: {} } }
+  await assert.rejects(v1Host({ client: hung, directory: '', worktree: '' }).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
+  assert.deepEqual(hung.sent.at(-1), ['abort', { path: { id: 'ses_1' } }])
+  // As opencode 1.19.5 answers an unknown agent (observed): an error object, not a throw.
+  const refused = fakeClient({ error: { name: 'UnknownError', data: { message: 'Unexpected server error.' } } })
+  await assert.rejects(v1Host({ client: refused, directory: '', worktree: '' }).runChild({ title: 't', agent: 'x', prompt: 'p' }), /Unexpected server error/)
+  assert.deepEqual([...await v1Host({ client: refused, directory: '', worktree: '' }).agents() ?? []], ['build', 'rust-reviewer'])
 })
