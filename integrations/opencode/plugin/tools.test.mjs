@@ -16,11 +16,11 @@ function fakeHost(model) {
     asked,
     directory: os.tmpdir(),
     worktree: os.tmpdir(),
-    sh: async () => '',
-    callerModel: async () => model,
-    runChild: async req => {
+    sh: () => Promise.resolve(''),
+    callerModel: () => Promise.resolve(model),
+    runChild: req => {
       asked.push(req)
-      return 'done'
+      return Promise.resolve('done')
     },
   }
 }

@@ -21,24 +21,25 @@ import { assertLintPrerequisites } from './lib/lint-prerequisites.mjs'
 // rule sees the same types tsc does (JSDoc types in .mjs, though not a JSDoc cast: the parser drops its
 // parentheses). typescript-eslint loads `typescript` from the root node_modules, hence the root
 // devDependency pinned to integrations/opencode/plugin's version (lib/typescript-pin.test.mjs fails when they part).
-// Only the rules of recommended-type-checked that report nothing on today's tree are on, so the gate stays
-// zero-warning; the rules left off and what they report are on #137.
+// The whole of typescript-eslint's strict-type-checked preset is on (realm @nick/craft, #509); each rule
+// eased below names why.
 // Fail closed: a program missing a declared package still builds, its imports read as `any` and the rules
 // go quiet, so loading this config throws unless both installs are whole (lib/lint-prerequisites.mjs).
 assertLintPrerequisites(import.meta.dirname)
 
+const strictTypeChecked = tseslint.configs.strictTypeChecked.find(c => c.name === 'typescript-eslint/strict-type-checked')?.rules ?? {}
+
 const typeAware = {
-  '@typescript-eslint/await-thenable': 'error',
-  '@typescript-eslint/no-array-delete': 'error',
-  '@typescript-eslint/no-duplicate-type-constituents': 'error',
-  '@typescript-eslint/no-for-in-array': 'error',
-  '@typescript-eslint/no-misused-promises': 'error',
-  '@typescript-eslint/no-redundant-type-constituents': 'error',
-  '@typescript-eslint/no-unnecessary-type-assertion': 'error',
-  '@typescript-eslint/no-unsafe-enum-comparison': 'error',
-  '@typescript-eslint/no-unsafe-unary-minus': 'error',
-  '@typescript-eslint/prefer-promise-reject-errors': 'error',
-  '@typescript-eslint/restrict-plus-operands': 'error',
+  ...strictTypeChecked,
+  // A number in a template literal is the idiom for counts and sizes; `${String(n)}` only adds noise.
+  '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+  // `() => clearTimeout(t)` is a callback, not a confusing value; braces around each only add lines.
+  '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
+  // `String(v ?? '')` on an unknown value narrows it to `{}`: the deliberate coercion of outside input, not an
+  // object printed by mistake; a real object type is still reported.
+  '@typescript-eslint/no-base-to-string': ['error', { ignoredTypeNames: ['Error', 'RegExp', 'URL', 'URLSearchParams', '{}'] }],
+  // The `_` prefix marks a parameter kept for its position, as the core rule's option did before.
+  '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', ignoreRestSiblings: true }],
 }
 
 export default [
@@ -109,6 +110,23 @@ export default [
     languageOptions: { parserOptions: { project: ['./integrations/opencode/plugin/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
     rules: typeAware,
   },
+  // Tests feed deliberately ill-typed input and read JSON.parse results through `any`; casting each fixture
+  // to a type is a claim no check backs, so the no-unsafe-* family holds only the shipped code.
+  {
+    files: ['lib/**/*.test.mjs', 'integrations/opencode/plugin/*.test.mjs'],
+    rules: {
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+    },
+  },
+  // A stub is `async` because the contract it fakes is, not because of its body; `Promise.resolve` wrappers
+  // only add noise, and a sync stub would turn a rejection the test exercises into a throw.
+  { files: ['lib/**/*.test.mjs', 'integrations/opencode/plugin/*.test.mjs'], rules: { '@typescript-eslint/require-await': 'off' } },
+  // This check compiles each shipped engine with `new Function` without running it: that is its job.
+  { files: ['lib/check-workflows.mjs'], rules: { '@typescript-eslint/no-implied-eval': 'off' } },
   // Every linted function, tests included; the engines get the same rules through lib/engine-lint.mjs.
   {
     files: ['lib/**/*.mjs', 'integrations/opencode/**/*.mjs', 'integrations/opencode/plugin/*.ts', 'knip.config.js', '.dependency-cruiser.mjs'],

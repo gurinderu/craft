@@ -524,7 +524,7 @@ test('writeRecord writes a detail file and appends one index line', async () => 
   const ctx = {
     worktree: '/proj',
     directory: '/proj',
-    sh: async cmd => (cmd.includes('rev-parse') ? 'abc1234' : ''), // status --porcelain → clean
+    sh: cmd => Promise.resolve(cmd.includes('rev-parse') ? 'abc1234' : ''), // status --porcelain → clean
   }
   try {
     await writeRecord(
@@ -562,7 +562,7 @@ test("writeRecord appends under the store's index lock: it takes over a dead wri
   const old = new Date(Date.now() - 60_000)
   utimesSync(lock, old, old)
   /** @type {import('./run-record.mjs').ShellCtx} */
-  const ctx = { worktree: '/proj', directory: '/proj', sh: async () => '' }
+  const ctx = { worktree: '/proj', directory: '/proj', sh: () => Promise.resolve('') }
   try {
     await writeRecord(ctx, buildAuditRecord({ results: [], baseRef: 'main', hasUnsafe: false, synthesisText: 'Approve' }))
     assert.equal(readFileSync(join(dir, 'index.jsonl'), 'utf8').trim().split('\n').length, 1)

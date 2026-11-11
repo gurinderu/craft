@@ -13,7 +13,7 @@ export function shellIn(cwd) {
   return cmd =>
     new Promise(resolve => {
       execFile('bash', ['-lc', cmd], { ...(cwd ? { cwd } : {}), maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
-        resolve(err ? '' : String(stdout).trim())
+        resolve(err ? '' : stdout.trim())
       })
     })
 }

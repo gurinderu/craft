@@ -154,11 +154,11 @@ function fakeCtx(answerFor, prompts = []) {
   return {
     directory: '/repo',
     worktree: '/repo',
-    sh: async () => '',
-    callerModel: async () => undefined,
-    runChild: async (/** @type {import('./host.ts').ChildRequest} */ { prompt }) => {
+    sh: () => Promise.resolve(''),
+    callerModel: () => Promise.resolve(undefined),
+    runChild: (/** @type {import('./host.ts').ChildRequest} */ { prompt }) => {
       prompts.push(prompt)
-      return answerFor({ isPlan: /ordered fix plan/i.test(prompt) })
+      return Promise.resolve(answerFor({ isPlan: /ordered fix plan/i.test(prompt) }))
     },
   }
 }
@@ -313,7 +313,7 @@ test('lines the splitter ate reach the run record, not only the screen', async (
   })
 })
 
-test('a closing fence must match the one that opened it', async () => {
+test('a closing fence must match the one that opened it', () => {
   // The other half of the delimiter property, and the same silent loss as the inline-span defect by
   // a different door: a ```` block quoting a ``` example was closed by the inner marker, and every
   // finding after it was discarded as code with `dropped` still 0 — so the banner never fired.
@@ -389,7 +389,7 @@ test('a validation that refuses while quoting the outcome line has not validated
   })
 })
 
-test('a per-finding validation carries a line-sized deadline, not a build-sized one', async () => {
+test('a per-finding validation carries a line-sized deadline, not a build-sized one', () => {
   // The escape hatch this branch added, and the one thing about it no test could see: mutating the
   // constant to twenty minutes left all 542 green. Forty validations inheriting the audit's
   // build-sized deadline is the arithmetic that made the sequential retry unlivable in the first

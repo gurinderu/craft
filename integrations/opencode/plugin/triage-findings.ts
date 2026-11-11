@@ -133,7 +133,7 @@ function contentStep(s: SplitState, l: string): void {
   // wrapped bullet and a wrapped paragraph both look like. Only when no item is open does it start
   // one, so a paragraph becomes a single finding rather than one per line.
   if (s.open && s.items.length) {
-    s.items[s.items.length - 1] += ` ${l}`
+    s.items.push(`${s.items.pop() ?? ''} ${l}`)
   } else {
     s.items.push(l)
     s.open = true
@@ -227,7 +227,7 @@ ${ledger}`
   // asked me to end with `PLAN: READY`, but I have nothing to plan") carries the line and passed
   // too. The audit prompt already avoids this by writing `VERDICT: X` as a placeholder so the
   // literal final line appears nowhere in the instructions; this now does the same.
-  const planned = await runAnswering(ctx, '', planPrompt, hasPlanMarkerLine, undefined, 'PLAN: READY line').catch(e => ({
+  const planned = await runAnswering(ctx, '', planPrompt, hasPlanMarkerLine, undefined, 'PLAN: READY line').catch((e: unknown) => ({
     ok: false,
     text: '',
     note: `The planning call itself threw: ${e instanceof Error ? e.message : String(e)}`,

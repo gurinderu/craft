@@ -25,49 +25,52 @@ function fakeCtx(contexts = []) {
   const queue = []
   let disposed = 0
   const reg = {
-    dispose: async () => {
+    dispose: () => {
       disposed++
+      return Promise.resolve()
     },
   }
   const ctx = /** @type {import('./opencode-v2.js').V2Context} */ (
     /** @type {unknown} */ ({
       app: { version: '2.2.7' },
       location: { directory: '/repo', project: { directory: '/root' } },
-      agent: { list: async () => ({ location: { directory: '/repo' }, data: [{ id: 'build' }, { id: 'review-task' }] }) },
+      agent: { list: () => Promise.resolve({ location: { directory: '/repo' }, data: [{ id: 'build' }, { id: 'review-task' }] }) },
       tool: {
-        transform: async (/** @type {any} */ edit) => {
+        transform: (/** @type {any} */ edit) => {
           edit({ add: (/** @type {any} */ d) => tools.push(d) })
-          return reg
+          return Promise.resolve(reg)
         },
       },
       session: {
-        create: async (/** @type {unknown} */ input) => {
+        create: (/** @type {unknown} */ input) => {
           sent.push(['create', input])
-          return { id: 'ses_1' }
+          return Promise.resolve({ id: 'ses_1' })
         },
-        get: async (/** @type {{ sessionID: string }} */ { sessionID }) =>
-          sessionID === 'ses_set' ? { id: sessionID, model: { providerID: 'p', id: 'm', variant: 'default' } } : { id: sessionID },
-        prompt: async (/** @type {unknown} */ input) => {
+        get: (/** @type {{ sessionID: string }} */ { sessionID }) =>
+          Promise.resolve(sessionID === 'ses_set' ? { id: sessionID, model: { providerID: 'p', id: 'm', variant: 'default' } } : { id: sessionID }),
+        prompt: (/** @type {unknown} */ input) => {
           sent.push(['prompt', input])
+          return Promise.resolve()
         },
-        wait: async () => {
+        wait: () => {
           sent.push(['wait'])
+          return Promise.resolve()
         },
-        interrupt: async (/** @type {unknown} */ input) => {
+        interrupt: (/** @type {unknown} */ input) => {
           sent.push(['interrupt', input])
-          return { interrupted: true }
+          return Promise.resolve({ interrupted: true })
         },
-        context: async () => contexts.shift() ?? [],
-        hook: async (/** @type {string} */ name, /** @type {any} */ cb) => {
+        context: () => Promise.resolve(contexts.shift() ?? []),
+        hook: (/** @type {string} */ name, /** @type {any} */ cb) => {
           hooks[name] = cb
-          return reg
+          return Promise.resolve(reg)
         },
       },
       event: {
         subscribe: () => ({
           [Symbol.asyncIterator]: () => ({
-            next: async () => (queue.length ? { done: false, value: queue.shift() } : { done: true, value: undefined }),
-            return: async () => ({ done: true, value: undefined }),
+            next: () => Promise.resolve(queue.length ? { done: false, value: queue.shift() } : { done: true, value: undefined }),
+            return: () => Promise.resolve({ done: true, value: undefined }),
           }),
         }),
       },
@@ -128,9 +131,9 @@ test('a tool spec becomes a JSON Schema tool whose result is text content, a tit
     name: 'probe',
     description: 'd',
     args: { base: { optional: true }, locator: { optional: false } },
-    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => {
+    run: (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => {
       ran.push([args, call])
-      return { title: 't', output: 'out' }
+      return Promise.resolve({ title: 't', output: 'out' })
     },
   }
   const def = v2Tool(v2Host(fakeCtx().ctx), spec)
@@ -159,11 +162,13 @@ test('setup registers the tools, hooks the prompt, maps the events, and disposes
     childCreated: (/** @type {unknown[]} */ ...a) => {
       seen.push(['child', ...a])
     },
-    compacted: async (/** @type {string} */ s) => {
+    compacted: (/** @type {string} */ s) => {
       seen.push(['compacted', s])
+      return Promise.resolve()
     },
-    message: async (/** @type {string} */ s, /** @type {string} */ p, /** @type {unknown} */ a, /** @type {(t: string) => boolean} */ deliver) => {
+    message: (/** @type {string} */ s, /** @type {string} */ p, /** @type {unknown} */ a, /** @type {(t: string) => boolean} */ deliver) => {
       seen.push(['message', s, p, a, deliver('craft lines')])
+      return Promise.resolve()
     },
   }
   f.queue.push(
@@ -171,7 +176,7 @@ test('setup registers the tools, hooks the prompt, maps the events, and disposes
     { type: 'session.created', data: { sessionID: 'c', parentID: 'p', agent: 'general' } },
     { type: 'session.compaction.ended', data: { sessionID: 'p' } },
   )
-  const spec = { name: 'probe', description: 'd', args: {}, run: async () => '' }
+  const spec = { name: 'probe', description: 'd', args: {}, run: () => Promise.resolve('') }
   const dispose = await v2Setup(f.ctx, [spec], work)
   assert.deepEqual(
     f.tools.map(t => t.name),
@@ -194,7 +199,7 @@ test('a deadline interrupts the session and stops the polling', async () => {
   const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }]])
   const stop = new AbortController()
   const ctx = f.ctx
-  const wait = ctx.session.wait
+  const wait = ctx.session.wait.bind(ctx.session)
   ctx.session.wait = async input => {
     await wait(input)
     stop.abort()
