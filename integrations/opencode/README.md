@@ -64,9 +64,10 @@ binary named, and hands the batch back until the binary is done. The answer is t
 `## Verdict` block. This route is new: it is covered by tests against a fake binary and fake
 sessions, and has not yet been seen in a real OpenCode session.
 
-On OpenCode 2.x `/review` refuses up front, INCOMPLETE, and runs nothing: its child sessions never
-answered in testing (craft 0.50.0, OpenCode 2.2.7). Use OpenCode 1.x, Claude Code, Codex or pi for
-now; the next craft release moves OpenCode onto a different route.
+On OpenCode 2.x `/review`, `/rust-audit` and `/triage-findings` refuse up front, INCOMPLETE, and
+run nothing: their child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). A route
+through `opencode run` is in progress; until it ships, use OpenCode 1.x, Claude Code, Codex or pi.
+The refusal itself is tested against fake hosts only, not yet seen in a real OpenCode 2.x.
 
 - Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
   every other on the hidden `review-task` agent (both have write and edit off), with the matching

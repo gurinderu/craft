@@ -141,15 +141,31 @@ test('a deadline interrupts the session and stops the polling; the agents are li
   assert.deepEqual([...await v2Host(ctx, 0).agents() ?? []], ['build', 'review-task'])
 })
 
-test('the review on the 2.x entry refuses up front and opens no session', async () => {
+test('every workflow on the 2.x entry refuses up front, says so in its description, and opens no session', async () => {
   const f = fakeCtx()
-  const work = { childCreated: () => {}, compacted: async () => {}, message: async () => {} }
-  await v2Setup(f.ctx, onV2(TOOLS), work)
-  const review = f.tools.find(t => t.name === 'review')
-  const out = await review.execute({}, { sessionID: 'ses_set', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
-  assert.match(out.content[0].text, /INCOMPLETE — craft's review does not yet work in OpenCode 2\.x: its child sessions never answered in testing \(craft 0\.50\.0, OpenCode 2\.2\.7\)\. Use OpenCode 1\.x, Claude Code, Codex or pi for now; the next craft release moves OpenCode onto a different route\. Nothing ran\./)
+  await v2Setup(f.ctx, onV2(TOOLS), { childCreated: () => {}, compacted: async () => {}, message: async () => {} })
+  assert.deepEqual(f.tools.map(t => t.name), ['rust-audit', 'triage-findings', 'review'], 'all three stay registered')
+  for (const tool of f.tools) {
+    const out = await tool.execute({ locator: 'x' }, { sessionID: 'ses_set', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
+    assert.match(out.content[0].text, new RegExp(`INCOMPLETE — craft's \`${tool.name}\` does not yet work in OpenCode 2\\.x: .*A route through \`opencode run\` is in progress; until it ships, use OpenCode 1\\.x, Claude Code, Codex or pi\\. Nothing ran\\.`))
+    assert.match(tool.description, /^Not available on OpenCode 2\.x yet/)
+    if (tool.name === 'review') assert.match(out.content[0].text, /^## Verdict\n\n⚠️ INCOMPLETE/, 'the review answers with its verdict block')
+  }
   assert.equal(f.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
-  assert.deepEqual(f.tools.map(t => t.name), TOOLS.map(t => t.name), 'rust-audit and triage-findings are registered as they are')
+})
+
+test('the polling leaves no abort listener behind, however many reads it takes', async () => {
+  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }], [assistant('done')]])
+  const stop = new AbortController()
+  let live = 0
+  let most = 0
+  const add = stop.signal.addEventListener.bind(stop.signal)
+  const remove = stop.signal.removeEventListener.bind(stop.signal)
+  stop.signal.addEventListener = (/** @type {any[]} */ ...a) => { most = Math.max(most, ++live); add(.../** @type {[any, any, any]} */ (a)) }
+  stop.signal.removeEventListener = (/** @type {any[]} */ ...a) => { live--; remove(.../** @type {[any, any]} */ (a)) }
+  assert.equal(await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), 'done')
+  assert.equal(live, 0)
+  assert.ok(most <= 2, `at most the session's stop and one poll's listener at once, saw ${most}`)
 })
 
 test('a wait that never returns does not hold the polling past the abort', async () => {

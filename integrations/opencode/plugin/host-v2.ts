@@ -24,12 +24,15 @@ export function finishedReply(messages: readonly V2Message[]): string | null {
 const STOPPED = "the child session was stopped at its deadline"
 
 // `work`, or a rejection as soon as `signal` aborts: a `wait` that never returns does not hold the loop past the abort.
+// Its listener goes once the race settles, so the polls do not pile them up on the signal.
 function untilAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (!signal) return work
+  let onAbort = () => {}
   const aborted = new Promise<never>((_, reject) => {
-    signal.addEventListener("abort", () => reject(new Error(STOPPED)), { once: true })
+    onAbort = () => reject(new Error(STOPPED))
+    signal.addEventListener("abort", onAbort, { once: true })
   })
-  return Promise.race([work, aborted])
+  return Promise.race([work, aborted]).finally(() => signal.removeEventListener("abort", onAbort))
 }
 
 // `wait` may resolve before the admitted prompt's loop has started, so idle is read as "look again", and
