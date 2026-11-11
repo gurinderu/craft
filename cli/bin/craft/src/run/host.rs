@@ -50,8 +50,8 @@ impl Host {
         let (re, how) = match self.kind {
             HostKind::Codex => (&*CODEX_LOGIN, "run `codex login`"),
             HostKind::Pi => (&*PI_LOGIN, "run `pi` and `/login`"),
-            // What opencode says with no provider logged in is not observed (lib/opencode-review*.mjs
-            // knows nothing of it either): such a failure is an ordinary one.
+            // What opencode says with no provider logged in is not observed: such a failure is an
+            // ordinary one.
             HostKind::OpenCode => return None,
         };
         let found = re.as_ref()?.find(said)?.as_str().trim();

@@ -91,8 +91,8 @@ fn agents_of(said: &str) -> Option<Vec<String>> {
     Some(ids)
 }
 
-/// The agents a review can run on, or why it cannot run: a 1.x opencode puts a subagent such as
-/// `review-task` on its default agent, which writes (observed on 1.19.5), and an opencode without
+/// The agents a review can run on, or why it cannot run: a 1.x opencode's `run` takes no `--archived`
+/// and prints its help instead of running (observed on 1.19.5), and an opencode without
 /// `review-task` would run every task on another agent or fail it. `log` hears a list it could not
 /// read.
 pub(crate) fn preflight(
@@ -105,7 +105,7 @@ pub(crate) fn preflight(
         Some(n) if n >= 2 => {}
         Some(_) => {
             return Err(format!(
-                "opencode {} is a 1.x opencode: its `run` puts a subagent such as `{TASK_AGENT}` on its default agent, which can write, so no task runs on it — upgrade to opencode 2.x",
+                "opencode {} is a 1.x opencode: its `run` takes no `--archived`, so no review task runs on it — upgrade to opencode 2.x",
                 version.trim()
             ));
         }

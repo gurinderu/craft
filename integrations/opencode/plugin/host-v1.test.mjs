@@ -2,7 +2,6 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { extractText, lastModel, v1Host, v1Hooks } from './host-v1.ts'
-import { TOOLS } from './tools.ts'
 
 /** @param {unknown} reply */
 function fakeClient(reply) {
@@ -16,7 +15,6 @@ function fakeClient(reply) {
       abort: async (/** @type {unknown} */ req) => { sent.push(['abort', req]); return { data: true } },
       messages: async (/** @type {unknown} */ req) => { sent.push(['messages', req]); return { data: [{ info: { role: 'user', model: { providerID: 'p', modelID: 'm' } } }, { info: { role: 'assistant' } }] } },
     },
-    app: { agents: async () => ({ data: [{ name: 'build' }, { name: 'rust-reviewer' }] }) },
   }
 }
 
@@ -73,12 +71,17 @@ test('the answer is read from every response shape a session may return', () => 
   assert.equal(extractText(null), '')
 })
 
-test('each tool spec becomes a 1.x tool that hands its string arguments to the spec', async () => {
+test('each tool spec becomes a 1.x tool that hands its string arguments, the abort and a progress title to the spec', async () => {
   /** @type {unknown[]} */
   const ran = []
   const spec = {
     name: 'probe', description: 'd', args: { base: { optional: true }, locator: { optional: false } },
-    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => { ran.push([args, call]); return 'out' },
+    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {import('./host.ts').ToolCall} */ call) => {
+      const { progress, ...rest } = call
+      progress?.('half way')
+      ran.push([args, rest])
+      return { title: 't', output: 'out' }
+    },
   }
   const work = { childCreated() {}, compacted: async () => {}, message: async () => {} }
   const hooks = v1Hooks({ client: fakeClient(null), directory: '/r', worktree: '/r' }, [spec], work)
@@ -86,14 +89,18 @@ test('each tool spec becomes a 1.x tool that hands its string arguments to the s
   assert.ok(probe, 'the tool is registered under its name')
   assert.equal(probe.description, 'd')
   assert.deepEqual(Object.keys(probe.args).sort(), ['base', 'locator'])
-  const out = await probe.execute({ locator: 'x', base: 3 }, /** @type {any} */ ({ sessionID: 'ses_caller' }))
-  assert.equal(out, 'out')
-  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 'ses_caller' }]], 'only string arguments reach the spec, with the caller')
+  /** @type {unknown[]} */
+  const titles = []
+  const abort = new AbortController().signal
+  const out = await probe.execute({ locator: 'x', base: 3 }, /** @type {any} */ ({ sessionID: 'ses_caller', abort, metadata: (/** @type {unknown} */ m) => titles.push(m) }))
+  assert.deepEqual(out, { title: 't', output: 'out' }, 'a titled answer reaches 1.x as it is')
+  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 'ses_caller', signal: abort }]], 'only string arguments reach the spec, with the caller and its abort')
+  assert.deepEqual(titles, [{ title: 'half way' }], 'progress is the tool\'s title')
   assert.equal(typeof hooks['chat.message'], 'function')
   assert.equal(typeof hooks.event, 'function')
 })
 
-test('a deadline stops the session and gives up on it; a refused prompt throws its error; the agents are listed', async () => {
+test('a deadline stops the session and gives up on it; a refused prompt throws its error', async () => {
   const stop = new AbortController()
   const hung = fakeClient(null)
   hung.session.prompt = async (/** @type {unknown} */ req) => { hung.sent.push(['prompt', req]); stop.abort(); return { data: {} } }
@@ -102,13 +109,4 @@ test('a deadline stops the session and gives up on it; a refused prompt throws i
   // As opencode 1.19.5 answers an unknown agent (observed): an error object, not a throw.
   const refused = fakeClient({ error: { name: 'UnknownError', data: { message: 'Unexpected server error.' } } })
   await assert.rejects(v1Host({ client: refused, directory: '', worktree: '' }).runChild({ title: 't', agent: 'x', prompt: 'p' }), /Unexpected server error/)
-  assert.deepEqual([...await v1Host({ client: refused, directory: '', worktree: '' }).agents() ?? []], ['build', 'rust-reviewer'])
-})
-
-test('the review tool on a 1.x without review-task refuses up front and opens no session', async () => {
-  const client = fakeClient({ text: 'ok' })
-  const review = TOOLS.find(t => t.name === 'review')
-  const answer = await review?.run(v1Host({ client, directory: '/r', worktree: '/r' }), {}, { sessionID: 'ses_caller' })
-  assert.match(String(answer), /INCOMPLETE — the craft OpenCode agents are not installed or are out of date: rerun integrations\/opencode\/install\.sh/)
-  assert.equal(client.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
 })

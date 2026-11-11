@@ -1,12 +1,12 @@
 ---
-description: craft's review of the current change — the craft binary plans it, each task runs as a child session, the answer is its Verdict block.
+description: craft's review of the current change — the craft binary runs it, each task its own `opencode run` on craft's read-only agents, the answer is its Verdict block.
 ---
 
 Run craft's review by invoking the `review` tool.
 
-If the user passed arguments, call the tool with `args` set to them exactly as written (the review's own
-`key=value` words, such as `base=main`, `pr=123`, `run=<dir>` to resume a run, or
-`opencodeModels=<provider/model>`):
+If the user passed arguments, call the tool with `args` set to them exactly as written (the review's
+flags, such as `--base main`, `--depth light`, `--pr 123`, `--run <dir>` to resume a run, or
+`--models <provider/model>`):
 
 `$ARGUMENTS`
 

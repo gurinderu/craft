@@ -2,7 +2,6 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
-import { TOOLS } from './tools.ts'
 
 const assistant = (/** @type {string} */ text) => ({ type: 'assistant', finish: 'stop', content: [{ type: 'reasoning', text: 'hm' }, { type: 'text', text }] })
 
@@ -85,20 +84,21 @@ test('only a finished assistant turn is a reply', () => {
   assert.equal(finishedReply([assistant(' a ')]), 'a')
 })
 
-test('a tool spec becomes a JSON Schema tool whose result is text content', async () => {
+test('a tool spec becomes a JSON Schema tool whose result is text content, a titled answer its output', async () => {
   /** @type {unknown[]} */
   const ran = []
   const spec = {
     name: 'probe', description: 'd', args: { base: { optional: true }, locator: { optional: false } },
-    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => { ran.push([args, call]); return 'out' },
+    run: async (/** @type {unknown} */ _host, /** @type {Record<string, string | undefined>} */ args, /** @type {unknown} */ call) => { ran.push([args, call]); return { title: 't', output: 'out' } },
   }
   const def = v2Tool(v2Host(fakeCtx().ctx), spec)
   assert.deepEqual(def.input, {
     type: 'object', properties: { base: { type: 'string' }, locator: { type: 'string' } }, required: ['locator'], additionalProperties: false,
   })
-  const result = await def.execute({ locator: 'x' }, { sessionID: 's', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
+  const signal = new AbortController().signal
+  const result = await def.execute({ locator: 'x' }, { sessionID: 's', messageID: 'm', id: 'c', agent: 'build', signal })
   assert.deepEqual(result, { content: [{ type: 'text', text: 'out' }] })
-  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 's' }]])
+  assert.deepEqual(ran, [[{ base: undefined, locator: 'x' }, { sessionID: 's', signal }]])
 })
 
 test('setup registers the tools, hooks the prompt, maps the events, and disposes all of it', async () => {
@@ -129,7 +129,7 @@ test('setup registers the tools, hooks the prompt, maps the events, and disposes
   assert.equal(f.disposed(), 2)
 })
 
-test('a deadline interrupts the session and stops the polling; the agents are listed', async () => {
+test('a deadline interrupts the session and stops the polling', async () => {
   const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }]])
   const stop = new AbortController()
   const ctx = f.ctx
@@ -138,14 +138,5 @@ test('a deadline interrupts the session and stops the polling; the agents are li
   await assert.rejects(v2Host(ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
   assert.deepEqual(f.sent.filter(e => Array.isArray(e) && e[0] === 'wait').length, 1, 'no read after the abort')
   assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
-  assert.deepEqual([...await v2Host(ctx, 0).agents() ?? []], ['build', 'review-task'])
 })
 
-test('the review tool on a 2.x without review-task refuses up front and opens no session', async () => {
-  const f = fakeCtx()
-  f.ctx.agent.list = /** @type {any} */ (async () => ({ location: { directory: '/repo' }, data: [{ id: 'build' }, { id: 'rust-reviewer' }] }))
-  const review = TOOLS.find(t => t.name === 'review')
-  const answer = await review?.run(v2Host(f.ctx), {}, { sessionID: 'ses_set' })
-  assert.match(String(answer), /INCOMPLETE — the craft OpenCode agents are not installed or are out of date: rerun integrations\/opencode\/install\.sh/)
-  assert.equal(f.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
-})

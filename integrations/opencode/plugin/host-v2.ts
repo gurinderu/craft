@@ -73,11 +73,6 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
       const model = (await ctx.session.get({ sessionID })).model
       return model ? { providerID: model.providerID, modelID: model.id } : undefined
     },
-    // The agents' ids `agent.list` answers (observed on opencode 2.2.7: `{ location, data: [{ id, … }] }`).
-    async agents() {
-      const res = await ctx.agent.list()
-      return new Set(res.data.map((a) => a.id))
-    },
   }
 }
 
@@ -88,7 +83,10 @@ export function v2Tool(host: Host, spec: ToolSpec): V2ToolDefinition {
     name: spec.name,
     description: spec.description,
     input: { type: "object", properties, required, additionalProperties: false },
-    execute: async (input, call) => ({ content: [{ type: "text", text: await spec.run(host, stringArgs(spec, input), { sessionID: call.sessionID }) }] }),
+    execute: async (input, call) => {
+      const answer = await spec.run(host, stringArgs(spec, input), { sessionID: call.sessionID, signal: call.signal })
+      return { content: [{ type: "text", text: typeof answer === "string" ? answer : answer.output }] }
+    },
   }
 }
 

@@ -1,6 +1,6 @@
 ---
 description: Runs one task of craft's review (a lens, a scout, a verifier) for the review driver, read-only. Not for direct use — the `review` tool launches it.
-mode: subagent
+mode: all
 hidden: true
 tools:
   write: false

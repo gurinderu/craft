@@ -1,7 +1,6 @@
 // The tools craft registers in OpenCode, once for both runtimes: host-v1.ts turns each into a `tool()`,
 // host-v2.ts into a `ctx.tool` definition with a JSON Schema input.
-import type { ChildRequest, Host, ModelRef, ToolCall, ToolSpec } from "./host.ts"
-import { retryingEmpty } from "./child-run.ts"
+import type { Host, ToolAnswer, ToolCall, ToolSpec } from "./host.ts"
 import { runRustAudit } from "./rust-audit.ts"
 import { runTriageFindings } from "./triage-findings.ts"
 
@@ -12,31 +11,25 @@ export function nestedUnder(host: Host, parent: string | undefined): Host {
   return { ...host, runChild: (req) => host.runChild({ ...req, parentID: parent }) }
 }
 
-// The review driver lives in craft's lib/ (lib/opencode-review.mjs), loaded from the checkout the plugin is linked from
-// when the tool runs, as the work hook loads its modules: a plugin copy without lib/ keeps its other tools.
-// A review task's child session: nested under the calling session, on that session's model unless the review's table
-// mapped the task's tier, through the child-run unit the audit's fan-out shares (child-run.ts) — marked as the engine's
-// while it runs, and an empty reply tried once more alone, the #8528/#6573 mitigation.
-export function reviewChild(host: Host, parent: string | undefined, callerModel: ModelRef | undefined) {
-  const nested = nestedUnder(host, parent)
-  return (req: ChildRequest): Promise<string> => {
-    const model = req.model ?? callerModel
-    return retryingEmpty(nested, { ...req, ...(model ? { model } : {}) })
-  }
-}
+// The review is the craft binary's own driver with its opencode backend, run through the plugin's bin/craft
+// (lib/craft-review-run.mjs; realm @nick/craft, nodes #499, #503): each task an `opencode run` on craft's read-only
+// agents, every tier on the calling session's model unless the flags name `--models`. lib/ is loaded from the
+// checkout the plugin is linked from when the tool runs, as the work hook loads its modules: a plugin copy without
+// lib/ keeps its other tools.
+const hasModels = (words: string[]) => words.some((w) => w === "--models" || w.startsWith("--models="))
 
-async function runReview(host: Host, args: string, call: ToolCall): Promise<string> {
-  const { reviewInOpenCode } = await import("../../../lib/opencode-review.mjs")
-  const parent = call.sessionID
-  const callerModel = parent ? await host.callerModel(parent).catch(() => undefined) : undefined
-  const readAgents = () => host.agents().catch(() => null)
-  return reviewInOpenCode(args, {
-    directory: host.directory,
-    agents: await readAgents(),
-    readAgents,
-    runChild: reviewChild(host, parent, callerModel),
-    log: (line) => console.error(`craft review: ${line}`),
+async function runReview(host: Host, args: string, call: ToolCall): Promise<ToolAnswer> {
+  const review = await import("../../../lib/craft-review-run.mjs")
+  const words = review.flagWords(args)
+  const model = hasModels(words) || !call.sessionID ? undefined : await host.callerModel(call.sessionID).catch(() => undefined)
+  const outcome = await review.runReview({
+    backend: "opencode",
+    args: model ? [...words, "--models", `${model.providerID}/${model.modelID}`] : words,
+    cwd: host.directory,
+    ...(call.signal ? { signal: call.signal } : {}),
+    onProgress: (p) => call.progress?.(review.progressLine(p)),
   })
+  return { title: `craft review: ${review.summaryOf(outcome).verdict}`, output: review.answerText(outcome) }
 }
 
 export const TOOLS: readonly ToolSpec[] = [
@@ -57,7 +50,7 @@ export const TOOLS: readonly ToolSpec[] = [
   {
     name: "review",
     description:
-      "craft's review of the current change, driven by the `craft` binary step by step: it plans the lenses, each task runs as a child session, and it answers with the `## Verdict` block. Arg `args` takes the review's own `key=value` words (for example `base=main`, `pr=123`, `run=<dir>` to resume, `opencodeModels=<provider/model>`), or none.",
+      "craft's review of the current change by the `craft` binary (`craft review run --backend opencode`): the mechanical gate, review lenses per language profile, verification, one report and the `## Verdict` block; each task runs as its own `opencode run` on craft's read-only agents, on this session's model. It runs long and needs opencode 2.x. Arg `args` takes the review's flags as one string (for example `--base main`, `--depth light`, `--pr 123 --comment`, `--run <dir>` to resume, `--models <provider/model>`), or none.",
     args: { args: { optional: true } },
     run: (host, args, call) => runReview(host, args["args"] ?? "", call),
   },
