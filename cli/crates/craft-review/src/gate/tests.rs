@@ -7,7 +7,7 @@ use std::time::Duration;
 use super::{GateSetup, Status, run};
 use crate::state::Track;
 
-#[path = "../../tests/common/exe.rs"]
+#[path = "../../../../test-support/exe.rs"]
 mod exe;
 
 pub(super) fn tool(dir: &Path, name: &str, script: &str) {
