@@ -2,6 +2,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { extractText, lastModel, v1Host, v1Hooks } from './host-v1.ts'
+import { TOOLS } from './tools.ts'
 
 /** @param {unknown} reply */
 function fakeClient(reply) {
@@ -102,4 +103,12 @@ test('a deadline stops the session and gives up on it; a refused prompt throws i
   const refused = fakeClient({ error: { name: 'UnknownError', data: { message: 'Unexpected server error.' } } })
   await assert.rejects(v1Host({ client: refused, directory: '', worktree: '' }).runChild({ title: 't', agent: 'x', prompt: 'p' }), /Unexpected server error/)
   assert.deepEqual([...await v1Host({ client: refused, directory: '', worktree: '' }).agents() ?? []], ['build', 'rust-reviewer'])
+})
+
+test('the review tool on a 1.x without review-task refuses up front and opens no session', async () => {
+  const client = fakeClient({ text: 'ok' })
+  const review = TOOLS.find(t => t.name === 'review')
+  const answer = await review?.run(v1Host({ client, directory: '/r', worktree: '/r' }), {}, { sessionID: 'ses_caller' })
+  assert.match(String(answer), /INCOMPLETE — the craft OpenCode agents are not installed or are out of date: rerun integrations\/opencode\/install\.sh/)
+  assert.equal(client.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
 })

@@ -24,8 +24,10 @@ else
 fi
 
 # Idempotent symlink: repoint if wrong, leave alone if already correct, never clobber a real file.
+MADE=()  # every destination this run links, so the stale-link pass below knows what is current
 link() {  # link <source> <destination>
   local src="$1" dst="$2"
+  MADE+=("$dst")
   mkdir -p "$(dirname "$dst")"
   if [ -L "$dst" ]; then
     [ "$(readlink "$dst")" = "$src" ] && { echo "  = $dst"; return; }
@@ -53,22 +55,34 @@ for f in "$SCRIPT_DIR"/commands/*.md; do [ -e "$f" ] && link "$f" "$TARGET/comma
 
 # Plugin — ONE file link to its entry: opencode 1.x discovers only `plugins/*.{ts,js}` files (a directory link
 # is never loaded there), 2.x takes files and directories alike. An earlier install's directory link is
-# retired, so 2.x does not load the plugin twice.
-if [ -d "$SCRIPT_DIR/plugin" ]; then
-  old="$TARGET/plugins/craft-rust"
-  if [ -L "$old" ] && [ "$(readlink "$old")" = "$SCRIPT_DIR/plugin" ]; then rm "$old"; echo "  - $old (directory link replaced)"; fi
-  link "$SCRIPT_DIR/plugin/index.ts" "$TARGET/plugins/craft-rust.ts"
-fi
+# removed as stale below, so 2.x does not load the plugin twice.
+[ -d "$SCRIPT_DIR/plugin" ] && link "$SCRIPT_DIR/plugin/index.ts" "$TARGET/plugins/craft-rust.ts"
 
-# Plugin dependencies — opencode 2.x does not install a plugin directory's package.json (1.x did, through
-# Bun), so install the locked production closure here when it is missing. An existing tree is left alone:
-# a checkout that ran `npm ci` for development keeps its dev dependencies.
-if [ -d "$SCRIPT_DIR/plugin" ] && [ ! -d "$SCRIPT_DIR/plugin/node_modules/@opencode-ai/plugin" ]; then
+# Stale links — one an earlier install made from this checkout (it points at a skill or into integrations/opencode/)
+# that this run did not make: its target is gone, or no longer installed (codex-review, the plugin's directory link).
+# A link pointing anywhere else, and every real file, is left alone.
+made() { local d; for d in "${MADE[@]+"${MADE[@]}"}"; do [ "$d" = "$1" ] && return 0; done; return 1; }
+for l in "$TARGET"/skills/* "$TARGET"/agents/* "$TARGET"/commands/* "$TARGET"/plugins/*; do
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in "$REPO_ROOT"/skills/*|"$SCRIPT_DIR"/*) ;; *) continue ;; esac
+  made "$l" || { rm "$l"; echo "  - $l (stale)"; }
+done
+
+# Plugin dependencies — opencode 2.x does not install a plugin directory's package.json (1.x did, through Bun), so
+# install the locked closure here when it is missing or older than the lockfile (a pull that moved the lock), as npm's
+# own record of the installed tree, node_modules/.package-lock.json, dates it. Not on every run: `npm ci` deletes the
+# tree first, under an opencode that has the plugin loaded. A tree that holds dev packages (a development checkout's
+# `npm ci`) is reinstalled whole, so it keeps them.
+PLUGIN="$SCRIPT_DIR/plugin"
+INSTALLED="$PLUGIN/node_modules/.package-lock.json"
+if [ -d "$PLUGIN" ] && { [ ! -d "$PLUGIN/node_modules/@opencode-ai/plugin" ] || [ "$PLUGIN/package-lock.json" -nt "$INSTALLED" ]; }; then
+  omit="--omit=dev"
+  if [ -f "$INSTALLED" ] && grep -q '"dev": *true' "$INSTALLED"; then omit=""; fi
   if command -v npm >/dev/null 2>&1; then
-    echo "  installing the plugin's locked dependencies (npm ci --omit=dev)"
-    npm ci --prefix "$SCRIPT_DIR/plugin" --omit=dev --no-audit --no-fund
+    echo "  installing the plugin's locked dependencies (npm ci ${omit:-with dev dependencies})"
+    npm ci --prefix "$PLUGIN" ${omit:+"$omit"} --no-audit --no-fund
   else
-    echo "  ! npm not found: run 'npm ci --omit=dev' in $SCRIPT_DIR/plugin before starting opencode" >&2
+    echo "  ! npm not found: run 'npm ci --omit=dev' in $PLUGIN before starting opencode" >&2
   fi
 fi
 
