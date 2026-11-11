@@ -11,6 +11,7 @@ fn host(kind: HostKind) -> Host {
         kind,
         models,
         command: PathBuf::from("x"),
+        agents: None,
     }
 }
 

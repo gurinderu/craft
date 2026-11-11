@@ -2,12 +2,14 @@
 //!
 //! A backend turns an [`AgentRequest`] into an [`AgentReply`]: the shaped answer when a schema was
 //! given, the final text, and what the run spent. [`claude_code::ClaudeCode`] runs the `claude` CLI,
-//! [`codex::Codex`] the `codex` CLI and [`pi::Pi`] the `pi` CLI, one subprocess per agent;
+//! [`codex::Codex`] the `codex` CLI, [`pi::Pi`] the `pi` CLI and [`opencode::OpenCode`] the
+//! `opencode` CLI, one subprocess per agent;
 //! [`anthropic_api::AnthropicApi`] is a stub until the API backend lands.
 
 pub mod anthropic_api;
 pub mod claude_code;
 pub mod codex;
+pub mod opencode;
 pub mod pi;
 mod process_group;
 mod reply;
@@ -25,6 +27,8 @@ pub use reply::{AgentReply, Usage};
 pub struct AgentRequest {
     /// Names the agent in events and errors.
     pub label: String,
+    /// The host's own agent to run as; a backend with no named agents ignores it.
+    pub agent: Option<String>,
     /// Sent to the agent as its first user turn.
     pub prompt: String,
     /// The backend's own default when absent.
@@ -63,8 +67,8 @@ pub enum AgentError {
     #[error("the {backend} backend is not implemented yet")]
     NotYet { backend: &'static str },
     /// A host CLI's failed exit, both streams kept: a missing login or a usage limit may be said
-    /// on either.
-    #[error("exited with {code:?}: {stderr}")]
+    /// on either. Its message is stderr, else stdout when stderr is empty.
+    #[error("exited with {code:?}: {}", if stderr.is_empty() { stdout } else { stderr })]
     Quit {
         code: Option<i32>,
         stderr: String,

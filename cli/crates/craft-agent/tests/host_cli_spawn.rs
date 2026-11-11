@@ -1,4 +1,4 @@
-//! The codex and pi backends against stand-in CLIs: shell scripts that answer as the real ones
+//! The codex, pi and opencode backends against stand-in CLIs: shell scripts that answer as the real ones
 //! do, or fail, or answer nothing.
 
 mod common;
@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use craft_agent::codex::Codex;
+use craft_agent::opencode::OpenCode;
 use craft_agent::pi::Pi;
 use craft_agent::{AgentBackend, AgentError, AgentRequest};
 use serde_json::json;
@@ -20,6 +21,7 @@ fn script(dir: &Path, name: &str, body: &str) -> std::io::Result<PathBuf> {
 fn request(cwd: &Path) -> AgentRequest {
     AgentRequest {
         label: "t".into(),
+        agent: None,
         prompt: "the prompt".into(),
         model: None,
         schema: Some(
@@ -128,6 +130,81 @@ async fn pi_printing_no_object_is_no_answer_and_a_failure_keeps_its_words() {
     .unwrap_err();
     assert!(
         matches!(&err, AgentError::Quit { stderr, .. } if stderr.starts_with("No API key found")),
+        "{err:?}"
+    );
+}
+
+fn opencode(command: PathBuf) -> OpenCode {
+    OpenCode {
+        command,
+        timeout: Duration::from_secs(10),
+        env: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn opencode_reads_the_prompt_on_stdin_and_answers_from_its_last_steps_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = r#"cat > stdin.txt; echo "$@" > argv.txt; pwd > cwd.txt
+printf '%s\n' '{"type":"step_start","part":{}}'
+printf '%s\n' '{"type":"text","part":{"id":"a","text":"```craft-answer\n{\"a\": \"early\"}\n```"}}'
+printf '%s\n' '{"type":"step_finish","part":{"cost":0.5,"tokens":{"input":3,"output":2}}}'
+printf '%s\n' '{"type":"step_start","part":{}}'
+printf '%s\n' '{"type":"text","part":{"id":"b","text":"Done.\n```craft-answer\n{\"a\": \"z\"}\n```"}}'
+printf '%s\n' '{"type":"step_finish","part":{"cost":0.25,"tokens":{"input":1,"output":1}}}'"#;
+    let mut req = request(dir.path());
+    req.agent = Some("review-task".into());
+    let reply = opencode(script(dir.path(), "opencode", body).unwrap())
+        .run(&req)
+        .await
+        .unwrap();
+    assert_eq!(reply.structured, Some(json!({"a": "z"})));
+    assert_eq!(reply.usage.total(), 7);
+    assert!((reply.cost_usd - 0.75).abs() < 1e-9);
+    let read = |f: &str| std::fs::read_to_string(dir.path().join(f)).unwrap();
+    assert_eq!(read("stdin.txt"), "the prompt");
+    assert_eq!(
+        read("argv.txt").trim(),
+        "run --format json --agent review-task --archived"
+    );
+    assert_eq!(
+        Path::new(read("cwd.txt").trim()).canonicalize().unwrap(),
+        dir.path().canonicalize().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn opencode_error_events_are_its_words_and_no_block_is_no_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let failing = r#"cat > /dev/null; echo '{"type":"error","error":{"type":"unknown","message":"Agent not found: \"x\""}}'; exit 1"#;
+    let err = opencode(script(dir.path(), "opencode", failing).unwrap())
+        .run(&request(dir.path()))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, AgentError::Quit { code: Some(1), stdout, .. } if stdout == "Agent not found: \"x\""),
+        "{err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "exited with Some(1): Agent not found: \"x\""
+    );
+    let clean_error = r#"cat > /dev/null; echo '{"type":"error","error":{"message":"You have hit your usage limit, resets 5pm"}}'"#;
+    let err = opencode(script(dir.path(), "opencode2", clean_error).unwrap())
+        .run(&request(dir.path()))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, AgentError::Quit { code: Some(0), stdout, .. } if stdout.contains("usage limit")),
+        "{err:?}"
+    );
+    let silent = r#"cat > /dev/null; echo '{"type":"text","part":{"id":"a","text":"all done"}}'; echo hm >&2"#;
+    let err = opencode(script(dir.path(), "opencode3", silent).unwrap())
+        .run(&request(dir.path()))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, AgentError::NoAnswer { stderr, stdout } if stderr == "hm" && stdout == "all done"),
         "{err:?}"
     );
 }

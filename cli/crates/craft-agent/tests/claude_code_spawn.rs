@@ -24,6 +24,7 @@ fn script(dir: &Path, body: &str) -> std::io::Result<PathBuf> {
 fn request(cwd: &Path) -> AgentRequest {
     AgentRequest {
         label: "probe".into(),
+        agent: None,
         prompt: "the prompt".into(),
         model: None,
         schema: Some(serde_json::json!({"type": "object"})),

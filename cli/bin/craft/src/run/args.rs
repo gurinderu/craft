@@ -16,6 +16,7 @@ fn host_env(kind: HostKind, what: &str) -> Option<String> {
     let host = match kind {
         HostKind::Codex => "CODEX",
         HostKind::Pi => "PI",
+        HostKind::OpenCode => "OPENCODE",
     };
     std::env::var(format!("CRAFT_{host}_{what}")).ok()
 }
@@ -41,6 +42,8 @@ pub(super) fn host_of(args: &RunArgs) -> Result<Host, String> {
     let (name, command) = match args.backend {
         HostKind::Codex => (r"^[\w.:/-]{1,80}$", "codex"),
         HostKind::Pi => (r"^[\w.:/@*-]{1,120}$", "pi"),
+        // `provider/model`, a `#variant` allowed (opencode 2.x).
+        HostKind::OpenCode => (r"^[\w.@-]{1,60}/[\w.:/@#-]{1,120}$", "opencode"),
     };
     let name = Regex::new(name).map_err(|e| e.to_string())?;
     let spec = args
@@ -57,6 +60,7 @@ pub(super) fn host_of(args: &RunArgs) -> Result<Host, String> {
         kind: args.backend,
         models: models::model_table(&spec, &name)?,
         command,
+        agents: None,
     })
 }
 

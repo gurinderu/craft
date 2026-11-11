@@ -159,6 +159,7 @@ mod tests {
     fn argv_is_read_only_and_ephemeral_with_the_model_only_when_asked() {
         let request = AgentRequest {
             label: "t".into(),
+            agent: None,
             prompt: String::new(),
             model: Some("gpt-x".into()),
             schema: None,

@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use super::HostKind;
 use super::drive::Driver;
 use super::ending::{Answer, drive};
+use super::events::Event;
 use super::exe::write_executable;
 use super::host::Host;
 use super::models::ModelTable;
@@ -143,12 +144,16 @@ const CODEX_READ: &str =
 const CODEX_ANSWER: &str = r#"printf '{"answer":"ok","note":null}' > "$out""#;
 const PI_READ: &str = r#"for a in "$@"; do msg="$a"; done; file=$(printf '%s' "$msg" | sed -n 's/^Read the file \([^ ]*\) and do.*/\1/p'); input=$(cat "$file")"#;
 const PI_ANSWER: &str = r#"printf 'Done.\n```craft-answer\n{"answer": "ok"}\n```\n'"#;
+const OPENCODE_READ: &str = r#"msg=$(cat); printf '%s' "$msg" > "$0.msg-$$"; file=$(printf '%s' "$msg" | sed -n 's/^Read the file \([^ ]*\) and do.*/\1/p'); input=$(cat "$file")"#;
+const OPENCODE_ANSWER: &str = r#"printf '%s\n' '{"type":"step_start","part":{}}' '{"type":"text","part":{"id":"p","text":"Done.\n```craft-answer\n{\"answer\": \"ok\"}\n```"}}' '{"type":"step_finish","part":{"cost":0.01,"tokens":{"input":5,"output":2}}}'"#;
 
 struct Bench {
     dir: tempfile::TempDir,
     kind: HostKind,
     concurrency: usize,
     deadline: Option<Duration>,
+    agents: Option<Vec<String>>,
+    events: RefCell<Vec<Event>>,
 }
 
 impl Bench {
@@ -165,6 +170,7 @@ impl Bench {
         let (read, answer) = match kind {
             HostKind::Codex => (CODEX_READ, CODEX_ANSWER),
             HostKind::Pi => (PI_READ, PI_ANSWER),
+            HostKind::OpenCode => (OPENCODE_READ, OPENCODE_ANSWER),
         };
         write_executable(
             &dir.path().join("host"),
@@ -176,6 +182,8 @@ impl Bench {
             kind,
             concurrency: 4,
             deadline: None,
+            agents: None,
+            events: RefCell::default(),
         }
     }
 
@@ -195,6 +203,7 @@ impl Bench {
             kind: self.kind,
             models,
             command: self.path("host"),
+            agents: self.agents.clone(),
         };
         let (root, repo) = (self.path("root"), self.path("repo"));
         let again = |run: &str| {
@@ -207,6 +216,7 @@ impl Bench {
             concurrency: NonZeroUsize::new(self.concurrency).unwrap(),
             deadline: self.deadline,
             log: &|_| {},
+            emit: &|e| self.events.borrow_mut().push(e),
         };
         drive(
             &Driver {
@@ -421,3 +431,6 @@ async fn a_submit_that_fails_is_asked_of_status_and_the_run_said_where_it_stands
     );
     assert_eq!(fake.filed.borrow().len(), 1);
 }
+
+#[path = "opencode_drive_tests.rs"]
+mod opencode;

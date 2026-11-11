@@ -6,11 +6,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use craft_agent::codex::Codex;
+use craft_agent::opencode::OpenCode;
 use craft_agent::pi::Pi;
 use serde_json::Value;
 
 use super::HostKind;
 use super::ending::{Ending, recovered};
+use super::events::Event;
 use super::protocol::{Protocol, Said};
 use super::report::resume_hint;
 use super::round::{RoundCtx, RoundResult, run_round};
@@ -32,6 +34,10 @@ pub(crate) struct Driver<'a, P> {
 impl<P> Driver<'_, P> {
     pub(crate) fn log(&self, line: &str) {
         (self.round.log)(line);
+    }
+
+    fn emit(&self, event: Event) {
+        (self.round.emit)(event);
     }
 
     pub(crate) fn hint(&self, run: &Path) -> String {
@@ -95,6 +101,7 @@ async fn rounds<P: Protocol>(
     mut at: Value,
     r: &mut Running,
 ) -> Ending {
+    let mut last_phase = String::new();
     for round in 1.. {
         if is_done(&at) {
             return Ending::Finished(at);
@@ -111,17 +118,7 @@ async fn rounds<P: Protocol>(
             Err(e) => return recovered(d, run, &e, r),
         };
         let phase = at.get("phase").and_then(Value::as_str).unwrap_or_default();
-        let labels: Vec<&str> = tasks.iter().map(|t| t.label.as_str()).collect();
-        let phase = if phase.is_empty() {
-            String::new()
-        } else {
-            format!(" ({phase})")
-        };
-        d.log(&format!(
-            "round {round}{phase}: {} task(s) — {}",
-            tasks.len(),
-            labels.join(", ")
-        ));
+        announce(d, (round, phase), &tasks, &mut last_phase);
         let res = round_of(&d.round, &tasks, round).await;
         let said = heard(r, res);
         // Not logged in: no task can answer, so nothing is submitted; a resume hands the step's
@@ -139,6 +136,37 @@ async fn rounds<P: Protocol>(
         }
     }
     Ending::Stopped("review ran out of rounds".into())
+}
+
+/// A round's start, said: the phase when it moved, then the round and its tasks.
+fn announce<P>(
+    d: &Driver<'_, P>,
+    (round, phase): (usize, &str),
+    tasks: &[Task],
+    last: &mut String,
+) {
+    if !phase.is_empty() && phase != last {
+        phase.clone_into(last);
+        d.emit(Event::Phase {
+            name: phase.to_owned(),
+        });
+    }
+    d.emit(Event::Round {
+        round,
+        phase: phase.to_owned(),
+        tasks: tasks.len(),
+    });
+    let labels: Vec<&str> = tasks.iter().map(|t| t.label.as_str()).collect();
+    let phase = if phase.is_empty() {
+        String::new()
+    } else {
+        format!(" ({phase})")
+    };
+    d.log(&format!(
+        "round {round}{phase}: {} task(s) — {}",
+        tasks.len(),
+        labels.join(", ")
+    ));
 }
 
 /// A round counted into the run's: what the next submit says, and a missing login.
@@ -181,6 +209,14 @@ async fn round_of(ctx: &RoundCtx<'_>, tasks: &[Task], round: usize) -> RoundResu
                 ..Pi::default()
             };
             run_round(pi, tasks, round, ctx).await
+        }
+        HostKind::OpenCode => {
+            let opencode = OpenCode {
+                command,
+                env,
+                ..OpenCode::default()
+            };
+            run_round(opencode, tasks, round, ctx).await
         }
     }
 }
