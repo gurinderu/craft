@@ -9,6 +9,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use craft_review::filing;
 use craft_review::publish::{self, PostSetup};
+use serde_json::Value;
 
 use crate::steps::{filing_root, print, stamped};
 
@@ -28,6 +29,11 @@ pub struct CommentArgs {
 }
 
 pub fn comment(args: &CommentArgs) -> Result<ExitCode> {
+    print(&comment_step(args)?)
+}
+
+/// The finished step `comment` prints, with what amending its record did.
+pub(crate) fn comment_step(args: &CommentArgs) -> Result<Value> {
     let began = Instant::now();
     let run = std::path::absolute(&args.run)
         .with_context(|| format!("resolving {}", args.run.display()))?;
@@ -36,8 +42,10 @@ pub fn comment(args: &CommentArgs) -> Result<ExitCode> {
         publish::comment(&run, args.pr, &PostSetup::default())?,
         began,
     );
-    match filing::republished(&run, &step, &filing::NodeWriter) {
-        Some(filed) => print(&filing::with_filing(step, filed)),
-        None => print(&step),
-    }
+    Ok(
+        match filing::republished(&run, &step, &filing::NodeWriter) {
+            Some(filed) => filing::with_filing(step, filed),
+            None => step,
+        },
+    )
 }
