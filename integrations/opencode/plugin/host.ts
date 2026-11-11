@@ -74,10 +74,10 @@ export interface WorkHook {
 // The tool's arguments as the runtime hands them over: only the declared string fields survive.
 export function stringArgs(spec: ToolSpec, input: unknown): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {}
-  const record = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {}
+  const record = typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {}
   for (const key of Object.keys(spec.args)) {
     const value = record[key]
-    out[key] = typeof value === "string" ? value : undefined
+    out[key] = typeof value === 'string' ? value : undefined
   }
   return out
 }

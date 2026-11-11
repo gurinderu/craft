@@ -8,13 +8,5 @@
     "email": "gurinderu@gmail.com"
   },
   "license": "MIT",
-  "keywords": [
-    "claude-code",
-    "skills",
-    "agents",
-    "rust",
-    "testing",
-    "code-review",
-    "craft"
-  ]
+  "keywords": ["claude-code", "skills", "agents", "rust", "testing", "code-review", "craft"]
 }

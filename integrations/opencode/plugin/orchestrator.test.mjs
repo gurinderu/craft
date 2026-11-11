@@ -124,7 +124,10 @@ test('one dead dimension does not take the live ones down with it', async () => 
     { label: 'a', agent: 'good', prompt: 'p', answered: hasVerdictLine },
     { label: 'b', agent: 'bad', prompt: 'p', answered: hasVerdictLine },
   ])
-  assert.deepEqual(rs.map(r => r.ok), [true, false])
+  assert.deepEqual(
+    rs.map(r => r.ok),
+    [true, false],
+  )
   const [, dead] = rs
   assert.ok(dead)
   assert.match(dead.text, /INCOMPLETE \(not run\)/)
@@ -361,20 +364,14 @@ test('a dimension table does not overrule the verdict line above it', async () =
   // tables the dimensions, so last-wins across both let the final table ROW decide. `VERDICT: BLOCK`
   // followed by a table ending `| deps | VERDICT: APPROVE |` parsed as Approve — a Block filed as
   // clean. A row is read only when no line of its own carried a verdict.
-  assert.equal(
-    parseVerdict('VERDICT: BLOCK\n\n| dimension | result |\n|---|---|\n| security | VERDICT: BLOCK |\n| deps | VERDICT: APPROVE |'),
-    'Block',
-  )
+  assert.equal(parseVerdict('VERDICT: BLOCK\n\n| dimension | result |\n|---|---|\n| security | VERDICT: BLOCK |\n| deps | VERDICT: APPROVE |'), 'Block')
   assert.equal(parseVerdict('VERDICT: BLOCK\n\nNote: the required shape is | overall | VERDICT: APPROVE |.'), 'Block')
 
   // A row whose FIRST cell carries the token. The split only holds if every row shape reaches stage
   // two, and a leading pipe in the line pattern's own decoration class meant this one did not — it
   // was read as a line of its own and won last-wins against the overall verdict, which is the
   // inversion the split exists to close, still live for a verdict-first column layout.
-  assert.equal(
-    parseVerdict('VERDICT: BLOCK\n\nDimension table:\n\n| VERDICT: APPROVE | deps | no advisories |'),
-    'Block',
-  )
+  assert.equal(parseVerdict('VERDICT: BLOCK\n\nDimension table:\n\n| VERDICT: APPROVE | deps | no advisories |'), 'Block')
 
   // A table-only synthesis is still read, which is the case the table shape was taught for.
   assert.equal(parseVerdict('| dimension | result |\n|---|---|\n| overall | VERDICT: APPROVE |'), 'Approve')
@@ -512,11 +509,7 @@ test('reported severity in prose IS an answer, even unlabelled', async () => {
   // claimed approval is kept is the asymmetry this whole branch exists against. So the
   // discriminator is what the text says about ITSELF: a keyword stands unless the session also
   // said it could not do the work.
-  for (const text of [
-    'Miri reported UB-found in two tests.',
-    '⛔ This must not merge.',
-    'Summary: At-risk. The graph has three cycles.',
-  ]) {
+  for (const text of ['Miri reported UB-found in two tests.', '⛔ This must not merge.', 'Summary: At-risk. The graph has three cycles.']) {
     const ctx = fakeCtx({ 'rust-security-scanner': text })
     const [r] = await fanOut(ctx, [job()])
     assert.ok(r)
@@ -615,10 +608,17 @@ test('the sequential retries share one budget instead of multiplying the deadlin
   const calls = []
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) }, calls)
   const jobs = Array.from({ length: 3 }, (_, i) => ({
-    label: `d${i}`, agent: 'slow', prompt: 'p', answered: hasVerdictLine, timeoutMs: 40,
+    label: `d${i}`,
+    agent: 'slow',
+    prompt: 'p',
+    answered: hasVerdictLine,
+    timeoutMs: 40,
   }))
   const rs = await fanOut(ctx, jobs)
-  assert.deepEqual(rs.map(r => r.ok), [false, false, false])
+  assert.deepEqual(
+    rs.map(r => r.ok),
+    [false, false, false],
+  )
   assert.equal(calls.length, 6, 'three concurrent attempts and three retries, none skipped at this budget')
   for (const r of rs) assert.match(r.text, /INCOMPLETE \(not run\)/)
 })
@@ -638,9 +638,15 @@ test('the note names the line THIS job required, not a line from another engine'
   // Hard-coded, it sent the forty triage jobs looking for a `VERDICT:` line their prompt never
   // mentions — the same wrong-cause reporting this file fixed for timeout-versus-silence.
   const ctx = fakeCtx({ validator: 'I cannot judge this one.' })
-  const [r] = await fanOut(ctx, [{
-    label: 'f1', agent: 'validator', prompt: 'p', answered: () => false, requires: 'OUTCOME: line',
-  }])
+  const [r] = await fanOut(ctx, [
+    {
+      label: 'f1',
+      agent: 'validator',
+      prompt: 'p',
+      answered: () => false,
+      requires: 'OUTCOME: line',
+    },
+  ])
   assert.ok(r)
   assert.match(r.text, /without the OUTCOME: line the prompt requires/)
   assert.ok(!/verdict/i.test(r.text), 'and never names a line the job did not ask for')
@@ -682,16 +688,17 @@ test('a retry clipped by the budget names the budget, not a deadline that exists
   assert.ok(unclipped && clipped)
   assert.match(unclipped.text, /may simply need longer than that deadline/, 'the unclipped one still says so')
   assert.match(clipped.text, /all that was left of this run's shared retry budget/, 'the clipped one names the budget')
-  assert.ok(
-    !/may simply need longer than that deadline/.test(clipped.text),
-    'and does not send the reader after a per-job deadline that was never the limit',
-  )
+  assert.ok(!/may simply need longer than that deadline/.test(clipped.text), 'and does not send the reader after a per-job deadline that was never the limit')
 })
 
 test('a job left over when the budget is spent is not attempted, and says so', async () => {
   const ctx = fakeCtx({ slow: () => new Promise(() => {}) })
   const jobs = Array.from({ length: 5 }, (_, i) => ({
-    label: `d${i}`, agent: 'slow', prompt: 'p', answered: () => false, timeoutMs: 50,
+    label: `d${i}`,
+    agent: 'slow',
+    prompt: 'p',
+    answered: () => false,
+    timeoutMs: 50,
   }))
   // A budget the retries exactly use up is a race: 90ms against 50ms jobs (one full retry, one
   // clipped to the remainder) left the third job's check at `left` 0 or 1 by timer jitter, and
@@ -706,7 +713,10 @@ test('a job past its deadline has its child session told to stop', async () => {
   const ctx = fakeCtx({})
   /** @type {AbortSignal | undefined} */
   let seen
-  ctx.runChild = (req) => { seen = req.signal; return new Promise(() => {}) }
+  ctx.runChild = req => {
+    seen = req.signal
+    return new Promise(() => {})
+  }
   const r = await runAnswering(ctx, 'slow', 'p', hasVerdictLine, 20)
   assert.equal(r.ok, false)
   assert.equal(seen?.aborted, true)

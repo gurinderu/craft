@@ -10,9 +10,10 @@ import { execFile } from 'node:child_process'
  * @returns {(cmd: string) => Promise<string>}
  */
 export function shellIn(cwd) {
-  return cmd => new Promise(resolve => {
-    execFile('bash', ['-lc', cmd], { ...(cwd ? { cwd } : {}), maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
-      resolve(err ? '' : String(stdout).trim())
+  return cmd =>
+    new Promise(resolve => {
+      execFile('bash', ['-lc', cmd], { ...(cwd ? { cwd } : {}), maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+        resolve(err ? '' : String(stdout).trim())
+      })
     })
-  })
 }

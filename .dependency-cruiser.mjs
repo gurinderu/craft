@@ -29,15 +29,14 @@ export default {
     {
       name: 'shipped-reaches-no-test',
       severity: 'error',
-      comment: 'A shipped entry reaches a test file, which imports vitest: absent in a consumer\'s install.',
+      comment: "A shipped entry reaches a test file, which imports vitest: absent in a consumer's install.",
       from: { path: SHIPPED },
       to: { path: '[.]test[.]mjs$', reachable: true },
     },
     {
       name: 'shipped-reaches-no-package',
       severity: 'error',
-      comment: 'A shipped entry reaches an npm package. craft ships none (#124); the OpenCode plugin ships '
-        + 'only @opencode-ai/plugin and @opencode-ai/sdk.',
+      comment: 'A shipped entry reaches an npm package. craft ships none (#124); the OpenCode plugin ships ' + 'only @opencode-ai/plugin and @opencode-ai/sdk.',
       from: { path: SHIPPED },
       to: {
         path: '(^|/)node_modules/',

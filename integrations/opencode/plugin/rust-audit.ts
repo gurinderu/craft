@@ -3,22 +3,22 @@
 // unused-crates, tests-cov, on the default session model) → synthesize. The Claude-Code-only
 // review engine (the craft CLI driven through Claude Code's Workflow tool) has no opencode equivalent, so the "review" dimension is a single-pass
 // rust-reviewer (no per-crate / inter-crate-contract fan-out); see integrations/opencode/README.md parity caveats.
-import type { Host } from "./host.ts"
-import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
-import { auditSynthesisInput, buildAuditRecord, hasVerdictLine, writeRecord, EVIDENCE_MARKER } from "./run-record.mjs"
+import type { Host } from './host.ts'
+import { fanOut, runAnswering, type Job } from './orchestrator.ts'
+import { auditSynthesisInput, buildAuditRecord, hasVerdictLine, writeRecord, EVIDENCE_MARKER } from './run-record.mjs'
 
 // Every dimension — and the synthesis — ends with ONE machine-readable line from a closed
 // vocabulary. run-record.mjs's parseVerdict() reads the LAST such line, which is what keeps a
 // quoted instruction or an emphasised adjective from deciding the verdict. Written as a placeholder
 // (`VERDICT: X`) on purpose: a literal example line here could be echoed back as the final line.
 const VERDICT_RULE =
-  "\n\nFINALLY, after everything else, end your report with ONE line on its own, in exactly this " +
-  "form: `VERDICT: X` — where X is exactly one of the four tokens APPROVE, WARNING, BLOCK, " +
-  "INCOMPLETE (uppercase, no other wording). Use INCOMPLETE when nothing was actually checked — " +
-  "the tooling was absent, or nothing executed — never APPROVE in that case: an APPROVE is a claim " +
-  "about what was not found, and it only holds over what was actually looked at. Map any " +
-  "domain-specific rating you used above onto these four (Healthy/Clean → APPROVE, Concerns → " +
-  "WARNING, At-risk/UB-found → BLOCK). Write nothing after that line — it is machine-read."
+  '\n\nFINALLY, after everything else, end your report with ONE line on its own, in exactly this ' +
+  'form: `VERDICT: X` — where X is exactly one of the four tokens APPROVE, WARNING, BLOCK, ' +
+  'INCOMPLETE (uppercase, no other wording). Use INCOMPLETE when nothing was actually checked — ' +
+  'the tooling was absent, or nothing executed — never APPROVE in that case: an APPROVE is a claim ' +
+  'about what was not found, and it only holds over what was actually looked at. Map any ' +
+  'domain-specific rating you used above onto these four (Healthy/Clean → APPROVE, Concerns → ' +
+  'WARNING, At-risk/UB-found → BLOCK). Write nothing after that line — it is machine-read.'
 
 // Invariant #53 for the six TOOL dimensions: they have no agent rubric to carry it (they run on the
 // default session model), so the prompt itself must ask for the positive proof of work that
@@ -34,13 +34,9 @@ const EVIDENCE_RULE =
   `line is treated as INCOMPLETE, not trusted.`
 
 async function scout(ctx: Host, base?: string): Promise<{ baseRef: string; hasUnsafe: boolean }> {
-  let baseRef = base ?? ""
+  let baseRef = base ?? ''
   if (!baseRef) {
-    for (const c of [
-      "git merge-base HEAD origin/main 2>/dev/null",
-      "git merge-base HEAD main 2>/dev/null",
-      "git rev-parse HEAD~1 2>/dev/null",
-    ]) {
+    for (const c of ['git merge-base HEAD origin/main 2>/dev/null', 'git merge-base HEAD main 2>/dev/null', 'git rev-parse HEAD~1 2>/dev/null']) {
       baseRef = await ctx.sh(c)
       if (baseRef) break
     }
@@ -49,8 +45,8 @@ async function scout(ctx: Host, base?: string): Promise<{ baseRef: string; hasUn
   // prints if the shell actually ran, so we can mirror workflows/rust-audit.js's `?? true`
   // fail-safe: when unsafe-detection does not resolve, run Miri anyway.
   const probe = await ctx.sh(`grep -rlE "\\bunsafe\\b" --include='*.rs' . 2>/dev/null | head -n1; echo "__scout_ok__"`)
-  const ranOk = probe.includes("__scout_ok__")
-  const hasMatch = probe.replace("__scout_ok__", "").trim().length > 0
+  const ranOk = probe.includes('__scout_ok__')
+  const hasMatch = probe.replace('__scout_ok__', '').trim().length > 0
   return { baseRef, hasUnsafe: hasMatch || !ranOk }
 }
 
@@ -58,29 +54,29 @@ export async function runRustAudit(ctx: Host, args: { base?: string }): Promise<
   const { baseRef, hasUnsafe } = await scout(ctx, args.base)
   const diffNote = baseRef
     ? `Diff base: \`${baseRef}\`.`
-    : "There is no clean base ref — review uncommitted changes, or the most recent commit if the tree is clean."
+    : 'There is no clean base ref — review uncommitted changes, or the most recent commit if the tree is clean.'
 
   const jobs: Job[] = [
     {
-      label: "review",
-      agent: "rust-reviewer",
+      label: 'review',
+      agent: 'rust-reviewer',
       prompt: `Review the Rust diff for mergeability using the rust-review rubric. ${diffNote} Report every finding with severity and confidence (coverage, not filtering), then your Approve/Warning/Block verdict.${VERDICT_RULE}`,
     },
     {
-      label: "architecture",
-      agent: "rust-architecture-reviewer",
+      label: 'architecture',
+      agent: 'rust-architecture-reviewer',
       prompt: `Audit the architecture of this whole Rust project: build the crate/module dependency graph and judge it in both directions (layer leaks/god modules vs ghost abstractions/over-layering). Return your Healthy/Concerns/At-risk rating and findings. If the graph could not be built at all — no manifest is readable and \`cargo metadata\` does not run — nothing was judged: return verdict "INCOMPLETE (not run)" naming what was missing, NOT Healthy.${VERDICT_RULE}`,
     },
     {
-      label: "security",
-      agent: "rust-security-scanner",
+      label: 'security',
+      agent: 'rust-security-scanner',
       prompt: `Run the Rust security toolchain (cargo-audit, cargo-deny, cargo-geiger, semgrep — whatever is installed) and consolidate into a severity-ranked verdict and findings. Note any absent tools. If NONE of the tools is installed, so nothing was actually scanned, return verdict "INCOMPLETE (not run)" and name the missing tools — a scan that ran nothing is not an Approve.${VERDICT_RULE}`,
     },
   ]
   if (hasUnsafe) {
     jobs.push({
-      label: "miri",
-      agent: "rust-miri",
+      label: 'miri',
+      agent: 'rust-miri',
       prompt: `This workspace contains unsafe code. Run its tests under Miri and report any undefined behavior against the rust-unsafe rubric. Return a Clean / UB-found verdict, or "INCOMPLETE (not run)" if the nightly toolchain or miri itself is unavailable so nothing was executed under Miri — an unrun Miri is NOT Clean. Return findings.${VERDICT_RULE}`,
     })
   }
@@ -92,33 +88,33 @@ export async function runRustAudit(ctx: Host, args: { base?: string }): Promise<
   // two apart.
   jobs.push(
     {
-      label: "crate-decomposition",
-      agent: "",
+      label: 'crate-decomposition',
+      agent: '',
       prompt: `Judge this Rust workspace's crate boundaries: recommend where code should be EXTRACTED into its own crate, or where an over-split crate should be MERGED back (build on the workspace graph from \`cargo metadata --locked --format-version 1\`; if \`--locked\` refuses (Cargo.lock missing or stale), read it from \`cargo metadata --no-deps --format-version 1\` instead, which does not resolve dependencies and so never writes Cargo.lock; never run it without one of those two flags). For each recommendation give the DRIVER, the BOUNDARY, and the HOW. Recommend only — do not move code. Load the rust-ecosystem skill (crate-extraction). Return a Healthy/Concerns/At-risk verdict and findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
-      label: "semver",
-      agent: "",
+      label: 'semver',
+      agent: '',
       prompt: `Check public-API semver compatibility across PUBLISHED crates: run \`cargo semver-checks check-release\` if installed. If cargo-semver-checks is absent, say so and return verdict "INCOMPLETE (not run)" with a one-line note naming what was missing — do NOT fail, and do NOT return Approve: nothing was checked. If the tool IS available but there is no published library crate to check, that is a real, complete answer — return "Approve" with a note that the workspace publishes no library. Load the rust-ecosystem skill. Report breaking changes vs the published baseline as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
-      label: "build-matrix",
-      agent: "",
+      label: 'build-matrix',
+      agent: '',
       prompt: `Check the build across feature combinations and the MSRV. If \`cargo-hack\` is installed: \`cargo hack check --feature-powerset --no-dev-deps\`, plus \`cargo check --no-default-features\` and \`cargo check --all-features\`. For MSRV read \`rust-version\` from Cargo.toml and run \`cargo hack --rust-version check\`. Skip any absent tool/toolchain with a note. If NOTHING could run, return verdict "INCOMPLETE (not run)" naming what was missing — do NOT fail, and do NOT return Approve: no feature combination was actually built. Return "Approve" only if at least one check ran and passed. Report failing feature combinations or MSRV breakage as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
-      label: "deps",
-      agent: "",
+      label: 'deps',
+      agent: '',
       prompt: `Audit dependency HYGIENE (distinct from security vulns/licenses): \`cargo tree -d\` (duplicate/conflicting versions) and \`cargo outdated\` (out-of-date deps). Do NOT check unused dependencies here — the unused-crates dimension owns that. Skip any absent tool with a note — do NOT fail; but if NEITHER tool is installed, so no dependency hygiene was actually inspected, return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve". Load the rust-ecosystem skill. Report duplicates and notably out-of-date deps as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
-      label: "unused-crates",
-      agent: "",
+      label: 'unused-crates',
+      agent: '',
       prompt: `Find UNUSED crates in two classes, then VERIFY each before reporting: (a) ORPHAN workspace members — members that NO other workspace member depends on, excluding binaries and published libraries (from \`cargo metadata --locked --format-version 1\`; if \`--locked\` refuses (Cargo.lock missing or stale), read it from \`cargo metadata --no-deps --format-version 1\` instead, which does not resolve dependencies and so never writes Cargo.lock; never run it without one of those two flags); (b) UNUSED dependencies — \`cargo machete\` (or \`cargo +nightly udeps\` if absent). For EACH candidate, try HARD to prove it IS used (cfg/feature-gated, macro-only, re-exported, build.rs, dev/bench/example usage, bin/published status) before accepting it; default to "used" when uncertain (recommending deletion of live code is the costly error). Skip any absent tool with a note — do NOT fail. \`cargo metadata\` alone answers class (a), so it is enough to run: if the graph loads and there are no orphan members, that is a real "Approve". But if \`cargo metadata\` itself does not run, so NOTHING was inspected, return verdict "INCOMPLETE (not run)" naming what was missing — not "Approve". Report ONLY verified-unused crates/deps as findings (severity Medium).${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
     {
-      label: "tests-cov",
-      agent: "",
+      label: 'tests-cov',
+      agent: '',
       prompt: `Assess test effectiveness and docs: \`cargo llvm-cov --summary-only\` if cargo-llvm-cov is installed; build docs cleanly (\`cargo doc --no-deps\`, flag broken intra-doc links) and run doctests (\`cargo test --doc\`). Skip any absent tool with a note — do NOT fail; but if NONE of them ran (no coverage tool, no doc build, no doctests), return verdict "INCOMPLETE (not run)" naming the missing tools rather than "Approve" — nothing was measured. Load the rust-testing skill. Report low-coverage hotspots, broken doc links, and failing doctests as findings.${EVIDENCE_RULE}${VERDICT_RULE}`,
     },
   )
@@ -128,7 +124,10 @@ export async function runRustAudit(ctx: Host, args: { base?: string }): Promise<
   // it per job would be ten chances to forget one, and the one forgotten is the one that reports
   // Approve on a dead session. The predicate comes FROM the parser that will later read the same
   // line, so the gate and the reader cannot disagree about what an answer looks like.
-  const results = await fanOut(ctx, jobs.map((j) => ({ ...j, answered: hasVerdictLine, requires: "VERDICT: line" })))
+  const results = await fanOut(
+    ctx,
+    jobs.map(j => ({ ...j, answered: hasVerdictLine, requires: 'VERDICT: line' })),
+  )
 
   // Synthesize through a fresh child session (no agent → the session's default model/persona).
   // The blob and the coverage buckets come from auditSynthesisInput — the SAME evidence gate
@@ -150,9 +149,9 @@ export async function runRustAudit(ctx: Host, args: { base?: string }): Promise<
 3. **Findings by severity** (Critical first), each tagged with its dimension and location + a one-line fix direction.
 4. A short **"Fix first"** list of the highest-leverage items.
 
-NOT RUN (no result — the agent failed or was skipped; treat as uncovered, never a pass): ${notRun.length ? notRun.join(", ") : "none"}
-COULD NOT RUN (reported back, but its tooling was absent so nothing was checked; treat as uncovered, never a pass): ${couldNotRun.length ? couldNotRun.join(", ") : "none"}
-NO EVIDENCE (claimed a green but showed no work, so the verdict is not trusted — the tool may have run; treat as uncovered, never a pass, but do NOT assert its tooling was absent): ${noEvidence.length ? noEvidence.join(", ") : "none"}
+NOT RUN (no result — the agent failed or was skipped; treat as uncovered, never a pass): ${notRun.length ? notRun.join(', ') : 'none'}
+COULD NOT RUN (reported back, but its tooling was absent so nothing was checked; treat as uncovered, never a pass): ${couldNotRun.length ? couldNotRun.join(', ') : 'none'}
+NO EVIDENCE (claimed a green but showed no work, so the verdict is not trusted — the tool may have run; treat as uncovered, never a pass, but do NOT assert its tooling was absent): ${noEvidence.length ? noEvidence.join(', ') : 'none'}
 
 RESULTS:
 ${blob}${VERDICT_RULE}`
@@ -172,9 +171,11 @@ ${blob}${VERDICT_RULE}`
   // The catch is belt-and-braces and unreachable today: `tryOne` already catches everything
   // `runAgent` can throw, and `notRunNote` cannot throw. Kept so a future throw kills one step
   // rather than the whole audit; no falsifier reaches it, and it is not claimed as covered.
-  const synthesis = await runAnswering(ctx, "", synthPrompt, hasVerdictLine, undefined, "VERDICT: line").catch(
-    (e) => ({ ok: false, text: "", note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}` }),
-  )
+  const synthesis = await runAnswering(ctx, '', synthPrompt, hasVerdictLine, undefined, 'VERDICT: line').catch(e => ({
+    ok: false,
+    text: '',
+    note: `The synthesis call itself threw: ${e instanceof Error ? e.message : String(e)}`,
+  }))
   // WHY it died, in the reader's hands. A refusal, a twenty-minute timeout and an errored session are
   // three different things to do next, and they used to print the same sentence.
   const report = synthesis.ok ? synthesis.text : unsynthesized(synthesis.note)
