@@ -39,17 +39,23 @@ async function runReview(host: Host, args: string, call: ToolCall): Promise<stri
   })
 }
 
-// The review's answer on OpenCode 2.x, before any child session: no 2.x child session was seen answering.
-const REVIEW_ON_V2 = "craft's review does not yet work in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). Use OpenCode 1.x, Claude Code, Codex or pi for now; the next craft release moves OpenCode onto a different route. Nothing ran."
-
-async function refuseReview(): Promise<string> {
-  const { stoppedAnswer } = await import("../../../lib/cli-review-verdict.mjs")
-  return stoppedAnswer(REVIEW_ON_V2)
+// What a workflow answers on OpenCode 2.x, before any child session: no 2.x child session was seen answering. Built
+// here, without lib/, so a plugin copy without it still answers. The review's is its `## Verdict` block.
+export function refusalOnV2(name: string): string {
+  const line = `INCOMPLETE — craft's \`${name}\` does not yet work in OpenCode 2.x: its child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7). A route through \`opencode run\` is in progress; until it ships, use OpenCode 1.x, Claude Code, Codex or pi. Nothing ran.`
+  return name === "review" ? `## Verdict\n\n⚠️ ${line}` : `⚠️ ${line}`
 }
 
-/** The tools as the 2.x entry (`setup`) registers them: the review refuses up front; the others are the same. */
+/**
+ * The tools as the 2.x entry (`setup`) registers them: every workflow runs child sessions, so each refuses up front and
+ * says so in its description; all stay registered, to answer a call with why.
+ */
 export const onV2 = (tools: readonly ToolSpec[]): ToolSpec[] =>
-  tools.map((spec) => (spec.name === "review" ? { ...spec, run: refuseReview } : spec))
+  tools.map((spec) => ({
+    ...spec,
+    description: `Not available on OpenCode 2.x yet: craft's \`${spec.name}\` answers INCOMPLETE and runs nothing (use OpenCode 1.x, Claude Code, Codex or pi).`,
+    run: () => Promise.resolve(refusalOnV2(spec.name)),
+  }))
 
 export const TOOLS: readonly ToolSpec[] = [
   {
