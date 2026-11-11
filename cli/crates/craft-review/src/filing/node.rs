@@ -35,7 +35,7 @@ fn run_writer(call: &Call<'_>, program: &str) -> Result<Value, WriteError> {
     std::fs::create_dir_all(&dir)
         .and_then(|()| std::fs::write(&input, call.request.to_string()))
         .map_err(|e| WriteError::Broken(format!("writing {}: {e}", input.display())))?;
-    let adapter = Path::new(call.root).join(ADAPTER);
+    let adapter = crate::prompts::plugin_path(Path::new(call.root), ADAPTER);
     let (adapter, input) = (adapter.display().to_string(), input.display().to_string());
     let ran = Runner::new(BUDGET, None, dir.clone()).run(
         &dir,

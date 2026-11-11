@@ -126,7 +126,7 @@ fn flatten(v: Option<&Value>) -> String {
 fn plugin_candidates(ctx: &PromptContext, file: &str) -> String {
     let mut c = Vec::new();
     if let Some(root) = ctx.craft_root.as_deref().filter(|r| !r.is_empty()) {
-        c.push(format!("{root}/{file}"));
+        c.push(plugin_path(Path::new(root), file).display().to_string());
     }
     c.push(format!("${{CLAUDE_PLUGIN_ROOT}}/{file}"));
     if let Some(v) = ctx.craft_version.as_deref() {
@@ -156,10 +156,40 @@ pub(crate) fn repo_directive(repo: &str) -> String {
 /// copy, or the delivery directory), else the checkout's delivery `integrations/claude-code`.
 #[must_use]
 pub fn plugin_root_at(dir: &Path) -> Option<PathBuf> {
-    [dir.to_path_buf(), dir.join("integrations/claude-code")]
+    [dir.to_path_buf(), dir.join(DELIVERY)]
         .into_iter()
         .find(|d| d.join(".claude-plugin/plugin.json").is_file())
 }
+
+/// Where `rel` (`skills/…`, `agents`, `lib/…`) really is for the plugin `root`: under `root` itself when
+/// its first part is there, else in the other half of a checkout's layout — the repository root's
+/// own `skills/`, `lib/`, `content/` beside the delivery `integrations/claude-code/agents/`. A copy
+/// that dropped the delivery's symlinks (Codex installs the repository root without them) has the
+/// shared directories only at the repository root; a materialized delivery has everything under
+/// itself. Nowhere found, `root/rel` as given (realm @nick/craft, node #500).
+#[must_use]
+pub fn plugin_path(root: &Path, rel: &str) -> PathBuf {
+    let rel = rel.trim_start_matches('/');
+    let top = rel.split('/').next().unwrap_or_default();
+    let checkout = root
+        .ends_with(DELIVERY)
+        .then(|| root.ancestors().nth(2))
+        .flatten()
+        .map(Path::to_path_buf);
+    [
+        Some(root.to_path_buf()),
+        Some(root.join(DELIVERY)),
+        checkout,
+    ]
+    .into_iter()
+    .flatten()
+    .find(|base| !top.is_empty() && base.join(top).exists())
+    .unwrap_or_else(|| root.to_path_buf())
+    .join(rel)
+}
+
+/// The Claude Code delivery inside a checkout.
+const DELIVERY: &str = "integrations/claude-code";
 
 /// The craft plugin root at or above `exe`, and the plugin version its manifest names.
 #[must_use]

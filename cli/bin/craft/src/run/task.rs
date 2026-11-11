@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use craft_review::prompts::plugin_path;
 use serde_json::Value;
 
 /// A task as the step hands it out.
@@ -104,7 +105,7 @@ fn body_of(file: &Path) -> String {
 pub(crate) fn rubric_of(task: &Task, root: &Path, repo: &Path) -> Rubric {
     let (agent, dir) = match (&task.consumer_agent, &task.agent_type) {
         (Some(a), _) => (a.clone(), repo.join(".claude").join("agents")),
-        (None, Some(a)) => (a.clone(), root.join("agents")),
+        (None, Some(a)) => (a.clone(), plugin_path(root, "agents")),
         (None, None) => return Rubric::default(),
     };
     let body = if safe(&agent) {
@@ -115,15 +116,37 @@ pub(crate) fn rubric_of(task: &Task, root: &Path, repo: &Path) -> Rubric {
     Rubric { agent, body }
 }
 
-/// Every literal `${CLAUDE_PLUGIN_ROOT}` in `text` as the root itself.
+/// Every literal `${CLAUDE_PLUGIN_ROOT}` in `text` spelled out: followed by a path, as where that
+/// path really is ([`plugin_path`]); alone, as the root itself.
 pub(crate) fn spell_root(text: &str, root: &Path) -> String {
-    text.replace("${CLAUDE_PLUGIN_ROOT}", &root.display().to_string())
+    const VAR: &str = "${CLAUDE_PLUGIN_ROOT}";
+    let mut parts = text.split(VAR);
+    let mut out = parts.next().unwrap_or_default().to_owned();
+    for part in parts {
+        let rel = part.strip_prefix('/').map(|p| {
+            p.split(|c: char| !(c.is_alphanumeric() || "._-".contains(c)))
+                .next()
+                .unwrap_or_default()
+        });
+        match rel.filter(|r| !r.is_empty()) {
+            Some(top) => {
+                let after = part.strip_prefix('/').and_then(|p| p.strip_prefix(top));
+                out.push_str(&plugin_path(root, top).display().to_string());
+                out.push_str(after.unwrap_or_default());
+            }
+            None => {
+                out.push_str(&root.display().to_string());
+                out.push_str(part);
+            }
+        }
+    }
+    out
 }
 
 /// The line that ends every task's message: a host loads none of craft's skills, so a skill the
 /// prompt names is read from the plugin's own file.
 pub(crate) fn skill_line(root: &Path) -> String {
-    let file = root.join("skills").join("<name>").join("SKILL.md");
+    let file = plugin_path(root, "skills").join("<name>").join("SKILL.md");
     format!(
         "A skill named in the prompt or the guidance (such as `rust-review`) is the file {}: read it from there.",
         file.display()
