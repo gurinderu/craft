@@ -30,9 +30,10 @@ provider that only an extension adds (a custom provider, the built-in llama.cpp 
 
 The message is the craft agent's prompt body the task names (from `integrations/claude-code/agents/`, or a consumer's
 `.claude/agents/`), then the instruction to read the task's prompt file and print the answer as one JSON object at the
-end, and where a skill the prompt names is (`skills/<name>/SKILL.md` in the package; pi loads none of craft's), with
+end, in a fence of its own (```` ```craft-answer ````), and where a skill the prompt names is (`skills/<name>/SKILL.md` in the package; pi loads none of craft's), with
 `${CLAUDE_PLUGIN_ROOT}` spelled out as the package root. The driver takes the answer from what pi printed — the last
-fenced `json` block, else the last top-level object that parses — and writes it to the task's answer file; pi has no
+`craft-answer` block, else the last `json` block, else the last top-level object that parses, each fence at the start
+of a line — and writes it to the task's answer file; pi has no
 schema output, and the binary validates each answer and hands an invalid one back for a retry.
 
 A task gets no tool that writes or edits a file. **pi has no sandbox**: `bash` stays, because the review agents need
