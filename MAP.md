@@ -248,7 +248,8 @@ through the plugin root's `lib/cli-review-file.mjs`, which builds the checkpoint
 `lib/craft-log-run.mjs`, keeping what it needs between steps in `filing.json`, including the stopped parts whose
 record has not landed, which every `--resume` files again first; `craft review status` carries that `filing` — the
 record, its file and the step the run ended with — for a host that lost the step that said it) and `crates/craft-tui` (progress as a phases → agents tree
-on a terminal, one line per event otherwise). The toolchain is pinned in `cli/rust-toolchain.toml`;
+on a terminal, one line per event otherwise); `test-support/` holds the one copy of a helper every crate's tests
+include by path (an executable a test writes and runs). The toolchain is pinned in `cli/rust-toolchain.toml`;
 CI's `rust` job runs `cargo fmt --check`, `cargo clippy` at zero warnings and `cargo test`, and checks that the
 parity files the CLI owns (`verify-cases.json`, `plan-cases.json`, `prompt-cases.json`) regenerate unchanged, apart
 from `npm run gate`. The CLI's version is the plugin's: release-please moves `cli/Cargo.toml` and

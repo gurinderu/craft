@@ -69,7 +69,11 @@ fn a_detached_head_no_pr_heads_is_round_one_and_says_why() {
     let (_, c) = start(repo.path(), runs.path(), "r2", &gh, None);
     assert_eq!((&c["branch"], &c["round"]), (&Value::Null, &json!(1)));
     let why = c["unchained"].as_str().unwrap();
-    assert!(why.contains("no branch (a detached HEAD)"), "{why}");
+    assert!(
+        why.starts_with("no branch (a detached HEAD) and no pull request named one"),
+        "{why}"
+    );
+    assert!(why.contains("name its pull request (`pr=`)"), "{why}");
     assert!(why.contains("no open pull request has this HEAD"), "{why}");
 }
 
