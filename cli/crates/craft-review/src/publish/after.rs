@@ -59,8 +59,9 @@ pub fn comment(dir: &Path, pr: Option<u64>, setup: &PostSetup) -> Result<Value, 
     if !Path::new(&run.context.repo).is_dir() {
         return Err(CommentError::NoCheckout(run.context.repo.clone()).into());
     }
-    // A run on a detached HEAD whose chain a pull request named posts on that PR, as `deliver`
-    // does; a branch name would ask gh for the checkout's branch, not the reviewed one.
+    // A run whose chain recorded a pull request posts on that PR by number, as `deliver` does: a
+    // lookup by branch misses a fork's PR, whose chain branch is `<owner>:<branch>`, and can take
+    // the wrong one when several PRs share a head branch.
     let which = match (pr.or(run.chain.pr), &run.chain.branch) {
         (Some(n), _) => n.to_string(),
         (None, Some(branch)) => branch.clone(),

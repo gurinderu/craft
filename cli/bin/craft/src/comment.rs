@@ -17,8 +17,8 @@ pub struct CommentArgs {
     /// The directory of the finished run `start` printed.
     #[arg(long)]
     pub run: PathBuf,
-    /// The pull request to post on, by number; without it the pull request the run's chain was
-    /// resolved from (a detached HEAD's), else the reviewed branch's pull request.
+    /// The pull request to post on, by number; without it the pull request the run's chain
+    /// recorded (given at its start, or found for a detached HEAD), else the reviewed branch's.
     #[arg(long)]
     pub pr: Option<u64>,
     /// The plugin root the run's telemetry is filed through, for a run whose telemetry knows none
