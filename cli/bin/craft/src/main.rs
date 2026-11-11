@@ -3,6 +3,7 @@
 mod comment;
 mod init;
 mod review;
+mod run;
 mod steps;
 
 use std::num::NonZeroUsize;
@@ -45,6 +46,9 @@ enum ReviewCommand {
     Gate(steps::GateArgs),
     /// Run one probe agent end to end through a backend, with the progress view.
     Probe(ReviewArgs),
+    /// Run the whole review in one command: the binary drives its steps itself, each task run as
+    /// its own process of the host's CLI (`codex exec`, `pi -p`), and prints the verdict.
+    Run(Box<run::RunArgs>),
 }
 
 /// Which way an agent is run.
@@ -96,6 +100,7 @@ async fn main() -> ExitCode {
         Command::Review(ReviewCommand::Status(args)) => steps::status(&args),
         Command::Review(ReviewCommand::Comment(args)) => comment::comment(&args),
         Command::Review(ReviewCommand::Gate(args)) => steps::gate(&args),
+        Command::Review(ReviewCommand::Run(args)) => run::run(*args).await,
         Command::Init(args) => init::init(&args),
     };
     // Every way out — a stop, an error, a finished run — waits out the grace of the agents'

@@ -331,6 +331,7 @@ dependencies = [
  "craft-agent",
  "craft-review",
  "craft-tui",
+ "regex",
  "serde_json",
  "tempfile",
  "tokio",
