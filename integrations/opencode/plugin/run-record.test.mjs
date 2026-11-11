@@ -468,20 +468,12 @@ test('indexProjection carries runtime and nulls findingsTotal when findings is n
 test('writeRecord writes a detail file and appends one index line', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'craft-obs-'))
   process.env['CRAFT_RUNS_DIR'] = dir
-  // Fake PluginCtx: $ is a tagged-template returning a .quiet() that yields canned git output.
+  // A fake workspace: its probe runner answers the git probes with canned output.
   /** @type {import('./run-record.mjs').ShellCtx} */
   const ctx = {
     worktree: '/proj',
     directory: '/proj',
-    // Mirrors sh()'s `$\`bash -lc ${cmd}\`` shape: the command is the sole interpolated value,
-    // so reading vals (ignoring the static `bash -lc ` prefix) reconstructs it.
-    $: (_strings, ...vals) => ({
-      quiet: async () => {
-        const cmd = vals.join('')
-        if (cmd.includes('rev-parse')) return { stdout: 'abc1234\n' }
-        return { stdout: '' } // status --porcelain → clean
-      },
-    }),
+    sh: async cmd => (cmd.includes('rev-parse') ? 'abc1234' : ''), // status --porcelain → clean
   }
   try {
     await writeRecord(ctx, buildAuditRecord({
@@ -514,7 +506,7 @@ test('writeRecord appends under the store\'s index lock: it takes over a dead wr
   const old = new Date(Date.now() - 60_000)
   utimesSync(lock, old, old)
   /** @type {import('./run-record.mjs').ShellCtx} */
-  const ctx = { worktree: '/proj', directory: '/proj', $: () => ({ quiet: async () => ({ stdout: '' }) }) }
+  const ctx = { worktree: '/proj', directory: '/proj', sh: async () => '' }
   try {
     await writeRecord(ctx, buildAuditRecord({ results: [], baseRef: 'main', hasUnsafe: false, synthesisText: 'Approve' }))
     assert.equal(readFileSync(join(dir, 'index.jsonl'), 'utf8').trim().split('\n').length, 1)

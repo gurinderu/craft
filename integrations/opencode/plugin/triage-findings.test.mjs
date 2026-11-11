@@ -153,24 +153,16 @@ test('an empty blob yields nothing rather than a phantom finding', () => {
 // a planner predicate satisfied by a refusal, and a record that could not say the plan never came —
 // were invisible to a suite that covered the splitter thoroughly.
 
-/** @typedef {{ body?: { parts?: { text?: string }[] } }} PromptRequest */
-
 /** @param {(q: { isPlan: boolean }) => string} answerFor @param {string[]} [prompts] */
 function fakeCtx(answerFor, prompts = []) {
   return {
     directory: '/repo',
     worktree: '/repo',
-    $: () => ({ quiet: async () => ({ stdout: '' }) }),
-    client: {
-      session: {
-        create: async () => ({ id: 's' }),
-        prompt: async (/** @type {PromptRequest} */ { body }) => {
-          const text = body?.parts?.[0]?.text ?? ''
-          prompts.push(text)
-          const isPlan = /ordered fix plan/i.test(text)
-          return { parts: [{ type: 'text', text: answerFor({ isPlan }) }] }
-        },
-      },
+    sh: async () => '',
+    callerModel: async () => undefined, agents: async () => null,
+    runChild: async (/** @type {import('./host.ts').ChildRequest} */ { prompt }) => {
+      prompts.push(prompt)
+      return answerFor({ isPlan: /ordered fix plan/i.test(prompt) })
     },
   }
 }

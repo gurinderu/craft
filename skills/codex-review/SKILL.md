@@ -1,7 +1,7 @@
 ---
 name: codex-review
 description: >-
-  Codex only: craft's review of a diff or PR in any language, run from a Codex session — one command that drives the craft CLI's review (the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict), each review agent its own `codex exec` process. Use in Codex when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers: review this branch, review the diff, is this mergeable, re-review the fixes, resume the review. Not in Claude Code: there the review is the craft:review workflow (Workflow tool), never this skill.
+  Codex only: craft's review of a diff or PR in any language, run from a Codex session — one command that drives the craft CLI's review (the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict), each review agent its own `codex exec` process. Use in Codex when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers: review this branch, review the diff, is this mergeable, re-review the fixes, resume the review. Not in Claude Code: there the review is the craft:review workflow (Workflow tool), never this skill. Not in OpenCode: there the review is the /review command (the `review` tool), never this skill and never `codex exec`.
 ---
 
 # codex-review — craft's review from Codex

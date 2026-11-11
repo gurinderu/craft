@@ -8,8 +8,8 @@
 // verdict parser, which falls through to APPROVE. A dimension whose child session errored out
 // reported Approve — the one outcome this engine exists to make impossible.
 //
-// `fanOut` reaches the outside world through exactly one seam: `ctx.client.session`. A fake client
-// drives the whole dispatcher, which is the same shape the Claude Code engines are tested with.
+// `fanOut` reaches the outside world through exactly one seam: the host's `runChild` (host.ts). A fake
+// host drives the whole dispatcher, which is the same shape the Claude Code engines are tested with.
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { fanOut, runAnswering } from './orchestrator.ts'
@@ -25,28 +25,24 @@ import { hasVerdictLine, parseVerdict } from './run-record.mjs'
 /**
  * @param {Record<string, Answer>} answers
  * @param {string[]} [calls]
- * @returns {import('./index.ts').PluginCtx & { calls: string[] }}
+ * @returns {import('./host.ts').Host & { calls: string[] }}
  */
 function fakeCtx(answers, calls = []) {
   return {
     calls,
-    // The dispatcher reaches only `client`; the rest of the plugin input is present to make this a
-    // whole PluginCtx, and nothing here reads it.
-    $: null,
+    // The dispatcher reaches only `runChild`; the rest of the host is present to make this a whole Host,
+    // and nothing here reads it.
     directory: '',
     worktree: '',
-    client: {
-      session: {
-        create: async (/** @type {{ body?: { title?: string } }} */ { body }) => ({ id: `s-${calls.length}`, title: body?.title }),
-        prompt: async (/** @type {{ body?: { agent?: string } }} */ { body }) => {
-          const agent = body?.agent ?? ''
-          calls.push(agent)
-          const nth = calls.filter(a => a === agent).length - 1
-          const answer = typeof answers[agent] === 'function' ? await answers[agent](nth) : answers[agent]
-          if (answer instanceof Error) throw answer
-          return { parts: [{ type: 'text', text: String(answer ?? '') }] }
-        },
-      },
+    sh: async () => '',
+    callerModel: async () => undefined, agents: async () => null,
+    runChild: async ({ agent }) => {
+      calls.push(agent)
+      const nth = calls.filter(a => a === agent).length - 1
+      const given = answers[agent]
+      const answer = typeof given === 'function' ? await given(nth) : given
+      if (answer instanceof Error) throw answer
+      return String(answer ?? '')
     },
   }
 }
@@ -706,24 +702,12 @@ test('a job left over when the budget is spent is not attempted, and says so', a
   assert.ok(skipped.length >= 1, 'at least one job is honestly reported as never retried')
 })
 
-test('the answer is read from every response shape a session may return', async () => {
-  // A response may carry its parts at the top, under `data` or under `message`, may arrive as an array
-  // whose last element is the message, or may carry only a top-level `text`. Each shape is an answer.
-  const line = 'VERDICT: APPROVE'
-  /** @type {Record<string, unknown>} */
-  const shapes = {
-    top: { parts: [{ type: 'text', text: line }] },
-    data: { data: { parts: [{ type: 'text', text: line }] } },
-    message: { message: { parts: [{ type: 'text', text: line }] } },
-    array: [{ parts: [] }, { parts: [{ type: 'text', text: line }] }],
-    text: { text: `  ${line}  ` },
-    nothing: { parts: [{ type: 'image', text: line }] },
-  }
-  for (const [shape, res] of Object.entries(shapes)) {
-    const ctx = fakeCtx({})
-    ctx.client.session.prompt = async () => res
-    const r = await runAnswering(ctx, 'rust-security-scanner', 'p', hasVerdictLine)
-    if (shape === 'nothing') assert.equal(r.ok, false, 'a part that is not text carries no answer')
-    else assert.deepEqual([shape, r.ok, r.text], [shape, true, line])
-  }
+test('a job past its deadline has its child session told to stop', async () => {
+  const ctx = fakeCtx({})
+  /** @type {AbortSignal | undefined} */
+  let seen
+  ctx.runChild = (req) => { seen = req.signal; return new Promise(() => {}) }
+  const r = await runAnswering(ctx, 'slow', 'p', hasVerdictLine, 20)
+  assert.equal(r.ok, false)
+  assert.equal(seen?.aborted, true)
 })
