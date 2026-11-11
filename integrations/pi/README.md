@@ -3,8 +3,8 @@
 A pi driver for the craft CLI's step-by-step review (`craft review start`, then `craft review submit`
 after each step's agents ran), as `integrations/claude-code/workflows/review.js` (the `craft:review` workflow) drives it from Claude Code.
 The binary decides every step; the driver only runs the agents a step hands out and hands their answers back.
-The route is new and not yet observed running in a real pi session: its loop is tested against fake `craft` and `pi`
-binaries only. Its driver, `lib/pi-review.mjs`, is the process-per-task runner the Codex driver shares
+The route is new: it has been seen running end to end from a checkout, not yet as an installed pi package.
+Its driver, `lib/pi-review.mjs`, is the process-per-task runner the Codex driver shares
 (`lib/task-process-*.mjs`), with pi as its host (`lib/pi-review-task.mjs`).
 
 ## Install

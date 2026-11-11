@@ -34,7 +34,7 @@ The corpus deliberately mixes two kinds of case:
 
 Covered high-traffic skills: `rust-review`, `nix-review`, `debugging`, `addressing-findings`,
 `rust-testing`, `rust-errors`, `rust-ownership`, `rust-concurrency`, `rust-performance`, `specs`,
-`distributed-races`, `compatibility`, `memory`, `develop`, `codex-review`.
+`distributed-races`, `compatibility`, `memory`, `develop`, `codex-review` (a Codex session must select it; a Claude Code or OpenCode session must not).
 
 ## Running it
 
