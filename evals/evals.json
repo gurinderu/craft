@@ -416,5 +416,13 @@
       "Does not select codex-review: in Claude Code the review is the craft:review workflow, here inside develop's loop.",
       "Runs the review through the Workflow tool, not through node lib/codex-review.mjs."
     ]
+  },
+  {
+    "skills": ["rust-review"],
+    "query": "(In an OpenCode session with craft installed) Review this Rust branch against main and tell me whether it's mergeable.",
+    "expected_behavior": [
+      "Does not select codex-review: in OpenCode the review is the /review command (the review tool), or the rust-review skill for a Rust-only pass.",
+      "Never runs codex exec or node lib/codex-review.mjs."
+    ]
   }
 ]

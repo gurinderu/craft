@@ -31,10 +31,13 @@ when they are missing; without npm, run it there yourself before starting openco
 ## Use
 
 - **Skills** — auto-discovered; opencode's `skill` tool lists all of craft's skills and routes by description.
+  `install.sh` leaves out `develop` and `codex-review`, which drive the review through Claude Code's
+  Workflow tool and `codex exec`; in OpenCode the review is `/review`.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`
   and `review-task` are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch
   them. `review-task` exists only for `/review`'s tasks.
 - **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/review [key=value ...]`.
+  Each workflow's child sessions nest under the session that called it.
 
 ## Review
 

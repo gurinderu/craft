@@ -3,7 +3,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { ENGINE_SESSIONS } from './orchestrator.ts'
-import { TOOLS, reviewChild } from './tools.ts'
+import { TOOLS, nestedUnder, reviewChild } from './tools.ts'
 
 /** @returns {import('./host.ts').Host & { asked: import('./host.ts').ChildRequest[] }} */
 function fakeHost() {
@@ -33,4 +33,13 @@ test('without a caller the child is top-level on the runtime default', async () 
 
 test('the plugin offers the review beside the audit and the triage', () => {
   assert.deepEqual(TOOLS.map(t => t.name), ['rust-audit', 'triage-findings', 'review'])
+})
+
+test('the audit and the triage nest their children under the caller too, and keep the rest of the host', async () => {
+  const host = fakeHost()
+  const nested = nestedUnder(host, 'ses_caller')
+  await nested.runChild({ title: 't', agent: 'rust-reviewer', prompt: 'x' })
+  assert.equal(host.asked[0]?.parentID, 'ses_caller')
+  assert.equal(nested.directory, '/r')
+  assert.equal(nestedUnder(host, undefined), host, 'no caller: the host as it is')
 })

@@ -21,7 +21,7 @@ is still its answer, with its `## Verdict` block: relay it, and its `## What the
 review agents died on (a model the account does not support, for one, is fixed with `piModels=`). A run with nothing to review — `INCOMPLETE (empty diff)` or
 `INCOMPLETE (no language profile)` — exits 0.
 
-This route is new and not yet observed running in a real pi session. If the command cannot run
+This route is new: seen running end to end from a checkout, not yet as an installed pi package. If the command cannot run
 here, or fails without a `## Verdict` block, say so plainly and review the diff yourself instead:
 the checklist in `<package root>/skills/rust-review/SKILL.md` (Rust) or
 `<package root>/skills/nix-review/SKILL.md` (Nix), otherwise read the diff for defects, and report

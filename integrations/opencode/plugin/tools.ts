@@ -5,6 +5,13 @@ import { ENGINE_SESSIONS } from "./orchestrator.ts"
 import { runRustAudit } from "./rust-audit.ts"
 import { runTriageFindings } from "./triage-findings.ts"
 
+// The host as a workflow sees it from inside one tool call: every child session it opens nests under the calling
+// session (OpenCode's parentID, observed on 1.19.5 and 2.2.7); a call with no session leaves them top-level.
+export function nestedUnder(host: Host, parent: string | undefined): Host {
+  if (!parent) return host
+  return { ...host, runChild: (req) => host.runChild({ ...req, parentID: parent }) }
+}
+
 // The review driver lives in craft's lib/ (lib/opencode-review.mjs), loaded from the checkout the plugin is linked from
 // when the tool runs, as the work hook loads its modules: a plugin copy without lib/ keeps its other tools.
 // A review task's child session: nested under the calling session, on that session's model unless the review's table
@@ -12,7 +19,7 @@ import { runTriageFindings } from "./triage-findings.ts"
 export function reviewChild(host: Host, parent: string | undefined, callerModel: ModelRef | undefined) {
   return (req: ChildRequest): Promise<string> => {
     const model = req.model ?? callerModel
-    return host.runChild({ ...req, ...(model ? { model } : {}), ...(parent ? { parentID: parent } : {}), onSession: (id) => ENGINE_SESSIONS.add(id) })
+    return nestedUnder(host, parent).runChild({ ...req, ...(model ? { model } : {}), onSession: (id) => ENGINE_SESSIONS.add(id) })
   }
 }
 
@@ -33,14 +40,14 @@ export const TOOLS: readonly ToolSpec[] = [
     description:
       "Full Rust crate audit: fan out the craft review agents (reviewer, architecture, security, and Miri if unsafe is present) and synthesize one severity-ranked report. Optional arg `base` fixes the diff base ref.",
     args: { base: { optional: true } },
-    run: (host, args) => runRustAudit(host, args["base"] === undefined ? {} : { base: args["base"] }),
+    run: (host, args, call) => runRustAudit(nestedUnder(host, call.sessionID), args["base"] === undefined ? {} : { base: args["base"] }),
   },
   {
     name: "triage-findings",
     description:
       "Validate review findings against the code and render one ordered fix plan + triage ledger (no edits). Arg `locator` points at the findings source (a report path, PR ref, or pasted findings).",
     args: { locator: { optional: false } },
-    run: (host, args) => runTriageFindings(host, { locator: args["locator"] ?? "" }),
+    run: (host, args, call) => runTriageFindings(nestedUnder(host, call.sessionID), { locator: args["locator"] ?? "" }),
   },
   {
     name: "review",
