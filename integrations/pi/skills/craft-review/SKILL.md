@@ -28,6 +28,8 @@ How to run it:
 - It writes under `~/.craft`, may fetch the craft binary from GitHub, builds and runs the
   branch's code for the mechanical gate (`gate=false` turns that off for a branch you do not
   trust), and starts `pi -p` processes that call the model with this pi installation's login.
+  Those processes get no write or edit tool, but pi has no sandbox: their bash runs with your
+  permissions.
 - It prints `run=<directory>` on stderr as soon as the run starts. If the call is cut off or the
   run stops on the usage limit, resume it with `run=<that directory>` alone.
 - If it says pi is not logged in, tell the human to log in to pi (`pi`, then `/login`) and
