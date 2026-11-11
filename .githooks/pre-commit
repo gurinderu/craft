@@ -1,0 +1,46 @@
+#!/bin/sh
+# Fast checks on the staged files only (wired by `npm ci`/`npm install` through the `prepare` script, which sets
+# core.hooksPath to .githooks): Prettier, ESLint on the staged lint-scope files, and `cargo fmt --check` when Rust is
+# staged. It reads the working-tree copy of each staged file. Not the gate: run `npm run gate` before pushing.
+set -u
+
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+
+bin=node_modules/.bin
+if [ ! -x "$bin/prettier" ] || [ ! -x "$bin/eslint" ]; then
+  echo "pre-commit: Prettier or ESLint is not installed — run: npm ci && npm ci --prefix integrations/opencode/plugin" >&2
+  exit 1
+fi
+
+failed=0
+
+# Prettier: every staged file it handles; .prettierignore and unknown extensions are skipped.
+# shellcheck disable=SC2086 # one path per word: the repository's paths hold no whitespace
+if ! "$bin/prettier" --check --ignore-unknown --no-error-on-unmatched-pattern $staged; then
+  echo "pre-commit: formatting — run: npm run format (or npx prettier --write <file>), then stage again" >&2
+  failed=1
+fi
+
+# ESLint: the staged files inside the lint scope of package.json's `lint` script.
+lintable=$(printf '%s\n' "$staged" | grep -E '^(lib/.*\.mjs|integrations/opencode/plugin/[^/]*\.(mjs|ts)|knip\.config\.js|\.dependency-cruiser\.mjs)$')
+if [ -n "$lintable" ]; then
+  # shellcheck disable=SC2086
+  if ! "$bin/eslint" --max-warnings 0 --no-warn-ignored $lintable; then
+    echo "pre-commit: lint — fix the findings above, then: npm run lint" >&2
+    failed=1
+  fi
+fi
+
+# Rust: the CLI's formatting when any .rs file under cli/ is staged.
+if printf '%s\n' "$staged" | grep -qE '^cli/.*\.rs$'; then
+  if ! (cd cli && cargo fmt --check); then
+    echo "pre-commit: Rust formatting — run: (cd cli && cargo fmt), then stage again" >&2
+    failed=1
+  fi
+fi
+
+exit "$failed"
