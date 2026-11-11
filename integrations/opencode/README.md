@@ -73,6 +73,12 @@ agent's prompt (1.x `run` puts a subagent on its default agent, which writes). T
 path was seen reaching the model as `review-task`; the tool itself is covered by tests against a fake
 binary, not yet seen in a real OpenCode session.
 
+On OpenCode 2.x `/rust-audit` and `/triage-findings` refuse up front, INCOMPLETE, and run nothing:
+their child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7); use OpenCode 1.x,
+Claude Code, Codex or pi for them. `/review` is not refused: its tasks run as `opencode run`
+processes, not child sessions. The refusal itself is tested against fake hosts only, not yet seen in
+a real OpenCode 2.x.
+
 - Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
   every other on `review-task` (both have write and edit off), with the matching Claude Code agent's
   prompt (or the reviewed repository's own `.claude/agents/<name>.md`) before the task. A task still

@@ -2,6 +2,7 @@
 import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { finishedReply, v2Host, v2Setup, v2Tool } from './host-v2.ts'
+import { onV2, TOOLS } from './tools.ts'
 
 const assistant = (/** @type {string} */ text) => ({ type: 'assistant', finish: 'stop', content: [{ type: 'reasoning', text: 'hm' }, { type: 'text', text }] })
 
@@ -140,3 +141,38 @@ test('a deadline interrupts the session and stops the polling', async () => {
   assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
 })
 
+test('the audit and the triage on the 2.x entry refuse up front and say so; the review runs as it is', async () => {
+  const f = fakeCtx()
+  await v2Setup(f.ctx, onV2(TOOLS), { childCreated: () => {}, compacted: async () => {}, message: async () => {} })
+  assert.deepEqual(f.tools.map(t => t.name), ['rust-audit', 'triage-findings', 'review'], 'all three stay registered')
+  const [review, ...workflows] = [f.tools.find(t => t.name === 'review'), ...f.tools.filter(t => t.name !== 'review')]
+  assert.equal(review?.description, TOOLS.find(t => t.name === 'review')?.description, 'the review goes through opencode run, not child sessions')
+  for (const tool of workflows) {
+    const out = await tool.execute({ locator: 'x' }, { sessionID: 'ses_set', messageID: 'm', id: 'c', agent: 'build', signal: new AbortController().signal })
+    assert.match(out.content[0].text, new RegExp(`INCOMPLETE — craft's \`${tool.name}\` does not yet work in OpenCode 2\\.x: .*A route through \`opencode run\` is in progress; until it ships, use OpenCode 1\\.x, Claude Code, Codex or pi\\. Nothing ran\\.`))
+    assert.match(tool.description, /^Not available on OpenCode 2\.x yet/)
+  }
+  assert.equal(f.sent.filter(s => /** @type {unknown[]} */ (s)[0] === 'create').length, 0)
+})
+
+test('the polling leaves no abort listener behind, however many reads it takes', async () => {
+  const f = fakeCtx([[{ type: 'user' }], [{ type: 'user' }], [{ type: 'user' }], [assistant('done')]])
+  const stop = new AbortController()
+  let live = 0
+  let most = 0
+  const add = stop.signal.addEventListener.bind(stop.signal)
+  const remove = stop.signal.removeEventListener.bind(stop.signal)
+  stop.signal.addEventListener = (/** @type {any[]} */ ...a) => { most = Math.max(most, ++live); add(.../** @type {[any, any, any]} */ (a)) }
+  stop.signal.removeEventListener = (/** @type {any[]} */ ...a) => { live--; remove(.../** @type {[any, any]} */ (a)) }
+  assert.equal(await v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), 'done')
+  assert.equal(live, 0)
+  assert.ok(most <= 2, `at most the session's stop and one poll's listener at once, saw ${most}`)
+})
+
+test('a wait that never returns does not hold the polling past the abort', async () => {
+  const f = fakeCtx()
+  const stop = new AbortController()
+  f.ctx.session.wait = () => { setTimeout(() => stop.abort(), 5); return new Promise(() => {}) }
+  await assert.rejects(v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
+  assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
+})
