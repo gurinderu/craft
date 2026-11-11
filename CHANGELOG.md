@@ -3,16 +3,28 @@
 ## [0.50.0](https://github.com/gurinderu/craft/compare/v0.49.1...v0.50.0) (2026-11-11)
 
 
+### ⚠ Behaviour changes on upgrade
+
+* **OpenCode: rerun `integrations/opencode/install.sh` after upgrading.** The plugin is now one module that loads on OpenCode 1.x and 2.x. Rerunning the script does three things:
+  - it relinks the plugin as the file `plugins/craft-rust.ts`, because 1.x never loaded the old directory link;
+  - it installs the plugin's dependencies, because 2.x does not;
+  - it links the new `review-task` agent and `/review` command, and removes stale links of its own.
+
+  Without the rerun, `/review` refuses to start. On 2.x the work hook's lines appear inside the user's message text.
+* **OpenCode: new `/review` command (the `review` tool).** It runs the CLI review, one child session per task, nested under the caller and on the caller's model. Every task runs on a read-only agent (`rust-reviewer` or `review-task`). It has not yet been seen answering with a real model.
+* **Codex:** the start and work hooks now send a review request to the new `craft:codex-review` skill, which runs the review through `codex exec`. If the command can't run, the review is done by hand. The route has not yet been seen in a real Codex session. The skill is not linked into OpenCode.
+* **pi:** install craft as a pi package (`pi install git:github.com/gurinderu/craft@v0.50.0`) and run the `craft-review` skill. Tasks run with no write tool and with `--no-approve --no-extensions --no-mcp`. pi has no sandbox, so bash is not contained. One review has been seen running end to end from a checkout.
+* **The Codex, pi and OpenCode drivers** stop with a "log in" message when the host is not logged in. When a run is cut short (INCOMPLETE anywhere in the verdict), they exit 1 and print what the agents last wrote. A run with nothing to review exits 0. The Claude Code Workflow is unchanged.
+* `craft review comment` without `--pr` posts to the PR the run's chain recorded.
+
+
 ### Features
 
 * **codex:** run craft:review from Codex through a Node driver of the craft CLI ([cd9b81a](https://github.com/gurinderu/craft/commit/cd9b81ad3db269eb3cc25ab01a31e85f32c78f34))
-* **codex:** run craft:review in a Codex session through the CLI step protocol ([00371da](https://github.com/gurinderu/craft/commit/00371da048ff7d782da18af9abc5a3c50ff1f4af))
 * **opencode:** drive craft's review from OpenCode through child sessions ([b2a6e29](https://github.com/gurinderu/craft/commit/b2a6e29ab1bb07622838951035bdc9cf5f3993ab))
 * **opencode:** load and run the plugin on OpenCode 1.x and 2.x ([1ee47ec](https://github.com/gurinderu/craft/commit/1ee47ecd115a4cfad215f97c640068684c2fe386))
-* **opencode:** one plugin for OpenCode 1.x and 2.x, and craft:review through child sessions ([de501dc](https://github.com/gurinderu/craft/commit/de501dc48aa4fca19fc733761c6810d91ca1dc1d))
 * **opencode:** run the review on the shared task runner, read-only and nested ([463e002](https://github.com/gurinderu/craft/commit/463e0021441ad0a42079f13cf746dfc9403053de))
 * **pi:** run craft:review from pi through a Node driver of the craft CLI ([d32eb81](https://github.com/gurinderu/craft/commit/d32eb816baeb45660d9a81b7bd44f2d222695afb))
-* **pi:** run craft:review in a pi session; one process-per-task runner for Codex and pi ([0a1d0dd](https://github.com/gurinderu/craft/commit/0a1d0dd35ab26f6edbbc790b80a6ddbcef777d57))
 
 
 ### Bug Fixes
@@ -25,7 +37,6 @@
 * **opencode:** one child-run unit, stopped at its deadline, with a rust-reviewer fallback ([888bd27](https://github.com/gurinderu/craft/commit/888bd27a24e8ebfe9e48a3e2240cbf6d93332eca))
 * **opencode:** re-read a still-loading agent list, own links by their resolved target ([bb5563e](https://github.com/gurinderu/craft/commit/bb5563e35a40eda887787fe1ed63244db0ec2ca5))
 * **opencode:** refuse a review without review-task and keep install.sh current on upgrade ([a5c0afd](https://github.com/gurinderu/craft/commit/a5c0afd61fe3273512762e065258a169fe4eae98))
-* **opencode:** refuse a review without the read-only agent, and make install.sh an upgrade path ([47fc4f7](https://github.com/gurinderu/craft/commit/47fc4f7ac1053add055b9b791689bd114c316849))
 * **opencode:** trust only a non-empty agent list, keep foreign and dev trees, match both checkout spellings ([e457a2c](https://github.com/gurinderu/craft/commit/e457a2c11a8698ffaeec85d4e461f603b9cda9e2))
 * **pi:** leave failed tasks to the binary, stop on a missing login, point at the skills ([c0d0889](https://github.com/gurinderu/craft/commit/c0d08896ddbac2250ba8471bd9abdf36df9c918a))
 * **pi:** match the answer fences with literal patterns ([d5d826a](https://github.com/gurinderu/craft/commit/d5d826acff07a86dcfa5c5a65241e63f3577df5b))
