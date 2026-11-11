@@ -20,9 +20,10 @@ Run it **once, in this session**, never in a subagent, and relay what it prints 
 `## Verdict` block, the report's path and the `## Findings` list — then read the report file it
 names for the details. Do not review the diff yourself beside it.
 
-It exits 1 when the review ended `INCOMPLETE`; that is still its answer, with its `## Verdict`
-block: relay it, and its `## What the agents said` section when there is one — the errors the
-review agents died on (a model the account does not support, for one, is fixed with `codexModels=`).
+It exits 1 when the review's work was cut short (`INCOMPLETE`, `Warning (INCOMPLETE)`, …); that
+is still its answer, with its `## Verdict` block: relay it, and its `## What the agents said` section when there is one — the errors the
+review agents died on (a model the account does not support, for one, is fixed with `codexModels=`). A run with nothing to review — `INCOMPLETE (empty diff)` or
+`INCOMPLETE (no language profile)` — exits 0.
 
 This route is new and not yet observed running in a real Codex session. If the command cannot
 run here, or fails without a `## Verdict` block, say so plainly and review the diff yourself
