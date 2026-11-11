@@ -1,5 +1,6 @@
 //! An executable a test writes and then runs: a stand-in tool or script on a PATH of its own.
-//! The integration tests reach it as `common::exe`; the lib's unit tests include this same file.
+//! One file for the whole workspace, no crate of its own: each crate's integration tests include
+//! it into their `common` module by `#[path]`, and craft-review's gate unit tests include it too.
 
 use std::io::Write;
 use std::path::Path;
