@@ -124,6 +124,7 @@ The gate is one call: `npm run gate` (`lib/gate.mjs`; needs `npm ci` and `npm ci
 | What | Command |
 |---|---|
 | Unit tests | `npm test` (`vitest run`; files in `vitest.config.mjs`) |
+| Format (Prettier, pinned exact; options in `.prettierrc.json`, scope in `.prettierignore`: JS, TS and JSON/YAML config — never Markdown, the generated engines, lockfiles, `content/` or `cli/`) | `npm run check:format`; `npm run format` rewrites the files (needs `npm ci`) |
 | Lint (zero-warning, identical to CI; type-aware rules over the `lib/` and `integrations/opencode/plugin/` programs; each function is held to fixed bars in `lib/complexity-rules.mjs`, the engines too — cognitive 15 (the same number as Rust's) and cyclomatic 10 — with no exception: a function over a bar is rebuilt) | `npm run lint` — read the raw exit code (needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`) |
 | Typecheck the OpenCode plugin — `*.ts` and every `*.mjs`, tests included, at `lib/`'s maximum strictness (checkJs, JSDoc types, the plugin's own Node typings) | `npm run check:types` (needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`: the plugin's tests import `vitest` from the root) |
 | Typecheck `lib/*.mjs` at maximum strictness (checkJs, JSDoc types, Node 22 typings; tests included) | `npm run check:types:lib` (needs `npm ci` and `npm ci --prefix integrations/opencode/plugin`) |
