@@ -33,7 +33,29 @@ when they are missing; without npm, run it there yourself before starting openco
 - **Skills** — auto-discovered; opencode's `skill` tool lists all of craft's skills and routes by description.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner`, `rust-miri`
   are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
-- **Workflows** — `/rust-audit [base-ref]` and `/triage-findings <locator>`.
+- **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/review [key=value ...]`.
+
+## Review
+
+`/review` runs craft's review through the `review` tool. The `craft` binary decides every step —
+the gate, the scouts, the lenses round after round, verification, the verdict — and the tool runs
+each step's tasks as child sessions, writes each task's final JSON message to the answer file the
+binary named, and hands the batch back until the binary is done. The answer is the binary's
+`## Verdict` block. This route is new: it is covered by tests against a fake binary and fake
+sessions, and has not yet been seen in a real OpenCode session.
+
+- A task that names `rust-reviewer` runs on the hidden `rust-reviewer` agent; any other task runs
+  on the session's default agent, with the matching Claude Code agent's prompt (or the reviewed
+  repository's own `.claude/agents/<name>.md`) before the task.
+- Models: each task runs on the session's model unless `opencodeModels=` maps the binary's tiers —
+  one `provider/model` for all, or `opus=provider/model,haiku=provider/model` (env
+  `CRAFT_OPENCODE_MODELS`). `concurrency=<n>` caps the child sessions at once (default 4, env
+  `CRAFT_OPENCODE_CONCURRENCY`).
+- The review's own arguments are the Claude Code workflow's: `base=`, `pr=`, `repo=`, `depth=`,
+  `run=<dir>` to resume a stopped run, `craftBin=` for a local build. The binary is the release of
+  this plugin's version, fetched once.
+- A task past its deadline is abandoned, a failed one is handed out again by the binary, and the
+  first usage-limit error stops new tasks and ends the run INCOMPLETE with how to resume it.
 
 ## Model strategy
 
@@ -72,9 +94,8 @@ the plugin directory is linked from; if that fails, the hook is silent and the t
 - **On 2.x the child-session reply is read but not yet seen.** The plugin admits the prompt, waits for
   the session to go idle and reads its last finished assistant message. Loading, tool registration and
   a tool run were seen on opencode 2.2.7; a child session answered by a real model was not.
-- **No CLI-driven review.** The Claude Code `review` workflow (the driver of the `craft` binary's
-  step-by-step review: scout-planned lens rounds until dry, verification) has no opencode driver. In `/rust-audit`
-  the **review** dimension is a single-pass `rust-reviewer` agent — there is no per-crate review
+- **`/rust-audit`'s review dimension is single-pass.** The CLI-driven review is `/review` (above); in
+  `/rust-audit` the **review** dimension is a single-pass `rust-reviewer` agent — there is no per-crate review
   fan-out and no inter-crate-contract dimension. The other audit dimensions (architecture,
   security, miri, crate-decomposition, semver, build-matrix, deps, unused-crates, tests-cov) do run.
 - **Observability is a deterministic subset.** `/rust-audit` and `/triage-findings` write a run
