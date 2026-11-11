@@ -29,10 +29,11 @@ async function runReview(host: Host, args: string, call: ToolCall): Promise<stri
   const { reviewInOpenCode } = await import("../../../lib/opencode-review.mjs")
   const parent = call.sessionID
   const callerModel = parent ? await host.callerModel(parent).catch(() => undefined) : undefined
-  const agents = await host.agents().catch(() => null)
+  const readAgents = () => host.agents().catch(() => null)
   return reviewInOpenCode(args, {
     directory: host.directory,
-    agents,
+    agents: await readAgents(),
+    readAgents,
     runChild: reviewChild(host, parent, callerModel),
     log: (line) => console.error(`craft review: ${line}`),
   })
