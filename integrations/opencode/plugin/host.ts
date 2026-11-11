@@ -23,8 +23,6 @@ export interface ChildRequest {
   onSession?: (id: string) => void
   // Aborted when the caller gives up (its deadline): the host stops the child session and gives up on its reply.
   signal?: AbortSignal
-  // The caller's own deadline in milliseconds, when it has one: a host's own bound on the reply is clamped to it.
-  deadlineMs?: number
 }
 
 // Where the workflows run and how they read it. `sh` runs one read-only probe through `bash -lc` in
@@ -37,8 +35,7 @@ export interface Workspace {
 
 export interface Host extends Workspace {
   // Run one child session to its end and return its final text ("" when it said nothing). Throws when the
-  // runtime refuses the session; a hang is the caller's to bound (orchestrator.ts), and on 2.x also the
-  // session's own idle deadline (host-v2-reply.ts).
+  // runtime refuses the session; a hang is the caller's to bound (orchestrator.ts).
   runChild(req: ChildRequest): Promise<string>
   // The model a session runs on, as the runtime records it; undefined when it records none (the runtime's default).
   callerModel(sessionID: string): Promise<ModelRef | undefined>
