@@ -69,7 +69,7 @@ pub enum StepError {
     },
     #[error(transparent)]
     Scope(#[from] crate::scope::ScopeError),
-    /// The pull request given (`pr`) has a head other than `HEAD`: the refusal, saying how to
+    /// The pull request given (`pr`) has a head `HEAD` does not hold: the refusal, saying how to
     /// review its head ([`rereview::branch::resolve`]).
     #[error("{0}")]
     PrHead(String),
@@ -134,7 +134,8 @@ pub struct StartOptions {
     /// A parent engine launched the run (`nested`): it builds on no earlier round of the branch
     /// and files no round record for a later one, as the engine keeps a nested run out of the chain.
     pub nested: bool,
-    /// The pull request under review (`pr`), whose head `HEAD` must be, else the run is refused: on
+    /// The pull request under review (`pr`), whose head `HEAD` must be or hold, else the run is
+    /// refused: on
     /// a detached `HEAD` its head branch keys the round chain ([`rereview::branch`]); `None`, gh is
     /// asked for the open one whose head is `HEAD`.
     pub pr: Option<u64>,
@@ -159,7 +160,8 @@ impl StartOptions {
 ///
 /// # Errors
 /// When the repository or base cannot be read, the run directory holds a run already or a
-/// non-empty `tasks/` or `answers/`, or the state cannot be written.
+/// non-empty `tasks/` or `answers/`, the pull request given (`pr`) has a head `HEAD` does not hold
+/// ([`StepError::PrHead`]), or the state cannot be written.
 pub fn start(opts: &StartOptions) -> Result<Value, Error> {
     let cwd = opts
         .cwd

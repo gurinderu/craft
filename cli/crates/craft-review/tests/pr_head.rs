@@ -1,7 +1,8 @@
-//! A given `pr=` names the pull request whose head is `HEAD`: a checkout at another commit — the
-//! trunk, or local commits not yet pushed — is refused before any task, saying how to review the
-//! PR's head; a tree with local edits on that head is reviewed; gh unreachable, the run goes on as
-//! before and says the head went unchecked.
+//! A given `pr=` names the pull request whose head is `HEAD`: a checkout that does not hold that
+//! head — the trunk, an unrelated commit, or one where the head is not even fetched — is refused
+//! before any task, saying how to review the PR's head; a tree with local edits on that head, or
+//! fix commits on it not yet pushed (noted), is reviewed; gh unreachable, the run goes on as before
+//! and says the head went unchecked.
 #![expect(
     clippy::unwrap_used,
     reason = "the helpers of these tests fail loudly, like the tests they serve"
@@ -65,7 +66,7 @@ fn a_pr_named_from_a_checkout_on_the_trunk_is_refused_before_any_task() {
         pr_head.get(..12).unwrap(),
         at.get(..12).unwrap(),
         "gh pr checkout 1491",
-        &format!("git worktree add --detach <dir> {pr_head}"),
+        "git fetch origin pull/1491/head && git worktree add --detach <dir> FETCH_HEAD",
         "drop `pr=`",
     ] {
         assert!(err.contains(want), "{want} missing from: {err}");
@@ -75,7 +76,7 @@ fn a_pr_named_from_a_checkout_on_the_trunk_is_refused_before_any_task() {
 }
 
 #[test]
-fn a_head_ahead_of_the_pr_head_is_refused_until_pushed() {
+fn a_head_ahead_of_the_pr_head_is_reviewed_on_its_chain_and_noted() {
     let (keep, runs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let repo = detached(runs.path());
     let pr_head = rev(repo.path(), "HEAD");
@@ -83,11 +84,48 @@ fn a_head_ahead_of_the_pr_head_is_refused_until_pushed() {
     git(repo.path(), &["commit", "-qam", "fix: local, not pushed"]);
     let view = pr(1488, "main", &pr_head).to_string();
     let gh = pr_gh(&keep.path().join("gh"), "", &view);
-    let err = start(repo.path(), runs.path(), "r2", &gh, 1488).unwrap_err();
-    assert!(err.contains("1 commit ahead of"), "{err}");
-    assert!(err.contains("push"), "{err}");
-    assert!(err.contains("drop `pr=`"), "{err}");
-    assert_nothing_filed(&runs.path().join("r2"));
+    start(repo.path(), runs.path(), "r2", &gh, 1488).unwrap();
+    let st = state(&runs.path().join("r2"));
+    assert_eq!(
+        (&st["chain"]["branch"], &st["chain"]["round"]),
+        (&json!("main"), &json!(2))
+    );
+    let notes = st["notes"].to_string();
+    assert!(
+        notes.contains("HEAD is 1 commit ahead of PR #1488's head")
+            && notes.contains("push before publishing"),
+        "{notes}"
+    );
+}
+
+/// The refusal of a run over `repo` whose PR #1488 has its head at `pr_head`.
+fn refused(repo: &Path, pr_head: &str) {
+    let (keep, runs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let view = pr(1488, "main", pr_head).to_string();
+    let gh = pr_gh(&keep.path().join("gh"), "", &view);
+    let err = start(repo, runs.path(), "r1", &gh, 1488).unwrap_err();
+    assert!(
+        err.contains("does not hold it") && err.contains("gh pr checkout 1488"),
+        "{err}"
+    );
+    assert_nothing_filed(&runs.path().join("r1"));
+}
+
+#[test]
+fn a_head_beside_the_pr_head_is_refused() {
+    let repo = common::fixture(true);
+    let pr_head = rev(repo.path(), "HEAD");
+    git(repo.path(), &["checkout", "-q", "--detach", "HEAD~1"]);
+    std::fs::write(repo.path().join("other.txt"), "z\n").unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-qm", "feat: elsewhere"]);
+    refused(repo.path(), &pr_head);
+}
+
+#[test]
+fn a_pr_head_this_repository_lacks_is_refused() {
+    let repo = common::fixture(true);
+    refused(repo.path(), "0123456789abcdef0123456789abcdef01234567");
 }
 
 #[test]
