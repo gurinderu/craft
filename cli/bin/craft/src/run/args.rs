@@ -61,6 +61,7 @@ pub(super) fn host_of(args: &RunArgs) -> Result<Host, String> {
         models: models::model_table(&spec, &name)?,
         command,
         agents: None,
+        archived: true,
     })
 }
 

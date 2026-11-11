@@ -110,7 +110,7 @@ craft also runs in [opencode](https://opencode.ai) via a contained adapter layer
 `integrations/opencode/`: the skills are shared verbatim (opencode reads the Anthropic skill spec), the 4
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
 workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`), beside `/review`, which runs the
-`craft` binary's own review (`bin/craft review run --backend opencode`, opencode 2.x) on the session's model. Install with
+`craft` binary's own review (`bin/craft review run --backend opencode`) on the session's model. Install with
 `integrations/opencode/install.sh` (project-scoped by default). See `integrations/opencode/README.md` for details, the model
 strategy, and parity caveats.
 

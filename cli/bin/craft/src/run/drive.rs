@@ -214,6 +214,7 @@ async fn round_of(ctx: &RoundCtx<'_>, tasks: &[Task], round: usize) -> RoundResu
             let opencode = OpenCode {
                 command,
                 env,
+                archived: ctx.host.archived,
                 ..OpenCode::default()
             };
             run_round(opencode, tasks, round, ctx).await

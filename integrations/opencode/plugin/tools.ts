@@ -50,7 +50,7 @@ export const TOOLS: readonly ToolSpec[] = [
   {
     name: "review",
     description:
-      "craft's review of the current change by the `craft` binary (`craft review run --backend opencode`): the mechanical gate, review lenses per language profile, verification, one report and the `## Verdict` block; each task runs as its own `opencode run` on craft's read-only agents, on this session's model. It runs long and needs opencode 2.x. Arg `args` takes the review's flags as one string (for example `--base main`, `--depth light`, `--pr 123 --comment`, `--run <dir>` to resume, `--models <provider/model>`), or none.",
+      "craft's review of the current change by the `craft` binary (`craft review run --backend opencode`): the mechanical gate, review lenses per language profile, verification, one report and the `## Verdict` block; each task runs as its own `opencode run` on craft's read-only agents, on this session's model. It runs long. Arg `args` takes the review's flags as one string (for example `--base main`, `--depth light`, `--pr 123 --comment`, `--run <dir>` to resume, `--models <provider/model>`), or none.",
     args: { args: { optional: true } },
     run: (host, args, call) => runReview(host, args["args"] ?? "", call),
   },

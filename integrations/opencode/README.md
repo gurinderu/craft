@@ -53,7 +53,9 @@ opencode. The links point into this checkout, but a pull does not change what is
   are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
   `review-task` exists only for `/review`'s tasks: hidden too, but `mode: all`, because the binary
   starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a subagent
-  (it falls back to the default agent); `hidden` keeps it out of the agent picker.
+  (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
+  outside the reviewed repository (`external_directory: allow`): its task's prompt file is in the
+  run directory under `~/.craft`, and 1.19.5's `run` stops on the permission question otherwise.
 - **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/review [flags ...]`.
   Each workflow's child sessions nest under the session that called it.
 
@@ -65,9 +67,11 @@ plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version
 (`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
 lenses round after round, verification, the verdict — and runs each task as its own `opencode run`
 process. On 1.x the tool's title follows the run's progress; the answer is the binary's `## Verdict`
-block and findings, as markdown. The binary needs **opencode 2.x**: on 1.x it refuses before
-anything runs (1.19.5's `run` takes no `--archived`), and the tool relays that refusal. This route is
-new: covered by tests against a fake binary, not yet seen in a real OpenCode session.
+block and findings, as markdown. On 1.x the tasks' sessions are not archived (1.19.5's `run` takes no
+`--archived`), and a task of a subagent such as `rust-reviewer` runs on `review-task` with that
+agent's prompt (1.x `run` puts a subagent on its default agent, which writes). The binary's 1.19.5
+path was seen reaching the model as `review-task`; the tool itself is covered by tests against a fake
+binary, not yet seen in a real OpenCode session.
 
 - Every task is read-only: one that names `rust-reviewer` runs on the hidden `rust-reviewer` agent,
   every other on `review-task` (both have write and edit off), with the matching Claude Code agent's

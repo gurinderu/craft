@@ -2,6 +2,8 @@
 description: Runs one task of craft's review (a lens, a scout, a verifier) for the review driver, read-only. Not for direct use — the `review` tool launches it.
 mode: all
 hidden: true
+permission:
+  external_directory: allow
 tools:
   write: false
   edit: false

@@ -64,8 +64,21 @@ fn fake(dir: &Path, version: &str, agents: &str) -> PathBuf {
         .map(|a| format!(r#"{{"id":"{a}","hidden":true}}"#))
         .collect::<Vec<_>>()
         .join(",");
+    let names = agents
+        .split(',')
+        .filter(|a| !a.is_empty())
+        .map(|a| {
+            let mode = if a.starts_with("rust-") {
+                "subagent"
+            } else {
+                "all"
+            };
+            format!("{a} ({mode})\n  [\n  {{\"permission\": \"*\"}}\n  ]")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let script = format!(
-        "#!/bin/sh\ncase \"$1\" in --version) echo '{version}';; debug) echo '[{list}]';; *) exit 9;; esac\n"
+        "#!/bin/sh\ncase \"$1\" in --version) echo '{version}';; debug) echo '[{list}]';; agent) printf '%s\\n' '{names}';; *) exit 9;; esac\n"
     );
     write_executable(&path, &script).unwrap();
     path
@@ -82,20 +95,40 @@ fn a_2x_opencode_with_review_task_is_ready_and_its_agents_read() {
     let got = preflight(&oc, dir.path(), &|_| {}).unwrap();
     assert_eq!(
         got,
-        Some(vec![
-            "build".into(),
-            "review-task".into(),
-            "rust-reviewer".into()
-        ])
+        Ready {
+            agents: Some(vec![
+                "build".into(),
+                "review-task".into(),
+                "rust-reviewer".into()
+            ]),
+            archived: true,
+        }
     );
 }
 
 #[test]
-fn a_1x_opencode_or_one_without_review_task_is_refused() {
+fn a_1x_opencode_runs_unarchived_its_runnable_agents_read_from_agent_list() {
     let dir = tempfile::tempdir().unwrap();
-    let old = fake(dir.path(), "1.19.5", "review-task");
+    let oc = fake(dir.path(), "1.19.5", "build,review-task,rust-reviewer");
+    let got = preflight(&oc, dir.path(), &|_| {}).unwrap();
+    assert_eq!(
+        got,
+        Ready {
+            agents: Some(vec!["build".into(), "review-task".into()]),
+            archived: false,
+        }
+    );
+}
+
+#[test]
+fn an_opencode_without_review_task_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = fake(dir.path(), "1.19.5", "build");
     let why = preflight(&old, dir.path(), &|_| {}).unwrap_err();
-    assert!(why.contains("1.x opencode"), "{why}");
+    assert!(
+        why.contains("rerun integrations/opencode/install.sh"),
+        "{why}"
+    );
     let bare = fake(dir.path(), "opencode v2.2.7", "build");
     let why = preflight(&bare, dir.path(), &|_| {}).unwrap_err();
     assert!(
@@ -118,6 +151,6 @@ fn an_unreadable_agent_list_is_said_and_no_refusal() {
         heard.borrow_mut().push(l.to_owned())
     })
     .unwrap();
-    assert_eq!(got, None);
+    assert_eq!(got.agents, None);
     assert!(heard.borrow()[0].contains("down"), "{:?}", heard.borrow());
 }
