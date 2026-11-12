@@ -61,7 +61,24 @@ export interface V2Event {
   data: { sessionID: string; parentID?: string; agent?: string }
 }
 
+// The RPC surface (`ctx.rpc`), observed on 2.2.7 by a probe plugin: `register` resolves to a registration whose
+// `events.emit(name, data)` publishes `rpc.<id>.<name>` on the server's event stream, where the TUI's
+// `client.rpc(def).events.on(name, …)` hears it; an event's `schema` may be plain JSON Schema. Internal to 2.x and
+// optional here: an older or newer 2.x may not have it. Re-read on each 2.x bump.
+export interface V2RpcDefinition {
+  id: string
+  methods: Record<string, unknown>
+  events: Record<string, { schema: Record<string, unknown> }>
+}
+
+export interface V2RpcRegistration extends V2Registration {
+  events: { emit(event: string, data: unknown): Promise<void> }
+}
+
 export interface V2Context {
+  rpc?: {
+    register(definition: V2RpcDefinition, handlers: Record<string, unknown>): Promise<V2RpcRegistration>
+  }
   app: { version: string }
   location: { directory: string; project?: { directory?: string } }
   agent: {

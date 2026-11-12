@@ -4,6 +4,7 @@
 import { stringArgs, type Host, type ToolSpec, type WorkHook } from './host.ts'
 import type { V2Context, V2Event, V2Message, V2ToolDefinition } from './opencode-v2.js'
 import { shellIn } from './shell.mjs'
+import { progressChannel, withProgress, type Say } from './progress-rpc.ts'
 
 // How long to wait between reads of a child session that is not yet done, and how many reads before giving
 // up. The orchestrator's own deadline (orchestrator.ts) is the real bound; this only keeps the loop from
@@ -94,7 +95,8 @@ export function v2Host(ctx: V2Context, pollMs = POLL_MS): Host {
   }
 }
 
-export function v2Tool(host: Host, spec: ToolSpec): V2ToolDefinition {
+// `say` carries the call's progress to the TUI's footer (progress-rpc.ts; realm @nick/craft, node #512).
+export function v2Tool(host: Host, spec: ToolSpec, say?: Say): V2ToolDefinition {
   const properties = Object.fromEntries(Object.keys(spec.args).map(k => [k, { type: 'string' }]))
   const required = Object.entries(spec.args)
     .filter(([, a]) => !a.optional)
@@ -104,7 +106,9 @@ export function v2Tool(host: Host, spec: ToolSpec): V2ToolDefinition {
     description: spec.description,
     input: { type: 'object', properties, required, additionalProperties: false },
     execute: async (input, call) => {
-      const answer = await spec.run(host, stringArgs(spec, input), { sessionID: call.sessionID, signal: call.signal })
+      const answer = await withProgress(spec.name, say, call.sessionID, progress =>
+        spec.run(host, stringArgs(spec, input), { sessionID: call.sessionID, signal: call.signal, ...(progress ? { progress } : {}) }),
+      )
       return { content: [{ type: 'text', text: typeof answer === 'string' ? answer : answer.output }] }
     },
   }
@@ -141,12 +145,14 @@ async function hookWork(ctx: V2Context, work: WorkHook): Promise<() => Promise<v
 /** Everything the 2.x runtime gets from `setup()`: the tools and the work hook; resolves to their disposer. */
 export async function v2Setup(ctx: V2Context, tools: readonly ToolSpec[], work: WorkHook): Promise<() => Promise<void>> {
   const host = v2Host(ctx)
+  const channel = await progressChannel(ctx)
   const toolReg = await ctx.tool.transform(editor => {
-    for (const spec of tools) editor.add(v2Tool(host, spec))
+    for (const spec of tools) editor.add(v2Tool(host, spec, channel.say))
   })
   const unhook = await hookWork(ctx, work).catch(() => async () => {})
   return async () => {
     await toolReg.dispose()
     await unhook()
+    await channel.dispose()
   }
 }

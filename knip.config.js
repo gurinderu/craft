@@ -62,7 +62,9 @@ export default {
       project: ['**/*.{ts,mjs,js}!'],
       // Pinned exactly beside @opencode-ai/plugin on purpose, though nothing imports it directly
       // (realm @nick/craft, node #124).
-      ignoreDependencies: ['@opencode-ai/sdk'],
+      // The UI modules OpenCode 2.x supplies to the TUI plugin it loads (tui/tui.mjs, opentui.d.ts; realm @nick/craft,
+      // node #512): no dependency of this plugin.
+      ignoreDependencies: ['@opencode-ai/sdk', '@opentui/solid', 'solid-js'],
     },
   },
 }
