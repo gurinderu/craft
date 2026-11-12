@@ -146,6 +146,10 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
         .record
         .get_or_insert_with(|| env!("CARGO_PKG_VERSION").to_owned());
     start.craft_root = Some(root.clone());
+    start.runtime = args
+        .backend
+        .to_possible_value()
+        .map(|v| v.get_name().to_owned());
     let log = |line: &str| sink.log(line);
     let emit = |event: Event| sink.emit(&event);
     log(&format!(

@@ -107,6 +107,10 @@ pub struct StartArgs {
     /// root's `lib/cli-review-file.mjs` and `node`. Absent, nothing is filed.
     #[arg(long, value_name = "CRAFT_VERSION")]
     pub record: Option<String>,
+    /// The host the run's tasks run in, as its record names it (`runtime`): `craft review run`
+    /// sets its backend; absent, the record names `claude-code`, whose engine drives `start` itself.
+    #[arg(skip)]
+    pub runtime: Option<String>,
     /// The parent engine a nested run's record is filed under.
     #[arg(long, requires = "record")]
     pub via: Option<String>,
@@ -287,6 +291,7 @@ pub(crate) fn start_step(args: &StartArgs) -> Result<Value> {
             &opts.run_dir,
             version,
             (args.via.as_deref(), args.record_root.as_deref()),
+            args.runtime.as_deref(),
             step,
         ),
         None => step,
@@ -322,11 +327,13 @@ fn opened(
     run: &Path,
     version: &str,
     (via, record_root): (Option<&str>, Option<&Path>),
+    runtime: Option<&str>,
     step: Value,
 ) -> Value {
     let filing = match craft_review::state::load(run) {
         Ok(state) => {
             let mut ctx = filing::Ctx::of(&state, version, via.unwrap_or_default());
+            runtime.unwrap_or_default().clone_into(&mut ctx.runtime);
             let given = record_root.and_then(|r| std::path::absolute(r).ok());
             ctx.root = filing::found_root([given])
                 .or(ctx.root)
