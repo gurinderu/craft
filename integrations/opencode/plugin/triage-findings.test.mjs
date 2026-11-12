@@ -97,9 +97,7 @@ test('prose is triaged, not discarded because something else was structured', ()
   // one job. It is chosen because the opposite error is far worse: splitting wrapped prose produced
   // forty fragment-findings on an ordinary report and dropped everything past the cap. Merging
   // degrades a judgment; splitting loses findings outright.
-  const { findings, skipped } = splitFindings(
-    'The parser drops trailing bytes.\nThe retry loop never terminates.\n- src/a.rs:10 unbounded growth',
-  )
+  const { findings, skipped } = splitFindings('The parser drops trailing bytes.\nThe retry loop never terminates.\n- src/a.rs:10 unbounded growth')
   assert.equal(findings.length, 2, 'the prose block is one finding, the bullet is another')
   assert.match(findings[0] ?? '', /drops trailing bytes.*never terminates/, 'and neither sentence is lost')
   assert.match(findings[1] ?? '', /src\/a\.rs:10/)
@@ -111,9 +109,7 @@ test('prose is triaged, not discarded because something else was structured', ()
 })
 
 test('code fences are not findings', () => {
-  const { findings, skipped } = splitFindings(
-    '- real finding\n```\n1. this is sample output\n2. so is this\n```\n- another real one',
-  )
+  const { findings, skipped } = splitFindings('- real finding\n```\n1. this is sample output\n2. so is this\n```\n- another real one')
   assert.deepEqual(findings, ['- real finding', '- another real one'])
   assert.equal(skipped, 2, 'and what was skipped is counted, not silently swallowed')
 })
@@ -158,11 +154,11 @@ function fakeCtx(answerFor, prompts = []) {
   return {
     directory: '/repo',
     worktree: '/repo',
-    sh: async () => '',
-    callerModel: async () => undefined,
-    runChild: async (/** @type {import('./host.ts').ChildRequest} */ { prompt }) => {
+    sh: () => Promise.resolve(''),
+    callerModel: () => Promise.resolve(undefined),
+    runChild: (/** @type {import('./host.ts').ChildRequest} */ { prompt }) => {
       prompts.push(prompt)
-      return answerFor({ isPlan: /ordered fix plan/i.test(prompt) })
+      return Promise.resolve(answerFor({ isPlan: /ordered fix plan/i.test(prompt) }))
     },
   }
 }
@@ -191,8 +187,7 @@ test('a planner that refuses does not produce a plan, on screen or in the store'
   // "triage ledger" is a phrase the PROMPT supplies in bold. A keyword the prompt hands the model
   // tests nothing; the terminal marker tests whether it got to the end.
   await withStore(async dir => {
-    const ctx = fakeCtx(({ isPlan }) =>
-      isPlan ? 'I cannot build the triage ledger from these results.' : 'checked\n\nOUTCOME: accept')
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'I cannot build the triage ledger from these results.' : 'checked\n\nOUTCOME: accept'))
     const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.match(out, /INCOMPLETE \(not run\) — the fix plan was not produced/)
     assert.equal(record(dir).planned, false, 'and the store says so too')
@@ -210,8 +205,7 @@ test('a plan is not accepted from a refusal that quotes its own instructions', a
   /** @type {string[]} */
   const prompts = []
   await withStore(async dir => {
-    const quoted =
-      'I cannot triage these. My instructions say to end with ONE line in the form `PLAN: X` where X is READY.'
+    const quoted = 'I cannot triage these. My instructions say to end with ONE line in the form `PLAN: X` where X is READY.'
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? quoted : 'checked\n\nOUTCOME: accept'), prompts)
     const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     const plan = prompts.find(t => /ordered fix plan/i.test(t)) ?? ''
@@ -267,8 +261,7 @@ test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy 
   // the contents of every properly closed fence before the truncated one, so a single unterminated
   // final block restored exactly the regression this predicate exists to prevent.
   await withStore(async dir => {
-    const refusal =
-      'The instructions ask for:\n```\nPLAN: READY\n```\nbut there is nothing to plan. Here is the file:\n```rust\nfn f(){}'
+    const refusal = 'The instructions ask for:\n```\nPLAN: READY\n```\nbut there is nothing to plan. Here is the file:\n```rust\nfn f(){}'
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? refusal : 'checked\n\nOUTCOME: accept'))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.equal(record(dir).planned, false, 'a closed fence stays closed when a later one is truncated')
@@ -279,8 +272,7 @@ test('a plan marker quoted inside a sentence is not a plan; a trailing courtesy 
   // — forty child sessions already paid for — on a guess. Same asymmetric cost the splitter one
   // file over already reasons about, and the same CommonMark closer rule.
   await withStore(async dir => {
-    const ctx = fakeCtx(({ isPlan }) =>
-      isPlan ? '1. fix a\n\nSee:\n```rust\nfn f(){}\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept')
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? '1. fix a\n\nSee:\n```rust\nfn f(){}\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept'))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.equal(record(dir).planned, true, 'an unterminated fence does not swallow the plan')
   })
@@ -321,20 +313,26 @@ test('lines the splitter ate reach the run record, not only the screen', async (
   })
 })
 
-test('a closing fence must match the one that opened it', async () => {
+test('a closing fence must match the one that opened it', () => {
   // The other half of the delimiter property, and the same silent loss as the inline-span defect by
   // a different door: a ```` block quoting a ``` example was closed by the inner marker, and every
   // finding after it was discarded as code with `dropped` still 0 — so the banner never fired.
   const nested = ['- A: src/a.rs:1', '````', '- CRITICAL: src/x.rs:1 leak', '```', '- B: src/b.rs:2'].join('\n')
   const r = splitFindings(nested)
-  assert.ok(r.findings.some(f => /src\/x\.rs:1/.test(f)), 'the shorter inner marker did not close the block')
+  assert.ok(
+    r.findings.some(f => /src\/x\.rs:1/.test(f)),
+    'the shorter inner marker did not close the block',
+  )
 
   // A backtick marker cannot close a tilde block, so that block never terminates — and the
   // unterminated-fence recovery then hands its contents back rather than eating the rest. Noise,
   // deliberately, over loss: `- B` survives either way.
   const tilde = ['- A: src/a.rs:1', '~~~', 'sample', '```', '- B: src/b.rs:2'].join('\n')
   const t = splitFindings(tilde)
-  assert.ok(t.findings.some(f => /src\/b\.rs:2/.test(f)), 'the finding after a tilde block is not lost')
+  assert.ok(
+    t.findings.some(f => /src\/b\.rs:2/.test(f)),
+    'the finding after a tilde block is not lost',
+  )
 })
 
 test('a planner failure carries its cause into the banner', async () => {
@@ -344,7 +342,7 @@ test('a planner failure carries its cause into the banner', async () => {
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'I will not do that.' : 'checked\n\nOUTCOME: accept'))
     const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.match(out, /without the PLAN: READY line/, 'the cause is named')
-    assert.match(out, /I will not do that/, 'and the planner\'s own words are shown')
+    assert.match(out, /I will not do that/, "and the planner's own words are shown")
   })
 
   await withStore(async () => {
@@ -356,8 +354,7 @@ test('a planner failure carries its cause into the banner', async () => {
 
 test('a real plan is used, and the store agrees', async () => {
   await withStore(async dir => {
-    const ctx = fakeCtx(({ isPlan }) =>
-      isPlan ? '## Triage ledger\n\n1. fix a\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept')
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? '## Triage ledger\n\n1. fix a\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept'))
     const out = await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.match(out, /Triage ledger/)
     assert.ok(!/was not produced/.test(out))
@@ -392,7 +389,7 @@ test('a validation that refuses while quoting the outcome line has not validated
   })
 })
 
-test('a per-finding validation carries a line-sized deadline, not a build-sized one', async () => {
+test('a per-finding validation carries a line-sized deadline, not a build-sized one', () => {
   // The escape hatch this branch added, and the one thing about it no test could see: mutating the
   // constant to twenty minutes left all 542 green. Forty validations inheriting the audit's
   // build-sized deadline is the arithmetic that made the sequential retry unlivable in the first
@@ -410,8 +407,7 @@ test('an indented quotation of the marker is not an answer', async () => {
   await withStore(async dir => {
     const refusal =
       'The tool call was rejected by the sandbox, so I have no view of the file.\nThe instructions ask me to end with:\n\n    OUTCOME: accept\n\nbut I have nothing to base that on.'
-    const plan =
-      'The sandbox rejected the call.\nThe instructions want:\n\n    PLAN: READY\n\nbut there is no basis.'
+    const plan = 'The sandbox rejected the call.\nThe instructions want:\n\n    PLAN: READY\n\nbut there is no basis.'
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? plan : refusal))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     const r = record(dir)
@@ -424,7 +420,8 @@ test('an indented quotation of the marker is not an answer', async () => {
     const ctx = fakeCtx(({ isPlan }) =>
       isPlan
         ? 'The sandbox rejected the call.\nThe instructions want:\n\n\tPLAN: READY\n\nbut there is no basis.'
-        : 'The tool call was rejected by the sandbox.\nThe form asks for:\n\n\tOUTCOME: accept\n\nbut I have no view of the file.')
+        : 'The tool call was rejected by the sandbox.\nThe form asks for:\n\n\tOUTCOME: accept\n\nbut I have no view of the file.',
+    )
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     const r = record(dir)
     assert.deepEqual(r.notRun, ['f1'], 'a tab-indented quotation is a quotation too')
@@ -439,7 +436,8 @@ test('an indented quotation of the marker is not an answer', async () => {
     const ctx = fakeCtx(({ isPlan }) =>
       isPlan
         ? 'The sandbox rejected the call.\nThe instructions want:\n\n \tPLAN: READY\n\nbut there is no basis.'
-        : 'The sandbox blocked my file reads, so I have no view of src/a.rs.\nThe form asks for:\n\n   \tOUTCOME: accept\n\nbut I cannot say that.')
+        : 'The sandbox blocked my file reads, so I have no view of src/a.rs.\nThe form asks for:\n\n   \tOUTCOME: accept\n\nbut I cannot say that.',
+    )
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     const r = record(dir)
     assert.deepEqual(r.notRun, ['f1'], 'a mixed-indent quotation is a quotation too')
@@ -450,21 +448,19 @@ test('an indented quotation of the marker is not an answer', async () => {
   // fixtures above contain no fence, so they never reach it, and it is the copy a future reader
   // deletes as dead defence — which is exactly what happened to the main arm one commit ago.
   await withStore(async dir => {
-    const quoted =
-      'The sandbox rejected the call. The form asks for:\n\n```text\nan example\n\n    OUTCOME: accept\n\nbut I have no view of the file.'
+    const quoted = 'The sandbox rejected the call. The form asks for:\n\n```text\nan example\n\n    OUTCOME: accept\n\nbut I have no view of the file.'
     const ctx = fakeCtx(({ isPlan }) => (isPlan ? 'plan\n\nPLAN: READY' : quoted))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     assert.deepEqual(record(dir).notRun, ['f1'], 'the tail an unclosed fence hands back is indented code too')
   })
 })
 
-test('a marker in a table row is the session\'s own line', async () => {
+test("a marker in a table row is the session's own line", async () => {
   // `ownLine`'s table branch had no test on the marker paths: `hasVerdictLine` does not route
   // through `markerLine`, so the audit's table fixtures never reached it, and there was no PLAN or
   // OUTCOME row anywhere. Mutating the branch to `return false` left the suite green.
   await withStore(async dir => {
-    const ctx = fakeCtx(({ isPlan }) =>
-      isPlan ? '| step | note |\n| PLAN: READY | ordered |' : '| finding | outcome |\n| f1 | OUTCOME: accept |')
+    const ctx = fakeCtx(({ isPlan }) => (isPlan ? '| step | note |\n| PLAN: READY | ordered |' : '| finding | outcome |\n| f1 | OUTCOME: accept |'))
     await runTriageFindings(ctx, { locator: '- Critical: src/a.rs:10 growth' })
     const r = record(dir)
     assert.deepEqual(r.notRun, [], 'a validation answering in a table row has answered')
@@ -478,9 +474,8 @@ test('a ledger cell that opens with the phrase is a finding, not a refusal', asy
   // — up to forty paid validations. The phrase must be the whole cell.
   await withStore(async dir => {
     const ctx = fakeCtx(({ isPlan }) =>
-      isPlan
-        ? '| f3 | accept | permission denied is returned before the ownership check |\n\nPLAN: READY'
-        : 'checked\n\nOUTCOME: accept')
+      isPlan ? '| f3 | accept | permission denied is returned before the ownership check |\n\nPLAN: READY' : 'checked\n\nOUTCOME: accept',
+    )
     await runTriageFindings(ctx, { locator: '- Critical: api/routes.rs:88 missing authz' })
     assert.equal(record(dir).planned, true, 'a finding in a ledger cell is not a refusal')
   })
@@ -496,10 +491,11 @@ test('ordinary review prose in a finished plan is not a refusal', async () => {
     const ctx = fakeCtx(({ isPlan }) =>
       isPlan
         ? '| f1 | accept | The delete endpoint does not have permission checks (api/routes.rs:88). |\n\nPLAN: READY'
-        // A log excerpt carrying a pipe. The permission arm's cell prefix was not anchored to a
-        // table, so any prose with a `|` before the phrase read as a refusal — the over-matching
-        // direction the file names as the expensive one.
-        : 'REASON: the middleware chain `authz | permission denied` is inverted (mw.rs:44).\n\nOUTCOME: accept')
+        : // A log excerpt carrying a pipe. The permission arm's cell prefix was not anchored to a
+          // table, so any prose with a `|` before the phrase read as a refusal — the over-matching
+          // direction the file names as the expensive one.
+          'REASON: the middleware chain `authz | permission denied` is inverted (mw.rs:44).\n\nOUTCOME: accept',
+    )
     await runTriageFindings(ctx, { locator: '- Critical: api/routes.rs:88 missing authz' })
     const r = record(dir)
     assert.deepEqual(r.notRun, [], 'the validation stands')
@@ -517,7 +513,8 @@ test('an inability that IS the finding does not discard the work', async () => {
     const ctx = fakeCtx(({ isPlan }) =>
       isPlan
         ? 'Fix order:\n1. src/a.rs — the crate cannot compile without this.\n\nPLAN: READY'
-        : 'The finding points at src/old.rs:12, but I could not open that file — the PR deletes it. Stale finding.\n\nOUTCOME: reject')
+        : 'The finding points at src/old.rs:12, but I could not open that file — the PR deletes it. Stale finding.\n\nOUTCOME: reject',
+    )
     await runTriageFindings(ctx, { locator: '- Critical: src/old.rs:12 growth' })
     const r = record(dir)
     assert.deepEqual(r.notRun, [], 'the validation stands')

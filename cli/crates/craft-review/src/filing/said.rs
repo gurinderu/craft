@@ -16,7 +16,7 @@ pub fn summary(run: &Path) -> Option<Value> {
     let finished = filing
         .finished
         .clone()
-        .map(|step| with_filing(step, outcome(&filing, filing.lost.clone(), true)));
+        .map(|step| with_filing(step, outcome(&filing, &filing.lost, true)));
     Some(json!({
         "record": filing.record, "recordFile": filing.record_file, "finished": finished,
         "pending": filing.pending.len(),
@@ -33,7 +33,7 @@ pub fn with_filing(mut step: Value, filing: Value) -> Value {
 }
 
 /// What the writes after a step did, as the step's `filing` says it.
-pub(super) fn outcome(filing: &Filing, lost: Vec<String>, done: bool) -> Value {
+pub(super) fn outcome(filing: &Filing, lost: &[String], done: bool) -> Value {
     let mut v = json!({"runDir": filing.run_dir, "rejoin": filing.rejoin, "lost": lost});
     if let Some(obj) = v.as_object_mut().filter(|_| done) {
         obj.insert("record".into(), json!(filing.record));

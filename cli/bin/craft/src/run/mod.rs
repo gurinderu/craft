@@ -105,7 +105,7 @@ fn refused(sink: Sink, why: &str) -> Result<ExitCode> {
         &mut std::io::stdout().lock(),
         &report::stopped_answer(&format!("review: {why}. Nothing ran.")),
     )?;
-    sink.emit(Event::result(None, None, 2));
+    sink.emit(&Event::result(None, None, 2));
     Ok(ExitCode::from(2))
 }
 
@@ -147,7 +147,7 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
         .get_or_insert_with(|| env!("CARGO_PKG_VERSION").to_owned());
     start.craft_root = Some(root.clone());
     let log = |line: &str| sink.log(line);
-    let emit = |event: Event| sink.emit(event);
+    let emit = |event: Event| sink.emit(&event);
     log(&format!(
         "review {} in {}: {} over {}, up to {concurrency} task(s) at once",
         env!("CARGO_PKG_VERSION"),
@@ -187,6 +187,6 @@ pub async fn run(args: RunArgs) -> Result<ExitCode> {
     let answer = ending::drive(&driver, args.run.as_deref().map(Path::new), comment).await;
     say(&mut std::io::stdout().lock(), &answer.text)?;
     let code = (*stop.borrow()).unwrap_or(u8::from(!answer.finished));
-    sink.emit(Event::result(answer.step.as_ref(), answer.run, code));
+    sink.emit(&Event::result(answer.step.as_ref(), answer.run, code));
     Ok(ExitCode::from(code))
 }

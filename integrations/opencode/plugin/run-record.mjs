@@ -52,8 +52,7 @@ const VERDICT_LINE = /^[ \t>*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BL
 // reads can be headed by the milder verdict. Kept because the alternative is worse: without the row
 // arm a table-formatted synthesis is not structured at all, and falls to the prose arm where a clean
 // run that named an absent tool is filed not-run.
-const VERDICT_ROW =
-  /^[ \t]*\|(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
+const VERDICT_ROW = /^[ \t]*\|(?:[^\n|]*\|){0,4}[ \t>|*_`#-]*VERDICT:[ \t]*[*_`]*[ \t]*(APPROVE|WARNING|BLOCK|INCOMPLETE)\b/gm
 
 // Whether a dimension ANSWERED, asked of the parser itself rather than of one of its arms.
 //
@@ -149,32 +148,31 @@ const REFUSED = new RegExp(
 // `(permission denied)` in parentheses is the other real rendering, and it is included by name. A
 // mid-line mention without parentheses stays out: "the endpoint returns permission denied for
 // anonymous users" is a FINDING, and reading it as a refusal discards a validated plan.
-const REFUSED_LINE =
-  new RegExp(
-    [
-      // opening a line, however the line is decorated — heading, bullet, blockquote, table cell
-      '(?:^|\\n)[ \\t>*_#-]*permission denied',
-      // A TABLE ROW, anchored on the leading pipe. Without that anchor the cell prefix accepted any
-      // prose carrying a `|`, which contradicts the rule stated above: "REASON: the middleware chain
-      // `authz | permission denied` is inverted (mw.rs:44)" is a validation grounding itself in a
-      // log excerpt, and reading it as a refusal files the finding not-run and retries it off the
-      // shared budget.
-      // `\\n` in the lookahead, not just `$`: this regex has no `m` flag — which is why its START
-      // spells `(?:^|\\n)` — so `$` alone meant end of DOCUMENT, and a row without a trailing pipe
-      // (optional in GitHub-flavoured markdown, and models omit it) was only caught when it happened
-      // to be the last line. The end anchor did not get the treatment the start anchor did.
-      //
-      // The phrase must be the WHOLE cell, not merely open it: a triage ledger row like
-      // `| f3 | accept | permission denied is returned before the ownership check |` is a FINDING,
-      // and reading it as a refusal discards the very deliverable this path produces.
-      '(?:^|\\n)[ \\t]{0,3}\\|(?:[^\\n|]*\\|)*[ \\t*_]*permission denied[ \\t*_.]*(?=\\||\\n|$)',
-      // opening a sentence inside a line: "I could not run the toolchain: permission denied when …"
-      '[.;:!?] permission denied',
-      // quoted as a tool error
-      '\\(permission denied\\)',
-    ].join('|'),
-    'i',
-  )
+const REFUSED_LINE = new RegExp(
+  [
+    // opening a line, however the line is decorated — heading, bullet, blockquote, table cell
+    '(?:^|\\n)[ \\t>*_#-]*permission denied',
+    // A TABLE ROW, anchored on the leading pipe. Without that anchor the cell prefix accepted any
+    // prose carrying a `|`, which contradicts the rule stated above: "REASON: the middleware chain
+    // `authz | permission denied` is inverted (mw.rs:44)" is a validation grounding itself in a
+    // log excerpt, and reading it as a refusal files the finding not-run and retries it off the
+    // shared budget.
+    // `\\n` in the lookahead, not just `$`: this regex has no `m` flag — which is why its START
+    // spells `(?:^|\\n)` — so `$` alone meant end of DOCUMENT, and a row without a trailing pipe
+    // (optional in GitHub-flavoured markdown, and models omit it) was only caught when it happened
+    // to be the last line. The end anchor did not get the treatment the start anchor did.
+    //
+    // The phrase must be the WHOLE cell, not merely open it: a triage ledger row like
+    // `| f3 | accept | permission denied is returned before the ownership check |` is a FINDING,
+    // and reading it as a refusal discards the very deliverable this path produces.
+    '(?:^|\\n)[ \\t]{0,3}\\|(?:[^\\n|]*\\|)*[ \\t*_]*permission denied[ \\t*_.]*(?=\\||\\n|$)',
+    // opening a sentence inside a line: "I could not run the toolchain: permission denied when …"
+    '[.;:!?] permission denied',
+    // quoted as a tool error
+    '\\(permission denied\\)',
+  ].join('|'),
+  'i',
+)
 
 // THE VOCABULARY ABOVE IS FROZEN. Seven seams of one class were found in seven consecutive rounds,
 // three of them created by the fix for the round before. The set of English refusal phrasings is
@@ -239,7 +237,6 @@ export function hasVerdictLine(text) {
   return true
 }
 
-
 // The plan marker must BE the last thing said, not merely appear somewhere. An any-line boolean is
 // satisfied by a refusal that quotes or reconstructs the marker — `\`PLAN: READY\` is what the
 // instructions ask for, but there is nothing to plan` passed, and the refusal was returned as the
@@ -292,7 +289,7 @@ const FENCE = /^[ \t]*(`{3,}|~{3,})/
 function ownLine(line, marker) {
   if (marker.test(line)) return true
   if (!/^[ \t]{0,3}\|/.test(line)) return false
-  return line.split('|').some((cell) => marker.test(cell.trim()))
+  return line.split('|').some(cell => marker.test(cell.trim()))
 }
 
 /**
@@ -311,7 +308,9 @@ function closesFence(fence, openedWith) {
 function markerLine(text, marker) {
   // `\r` stripped: `PLAN_MARKER` is the one marker anchored with `$`, so a CRLF reply lost its plan
   // and discarded forty paid-for child sessions over a line ending.
-  const lines = String(text ?? '').split('\n').map((l) => l.replace(/\r$/, ''))
+  const lines = String(text ?? '')
+    .split('\n')
+    .map(l => l.replace(/\r$/, ''))
   /** @type {string | null} */
   let openedWith = null
   let openedAt = -1
@@ -354,7 +353,7 @@ function markerLine(text, marker) {
   // work already paid for; accepting one quoted inside a block nobody closed costs a re-read.
   if (openedWith !== null) {
     const tail = lines.slice(openedAt + 1)
-    return tail.some((l) => !FENCE.test(l) && !INDENTED.test(l) && ownLine(l, marker))
+    return tail.some(l => !FENCE.test(l) && !INDENTED.test(l) && ownLine(l, marker))
   }
   return false
 }
@@ -368,7 +367,6 @@ function markerLine(text, marker) {
 export function hasPlanMarkerLine(text) {
   return markerLine(text, PLAN_MARKER) && !refused(text)
 }
-
 
 // Same argument for the triage outcome line.
 // Case-INSENSITIVE on the token, and the difference from VERDICT is not an oversight. `parseVerdict`
@@ -413,8 +411,7 @@ const LABELLED_ANY =
 // The words a "nothing ran" reason opens with. A closed set that no longer has to grow, because a
 // conforming agent never reaches this arm.
 const REASON =
-  '(?:[Nn](?:ot|o|one|othing|ever)|[Rr]un|[Dd]ue|[Bb]ecause|[Ss]ince|[Cc](?:annot|ould|an)' +
-  '|[Uu]n(?:able|available)|[Mm]issing|[Aa]bsent|[Ss]kip(?:ped)?)'
+  '(?:[Nn](?:ot|o|one|othing|ever)|[Rr]un|[Dd]ue|[Bb]ecause|[Ss]ince|[Cc](?:annot|ould|an)' + '|[Uu]n(?:able|available)|[Mm]issing|[Aa]bsent|[Ss]kip(?:ped)?)'
 
 // INCOMPLETE used as a verdict rather than as an adjective. The discriminator is position plus what
 // follows: it must START a line (an adjective in prose — "coverage here is INCOMPLETE" — does not),
@@ -424,10 +421,12 @@ const REASON =
 // feature powerset"), which matches none of the three.
 const INCOMPLETE_LINE = new RegExp(
   '^[ \\t>|*_`#-]*INCOMPLETE\\b(?:' +
-    '[ \\t]*\\(?[ \\t]*' + REASON + '\\b' +
+    '[ \\t]*\\(?[ \\t]*' +
+    REASON +
+    '\\b' +
     '|[ \\t]+[A-Za-z][\\w-]*(?:[ \\t]+[A-Za-z][\\w-]*)?[ \\t]*[:(—–-]' +
     '|(?![ \\t]+[A-Za-z])' +
-  ')',
+    ')',
   'm',
 )
 // A whole table cell holding the token, e.g. `| deps | INCOMPLETE |`.
@@ -440,7 +439,8 @@ const INCOMPLETE_CELL = /\|[ \t]*\**[ \t]*INCOMPLETE[ \t]*\**[ \t]*\|/
  */
 function lastMatch(re, t) {
   re.lastIndex = 0
-  let m, last = /** @type {string | null} */ (null)
+  let m,
+    last = /** @type {string | null} */ (null)
   while ((m = re.exec(t)) !== null) last = /** @type {string} */ (m[1])
   return last
 }
@@ -577,7 +577,7 @@ export function hasEvidence(text) {
  */
 export function auditDimensions(results) {
   const rs = Array.isArray(results) ? results : []
-  return rs.map((r) => {
+  return rs.map(r => {
     if (!r.ok) return { dimension: r.label, ran: false, verdict: '' }
     const raw = parseVerdict(r.text)
     const verdict = raw === 'Approve' && !hasEvidence(r.text) ? 'INCOMPLETE (no evidence — claimed Approve)' : raw
@@ -598,11 +598,14 @@ export function auditSynthesisInput(results) {
   const rs = Array.isArray(results) ? results : []
   const dims = auditDimensions(rs)
   const blob = rs
-    .map((r, i) => `### ${r.label} (${/** @type {AuditDimension} */ (dims[i]).ran ? /** @type {AuditDimension} */ (dims[i]).verdict : 'INCOMPLETE (not run)'})\n\n${r.text ?? ''}`)
+    .map(
+      (r, i) =>
+        `### ${r.label} (${/** @type {AuditDimension} */ (dims[i]).ran ? /** @type {AuditDimension} */ (dims[i]).verdict : 'INCOMPLETE (not run)'})\n\n${r.text ?? ''}`,
+    )
     .join('\n\n')
-  const notRun = dims.filter((d) => !d.ran).map((d) => d.dimension)
-  const couldNotRun = dims.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
-  const noEvidence = dims.filter((d) => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map((d) => d.dimension)
+  const notRun = dims.filter(d => !d.ran).map(d => d.dimension)
+  const couldNotRun = dims.filter(d => d.ran && d.verdict === 'INCOMPLETE (not run)').map(d => d.dimension)
+  const noEvidence = dims.filter(d => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map(d => d.dimension)
   return { blob, notRun, couldNotRun, noEvidence }
 }
 
@@ -626,21 +629,21 @@ export function buildAuditRecord({ results, baseRef, hasUnsafe, synthesisText, s
   // A verdict string leading with INCOMPLETE (either the tooling-absent token or a no-evidence
   // demotion) ranks as INCOMPLETE in the roll-up; worstOf keys on the exact token, so map it first.
   /** @param {string} v */
-  const asRank = (v) => (v.startsWith('INCOMPLETE') ? 'INCOMPLETE (not run)' : v)
+  const asRank = v => (v.startsWith('INCOMPLETE') ? 'INCOMPLETE (not run)' : v)
   // The top-level verdict is the worst of the synthesis's own verdict and every dimension's, so it
   // no longer depends on the synthesising model restating the roll-up correctly — and no longer on
   // the word "Warning" happening to appear somewhere in a dimension table.
   const worst = worstOf([
     synthesized ? parseVerdict(synthesisText) : 'INCOMPLETE (not run)',
-    ...dimensions.map((d) => (d.ran ? asRank(d.verdict) : 'INCOMPLETE (not run)')),
+    ...dimensions.map(d => (d.ran ? asRank(d.verdict) : 'INCOMPLETE (not run)')),
   ])
-  const notRun = rs.filter((r) => !r.ok).map((r) => r.label)
-  const incomplete = dimensions.filter((d) => d.ran && d.verdict === 'INCOMPLETE (not run)').map((d) => d.dimension)
+  const notRun = rs.filter(r => !r.ok).map(r => r.label)
+  const incomplete = dimensions.filter(d => d.ran && d.verdict === 'INCOMPLETE (not run)').map(d => d.dimension)
   // Dimensions demoted for a MISSING Evidence line, kept apart from `incomplete` (tooling absent): the
   // tool may well have run — the agent just did not show its work — so lumping them together would
   // tell a reader "nothing was checked" when something may have been. This mirrors the Claude engine's
   // noEvidence bucket. Both still make the audit partial below.
-  const noEvidence = dimensions.filter((d) => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map((d) => d.dimension)
+  const noEvidence = dimensions.filter(d => d.ran && d.verdict.startsWith('INCOMPLETE (no evidence')).map(d => d.dimension)
   // Worst-wins ranks INCOMPLETE below Warning, so partial coverage vanishes from the top-level
   // token whenever anything else is worse. The SUFFIXED form is the shape lib/analyze-runs.mjs
   // already reads (`/INCOMPLETE/i` over the verdict string, severity-first bucketing), so emitting
@@ -718,8 +721,8 @@ export function buildTriageRecord({ results, planned = true, untriaged = 0, skip
     findings: null,
     nested: false,
     via: null,
-    dimensions: rs.map((r) => ({ dimension: r.label, ran: !!r.ok })),
-    notRun: rs.filter((r) => !r.ok).map((r) => r.label),
+    dimensions: rs.map(r => ({ dimension: r.label, ran: !!r.ok })),
+    notRun: rs.filter(r => !r.ok).map(r => r.label),
   }
 }
 
@@ -743,10 +746,18 @@ export function buildTriageRecord({ results, planned = true, untriaged = 0, skip
 /** @param {RunRecord} r */
 export function indexProjection(r) {
   return {
-    schemaVersion: r.schemaVersion, runtime: r.runtime ?? null, ts: r.ts, kind: r.kind, name: r.name,
-    project: r.project, commit: r.commit, dirty: r.dirty,
-    verdict: r.verdict, findingsTotal: r.findings ? r.findings.total : null,
-    nested: r.nested, via: r.via,
+    schemaVersion: r.schemaVersion,
+    runtime: r.runtime ?? null,
+    ts: r.ts,
+    kind: r.kind,
+    name: r.name,
+    project: r.project,
+    commit: r.commit,
+    dirty: r.dirty,
+    verdict: r.verdict,
+    findingsTotal: r.findings ? r.findings.total : null,
+    nested: r.nested,
+    via: r.via,
   }
 }
 
@@ -757,7 +768,10 @@ function runsDir() {
 // Filesystem-safe UTC: YYYY-MM-DDTHH-MM-SSZ (drop millis, replace the time colons).
 /** @param {Date} d */
 function tsStamp(d) {
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-')
+  return d
+    .toISOString()
+    .replace(/\.\d{3}Z$/, 'Z')
+    .replace(/:/g, '-')
 }
 
 /**
@@ -801,6 +815,10 @@ export async function writeRecord(ctx, record) {
     writeFileSync(join(dir, `${ts}-${full.kind}-${full.name}.json`), JSON.stringify(full, null, 2) + '\n')
     await appendIndex(dir, JSON.stringify(indexProjection(full)))
   } catch (e) {
-    try { console.error(`craft observability: failed to write run record: ${/** @type {{ message?: unknown } | null | undefined} */ (e)?.message ?? e}`) } catch { /* ignore */ }
+    try {
+      console.error(`craft observability: failed to write run record: ${String(/** @type {{ message?: unknown } | null | undefined} */ (e)?.message ?? e)}`)
+    } catch {
+      /* ignore */
+    }
   }
 }

@@ -86,7 +86,7 @@ pub fn opts(repo: &Path, run: &Path) -> StartOptions {
 }
 
 pub fn answers(pairs: Value) -> Map<String, Value> {
-    pairs.as_object().unwrap().clone()
+    serde_json::from_value(pairs).unwrap()
 }
 
 pub fn finding(severity: &str, line: u32) -> Value {

@@ -47,7 +47,9 @@ pub(super) fn statix(cx: &Cx<'_>, acc: &mut Acc, file: &str) -> bool {
     };
     match statix_report(code, &out, &err) {
         Ok(v) => {
-            v.iter().for_each(|v| seed_statix(cx, acc, file, v));
+            if let Some(report) = &v {
+                seed_statix(cx, acc, file, report);
+            }
             true
         }
         Err(why) => {
@@ -102,7 +104,9 @@ pub(super) fn deadnix(cx: &Cx<'_>, acc: &mut Acc, files: &[&str]) -> bool {
         }
     };
     let unread: Vec<String> = reports.iter().filter_map(unread).collect();
-    reports.iter().for_each(|v| seed_deadnix(cx, acc, v));
+    for report in &reports {
+        seed_deadnix(cx, acc, report);
+    }
     if unread.is_empty() {
         acc.parts.push(format!("{DEADNIX}: local"));
         return true;

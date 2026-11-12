@@ -30,7 +30,7 @@ fn typescript() -> tempfile::TempDir {
 }
 
 /// A complexity finding at `web/app.ts:1` carrying `metrics`.
-fn metric(title: &str, metrics: Value) -> Value {
+fn metric(title: &str, metrics: &Value) -> Value {
     json!({"severity": "Medium", "title": title, "file": "web/app.ts", "line": 1, "why": "w",
            "fix": "extract", "blastRadius": "", "source": "complexity", "ruleId": "", "whereChecked": "query_graph",
            "metrics": metrics})
@@ -104,7 +104,7 @@ fn with_an_index_a_finding_stands_on_the_metrics_it_carries_and_the_verifier_rer
     );
     let s = submit(
         &run,
-        json!({"lens-general-complexity-r1": lens("complexity", &[metric("f is hard to follow", json!({"function": "f", "cognitive": 3, "loop_depth": 1, "unguarded_recursion": false})), metric("f is a bit long", json!({"function": "f"}))]),
+        json!({"lens-general-complexity-r1": lens("complexity", &[metric("f is hard to follow", &json!({"function": "f", "cognitive": 3, "loop_depth": 1, "unguarded_recursion": false})), metric("f is a bit long", &json!({"function": "f"}))]),
                "lens-general-correctness-r1": lens("correctness", &[])}),
     );
     // Round 2 adds nothing; then the one finding with metrics goes to one metric verifier.

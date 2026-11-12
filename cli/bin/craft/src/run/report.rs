@@ -131,9 +131,9 @@ pub(crate) fn finished_answer(step: &Value, again: &str) -> String {
         d.extend(notes.iter().map(|n| format!("- {}", one_line(n))));
         rest.push(d.join("\n"));
     }
-    let stop = stop_note(step);
-    if !stop.is_empty() && !line.contains(&stop) {
-        rest.push(format!("{stop}."));
+    let stopped = stop_note(step);
+    if !stopped.is_empty() && !line.contains(&stopped) {
+        rest.push(format!("{stopped}."));
     }
     if step.get("stopped").is_some_and(Value::is_object) {
         rest.push(resume_hint(run, again));

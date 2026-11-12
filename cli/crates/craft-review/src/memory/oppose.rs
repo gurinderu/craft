@@ -226,14 +226,15 @@ pub(super) fn with_overrides(x: &Value, ids: Option<&Vec<String>>) -> Value {
 /// Why passed date `p` does not override a record of `status` dated `date`; '' when it is later.
 /// Two timestamps compare to the instant; otherwise by the UTC day (`notLaterWhy`).
 fn not_later_why(p: &str, status: &str, date: &str) -> String {
-    let Some(a) = moment(p) else {
+    let Some(passed) = moment(p) else {
         return "the passed record carries no ISO date to set against it".into();
     };
-    let Some(b) = moment(date) else {
+    let Some(theirs) = moment(date) else {
         return format!("the {status} record carries no ISO date to compare");
     };
-    let same_day_later = a.0 == b.0 && matches!((a.1, b.1), (Some(x), Some(y)) if x > y);
-    if a.0 > b.0 || same_day_later {
+    let same_day_later = passed.0 == theirs.0
+        && matches!((passed.1, theirs.1), (Some(ours), Some(other)) if ours > other);
+    if passed.0 > theirs.0 || same_day_later {
         String::new()
     } else {
         format!("the passed record's date {p} is not later than the {status} record's {date}")
@@ -326,30 +327,28 @@ fn utc_seconds(t: &str) -> Option<f64> {
 /// An ISO date read by hand (`isoMoment`): its UTC day and, for a timestamp, its seconds into
 /// that day; `None` when it is no ISO date or names a day or time the calendar lacks.
 fn moment(v: &str) -> Option<(String, Option<f64>)> {
-    let (y, m, d) = (num(v, 0, 4)?, num(v, 5, 7)?, num(v, 8, 10)?);
+    let (year, month, day) = (num(v, 0, 4)?, num(v, 5, 7)?, num(v, 8, 10)?);
     if v.get(4..5) != Some("-")
         || v.get(7..8) != Some("-")
-        || !(1..=12).contains(&m)
-        || d < 1
-        || d > month_days(y, m)
+        || !(1..=12).contains(&month)
+        || day < 1
+        || day > month_days(year, month)
     {
         return None;
     }
-    let Some(t) = v.get(10..).filter(|t| !t.is_empty()) else {
+    let Some(time) = v.get(10..).filter(|t| !t.is_empty()) else {
         return Some((v.to_owned(), None));
     };
-    let clock = utc_seconds(t.strip_prefix('T')?)?;
+    let clock = utc_seconds(time.strip_prefix('T')?)?;
     let by: i64 = if clock < 0.0 {
         -1
-    } else if clock >= 86400.0 {
-        1
     } else {
-        0
+        i64::from(clock >= 86400.0)
     };
     #[expect(
         clippy::cast_precision_loss,
         reason = "a day's seconds fit an f64 exactly"
     )]
     let at = clock - (by * 86400) as f64;
-    Some((shifted_day(y, m, d, by), Some(at)))
+    Some((shifted_day(year, month, day, by), Some(at)))
 }

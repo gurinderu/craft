@@ -17,8 +17,11 @@ export interface V2ToolDefinition {
   name: string
   description: string
   input: Record<string, unknown>
-  execute(input: unknown, context: { sessionID: string; messageID: string; id: string; agent: string; signal: AbortSignal }): Promise<{
-    content: { type: "text"; text: string }[]
+  execute(
+    input: unknown,
+    context: { sessionID: string; messageID: string; id: string; agent: string; signal: AbortSignal },
+  ): Promise<{
+    content: { type: 'text'; text: string }[]
   }>
 }
 
@@ -77,7 +80,7 @@ export interface V2Context {
     // Stops the session's agent loop; `{ interrupted: false }` when it was idle (observed).
     interrupt(input: { sessionID: string }): Promise<unknown>
     context(input: { sessionID: string }): Promise<V2Message[]>
-    hook(name: "prompt", callback: (input: V2PromptHookInput) => Promise<void> | void): Promise<V2Registration>
+    hook(name: 'prompt', callback: (input: V2PromptHookInput) => Promise<void> | void): Promise<V2Registration>
   }
   event: {
     // Returned synchronously; an async iterable of the location's events, filtered by type.

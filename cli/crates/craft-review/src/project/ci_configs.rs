@@ -23,8 +23,10 @@ fn parts(v: &str) -> Option<Vec<String>> {
         .filter(|c| *c != Component::CurDir)
         .map(|c| match c {
             Component::Normal(n) => n.to_str().map(str::to_owned),
-            Component::Prefix(_) | Component::RootDir | Component::CurDir => None,
-            Component::ParentDir => None,
+            Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => None,
         })
         .collect()
 }

@@ -40,6 +40,8 @@ export default {
         // The lint gate's prerequisite check, imported by eslint.config.mjs — a file knip's ESLint plugin
         // reads only outside production mode, so its import is not followed there.
         'lib/lint-prerequisites.mjs!',
+        // The fail-closed preset lookup, imported by eslint.config.mjs for the same reason.
+        'lib/eslint-preset.mjs!',
       ],
       project: [
         'lib/**/*.mjs!',

@@ -27,7 +27,7 @@ pub fn resuming(run: &Path, w: &dyn Writer) -> Vec<String> {
     if !done && unfiled(&filing).is_some() {
         let mut ended = std::mem::take(&mut filing);
         filing.ctx = ended.ctx.clone();
-        filing.session = ended.session.clone();
+        filing.session.clone_from(&ended.session);
         filing.pending = std::mem::take(&mut ended.pending);
         filing.pending.push(ended);
     }

@@ -10,7 +10,10 @@ function fakeHost(answer) {
   /** @type {boolean[]} */
   const marked = []
   const host = {
-    directory: '', worktree: '', sh: async () => '', callerModel: async () => undefined,
+    directory: '',
+    worktree: '',
+    sh: () => Promise.resolve(''),
+    callerModel: () => Promise.resolve(undefined),
     runChild: async (/** @type {import('./host.ts').ChildRequest} */ req) => {
       const id = `ses_${n}`
       req.onSession?.(id)
@@ -21,10 +24,10 @@ function fakeHost(answer) {
   return { host, marked, calls: () => n }
 }
 
-test('a child is the engine\'s while it runs and forgotten when it ends, even when it fails', async () => {
-  const ok = fakeHost(async () => 'done')
+test("a child is the engine's while it runs and forgotten when it ends, even when it fails", async () => {
+  const ok = fakeHost(() => Promise.resolve('done'))
   assert.equal(await runChildSession(ok.host, { title: 't', agent: '', prompt: 'p' }), 'done')
-  const bad = fakeHost(async () => { throw new Error('boom') })
+  const bad = fakeHost(() => Promise.reject(new Error('boom')))
   await assert.rejects(runChildSession(bad.host, { title: 't', agent: '', prompt: 'p' }), /boom/)
   assert.deepEqual([...ok.marked, ...bad.marked], [true, true])
   assert.equal(ENGINE_SESSIONS.size, 0)
@@ -42,6 +45,9 @@ test('solo work runs one at a time across callers, and the queue goes on after a
   }
   assert.deepEqual(await Promise.all([solo(work), solo(work), solo(work)]), ['done', 'done', 'done'])
   assert.equal(most, 1, 'never two at once')
-  await assert.rejects(solo(async () => { throw new Error('boom') }), /boom/)
-  assert.equal(await solo(async () => 'after'), 'after', 'the queue keeps working after its works settled')
+  await assert.rejects(
+    solo(() => Promise.reject(new Error('boom'))),
+    /boom/,
+  )
+  assert.equal(await solo(() => Promise.resolve('after')), 'after', 'the queue keeps working after its works settled')
 })

@@ -7,15 +7,9 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "target": "es2022",
-    "lib": [
-      "es2023"
-    ],
-    "types": [
-      "node"
-    ],
-    "typeRoots": [
-      "../node_modules/@types"
-    ],
+    "lib": ["es2023"],
+    "types": ["node"],
+    "typeRoots": ["../node_modules/@types"],
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -31,12 +25,6 @@
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true
   },
-  "include": [
-    "**/*.mjs",
-    "content-modules.d.ts",
-    "pi-tui.d.ts",
-    "../integrations/opencode/plugin/run-record.mjs",
-    "../.dependency-cruiser.mjs"
-  ],
+  "include": ["**/*.mjs", "content-modules.d.ts", "pi-tui.d.ts", "../integrations/opencode/plugin/run-record.mjs", "../.dependency-cruiser.mjs"],
   "exclude": []
 }

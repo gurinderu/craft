@@ -153,7 +153,7 @@ pub(crate) fn raise(f: &Value, level: &str) -> Value {
         out.insert("severity".into(), Value::String("High".into()));
         note(
             &mut out,
-            format!(
+            &format!(
                 "raised to High from {severity}: verified harm — a verifier confirmed the {level} harm, which is must-fix"
             ),
         );

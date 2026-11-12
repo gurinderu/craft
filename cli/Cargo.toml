@@ -37,6 +37,21 @@ craft-tui = { path = "crates/craft-tui" }
 # CI's `-D warnings` makes them hard, and `warn` (unlike `forbid`) still lets a
 # site carry `#[expect(lint, reason = "…")]`. Tests are relaxed in `clippy.toml`.
 [workspace.lints.clippy]
+# The pedantic group as a whole; the specific lints below sit above it
+pedantic = { level = "warn", priority = -1 }
+# Pedantic lints that fight this codebase for no gain, each with its reason.
+# Paths and refs are matched exactly as git and the diff spell them; folding case changes behaviour.
+case_sensitive_file_extension_comparisons = "allow"
+# The `write!` fix returns a `fmt::Result` the no-silent-failure lints above refuse to drop.
+format_push_string = "allow"
+# Same: the `fold` + `write!` fix leaves a `fmt::Result` to drop or unwrap.
+format_collect = "allow"
+# The fix, `assert_eq!(v, [] as [T; 0])`, spells the element type at every test site.
+assert_is_empty = "allow"
+# Independent switches (CLI flags, lens options) are bools by nature; an enum per flag adds nothing.
+struct_excessive_bools = "allow"
+# Fields mirror the wire's keys (serde) or the domain's word, shared with the struct by design.
+struct_field_names = "allow"
 # Don't panic
 string_slice = "warn"
 indexing_slicing = "warn"

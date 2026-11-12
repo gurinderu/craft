@@ -5,8 +5,13 @@
 // catches a read before narrowing (and the engines' `any` count would otherwise see every such read).
 // Every option is optional; an explicit `undefined` reads as absent, as an options bag does.
 type AgentOptions = {
-  label?: string | undefined, phase?: string | undefined, schema?: object | undefined, model?: string | undefined,
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined, isolation?: 'worktree' | undefined, agentType?: string | undefined,
+  label?: string | undefined
+  phase?: string | undefined
+  schema?: object | undefined
+  model?: string | undefined
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined
+  isolation?: 'worktree' | undefined
+  agentType?: string | undefined
 }
 declare const args: unknown
 /**
@@ -25,7 +30,7 @@ declare function log(message: string): void
 /** Runs another workflow inline; one level only; throws on an unknown name. */
 declare function workflow(nameOrRef: string | { scriptPath: string }, args?: unknown): Promise<unknown>
 /** `total` is null when no token target was set; `remaining()` is then Infinity. */
-declare const budget: { total: number | null, spent(): number, remaining(): number }
+declare const budget: { total: number | null; spent(): number; remaining(): number }
 // Beyond the eight: the timers review.js relies on — a probe workflow saw setTimeout/clearTimeout
 // defined, and TextEncoder, TextDecoder, process and require undefined (realm @nick/craft, #135).
 declare function setTimeout(callback: () => void, ms?: number): unknown

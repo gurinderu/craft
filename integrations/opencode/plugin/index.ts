@@ -12,18 +12,18 @@
 //   • talks only to the local opencode server; opens no ports, no outbound network, no telemetry; the hook
 //     writes one line per firing to ~/.craft/hooks.jsonl
 //   • the 5 review subagents stay hidden (their own frontmatter: hidden: true)
-import type { PluginInput, PluginModule } from "@opencode-ai/plugin"
-import { v1Hooks } from "./host-v1.ts"
-import { v2Setup } from "./host-v2.ts"
-import type { V2Context } from "./opencode-v2.js"
-import { ENGINE_SESSIONS } from "./child-run.ts"
-import { onV2, TOOLS } from "./tools.ts"
-import { workHook } from "./work-hook.ts"
+import type { PluginInput, PluginModule } from '@opencode-ai/plugin'
+import { v1Hooks } from './host-v1.ts'
+import { v2Setup } from './host-v2.ts'
+import type { V2Context } from './opencode-v2.js'
+import { ENGINE_SESSIONS } from './child-run.ts'
+import { onV2, TOOLS } from './tools.ts'
+import { workHook } from './work-hook.ts'
 
 const craft: PluginModule & { id: string; setup(ctx: V2Context): Promise<() => Promise<void>> } = {
-  id: "craft-rust",
-  server: async (input: PluginInput) => v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS)),
-  setup: (ctx) => v2Setup(ctx, onV2(TOOLS), workHook(ctx.location.directory, ENGINE_SESSIONS)),
+  id: 'craft-rust',
+  server: (input: PluginInput) => Promise.resolve(v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS))),
+  setup: ctx => v2Setup(ctx, onV2(TOOLS), workHook(ctx.location.directory, ENGINE_SESSIONS)),
 }
 
 export default craft

@@ -24,15 +24,12 @@ pub(super) fn bin_pack(mut items: Vec<Piece>, cap: u64) -> Vec<Vec<Piece>> {
     items.sort_by(|a, b| b.w.cmp(&a.w).then_with(|| a.key.cmp(&b.key)));
     let mut bins: Vec<(Vec<Piece>, u64)> = Vec::new();
     for it in items {
-        match bins.iter_mut().find(|b| b.1 + it.w <= cap) {
-            Some(bin) => {
-                bin.1 += it.w;
-                bin.0.push(it);
-            }
-            None => {
-                let w = it.w;
-                bins.push((vec![it], w));
-            }
+        if let Some(bin) = bins.iter_mut().find(|b| b.1 + it.w <= cap) {
+            bin.1 += it.w;
+            bin.0.push(it);
+        } else {
+            let w = it.w;
+            bins.push((vec![it], w));
         }
     }
     let mut out: Vec<Vec<Piece>> = bins
