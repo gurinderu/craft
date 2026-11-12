@@ -1,0 +1,686 @@
+{
+  "cases": [
+    {
+      "name": "a confirmed finding on a changed line is a defect",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a suspected one is doubtful",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "Suspected"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "not confirmed (suspected)"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "the intent lens makes it doubtful",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "intent",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "raised by the intent lens"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: intent -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "each doubt lens is named once",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "compat",
+        "tier": "confirmed",
+        "sources": [
+          "compat",
+          "api-boundary",
+          "errors"
+        ]
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "raised by the compat, api-boundary lens"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: compat -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a rollback in the title",
+      "finding": {
+        "severity": "High",
+        "title": "Rollback leaves old replicas behind",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "it speaks of rollback, rollout, old replicas, migration or a breaking change"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] Rollback leaves old replicas behind\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a migration in the reason",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "the Migrating step drops a column",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "it speaks of rollback, rollout, old replicas, migration or a breaking change"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nthe Migrating step drops a column — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a roll-out and a rolling restart",
+      "finding": {
+        "severity": "High",
+        "title": "roll-out order",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "a rolling restart races",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "it speaks of rollback, rollout, old replicas, migration or a breaking change"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] roll-out order\n\na rolling restart races — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a word inside another word is no sign",
+      "finding": {
+        "severity": "High",
+        "title": "unrolled backlog of migrations_x",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] unrolled backlog of migrations_x\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a line outside the diff",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 30,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "its line is outside the lines the diff changed"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a file the diff did not touch",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/other.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "its line is outside the lines the diff changed"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "unknown changed lines apply no outside sign",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 30,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": null,
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": false,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "no line applies no outside sign",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 0,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a line given as text",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": "30",
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "its line is outside the lines the diff changed"
+        ],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a confirmed contradiction is a defect whatever else says",
+      "finding": {
+        "severity": "High",
+        "title": "breaking change",
+        "file": "src/lib.rs",
+        "line": 30,
+        "why": "w",
+        "fix": "f",
+        "source": "intent",
+        "tier": "confirmed",
+        "memoryContradicts": {
+          "id": "D-1",
+          "kind": "decision",
+          "why": "the decision keeps retries"
+        }
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 1,
+          "doubtSignsAlone": 1,
+          "inDiffJudged": true,
+          "doubtSigns": [
+            [
+              "raised by the intent lens",
+              "it speaks of rollback, rollout, old replicas, migration or a breaking change",
+              "its line is outside the lines the diff changed"
+            ]
+          ]
+        },
+        "body": "[High] breaking change\n\nw — f\n\n<!-- craft-lens: intent -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "an unconfirmed contradiction is doubtful, the record first",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "suspected",
+        "memoryContradicts": {
+          "id": "D-1",
+          "kind": "decision",
+          "why": "the decision keeps retries"
+        }
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "goes against memory decision D-1: the decision keeps retries",
+          "not confirmed (suspected)"
+        ],
+        "contradictions": {
+          "count": 1,
+          "doubtSignsAlone": 1,
+          "inDiffJudged": true,
+          "doubtSigns": [
+            [
+              "not confirmed (suspected)"
+            ]
+          ]
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a contradiction of no kind names a record",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "suspected",
+        "memoryContradicts": {
+          "id": "R-2",
+          "why": "w"
+        }
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "doubtful",
+        "reasons": [
+          "goes against memory record R-2: w",
+          "not confirmed (suspected)"
+        ],
+        "contradictions": {
+          "count": 1,
+          "doubtSignsAlone": 1,
+          "inDiffJudged": true,
+          "doubtSigns": [
+            [
+              "not confirmed (suspected)"
+            ]
+          ]
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a finding a decision set aside is not sorted",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "errors",
+        "tier": "confirmed",
+        "priorDecision": "D-9"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "none",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-lens: errors -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a body with its lens and tool rule",
+      "finding": {
+        "severity": "Medium",
+        "title": "  unwrap   on input ",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": " a\nb ",
+        "fix": " use ? ",
+        "source": "clippy",
+        "tier": "confirmed",
+        "toolRule": "clippy::unwrap_used"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[Medium] unwrap on input\n\na\nb — use ?\n\n<!-- craft-lens: clippy -->\n<!-- craft-tool-rule: clippy::unwrap_used -->\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a body whose lens and rule do not fit their lines",
+      "finding": {
+        "severity": "High",
+        "title": "retry loop never ends",
+        "file": "src/lib.rs",
+        "line": 3,
+        "why": "w",
+        "fix": "f",
+        "source": "intent<x>",
+        "tier": "confirmed",
+        "toolRule": "has space"
+      },
+      "changed": {
+        "src/lib.rs": [
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": true,
+          "doubtSigns": []
+        },
+        "body": "[High] retry loop never ends\n\nw — f\n\n<!-- craft-finding -->"
+      }
+    },
+    {
+      "name": "a body with no lens and no reason",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "a.rs",
+        "line": 1
+      },
+      "changed": null,
+      "expected": {
+        "sorted": "defect",
+        "reasons": [],
+        "contradictions": {
+          "count": 0,
+          "doubtSignsAlone": 0,
+          "inDiffJudged": false,
+          "doubtSigns": []
+        },
+        "body": "[Low] t\n\n — \n\n<!-- craft-finding -->"
+      }
+    }
+  ]
+}

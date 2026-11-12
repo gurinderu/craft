@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdicts"
+  ],
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "description": "one entry per pair",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pair",
+          "covered",
+          "violates",
+          "why"
+        ],
+        "properties": {
+          "pair": {
+            "type": "integer",
+            "description": "the PAIR number"
+          },
+          "covered": {
+            "type": "boolean",
+            "description": "true only when the concern the finding raises is exactly what the rule declares acceptable"
+          },
+          "violates": {
+            "type": "boolean",
+            "description": "true only when the finding shows the code going against what the rule requires or forbids; then covered is false"
+          },
+          "why": {
+            "type": "string",
+            "description": "one line: what puts the finding under the rule, outside it, or against it"
+          }
+        }
+      }
+    }
+  }
+}

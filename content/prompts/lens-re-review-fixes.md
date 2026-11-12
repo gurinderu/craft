@@ -1,0 +1,1 @@
+RE-REVIEW: you are reviewing ONLY the fix commits since the prior round (base {{base}}). Prior findings are adjudicated separately — do not re-report them; surface only NEW defects the fixes introduced.

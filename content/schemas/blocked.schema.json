@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "description": "whether you could look at all: couldNotLook true ONLY when you could not read the code or run the commands your task needs (a sandbox refusal, a missing checkout, a permission error), else false; never true because you found nothing or used a simpler method",
+  "properties": {
+    "couldNotLook": {
+      "type": "boolean"
+    },
+    "what": {
+      "type": "string",
+      "description": "when couldNotLook is true: what failed, in one line"
+    }
+  }
+}

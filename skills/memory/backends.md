@@ -1,0 +1,141 @@
+# Backend mechanics
+
+How the record shape from [SKILL.md](SKILL.md) lands in each backend. The *choice* of backend is
+SKILL.md's ("Choosing the backend"); this file only says how to write and search once chosen.
+
+## MCP memory / knowledge-graph server
+
+- **A pinned store** (`craft-memory: mcp <server> <store>`, SKILL.md rule 1; `<server>` matches
+  the server whose tool prefix, such as `mcp__<...>__`, contains it, ignoring case; more words
+  than that is an unknown value, so `none` with the reason): every search and
+  every create passes the store as the tools' scope parameter (a graph, project or workspace
+  argument, whatever that server calls it), or as the scope of the server's own skill. A tool that
+  takes no scope, or refuses the store, makes the backend unavailable: `none` with that reason,
+  never a write to the server's default or another store.
+- **Its own instructions first.** When the server ships a skill, a prompt or tool descriptions
+  saying how to write (which item type, which fields, which modes, where to anchor), follow them
+  and hand it the record's content — title, body, scope, kind, author, commit, deferred, line, lens, toolRule, links. Do not force the fields
+  below onto a store that has its own discipline.
+- **Without instructions**, the plain mapping: one item per record; the item's name = `title`;
+  its text = `body`; the other fields under fixed keys, prefixed `craft_` as in the harness format
+  below — `craft_kind`, `craft_id`, `craft_scope`, `craft_status`, `craft_author`, `craft_commit`,
+  `craft_deferred`, `craft_line`, `craft_lens`, `craft_tool_rule` — as attributes, tags
+  (`craft_kind:decision`) or observations, whichever the tool accepts, never under another name;
+  `links` as relations when the tool has them, else as text.
+- **Recall searches both spellings**: records written before these keys were fixed may carry them
+  bare (`kind`, `id`, `scope`, `status`, …). Search and filter by the `craft_` key **and** the bare
+  one (`craft_kind:decision` or `kind:decision`), never by one alone, and hand the record on with the
+  bare names of SKILL.md.
+- **Recall returns the record shape**: whatever the server stores, a recalled record handed on
+  (to a subagent, or to a review as `priorDecisions`) is rebuilt as the SKILL.md shape — `author`,
+  `commit`, `deferred`, `line`, `lens` and `toolRule` included when the item carries them, and an
+  `external` record's `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version`.
+- **Ids — the convention for a server with its own ids**: `id` is the skill-rule id (SKILL.md,
+  from kind + title + scope), and the server's own id goes into `links` as `store: <id>`. `kind`,
+  `title` and `scope` are always handed on as stored, so the id can be derived again — a review
+  engine sets `id` from them itself whenever a record carries a `store:` link or an id not of the
+  form `<kind>-<10 hex>`, and `answers:` / `supersedes:` links name skill-rule ids.
+- **Search, don't list**: `recall` calls the server's search with the topic keywords and the scope,
+  then filters the hits by `scope` and `status` — never a full listing.
+- **Supersede** by the server's own means (a status field, a supersede relation, a mode); if it has
+  none, write the new item and append `superseded by <id>` to the old one.
+
+## Harness project memory (Claude Code)
+
+The directory is the one the harness names in the session's instructions (in Claude Code,
+`~/.claude/projects/<project-slug>/memory/`, with `MEMORY.md` as its index). An agent that does not
+have the index in context — a workflow's agent, a subagent — derives the directory itself. The
+harness keys project memory by the repository's **main checkout**, never a worktree or a
+subdirectory (a worktree session gets its own `~/.claude/projects/` entry, but without
+`memory/`). The root is `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`
+(the same from any worktree or subdirectory), `pwd` only outside a git repo; the slug is that
+root with every character that is not an ASCII letter or digit replaced by `-` (for example
+`/home/alice/src/app` → `-home-alice-src-app`). This is an observed
+convention, not a documented one: `~/.claude/projects/<slug>/memory/` must exist; if it does
+not, say `none — harness memory directory <path>/memory not found` and never guess a near
+match. Use the harness's format, not a craft one:
+
+- **One file per record**, `<id>.md`:
+
+  ```markdown
+  ---
+  name: <id>
+  description: "<kind>: <title>"
+  metadata:
+    type: project
+    craft_kind: decision    # decision | rule | lesson | question | external
+    craft_scope: src/parse.rs
+    craft_status: active
+    craft_author: alice
+    craft_commit: 33d0240d4fe0
+    craft_deferred: true    # a deferred question only
+    craft_line: 42          # the finding's line, when known
+    craft_lens: safety      # the lens that raised it, when known; on a rule, the lens it is narrowed to
+    craft_tool_rule: clippy::needless_pass_by_value  # the gate tool's own rule the finding fired, when known
+    # an external record only: craft_system, craft_repo, craft_version_from and craft_version_match, or craft_version
+    modified: 2026-10-06
+  ---
+
+  <body>
+
+  Links: <links, one per line>
+  ```
+
+- **One index line per record** in `MEMORY.md`, which the harness loads every session — keep it
+  short — a Markdown link whose text is `<kind>: <title>` and whose target is the record file
+  `<id>.md`, then ` — <scope>`; at most 150 characters (shorten the title with
+  `…` past that; the file keeps the full one). Superseded/withdrawn records leave the index (their
+  files stay, `craft_status` updated) so the always-loaded index carries only live facts.
+- **Recall**: the index is in the main session's context (an agent without it reads `MEMORY.md`
+  at the derived path) — match scope and keywords there, then read only
+  the matching files; for history, `grep -l "craft_scope: <path>"` over the directory.
+  Handed on (a subagent's brief, a review's `priorDecisions`) as the SKILL.md shape: `name` → `id`,
+  `craft_kind` → `kind`, the title from `description` without its `<kind>: ` prefix, `craft_scope`
+  → `scope`, `craft_status` → `status`, `modified` → `date`, `craft_author` → `author`,
+  `craft_commit` → `commit`, `craft_deferred` → `deferred` (a boolean), `craft_line` → `line` (a
+  number), `craft_lens` → `lens`, `craft_tool_rule` → `toolRule`, `craft_system` → `system`, `craft_repo` → `repo`,
+  `craft_version_from` → `versionFrom`, `craft_version_match` → `versionMatch`, `craft_version` → `version`, the body, and the `Links:` lines → `links`.
+- **Refused write** (a `PreToolUse` guard exiting non-zero, a permission denial, an index line or
+  instruction saying "do not write here") → the backend is unavailable: do not retry, do not route
+  around the guard; go to the next rule.
+
+## Files in the consumer repo
+
+`.craft/memory/<kind>/<id>.md` — `kind` ∈ `decision`, `rule`, `lesson`, `question`, `external`
+(an external record carries `system`, `repo`, and `versionFrom` and `versionMatch` or a stated `version` in
+its frontmatter beside `scope`):
+
+```markdown
+---
+id: <id>
+kind: decision
+title: <title>
+scope: src/parse.rs
+status: active
+date: 2026-10-06
+author: alice
+commit: 33d0240d4fe0
+deferred: true   # a deferred question only
+line: 42         # the finding's line, when known
+lens: safety     # the lens that raised it, when known
+toolRule: clippy::needless_pass_by_value  # the gate tool's own rule the finding fired, when known
+links:
+  - https://github.com/org/repo/pull/42
+---
+
+<body>
+```
+
+- **One file per record**, never a single append-only log: a log conflicts on every parallel
+  branch and must be read whole to recall one fact.
+- **Supersede / withdraw**: set `status`, add the successor to `links`, and `git mv` the file to
+  `.craft/memory/archive/<kind>/<id>.md`. The live directories hold only active records, so a
+  plain `grep -rl` over them never returns a retired fact.
+- **Recall**: `grep -rl -e "scope: <path>" -e "scope: <parent-dir>" .craft/memory/<kind>/`, then
+  keyword-filter titles and bodies of those files only. `archive/` is searched only when history is
+  asked for.
+- **An existing ADR directory** (`docs/adr/`, …) shows the project already keeps decisions in the
+  repo, so this backend is chosen without asking — but it is not a place to write: craft records
+  go to `.craft/memory/`, and an ADR stays the project's to write in its own format. Recall may
+  also grep the ADR directory read-only.
+- The files are committed with the change they explain; say so when you create the first one.

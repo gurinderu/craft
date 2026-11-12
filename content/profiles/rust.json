@@ -1,0 +1,50 @@
+{
+  "id": "rust",
+  "lang": "Rust",
+  "detect": { "suffixes": [".rs"], "names": ["Cargo.toml"] },
+  "diffGlobs": ["'*.rs'"],
+  "rubricSkill": "rust-review",
+  "fpRules": "fp-rules.md",
+  "navSkill": "rust-navigation",
+  "securityHints": "auth, crypto, input parsing, unsafe, FFI, or dependencies",
+  "usesLibrary": true,
+  "alwaysLenses": ["intent"],
+  "safetyLens": "safety",
+  "scoutRules": "scout-rules-rust",
+  "scoutModel": "haiku",
+  "dedupModel": "haiku",
+  "lensAgent": "rust-reviewer",
+  "rollupRuleIds": ["API-001", "API-003", "API-004", "API-005"],
+  "units": {
+    "noun": "crate",
+    "signatures": "pub signatures and doc comments: `git grep -n -E '^\\s*(pub|///)' -- <its path>`",
+    "surface": "`git grep -n -E '^\\s*(pub|///|#\\[)' -- {{root}}` and its Cargo.toml, with no -A/-B/-C context; a pub item's whole signature (a multi-line fn, a struct's fields, an enum's variants) by `sed -n` over just those lines, never past its opening brace into a body",
+    "publicItems": "pub items, error types and variants, trait bounds, Cargo features, re-exports, docs",
+    "changedItems": "pub item (fn, type, variant, trait, const, re-export, Cargo feature)"
+  },
+  "negativeSpace": { "newSurface": "enum variant / status value / DB column / table / migration / public fn / route / struct field", "shapeUses": "lists, updates, deletes, cascades, serializes, orders, or authorizes" },
+  "lenses": [
+    { "id": "safety", "brief": "lens-briefs/rust-safety", "model": "opus" },
+    { "id": "errors", "brief": "lens-briefs/rust-errors", "model": "opus" },
+    { "id": "concurrency", "brief": "lens-briefs/rust-concurrency", "model": "opus" },
+    { "id": "performance", "brief": "lens-briefs/rust-performance", "model": "opus", "optional": true },
+    { "id": "api-idioms", "brief": "lens-briefs/rust-api-idioms", "model": "opus", "optional": true },
+    { "id": "api-boundary", "brief": "lens-briefs/rust-api-boundary", "model": "opus", "optional": true },
+    {
+      "id": "reconciler", "brief": "lens-briefs/rust-reconciler", "model": "opus",
+      "catalogue": { "label": "RACE CATALOGUE", "file": "skills/distributed-races/catalogue.md", "fallback": "R1–R6" }
+    },
+    { "id": "failure-windows", "brief": "lens-briefs/rust-failure-windows", "model": "opus", "conditional": true, "wholeDiff": true },
+    {
+      "id": "compat", "brief": "lens-briefs/rust-compat", "model": "opus", "surface": "wireForm", "wholeDiff": true,
+      "catalogue": { "label": "COMPATIBILITY CATALOGUE", "file": "skills/compatibility/catalogue.md", "fallback": "C1–C4, C8, C9 and C11–C13" }
+    },
+    { "id": "maintainability", "brief": "lens-briefs/rust-maintainability", "model": "opus" },
+    { "id": "tests", "brief": "lens-briefs/rust-tests", "model": "opus" },
+    { "id": "intent", "brief": "lens-briefs/rust-intent", "model": "opus", "wholeDiff": true },
+    { "id": "invariants", "brief": "lens-briefs/rust-invariants", "model": "opus", "surface": "invariantType", "wholeDiff": true }
+  ],
+  "floorLenses": [
+    { "id": "negative-space", "brief": "lens-briefs/rust-negative-space", "model": "opus", "surface": "crossBoundarySymbol", "wholeDiff": true }
+  ]
+}

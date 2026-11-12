@@ -1,0 +1,18 @@
+{
+  "name": "craft-opencode",
+  "version": "0.52.0",
+  "description": "craft's skills, review agents and review for OpenCode 2.x.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./server": "./integrations/opencode/plugin/index.ts",
+    "./tui": "./integrations/opencode/plugin/tui/tui.mjs"
+  },
+  "files": [
+    "bin",
+    "content",
+    "integrations",
+    "lib",
+    "skills"
+  ]
+}

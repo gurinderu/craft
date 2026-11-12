@@ -1,0 +1,202 @@
+// Deterministic child-session fan-out with a sequential fallback for opencode's known
+// child-session execution bugs (anomalyco/opencode #8528, sst/opencode #6573): if a child
+// session is created but never executes within STUCK_MS, retry the failed jobs one at a time;
+// if a job still yields nothing, surface a clear, actionable error rather than hang.
+//
+// A child session is the host's (host.ts), run through the one child-run unit every workflow shares (child-run.ts):
+// marked as the engine's while it runs, stopped at its deadline, its retries alone through the shared queue.
+import { runChildSession, solo } from './child-run.ts'
+import type { Host, ModelRef } from './host.ts'
+
+// A dimension that runs `cargo clippy --all-targets` and `cargo test` on a real workspace takes
+// minutes, not seconds. The old 90s ceiling therefore fired on essentially every Rust repository
+// this plugin exists for, and the timeout was then reported as an opencode child-session bug — so
+// the user went looking for a version problem instead of a deadline. A deadline exists to stop a
+// hang, so it belongs far past the slowest legitimate run; jobs that know they are cheap can say so.
+const STUCK_MS = 20 * 60_000
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | { __timeout: true }> {
+  // The timer is CLEARED when the race settles. Left pending it kept one live timer per job for the
+  // whole deadline — invisible at 90 seconds in a long-lived process, and immediately visible once
+  // the deadline became twenty minutes: any host that waits for the event loop to drain simply
+  // stops. `unref` alone would hide it rather than fix it.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const ticking = new Promise<{ __timeout: true }>(r => {
+    timer = setTimeout(() => r({ __timeout: true }), ms)
+  })
+  return Promise.race([p, ticking]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
+}
+
+// Spawn one child session bound to a hidden agent and return its final text. NOT exported: both
+// callers moved to runAnswering/fanOut, and an exported un-gated spawn is exactly the bypass this
+// file closes everywhere else — the next caller would get no predicate and no deadline.
+function runAgent(host: Host, job: Job, signal: AbortSignal): Promise<string> {
+  return runChildSession(host, {
+    title: `craft:${job.agent || 'default'}`,
+    agent: job.agent,
+    prompt: job.prompt,
+    ...(job.model === undefined ? {} : { model: job.model }),
+    signal,
+  })
+}
+
+// `answered` is what makes a job's answer an ANSWER rather than merely output. Without it liveness was
+// inferred from `text.length > 0`, so a refusal, a tool-permission error, or "I'll start by looking
+// at the repo" counted as success — and that text then reached the verdict parser, which falls
+// through to APPROVE. A dimension whose session errored out therefore reported Approve. Callers that
+// require a machine-readable line pass the PARSER'S OWN predicate here — not a second regex, which
+// drifted from the parser the moment it existed. A job with no `answered` keeps the old non-empty
+// rule, which is honest for jobs whose output is prose by design.
+export interface Job {
+  label: string
+  agent: string
+  prompt: string
+  answered?: (text: string) => boolean
+  timeoutMs?: number
+  // What the job asked for, in the reader's words. Hard-coding "verdict line" sent the forty triage
+  // jobs looking for a line their prompt never mentioned — the same wrong-cause reporting this file
+  // fixed for timeout-versus-silence.
+  requires?: string
+  // The child's model; absent runs it on the session's own (realm @nick/craft, #465).
+  model?: ModelRef
+}
+
+// One call, held to the same standard as a fan-out job. The consolidation step used to bypass all of
+// it — no predicate, no deadline — which left the audit's most authoritative text as the single path
+// exempt from the rule the rest of the branch is about: a refusal from the synthesising session was
+// non-empty, so it was treated as the report AND filed as a verdict, and parseVerdict falls through
+// to Approve. A hung synthesis also hung the whole run, since only dimensions had a deadline.
+export async function runAnswering(
+  ctx: Host,
+  agent: string,
+  prompt: string,
+  answered: (text: string) => boolean,
+  timeoutMs = STUCK_MS,
+  requires?: string,
+): Promise<{ ok: boolean; text: string; note: string }> {
+  // The cause travels with the failure. Returning only `{ok, text}` made a refusal, a twenty-minute
+  // timeout and an errored session produce the byte-identical banner at the caller — the fan-out path
+  // keeps that text on purpose (see `tryOne`), and the single-call path was held to the same GATE
+  // but not to the same REPORTING.
+  const job: Job = { label: agent || 'default', agent, prompt, answered, timeoutMs, ...(requires === undefined ? {} : { requires }) }
+  const r = await tryOne(ctx, job)
+  return { ok: r.ok, text: r.text, note: r.ok ? '' : notRunNote(job, r.why, r.text, false, false) }
+}
+export interface JobResult {
+  label: string
+  ok: boolean
+  text: string
+}
+
+// Why the job failed, in the words a reader can act on. Conflating these was half the defect: a
+// deadline reported as "no output" sent people to look for an opencode bug.
+type Failure = 'timeout' | 'empty' | 'unanswered' | 'error' | 'budget'
+
+/** The race's timeout marker, read as the runtime may hand anything back. */
+function isTimeout(out: unknown): boolean {
+  return Boolean(out && typeof out === 'object' && '__timeout' in out && out.__timeout)
+}
+
+async function tryOne(ctx: Host, job: Job): Promise<JobResult & { why?: Failure }> {
+  // A child past its deadline is stopped, not only left behind: its session would otherwise keep running.
+  const stop = new AbortController()
+  try {
+    // Read as unknown: the host's answer crosses a runtime boundary, so its declared string is not trusted here.
+    const out: unknown = await withTimeout(runAgent(ctx, job, stop.signal), job.timeoutMs ?? STUCK_MS)
+    if (isTimeout(out)) {
+      stop.abort()
+      return { label: job.label, ok: false, text: '', why: 'timeout' }
+    }
+    const text = String(out)
+    if (!text.length) return { label: job.label, ok: false, text, why: 'empty' }
+    // Output that does not carry what the job asked for is not a result. Keeping the text matters:
+    // a refusal or an error message is the most useful thing to show the reader about why.
+    if (job.answered && !job.answered(text)) return { label: job.label, ok: false, text, why: 'unanswered' }
+    return { label: job.label, ok: true, text }
+  } catch (e) {
+    return { label: job.label, ok: false, text: `error: ${e instanceof Error ? e.message : String(e)}`, why: 'error' }
+  }
+}
+
+// Seconds below a minute: `Math.round` turned every short deadline into "within 0 minutes", which
+// is what a test drove without noticing, because it asserted only the prefix.
+function spanOf(ms: number): string {
+  return ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : ms >= 1000 ? `${Math.round(ms / 1000)} seconds` : `${ms} ms`
+}
+
+function failureCause(job: Job, why: Failure | undefined, span: string, boundByBudget: boolean, retried: boolean): string {
+  if (why === 'budget') return `the retry budget for this run was already spent on earlier jobs, so it was not attempted a second time`
+  if (why === 'timeout') {
+    return boundByBudget
+      ? `it produced no result within ${span} — which is all that was left of this run's shared retry budget, not its own deadline. Earlier retries spent the rest; raising this job's timeout would not have helped`
+      : `it produced no result within ${span}. If this dimension runs a build or a test suite, it may simply need longer than that deadline`
+  }
+  if (why === 'unanswered')
+    return `it answered, but without the ${job.requires ?? 'machine-readable line'} the prompt requires — so nothing it said can be read as a result. Its output is kept below`
+  if (why === 'error') return `the child session errored on its last attempt`
+  return retried
+    ? `the child session produced no output after a concurrent attempt and a sequential retry. This matches opencode child-session execution bugs (#8528/#6573); check your opencode version`
+    : `the child session produced no output on its single attempt. This step is not retried, so there is nothing more to read into it than that the session returned nothing`
+}
+
+// `boundByBudget` says the deadline this attempt ran under was the shared retry budget's remainder,
+// not anything the job or the config chose. Without it the note named a span that exists nowhere —
+// "no result within 10 minutes" for a 20-minute job clipped by what was left — and a reader either
+// hunts for that deadline or raises `timeoutMs` and sees nothing change, because the budget bound it.
+// The `left <= 0` guard below catches only the exactly-exhausted case; everything between is here.
+function notRunNote(
+  job: Job,
+  why: Failure | undefined,
+  detail: string,
+  boundByBudget = false,
+  // How many attempts were actually made. The fall-through arm below said "after a concurrent
+  // attempt and a sequential retry … check your opencode version", which `fanOut` earns and
+  // `runAnswering` does not: it makes exactly one call and has no retry. A reader was told two
+  // attempts happened and sent after an upstream bug that is not implicated — the wrong cause on
+  // the very path this branch exists to keep honest.
+  retried = true,
+): string {
+  const span = spanOf(job.timeoutMs ?? STUCK_MS)
+  const cause = failureCause(job, why, span, boundByBudget, retried)
+  return `INCOMPLETE (not run) — the child session for "${job.agent || 'the default model'}" did not deliver a result: ${cause}. ${detail}`.trim()
+}
+
+// The SEQUENTIAL pass needs a budget of its own, because its cost is per job rather than shared.
+// Raising the per-job deadline to twenty minutes made that arithmetic unlivable: ten audit
+// dimensions retried one after another is nearly four hours with nothing on screen, and forty
+// triage findings is over half a day. A deadline that turns a hang into a longer hang has not
+// helped anyone. So the retries share one wall-clock budget: whoever is left when it runs out is
+// reported not-run without being attempted, which is the truthful thing to say about them.
+const RETRY_BUDGET_MS = 30 * 60_000
+
+// The budget is a PARAMETER, not only a constant, because a test that cannot shrink it cannot reach
+// the clipping branch at all: with thirty minutes remaining, `Math.min(job.timeoutMs, left)` is
+// always the job's own value, so the assertion held whether or not the clipping existed.
+export async function fanOut(ctx: Host, jobs: Job[], retryBudgetMs = RETRY_BUDGET_MS): Promise<JobResult[]> {
+  // Pass 1: concurrent. Each result travels with its job, so pass 2 reads no parallel array.
+  const slots: { job: Job; result: JobResult & { why?: Failure } }[] = await Promise.all(jobs.map(async job => ({ job, result: await tryOne(ctx, job) })))
+  if (slots.every(s => s.result.ok)) return slots.map(s => s.result)
+
+  // Pass 2: sequential retry of the stuck/failed jobs (the #8528/#6573 mitigation).
+  const deadline = Date.now() + retryBudgetMs
+  for (const slot of slots) {
+    if (slot.result.ok) continue
+    const { job } = slot
+    const left = deadline - Date.now()
+    if (left <= 0) {
+      slot.result = { label: job.label, ok: false, text: notRunNote(job, 'budget', slot.result.text) }
+      continue
+    }
+    // The clipped deadline is what the retry actually ran under, so it is what the note must
+    // describe. Reading the unclipped one told the reader "no result within 20 minutes" about a job
+    // that was given ninety seconds — a false span pointing at a deadline that never fired.
+    const timeoutMs = Math.min(job.timeoutMs ?? STUCK_MS, left)
+    const effective: Job = { ...job, timeoutMs }
+    const clipped = timeoutMs < (job.timeoutMs ?? STUCK_MS)
+    const retry = await solo(() => tryOne(ctx, effective))
+    slot.result = retry.ok ? retry : { label: job.label, ok: false, text: notRunNote(effective, retry.why, retry.text, clipped) }
+  }
+  return slots.map(s => s.result)
+}

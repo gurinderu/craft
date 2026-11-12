@@ -1,0 +1,1577 @@
+{
+  "_comment": "Shared answers the JS engines (lib/verify-parity.test.mjs) and the Rust CLI (cli/crates/craft-review/src/parity.rs) must both give: verification constants, and for one finding and one verdict its tier, final severity (reach demotion, verified-harm raise, harm cap) and route; for a panel of votes (null for a voter that returned nothing, an object without the four booleans for an off-schema one) the tier, final severity, why, discarded votes and verified harm; and whether a deciding pair agrees, which spares the rest of a Critical or High panel. A finding routed to skip gets no verifier in a run; its vote here exercises the settling rules alone.",
+  "batchSize": 6,
+  "criticalTierRules": [
+    "SAF-001",
+    "SAF-002",
+    "SAF-003",
+    "SAF-004",
+    "SAF-005",
+    "SAF-006",
+    "SAF-008",
+    "ERR-001",
+    "ERR-002"
+  ],
+  "demote": {
+    "Critical": "High",
+    "High": "Medium",
+    "Medium": "Low",
+    "Low": "Info",
+    "Info": "Info"
+  },
+  "harmCeiling": [
+    [
+      "data-loss",
+      "Critical"
+    ],
+    [
+      "security",
+      "Critical"
+    ],
+    [
+      "outage",
+      "Critical"
+    ],
+    [
+      "irreversible",
+      "Critical"
+    ],
+    [
+      "intent-unmet",
+      "Critical"
+    ],
+    [
+      "repo-rule",
+      "Critical"
+    ],
+    [
+      "operator-recovery",
+      "Medium"
+    ],
+    [
+      "self-healing",
+      "Low"
+    ],
+    [
+      "text",
+      "Low"
+    ],
+    [
+      "none",
+      "Low"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "confirmed High, must-fix harm: kept",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "refuted by the verifier",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": true,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "refuted",
+        "severity": "High",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "cited line does not match: refuted though not refuted",
+      "finding": {
+        "severity": "Critical",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "security",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": false,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "refuted",
+        "severity": "Critical",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "premise not shown: suspected, not demoted",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": false,
+        "premiseSupported": false,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "suspected",
+        "severity": "High",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "confirmed but unreachable: one notch lower",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": false,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Medium",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "confirmed Low unreachable: Info",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": false,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Info",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "no verdict: unverified",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": null,
+      "expected": {
+        "tier": "unverified",
+        "severity": "High",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "off-schema verdict (no reachable): unverified",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "unverified",
+        "severity": "High",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "harm cap: confirmed High naming self-healing goes to Low",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "self-healing",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "harm cap: Critical naming operator-recovery goes to Medium",
+      "finding": {
+        "severity": "Critical",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "operator-recovery",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Medium",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "harm cap: none caps at Low",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "none",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "harm cap applies to an unverified finding too",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "text",
+        "harm": "callers see it"
+      },
+      "vote": null,
+      "expected": {
+        "tier": "unverified",
+        "severity": "Low",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "harm cap: repo-rule citing no rule reads as none",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "repo-rule",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "harm cap: repo-rule citing its rule is must-fix",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "repo-rule",
+        "harm": "callers see it",
+        "repoRule": {
+          "file": "AGENTS.md",
+          "text": "never unwrap"
+        }
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "harm cap: a lint seed naming no harm reads as none",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "clippy-pedantic"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "batch"
+      }
+    },
+    {
+      "name": "no harm level named: no cap",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "verified must-fix harm raises a confirmed Medium to High",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "intent-unmet"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "route": "batch"
+      }
+    },
+    {
+      "name": "a vote naming intent-unmet on behaviour stated as intended raises nothing",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "intent-unmet",
+        "behaviourIntended": true
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "a vote naming no level (\"none\") raises nothing",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "none"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "an older vote with a null level raises nothing",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": null
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "unsupported harm raises nothing",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "security",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": false
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Medium",
+        "route": "batch"
+      }
+    },
+    {
+      "name": "reach demotion wins over the raise",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": false,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "intent-unmet"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "batch"
+      }
+    },
+    {
+      "name": "a suspected finding is not raised",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "security",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": false,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "security"
+      },
+      "expected": {
+        "tier": "suspected",
+        "severity": "Medium",
+        "route": "batch"
+      }
+    },
+    {
+      "name": "confirmedHarmLevel picks the lesser claim, which the cap then reads",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "security",
+        "harm": "callers see it",
+        "harmClaims": [
+          {
+            "harmLevel": "security",
+            "harm": "leak"
+          },
+          {
+            "harmLevel": "self-healing",
+            "harm": "retried"
+          }
+        ]
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "self-healing"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "batch"
+      }
+    },
+    {
+      "name": "confirmedHarmLevel naming no claim raises nothing",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "data-loss"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Medium",
+        "route": "batch"
+      }
+    },
+    {
+      "name": "raise then cap: a cited repo-rule Low goes to High",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "repo-rule",
+        "harm": "callers see it",
+        "repoRule": {
+          "file": "AGENTS.md",
+          "text": "no panics"
+        }
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "repo-rule"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "a cited repo-rule vote naming no level (\"none\") is not raised",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "repo-rule",
+        "harm": "callers see it",
+        "repoRule": {
+          "file": "AGENTS.md",
+          "text": "no panics"
+        }
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "none"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "behaviour stated as intended does not stop a repo-rule raise",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "repo-rule",
+        "harm": "callers see it",
+        "repoRule": {
+          "file": "AGENTS.md",
+          "text": "no panics"
+        }
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r",
+        "harmSupported": true,
+        "confirmedHarmLevel": "repo-rule",
+        "behaviourIntended": true
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "a Low citing a block-on-sight rule is verified on its own",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "ERR-001",
+        "source": "correctness",
+        "harmLevel": "none",
+        "harm": "callers see it"
+      },
+      "vote": {
+        "refuted": false,
+        "citedLineMatches": true,
+        "reachable": true,
+        "premiseSupported": true,
+        "reason": "r"
+      },
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "route": "individual"
+      }
+    },
+    {
+      "name": "a Low citing no block-on-sight rule goes unverified",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "vote": null,
+      "expected": {
+        "tier": "unverified",
+        "severity": "Low",
+        "route": "skip"
+      }
+    },
+    {
+      "name": "an Info citing a rule that does not block on sight goes unverified",
+      "finding": {
+        "severity": "Info",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "SAF-007",
+        "source": "correctness",
+        "harmLevel": "none",
+        "harm": "callers see it"
+      },
+      "vote": null,
+      "expected": {
+        "tier": "unverified",
+        "severity": "Info",
+        "route": "skip"
+      }
+    }
+  ],
+  "panelCases": [
+    {
+      "name": "three votes agree: confirmed, its harm verified",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet"
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "why": "w",
+        "harmVerified": "intent-unmet"
+      }
+    },
+    {
+      "name": "three votes name intent-unmet but state the behaviour intended: no harm verified",
+      "finding": {
+        "severity": "Low",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet",
+          "behaviourIntended": true
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet",
+          "behaviourIntended": true
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "intent-unmet",
+          "behaviourIntended": true
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Low",
+        "why": "w"
+      }
+    },
+    {
+      "name": "two votes split one refutes one confirms: suspected",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": true,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "suspected",
+        "severity": "High",
+        "why": "w"
+      }
+    },
+    {
+      "name": "three votes, two refute: refuted",
+      "finding": {
+        "severity": "Critical",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "security",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": true,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": true,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "refuted",
+        "severity": "Critical",
+        "why": "w"
+      }
+    },
+    {
+      "name": "three votes, one refutes: suspected",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": true,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "suspected",
+        "severity": "High",
+        "why": "w"
+      }
+    },
+    {
+      "name": "a dead voter is left out: the two that answered confirm",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        null,
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "why": "w"
+      }
+    },
+    {
+      "name": "every voter died: unverified",
+      "finding": {
+        "severity": "Critical",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "security",
+        "harm": "callers see it"
+      },
+      "votes": [
+        null,
+        null
+      ],
+      "expected": {
+        "tier": "unverified",
+        "severity": "Critical",
+        "why": "w (NOT VERIFIED: every verifier vote for this finding died before returning a verdict — nothing was checked against the code)"
+      }
+    },
+    {
+      "name": "one of two votes off-schema: thinned, the confirmation stands on half",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "reason": "I think it is fine"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "why": "w (PANEL THINNED: 1 of 2 returned votes answered off-schema and were discarded before the arithmetic — this confirmed stands on 1 of 2 returned votes, exactly half of the panel that answered)",
+        "votesDiscarded": 1
+      }
+    },
+    {
+      "name": "one of three votes off-schema: thinned refutation on most of the panel",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "reason": "I think it is fine"
+        },
+        {
+          "refuted": true,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": true,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "refuted",
+        "severity": "High",
+        "why": "w (PANEL THINNED: 1 of 3 returned votes answered off-schema and were discarded before the arithmetic — this refuted stands on 2 of 3 returned votes, most of the panel that answered)",
+        "votesDiscarded": 1
+      }
+    },
+    {
+      "name": "every returned vote off-schema: unverified, the discard counted",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "reason": "I think it is fine"
+        },
+        {
+          "reason": "I think it is fine"
+        },
+        null
+      ],
+      "expected": {
+        "tier": "unverified",
+        "severity": "High",
+        "why": "w (NOT VERIFIED: the verifier ANSWERED OFF-SCHEMA — its verdict carried none of the judgements this tier is decided on, so nothing was checked against the code)",
+        "votesDiscarded": 2
+      }
+    },
+    {
+      "name": "the premise held for a minority: demoted to suspected",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it",
+        "whereChecked": "src/b.rs:9"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": false,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": false,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "suspected",
+        "severity": "High",
+        "why": "w (demoted to Suspected: the load-bearing premise is off-site and no verifier could pin it to real code — claimed at src/b.rs:9)"
+      }
+    },
+    {
+      "name": "off every reachable path by majority: one severity lower",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": false,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": false,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Medium",
+        "why": "w (severity demoted High→Medium: not on a production-reachable path)"
+      }
+    },
+    {
+      "name": "the cited line matched for a minority: refuted",
+      "finding": {
+        "severity": "High",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "intent-unmet",
+        "harm": "callers see it"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": false,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": false,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "expected": {
+        "tier": "refuted",
+        "severity": "High",
+        "why": "w"
+      }
+    },
+    {
+      "name": "a majority verifies a must-fix harm on a Medium: raised to High",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "data-loss",
+        "harm": "rows lost"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "data-loss"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "data-loss"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": false
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "High",
+        "why": "w (raised to High from Medium: verified harm — a verifier confirmed the data-loss harm, which is must-fix)",
+        "harmVerified": "data-loss"
+      }
+    },
+    {
+      "name": "a split harm verdict raises nothing",
+      "finding": {
+        "severity": "Medium",
+        "title": "t",
+        "file": "src/a.rs",
+        "line": 3,
+        "why": "w",
+        "ruleId": "",
+        "source": "correctness",
+        "harmLevel": "data-loss",
+        "harm": "rows lost"
+      },
+      "votes": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": true,
+          "confirmedHarmLevel": "data-loss"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r",
+          "harmSupported": false
+        }
+      ],
+      "expected": {
+        "tier": "confirmed",
+        "severity": "Medium",
+        "why": "w"
+      }
+    }
+  ],
+  "agreeCases": [
+    {
+      "name": "the same on every axis",
+      "pair": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "other words"
+        }
+      ],
+      "agree": true
+    },
+    {
+      "name": "apart on reach alone",
+      "pair": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": false,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "agree": false
+    },
+    {
+      "name": "apart on the verdict",
+      "pair": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "refuted": true,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        }
+      ],
+      "agree": false
+    },
+    {
+      "name": "one off-schema",
+      "pair": [
+        {
+          "refuted": false,
+          "citedLineMatches": true,
+          "reachable": true,
+          "premiseSupported": true,
+          "reason": "r"
+        },
+        {
+          "reason": "I think it is fine"
+        }
+      ],
+      "agree": false
+    },
+    {
+      "name": "both off-schema and alike",
+      "pair": [
+        {
+          "reason": "I think it is fine"
+        },
+        {
+          "reason": "I think it is fine"
+        }
+      ],
+      "agree": false
+    }
+  ]
+}

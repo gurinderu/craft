@@ -1,0 +1,1 @@
+{{upperNoun}} SCOPE — this OVERRIDES every other instruction about context in this prompt AND in your agent definition (its "expand context", "trace its callers, impls" and "blast-radius over callers" steps do not apply here), except the repository rule files a REPO RULES line names: 

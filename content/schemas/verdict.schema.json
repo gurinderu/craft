@@ -1,0 +1,62 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "refuted",
+    "citedLineMatches",
+    "reachable",
+    "premiseSupported",
+    "behaviourIntended",
+    "harmSupported",
+    "confirmedHarmLevel",
+    "reason"
+  ],
+  "properties": {
+    "refuted": {
+      "type": "boolean",
+      "description": "true if the finding does not hold up"
+    },
+    "citedLineMatches": {
+      "type": "boolean",
+      "description": "true if the cited file:line actually contains what the finding claims"
+    },
+    "reachable": {
+      "type": "boolean",
+      "description": "true if the path is reachable in production (not test/example-only)"
+    },
+    "premiseSupported": {
+      "type": "boolean",
+      "description": "true if the load-bearing premise is either self-contained at the cited line or actually shown by the code at whereChecked; false if it is an off-site claim with no evidence that checks out"
+    },
+    "behaviourIntended": {
+      "type": "boolean",
+      "description": "true when the code (a doc comment, a name, a test) or the PR states that the flagged behaviour is intended; false otherwise. It never refutes the finding: it only stops the intent-unmet harm level"
+    },
+    "harmSupported": {
+      "type": "boolean",
+      "description": "true only if the code shows a listed harm (effect, who, recovery) as stated at a level that holds; behaviour stated as intended is not intent-unmet"
+    },
+    "confirmedHarmLevel": {
+      "type": "string",
+      "enum": [
+        "data-loss",
+        "security",
+        "outage",
+        "irreversible",
+        "intent-unmet",
+        "repo-rule",
+        "operator-recovery",
+        "self-healing",
+        "text",
+        "none"
+      ],
+      "description": "the worst listed level that holds; \"none\" when no listed level holds or none is listed — a vote naming \"none\" confirms no level"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
+    }
+  }
+}

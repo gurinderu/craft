@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "missingLenses",
+    "notes"
+  ],
+  "properties": {
+    "missingLenses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "lenses from the candidate list that should also run; empty if coverage is complete"
+    },
+    "notes": {
+      "type": "string",
+      "description": "one line on anything else likely missed, or \"coverage complete\""
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
+    }
+  }
+}

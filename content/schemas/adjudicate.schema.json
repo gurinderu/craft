@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "currentLine",
+    "note",
+    "invariant",
+    "attack"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "resolved",
+        "still-open",
+        "cannot-tell",
+        "regressed"
+      ]
+    },
+    "currentLine": {
+      "type": "integer",
+      "description": "re-located 1-based line; 0 if not found"
+    },
+    "note": {
+      "type": "string"
+    },
+    "invariant": {
+      "type": "string",
+      "description": "one-sentence invariant the finding violated"
+    },
+    "attack": {
+      "type": "string",
+      "description": "the successful attack on the fix; empty string if every attack failed"
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
+    }
+  }
+}
