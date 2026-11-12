@@ -5,7 +5,7 @@
 //   • `solo` is the one queue retries go through: opencode's child-session execution bugs (anomalyco/opencode #8528,
 //     sst/opencode #6573) leave a child created but never run, and the mitigation is to try again ALONE. The fan-out
 //     retries its failed jobs one at a time through it.
-import type { ChildRequest, Host } from "./host.ts"
+import type { ChildRequest, Host } from './host.ts'
 
 // The sessions this plugin's workflows are running now: craft's hook at the moment of work stays silent there.
 export const ENGINE_SESSIONS = new Set<string>()
@@ -16,7 +16,7 @@ export async function runChildSession(host: Host, req: ChildRequest): Promise<st
   try {
     return await host.runChild({
       ...req,
-      onSession: (session) => {
+      onSession: session => {
         id = session
         ENGINE_SESSIONS.add(session)
         req.onSession?.(session)
@@ -35,4 +35,3 @@ export function solo<T>(work: () => Promise<T>): Promise<T> {
   soloTail = run.catch(() => undefined)
   return run
 }
-

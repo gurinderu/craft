@@ -48,7 +48,8 @@ fn unique_key(key: String, groups: &[(String, Vec<String>)]) -> String {
     if !taken(&key) {
         return key;
     }
-    (2..)
+    // `groups` holds at most `len` names, `key` among them, so one of these `len` is free.
+    (2..=groups.len() + 1)
         .map(|n| format!("{key} ({n})"))
         .find(|k| !taken(k))
         .unwrap_or(key)

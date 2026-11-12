@@ -1,16 +1,16 @@
 // Mirrors workflows/triage-findings.js: gather → validate each finding against the code (parallel)
 // → render one ordered fix plan + triage ledger. No edits. Delegates the per-finding code-check to
 // the hidden rust-reviewer agent; the final plan is synthesized on the session's default model.
-import type { Host } from "./host.ts"
-import { fanOut, runAnswering, type Job } from "./orchestrator.ts"
-import { buildTriageRecord, hasPlanMarkerLine, hasOutcomeLine, writeRecord } from "./run-record.mjs"
-import { existsSync, readFileSync } from "node:fs"
+import type { Host } from './host.ts'
+import { fanOut, runAnswering, type Job } from './orchestrator.ts'
+import { buildTriageRecord, hasPlanMarkerLine, hasOutcomeLine, writeRecord } from './run-record.mjs'
+import { existsSync, readFileSync } from 'node:fs'
 
 // Read the locator as a file when it points at one; otherwise treat it as literal findings text.
 // Use FS APIs (not a shell) so the locator can never be interpreted as a command — no injection.
 function gather(locator: string): string {
   try {
-    return existsSync(locator) ? readFileSync(locator, "utf8") : locator
+    return existsSync(locator) ? readFileSync(locator, 'utf8') : locator
   } catch {
     return locator
   }
@@ -89,13 +89,16 @@ function fenceStep(s: SplitState, l: string): boolean {
     return true
   }
   if (!s.inFence) return false
-  if (l.length) { s.skipped++; s.pending.push(l) }
+  if (l.length) {
+    s.skipped++
+    s.pending.push(l)
+  }
   return true
 }
 
 // Furniture: a horizontal rule, a table's |---|---| rule, a lone bold heading.
 function isFurniture(l: string): boolean {
-  return /^([-*_])\1{2,}$/.test(l.replace(/\s+/g, "")) || /^\|[\s|:-]*\|$/.test(l) || /^\*\*[^*]+\*\*$/.test(l)
+  return /^([-*_])\1{2,}$/.test(l.replace(/\s+/g, '')) || /^\|[\s|:-]*\|$/.test(l) || /^\*\*[^*]+\*\*$/.test(l)
 }
 
 function startsItem(l: string): boolean {
@@ -108,23 +111,38 @@ function contentStep(s: SplitState, l: string): void {
   // markdown wraps at column zero, so "indented means continuation" was true of code and false of
   // prose — and an ordinary multi-KB report then saturated the cap on paragraph fragments alone,
   // spending forty child sessions on half-sentences while real findings past the cap were dropped.
-  if (!l.length) { s.open = false; return }
-  if (/^#{1,6}\s/.test(l)) { s.open = false; return }
+  if (!l.length) {
+    s.open = false
+    return
+  }
+  if (/^#{1,6}\s/.test(l)) {
+    s.open = false
+    return
+  }
   if (isFurniture(l)) {
     s.skipped++
     s.open = false
     return
   }
-  if (startsItem(l)) { s.items.push(l); s.open = true; return }
+  if (startsItem(l)) {
+    s.items.push(l)
+    s.open = true
+    return
+  }
   // Anything else continues the item above it — including a line at column zero, which is what a
   // wrapped bullet and a wrapped paragraph both look like. Only when no item is open does it start
   // one, so a paragraph becomes a single finding rather than one per line.
-  if (s.open && s.items.length) { s.items[s.items.length - 1] += ` ${l}` } else { s.items.push(l); s.open = true }
+  if (s.open && s.items.length) {
+    s.items.push(`${s.items.pop() ?? ''} ${l}`)
+  } else {
+    s.items.push(l)
+    s.open = true
+  }
 }
 
 export function splitFindings(blob: string): { findings: string[]; dropped: number; skipped: number } {
-  const s: SplitState = { items: [], skipped: 0, inFence: false, open: false, pending: [], openedWith: "" }
-  for (const line of blob.split("\n")) {
+  const s: SplitState = { items: [], skipped: 0, inFence: false, open: false, pending: [], openedWith: '' }
+  for (const line of blob.split('\n')) {
     const l = line.trim()
     if (!fenceStep(s, l)) contentStep(s, l)
   }
@@ -142,14 +160,14 @@ export function splitFindings(blob: string): { findings: string[]; dropped: numb
 export async function runTriageFindings(ctx: Host, args: { locator: string }): Promise<string> {
   const blob = gather(args.locator)
   const { findings, dropped, skipped } = splitFindings(blob)
-  if (findings.length === 0) return "No findings parsed from the locator."
+  if (findings.length === 0) return 'No findings parsed from the locator.'
   // Said out loud, at the top of the plan. Dropping input silently is what turns "triaged" into a
   // claim about findings nobody looked at — a Critical one past the cap vanished with no trace in
   // the output OR the run record.
   const coverage = dropped
     ? `> ⚠️ **INCOMPLETE — ${dropped} finding(s) past the first ${MAX_FINDINGS} were NOT triaged.** This plan covers only what is listed below; scope the input down and re-run to cover the rest.\n`
-    : ""
-  const skippedNote = skipped ? `> ${skipped} line(s) inside code fences or table furniture were not treated as findings.\n` : ""
+    : ''
+  const skippedNote = skipped ? `> ${skipped} line(s) inside code fences or table furniture were not treated as findings.\n` : ''
 
   // A validation reads ONE finding against the code. The twenty-minute default was sized for an audit
   // dimension running `cargo clippy --all-targets` and `cargo test`, and its escape hatch — "jobs
@@ -159,7 +177,7 @@ export async function runTriageFindings(ctx: Host, args: { locator: string }): P
 
   const jobs: Job[] = findings.map((f, i) => ({
     label: `f${i + 1}`,
-    agent: "rust-reviewer",
+    agent: 'rust-reviewer',
     timeoutMs: VALIDATION_MS,
     prompt: `Validate this single review finding against the actual code. Do NOT fix anything.
 Finding: ${f}
@@ -173,10 +191,13 @@ OUTCOME: <exactly one of the five, lowercase>`,
 
   // Same discriminator as the audit: these prompts demand an OUTCOME line, so carrying one is what
   // it means to have answered. Without it a refusal counted as a validation.
-  const validated = await fanOut(ctx, jobs.map((j) => ({ ...j, answered: hasOutcomeLine, requires: "OUTCOME: line" })))
+  const validated = await fanOut(
+    ctx,
+    jobs.map(j => ({ ...j, answered: hasOutcomeLine, requires: 'OUTCOME: line' })),
+  )
   const ledger = validated
-    .map((r, i) => `- **${r.label}** (${r.ok ? "validated" : "INCOMPLETE (not run)"}): ${findings[i]}\n  ${r.text.replace(/\n/g, "\n  ")}`)
-    .join("\n")
+    .map((r, i) => `- **${r.label}** (${r.ok ? 'validated' : 'INCOMPLETE (not run)'}): ${findings[i]}\n  ${r.text.replace(/\n/g, '\n  ')}`)
+    .join('\n')
 
   const planPrompt = `You are turning validated review findings into ONE ordered fix plan (writing-plans style) plus a triage ledger. Do not edit code.
 
@@ -206,16 +227,9 @@ ${ledger}`
   // asked me to end with `PLAN: READY`, but I have nothing to plan") carries the line and passed
   // too. The audit prompt already avoids this by writing `VERDICT: X` as a placeholder so the
   // literal final line appears nowhere in the instructions; this now does the same.
-  const planned = await runAnswering(
-    ctx,
-    "",
-    planPrompt,
-    hasPlanMarkerLine,
-    undefined,
-    "PLAN: READY line",
-  ).catch((e) => ({
+  const planned = await runAnswering(ctx, '', planPrompt, hasPlanMarkerLine, undefined, 'PLAN: READY line').catch((e: unknown) => ({
     ok: false,
-    text: "",
+    text: '',
     note: `The planning call itself threw: ${e instanceof Error ? e.message : String(e)}`,
   }))
   const plan = planned.ok ? planned.text : unplanned(planned.note)

@@ -22,9 +22,9 @@ mod tests {
 
     #[test]
     fn each_kind_has_its_phase_deadline() {
-        assert_eq!(deadline_of(Some("scout")), Duration::from_secs(900));
-        assert_eq!(deadline_of(Some("seam")), Duration::from_secs(5400));
-        assert_eq!(deadline_of(Some("verify")), Duration::from_secs(1800));
-        assert_eq!(deadline_of(None), Duration::from_secs(1800));
+        assert_eq!(deadline_of(Some("scout")), Duration::from_mins(15));
+        assert_eq!(deadline_of(Some("seam")), Duration::from_mins(90));
+        assert_eq!(deadline_of(Some("verify")), Duration::from_mins(30));
+        assert_eq!(deadline_of(None), Duration::from_mins(30));
     }
 }

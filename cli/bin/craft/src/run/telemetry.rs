@@ -112,11 +112,11 @@ mod tests {
         let quiet = |_: &str| {};
         let filed = json!({"run": "/r", "filing": {"record": "filed", "lost": []}});
         assert_eq!(Lost::default().settled(&filed, "again", &quiet), "");
-        let failed =
+        let refused =
             json!({"run": "/r", "filing": {"record": "failed", "lost": ["the run record — x"]}});
         let mut lost = Lost::default();
-        lost.heard(&failed, &quiet);
-        let got = lost.settled(&failed, "again", &quiet);
+        lost.heard(&refused, &quiet);
+        let got = lost.settled(&refused, "again", &quiet);
         assert!(
             got.starts_with("## ⚠️ Telemetry lost\n1 record write(s)"),
             "{got}"

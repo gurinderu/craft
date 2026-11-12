@@ -33,7 +33,7 @@ impl Default for OpenCode {
     fn default() -> Self {
         Self {
             command: PathBuf::from("opencode"),
-            timeout: Duration::from_secs(2 * 60 * 60),
+            timeout: Duration::from_hours(2),
             env: Vec::new(),
             archived: true,
         }

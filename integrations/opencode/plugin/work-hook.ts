@@ -3,16 +3,16 @@
 // feeds it from `chat.message` and `event`, host-v2.ts from the session `prompt` hook and `ctx.event`; each
 // says how the lines reach the message (`deliver`). The lib modules load lazily and any failure is silence:
 // the hook must never cost the plugin its tools (realm @nick/craft, #276).
-import { homedir } from "node:os"
-import type { WorkHook } from "./host.ts"
+import { homedir } from 'node:os'
+import type { WorkHook } from './host.ts'
 
-type Modules = [typeof import("../../../lib/work-hook-opencode.mjs"), typeof import("../../../lib/hook-log.mjs")]
+type Modules = [typeof import('../../../lib/work-hook-opencode.mjs'), typeof import('../../../lib/hook-log.mjs')]
 let modules: Promise<Modules | null> | undefined
 const load = (): Promise<Modules | null> =>
-  (modules ??= Promise.all([import("../../../lib/work-hook-opencode.mjs"), import("../../../lib/hook-log.mjs")]).catch(() => null))
+  (modules ??= Promise.all([import('../../../lib/work-hook-opencode.mjs'), import('../../../lib/hook-log.mjs')]).catch(() => null))
 
-type Where = { directory: string, home: string, env: Record<string, string | undefined> }
-type Subagent = { parent: string, agent: string }
+type Where = { directory: string; home: string; env: Record<string, string | undefined> }
+type Subagent = { parent: string; agent: string }
 
 // One message the hook answers: decide, log, and hand the lines to `deliver` when there are any.
 async function respond(where: Where, session: string, prompt: string, subagent: Subagent | null, deliver: (text: string) => boolean): Promise<void> {
@@ -23,7 +23,7 @@ async function respond(where: Where, session: string, prompt: string, subagent: 
   const { text, entry } = m[0].opencodeMessage(message, where.env, new Date(), () => m[1].readHookLog(file) ?? [])
   const placed = text ? deliver(text) : false
   // Nothing to build the lines on: the log says so rather than claiming they were said.
-  if (text && !placed && entry) Object.assign(entry, { spoke: false, silent: "no-part" })
+  if (text && !placed && entry) Object.assign(entry, { spoke: false, silent: 'no-part' })
   if (entry) m[1].appendHookLog(entry, file)
 }
 
@@ -51,10 +51,14 @@ export function workHook(
   const children = new Map<string, Subagent | null>()
   return {
     childCreated(id, parent, agent) {
-      children.set(id, { parent, agent: agent ?? "" })
+      children.set(id, { parent, agent: agent ?? '' })
     },
     async compacted(session) {
-      try { await compacted(where, session) } catch { /* silence */ }
+      try {
+        await compacted(where, session)
+      } catch {
+        /* silence */
+      }
     },
     async message(session, prompt, agent, deliver) {
       try {
@@ -63,7 +67,9 @@ export function workHook(
         if (child !== undefined) children.set(session, null)
         const subagent = child === undefined ? null : { parent: child.parent, agent: agent ?? child.agent }
         await respond(where, session, prompt, subagent, deliver)
-      } catch { /* silence */ }
+      } catch {
+        /* silence */
+      }
     },
   }
 }

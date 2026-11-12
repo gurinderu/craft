@@ -148,7 +148,7 @@ fn an_unreadable_agent_list_is_said_and_no_refusal() {
     .unwrap();
     let heard = std::cell::RefCell::new(Vec::new());
     let got = preflight(&path, dir.path(), &|l| {
-        heard.borrow_mut().push(l.to_owned())
+        heard.borrow_mut().push(l.to_owned());
     })
     .unwrap();
     assert_eq!(got.agents, None);

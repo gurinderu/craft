@@ -1,0 +1,27 @@
+# Generated: the shipped engines are built from src/ (npm run build:engines).
+integrations/claude-code/workflows/
+# The engines as authored: each is one `__run` body whose CRAFT_VERSION stamp must start its line
+# (lib/build-engines.mjs, lib/check-workflows.mjs; release-please rewrites it); Prettier would indent it.
+src/
+# Lockfiles, build output, installs.
+package-lock.json
+**/package-lock.json
+Cargo.lock
+cli/target/
+node_modules/
+# Markdown is delivery text (skill bodies, docs): never reflowed. CHANGELOG.md is release-please's.
+*.md
+# Data, not config: the review's content (inlined byte for byte into the engines and the CLI), the CLI's fixtures,
+# and files a tool writes (the parity files, the jscpd baseline, release-please's manifest).
+content/
+cli/
+.jscpd-baseline.json
+.release-please-manifest.json
+# The JSON manifests release-please rewrites with its own serializer (release-please-config.json `extra-files`).
+integrations/claude-code/.claude-plugin/plugin.json
+.claude-plugin/marketplace.json
+.codex-plugin/plugin.json
+# Stryker's leftovers (gitignored).
+.stryker-tmp/
+reports/
+stryker-setup-*.js

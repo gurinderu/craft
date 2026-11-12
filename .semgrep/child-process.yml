@@ -14,27 +14,27 @@ rules:
               - pattern-inside: |
                   import { $F } from '$M'
                   ...
-              - pattern: "$F($CMD, ...)"
+              - pattern: '$F($CMD, ...)'
           - patterns:
               - pattern-inside: |
                   import * as $NS from '$M'
                   ...
-              - pattern: "$NS.$F($CMD, ...)"
+              - pattern: '$NS.$F($CMD, ...)'
           - patterns:
               - pattern-inside: |
                   $NS = require('$M')
                   ...
-              - pattern: "$NS.$F($CMD, ...)"
+              - pattern: '$NS.$F($CMD, ...)'
           - patterns:
               - pattern-inside: |
                   const { $F } = require('$M')
                   ...
-              - pattern: "$F($CMD, ...)"
+              - pattern: '$F($CMD, ...)'
           - patterns:
               - pattern-inside: |
                   const { $F } = await import('$M')
                   ...
-              - pattern: "$F($CMD, ...)"
+              - pattern: '$F($CMD, ...)'
           - pattern: "require('$M').$F($CMD, ...)"
       - metavariable-regex:
           metavariable: $M
@@ -57,27 +57,27 @@ rules:
               - pattern-inside: |
                   import { $F } from '$M'
                   ...
-              - pattern: "$F(..., {..., shell: true, ...}, ...)"
+              - pattern: '$F(..., {..., shell: true, ...}, ...)'
           - patterns:
               - pattern-inside: |
                   import * as $NS from '$M'
                   ...
-              - pattern: "$NS.$F(..., {..., shell: true, ...}, ...)"
+              - pattern: '$NS.$F(..., {..., shell: true, ...}, ...)'
           - patterns:
               - pattern-inside: |
                   $NS = require('$M')
                   ...
-              - pattern: "$NS.$F(..., {..., shell: true, ...}, ...)"
+              - pattern: '$NS.$F(..., {..., shell: true, ...}, ...)'
           - patterns:
               - pattern-inside: |
                   const { $F } = require('$M')
                   ...
-              - pattern: "$F(..., {..., shell: true, ...}, ...)"
+              - pattern: '$F(..., {..., shell: true, ...}, ...)'
           - patterns:
               - pattern-inside: |
                   const { $F } = await import('$M')
                   ...
-              - pattern: "$F(..., {..., shell: true, ...}, ...)"
+              - pattern: '$F(..., {..., shell: true, ...}, ...)'
           - pattern: "require('$M').$F(..., {..., shell: true, ...}, ...)"
       - metavariable-regex:
           metavariable: $M

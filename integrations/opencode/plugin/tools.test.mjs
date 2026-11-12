@@ -13,8 +13,15 @@ function fakeHost(model) {
   /** @type {import('./host.ts').ChildRequest[]} */
   const asked = []
   return {
-    asked, directory: os.tmpdir(), worktree: os.tmpdir(), sh: async () => '', callerModel: async () => model,
-    runChild: async req => { asked.push(req); return 'done' },
+    asked,
+    directory: os.tmpdir(),
+    worktree: os.tmpdir(),
+    sh: () => Promise.resolve(''),
+    callerModel: () => Promise.resolve(model),
+    runChild: req => {
+      asked.push(req)
+      return Promise.resolve('done')
+    },
   }
 }
 
@@ -36,18 +43,22 @@ function fakeBinary() {
   return path.join(path.dirname(bin), 'argv')
 }
 
-test('the review runs the binary with the opencode backend on the caller\'s model, its progress the title, its answer titled', async () => {
+test("the review runs the binary with the opencode backend on the caller's model, its progress the title, its answer titled", async () => {
   const argv = fakeBinary()
   const review = TOOLS.find(t => t.name === 'review')
   /** @type {string[]} */
   const titles = []
-  const answer = await review?.run(fakeHost({ providerID: 'p', modelID: 'm' }), { args: '--base main' }, { sessionID: 'ses_caller', progress: t => titles.push(t) })
+  const answer = await review?.run(
+    fakeHost({ providerID: 'p', modelID: 'm' }),
+    { args: '--base main' },
+    { sessionID: 'ses_caller', progress: t => titles.push(t) },
+  )
   assert.equal(fs.readFileSync(argv, 'utf8').trim(), 'review run --backend opencode --events json --base main --models p/m')
   assert.deepEqual(titles, ['craft review: lenses, round 1 — 0 running, 0 done'])
   assert.deepEqual(answer, { title: 'craft review: Approve', output: '## Verdict\n\n✅ Approve' })
 })
 
-test('flags that name the models keep them, and a call with no session runs on opencode\'s own model', async () => {
+test("flags that name the models keep them, and a call with no session runs on opencode's own model", async () => {
   const argv = fakeBinary()
   const review = TOOLS.find(t => t.name === 'review')
   await review?.run(fakeHost({ providerID: 'p', modelID: 'm' }), { args: '--models=a/b' }, { sessionID: 'ses_caller' })
@@ -65,7 +76,10 @@ test('CRAFT_OPENCODE_MODELS keeps the session model off the flags: the binary ma
 })
 
 test('the plugin offers the review beside the audit and the triage', () => {
-  assert.deepEqual(TOOLS.map(t => t.name), ['rust-audit', 'triage-findings', 'review'])
+  assert.deepEqual(
+    TOOLS.map(t => t.name),
+    ['rust-audit', 'triage-findings', 'review'],
+  )
 })
 
 test('the audit and the triage nest their children under the caller too, and keep the rest of the host', async () => {

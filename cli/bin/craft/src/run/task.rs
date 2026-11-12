@@ -128,16 +128,13 @@ pub(crate) fn spell_root(text: &str, root: &Path) -> String {
                 .next()
                 .unwrap_or_default()
         });
-        match rel.filter(|r| !r.is_empty()) {
-            Some(top) => {
-                let after = part.strip_prefix('/').and_then(|p| p.strip_prefix(top));
-                out.push_str(&plugin_path(root, top).display().to_string());
-                out.push_str(after.unwrap_or_default());
-            }
-            None => {
-                out.push_str(&root.display().to_string());
-                out.push_str(part);
-            }
+        if let Some(top) = rel.filter(|r| !r.is_empty()) {
+            let after = part.strip_prefix('/').and_then(|p| p.strip_prefix(top));
+            out.push_str(&plugin_path(root, top).display().to_string());
+            out.push_str(after.unwrap_or_default());
+        } else {
+            out.push_str(&root.display().to_string());
+            out.push_str(part);
         }
     }
     out

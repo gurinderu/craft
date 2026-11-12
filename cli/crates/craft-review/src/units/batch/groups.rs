@@ -58,16 +58,15 @@ pub(super) fn batch_groups(
             grow_along_edges(&comp, &adj, vol, budget)
         };
         for mut p in parts {
-            match p.as_slice() {
-                [one] => singles.push(Piece {
+            if let [one] = p.as_slice() {
+                singles.push(Piece {
                     key: one.clone(),
                     files: Vec::new(),
                     w: vol(one),
-                }),
-                _ => {
-                    p.sort();
-                    groups.push(p);
-                }
+                });
+            } else {
+                p.sort();
+                groups.push(p);
             }
         }
     }

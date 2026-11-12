@@ -34,7 +34,12 @@ fn nothing_recalled() -> Value {
 
 /// A run over `repo` that recalls, `passed` handed in, its scout picking `errors` and its recall
 /// answering `recall`: the run directory and the lens step.
-fn recalled_run(repo: &Path, out: &Path, passed: Option<Value>, recall: Value) -> (PathBuf, Value) {
+fn recalled_run(
+    repo: &Path,
+    out: &Path,
+    passed: Option<Value>,
+    recall: &Value,
+) -> (PathBuf, Value) {
     let run = out.join("run");
     let start = StartOptions {
         recall: true,
@@ -93,7 +98,7 @@ fn rejected_run(repo: &Path, out: &Path) -> Value {
         "scope": "src/lib.rs", "author": "rev", "date": "2026-05-01", "commit": head, "line": 1,
         "lens": "errors", "links": ["https://github.com/o/r/pull/1#discussion_r1"]
     }]);
-    let (run, _) = recalled_run(repo, out, Some(rejected), nothing_recalled());
+    let (run, _) = recalled_run(repo, out, Some(rejected), &nothing_recalled());
     submit(
         &run,
         round1(&[
@@ -141,7 +146,7 @@ fn a_finding_rejected_on_the_pr_is_set_aside_not_reported_again() {
         "scope": "src/lib.rs", "author": "rev", "date": "2026-05-01", "commit": head, "line": 1,
         "lens": "errors", "links": ["https://github.com/o/r/pull/1#discussion_r1"]
     }]);
-    let (run, _) = recalled_run(repo.path(), out.path(), Some(rejected), nothing_recalled());
+    let (run, _) = recalled_run(repo.path(), out.path(), Some(rejected), &nothing_recalled());
     submit(
         &run,
         round1(&[
@@ -221,7 +226,7 @@ fn a_recalled_decision_whose_scope_changed_since_raises_its_finding_again() {
             "body": "fine", "scope": "src", "status": "active", "commit": before, "line": 1, "lens": "errors"
         }]
     });
-    let (run, _) = recalled_run(repo.path(), out.path(), None, recall);
+    let (run, _) = recalled_run(repo.path(), out.path(), None, &recall);
     submit(
         &run,
         round1(&[titled("Medium", 1, "f returns 1 instead of 0")]),

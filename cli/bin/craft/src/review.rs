@@ -288,14 +288,13 @@ async fn view(
 
 fn write_result(out: Option<&Path>, result: &serde_json::Value) -> Result<()> {
     let text = serde_json::to_string_pretty(result)?;
-    match out {
-        Some(path) => std::fs::write(path, format!("{text}\n"))
-            .with_context(|| format!("writing the result to {}", path.display())),
-        None => {
-            let mut stdout = std::io::stdout().lock();
-            writeln!(stdout, "{text}")?;
-            Ok(())
-        }
+    if let Some(path) = out {
+        std::fs::write(path, format!("{text}\n"))
+            .with_context(|| format!("writing the result to {}", path.display()))
+    } else {
+        let mut stdout = std::io::stdout().lock();
+        writeln!(stdout, "{text}")?;
+        Ok(())
     }
 }
 

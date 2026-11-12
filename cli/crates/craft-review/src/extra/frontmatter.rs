@@ -41,7 +41,7 @@ pub fn parse_definition(text: &str, stem: &str) -> Definition {
     let mut d = Definition::default();
     let mut lines = text.lines();
     if lines.next().map(str::trim_end) != Some("---") {
-        d.name = stem.to_owned();
+        stem.clone_into(&mut d.name);
         return d;
     }
     let body: Vec<&str> = lines.take_while(|l| l.trim_end() != "---").collect();
@@ -64,10 +64,12 @@ pub fn parse_definition(text: &str, stem: &str) -> Definition {
             _ => {}
         }
     }
-    if d.name.trim().is_empty() {
-        d.name = stem.to_owned();
+    let named = match d.name.trim() {
+        "" => stem.trim(),
+        name => name,
     }
-    d.name = d.name.trim().to_owned();
+    .to_owned();
+    d.name = named;
     d
 }
 

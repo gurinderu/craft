@@ -30,7 +30,7 @@ impl Default for ClaudeCode {
         Self {
             command: PathBuf::from("claude"),
             plugin_dirs: Vec::new(),
-            timeout: Duration::from_secs(30 * 60),
+            timeout: Duration::from_mins(30),
         }
     }
 }

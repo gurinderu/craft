@@ -31,7 +31,7 @@ fn verified(
     repo: &Path,
     out: &Path,
     passed: Option<Value>,
-    recall: Value,
+    recall: &Value,
     found: &[Value],
 ) -> Value {
     let run = out.join("run");
@@ -69,7 +69,7 @@ fn report(done: &Value) -> String {
 
 /// A rejected decision on `f` at line 1, and its finding raised again twenty lines off in other
 /// words: no title rule matches it, only the judge. The finished step and its report.
-fn reworded(answer: Value) -> (Value, String) {
+fn reworded(answer: &Value) -> (Value, String) {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let rejected = json!([{
@@ -83,7 +83,7 @@ fn reworded(answer: Value) -> (Value, String) {
         21,
         "callers get one where zero is expected",
     )];
-    let s = verified(repo.path(), out.path(), Some(rejected), nothing, &found);
+    let s = verified(repo.path(), out.path(), Some(rejected), &nothing, &found);
     assert_eq!(ids(&s), ["match-judge"]);
     assert_contains_all(
         &prompt_of(&s["tasks"][0]),
@@ -102,7 +102,7 @@ fn reworded(answer: Value) -> (Value, String) {
 #[test]
 fn a_decision_only_the_judge_matches_sets_its_reworded_finding_aside() {
     let same = json!({"verdicts": [{"pair": 0, "same": true, "violates": false, "why": "the same constant, reworded"}]});
-    let (done, text) = reworded(same);
+    let (done, text) = reworded(&same);
     assert_eq!(done["verdict"], json!("Approve"));
     assert_eq!(done["findings"], json!([]));
     assert_eq!(done["ledger"][0]["disposition"], json!("rejected"));
@@ -116,7 +116,7 @@ fn a_decision_only_the_judge_matches_sets_its_reworded_finding_aside() {
     );
 
     // Without its verdict the title rule decides, and these titles share too few words.
-    let (done, text) = reworded(json!({"verdicts": []}));
+    let (done, text) = reworded(&json!({"verdicts": []}));
     assert_eq!(done["verdict"], json!("Warning"));
     assert_contains_all(
         &text,
@@ -138,7 +138,7 @@ fn a_project_rule_the_judge_puts_a_finding_under_covers_it() {
         titled("Medium", 1, "f returns 1, not 0"),
         titled("Medium", 5, "f is not documented"),
     ];
-    let s = verified(repo.path(), out.path(), None, recall, &found);
+    let s = verified(repo.path(), out.path(), None, &recall, &found);
     assert_eq!(ids(&s), ["rule-judge"], "no decision: only the rule judge");
     assert_contains_all(
         &prompt_of(&s["tasks"][0]),
