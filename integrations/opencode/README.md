@@ -67,7 +67,7 @@ run it there yourself before starting opencode. The 2.x package needs none of th
 
 ## Upgrading
 
-On 2.x with the package, add the new release's tag (above). With `install.sh`: after checking out the new release tag (`git fetch --tags && git checkout v<version>`), rerun `install.sh` with the same scope, then restart
+On 2.x with the package, run `opencode plugin remove <old spec>`, then `opencode plugin add <new spec>` (above) — adding the new spec alone keeps the old one too, and craft loads twice. With `install.sh`: after checking out the new release tag (`git fetch --tags && git checkout v<version>`), rerun `install.sh` with the same scope, then restart
 opencode. The links point into this checkout, but a checkout does not change what is linked:
 
 - it relinks the plugin as one file, `plugins/craft-rust.ts` — opencode 1.x never loads the older
