@@ -6,6 +6,33 @@ adapter layer.
 
 ## Install
 
+### OpenCode 2.x — one command
+
+<!-- x-release-please-start-version -->
+```bash
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.51.0
+```
+<!-- x-release-please-end -->
+
+`opencode plugin add` installs the release's package (the `opencode-plugin` branch, tagged
+`opencode-v<version>` by each release) — it has no npm dependencies, so nothing else is installed — and writes the spec into the global
+`~/.config/opencode/opencode.json` `plugins` list; the same spec as one line of a project's `plugins` works too.
+The plugin brings craft's tools, its agents, the `/craft-review`, `/rust-audit` and `/triage-findings` commands,
+the skills (all but `develop` and `codex-review`) and the review's footer line — 2.x reads no agents, commands
+or skills folder inside a package, so the plugin registers them itself. `opencode plugin list --builtin` lists
+it as `craft-rust` (a plain `opencode plugin list` does not). The spec names a fixed tag, so `opencode plugin update`
+never moves it. To move to a new release, remove the old spec and add the new one — adding the new tag's spec alone
+keeps the old one in the list too, and both load:
+
+```bash
+opencode plugin remove git+https://github.com/gurinderu/craft#opencode-v<old version>
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v<new version>
+```
+
+The review command is `/craft-review`: 2.x has a built-in `/review` of its own.
+
+### OpenCode 1.x — install.sh
+
 Check out a release tag, then, from the project the adapters are for, symlink them into an opencode tree:
 
 <!-- x-release-please-start-version -->
@@ -17,7 +44,8 @@ git clone --branch v0.51.0 https://github.com/gurinderu/craft ~/craft
 <!-- x-release-please-end -->
 
 Install from a release tag, not `main`: `bin/craft` runs the `craft` binary of the release version, so a
-checkout of `main` would run newer skills and content with an older binary.
+checkout of `main` would run newer skills and content with an older binary. `install.sh` works on 2.x too (2.x
+reads the linked folders itself, and the plugin then registers nothing of its own).
 
 Then restart opencode (or reopen the project) so it rescans `skills/`, `agents/`, `commands/`,
 and `plugins/`.
@@ -34,11 +62,12 @@ files from `plugins/`, not directories). opencode 2.x does not install a plugin
 directory's dependencies, so `install.sh` runs `npm ci --omit=dev` in `integrations/opencode/plugin`
 whenever the dependencies are missing or npm's record of them is older than `package-lock.json` (a tree
 with dev packages is reinstalled with them; one another installer laid out is left alone); without npm,
-run it there yourself before starting opencode.
+run it there yourself before starting opencode. The 2.x package needs none of them: only the 1.x entry imports
+`@opencode-ai/plugin` at run time, and it loads that module only when 1.x calls it.
 
 ## Upgrading
 
-After checking out the new release tag (`git fetch --tags && git checkout v<version>`), rerun `install.sh` with the same scope, then restart
+On 2.x with the package, add the new release's tag (above). With `install.sh`: after checking out the new release tag (`git fetch --tags && git checkout v<version>`), rerun `install.sh` with the same scope, then restart
 opencode. The links point into this checkout, but a checkout does not change what is linked:
 
 - it relinks the plugin as one file, `plugins/craft-rust.ts` — opencode 1.x never loads the older
@@ -46,30 +75,30 @@ opencode. The links point into this checkout, but a checkout does not change wha
 - it links the footer's directory, `plugins/craft-review-footer` — without it 2.x shows no review
   progress line;
 - it installs the plugin's locked dependencies again (`npm ci --omit=dev`) — opencode 2.x does not;
-- it links agents and commands added since the last install (`review-task`, `/review`) — they are
+- it links agents and commands added since the last install (`review-task`, `/craft-review`) — they are
   linked file by file, so a new one is missing until the rerun — and removes its links whose target
   is gone or no longer installed (`codex-review`, the old plugin directory link).
 
-`/review` refuses to start when the `review-task` agent is missing and says to rerun `install.sh`.
+`/craft-review` refuses to start when the `review-task` agent is missing and says to add the package (2.x) or rerun `install.sh`.
 
 ## Use
 
 - **Skills** — auto-discovered; opencode's `skill` tool lists all of craft's skills and routes by description.
   `install.sh` leaves out `develop` and `codex-review`, which drive the review through Claude Code's
-  Workflow tool and `codex exec`; in OpenCode the review is `/review`.
+  Workflow tool and `codex exec`; in OpenCode the review is `/craft-review`.
 - **Agents** — `rust-reviewer`, `rust-architecture-reviewer`, `rust-security-scanner` and `rust-miri`
   are hidden subagents (they don't clutter `@`-autocomplete); the workflows dispatch them.
-  `review-task` exists only for `/review`'s tasks: hidden too, but `mode: all`, because the binary
+  `review-task` exists only for `/craft-review`'s tasks: hidden too, but `mode: all`, because the binary
   starts it with `opencode run --agent review-task`, which opencode 1.19.5 refuses for a subagent
   (it falls back to the default agent); `hidden` keeps it out of the agent picker. It may read
   outside the reviewed repository (`external_directory: allow`): its task's prompt file is in the
   run directory under `~/.craft`, and 1.19.5's `run` stops on the permission question otherwise.
-- **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/review [flags ...]`.
+- **Workflows** — `/rust-audit [base-ref]`, `/triage-findings <locator>` and `/craft-review [flags ...]`.
   Each workflow's child sessions nest under the session that called it.
 
 ## Review
 
-`/review` runs craft's review through the `review` tool, which runs the `craft` binary's own driver:
+`/craft-review` runs craft's review through the `review` tool, which runs the `craft` binary's own driver:
 `<checkout>/bin/craft review run --backend opencode --events json`. `bin/craft` runs the binary of this
 plugin's version, downloaded from its GitHub release into `~/.craft/bin/<version>/` the first time
 (`CRAFT_BIN=<path>` runs a local build). The binary decides every step — the gate, the scouts, the
@@ -90,7 +119,7 @@ with no footer line.
 
 On OpenCode 2.x `/rust-audit` and `/triage-findings` refuse up front, INCOMPLETE, and run nothing:
 their child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7); use OpenCode 1.x,
-Claude Code, Codex or pi for them. `/review` is not refused: its tasks run as `opencode run`
+Claude Code, Codex or pi for them. `/craft-review` is not refused: its tasks run as `opencode run`
 processes, not child sessions. The refusal itself is tested against fake hosts only, not yet seen in
 a real OpenCode 2.x.
 
@@ -108,7 +137,7 @@ a real OpenCode 2.x.
 - A failed task is handed out again by the binary; the first usage-limit error stops new tasks and
   ends the run INCOMPLETE with how to resume it.
 - If this OpenCode has no `review-task` agent (an install from before it), the review refuses to
-  start, INCOMPLETE, and says to rerun `install.sh`; it never runs a task on another, writable agent.
+  start, INCOMPLETE, and says to add the package (2.x) or rerun `install.sh`; it never runs a task on another, writable agent.
 - If this OpenCode has no `rust-reviewer` agent, its tasks run on `review-task` with the
   rust-reviewer prompt, and the run is reported as degraded.
 
@@ -149,7 +178,7 @@ the plugin directory is linked from; if that fails, the hook is silent and the t
 - **On 2.x the child-session reply is read but not yet seen.** The plugin admits the prompt, waits for
   the session to go idle and reads its last finished assistant message. Loading, tool registration and
   a tool run were seen on opencode 2.2.7; a child session answered by a real model was not.
-- **`/rust-audit`'s review dimension is single-pass.** The CLI-driven review is `/review` (above); in
+- **`/rust-audit`'s review dimension is single-pass.** The CLI-driven review is `/craft-review` (above); in
   `/rust-audit` the **review** dimension is a single-pass `rust-reviewer` agent — there is no per-crate review
   fan-out and no inter-crate-contract dimension. The other audit dimensions (architecture,
   security, miri, crate-decomposition, semver, build-matrix, deps, unused-crates, tests-cov) do run.

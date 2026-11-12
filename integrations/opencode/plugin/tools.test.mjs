@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { writeExecutable } from '../../../lib/write-executable.mjs'
-import { TOOLS, nestedUnder } from './tools.ts'
+import { TOOLS, nestedUnder, withoutContent } from './tools.ts'
 
 /** @param {import('./host.ts').ModelRef} [model] @returns {import('./host.ts').Host & { asked: import('./host.ts').ChildRequest[] }} */
 function fakeHost(model) {
@@ -89,4 +89,19 @@ test('the audit and the triage nest their children under the caller too, and kee
   assert.equal(host.asked[0]?.parentID, 'ses_caller')
   assert.equal(nested.directory, os.tmpdir())
   assert.equal(nestedUnder(host, undefined), host, 'no caller: the host as it is')
+})
+
+test('when the registration failed, the review says why and runs nothing; the other tools stay', async () => {
+  const tools = withoutContent(TOOLS, 'no skill editor')
+  const review = tools.find(t => t.name === 'review')
+  assert.ok(review)
+  assert.match(review.description, /could not register its agents, commands and skills on this OpenCode \(no skill editor\)/)
+  const answer = await review.run(fakeHost(), {}, {})
+  assert.ok(typeof answer === 'string')
+  assert.match(answer, /^⚠️ INCOMPLETE — craft could not register its agents, commands and skills on this OpenCode: no skill editor\./)
+  assert.doesNotMatch(answer, /plugin add/)
+  assert.deepEqual(
+    tools.filter(t => t.name !== 'review'),
+    TOOLS.filter(t => t.name !== 'review'),
+  )
 })
