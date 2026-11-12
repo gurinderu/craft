@@ -18,11 +18,6 @@ sh "<plugin root>/bin/craft" review run --backend codex [flags ...]
 
 `craft` is not on PATH: always name it by that path, never as a bare `craft`.
 
-It must run outside Codex's sandbox — with escalated permissions the user approves: the first run
-downloads the binary (network, writes `~/.craft/bin`), and the review agents run as
-`codex exec -s read-only`, which needs Codex's own sandbox to start. If Codex's sandbox itself
-cannot start here (every command fails, `bwrap: …` errors), tell the user that and stop.
-
 `bin/craft` runs the craft binary of this plugin version, downloading it from the plugin's GitHub
 release into `~/.craft/bin/<version>/` the first time. If it fails with one `craft: …` line (no
 download tool, no network, a platform with no released binary), relay that line.
@@ -45,10 +40,12 @@ the diff for defects, and report the findings by severity with file:line.
 How to run it:
 - It runs long (minutes to an hour on a large diff): give the shell call the longest timeout
   your tool allows.
-- It needs to run **outside the sandbox** (ask for escalated permissions): it writes under
-  `~/.craft`, may fetch the craft binary from GitHub, builds and runs the branch's code for the
-  mechanical gate (`--no-gate` turns that off for a branch you do not trust), and starts
-  `codex exec` processes that call the model with this session's login.
+- It needs to run **outside the sandbox** (ask for escalated permissions the user approves): it
+  writes under `~/.craft`, may fetch the craft binary from GitHub, builds and runs the branch's
+  code for the mechanical gate (`--no-gate` turns that off for a branch you do not trust), and
+  starts `codex exec -s read-only` processes that call the model with this session's login and
+  need Codex's own sandbox to start. If that sandbox itself cannot start here (every command
+  fails, `bwrap: …` errors), tell the user that and stop.
 - It prints `run=<directory>` on stderr as soon as the run starts. If the call is cut off or the
   run stops on the usage limit, resume it with `--run <that directory>` alone (beside
   `--backend codex`).
