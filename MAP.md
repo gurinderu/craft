@@ -289,7 +289,14 @@ HTTPS), which each release rebuilds from this directory with the links dereferen
 (`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
 so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` holds the pi package's `craft-review` skill: the repository is a pi
-package (`pi install git:github.com/gurinderu/craft`) whose manifest, the root `package.json`'s `pi` key, loads that
+package whose manifest, the root `package.json`'s `pi` key, loads that
 skill and one extension, `lib/pi-extension.mjs`, whose `craft_review` tool runs `bin/craft review run --backend pi
 --events json` (`lib/craft-review-run.mjs`, shared with the OpenCode tool), streams its progress and draws the verdict,
 findings and report — new, seen running end to end from a checkout, not yet as an installed pi package.
+The pi package installs at the release tag:
+
+<!-- x-release-please-start-version -->
+```sh
+pi install git:github.com/gurinderu/craft@v0.50.1
+```
+<!-- x-release-please-end -->

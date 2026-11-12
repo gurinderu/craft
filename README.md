@@ -131,6 +131,18 @@ codex plugin add craft@craft
 The marketplace is pinned to the release tag because `bin/craft` runs the `craft` binary of the plugin's release
 version: a marketplace that followed `main` would run newer skills and content with an older binary.
 
+To move to a new release — or off a marketplace added without `--ref` — remove the marketplace first: Codex refuses
+to add `craft` again from another ref ("already added from a different source"), and `codex plugin marketplace
+upgrade craft` only refreshes the ref already pinned. Then add it at the new tag and add the plugin again:
+
+<!-- x-release-please-start-version -->
+```
+codex plugin marketplace remove craft
+codex plugin marketplace add gurinderu/craft --ref v0.50.1
+codex plugin add craft@craft
+```
+<!-- x-release-please-end -->
+
 Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
 skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines `rust-audit` and
 `triage-findings` and the review loop of `craft:develop` do not run there. The review has a Codex route, new and not
