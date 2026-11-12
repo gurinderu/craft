@@ -4,7 +4,9 @@
 //! Claude Code release branch holds the delivery with those links made real directories. On both, a
 //! review run by a stand-in `codex` (the smallest answer each task's schema allows) reaches its
 //! verdict, the tasks are told of skills that exist and given the agents' bodies, and the run is
-//! filed through the plugin's own `lib/`.
+//! filed through the plugin's own `lib/`. The OpenCode 2.x package (`lib/opencode-package.mjs`) is
+//! a third layout: `bin/craft` hands the binary the package root, which holds the Claude Code
+//! manifest under `integrations/claude-code` and the shared parts at its own root.
 #![expect(
     clippy::unwrap_used,
     reason = "the fixture helpers fail the test loudly, like the tests they serve"
@@ -198,4 +200,35 @@ fn the_materialized_claude_code_delivery_resolves_under_itself() {
     std::fs::rename(&delivery, &root).unwrap();
     std::fs::remove_dir_all(&copy).unwrap();
     assert_reviewed(tmp.path(), &root);
+}
+
+#[test]
+fn the_opencode_package_is_a_plugin_root_the_review_runs_over() {
+    let tmp = tempfile::tempdir().unwrap();
+    let laid = tmp.path().join("laid");
+    std::fs::create_dir_all(&laid).unwrap();
+    let script = "const [lib, root, into] = process.argv.slice(1); \
+                  const { layPackage } = await import(lib); \
+                  process.stdout.write(layPackage(root, into))";
+    let lib = checkout().join("lib/opencode-package.mjs");
+    let out = Command::new("node")
+        .args(["--input-type=module", "-e", script])
+        .arg(url_of(&lib))
+        .arg(checkout())
+        .arg(&laid)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let root = PathBuf::from(String::from_utf8(out.stdout).unwrap());
+    assert!(root.join("npm-shrinkwrap.json").is_file());
+    assert_reviewed(tmp.path(), &root);
+}
+
+/// `path` as a `file://` URL, the form a dynamic `import()` of an absolute path takes.
+fn url_of(path: &Path) -> String {
+    format!("file://{}", std::fs::canonicalize(path).unwrap().display())
 }

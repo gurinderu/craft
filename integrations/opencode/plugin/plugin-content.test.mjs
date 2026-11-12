@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseMarkdown } from './frontmatter.ts'
-import { isPackage, PACKAGE_NAME, permissionsOf, registerContent } from './plugin-content.ts'
+import { isPackage, PACKAGE_NAME, permissionsOf, registerOrSay } from './plugin-content.ts'
 import { PACKAGE_NAME as LAID_OUT_AS } from '../../../lib/opencode-package.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -104,7 +104,8 @@ test("a 1.x agent's tools and permission become 2.x rules, as 2.2.7 reads a 1.x 
 
 test('the package registers the agents, /craft-review and the other commands, and the skills', async () => {
   const f = fakeCtx()
-  const dispose = await registerContent(f.ctx, packageRoot())
+  const outcome = await registerOrSay(f.ctx, packageRoot())
+  assert.equal(outcome.failed, undefined)
   const task = f.agents.get('review-task')
   assert.equal(task.mode, 'all')
   assert.equal(task.hidden, true)
@@ -127,17 +128,30 @@ test('the package registers the agents, /craft-review and the other commands, an
   assert.match(review.description, /^Rust code-review rubric/)
   assert.ok(review.path.endsWith(path.join('skills', 'rust-review', 'SKILL.md')))
   assert.match(review.content, /^# Rust Review/)
-  await dispose()
+  await outcome.dispose()
   assert.equal(f.disposed(), 3)
 })
 
 test('a checkout (install.sh) registers nothing: 2.x reads its linked files itself', async () => {
   const f = fakeCtx()
-  await registerContent(f.ctx, packageRoot('craft'))
+  await registerOrSay(f.ctx, packageRoot('craft'))
   assert.equal(f.agents.size + f.commands.size + f.skills.size, 0)
   assert.equal(isPackage(REPO), false)
 })
 
 test('the plugin knows the package by the name the release lays it out under', () => {
   assert.equal(PACKAGE_NAME, LAID_OUT_AS)
+})
+
+test('an editor that refuses leaves nothing registered, and its reason is logged and handed back', async () => {
+  const f = fakeCtx()
+  f.ctx.skill.transform = () => Promise.reject(new Error('skill.transform is not a function'))
+  /** @type {string[]} */
+  const logged = []
+  const outcome = await registerOrSay(f.ctx, packageRoot(), line => logged.push(line))
+  assert.equal(outcome.failed, 'skill.transform is not a function')
+  assert.equal(f.disposed(), 2, 'the agents and commands already registered are disposed')
+  assert.deepEqual(logged, ['craft: could not register its agents, commands and skills on this OpenCode: skill.transform is not a function'])
+  await outcome.dispose()
+  assert.equal(f.disposed(), 2)
 })

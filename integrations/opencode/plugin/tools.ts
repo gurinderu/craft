@@ -56,6 +56,26 @@ export const onV2 = (tools: readonly ToolSpec[]): ToolSpec[] =>
         },
   )
 
+/** What the review answers when craft's agents, commands and skills could not be registered (plugin-content.ts). */
+export function unregisteredAnswer(reason: string): string {
+  return `⚠️ INCOMPLETE — craft could not register its agents, commands and skills on this OpenCode: ${reason}. The review runs every task on craft's \`review-task\` agent, which is not there. Nothing ran.`
+}
+
+/**
+ * The tools when the registration failed: the review says why in its description and answer instead of running into
+ * the binary's "not installed" refusal, which would send the user to reinstall a package that is installed.
+ */
+export const withoutContent = (tools: readonly ToolSpec[], reason: string): ToolSpec[] =>
+  tools.map(spec =>
+    spec.name === 'review'
+      ? {
+          ...spec,
+          description: `Not available here: craft could not register its agents, commands and skills on this OpenCode (${reason}); a call answers INCOMPLETE and runs nothing.`,
+          run: () => Promise.resolve(unregisteredAnswer(reason)),
+        }
+      : spec,
+  )
+
 export const TOOLS: readonly ToolSpec[] = [
   {
     name: 'rust-audit',

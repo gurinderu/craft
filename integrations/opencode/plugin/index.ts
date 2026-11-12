@@ -17,22 +17,23 @@
 import type { PluginInput, PluginModule } from '@opencode-ai/plugin'
 import { v1Hooks } from './host-v1.ts'
 import { v2Setup } from './host-v2.ts'
-import { registerContent } from './plugin-content.ts'
+import { registerOrSay } from './plugin-content.ts'
 import type { V2Context } from './opencode-v2.js'
 import { ENGINE_SESSIONS } from './child-run.ts'
-import { onV2, TOOLS } from './tools.ts'
+import { onV2, TOOLS, withoutContent } from './tools.ts'
 import { workHook } from './work-hook.ts'
 
 const craft: PluginModule & { id: string; setup(ctx: V2Context): Promise<() => Promise<void>> } = {
   id: 'craft-rust',
   server: (input: PluginInput) => Promise.resolve(v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS))),
   setup: async ctx => {
-    // A 2.x without one of the editors keeps the tools; the review then refuses for want of its `review-task` agent.
-    const content = await registerContent(ctx).catch(() => async () => {})
-    const rest = await v2Setup(ctx, onV2(TOOLS), workHook(ctx.location.directory, ENGINE_SESSIONS))
+    // A 2.x whose editors refuse keeps the tools; the failure is logged and the review answers with it.
+    const content = await registerOrSay(ctx)
+    const tools = content.failed === undefined ? onV2(TOOLS) : withoutContent(onV2(TOOLS), content.failed)
+    const rest = await v2Setup(ctx, tools, workHook(ctx.location.directory, ENGINE_SESSIONS))
     return async () => {
       await rest()
-      await content()
+      await content.dispose()
     }
   },
 }
