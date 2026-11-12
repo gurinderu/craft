@@ -7,6 +7,7 @@
 
 pub mod absorbed;
 pub mod agent;
+pub mod blocked;
 pub mod chain;
 pub mod complexity;
 pub mod content;

@@ -64,6 +64,9 @@
           }
         }
       }
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
     }
   }
 }

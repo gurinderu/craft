@@ -3,9 +3,11 @@
 
 use craft_agent::AgentRequest;
 use craft_agent::runner::RunEvent;
+use craft_review::blocked;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::events::Event;
+use super::outcome::blocked_in;
 use super::task::Task;
 
 /// A request as the stream names it.
@@ -49,6 +51,13 @@ pub(crate) fn task_event(named: &[Named], event: RunEvent) -> Option<Event> {
                 agent: n.agent,
                 model: n.model,
                 tier: n.tier,
+            }
+        }
+        // An answer that says it could not look is a failed task, as the binary fails it.
+        RunEvent::Finished { index, reply } if let Some(why) = blocked_in(&reply) => {
+            Event::TaskFailed {
+                id: named.get(index)?.id.clone(),
+                reason: blocked::failure(&why),
             }
         }
         RunEvent::Finished { index, reply } => Event::TaskFinished {

@@ -54,6 +54,9 @@
     },
     "reason": {
       "type": "string"
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
     }
   }
 }
