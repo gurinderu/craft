@@ -7,6 +7,8 @@
 //! before anything ran.
 
 mod args;
+#[cfg(test)]
+mod blocked_tests;
 mod deadline;
 mod drive;
 #[cfg(test)]

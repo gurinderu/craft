@@ -1,4 +1,5 @@
-//! An agent that could not look (realm @nick/craft, node #511): a lens answering `blocked` is a
+//! An agent that could not look (realm @nick/craft, node #511): a lens answering
+//! `blocked.couldNotLook: true` is a
 //! failed lens with its reason, its findings dropped, and the verdict INCOMPLETE — never a lens
 //! that returned nothing; a lens answering empty findings without it stays a clean one (#24).
 
@@ -12,7 +13,10 @@ const SANDBOX: &str = "bwrap: loopback: Failed RTM_NEWADDR: Operation not permit
 fn blocked(name: &str, findings: &[Value]) -> Value {
     let mut a = lens(name, findings);
     if let Some(o) = a.as_object_mut() {
-        o.insert("blocked".into(), json!(SANDBOX));
+        o.insert(
+            "blocked".into(),
+            json!({"couldNotLook": true, "what": SANDBOX}),
+        );
     }
     a
 }
@@ -32,7 +36,7 @@ fn every_lens_and_the_scout_are_told_how_to_say_they_could_not_look() {
     let (run, s) = small_run(repo.path(), out.path());
     for t in s["tasks"].as_array().unwrap() {
         assert!(
-            prompt_of(t).contains("COULD NOT LOOK: if you could not read the code"),
+            prompt_of(t).contains("COULD NOT LOOK: set `blocked.couldNotLook` to true only when"),
             "{t}"
         );
     }
@@ -42,7 +46,12 @@ fn every_lens_and_the_scout_are_told_how_to_say_they_could_not_look() {
         &std::fs::read_to_string(run.join("tasks/lens-rust-errors-r1.schema.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(schema["properties"]["blocked"]["type"], json!("string"));
+    let field = &schema["properties"]["blocked"];
+    assert_eq!(field["type"], json!("object"));
+    assert_eq!(
+        field["properties"]["couldNotLook"]["type"],
+        json!("boolean")
+    );
     assert!(
         !schema["required"]
             .as_array()
@@ -110,16 +119,44 @@ fn empty_findings_without_blocked_stay_clean() {
     let repo = fixture(true);
     let out = tempfile::tempdir().unwrap();
     let (run, _) = small_run(repo.path(), out.path());
-    // A blank field says nothing.
+    // Anything but a literal true says nothing: a filler line beside a false flag, no flag at all.
     let mut quiet = lens("tests", &[]);
-    quiet["blocked"] = json!("  ");
+    quiet["blocked"] = json!({"couldNotLook": false, "what": "none"});
+    let mut bare = lens("intent", &[]);
+    bare["blocked"] = json!({});
+    let s = submit(
+        &run,
+        json!({
+            "lens-rust-errors-r1": lens("errors", &[]),
+            "lens-rust-intent-r1": bare,
+            "lens-rust-tests-r1": quiet,
+        }),
+    );
+    assert_eq!(s["verdict"], json!("Approve"), "{s}");
+}
+
+#[test]
+fn a_lens_that_could_not_look_keeps_its_reason_though_its_answer_is_off_its_schema() {
+    let repo = fixture(true);
+    let out = tempfile::tempdir().unwrap();
+    let (run, _) = small_run(repo.path(), out.path());
+    // No `findings` at all: refused by the schema, it would be retried and lose its reason.
     let s = submit(
         &run,
         json!({
             "lens-rust-errors-r1": lens("errors", &[]),
             "lens-rust-intent-r1": lens("intent", &[]),
-            "lens-rust-tests-r1": quiet,
+            "lens-rust-tests-r1": {"blocked": {"couldNotLook": true, "what": SANDBOX}},
         }),
     );
-    assert_eq!(s["verdict"], json!("Approve"), "{s}");
+    assert_eq!(
+        s["verdict"],
+        json!("INCOMPLETE"),
+        "failed at once, not retried: {s}"
+    );
+    let r = report(&s);
+    assert!(
+        r.contains("- rust lenses that never returned — tests: could not review: bwrap"),
+        "{r}"
+    );
 }
