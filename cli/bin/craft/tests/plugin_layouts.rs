@@ -224,7 +224,8 @@ fn the_opencode_package_is_a_plugin_root_the_review_runs_over() {
         String::from_utf8_lossy(&out.stderr)
     );
     let root = PathBuf::from(String::from_utf8(out.stdout).unwrap());
-    assert!(root.join("npm-shrinkwrap.json").is_file());
+    let manifest = std::fs::read_to_string(root.join("package.json")).unwrap();
+    assert!(!manifest.contains("\"dependencies\""), "{manifest}");
     assert_reviewed(tmp.path(), &root);
 }
 
