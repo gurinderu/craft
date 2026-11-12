@@ -51,6 +51,9 @@
     },
     "answered": {
       "type": "number"
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
     }
   }
 }

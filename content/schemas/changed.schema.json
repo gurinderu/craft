@@ -2,5 +2,5 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["changed", "reason"],
-  "properties": { "changed": { "type": "boolean" }, "reason": { "type": "string" } }
+  "properties": { "changed": { "type": "boolean" }, "reason": { "type": "string" }, "blocked": { "$ref": "blocked.schema.json" } }
 }

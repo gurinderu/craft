@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use craft_agent::runner::{Batch, run_until};
 use craft_agent::{AgentBackend, AgentError, AgentReply, AgentRequest};
+use craft_review::blocked;
 
 use super::deadline::deadline_of;
 use super::events::Event;
@@ -185,6 +186,7 @@ fn gather(
                 r.login.get_or_insert_with(|| why.clone());
             }
             Outcome::Unanswered { said, .. } => r.errors.extend(said.clone()),
+            Outcome::Blocked(why) => r.errors.push(blocked::failure(why)),
             Outcome::NotStarted => {}
         }
     }

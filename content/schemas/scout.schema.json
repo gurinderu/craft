@@ -73,6 +73,9 @@
           "description": "diff changes a type that carries an invariant other code relies on"
         }
       }
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
     }
   }
 }

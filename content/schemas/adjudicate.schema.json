@@ -32,6 +32,9 @@
     "attack": {
       "type": "string",
       "description": "the successful attack on the fix; empty string if every attack failed"
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
     }
   }
 }

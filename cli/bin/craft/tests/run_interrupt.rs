@@ -2,7 +2,7 @@
 //! with SIGTERM to craft alone — the OpenCode and pi tools kill the process they spawned, the
 //! wrapper having `exec`ed into craft — while a task's process and its grandchild run in a group of
 //! their own. craft stops that group, files the run INCOMPLETE, says how to resume it, and exits
-//! with 128 + 15.
+//! with 128 + 15 — its record naming the host its tasks ran in (`runtime`).
 #![cfg(target_os = "linux")]
 #![expect(
     clippy::unwrap_used,
@@ -149,4 +149,10 @@ fn sigterm_to_craft_stops_the_tasks_and_files_the_run_incomplete() {
         .collect::<Vec<_>>();
     assert_eq!(filed.len(), 1, "one record is filed");
     assert!(filed[0].contains("INCOMPLETE"), "{}", filed[0]);
+    let record: serde_json::Value = serde_json::from_str(&filed[0]).unwrap();
+    assert_eq!(
+        record["runtime"],
+        serde_json::json!("codex"),
+        "the record names the host its tasks ran in, not claude-code"
+    );
 }

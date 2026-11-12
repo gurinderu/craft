@@ -25,6 +25,8 @@ pub(super) struct Common<'a> {
     pub(super) git_dir: &'a str,
     pub(super) branch: Option<&'a str>,
     pub(super) dirty: bool,
+    /// The host the run's tasks ran in; empty, the adapter's default.
+    pub(super) runtime: &'a str,
 }
 
 impl<'a> Common<'a> {
@@ -40,6 +42,7 @@ impl<'a> Common<'a> {
             git_dir: &filing.ctx.git_dir,
             branch: filing.ctx.branch.as_deref(),
             dirty: filing.ctx.dirty,
+            runtime: &filing.ctx.runtime,
         }
     }
 }

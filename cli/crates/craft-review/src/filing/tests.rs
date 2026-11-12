@@ -79,6 +79,7 @@ fn ctx() -> Ctx {
         root: Some("/plugin".into()),
         craft_version: "0.44.0".into(),
         via: "rust-audit".into(),
+        runtime: "codex".into(),
         ..Ctx::default()
     }
 }
@@ -171,6 +172,7 @@ fn the_finishing_submit_writes_the_last_checkpoint_then_the_record_once() {
         &req["depth"],
         &req["strict"],
         &req["via"],
+        &req["runtime"],
         &req["outputTokens"],
         &req["retry"],
         &req["dir"],
@@ -181,6 +183,7 @@ fn the_finishing_submit_writes_the_last_checkpoint_then_the_record_once() {
             &json!("full"),
             &json!(true),
             &json!("rust-audit"),
+            &json!("codex"),
             &json!(9000),
             &json!(false),
             &json!("/store/.partial/a")
