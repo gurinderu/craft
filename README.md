@@ -76,8 +76,9 @@ craft/
 │   │   └── skills, lib, content, src, README.md -> ../../…   # symlinks; the release branch holds them as real files
 │   ├── opencode/          # the OpenCode adapter layer (agents, commands, plugin, install.sh)
 │   ├── codex/             # where the Codex delivery lives, and why its manifest stays at the root
-│   └── pi/                # the pi package's craft-review skill (new, not yet observed in a real pi session)
+│   └── pi/                # the pi package's craft-review skill; its craft_review tool is lib/pi-extension.mjs (new)
 ├── src/                   # the workflow scripts as authored
+├── bin/craft              # the sh wrapper Codex, pi and OpenCode run the craft binary of this version through
 ├── lib/                   # tested helpers shared (bundled) by the workflows; the hooks' scripts
 ├── content/               # prompts and schemas the engines and the CLI render
 ├── cli/                   # the craft Rust CLI
@@ -108,8 +109,9 @@ released binary covers x86_64 Windows too (`craft-x86_64-pc-windows-msvc.tar.gz`
 craft also runs in [opencode](https://opencode.ai) via a contained adapter layer under
 `integrations/opencode/`: the skills are shared verbatim (opencode reads the Anthropic skill spec), the 4
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
-workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`). Install with
-`integrations/opencode/install.sh` (project-scoped by default). See `integrations/opencode/README.md` for details, the model
+workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`), beside `/review`, which runs the
+`craft` binary's own review (`bin/craft review run --backend opencode`) on the session's model. Install with
+`integrations/opencode/install.sh` from a checkout of a release tag (project-scoped by default). See `integrations/opencode/README.md` for details, the model
 strategy, and parity caveats.
 
 ## Codex
@@ -119,22 +121,40 @@ and the marketplace `.agents/plugins/marketplace.json` serve the same `skills/` 
 (`integrations/claude-code/hooks/hooks.json`) as the Claude Code plugin. The Codex plugin root is the repository
 root (see `integrations/codex/README.md`).
 
+<!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft
+codex plugin marketplace add gurinderu/craft --ref v0.51.0
 codex plugin add craft@craft
 ```
+<!-- x-release-please-end -->
+
+The marketplace is pinned to the release tag because `bin/craft` runs the `craft` binary of the plugin's release
+version: a marketplace that followed `main` would run newer skills and content with an older binary.
+
+To move to a new release — or off a marketplace added without `--ref` — remove the marketplace first: Codex refuses
+to add `craft` again from another ref ("already added from a different source"), and `codex plugin marketplace
+upgrade craft` only refreshes the ref already pinned. Then add it at the new tag and add the plugin again:
+
+<!-- x-release-please-start-version -->
+```
+codex plugin marketplace remove craft
+codex plugin marketplace add gurinderu/craft --ref v0.51.0
+codex plugin add craft@craft
+```
+<!-- x-release-please-end -->
 
 Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
 skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines `rust-audit` and
 `triage-findings` and the review loop of `craft:develop` do not run there. The review has a Codex route, new and not
-yet observed running in a real Codex session (only its loop is tested, against fake `craft` and `codex` binaries;
-the hooks tell a session to review the diff itself when the command cannot run or fails): the `craft:codex-review`
-skill has the session run one command, `node <plugin root>/lib/codex-review.mjs [key=value ...]`, which drives the
-same `craft` binary as the `craft:review` workflow, takes the same arguments, and runs each review task as its own
+yet observed running in a real Codex session (the hooks tell a session to review the diff itself when the command
+cannot run or fails): the `craft:codex-review` skill has the session run one command,
+`sh <plugin root>/bin/craft review run --backend codex [flags ...]`. `bin/craft` runs the `craft` binary of the
+plugin's version, downloading it from the GitHub release into `~/.craft/bin/<version>/` the first time; the binary
+drives the same review as the `craft:review` workflow and runs each review task as its own
 `codex exec --ephemeral -s read-only` process with the session's login — in parallel, 4 at once by default
-(`concurrency=<n>`), on the session's model unless `codexModels=<model>` or `codexModels=opus=<m>,sonnet=<m>,haiku=<m>`
-(or `CRAFT_CODEX_MODELS`) names one per tier. The command writes under `~/.craft` and starts model calls, so it runs
-outside Codex's sandbox. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
+(`--concurrency <n>`), on Codex's configured model unless `--models <model>` or
+`--models opus=<m>,sonnet=<m>,haiku=<m>` (or `CRAFT_CODEX_MODELS`) names one per tier. The command writes under
+`~/.craft` and starts model calls, so it runs outside Codex's sandbox. Under Codex the hooks also count the project's own agent roles (`.codex/agents/*.toml`) as declared roles.
 
 ## Workflows
 
