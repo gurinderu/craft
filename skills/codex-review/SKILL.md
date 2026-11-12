@@ -1,7 +1,7 @@
 ---
 name: codex-review
 description: >-
-  Codex only: craft's review of a diff or PR in any language, run from a Codex session — one command, the craft CLI's `craft review run --backend codex` (the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict), each review agent its own `codex exec` process. Use in Codex when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers: review this branch, review the diff, is this mergeable, re-review the fixes, resume the review. Not in Claude Code: there the review is the craft:review workflow (Workflow tool), never this skill. Not in OpenCode: there the review is the /review command (the `review` tool), never this skill and never `codex exec`.
+  Codex only: craft's review of a diff or PR in any language, run from a Codex session — one command, `sh <plugin root>/bin/craft review run --backend codex`, the plugin root two directories above this SKILL.md (`craft` is not on PATH; never run bare `craft`) — the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict, each review agent its own `codex exec` process. Use in Codex when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers: review this branch, review the diff, is this mergeable, re-review the fixes, resume the review. Not in Claude Code: there the review is the craft:review workflow (Workflow tool), never this skill. Not in OpenCode: there the review is the /review command (the `review` tool), never this skill and never `codex exec`.
 ---
 
 # codex-review — craft's review from Codex
@@ -15,6 +15,13 @@ directory (this file is `<plugin root>/skills/codex-review/SKILL.md`):
 ```sh
 sh "<plugin root>/bin/craft" review run --backend codex [flags ...]
 ```
+
+`craft` is not on PATH: always name it by that path, never as a bare `craft`.
+
+It must run outside Codex's sandbox — with escalated permissions the user approves: the first run
+downloads the binary (network, writes `~/.craft/bin`), and the review agents run as
+`codex exec -s read-only`, which needs Codex's own sandbox to start. If Codex's sandbox itself
+cannot start here (every command fails, `bwrap: …` errors), tell the user that and stop.
 
 `bin/craft` runs the craft binary of this plugin version, downloading it from the plugin's GitHub
 release into `~/.craft/bin/<version>/` the first time. If it fails with one `craft: …` line (no
