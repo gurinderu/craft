@@ -16,6 +16,9 @@
     "notes": {
       "type": "string",
       "description": "one line on anything else likely missed, or \"coverage complete\""
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
     }
   }
 }

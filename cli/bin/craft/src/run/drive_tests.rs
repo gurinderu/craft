@@ -1,7 +1,8 @@
 //! The loop end to end against a stand-in binary ([`Fake`], acting as the step protocol's binary
 //! does) and stand-in host CLIs: shell scripts that act on a word in their task's
 //! prompt — FAIL fails, FAIL-ONCE fails the first time, HANG outlives its deadline, LIMIT says the
-//! usage limit, NOLOGIN says no account is logged in — and otherwise answer.
+//! usage limit, NOLOGIN says no account is logged in, BLOCKED (Codex) answers that it could not
+//! look — and otherwise answer.
 
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
@@ -133,6 +134,7 @@ case "$input" in
   *FAIL*) echo boom >&2; exit 1;;
   *NOLOGIN*) echo 'ERROR: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: x' >&2; echo 'No API key found for x' >&2; exit 1;;
   *LIMIT*) echo "ERROR: You've hit your usage limit. Try again in 3 hours." >&2; exit 1;;
+  *BLOCKED*) blocked=1;;
 esac
 {answer}
 "#
@@ -141,7 +143,7 @@ esac
 
 const CODEX_READ: &str =
     r#"input=$(cat); prev=""; for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done"#;
-const CODEX_ANSWER: &str = r#"printf '{"answer":"ok","note":null}' > "$out""#;
+const CODEX_ANSWER: &str = r#"if [ -n "$blocked" ]; then printf '{"answer":"","note":null,"blocked":"bwrap: Operation not permitted"}' > "$out"; else printf '{"answer":"ok","note":null}' > "$out"; fi"#;
 const PI_READ: &str = r#"for a in "$@"; do msg="$a"; done; file=$(printf '%s' "$msg" | sed -n 's/^Read the file \([^ ]*\) and do.*/\1/p'); input=$(cat "$file")"#;
 const PI_ANSWER: &str = r#"printf 'Done.\n```craft-answer\n{"answer": "ok"}\n```\n'"#;
 const OPENCODE_READ: &str = r#"msg=$(cat); printf '%s' "$msg" > "$0.msg-$$"; file=$(printf '%s' "$msg" | sed -n 's/^Read the file \([^ ]*\) and do.*/\1/p'); input=$(cat "$file")"#;
@@ -428,6 +430,35 @@ async fn a_run_cut_short_exits_non_zero_and_says_what_the_dead_agents_wrote() {
     let answer = bench.drive(&fake).await;
     assert!(!answer.finished);
     assert!(answer.text.contains("## What the agents said\n\nThe tasks that gave no answer last wrote:\n\n- 6 task(s): `boom`"), "{}", answer.text);
+}
+
+#[tokio::test]
+async fn an_answer_that_could_not_look_is_a_failed_task_with_its_reason() {
+    let bench = Bench::new(HostKind::Codex);
+    let mut fake = bench.fake(vec![Spec("a", "BLOCKED", None), Spec("b", "do b", None)]);
+    fake.verdict = "Warning (INCOMPLETE)";
+    let answer = bench.drive(&fake).await;
+    assert_eq!(
+        bench.answer("a")["blocked"],
+        json!("bwrap: Operation not permitted"),
+        "written for the binary to fail with its reason"
+    );
+    let events = bench.events.borrow();
+    assert!(
+        events.iter().any(|e| matches!(e, Event::TaskFailed { id, reason } if id == "a" && reason == "could not review: bwrap: Operation not permitted")),
+        "{events:?}"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Event::TaskFinished { id, .. } if id == "b")),
+        "{events:?}"
+    );
+    assert!(
+        answer.text.contains("## What the agents said\n\nThe tasks that gave no answer last wrote:\n\n- 1 task(s): `could not review: bwrap: Operation not permitted`"),
+        "{}",
+        answer.text
+    );
 }
 
 #[tokio::test]

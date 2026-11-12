@@ -1,0 +1,4 @@
+{
+  "type": "string",
+  "description": "set ONLY when you could not read the code or run the commands your task needs (a sandbox refusal, a missing checkout, a permission error): say what failed, in one line; never set it because you found nothing or used a simpler method"
+}

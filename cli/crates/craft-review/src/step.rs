@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use crate::Error;
+use crate::blocked;
 use crate::complexity;
 use crate::content;
 use crate::coverage;
@@ -619,6 +620,14 @@ fn take_answer(
         .map_err(Clone::clone)
         .and_then(|a| validate::check(task, Some(a)));
     match checked {
+        // An agent that could not look fails with its reason, its findings dropped: an empty
+        // answer from it would read as a clean review (realm @nick/craft, node #511).
+        Ok(answer) if let Some(why) = blocked::reason(&answer) => {
+            task.state = TaskState::Failed;
+            task.error = Some(blocked::failure(&why));
+            task.refused = None;
+            return Ok(true);
+        }
         Ok(answer) => {
             task.answer = Some(answer);
             task.state = TaskState::Answered;
