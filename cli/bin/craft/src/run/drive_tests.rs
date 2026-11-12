@@ -143,7 +143,7 @@ esac
 
 const CODEX_READ: &str =
     r#"input=$(cat); prev=""; for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done"#;
-const CODEX_ANSWER: &str = r#"if [ -n "$blocked" ]; then printf '{"answer":"","note":null,"blocked":"bwrap: Operation not permitted"}' > "$out"; else printf '{"answer":"ok","note":null}' > "$out"; fi"#;
+const CODEX_ANSWER: &str = r#"if [ -n "$blocked" ]; then printf '{"answer":"","note":null,"blocked":{"couldNotLook":true,"what":"bwrap: Operation not permitted"}}' > "$out"; else printf '{"answer":"ok","note":null}' > "$out"; fi"#;
 const PI_READ: &str = r#"for a in "$@"; do msg="$a"; done; file=$(printf '%s' "$msg" | sed -n 's/^Read the file \([^ ]*\) and do.*/\1/p'); input=$(cat "$file")"#;
 const PI_ANSWER: &str = r#"printf 'Done.\n```craft-answer\n{"answer": "ok"}\n```\n'"#;
 const OPENCODE_READ: &str = r#"msg=$(cat); printf '%s' "$msg" > "$0.msg-$$"; file=$(printf '%s' "$msg" | sed -n 's/^Read the file \([^ ]*\) and do.*/\1/p'); input=$(cat "$file")"#;
@@ -439,7 +439,7 @@ async fn an_answer_that_could_not_look_is_a_failed_task_with_its_reason() {
     fake.verdict = "Warning (INCOMPLETE)";
     let answer = bench.drive(&fake).await;
     assert_eq!(
-        bench.answer("a")["blocked"],
+        bench.answer("a")["blocked"]["what"],
         json!("bwrap: Operation not permitted"),
         "written for the binary to fail with its reason"
     );

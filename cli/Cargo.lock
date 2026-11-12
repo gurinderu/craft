@@ -331,6 +331,7 @@ dependencies = [
  "craft-agent",
  "craft-review",
  "craft-tui",
+ "jsonschema",
  "regex",
  "serde",
  "serde_json",
