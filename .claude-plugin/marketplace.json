@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "craft",
-  "version": "0.50.1",
+  "version": "0.51.0",
   "description": "Personal Claude Code engineering skills and agents.",
   "owner": {
     "name": "gurinderu",
