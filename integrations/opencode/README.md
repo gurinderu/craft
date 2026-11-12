@@ -15,7 +15,7 @@ opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.51.0
 <!-- x-release-please-end -->
 
 `opencode plugin add` installs the release's package (the `opencode-plugin` branch, tagged
-`opencode-v<version>` by each release) with its dependencies, and writes the spec into the global
+`opencode-v<version>` by each release) — it has no npm dependencies, so nothing else is installed — and writes the spec into the global
 `~/.config/opencode/opencode.json` `plugins` list; the same spec as one line of a project's `plugins` works too.
 The plugin brings craft's tools, its agents, the `/craft-review`, `/rust-audit` and `/triage-findings` commands,
 the skills (all but `develop` and `codex-review`) and the review's footer line — 2.x reads no agents, commands
@@ -62,7 +62,8 @@ files from `plugins/`, not directories). opencode 2.x does not install a plugin
 directory's dependencies, so `install.sh` runs `npm ci --omit=dev` in `integrations/opencode/plugin`
 whenever the dependencies are missing or npm's record of them is older than `package-lock.json` (a tree
 with dev packages is reinstalled with them; one another installer laid out is left alone); without npm,
-run it there yourself before starting opencode.
+run it there yourself before starting opencode. The 2.x package needs none of them: only the 1.x entry imports
+`@opencode-ai/plugin` at run time, and it loads that module only when 1.x calls it.
 
 ## Upgrading
 

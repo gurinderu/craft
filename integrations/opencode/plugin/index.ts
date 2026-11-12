@@ -15,7 +15,6 @@
 //   • on 2.x, installed as the package (`opencode plugin add`), also registers craft's agents, commands and skills,
 //     which 2.x reads from no folder inside a package (plugin-content.ts)
 import type { PluginInput, PluginModule } from '@opencode-ai/plugin'
-import { v1Hooks } from './host-v1.ts'
 import { v2Setup } from './host-v2.ts'
 import { registerOrSay } from './plugin-content.ts'
 import type { V2Context } from './opencode-v2.js'
@@ -25,7 +24,12 @@ import { workHook } from './work-hook.ts'
 
 const craft: PluginModule & { id: string; setup(ctx: V2Context): Promise<() => Promise<void>> } = {
   id: 'craft-rust',
-  server: (input: PluginInput) => Promise.resolve(v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS))),
+  server: async (input: PluginInput) => {
+    // Loaded here only: host-v1.ts imports @opencode-ai/plugin at run time, and the 2.x package installs no
+    // dependencies (realm @nick/craft, node #515), so 2.x, which never calls `server`, never reaches it.
+    const { v1Hooks } = await import('./host-v1.ts')
+    return v1Hooks(input, TOOLS, workHook(input.directory, ENGINE_SESSIONS))
+  },
   setup: async ctx => {
     // A 2.x whose editors refuse keeps the tools; the failure is logged and the review answers with it.
     const content = await registerOrSay(ctx)

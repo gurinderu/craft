@@ -111,7 +111,7 @@ craft also runs in [opencode](https://opencode.ai) via a contained adapter layer
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
 workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`), beside `/craft-review`, which runs the
 `craft` binary's own review (`bin/craft review run --backend opencode`) on the session's model. On OpenCode 2.x it
-installs with one command, from the release's package tag:
+installs with one command, from the release's package tag (the package has no npm dependencies):
 
 <!-- x-release-please-start-version -->
 ```bash
