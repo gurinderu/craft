@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.51.0](https://github.com/gurinderu/craft/compare/v0.50.1...v0.51.0) (2026-11-12)
+
+
+### Features
+
+* **cli:** run the opencode backend on 1.x ([498a103](https://github.com/gurinderu/craft/commit/498a103bcf1116e5a1e893e528d76fb0b14570f8))
+* **review:** craft review run drives Codex, pi and OpenCode reviews from the binary ([9855636](https://github.com/gurinderu/craft/commit/9855636184189099c1b2aca763d91ef2d920f40d))
+
+
+### Bug Fixes
+
+* **cli:** a stopped craft review run stops its tasks and files the run INCOMPLETE ([fd19fff](https://github.com/gurinderu/craft/commit/fd19fff6a886304f2ef8e7efdf259477c98e9417))
+* **cli:** on opencode 1.x never name a subagent when the agent list is unreadable ([522f114](https://github.com/gurinderu/craft/commit/522f11435dbd551a0e71e28a4ff115a76a9670c4))
+* fail closed when the strict-type-checked preset entry is missing ([490fad3](https://github.com/gurinderu/craft/commit/490fad30af460bcf4b3ea5e47f4cc691bc59e3c1))
+* give Codex an upgrade path and pin the pi install to the release tag ([e51acae](https://github.com/gurinderu/craft/commit/e51acae80299642fb855e461356e4ae26bbfc7a6))
+* keep prettier off the manifests release-please rewrites ([2571053](https://github.com/gurinderu/craft/commit/25710533e5b8f525d3f0b3d2590a71207cb0dfe8))
+* match the pre-commit lint filter to the lint scope ([c4f7ee9](https://github.com/gurinderu/craft/commit/c4f7ee9104156a8942bd3ae24b053477ff0f4a91))
+* name the preset lookup a knip production entry ([0510895](https://github.com/gurinderu/craft/commit/0510895947e76c80725be1e2247dd11d407a8085))
+* **opencode:** CRAFT_OPENCODE_MODELS takes effect through the review tool ([da8ec6b](https://github.com/gurinderu/craft/commit/da8ec6b01693dcde0f8e2a03f7dd1ce8990ac81a))
+* pin the Codex and OpenCode installs to the release tag ([09e2259](https://github.com/gurinderu/craft/commit/09e225974703f94779277872c5c8d105be4ec410))
+* pin the host installs to the release tag ([48c9b71](https://github.com/gurinderu/craft/commit/48c9b717378144032ec306af4de28823f26ed348))
+* re-anchor two nosemgrep suppressions the reformat moved ([3a05327](https://github.com/gurinderu/craft/commit/3a05327a4867ad5f7dece3d2a266b948cffeaf6f))
+* run each pre-commit check only when its files are staged ([083be85](https://github.com/gurinderu/craft/commit/083be85b0d2d21783b98995d96defe60423d5cc4))
+
 ## [0.50.1](https://github.com/gurinderu/craft/compare/v0.50.0...v0.50.1) (2026-11-11)
 
 
