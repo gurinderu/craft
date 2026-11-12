@@ -47,7 +47,7 @@ echo "Installing craft opencode adapters into: $TARGET  (scope: $SCOPE)"
 for d in "$REPO_ROOT"/skills/*/; do
   [ -f "$d/SKILL.md" ] || continue
   # develop drives the review engines through the Workflow tool, which only Claude Code has; codex-review runs each
-  # review agent as `codex exec`, which only Codex has. OpenCode's review is the `review` tool (/review).
+  # review agent as `codex exec`, which only Codex has. OpenCode's review is the `review` tool (/craft-review).
   case "$(basename "$d")" in develop|codex-review) continue ;; esac
   link "${d%/}" "$TARGET/skills/$(basename "$d")"
 done

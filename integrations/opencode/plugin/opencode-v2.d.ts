@@ -7,6 +7,8 @@
 // and executed, and `session.created` events. What no probe could reach without a model — a child session's
 // reply after a real agent loop — is marked UNOBSERVED. Re-read this against the binary on each 2.x bump.
 
+import type { V2AgentDraft, V2CommandDefinition, V2Skill } from './opencode-v2-editors.js'
+
 export interface V2Registration {
   dispose(): Promise<void>
 }
@@ -75,6 +77,8 @@ export interface V2RpcRegistration extends V2Registration {
   events: { emit(event: string, data: unknown): Promise<void> }
 }
 
+type V2Transform<Editor> = (edit: (editor: Editor) => void) => Promise<V2Registration>
+
 export interface V2Context {
   rpc?: {
     register(definition: V2RpcDefinition, handlers: Record<string, unknown>): Promise<V2RpcRegistration>
@@ -83,6 +87,13 @@ export interface V2Context {
   location: { directory: string; project?: { directory?: string } }
   agent: {
     list(): Promise<{ data: { id: string }[] }>
+    transform: V2Transform<{ update(id: string, edit: (draft: V2AgentDraft) => void): void }>
+  }
+  command: {
+    transform: V2Transform<{ add(definition: V2CommandDefinition): void }>
+  }
+  skill: {
+    transform: V2Transform<{ add(skill: V2Skill): void }>
   }
   tool: {
     transform(edit: (editor: { add(definition: V2ToolDefinition): void }) => void): Promise<V2Registration>
@@ -91,7 +102,7 @@ export interface V2Context {
     create(input: { title?: string; agent?: string; model?: V2ModelRef; parentID?: string }): Promise<V2Session>
     get(input: { sessionID: string }): Promise<V2Session>
     // Admits the input and schedules the agent loop (`resume: false` admits it without running the loop).
-    prompt(input: { sessionID: string; text: string; resume?: boolean }): Promise<unknown>
+    prompt(input: { sessionID: string; text: string; resume?: boolean; delivery?: string }): Promise<unknown>
     // Experimental in 2.2.7: resolves when the session's agent loop is idle.
     wait(input: { sessionID: string }): Promise<unknown>
     // Stops the session's agent loop; `{ interrupted: false }` when it was idle (observed).

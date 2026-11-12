@@ -107,3 +107,15 @@ jobs:
     uses: ./.github/workflows/claude-code-plugin.yml
     with:
       ref: ${{ needs.release-please.outputs.tag_name }}
+
+  # The OpenCode 2.x package, rebuilt from the release's tag as the next commit of the opencode-plugin branch and
+  # tagged opencode-vX.Y.Z (the first such release creates both) — opencode-plugin.yml. `opencode plugin add` installs
+  # the package from that tag; its review runs the release binaries the job above uploads.
+  opencode-plugin:
+    needs: [release-please, cli-binaries]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/opencode-plugin.yml
+    with:
+      ref: ${{ needs.release-please.outputs.tag_name }}

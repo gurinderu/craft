@@ -109,10 +109,18 @@ released binary covers x86_64 Windows too (`craft-x86_64-pc-windows-msvc.tar.gz`
 craft also runs in [opencode](https://opencode.ai) via a contained adapter layer under
 `integrations/opencode/`: the skills are shared verbatim (opencode reads the Anthropic skill spec), the 4
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
-workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`), beside `/review`, which runs the
-`craft` binary's own review (`bin/craft review run --backend opencode`) on the session's model. Install with
-`integrations/opencode/install.sh` from a checkout of a release tag (project-scoped by default). See `integrations/opencode/README.md` for details, the model
-strategy, and parity caveats.
+workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`), beside `/craft-review`, which runs the
+`craft` binary's own review (`bin/craft review run --backend opencode`) on the session's model. On OpenCode 2.x it
+installs with one command, from the release's package tag:
+
+<!-- x-release-please-start-version -->
+```bash
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.51.0
+```
+<!-- x-release-please-end -->
+
+On OpenCode 1.x install with `integrations/opencode/install.sh` from a checkout of a release tag (project-scoped by
+default). See `integrations/opencode/README.md` for details, the model strategy, and parity caveats.
 
 ## Codex
 

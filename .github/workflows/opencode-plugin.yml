@@ -1,0 +1,99 @@
+name: opencode-plugin
+
+# The OpenCode 2.x package of one release: `opencode plugin add git+https://github.com/gurinderu/craft#opencode-vX.Y.Z`
+# installs it. 2.x installs a git package with npm (scripts off) and refuses one whose package.json has a `prepare`
+# script — the repository root has one — so each release lays out a tree of its own, with its own package.json and no
+# scripts, as the next commit of the opencode-plugin branch, and tags that commit opencode-vX.Y.Z
+# (lib/materialize-opencode.mjs, lib/opencode-package.mjs). OpenCode 1.x keeps integrations/opencode/install.sh.
+#
+# release-please.yml calls this with the tag of each release it cuts; the first release to carry this file creates the
+# branch. By hand (`gh workflow run opencode-plugin.yml -f ref=vX.Y.Z`) it only re-publishes from a release tag once
+# this file is on main. Either way the ref must be a release tag (vX.Y.Z) at the manifest's version, the same guard as
+# claude-code-plugin.yml's: a branch or a commit would ship unreleased content under a release's version.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: the release tag (vX.Y.Z) whose package is materialized
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: the release tag (vX.Y.Z) whose package is re-published
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  opencode-plugin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: opencode-plugin
+      cancel-in-progress: false
+    env:
+      BRANCH: opencode-plugin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Only a release tag is published: vX.Y.Z, a tag on the remote at the checked-out commit, and release-please's
+      # manifest at that version. Anything else fails here, before the branch or the tag is touched.
+      - name: require a release tag
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "ref '$REF' is not a release tag (vX.Y.Z)"
+          tagged="$(git ls-remote --tags origin "refs/tags/$REF" "refs/tags/$REF^{}" | tail -n1 | cut -f1)"
+          [ -n "$tagged" ] || fail "no tag '$REF' on origin"
+          [ "$tagged" = "$(git rev-parse HEAD)" ] || fail "tag '$REF' ($tagged) is not the checked-out commit"
+          [ -f lib/materialize-opencode.mjs ] || fail "tag '$REF' has no lib/materialize-opencode.mjs"
+          version="$(node -p "require('./.release-please-manifest.json')['.']")"
+          [ "$version" = "${REF#v}" ] || fail "tag '$REF' carries manifest version '$version', not '${REF#v}'"
+          echo "TAG=opencode-$REF" >> "$GITHUB_ENV"
+      - name: fetch the branch head and the package tag
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git fetch --no-tags origin "refs/heads/$BRANCH:refs/heads/$BRANCH"
+          else
+            echo "no $BRANCH yet: its first commit has no parent"
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          fi
+      - name: commit and tag the package
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node lib/materialize-opencode.mjs --branch "$BRANCH" --message "craft $REF ($(git rev-parse HEAD)): the OpenCode 2.x package"
+      # What is about to be pushed, read back out of the commit: no symlink, no scripts (2.x refuses a `prepare`), and
+      # every entry the package.json exports is in the tree. A failure here pushes nothing.
+      - name: validate the committed tree
+        run: |
+          tree="$RUNNER_TEMP/opencode-plugin"
+          mkdir -p "$tree"
+          git archive "refs/tags/$TAG" | tar -x -C "$tree"
+          links="$(find "$tree" -type l)"
+          [ -z "$links" ] || { echo "::error::symlinks in the materialized tree:"; echo "$links"; exit 1; }
+          node -e '
+            const fs = require("fs"), path = require("path"), root = process.argv[1]
+            const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+            if (pkg.scripts) throw new Error("the package has scripts")
+            for (const entry of Object.values(pkg.exports)) if (!fs.existsSync(path.join(root, entry))) throw new Error(`no ${entry}`)
+          ' "$tree"
+      # The checkout keeps no credential; the token reaches git for this push alone.
+      - name: push
+        env:
+          TOKEN: ${{ github.token }}
+        run: git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$BRANCH:refs/heads/$BRANCH" "refs/tags/$TAG:refs/tags/$TAG"
