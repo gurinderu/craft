@@ -210,7 +210,9 @@ live-data/news tooling (crate/docs/changelog fetchers). LSP navigation is now co
 its default export carries both entries, and a host layer (`host.ts`, with `host-v1.ts` and `host-v2.ts`)
 gives the `rust-audit` and `triage-findings` workflows, the `review` tool (`bin/craft review run --backend opencode --events json`
 through `lib/craft-review-run.mjs`, on the calling session's model, each task its own `opencode run` on `review-task`; the
-on 1.x without `--archived` and with subagent tasks on `review-task`; the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime;
+on 1.x without `--archived` and with subagent tasks on `review-task`; the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime; on 2.x the review's progress also
+reaches the TUI's prompt footer through the `craft.review` RPC — `progress-rpc.ts` emits it, `review-footer.mjs` draws it, loaded by the TUI
+from `plugin/tui/`, the directory `install.sh` links as `plugins/craft-review-footer`;
 a symlink `install.sh` that also installs the plugin's locked dependencies). Single source of truth: the skills are not duplicated. The design spec
 that shaped this layer has been removed.
 

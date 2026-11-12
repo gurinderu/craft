@@ -60,6 +60,9 @@ for f in "$SCRIPT_DIR"/commands/*.md; do [ -e "$f" ] && link "$f" "$TARGET/comma
 # is never loaded there), 2.x takes files and directories alike. An earlier install's directory link is
 # removed as stale below, so 2.x does not load the plugin twice.
 [ -d "$SCRIPT_DIR/plugin" ] && link "$SCRIPT_DIR/plugin/index.ts" "$TARGET/plugins/craft-rust.ts"
+# The review's footer line on 2.x — a DIRECTORY link: a 2.x TUI plugin is a directory in plugins/ (a single file is
+# skipped there), with a `tui` module and no server entry; 1.x ignores directories, so it costs 1.x nothing.
+[ -d "$SCRIPT_DIR/plugin/tui" ] && link "$SCRIPT_DIR/plugin/tui" "$TARGET/plugins/craft-review-footer"
 
 # Stale links — one an earlier install made from this checkout (it points at a skill or into integrations/opencode/)
 # that this run did not make: its target is gone, or no longer installed (codex-review, the plugin's directory link).
