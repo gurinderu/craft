@@ -294,7 +294,8 @@ HTTPS), which each release rebuilds from this directory with the links dereferen
 (`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
 so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter; on 2.x it
 installs as a package from the `opencode-plugin` branch, each release's commit tagged `opencode-v<version>`
-(`lib/opencode-package.mjs` lays it out with its own `package.json` and no scripts, `lib/materialize-opencode.mjs` commits
+(`lib/opencode-package.mjs` lays it out with its own `package.json` and no scripts and an `npm-shrinkwrap.json` of the
+plugin's production closure from `lib/opencode-shrinkwrap.mjs`, `lib/materialize-opencode.mjs` commits
 and tags it, run by `.github/workflows/opencode-plugin.yml`, which release-please calls); `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` holds the pi package's `craft-review` skill: the repository is a pi
 package whose manifest, the root `package.json`'s `pi` key, loads that
