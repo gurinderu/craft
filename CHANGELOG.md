@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.52.0](https://github.com/gurinderu/craft/compare/v0.51.0...v0.52.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* the OpenCode command /review is now /craft-review.
+
+### Features
+
+* install craft on OpenCode 2.x with one opencode plugin add ([8c667c3](https://github.com/gurinderu/craft/commit/8c667c31b75fd2ec276ad22f7cb21eff7469b2fd))
+* show the review's progress in the OpenCode 2.x TUI footer ([c4158cd](https://github.com/gurinderu/craft/commit/c4158cd611399f185df4735083c96687dc4b9436))
+* show the review's progress in the OpenCode 2.x TUI footer ([4ea3811](https://github.com/gurinderu/craft/commit/4ea3811a1cd56177d319eae6cc95b320d37de204))
+
+
+### Bug Fixes
+
+* carry a CLI review's host through its checkpoints and recovery ([e81b6ba](https://github.com/gurinderu/craft/commit/e81b6ba0a97a283622492f43d3f4d518220c4dd3))
+* fail a review agent that could not look instead of counting it clean ([ef25f8b](https://github.com/gurinderu/craft/commit/ef25f8b069956d1faab277498061779b99442032))
+* fail a review agent that could not look instead of counting it clean ([af8a9ef](https://github.com/gurinderu/craft/commit/af8a9ef9c9606064a701a0736b63f43a73aa33d7))
+* list the shrinkwrap in the OpenCode package's files, so the installer keeps it ([ca42c92](https://github.com/gurinderu/craft/commit/ca42c921f3a1afdfeebf4ba2a2cafda01cf990f6))
+* name the Codex review command by its path and warn at start when Codex cannot run it ([31a57f4](https://github.com/gurinderu/craft/commit/31a57f402519836b77214ed9f97a1b2f97638ba5))
+* name the real host in a CLI review's run record ([1d3fc3d](https://github.com/gurinderu/craft/commit/1d3fc3d966e7877d9239114579995c26919d63e2))
+* name the review command by its bin/craft path in the Codex and pi skills ([608dcbc](https://github.com/gurinderu/craft/commit/608dcbcb54de38f9199086407474de42286fd6d4))
+* read an agent's could-not-look as a literal true, before its schema ([01ac7c1](https://github.com/gurinderu/craft/commit/01ac7c1539fdbf9573461beb66f9924a5b22a930))
+* say Codex readiness lines only on a sandbox-setup failure, honour the role-hook switches and log them as said ([c620c5c](https://github.com/gurinderu/craft/commit/c620c5cbb9f7c1a1b576d4472ff8343773d8b277))
+* ship the OpenCode 2.x package with no npm dependencies ([d1fce01](https://github.com/gurinderu/craft/commit/d1fce0190ce3e57e6a88f86c085d2bd92dbfba3a))
+* ship what the craft binary and the skills need in the OpenCode package, and its lockfile ([8cb6f9b](https://github.com/gurinderu/craft/commit/8cb6f9b2f7b5e9bc0a9c68622930d2c96497ebe6))
+* warn a Codex session at start when its sandbox or the craft binary will block the review ([cb58ac9](https://github.com/gurinderu/craft/commit/cb58ac9952cb005bc8096cd2616e40f1e5e3ee4e))
+
 ## [0.51.0](https://github.com/gurinderu/craft/compare/v0.50.1...v0.51.0) (2026-11-12)
 
 
