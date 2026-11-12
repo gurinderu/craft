@@ -22,5 +22,5 @@
     "noUncheckedSideEffectImports": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["*.ts", "*.mjs"]
+  "include": ["*.ts", "*.mjs", "tui/*.mjs"]
 }

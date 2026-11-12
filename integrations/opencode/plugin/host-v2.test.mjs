@@ -262,3 +262,40 @@ test('a wait that never returns does not hold the polling past the abort', async
   await assert.rejects(v2Host(f.ctx, 0).runChild({ title: 't', agent: '', prompt: 'p', signal: stop.signal }), /stopped at its deadline/)
   assert.deepEqual(f.sent.at(-1), ['interrupt', { sessionID: 'ses_1' }])
 })
+
+test("setup carries a tool's progress to the craft.review channel and disposes it", async () => {
+  const f = fakeCtx()
+  /** @type {unknown[]} */
+  const emitted = []
+  let rpcDisposed = 0
+  Object.assign(f.ctx, {
+    rpc: {
+      register: async () => ({
+        dispose: async () => {
+          rpcDisposed++
+        },
+        events: { emit: async (/** @type {string} */ name, /** @type {unknown} */ data) => emitted.push([name, data]) },
+      }),
+    },
+  })
+  const spec = {
+    name: 'review',
+    description: 'd',
+    args: {},
+    run: async (/** @type {unknown} */ _h, /** @type {unknown} */ _a, /** @type {import('./host.ts').ToolCall} */ call) => {
+      call.progress?.('half')
+      return { title: 'craft review: Approve', output: 'out' }
+    },
+  }
+  const work = { childCreated: () => {}, compacted: async () => {}, message: async () => {} }
+  const dispose = await v2Setup(f.ctx, [spec], work)
+  const signal = new AbortController().signal
+  await f.tools[0].execute({}, { sessionID: 's', messageID: 'm', id: 'c', agent: 'build', signal })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(emitted, [
+    ['progress', { sessionID: 's', line: 'half', done: false }],
+    ['progress', { sessionID: 's', line: 'craft review: Approve', done: true }],
+  ])
+  await dispose()
+  assert.equal(rpcDisposed, 1)
+})

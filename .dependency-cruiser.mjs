@@ -73,8 +73,9 @@ export default {
       severity: 'error',
       comment: 'An import dependency-cruiser cannot resolve is invisible to shipped-reaches-no-package.',
       from: { path: '^(lib|integrations/opencode/plugin|src)/' },
-      // pi supplies its TUI module to the extension it loads (lib/pi-extension.mjs; realm @nick/craft, node #504).
-      to: { couldNotResolve: true, pathNot: '^@earendil-works/pi-tui$' },
+      // pi supplies its TUI module to the extension it loads (lib/pi-extension.mjs; realm @nick/craft, node #504), and
+      // OpenCode 2.x its UI modules to the TUI plugin (integrations/opencode/plugin/tui/tui.mjs, node #512).
+      to: { couldNotResolve: true, pathNot: '^(@earendil-works/pi-tui|@opentui/solid|solid-js)$' },
     },
   ],
   options: {

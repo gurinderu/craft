@@ -43,6 +43,8 @@ opencode. The links point into this checkout, but a checkout does not change wha
 
 - it relinks the plugin as one file, `plugins/craft-rust.ts` — opencode 1.x never loads the older
   directory link, so without the rerun the plugin silently stops loading there;
+- it links the footer's directory, `plugins/craft-review-footer` — without it 2.x shows no review
+  progress line;
 - it installs the plugin's locked dependencies again (`npm ci --omit=dev`) — opencode 2.x does not;
 - it links agents and commands added since the last install (`review-task`, `/review`) — they are
   linked file by file, so a new one is missing until the rerun — and removes its links whose target
@@ -78,6 +80,13 @@ block and findings, as markdown. On 1.x the tasks' sessions are not archived (1.
 agent's prompt (1.x `run` puts a subagent on its default agent, which writes). The binary's 1.19.5
 path was seen reaching the model as `review-task`; the tool itself is covered by tests against a fake
 binary, not yet seen in a real OpenCode session.
+
+On 2.x the review shows its progress as a line in the TUI's prompt footer of the session that runs it —
+the same line 1.x shows as the tool's title — and on the end clears it and shows the verdict as a toast;
+nothing of it reaches the model. The footer is a TUI plugin of its own: `install.sh` links the directory
+`plugin/tui/` as `plugins/craft-review-footer` (2.x loads a TUI plugin only from a directory; 1.x ignores
+directories there). Without that link, or on a 2.x that lacks the plugin RPC, the review runs as before
+with no footer line.
 
 On OpenCode 2.x `/rust-audit` and `/triage-findings` refuse up front, INCOMPLETE, and run nothing:
 their child sessions never answered in testing (craft 0.50.0, OpenCode 2.2.7); use OpenCode 1.x,
