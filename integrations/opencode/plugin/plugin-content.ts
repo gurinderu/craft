@@ -87,24 +87,61 @@ export function skillsUnder(root: string): V2Skill[] {
   })
 }
 
+type Registration = { dispose(): Promise<void> }
+
+/** Each registration made in turn; when one throws, those already made are disposed before the error goes on. */
+async function registerAll(steps: (() => Promise<Registration>)[]): Promise<() => Promise<void>> {
+  const regs: Registration[] = []
+  const dispose = async () => {
+    for (const reg of regs.splice(0).reverse()) await reg.dispose()
+  }
+  try {
+    for (const step of steps) regs.push(await step())
+  } catch (e) {
+    await dispose().catch(() => undefined)
+    throw e
+  }
+  return dispose
+}
+
 /** Registers the package's agents, commands and skills; a checkout's install is left alone. Resolves to the disposer. */
-export async function registerContent(ctx: V2Context, root = ROOT): Promise<() => Promise<void>> {
+async function registerContent(ctx: V2Context, root = ROOT): Promise<() => Promise<void>> {
   if (!isPackage(root)) return async () => {}
   const agents = markdownIn(path.join(root, OPENCODE, 'agents'))
   const commands = markdownIn(path.join(root, OPENCODE, 'commands'))
   const skills = skillsUnder(root)
-  const regs = [
-    await ctx.agent.transform(editor => {
-      for (const a of agents) editor.update(a.id, draft => applyAgent(draft, a.data, a.body))
-    }),
-    await ctx.command.transform(editor => {
-      for (const c of commands) editor.add(commandOf(ctx, c.id, c.data, c.body))
-    }),
-    await ctx.skill.transform(editor => {
-      for (const s of skills) editor.add(s)
-    }),
-  ]
-  return async () => {
-    for (const reg of regs) await reg.dispose()
+  return registerAll([
+    () =>
+      ctx.agent.transform(editor => {
+        for (const a of agents) editor.update(a.id, draft => applyAgent(draft, a.data, a.body))
+      }),
+    () =>
+      ctx.command.transform(editor => {
+        for (const c of commands) editor.add(commandOf(ctx, c.id, c.data, c.body))
+      }),
+    () =>
+      ctx.skill.transform(editor => {
+        for (const s of skills) editor.add(s)
+      }),
+  ])
+}
+
+/** What became of the registration: its disposer, and why it failed when it did. */
+interface ContentOutcome {
+  dispose(): Promise<void>
+  failed?: string
+}
+
+/**
+ * The registration, a failure turned into its reason: logged as one `craft:` line (OpenCode's log takes stderr) and
+ * handed back, so the tools can say it — a 2.x whose editors changed must not lose craft's agents without a trace.
+ */
+export async function registerOrSay(ctx: V2Context, root = ROOT, log: (line: string) => void = console.error): Promise<ContentOutcome> {
+  try {
+    return { dispose: await registerContent(ctx, root) }
+  } catch (e) {
+    const failed = e instanceof Error ? e.message : String(e)
+    log(`craft: could not register its agents, commands and skills on this OpenCode: ${failed}`)
+    return { dispose: async () => {}, failed }
   }
 }
