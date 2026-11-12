@@ -213,7 +213,10 @@ through `lib/craft-review-run.mjs`, on the calling session's model, each task it
 on 1.x without `--archived` and with subagent tasks on `review-task`; the tool is not yet seen in a real OpenCode session) and craft's work hook one surface on either runtime; on 2.x the review's progress also
 reaches the TUI's prompt footer through the `craft.review` RPC — `progress-rpc.ts` emits it, `review-footer.mjs` draws it, loaded by the TUI
 from `plugin/tui/`, the directory `install.sh` links as `plugins/craft-review-footer`;
-a symlink `install.sh` that also installs the plugin's locked dependencies). Single source of truth: the skills are not duplicated. The design spec
+a symlink `install.sh` that also installs the plugin's locked dependencies; on 2.x the package `opencode plugin add`
+installs, from the `opencode-plugin` branch's `opencode-v<version>` tag, whose plugin registers the agents, commands
+(`/craft-review`, `/rust-audit`, `/triage-findings`) and skills itself through `plugin-content.ts` and `frontmatter.ts`).
+Single source of truth: the skills are not duplicated. The design spec
 that shaped this layer has been removed.
 
 ## Rust CLI
@@ -289,7 +292,10 @@ symlinks to the shared ones at the root; a load in place (`--plugin-dir`) follow
 marketplace (`.claude-plugin/marketplace.json`) installs it from the `claude-code-plugin` branch (a `url` source over
 HTTPS), which each release rebuilds from this directory with the links dereferenced into real files
 (`lib/materialize-claude-code.mjs`, run by `.github/workflows/claude-code-plugin.yml`, which release-please calls),
-so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter, `integrations/codex/` explains the
+so a clone without symlinks (Windows) installs it whole. `integrations/opencode/` is the OpenCode adapter; on 2.x it
+installs as a package from the `opencode-plugin` branch, each release's commit tagged `opencode-v<version>`
+(`lib/opencode-package.mjs` lays it out with its own `package.json` and no scripts, `lib/materialize-opencode.mjs` commits
+and tags it, run by `.github/workflows/opencode-plugin.yml`, which release-please calls); `integrations/codex/` explains the
 Codex delivery's place at the root, and `integrations/pi/` holds the pi package's `craft-review` skill: the repository is a pi
 package whose manifest, the root `package.json`'s `pi` key, loads that
 skill and one extension, `lib/pi-extension.mjs`, whose `craft_review` tool runs `bin/craft review run --backend pi
