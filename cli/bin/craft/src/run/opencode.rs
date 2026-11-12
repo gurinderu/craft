@@ -138,7 +138,8 @@ pub(crate) fn preflight(command: &Path, repo: &Path, log: &dyn Fn(&str)) -> Resu
         && !list.iter().any(|a| a == TASK_AGENT)
     {
         return Err(format!(
-            "the craft OpenCode agents are not installed or are out of date: rerun integrations/opencode/install.sh (this opencode has no `{TASK_AGENT}` agent, which every review task runs on read-only)"
+            "the craft OpenCode agents are not installed or are out of date: on OpenCode 2.x add the craft package of this release (`opencode plugin add git+https://github.com/gurinderu/craft#opencode-v{}`), or rerun integrations/opencode/install.sh (this opencode has no `{TASK_AGENT}` agent, which every review task runs on read-only)",
+            env!("CARGO_PKG_VERSION")
         ));
     }
     // A 1.x list that could not be read is taken as `review-task` alone: a subagent named to its

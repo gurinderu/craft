@@ -135,6 +135,11 @@ fn an_opencode_without_review_task_is_refused() {
         why.contains("rerun integrations/opencode/install.sh"),
         "{why}"
     );
+    let package = format!(
+        "opencode plugin add git+https://github.com/gurinderu/craft#opencode-v{}",
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(why.contains(&package), "{why}");
 }
 
 #[test]
