@@ -6,12 +6,18 @@ adapter layer.
 
 ## Install
 
-From the repo root, symlink the adapters into an opencode tree:
+Check out a release tag, then, from the project the adapters are for, symlink them into an opencode tree:
 
+<!-- x-release-please-start-version -->
 ```bash
-integrations/opencode/install.sh            # project-scoped: ./.opencode  (default)
-integrations/opencode/install.sh --global   # ~/.config/opencode
+git clone --branch v0.50.1 https://github.com/gurinderu/craft ~/craft
+~/craft/integrations/opencode/install.sh            # project-scoped: ./.opencode  (default)
+~/craft/integrations/opencode/install.sh --global   # ~/.config/opencode
 ```
+<!-- x-release-please-end -->
+
+Install from a release tag, not `main`: `bin/craft` runs the `craft` binary of the release version, so a
+checkout of `main` would run newer skills and content with an older binary.
 
 Then restart opencode (or reopen the project) so it rescans `skills/`, `agents/`, `commands/`,
 and `plugins/`.
@@ -32,8 +38,8 @@ run it there yourself before starting opencode.
 
 ## Upgrading
 
-After `git pull` (or checking out a new tag), rerun `install.sh` with the same scope, then restart
-opencode. The links point into this checkout, but a pull does not change what is linked:
+After checking out the new release tag (`git fetch --tags && git checkout v<version>`), rerun `install.sh` with the same scope, then restart
+opencode. The links point into this checkout, but a checkout does not change what is linked:
 
 - it relinks the plugin as one file, `plugins/craft-rust.ts` — opencode 1.x never loads the older
   directory link, so without the rerun the plugin silently stops loading there;

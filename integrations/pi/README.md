@@ -12,9 +12,11 @@ The repository is a pi package. Its manifest — the `pi` key of the root `packa
 extension `lib/pi-extension.mjs` and the `craft-review` skill in `skills/craft-review/` here, and nothing else (none
 of craft's other skills):
 
+<!-- x-release-please-start-version -->
 ```sh
-pi install git:github.com/gurinderu/craft@v<release>
+pi install git:github.com/gurinderu/craft@v0.50.1
 ```
+<!-- x-release-please-end -->
 
 The extension registers the `craft_review` tool: it runs `bin/craft review run --backend pi --events json` with the
 flags it is given, shows the run's progress while it runs and, when it ends, the verdict, the findings and the

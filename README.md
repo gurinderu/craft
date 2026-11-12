@@ -111,7 +111,7 @@ craft also runs in [opencode](https://opencode.ai) via a contained adapter layer
 review agents are translated to opencode agent files, and the `rust-audit` / `triage-findings`
 workflows ship as one contained TS/Bun plugin (`/rust-audit`, `/triage-findings`), beside `/review`, which runs the
 `craft` binary's own review (`bin/craft review run --backend opencode`) on the session's model. Install with
-`integrations/opencode/install.sh` (project-scoped by default). See `integrations/opencode/README.md` for details, the model
+`integrations/opencode/install.sh` from a checkout of a release tag (project-scoped by default). See `integrations/opencode/README.md` for details, the model
 strategy, and parity caveats.
 
 ## Codex
@@ -121,10 +121,27 @@ and the marketplace `.agents/plugins/marketplace.json` serve the same `skills/` 
 (`integrations/claude-code/hooks/hooks.json`) as the Claude Code plugin. The Codex plugin root is the repository
 root (see `integrations/codex/README.md`).
 
+<!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft
+codex plugin marketplace add gurinderu/craft --ref v0.50.1
 codex plugin add craft@craft
 ```
+<!-- x-release-please-end -->
+
+The marketplace is pinned to the release tag because `bin/craft` runs the `craft` binary of the plugin's release
+version: a marketplace that followed `main` would run newer skills and content with an older binary.
+
+To move to a new release — or off a marketplace added without `--ref` — remove the marketplace first: Codex refuses
+to add `craft` again from another ref ("already added from a different source"), and `codex plugin marketplace
+upgrade craft` only refreshes the ref already pinned. Then add it at the new tag and add the plugin again:
+
+<!-- x-release-please-start-version -->
+```
+codex plugin marketplace remove craft
+codex plugin marketplace add gurinderu/craft --ref v0.50.1
+codex plugin add craft@craft
+```
+<!-- x-release-please-end -->
 
 Codex runs a plugin's hooks only once you trust them: open `/hooks` in the Codex TUI and trust craft's. The
 skills appear as `craft:<name>`. Codex has no Workflow tool, so the workflow engines `rust-audit` and
