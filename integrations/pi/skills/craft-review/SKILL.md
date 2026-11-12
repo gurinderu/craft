@@ -1,6 +1,6 @@
 ---
 name: craft-review
-description: craft's review of a diff or PR in any language, run from a pi session — the `craft_review` tool, the craft CLI's `craft review run --backend pi` (the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict), each review agent its own `pi -p` process. Use when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers - review this branch, review the diff, is this mergeable, re-review the fixes, resume the review.
+description: craft's review of a diff or PR in any language, run from a pi session — the `craft_review` tool; without it `sh <package root>/bin/craft review run --backend pi`, the package root four directories above this SKILL.md (`craft` is not on PATH; never run bare `craft`) — the mechanical gate, review lenses per profile, verification, one report and an Approve/Warning/Block verdict, each review agent its own `pi -p` process. Use when asked to review a branch, a diff or a PR before commit or merge, to re-review fix commits, or to resume a stopped review. Triggers - review this branch, review the diff, is this mergeable, re-review the fixes, resume the review.
 ---
 
 # craft-review — craft's review from pi
