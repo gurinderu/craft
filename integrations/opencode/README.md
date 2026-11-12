@@ -19,9 +19,17 @@ opencode plugin add git+https://github.com/gurinderu/craft#opencode-v0.51.0
 `~/.config/opencode/opencode.json` `plugins` list; the same spec as one line of a project's `plugins` works too.
 The plugin brings craft's tools, its agents, the `/craft-review`, `/rust-audit` and `/triage-findings` commands,
 the skills (all but `develop` and `codex-review`) and the review's footer line — 2.x reads no agents, commands
-or skills folder inside a package, so the plugin registers them itself. `opencode plugin list` shows it;
-`opencode plugin update` moves it, `opencode plugin remove` takes it out. To move to a new release, add the new
-tag's spec. The review command is `/craft-review`: 2.x has a built-in `/review` of its own.
+or skills folder inside a package, so the plugin registers them itself. `opencode plugin list --builtin` lists
+it as `craft-rust` (a plain `opencode plugin list` does not). The spec names a fixed tag, so `opencode plugin update`
+never moves it. To move to a new release, remove the old spec and add the new one — adding the new tag's spec alone
+keeps the old one in the list too, and both load:
+
+```bash
+opencode plugin remove git+https://github.com/gurinderu/craft#opencode-v<old version>
+opencode plugin add git+https://github.com/gurinderu/craft#opencode-v<new version>
+```
+
+The review command is `/craft-review`: 2.x has a built-in `/review` of its own.
 
 ### OpenCode 1.x — install.sh
 
