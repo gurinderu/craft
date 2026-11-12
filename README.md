@@ -123,7 +123,7 @@ root (see `integrations/codex/README.md`).
 
 <!-- x-release-please-start-version -->
 ```
-codex plugin marketplace add gurinderu/craft --ref v0.50.1
+codex plugin marketplace add gurinderu/craft --ref v0.51.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
@@ -138,7 +138,7 @@ upgrade craft` only refreshes the ref already pinned. Then add it at the new tag
 <!-- x-release-please-start-version -->
 ```
 codex plugin marketplace remove craft
-codex plugin marketplace add gurinderu/craft --ref v0.50.1
+codex plugin marketplace add gurinderu/craft --ref v0.51.0
 codex plugin add craft@craft
 ```
 <!-- x-release-please-end -->
