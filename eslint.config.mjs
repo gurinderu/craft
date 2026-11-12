@@ -91,7 +91,10 @@ export default [
     },
   },
   // The TypeScript parser and plugin for every linted file; core rules tsc already enforces are off for .ts.
-  { ...tseslint.configs.base, files: ['lib/**/*.mjs', 'integrations/opencode/plugin/*.mjs', 'integrations/opencode/plugin/*.ts'] },
+  {
+    ...tseslint.configs.base,
+    files: ['lib/**/*.mjs', 'integrations/opencode/plugin/*.mjs', 'integrations/opencode/plugin/tui/*.mjs', 'integrations/opencode/plugin/*.ts'],
+  },
   { ...tseslint.configs.eslintRecommended, files: ['integrations/opencode/plugin/*.ts'] },
   // Core no-unused-vars reads a function type's parameter names as unused bindings; tsc's
   // noUnusedLocals/noUnusedParameters (integrations/opencode/plugin/tsconfig.json) already hold the real ones.
@@ -107,7 +110,7 @@ export default [
     rules: typeAware,
   },
   {
-    files: ['integrations/opencode/plugin/*.mjs', 'integrations/opencode/plugin/*.ts'],
+    files: ['integrations/opencode/plugin/*.mjs', 'integrations/opencode/plugin/tui/*.mjs', 'integrations/opencode/plugin/*.ts'],
     languageOptions: { parserOptions: { project: ['./integrations/opencode/plugin/tsconfig.json'], tsconfigRootDir: import.meta.dirname } },
     rules: typeAware,
   },
