@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
+use crate::blocked;
 use crate::state::{RunState, Task, TaskState};
 
 /// Why a task's files could not be laid out or moved.
@@ -22,6 +23,8 @@ pub enum HandoffError {
     UnsafeId(String),
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
+    #[error(transparent)]
+    Content(#[from] crate::content::ContentError),
     #[error("writing {}", path.display())]
     Unwritable {
         path: PathBuf,
@@ -94,8 +97,9 @@ pub(crate) fn write_pending(dir: &Path, run: &RunState) -> Result<(), HandoffErr
             return Err(HandoffError::UnsafeId(task.id.clone()));
         }
         let schema = format!("{}\n", serde_json::to_string_pretty(&task.schema)?);
+        let prompt = format!("{}{}", task.prompt_text(), blocked::note(&task.schema)?);
         for (path, text) in [
-            (prompt_file(dir, &task.id), task.prompt_text()),
+            (prompt_file(dir, &task.id), prompt),
             (schema_file(dir, &task.id), schema),
         ] {
             std::fs::write(&path, text)

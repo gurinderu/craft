@@ -5,6 +5,7 @@
 //! out again.
 
 use craft_agent::{AgentError, AgentReply};
+use craft_review::blocked;
 
 use super::host::Host;
 use super::limit::usage_limit_text;
@@ -26,6 +27,9 @@ pub(crate) enum Outcome {
     },
     /// The run stopped before the task's turn came.
     NotStarted,
+    /// It answered that it could not look, with why: its answer is written, and the binary fails
+    /// the task with that reason (realm @nick/craft, node #511).
+    Blocked(String),
 }
 
 impl Outcome {
@@ -37,6 +41,7 @@ impl Outcome {
             Self::Limit(t) => Some(format!("limit — {t}")),
             Self::Login(t) => Some(format!("login — {t}")),
             Self::Unanswered { why, .. } => Some(format!("unanswered — {why}")),
+            Self::Blocked(why) => Some(blocked::failure(why)),
         }
     }
 }
@@ -124,6 +129,21 @@ pub(crate) fn outcome_of(
     }
 }
 
+/// Why the agent of `reply` said it could not look: its shaped answer, else its text read as
+/// JSON; `None` when it did not say so.
+pub(crate) fn blocked_in(reply: &AgentReply) -> Option<String> {
+    let parsed = || {
+        let t = reply.text.as_deref()?;
+        serde_json::from_str(t.trim()).ok()
+    };
+    reply
+        .structured
+        .clone()
+        .or_else(parsed)
+        .as_ref()
+        .and_then(blocked::reason)
+}
+
 /// The answer written to the task's file: the shaped one as JSON, else the text as it stands, for
 /// the binary to refuse in its own words.
 fn write_answer(task: &Task, reply: &AgentReply) -> Outcome {
@@ -138,7 +158,7 @@ fn write_answer(task: &Task, reply: &AgentReply) -> Outcome {
         .map_or(Ok(()), std::fs::create_dir_all)
         .and_then(|()| std::fs::write(&task.answer_file, text));
     match written {
-        Ok(()) => Outcome::Answered,
+        Ok(()) => blocked_in(reply).map_or(Outcome::Answered, Outcome::Blocked),
         Err(e) => Outcome::Unanswered {
             why: format!("its answer could not be written: {e}"),
             said: None,

@@ -13,6 +13,9 @@
     "attack": {
       "type": "string",
       "description": "the concrete input/state and why it slips past the fix; empty if none found"
+    },
+    "blocked": {
+      "$ref": "blocked.schema.json"
     }
   }
 }

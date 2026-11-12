@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use crate::Error;
+use crate::blocked;
 use crate::complexity;
 use crate::content;
 use crate::coverage;
@@ -614,6 +615,20 @@ fn take_answer(
         Some(g) => g.contains_key(&task.id),
         None => handoff::answer_file(dir, &task.id).exists(),
     };
+    // An agent that could not look fails with its reason at once, its findings dropped and before
+    // its schema is checked: an empty answer from it would read as a clean review, and one that
+    // left out a required field would otherwise lose that reason to a refusal and its retries
+    // (realm @nick/craft, node #511).
+    if let Some(why) = submitted
+        .as_ref()
+        .ok()
+        .and_then(|a| blocked::said(&task.schema, a))
+    {
+        task.state = TaskState::Failed;
+        task.error = Some(blocked::failure(&why));
+        task.refused = None;
+        return Ok(true);
+    }
     let checked = submitted
         .as_ref()
         .map_err(Clone::clone)

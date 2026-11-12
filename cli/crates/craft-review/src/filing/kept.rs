@@ -39,6 +39,10 @@ pub struct Ctx {
     pub branch: Option<String>,
     #[serde(default)]
     pub dirty: bool,
+    /// The host the run's tasks ran in (`craft review run`'s backend), as the record names it;
+    /// empty, the adapter's default, `claude-code` (and a filing kept before it).
+    #[serde(default)]
+    pub runtime: String,
 }
 
 impl Ctx {
